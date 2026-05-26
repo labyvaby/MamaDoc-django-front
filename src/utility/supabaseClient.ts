@@ -2,8 +2,14 @@ import { createClient } from "@supabase/supabase-js";
 import { IS_DJANGO_BACKEND } from "../config/backend";
 
 // Получение переменных окружения
-const url = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY || "django-backend-placeholder-key";
+const disabledSupabaseUrl =
+  typeof window === "undefined" ? "http://127.0.0.1" : window.location.origin;
+const url = IS_DJANGO_BACKEND
+  ? disabledSupabaseUrl
+  : import.meta.env.VITE_SUPABASE_URL;
+const key = IS_DJANGO_BACKEND
+  ? "disabled-in-django-mode"
+  : import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Строгая проверка наличия ключей
 if (!IS_DJANGO_BACKEND && (!url || !key)) {

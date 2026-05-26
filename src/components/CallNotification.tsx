@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { HistoryRow } from '../types/models';
 import Dayjs from 'dayjs';
+import { IS_DJANGO_BACKEND } from '../config/backend';
 
 interface IncomingCall {
     id: string;
@@ -428,6 +429,8 @@ export const CallNotification: React.FC = () => {
     }, [calls]);
 
     useEffect(() => {
+        if (IS_DJANGO_BACKEND) return;
+
         const channel = supabase.channel('incoming_calls_sub')
             .on(
                 'postgres_changes',
@@ -444,6 +447,8 @@ export const CallNotification: React.FC = () => {
             supabase.removeChannel(channel);
         };
     }, [isRegistrator]);
+
+    if (IS_DJANGO_BACKEND) return null;
 
     const handleClose = (id: string) => {
         setCalls(prev => prev.filter(c => c.id !== id));
