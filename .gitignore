@@ -1,0 +1,189 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.backup
+supabase/.env
+supabase/config.toml.local
+.supabase/
+supabase/.temp/
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+*.credentials.json
+
+# Node modules
+node_modules/
+jspm_packages/
+bower_components/
+
+# Build output
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.output/
+.vercel/
+public/build/
+public/dist/
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+e2e-results/
+
+# Database
+*.sql
+!supabase/migrations/*.sql
+*.db
+*.sqlite
+*.sqlite3
+*.sql.backup
+*.dump
+backup/
+backups/
+db-backup/
+
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Other editors
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+.vs/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.pid
+*.seed
+*.pid.lock
+.lock-wscript
+uploads/
+tmp/
+temp/
+
+# Debug
+debug/
+debug.log
+*.stackdump
+.local/
+*.local
+
+# Storybook
+storybook-static/
+
+# Docker
+docker-compose.override.yml
+.dockerignore.local
+
+# Project specific
+explore-supabase.js
+supabase-mcp.ts
+explore-*.js
+*-exploration.js
+experiments/
+sandbox/
+scratch/
+patient-data/
+exports/
+reports/*.pdf
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# npm
+.npm/
+.node_repl_history
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+pids/
+*.pid
+*.seed
+
+#ai agent
+.agent
+.agent/
+.agent/rules
+.agent/rules/
+.claude/
+.claude/*

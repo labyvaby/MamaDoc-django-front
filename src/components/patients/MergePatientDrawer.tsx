@@ -1,0 +1,343 @@
+import React from "react";
+import {
+  Box,
+  Button,
+  Divider,
+  Drawer,
+  IconButton,
+  Stack,
+  Typography,
+  CircularProgress,
+  Alert,
+  Avatar,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  TextField,
+  InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from "@mui/material";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import SearchIcon from "@mui/icons-material/Search";
+import MergeIcon from "@mui/icons-material/MergeType";
+import { supabase } from "../../utility/supabaseClient";
+import { useNotification } from "@refinedev/core";
+
+type PatientOption = {
+  id: string;
+  full_name: string;
+  phone?: string | null;
+  birth_date?: string | null;
+};
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  /** Пациент, с которого начинаем (уже выбран в списке) */
+  initialPatient: PatientOption | null;
+  onMerged: () => void;
+};
+
+const MergePatientDrawer: React.FC<Props> = ({
+  open,
+  onClose,
+  initialPatient,
+  onMerged,
+}) => {
+  const { open: notify } = useNotification();
+
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [searchResults, setSearchResults] = React.useState<PatientOption[]>([]);
+  const [searching, setSearching] = React.useState(false);
+
+  // Какой из двух будет основным (primary)
+  const [primaryId, setPrimaryId] = React.useState<string>("");
+  const [selectedDuplicate, setSelectedDuplicate] = React.useState<PatientOption | null>(null);
+
+  const [busy, setBusy] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) {
+      setSearchQuery("");
+      setSearchResults([]);
+      setSelectedDuplicate(null);
+      setPrimaryId(initialPatient?.id ?? "");
+    } else {
+      setPrimaryId(initialPatient?.id ?? "");
+    }
+  }, [open, initialPatient]);
+
+  // Поиск с дебаунсом
+  React.useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const { data } = await supabase.rpc("search_patients", {
+          p_query: searchQuery.trim(),
+          p_limit: 10,
+          p_offset: 0,
+        });
+        // Исключаем самого initialPatient из результатов
+        setSearchResults(
+          (data ?? []).filter((p: PatientOption) => p.id !== initialPatient?.id)
+        );
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery, initialPatient?.id]);
+
+  const canMerge =
+    initialPatient && selectedDuplicate && primaryId;
+
+  const duplicateId = primaryId === initialPatient?.id
+    ? selectedDuplicate?.id
+    : initialPatient?.id;
+
+  const primaryName = primaryId === initialPatient?.id
+    ? initialPatient?.full_name
+    : selectedDuplicate?.full_name;
+
+  const duplicateName = duplicateId === selectedDuplicate?.id
+    ? selectedDuplicate?.full_name
+    : initialPatient?.full_name;
+
+  const handleMerge = () => {
+    if (!initialPatient || !selectedDuplicate || !primaryId) return;
+    setConfirmOpen(true);
+  };
+
+  const handleConfirm = async () => {
+    if (!primaryId || !duplicateId) return;
+    setConfirmOpen(false);
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("merge_patients", {
+        p_primary_id: primaryId,
+        p_duplicate_id: duplicateId,
+      });
+      if (error) throw error;
+      notify?.({ type: "success", message: "Пациенты объединены" });
+      onMerged();
+      onClose();
+    } catch (e) {
+      console.error(e);
+      notify?.({ type: "error", message: "Не удалось объединить пациентов" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const patientA = initialPatient;
+  const patientB = selectedDuplicate;
+
+  return (
+    <>
+      <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : onClose}
+      PaperProps={{
+        sx: {
+          width: { xs: "100%", sm: 480 },
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
+        <Stack direction="row" alignItems="center" gap={1}>
+          <MergeIcon color="primary" />
+          <Typography variant="h6">Объединить пациентов</Typography>
+        </Stack>
+        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+          <CloseOutlined />
+        </IconButton>
+      </Box>
+
+      <Divider />
+
+      <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+        <Stack spacing={3}>
+          {/* Текущий пациент */}
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
+              Выбранный пациент
+            </Typography>
+            {patientA && (
+              <PatientChip patient={patientA} />
+            )}
+          </Box>
+
+          {/* Поиск дубля */}
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
+              Найти дубликат
+            </Typography>
+            <TextField
+              fullWidth
+              placeholder="Поиск по имени или телефону…"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSelectedDuplicate(null);
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    {searching ? <CircularProgress size={16} /> : <SearchIcon fontSize="small" />}
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            {searchResults.length > 0 && (
+              <Box sx={{ mt: 1, border: "1px solid", borderColor: "divider", borderRadius: 1, overflow: "hidden" }}>
+                {searchResults.map((p) => (
+                  <Box
+                    key={p.id}
+                    onClick={() => {
+                      setSelectedDuplicate(p);
+                      setSearchQuery(p.full_name);
+                      setSearchResults([]);
+                    }}
+                    sx={{
+                      px: 2,
+                      py: 1.25,
+                      cursor: "pointer",
+                      borderBottom: "1px solid",
+                      borderColor: "divider",
+                      "&:last-child": { borderBottom: "none" },
+                      "&:hover": { bgcolor: "action.hover" },
+                      bgcolor: selectedDuplicate?.id === p.id ? "action.selected" : "transparent",
+                    }}
+                  >
+                    <Typography variant="body2" fontWeight={500}>{p.full_name}</Typography>
+                    {p.phone && (
+                      <Typography variant="caption" color="text.secondary">{p.phone}</Typography>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
+
+          {/* Выбор основного */}
+          {patientA && patientB && (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
+                Кого оставить основным?
+              </Typography>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Дубликат будет удалён, все его приёмы перенесены на основного
+              </Alert>
+              <RadioGroup value={primaryId} onChange={(e) => setPrimaryId(e.target.value)}>
+                <Box sx={{ border: "1px solid", borderColor: primaryId === patientA.id ? "primary.main" : "divider", borderRadius: 1, p: 1.5, mb: 1 }}>
+                  <FormControlLabel
+                    value={patientA.id}
+                    control={<Radio size="small" />}
+                    label={<PatientChip patient={patientA} compact />}
+                    sx={{ m: 0, width: "100%" }}
+                  />
+                </Box>
+                <Box sx={{ border: "1px solid", borderColor: primaryId === patientB.id ? "primary.main" : "divider", borderRadius: 1, p: 1.5 }}>
+                  <FormControlLabel
+                    value={patientB.id}
+                    control={<Radio size="small" />}
+                    label={<PatientChip patient={patientB} compact />}
+                    sx={{ m: 0, width: "100%" }}
+                  />
+                </Box>
+              </RadioGroup>
+            </Box>
+          )}
+        </Stack>
+      </Box>
+
+      <Box sx={{ p: 2, borderTop: 1, borderColor: "divider" }}>
+        <Stack direction="row" gap={1} justifyContent="flex-end">
+          <Button onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={!canMerge || busy}
+            onClick={handleMerge}
+            startIcon={busy ? <CircularProgress size={16} /> : <MergeIcon />}
+          >
+            Объединить
+          </Button>
+        </Stack>
+      </Box>
+    </Drawer>
+
+    <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="xs" fullWidth>
+      <DialogTitle>
+        <Stack direction="row" alignItems="center" gap={1.5}>
+          <WarningAmberIcon color="warning" />
+          <Typography variant="h6">Подтвердите объединение</Typography>
+        </Stack>
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2}>
+          <Box sx={{ bgcolor: "action.hover", borderRadius: 1, p: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">Основной (останется)</Typography>
+            <Typography variant="body1" fontWeight={600}>{primaryName}</Typography>
+          </Box>
+          <Box sx={{ bgcolor: "error.lighter", borderRadius: 1, p: 1.5, border: "1px solid", borderColor: "error.light" }}>
+            <Typography variant="caption" color="error.main">Дубль (будет удалён)</Typography>
+            <Typography variant="body1" fontWeight={600}>{duplicateName}</Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            Все приёмы, звонки и баланс дубля будут перенесены на основного. Действие необратимо.
+          </Typography>
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={() => setConfirmOpen(false)}>Отмена</Button>
+        <Button variant="contained" color="error" onClick={handleConfirm}>
+          Объединить
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
+  );
+};
+
+const PatientChip: React.FC<{ patient: PatientOption; compact?: boolean }> = ({ patient, compact }) => {
+  const initials = patient.full_name
+    .split(" ")
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+
+  return (
+    <Stack direction="row" alignItems="center" gap={1.5}>
+      <Avatar sx={{ width: compact ? 32 : 40, height: compact ? 32 : 40, fontSize: compact ? 13 : 15 }}>
+        {initials}
+      </Avatar>
+      <Box>
+        <Typography variant={compact ? "body2" : "body1"} fontWeight={500}>
+          {patient.full_name}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {[patient.phone, patient.birth_date].filter(Boolean).join(" · ")}
+        </Typography>
+      </Box>
+    </Stack>
+  );
+};
+
+export default MergePatientDrawer;
