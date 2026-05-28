@@ -1,13 +1,11 @@
 /**
  * Maps a Django permission code prefix to the corresponding module code.
- * Must mirror the backend module definitions in apps/tenancy/modules.py.
+ * Must mirror the backend module definitions in server/apps/rbac/module_mapping.py.
  */
 const PREFIX_TO_MODULE: Record<string, string> = {
   patients: 'patients',
   appointments: 'appointments',
   staff: 'staff',
-  // sidebar использует 'users.view' для раздела сотрудников → модуль staff
-  users: 'staff',
   catalog: 'catalog',
   finance: 'finance',
   warehouse: 'warehouse',

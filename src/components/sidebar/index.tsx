@@ -456,7 +456,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* ── Организация ── */}
         {show("org") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('users.view'))
+          ? (isSuper || can('staff.view'))
           : (isSuper || !isNurse)
         ) && (
           <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
