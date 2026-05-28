@@ -18,6 +18,7 @@ import {
   type AppointmentStatusFilter,
 } from "../../components/appointments/AppointmentFilters";
 import { AppointmentsEmptyState } from "../../components/appointments/AppointmentsEmptyState";
+import DjangoAddAppointmentDrawer from "./DjangoAddAppointmentDrawer";
 
 type ViewMode = "list" | "day";
 
@@ -44,19 +45,16 @@ const AppointmentsPage: React.FC = () => {
   const [status, setStatus] = React.useState<AppointmentStatusFilter>("all");
   const [search, setSearch] = React.useState("");
   const [view, setView] = React.useState<ViewMode>("list");
+  const [createOpen, setCreateOpen] = React.useState(false);
 
   const canCreate = can("appointments.create");
-  // ``appointments.update`` is consumed by future inline-edit actions in
-  // the list/day views; the variable is referenced via DOM only when a
-  // row exists, so we keep it computed but the empty state hides it.
-  // Future work: render a per-row edit button gated by this flag.
 
   const handleCreate = (): void => {
-    // Placeholder.  The "create appointment" drawer / page will be
-    // wired here once the appointments API is available.
+    setCreateOpen(true);
   };
 
   return (
+    <>
     <Box sx={{ p: { xs: 1, md: 2 }, height: "100%" }}>
       <Stack spacing={2} sx={{ height: "100%" }}>
         {/* ── Header ───────────────────────────────────────────────── */}
@@ -141,6 +139,16 @@ const AppointmentsPage: React.FC = () => {
         </Paper>
       </Stack>
     </Box>
+
+    <DjangoAddAppointmentDrawer
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      onCreated={() => {
+        setCreateOpen(false);
+        // Future: invalidate appointments query here
+      }}
+    />
+    </>
   );
 };
 
