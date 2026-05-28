@@ -15,10 +15,10 @@ import type { Dayjs } from "dayjs";
 export type AppointmentStatusFilter =
   | "all"
   | "scheduled"
-  | "confirmed"
-  | "arrived"
+  | "waiting"
+  | "in_progress"
   | "completed"
-  | "canceled"
+  | "cancelled"
   | "no_show";
 
 export const APPOINTMENT_STATUS_OPTIONS: ReadonlyArray<{
@@ -27,10 +27,10 @@ export const APPOINTMENT_STATUS_OPTIONS: ReadonlyArray<{
 }> = [
   { value: "all", label: "Все статусы" },
   { value: "scheduled", label: "Запланирован" },
-  { value: "confirmed", label: "Подтверждён" },
-  { value: "arrived", label: "Пришёл" },
+  { value: "waiting", label: "Ожидает" },
+  { value: "in_progress", label: "Принимается" },
   { value: "completed", label: "Завершён" },
-  { value: "canceled", label: "Отменён" },
+  { value: "cancelled", label: "Отменён" },
   { value: "no_show", label: "Неявка" },
 ];
 

@@ -146,7 +146,8 @@ const RootRedirect = () => {
   if (window.location.hash.includes("type=recovery")) {
     return <Navigate to={"/update-password" + window.location.hash} replace />;
   }
-  return <Navigate to="/home" replace />;
+  // В Django-режиме корень ведёт на /appointments, а не на Supabase-only /home
+  return <Navigate to={IS_DJANGO_BACKEND ? "/appointments" : "/home"} replace />;
 };
 
 function App() {
@@ -402,11 +403,15 @@ function App() {
                         <Route
                           path="home"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <HomePage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND
+                              ? <Navigate to="/appointments" replace />
+                              : (
+                                <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <HomePage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              )
                           }
                         />
                         <Route

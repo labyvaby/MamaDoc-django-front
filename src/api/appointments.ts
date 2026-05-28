@@ -87,21 +87,74 @@ export interface UpdateAppointmentPayload {
   services?: AppointmentServiceLineCreate[];
 }
 
+// ── Service-providers ────────────────────────────────────────────────────────
+
+/**
+ * One element returned by GET /api/appointments/service-providers/.
+ * Mirrors the backend ServiceProviderPayload (rename='camel').
+ */
+export interface ServiceProvider {
+  employeeId: number;
+  employeeFullName: string;
+  serviceId: number;
+  serviceName: string;
+  /** Effective price for this employee/service pair (overridden or base). */
+  price: string;
+  /** Effective duration in minutes. */
+  durationMinutes: number;
+}
+
 // ── API functions ─────────────────────────────────────────────────────────────
 
 export function getAppointments(params?: {
+  /** Filter by exact date YYYY-MM-DD. */
   date?: string;
+  /** Filter by date range start YYYY-MM-DD. */
+  dateFrom?: string;
+  /** Filter by date range end YYYY-MM-DD. */
+  dateTo?: string;
+  /** Filter by appointment status. */
   status?: string;
+  /** Full-text search (patient name / phone). */
   search?: string;
+  /** Filter by branch id. */
   branchId?: number;
+  /** Filter by employee id. */
+  employeeId?: number;
+  /** Filter by patient id. */
+  patientId?: number;
 }): Promise<DjangoAppointment[]> {
   const query = new URLSearchParams();
   if (params?.date) query.set("date", params.date);
+  if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
+  if (params?.dateTo) query.set("dateTo", params.dateTo);
   if (params?.status) query.set("status", params.status);
   if (params?.search) query.set("search", params.search);
   if (params?.branchId) query.set("branchId", String(params.branchId));
+  if (params?.employeeId) query.set("employeeId", String(params.employeeId));
+  if (params?.patientId) query.set("patientId", String(params.patientId));
   const qs = query.toString();
   return apiRequest<DjangoAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`);
+}
+
+/**
+ * GET /api/appointments/service-providers/
+ *
+ * Returns all active employee/service pairs visible to the caller,
+ * optionally filtered by serviceId and/or branchId.
+ * Replaces the N+1 pattern of calling getEmployeeServices() per employee.
+ */
+export function getServiceProviders(params?: {
+  serviceId?: number;
+  branchId?: number;
+}): Promise<ServiceProvider[]> {
+  const query = new URLSearchParams();
+  if (params?.serviceId) query.set("serviceId", String(params.serviceId));
+  if (params?.branchId) query.set("branchId", String(params.branchId));
+  const qs = query.toString();
+  return apiRequest<ServiceProvider[]>(
+    `/appointments/service-providers/${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export function getAppointment(id: number): Promise<DjangoAppointment> {

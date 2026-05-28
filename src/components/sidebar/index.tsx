@@ -422,22 +422,16 @@ const SidebarSecondary: React.FC = () => {
       {/* ── Список пунктов меню ── */}
       <List sx={{ py: 0, mt: (!siderCollapsed || isMobile) ? 0.5 : 0 }}>
         {/* ── Моя работа ── */}
-        {show("my-work") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('patients.view'))
-          : (isSuper || (!isNurse && !isDoctor()))
-        ) && (
+        {/* /home — Supabase-only (create_full_appointment RPC), скрыт в Django */}
+        {show("my-work") && !IS_DJANGO_BACKEND && (isSuper || (!isNurse && !isDoctor())) && (
           <SidebarMenuItem to="/home" icon={<HomeOutlined />} label="Регистратура" collapsed={siderCollapsed} />
         )}
-        {show("my-work") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('appointments.view'))
-          : (isSuper || (!isNurse && !isAdmin() && !isRegistrator()))
-        ) && (
+        {/* /doctor — Supabase-only, скрыт в Django */}
+        {show("my-work") && !IS_DJANGO_BACKEND && (isSuper || (!isNurse && !isAdmin() && !isRegistrator())) && (
           <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label="Кабинет врача" collapsed={siderCollapsed} />
         )}
-        {show("my-work") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('appointments.view'))
-          : (isSuper || isAdmin() || isNurse)
-        ) && (
+        {/* /nurse — Supabase-only, скрыт в Django */}
+        {show("my-work") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || isNurse) && (
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
         )}
         {show("my-work") && (IS_DJANGO_BACKEND
@@ -446,10 +440,8 @@ const SidebarSecondary: React.FC = () => {
         ) && (
           <SidebarMenuItem to="/patient-search" icon={<SearchOutlined />} label="Все пациенты" collapsed={siderCollapsed} />
         )}
-        {show("my-work") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('appointments.view'))
-          : true
-        ) && (
+        {/* /schedule — Supabase-only, скрыт в Django */}
+        {show("my-work") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
         )}
         {show("my-work") && <SidebarSkudItem collapsed={siderCollapsed} />}
@@ -475,10 +467,8 @@ const SidebarSecondary: React.FC = () => {
             collapsed={siderCollapsed}
           />
         )}
-        {show("org") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('appointments.view'))
-          : true
-        ) && (
+        {/* /all-procedures — Supabase-only, скрыт в Django */}
+        {show("org") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/all-procedures" icon={<MedicalServicesOutlined />} label="Все процедуры" collapsed={siderCollapsed} />
         )}
         {show("org") && (IS_DJANGO_BACKEND
@@ -501,10 +491,8 @@ const SidebarSecondary: React.FC = () => {
         ) && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
-        {show("storage") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('warehouse.view'))
-          : (isSuper || isAdmin() || isRegistrator())
-        ) && (
+        {/* /sales — Supabase warehouse, скрыт в Django */}
+        {show("storage") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || isRegistrator()) && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
         {show("storage") && (IS_DJANGO_BACKEND
@@ -518,10 +506,8 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* ── Управление ── */}
-        {show("management") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('finance.view'))
-          : true
-        ) && (
+        {/* /salary-reports — Supabase-only, скрыт в Django */}
+        {show("management") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
         {show("management") && (IS_DJANGO_BACKEND
@@ -536,10 +522,8 @@ const SidebarSecondary: React.FC = () => {
         ) && (
           <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         )}
-        {show("management") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('finance.manage'))
-          : hasAccessToCashbox
-        ) && (
+        {/* /cashbox — Supabase-only, скрыт в Django */}
+        {show("management") && !IS_DJANGO_BACKEND && hasAccessToCashbox && (
           <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
         )}
         {show("management") && isSuper && (
