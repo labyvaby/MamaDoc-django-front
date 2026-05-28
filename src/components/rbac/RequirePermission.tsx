@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, CircularProgress } from '@mui/material';
 import { usePermissions } from '../../hooks/usePermissions';
+import { IS_DJANGO_BACKEND } from '../../config/backend';
 import { AccessDenied } from './AccessDenied';
 
 interface RequirePermissionProps {
@@ -15,6 +16,7 @@ interface RequirePermissionProps {
 
 /**
  * Route / section guard на основе permission-кодов Django RBAC.
+ * В Django-режиме проверяет и permission, и включённость модуля (canAccess).
  *
  * @example
  * <RequirePermission permission="patients.view">
@@ -32,7 +34,7 @@ export const RequirePermission: React.FC<RequirePermissionProps> = ({
   requireAll = false,
   fallback,
 }) => {
-  const { loading, hasPermission, hasAllPermissions, isSuperAdmin } = usePermissions();
+  const { loading, hasPermission, hasAllPermissions, canAccess, isSuperAdmin } = usePermissions();
 
   if (loading) {
     return (
@@ -55,10 +57,22 @@ export const RequirePermission: React.FC<RequirePermissionProps> = ({
   }
 
   const perms = Array.isArray(permission) ? permission : [permission];
-  const hasAccess = requireAll ? hasAllPermissions(perms) : hasPermission(perms);
+
+  let hasAccess: boolean;
+  if (IS_DJANGO_BACKEND && canAccess) {
+    hasAccess = requireAll
+      ? perms.every((p) => canAccess(p))
+      : perms.some((p) => canAccess(p));
+  } else {
+    hasAccess = requireAll ? hasAllPermissions(perms) : hasPermission(perms);
+  }
 
   if (!hasAccess) {
-    return fallback !== undefined ? <>{fallback}</> : <AccessDenied />;
+    return fallback !== undefined ? (
+      <>{fallback}</>
+    ) : (
+      <AccessDenied description="Модуль недоступен для вашей организации или у вас нет прав." />
+    );
   }
 
   return <>{children}</>;

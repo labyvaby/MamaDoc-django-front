@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router';
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from '../../hooks/usePermissions';
+import { IS_DJANGO_BACKEND } from '../../config/backend';
 import { ROLE_HOME_PAGES, type RoleName } from '../../types/rbac';
 import { CircularProgress, Box, Typography } from '@mui/material';
 import { AccessDenied } from './AccessDenied';
@@ -51,7 +52,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requireAll = false,
   redirectTo = '/home',
 }) => {
-  const { hasRole, hasPermission, hasAllPermissions, loading, role: userRole } = usePermissions();
+  const { hasRole, hasPermission, hasAllPermissions, canAccess, loading, role: userRole } = usePermissions();
   const { open } = useNotification();
 
   // 0) Супер-админ всегда имеет доступ ко всему
@@ -133,16 +134,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Проверка разрешений
   if (requiredPermissions && requiredPermissions.length > 0) {
-    if (requireAll) {
-      // Требуем все разрешения
-      if (!hasAllPermissions(requiredPermissions)) {
-        return handleAccessDenied();
-      }
+    if (IS_DJANGO_BACKEND && canAccess) {
+      const granted = requireAll
+        ? requiredPermissions.every((p) => canAccess(p))
+        : requiredPermissions.some((p) => canAccess(p));
+      if (!granted) return handleAccessDenied();
+    } else if (requireAll) {
+      if (!hasAllPermissions(requiredPermissions)) return handleAccessDenied();
     } else {
-      // Требуем хотя бы одно разрешение
-      if (!hasPermission(requiredPermissions)) {
-        return handleAccessDenied();
-      }
+      if (!hasPermission(requiredPermissions)) return handleAccessDenied();
     }
   }
 

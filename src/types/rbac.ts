@@ -78,6 +78,12 @@ export interface UserPermissions {
   employeeId?: string | null;
   employee?: any | null;
   isSuperAdmin?: () => boolean;
+  /** Module codes enabled for the active organization (Django mode). */
+  enabledModules?: string[];
+  /** True if the given module code is enabled for the active organization. */
+  hasModule?: (moduleCode: string) => boolean;
+  /** Combined check: hasPermission AND hasModule (Django mode). */
+  canAccess?: (permissionCode: string) => boolean;
   // ── Django active context (optional, undefined in Supabase mode) ──
   /** Memberships available to the current user. */
   memberships?: import('../api/auth').RbacMembership[];
@@ -170,4 +176,8 @@ export interface PermissionCheck {
   canManageEmployees: () => boolean;
   /** Может управлять расходами (создание/редактирование) и видеть все расходы */
   canManageExpenses: () => boolean;
+  /** True if the given module code is enabled for the active organization (Django mode). */
+  hasModule: (moduleCode: string) => boolean;
+  /** Combined check: hasPermission AND hasModule — use this for UI visibility (Django mode). */
+  canAccess: (permissionCode: string) => boolean;
 }

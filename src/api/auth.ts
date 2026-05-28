@@ -77,6 +77,8 @@ export type MeResponse = {
   /** Flat deduplicated permissions across all memberships.
    *  Superuser → all active permission codes from the database. */
   permissions: string[];
+  /** Module codes enabled for the active organization (e.g. "patients", "finance"). */
+  enabledModules: string[];
 };
 
 /** Payload accepted by POST /api/auth/context/. */

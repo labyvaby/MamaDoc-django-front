@@ -11,6 +11,7 @@ import type {
 import { IS_DJANGO_BACKEND } from '../config/backend';
 import { supabase } from '../utility/supabaseClient';
 import type { Role, Permission, UserPermissions, RoleName, PermissionCheck } from '../types/rbac';
+import { getModuleCodeForPermission } from '../utils/moduleMapping';
 
 // Глобальное кэширование прав, чтобы исключить повторные запросы из разных мест
 // и не триггерить рефетч при сворачивании/возврате вкладки.
@@ -31,6 +32,7 @@ type GlobalState = {
   activeBranch: RbacBranch | null;
   activeEmployee: ActiveEmployee;
   switching: boolean;
+  enabledModules: string[];
 };
 
 let globalState: GlobalState = {
@@ -48,6 +50,7 @@ let globalState: GlobalState = {
   activeBranch: null,
   activeEmployee: null,
   switching: false,
+  enabledModules: [],
 };
 
 let inFlight: Promise<void> | null = null;
@@ -119,6 +122,7 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     activeOrganization: meData.activeOrganization ?? null,
     activeBranch: meData.activeBranch ?? null,
     activeEmployee: meData.activeEmployee ?? null,
+    enabledModules: meData.enabledModules ?? [],
   };
 }
 
@@ -416,6 +420,27 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
   const canManageEmployees = useCallback(() => hasRole(['superadmin', 'admin', 'receptionist', 'registrator']), [hasRole]);
   const canManageExpenses = useCallback(() => hasRole(['superadmin', 'admin', 'registrator', 'receptionist', 'manager']), [hasRole]);
 
+  const hasModule = useCallback(
+    (moduleCode: string): boolean => {
+      if (!IS_DJANGO_BACKEND) return true;
+      if (state.role?.name === 'superadmin') return true;
+      return state.enabledModules.includes(moduleCode);
+    },
+    [state.enabledModules, state.role]
+  );
+
+  const canAccess = useCallback(
+    (permissionCode: string): boolean => {
+      if (!IS_DJANGO_BACKEND) return hasPermission(permissionCode);
+      if (state.role?.name === 'superadmin') return true;
+      if (!hasPermission(permissionCode)) return false;
+      const moduleCode = getModuleCodeForPermission(permissionCode);
+      if (moduleCode === null) return true;
+      return state.enabledModules.includes(moduleCode);
+    },
+    [hasPermission, state.enabledModules, state.role]
+  );
+
   return {
     role: state.role,
     permissions: state.permissions,
@@ -441,6 +466,9 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     activeEmployee: state.activeEmployee,
     switching: state.switching,
     switchContext,
+    enabledModules: state.enabledModules,
+    hasModule,
+    canAccess,
   };
 };
 
