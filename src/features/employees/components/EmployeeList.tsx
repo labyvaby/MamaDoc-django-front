@@ -16,6 +16,7 @@ import {
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import ListSubheader from "@mui/material/ListSubheader";
 import type { EmployesRow } from "../types";
 
@@ -24,6 +25,8 @@ export type EmployeeListProps = {
   onSelect: (e: EmployesRow) => void;
   onEdit?: (e: EmployesRow) => void;
   onDelete?: (e: EmployesRow) => void;
+  /** Django-only: открыть drawer управления услугами */
+  onOpenServices?: (e: EmployesRow) => void;
   listRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
   loading?: boolean;
@@ -38,6 +41,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   onSelect,
   onEdit,
   onDelete,
+  onOpenServices,
   listRef,
   onScroll,
   loading,
@@ -68,8 +72,18 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
         divider
         sx={{ alignItems: "center" }}
         secondaryAction={
-          (onEdit || onDelete) && (
-            <Stack direction="row" spacing={1}>
+          (onEdit || onDelete || onOpenServices) && (
+            <Stack direction="row" spacing={0.5}>
+              {onOpenServices && (
+                <IconButton
+                  aria-label="Услуги"
+                  size="small"
+                  onClick={() => onOpenServices(e)}
+                  title="Управление услугами"
+                >
+                  <MedicalServicesOutlined fontSize="small" />
+                </IconButton>
+              )}
               {onEdit && (
                 <IconButton aria-label="Редактировать" onClick={() => onEdit(e)}>
                   <EditOutlined />

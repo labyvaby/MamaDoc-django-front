@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Divider, Stack, Typography, Avatar, Chip, CircularProgress, Card, CardHeader, CardContent, Box, Link, ImageList, ImageListItem, Modal, IconButton } from "@mui/material";
+import { Button, Divider, Stack, Typography, Avatar, Chip, CircularProgress, Card, CardHeader, CardContent, Box, Link, ImageList, ImageListItem, Modal, IconButton } from "@mui/material";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
@@ -8,6 +8,7 @@ import TelegramIcon from "@mui/icons-material/Telegram";
 import EmailOutlined from "@mui/icons-material/EmailOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import type { EmployesRow } from "../types";
 import type { ServiceRow as ServiceDto } from "../../../services/services";
 
@@ -19,7 +20,12 @@ import { EMPLOYEE_SERVICES_TABLE, fetchEmployeeSpecialization } from "../api";
 import { useOne } from "@refinedev/core";
 import { DB_TABLES } from "../../../utility/constants";
 
-export type EmployeeCardProps = { emp: EmployesRow | null; allServices: ServiceDto[] };
+export type EmployeeCardProps = {
+  emp: EmployesRow | null;
+  allServices: ServiceDto[];
+  /** Django-only: открыть drawer управления услугами */
+  onOpenServices?: (employeeId: number, employeeName: string) => void;
+};
 
 const calculateAge = (birthDate: string) => {
   if (!birthDate) return "";
@@ -47,7 +53,7 @@ const calculateAge = (birthDate: string) => {
   return `(${yearsStr}${monthsStr})`;
 };
 
-const EmployeeCard: React.FC<EmployeeCardProps> = ({ emp, allServices }) => {
+const EmployeeCard: React.FC<EmployeeCardProps> = ({ emp, allServices, onOpenServices }) => {
   console.log("DEBUG EmployeeCard passport_photos:", emp?.id, emp?.passport_photos);
   // Состояние для хранения загруженных ID услуг
   const [fetchedServiceIds, setFetchedServiceIds] = useState<string[]>([]);
@@ -448,12 +454,28 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({ emp, allServices }) => {
 
             {/* Блок Услуги Сотрудника */}
             <Box>
-              <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1.5 }}>
-                <LocalOfferOutlined color="primary" />
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Услуги сотрудника
-                </Typography>
-                {isLoadingServices && <CircularProgress size={16} />}
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <LocalOfferOutlined color="primary" />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Услуги сотрудника
+                  </Typography>
+                  {isLoadingServices && <CircularProgress size={16} />}
+                </Stack>
+                {onOpenServices && emp && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<SettingsOutlined fontSize="small" />}
+                    onClick={() => {
+                      const id = typeof emp.id === "number" ? emp.id : Number(emp.id);
+                      if (!isNaN(id)) onOpenServices(id, emp.full_name);
+                    }}
+                    sx={{ minWidth: 0 }}
+                  >
+                    Управление
+                  </Button>
+                )}
               </Stack>
 
               {servicesForEmployee.length > 0 ? (

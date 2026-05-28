@@ -23,6 +23,7 @@ import AddEmployeeDrawer from "./components/AddEmployeeDrawer";
 import EditEmployeeDrawer from "./components/EditEmployeeDrawer";
 import DeleteEmployeeDialog from "./components/DeleteEmployeeDialog";
 import OnboardEmployeeDrawer from "./components/OnboardEmployeeDrawer";
+import EmployeeServicesDrawer from "./components/EmployeeServicesDrawer";
 import { useEmployeesPageState } from "./hooks/useEmployeesPage";
 import { fetchServices, type ServiceRow as ServiceDto } from "../../services/services";
 import { AppBottomSheet, PageHeader } from "../../components/ui";
@@ -36,6 +37,22 @@ const EmployeesPage: React.FC = () => {
   const state = useEmployeesPageState();
   const [isGrouped, setIsGrouped] = React.useState(true);
   const [onboardOpen, setOnboardOpen] = React.useState(false);
+  const [servicesDrawer, setServicesDrawer] = React.useState<{
+    open: boolean;
+    employeeId: number;
+    employeeName: string;
+  }>({ open: false, employeeId: 0, employeeName: "" });
+
+  const openServicesDrawer = React.useCallback(
+    (id: number, name: string) =>
+      setServicesDrawer({ open: true, employeeId: id, employeeName: name }),
+    [],
+  );
+  const closeServicesDrawer = React.useCallback(
+    () => setServicesDrawer((s) => ({ ...s, open: false })),
+    [],
+  );
+
   const { canManageEmployees, isAdmin } = usePermissions();
 
   // Права для кнопки онбординга (хуки вызываются безусловно)
@@ -174,6 +191,14 @@ const EmployeesPage: React.FC = () => {
                 onSelect={(e) => state.setDetailsOpen(e)}
                 onEdit={canManageEmployees() ? (e) => state.setEditOpen(e) : undefined}
                 onDelete={isAdmin() && canManageEmployees() ? (e) => state.setDeleteOpen(e) : undefined}
+                onOpenServices={
+                  IS_DJANGO_BACKEND
+                    ? (e) => {
+                        const id = typeof e.id === "number" ? e.id : Number(e.id);
+                        if (!isNaN(id)) openServicesDrawer(id, e.full_name);
+                      }
+                    : undefined
+                }
                 listRef={listRef}
                 onScroll={state.loadMore}
                 loading={state.loading}
@@ -202,7 +227,15 @@ const EmployeesPage: React.FC = () => {
             >
               <Box sx={{ height: "100%", overflowY: "auto", pr: 0.5 }}>
                 {state.detailsOpen ? (
-                  <EmployeeCard emp={state.detailsOpen} allServices={allServices} />
+                  <EmployeeCard
+                    emp={state.detailsOpen}
+                    allServices={allServices}
+                    onOpenServices={
+                      IS_DJANGO_BACKEND
+                        ? (id, name) => openServicesDrawer(id, name)
+                        : undefined
+                    }
+                  />
                 ) : (
                   <Box
                     sx={{
@@ -232,12 +265,28 @@ const EmployeesPage: React.FC = () => {
           onClose={() => state.setDetailsOpen(null)}
         >
           <Box sx={{ p: 2 }}>
-            <EmployeeCard emp={state.detailsOpen} allServices={allServices} />
+            <EmployeeCard
+              emp={state.detailsOpen}
+              allServices={allServices}
+              onOpenServices={
+                IS_DJANGO_BACKEND
+                  ? (id, name) => openServicesDrawer(id, name)
+                  : undefined
+              }
+            />
           </Box>
         </AppBottomSheet>
       )}
 
       {/* --- ДИАЛОГИ ДЕЙСТВИЙ --- */}
+      {IS_DJANGO_BACKEND && servicesDrawer.employeeId > 0 && (
+        <EmployeeServicesDrawer
+          open={servicesDrawer.open}
+          onClose={closeServicesDrawer}
+          employeeId={servicesDrawer.employeeId}
+          employeeName={servicesDrawer.employeeName}
+        />
+      )}
       {IS_DJANGO_BACKEND && (
         <OnboardEmployeeDrawer
           open={onboardOpen}

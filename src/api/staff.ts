@@ -85,7 +85,73 @@ export interface OnboardEmployeeResponse {
   userBranches: DjangoEmployeeBranch[];
 }
 
+// ── EmployeeService shapes (mirrors staff/api/payloads.py) ───────────────────
+
+export interface EmployeeServiceShort {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface EmployeeServiceAssignment {
+  id: number;
+  employeeId: number;
+  service: EmployeeServiceShort;
+  branch: DjangoEmployeeBranch | null;
+  isActive: boolean;
+  priceOverride: string | null;
+  durationOverrideMinutes: number | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeServiceCreatePayload {
+  serviceId: number;
+  branchId?: number | null;
+  isActive?: boolean;
+  priceOverride?: string | number | null;
+  durationOverrideMinutes?: number | null;
+  notes?: string;
+}
+
+export interface EmployeeServiceUpdatePayload {
+  isActive?: boolean | null;
+  priceOverride?: string | number | null;
+  durationOverrideMinutes?: number | null;
+  notes?: string | null;
+}
+
 // ── API functions ─────────────────────────────────────────────────────────────
+
+export function getEmployeeServices(
+  employeeId: number,
+): Promise<EmployeeServiceAssignment[]> {
+  return apiRequest<EmployeeServiceAssignment[]>(
+    `/staff/employees/${employeeId}/services/`,
+  );
+}
+
+export function assignEmployeeService(
+  employeeId: number,
+  payload: EmployeeServiceCreatePayload,
+): Promise<EmployeeServiceAssignment> {
+  return apiRequest<EmployeeServiceAssignment>(
+    `/staff/employees/${employeeId}/services/`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function updateEmployeeService(
+  employeeId: number,
+  assignmentId: number,
+  payload: EmployeeServiceUpdatePayload,
+): Promise<EmployeeServiceAssignment> {
+  return apiRequest<EmployeeServiceAssignment>(
+    `/staff/employees/${employeeId}/services/${assignmentId}/`,
+    { method: "PATCH", body: payload },
+  );
+}
 
 export function onboardEmployee(
   payload: OnboardEmployeePayload,
