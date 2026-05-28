@@ -7,7 +7,9 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
+  Button,
 } from "@mui/material";
+import PersonAddOutlined from "@mui/icons-material/PersonAddOutlined";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -20,16 +22,31 @@ import EmployeeCard from "./components/EmployeeCard";
 import AddEmployeeDrawer from "./components/AddEmployeeDrawer";
 import EditEmployeeDrawer from "./components/EditEmployeeDrawer";
 import DeleteEmployeeDialog from "./components/DeleteEmployeeDialog";
+import OnboardEmployeeDrawer from "./components/OnboardEmployeeDrawer";
 import { useEmployeesPageState } from "./hooks/useEmployeesPage";
 import { fetchServices, type ServiceRow as ServiceDto } from "../../services/services";
 import { AppBottomSheet, PageHeader } from "../../components/ui";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useCan } from "../../hooks/useCan";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
+import type { OnboardEmployeeResponse } from "../../api/staff";
 
 const EmployeesPage: React.FC = () => {
   usePageTitle("Сотрудники");
   const state = useEmployeesPageState();
   const [isGrouped, setIsGrouped] = React.useState(true);
+  const [onboardOpen, setOnboardOpen] = React.useState(false);
   const { canManageEmployees, isAdmin } = usePermissions();
+
+  // Права для кнопки онбординга (хуки вызываются безусловно)
+  const canStaffCreate = useCan("staff.create");
+  const canMembershipsCreate = useCan("rbac.memberships.create");
+  const canMembershipsUpdate = useCan("rbac.memberships.update");
+  const canOnboard =
+    IS_DJANGO_BACKEND &&
+    canStaffCreate &&
+    (canMembershipsCreate || canMembershipsUpdate);
+
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const listRef = React.useRef<HTMLDivElement | null>(null);
@@ -75,38 +92,53 @@ const EmployeesPage: React.FC = () => {
         searchVal={state.q}
         onSearchChange={(v) => state.setQ(v)}
         actions={
-          <ToggleButtonGroup
-            size="small"
-            value={isGrouped}
-            exclusive
-            onChange={(_, val) => val !== null && setIsGrouped(val)}
-            sx={{
-              height: 40,
-              bgcolor: "background.paper",
-              "& .MuiToggleButton-root": {
-                px: 2,
-                borderColor: "divider",
-                "&.Mui-selected": {
-                  bgcolor: "primary.main",
-                  color: "white",
-                  "&:hover": {
-                    bgcolor: "primary.dark",
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {canOnboard && (
+              <Tooltip title="Создать сотрудника с аккаунтом и членством">
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<PersonAddOutlined />}
+                  onClick={() => setOnboardOpen(true)}
+                  sx={{ height: 40, whiteSpace: "nowrap" }}
+                >
+                  {isMobile ? "" : "Создать сотрудника"}
+                </Button>
+              </Tooltip>
+            )}
+            <ToggleButtonGroup
+              size="small"
+              value={isGrouped}
+              exclusive
+              onChange={(_, val) => val !== null && setIsGrouped(val)}
+              sx={{
+                height: 40,
+                bgcolor: "background.paper",
+                "& .MuiToggleButton-root": {
+                  px: 2,
+                  borderColor: "divider",
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "white",
+                    "&:hover": {
+                      bgcolor: "primary.dark",
+                    },
                   },
                 },
-              },
-            }}
-          >
-            <Tooltip title="Группировать по ролям">
-              <ToggleButton value={true}>
-                <GroupsOutlined fontSize="small" />
-              </ToggleButton>
-            </Tooltip>
-            <Tooltip title="Список">
-              <ToggleButton value={false}>
-                <ViewModuleOutlined fontSize="small" />
-              </ToggleButton>
-            </Tooltip>
-          </ToggleButtonGroup>
+              }}
+            >
+              <Tooltip title="Группировать по ролям">
+                <ToggleButton value={true}>
+                  <GroupsOutlined fontSize="small" />
+                </ToggleButton>
+              </Tooltip>
+              <Tooltip title="Список">
+                <ToggleButton value={false}>
+                  <ViewModuleOutlined fontSize="small" />
+                </ToggleButton>
+              </Tooltip>
+            </ToggleButtonGroup>
+          </Box>
         }
       />
 
@@ -206,6 +238,16 @@ const EmployeesPage: React.FC = () => {
       )}
 
       {/* --- ДИАЛОГИ ДЕЙСТВИЙ --- */}
+      {IS_DJANGO_BACKEND && (
+        <OnboardEmployeeDrawer
+          open={onboardOpen}
+          onClose={() => setOnboardOpen(false)}
+          onCreated={(_res: OnboardEmployeeResponse) => {
+            // Сбрасываем поиск, чтобы список обновился при следующем открытии
+            state.setQ("");
+          }}
+        />
+      )}
       <AddEmployeeDrawer
         open={state.addOpen}
         onClose={() => state.setAddOpen(false)}
