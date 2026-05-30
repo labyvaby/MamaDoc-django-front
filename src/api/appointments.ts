@@ -20,7 +20,17 @@ export function parseBackendError(err: unknown): string {
         if (errors && typeof errors === "object") {
           const parts = Object.entries(errors as Record<string, unknown>).map(
             ([field, msgs]) => {
-              const msgStr = Array.isArray(msgs) ? msgs.join(", ") : String(msgs);
+              const msgStr = Array.isArray(msgs)
+                ? msgs
+                    .map((m) =>
+                      typeof m === "object" && m !== null
+                        ? Object.values(m as Record<string, unknown>)
+                            .flat()
+                            .join(", ")
+                        : String(m),
+                    )
+                    .join(", ")
+                : String(msgs);
               return field === "__all__" ? msgStr : `${field}: ${msgStr}`;
             },
           );
@@ -56,8 +66,14 @@ export interface AppointmentServiceLine {
   id: number;
   service: AppointmentServiceShort;
   employee: AppointmentEmployeeShort;
+  /** Effective unit price for this line */
   price: string;
   durationMinutes: number | null;
+  quantity: number;
+  /** Unit price before any discount (may equal price when no override) */
+  unitPrice: string;
+  /** Discount amount applied to this line */
+  discountAmount: string;
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
@@ -92,6 +108,9 @@ export interface DjangoAppointment {
 export interface AppointmentServiceLineCreate {
   serviceId: number;
   employeeId: number;
+  quantity?: number;
+  unitPrice?: string;
+  discountAmount?: string;
 }
 
 export interface CreateAppointmentPayload {

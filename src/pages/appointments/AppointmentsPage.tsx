@@ -7,6 +7,8 @@ import {
   CircularProgress,
   Divider,
   IconButton,
+  List,
+  ListItem,
   Paper,
   Stack,
   Tab,
@@ -426,11 +428,78 @@ const AppointmentRow: React.FC<{
   const time = dayjs(appt.scheduledAt).format("HH:mm");
   const patientName = appt.patient?.fullName ?? "Бронирование";
   const patientPhone = appt.patient?.phone ?? "";
+
+  const serviceCount = appt.services.length;
   const firstService = appt.services[0];
-  const serviceName = firstService?.service.name ?? "—";
-  const employeeName = firstService?.employee.fullName ?? "—";
-  const price = firstService?.price ?? appt.totalAmount;
-  const showPrice = price && price !== "0.00" && price !== "0";
+
+  // Service cell: 1 service → name, N services → "N услуг" with tooltip list
+  const serviceCell =
+    serviceCount === 0 ? (
+      <Typography variant="body2" color="text.disabled">—</Typography>
+    ) : serviceCount === 1 ? (
+      <Typography variant="body2" noWrap>{firstService.service.name}</Typography>
+    ) : (
+      <Tooltip
+        title={
+          <List dense disablePadding>
+            {appt.services.map((sl) => (
+              <ListItem key={sl.id} disablePadding sx={{ py: 0.25 }}>
+                <Typography variant="caption">{sl.service.name}</Typography>
+              </ListItem>
+            ))}
+          </List>
+        }
+        arrow
+      >
+        <Typography
+          variant="body2"
+          noWrap
+          sx={{ cursor: "default", borderBottom: "1px dashed", borderColor: "text.secondary" }}
+        >
+          {serviceCount} услуг
+        </Typography>
+      </Tooltip>
+    );
+
+  // Employee cell: 1 unique employee → name, multiple → "N исполнителей" with tooltip
+  const uniqueEmployees = Array.from(
+    new Map(appt.services.map((sl) => [sl.employee.id, sl.employee.fullName])).entries(),
+  );
+  const employeeCell =
+    uniqueEmployees.length === 0 ? (
+      <Typography variant="caption" color="text.disabled">—</Typography>
+    ) : uniqueEmployees.length === 1 ? (
+      <Typography variant="caption" color="text.secondary" noWrap display="block">
+        {uniqueEmployees[0][1]}
+      </Typography>
+    ) : (
+      <Tooltip
+        title={
+          <List dense disablePadding>
+            {uniqueEmployees.map(([id, name]) => (
+              <ListItem key={id} disablePadding sx={{ py: 0.25 }}>
+                <Typography variant="caption">{name}</Typography>
+              </ListItem>
+            ))}
+          </List>
+        }
+        arrow
+      >
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          noWrap
+          display="block"
+          sx={{ cursor: "default", borderBottom: "1px dashed", borderColor: "text.secondary" }}
+        >
+          {uniqueEmployees.length} исполнителей
+        </Typography>
+      </Tooltip>
+    );
+
+  // Price: prefer totalAmount, fall back to first service price
+  const totalAmount = appt.totalAmount;
+  const showTotal = totalAmount && totalAmount !== "0.00" && totalAmount !== "0";
 
   return (
     <Stack
@@ -472,17 +541,15 @@ const AppointmentRow: React.FC<{
 
       {/* service / employee */}
       <Box sx={{ flex: 2, minWidth: 120, display: { xs: "none", sm: "block" } }}>
-        <Typography variant="body2" noWrap>{serviceName}</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap display="block">
-          {employeeName}
-        </Typography>
+        {serviceCell}
+        {employeeCell}
       </Box>
 
-      {/* price */}
+      {/* totalAmount */}
       <Box sx={{ width: 90, flexShrink: 0, display: { xs: "none", md: "block" } }}>
-        {showPrice && (
+        {showTotal && (
           <Typography variant="body2" fontWeight={500} color="text.secondary">
-            {price} с
+            {totalAmount} с
           </Typography>
         )}
       </Box>

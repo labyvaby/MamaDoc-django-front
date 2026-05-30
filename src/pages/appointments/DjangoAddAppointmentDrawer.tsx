@@ -25,6 +25,7 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   Stack,
   Switch,
   TextField,
@@ -66,6 +67,9 @@ export type DjangoAddAppointmentDrawerProps = {
 type ServiceRow = {
   serviceId: number | null;
   employeeId: number | null;
+  quantity: number;
+  unitPrice: string;
+  discountAmount: string;
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -108,7 +112,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
-    { serviceId: null, employeeId: null },
+    { serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
   ]);
   const [complaints, setComplaints] = React.useState("");
   const [doctorComplaints, setDoctorComplaints] = React.useState("");
@@ -125,7 +129,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       setIsBooking(false);
       setSelectedPatient(null);
       setPatientSearch("");
-      setServiceRows([{ serviceId: null, employeeId: null }]);
+      setServiceRows([{ serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" }]);
       setComplaints("");
       setDoctorComplaints("");
       setAdminComment("");
@@ -198,6 +202,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         services: validRows.map((r) => ({
           serviceId: r.serviceId!,
           employeeId: r.employeeId!,
+          quantity: r.quantity > 0 ? r.quantity : 1,
+          ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
+          ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
         })),
       });
       notify?.({ type: "success", message: "Приём успешно создан!" });
@@ -522,6 +529,43 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                       )}
                     </Stack>
 
+                    {/* quantity / unitPrice / discountAmount */}
+                    <Stack direction="row" spacing={1}>
+                      <TextField
+                        label="Кол-во"
+                        size="small"
+                        type="number"
+                        value={row.quantity}
+                        onChange={(e) =>
+                          updateRow(index, { quantity: Math.max(1, Number(e.target.value)) })
+                        }
+                        inputProps={{ min: 1, step: 1 }}
+                        sx={{ width: 80 }}
+                      />
+                      <TextField
+                        label="Цена"
+                        size="small"
+                        value={row.unitPrice}
+                        onChange={(e) => updateRow(index, { unitPrice: e.target.value })}
+                        placeholder="По умолчанию"
+                        InputProps={{
+                          endAdornment: <InputAdornment position="end">с</InputAdornment>,
+                        }}
+                        sx={{ flex: 1 }}
+                      />
+                      <TextField
+                        label="Скидка"
+                        size="small"
+                        value={row.discountAmount}
+                        onChange={(e) => updateRow(index, { discountAmount: e.target.value })}
+                        placeholder="0"
+                        InputProps={{
+                          endAdornment: <InputAdornment position="end">с</InputAdornment>,
+                        }}
+                        sx={{ flex: 1 }}
+                      />
+                    </Stack>
+
                     {incompatible && (
                       <Alert severity="error" sx={{ py: 0 }}>
                         Этот сотрудник не оказывает выбранную услугу
@@ -547,8 +591,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     ...prev,
                     {
                       serviceId: null,
-                      employeeId:
-                        prev[prev.length - 1]?.employeeId ?? null,
+                      employeeId: prev[prev.length - 1]?.employeeId ?? null,
+                      quantity: 1,
+                      unitPrice: "",
+                      discountAmount: "",
                     },
                   ])
                 }
