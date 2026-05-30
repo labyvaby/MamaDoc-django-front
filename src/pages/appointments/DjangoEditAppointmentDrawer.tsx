@@ -48,6 +48,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import {
   updateAppointment,
+  parseBackendError,
   type DjangoAppointment,
   type DjangoAppointmentStatus,
 } from "../../api/appointments";
@@ -248,9 +249,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       onSaved?.(updated);
       onClose();
     } catch (err: unknown) {
-      setSaveError(
-        err instanceof Error ? err.message : "Ошибка при сохранении приёма",
-      );
+      setSaveError(parseBackendError(err));
     } finally {
       setSaving(false);
     }
@@ -576,6 +575,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                       Этот сотрудник не оказывает выбранную услугу
                     </Alert>
                   )}
+                  {row.serviceId !== null &&
+                    !data.loading &&
+                    data.getEmployeesForService(row.serviceId).length === 0 && (
+                      <Alert severity="warning" sx={{ py: 0 }}>
+                        Нет сотрудников для этой услуги. Назначьте исполнителя в настройках.
+                      </Alert>
+                    )}
                 </Stack>
               );
             })}

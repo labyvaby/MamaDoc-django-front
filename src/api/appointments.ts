@@ -1,4 +1,36 @@
-import { apiRequest } from "./client";
+import { apiRequest, ApiError } from "./client";
+
+// ── Error helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Extract a human-readable message from a backend error response.
+ * Backend returns either:
+ *   { "error": "…" }            — string message
+ *   { "errors": { field: [msgs] } }  — field-level validation errors
+ */
+export function parseBackendError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const p = err.payload;
+    if (p && typeof p === "object") {
+      if ("error" in p && typeof (p as Record<string, unknown>).error === "string") {
+        return (p as Record<string, unknown>).error as string;
+      }
+      if ("errors" in p) {
+        const errors = (p as Record<string, unknown>).errors;
+        if (errors && typeof errors === "object") {
+          const parts = Object.entries(errors as Record<string, unknown>).map(
+            ([field, msgs]) => {
+              const msgStr = Array.isArray(msgs) ? msgs.join(", ") : String(msgs);
+              return field === "__all__" ? msgStr : `${field}: ${msgStr}`;
+            },
+          );
+          if (parts.length) return parts.join("; ");
+        }
+      }
+    }
+  }
+  return err instanceof Error ? err.message : "Неизвестная ошибка";
+}
 
 // ── Nested shapes ─────────────────────────────────────────────────────────────
 
@@ -154,6 +186,26 @@ export function getServiceProviders(params?: {
   const qs = query.toString();
   return apiRequest<ServiceProvider[]>(
     `/appointments/service-providers/${qs ? `?${qs}` : ""}`,
+  );
+}
+
+// ── Day counts ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/appointments/day-counts/
+ * Returns a map of date (YYYY-MM-DD) → count of appointments.
+ */
+export function getDayCounts(params: {
+  dateFrom: string;
+  dateTo: string;
+  branchId?: number;
+}): Promise<Record<string, number>> {
+  const query = new URLSearchParams();
+  query.set("dateFrom", params.dateFrom);
+  query.set("dateTo", params.dateTo);
+  if (params.branchId) query.set("branchId", String(params.branchId));
+  return apiRequest<Record<string, number>>(
+    `/appointments/day-counts/?${query.toString()}`,
   );
 }
 

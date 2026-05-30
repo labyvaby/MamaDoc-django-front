@@ -44,7 +44,7 @@ import { roundDateTimeLocalToStep } from "../../utility/time";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
-import { createAppointment } from "../../api/appointments";
+import { createAppointment, parseBackendError } from "../../api/appointments";
 import type { DjangoPatient } from "../../api/patients";
 import type {
   DjangoEmployeeWithServices,
@@ -204,9 +204,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       onCreated?.();
       onClose();
     } catch (err: unknown) {
-      setSaveError(
-        err instanceof Error ? err.message : "Ошибка при сохранении приёма",
-      );
+      setSaveError(parseBackendError(err));
     } finally {
       setSaving(false);
     }
@@ -529,6 +527,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         Этот сотрудник не оказывает выбранную услугу
                       </Alert>
                     )}
+                    {/* No providers for this service */}
+                    {row.serviceId !== null &&
+                      !data.loading &&
+                      data.getEmployeesForService(row.serviceId).length === 0 && (
+                        <Alert severity="warning" sx={{ py: 0 }}>
+                          Нет сотрудников для этой услуги. Назначьте исполнителя в настройках.
+                        </Alert>
+                      )}
                   </Stack>
                 );
               })}

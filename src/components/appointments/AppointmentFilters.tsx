@@ -2,13 +2,17 @@ import React from "react";
 import {
   Box,
   Chip,
+  IconButton,
   InputAdornment,
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
 } from "@mui/material";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
+import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import type { Dayjs } from "dayjs";
 
@@ -42,20 +46,11 @@ type Props = {
   search: string;
   onSearchChange: (next: string) => void;
   activeBranchName?: string | null;
+  loading?: boolean;
+  onRefresh?: () => void;
+  onReset?: () => void;
 };
 
-/**
- * Compact filter bar for the Appointments shell.
- *
- * - Date picker (single day).
- * - Status select.
- * - Search field (patient name / phone).
- * - Active branch chip (read-only indicator).
- *
- * The component is presentation-only — it does not fetch anything; the
- * parent owns the filter state and will wire it to the API when it
- * becomes available.
- */
 export const AppointmentFilters: React.FC<Props> = ({
   date,
   onDateChange,
@@ -64,7 +59,12 @@ export const AppointmentFilters: React.FC<Props> = ({
   search,
   onSearchChange,
   activeBranchName,
+  loading,
+  onRefresh,
+  onReset,
 }) => {
+  const isDirty = date !== null || status !== "all" || search !== "";
+
   return (
     <Stack
       direction={{ xs: "column", md: "row" }}
@@ -113,9 +113,17 @@ export const AppointmentFilters: React.FC<Props> = ({
               <SearchOutlined fontSize="small" />
             </InputAdornment>
           ),
+          endAdornment: search ? (
+            <InputAdornment position="end">
+              <IconButton size="small" onClick={() => onSearchChange("")}>
+                <CloseOutlined fontSize="small" />
+              </IconButton>
+            </InputAdornment>
+          ) : null,
         }}
       />
 
+      {/* Branch chip */}
       <Box sx={{ display: { xs: "none", md: "block" } }}>
         <Chip
           icon={<StoreOutlined />}
@@ -124,6 +132,32 @@ export const AppointmentFilters: React.FC<Props> = ({
           size="small"
         />
       </Box>
+
+      {/* Actions */}
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        {onReset && isDirty && (
+          <Tooltip title="Сбросить фильтры">
+            <IconButton size="small" onClick={onReset}>
+              <CloseOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        {onRefresh && (
+          <Tooltip title="Обновить">
+            <span>
+              <IconButton size="small" onClick={onRefresh} disabled={loading}>
+                <RefreshOutlined
+                  fontSize="small"
+                  sx={{
+                    animation: loading ? "spin 1s linear infinite" : "none",
+                    "@keyframes spin": { from: { transform: "rotate(0deg)" }, to: { transform: "rotate(360deg)" } },
+                  }}
+                />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
+      </Stack>
     </Stack>
   );
 };
