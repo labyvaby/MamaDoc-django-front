@@ -101,8 +101,8 @@ export interface DjangoAppointment {
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
-  // Payment fields (added by payment MVP)
-  paymentStatus?: string;
+  // Payment fields — included in list/detail responses by backend
+  paymentStatus?: import("./payments").PaymentStatus;
   paidTotal?: string;
   discountAmount?: string;
   payableAmount?: string;

@@ -45,7 +45,7 @@ import DjangoPaymentDrawer, {
   PAYMENT_STATUS_LABELS,
   PAYMENT_STATUS_COLOR,
 } from "./DjangoPaymentDrawer";
-import type { PaymentSummary } from "../../api/payments";
+import type { PaymentSummary, PaymentStatus } from "../../api/payments";
 import {
   getAppointments,
   getDayCounts,
@@ -195,6 +195,9 @@ const AppointmentsPage: React.FC = () => {
     setSearch("");
   }, []);
 
+  // Optimistically patch the visible list row with fresh payment fields.
+  // The drawer already called invalidateQueries(appointments.all) so a background
+  // refetch is already in flight — this just makes the row update instantly.
   const handlePaymentSaved = React.useCallback(
     (summary: PaymentSummary) => {
       setItems((prev) =>
@@ -211,7 +214,8 @@ const AppointmentsPage: React.FC = () => {
             : appt,
         ),
       );
-      setPaymentTarget(null);
+      // Do NOT call setPaymentTarget(null) here — drawer already called onClose()
+      // before firing onSaved, so the drawer is already closed.
     },
     [setItems],
   );
@@ -622,8 +626,9 @@ const AppointmentRow: React.FC<{
   const showTotal = totalAmount && totalAmount !== "0.00" && totalAmount !== "0";
 
   // Payment display
-  const payStatus = appt.paymentStatus as import("../../api/payments").PaymentStatus | undefined;
+  const payStatus = appt.paymentStatus as PaymentStatus | undefined;
   const showPayment = (canViewFinance || canManageFinance) && !!payStatus;
+  const isCancelledRow = appt.status === "cancelled" || appt.status === "no_show";
 
   return (
     <Box>
@@ -714,10 +719,16 @@ const AppointmentRow: React.FC<{
         {/* actions: pay + edit + expand conclusions */}
         <Box sx={{ width: canUpdate ? (canManageFinance ? 108 : 72) : 36, flexShrink: 0, display: "flex", gap: 0.5 }}>
           {canManageFinance && (
-            <Tooltip title="Оплата">
-              <IconButton size="small" onClick={() => onPay(appt)}>
-                <PaymentsOutlined fontSize="small" />
-              </IconButton>
+            <Tooltip title={isCancelledRow ? "Оплата недоступна для отменённых приёмов" : "Оплата"}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={() => onPay(appt)}
+                  disabled={isCancelledRow}
+                >
+                  <PaymentsOutlined fontSize="small" />
+                </IconButton>
+              </span>
             </Tooltip>
           )}
           {canUpdate && (

@@ -27,6 +27,8 @@ export interface PaymentSummary {
   paidTotal: string;
   debt: string;
   paymentStatus: PaymentStatus;
+  /** Appointment workflow status mirrored from backend (cancelled/no_show → debt always "0.00") */
+  appointmentStatus?: string;
   payments: AppointmentPayment[];
 }
 

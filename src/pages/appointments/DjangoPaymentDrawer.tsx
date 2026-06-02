@@ -56,7 +56,8 @@ export const PAYMENT_STATUS_COLOR: Record<
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseDecimal(s: string): number {
-  const n = parseFloat(s);
+  // Accept both "." and "," as decimal separator
+  const n = parseFloat(s.replace(",", "."));
   return isNaN(n) ? 0 : n;
 }
 
@@ -76,12 +77,15 @@ function computeStatus(
   return "unpaid";
 }
 
+const CANCELLED_STATUSES = new Set(["cancelled", "no_show"]);
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export type DjangoPaymentDrawerProps = {
   open: boolean;
   onClose: () => void;
   appointment: DjangoAppointment | null;
+  /** Called after successful apply. Drawer is already closed by the time this fires. */
   onSaved?: (summary: PaymentSummary) => void;
 };
 
@@ -97,6 +101,10 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const queryClient = useQueryClient();
   const appointmentId = appointment?.id ?? null;
 
+  // Track whether the user has touched the discount field since opening.
+  // When true we stop syncing from summary — user input wins.
+  const discountTouchedRef = React.useRef(false);
+
   const paymentQuery = useQuery({
     queryKey: appointmentId
       ? djangoQueryKeys.appointments.payments(appointmentId)
@@ -104,6 +112,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     queryFn: ({ signal }) => getAppointmentPayments(appointmentId!, signal),
     enabled: open && appointmentId !== null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    // Always re-fetch when drawer opens so repeated opens show fresh data
+    refetchOnMount: "always",
   });
   const summary = paymentQuery.data ?? null;
 
@@ -113,40 +123,64 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const [note, setNote] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
+  // Reset all form state when drawer opens for a new appointment (or closes).
+  // We separate "on open" from "on summary arrives" to avoid overwriting user input.
+  const prevAppointmentIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
-    if (!open || !appointment) {
+    if (!open || appointmentId === null) {
+      discountTouchedRef.current = false;
       setDiscountStr("0");
       setCashStr("0");
       setCardStr("0");
       setNote("");
       setSaveError(null);
+      prevAppointmentIdRef.current = null;
       return;
     }
 
-    setDiscountStr(summary?.discountAmount ?? appointment.discountAmount ?? "0");
-    setCashStr("0");
-    setCardStr("0");
-    setSaveError(null);
-  }, [open, appointment, summary?.discountAmount]);
+    if (appointmentId !== prevAppointmentIdRef.current) {
+      // Different appointment — reset unconditionally before summary loads
+      discountTouchedRef.current = false;
+      setDiscountStr(appointment?.discountAmount ?? "0");
+      setCashStr("0");
+      setCardStr("0");
+      setNote("");
+      setSaveError(null);
+      prevAppointmentIdRef.current = appointmentId;
+    }
+  }, [open, appointmentId, appointment?.discountAmount]);
 
-  // Derived calculations
+  // Once summary arrives (and user hasn't touched discount yet), seed from summary.
+  const summaryDiscountRef = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (!summary) return;
+    if (discountTouchedRef.current) return;
+    if (summary.discountAmount === summaryDiscountRef.current) return;
+    summaryDiscountRef.current = summary.discountAmount;
+    setDiscountStr(summary.discountAmount ?? "0");
+  }, [summary]);
+
+  // Derived calculations — use payableAmount from summary when available
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount ?? "0");
-  const discount = Math.max(0, Math.min(parseDecimal(discountStr), total));
-  const payable = Math.max(0, total - discount);
+  const discountRaw = parseDecimal(discountStr);
+  const discount = Math.max(0, Math.min(discountRaw, total));
+  // Prefer backend-computed payableAmount if discount hasn't been changed by user
+  const payable = discountTouchedRef.current || !summary
+    ? Math.max(0, total - discount)
+    : parseDecimal(summary.payableAmount);
   const cash = Math.max(0, parseDecimal(cashStr));
   const card = Math.max(0, parseDecimal(cardStr));
   const paidTotal = cash + card;
   const debt = Math.max(0, payable - paidTotal);
-  const overpaid = paidTotal > payable;
+  const overpaid = paidTotal > payable + 0.001; // float tolerance
 
   const statusPreview = computeStatus(payable, paidTotal, discount, total);
 
   // Validation
-  const discountInvalid = parseDecimal(discountStr) < 0 || parseDecimal(discountStr) > total;
+  const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const cashInvalid = parseDecimal(cashStr) < 0;
   const cardInvalid = parseDecimal(cardStr) < 0;
-  const submitDisabled =
-    discountInvalid || cashInvalid || cardInvalid || overpaid;
+  const submitDisabled = discountInvalid || cashInvalid || cardInvalid || overpaid;
 
   const applyMutation = useMutation({
     mutationFn: (payload: ApplyPaymentPayload) => {
@@ -154,13 +188,23 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       return applyAppointmentPayment(appointmentId, payload);
     },
     onSuccess: (result) => {
+      // Update payment cache so next open shows fresh data immediately
       queryClient.setQueryData(
         djangoQueryKeys.appointments.payments(result.appointmentId),
         result,
       );
+      // Invalidate so background refetch runs — catches any server-side divergence
+      void queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.appointments.payments(result.appointmentId),
+      });
+      // Invalidate all appointment lists so every filter sees fresh payment fields
+      void queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.appointments.all,
+      });
       notify?.({ type: "success", message: "Оплата сохранена" });
-      onSaved?.(result);
+      // Close first, then notify parent — avoids double-close via handlePaymentSaved
       onClose();
+      onSaved?.(result);
     },
     onError: (err: unknown) => {
       const msg = parseBackendError(err);
@@ -169,7 +213,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     },
   });
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!appointment) return;
     setSaveError(null);
     const payments: { method: "cash" | "card"; amount: string }[] = [];
@@ -183,13 +227,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     });
   };
 
+  const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
   const patientName = appointment?.patient?.fullName ?? "Бронирование";
 
   return (
     <Drawer
       anchor="right"
       open={open}
-      onClose={onClose}
+      onClose={applyMutation.isPending ? undefined : onClose}
       PaperProps={{ sx: { width: { xs: "100%", sm: 420 }, display: "flex", flexDirection: "column" } }}
     >
       {/* Header */}
@@ -203,14 +248,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           <PaymentsOutlined color="primary" />
           <Typography variant="h6" fontWeight={600}>Оплата</Typography>
         </Stack>
-        <IconButton size="small" onClick={onClose}>
+        <IconButton size="small" onClick={onClose} disabled={applyMutation.isPending}>
           <CloseOutlined />
         </IconButton>
       </Stack>
 
       {/* Body */}
       <Box sx={{ flex: 1, overflow: "auto", p: 2.5 }}>
-        {/* Patient + appointment info */}
+        {/* Patient info */}
         <Stack spacing={0.25} mb={2}>
           <Typography variant="subtitle2" fontWeight={600}>{patientName}</Typography>
           {appointment?.patient?.phone && (
@@ -220,6 +265,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           )}
         </Stack>
 
+        {/* Cancelled/no_show notice */}
+        {isCancelled && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Приём отменён или помечен как неявка — оплата недоступна.
+          </Alert>
+        )}
+
         {paymentQuery.isLoading && (
           <Stack alignItems="center" py={3}>
             <CircularProgress size={28} />
@@ -227,10 +279,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         )}
 
         {paymentQuery.error && !paymentQuery.isLoading && (
-          <Alert severity="warning" sx={{ mb: 2 }}>{parseBackendError(paymentQuery.error)}</Alert>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {parseBackendError(paymentQuery.error)}
+          </Alert>
         )}
 
-        {!paymentQuery.isLoading && (
+        {!paymentQuery.isLoading && !isCancelled && (
           <Stack spacing={2.5}>
             {/* Total */}
             <Stack
@@ -240,9 +294,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               sx={{ bgcolor: "action.hover", borderRadius: 1, px: 2, py: 1.25 }}
             >
               <Typography variant="body2" color="text.secondary">Сумма приёма</Typography>
-              <Typography variant="subtitle1" fontWeight={700}>
-                {fmt(total)} с
-              </Typography>
+              <Typography variant="subtitle1" fontWeight={700}>{fmt(total)} с</Typography>
             </Stack>
 
             <Divider />
@@ -252,9 +304,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               label="Скидка"
               size="small"
               value={discountStr}
-              onChange={(e) => setDiscountStr(e.target.value)}
+              onChange={(e) => {
+                discountTouchedRef.current = true;
+                setDiscountStr(e.target.value);
+              }}
               error={discountInvalid}
-              helperText={discountInvalid ? `Скидка должна быть от 0 до ${fmt(total)}` : " "}
+              helperText={discountInvalid ? `Скидка: от 0 до ${fmt(total)}` : " "}
               InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
               inputProps={{ inputMode: "decimal" }}
               fullWidth
@@ -263,9 +318,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             {/* Payable */}
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="body2" color="text.secondary">К оплате</Typography>
-              <Typography variant="body1" fontWeight={600}>
-                {fmt(payable)} с
-              </Typography>
+              <Typography variant="body1" fontWeight={600}>{fmt(payable)} с</Typography>
             </Stack>
 
             <Divider />
@@ -316,7 +369,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 <Typography
                   variant="body2"
                   fontWeight={600}
-                  color={debt > 0 ? "warning.main" : "text.secondary"}
+                  color={debt > 0.001 ? "warning.main" : "text.secondary"}
                 >
                   {fmt(debt)} с
                 </Typography>
@@ -332,6 +385,26 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 />
               </Stack>
             </Stack>
+
+            {/* Previous payments history */}
+            {summary && summary.payments.length > 0 && (
+              <>
+                <Divider />
+                <Stack spacing={0.75}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
+                    История платежей
+                  </Typography>
+                  {summary.payments.map((p) => (
+                    <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="caption" color="text.secondary">
+                        {p.method === "cash" ? "Наличные" : "Карта"}
+                      </Typography>
+                      <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </>
+            )}
 
             {/* Note */}
             <TextField
@@ -355,14 +428,19 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         spacing={1.5}
         sx={{ px: 2.5, py: 2, borderTop: "1px solid", borderColor: "divider", flexShrink: 0 }}
       >
-        <Button variant="outlined" onClick={onClose} fullWidth disabled={applyMutation.isPending}>
+        <Button
+          variant="outlined"
+          onClick={onClose}
+          fullWidth
+          disabled={applyMutation.isPending}
+        >
           Отмена
         </Button>
         <Button
           variant="contained"
           onClick={handleSave}
           fullWidth
-          disabled={submitDisabled || applyMutation.isPending}
+          disabled={submitDisabled || applyMutation.isPending || isCancelled}
           startIcon={applyMutation.isPending ? <CircularProgress size={16} /> : undefined}
         >
           Сохранить

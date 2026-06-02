@@ -142,9 +142,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     setDiagnosisText(
       conclusion.diagnosisData?.length
         ? conclusion.diagnosisData
-            .map((d) =>
-              [d.diagnosisCode, d.title].filter(Boolean).join(" — "),
-            )
+            .map((d) => [d.diagnosisCode, d.title].filter(Boolean).join(" — "))
             .join("\n")
         : "",
     );
@@ -182,7 +180,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       objective: objective.trim() || null,
       conclusion: conclusionText.trim() || null,
       diagnosisData: diagnosisText.trim()
-        ? [{ title: diagnosisText.trim() }]
+        ? diagnosisText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+              // Preserve "CODE — description" format produced on read
+              const sepIdx = line.indexOf(" — ");
+              if (sepIdx > 0) {
+                return { diagnosisCode: line.slice(0, sepIdx), title: line.slice(sepIdx + 3) };
+              }
+              return { title: line };
+            })
         : [],
       weightKg: weightKg.trim() || null,
       heightCm: heightCm.trim() || null,

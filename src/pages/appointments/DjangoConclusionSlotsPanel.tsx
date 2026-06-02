@@ -92,21 +92,16 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   // Drawer state
   const [drawerSlot, setDrawerSlot] = React.useState<ConclusionSlot | null>(null);
 
-  // Update slot in local state after save without full re-fetch
+  // Optimistically update cache then let React Query sync from server
   const handleSaved = React.useCallback(
     (saved: MedicalConclusion) => {
       queryClient.setQueryData<ConclusionSlot[]>(queryKey, (prev = []) =>
         prev.map((slot) =>
           slot.serviceLineId === saved.serviceLineId
-            ? {
-                ...slot,
-                state: saved.status === "completed" ? "completed" : "draft",
-                conclusion: saved,
-              }
+            ? { ...slot, state: saved.status === "completed" ? "completed" : "draft", conclusion: saved }
             : slot,
         ),
       );
-      void queryClient.invalidateQueries({ queryKey });
     },
     [queryClient, queryKey],
   );
