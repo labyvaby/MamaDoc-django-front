@@ -148,11 +148,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             .join("\n")
         : "",
     );
-    setWeightKg(conclusion.weightKg != null ? String(conclusion.weightKg) : "");
-    setHeightCm(conclusion.heightCm != null ? String(conclusion.heightCm) : "");
-    setTemperature(
-      conclusion.temperature != null ? String(conclusion.temperature) : "",
-    );
+    setWeightKg(conclusion.weightKg ?? "");
+    setHeightCm(conclusion.heightCm ?? "");
+    setTemperature(conclusion.temperature ?? "");
     setInternalComment(conclusion.internalComment ?? "");
     setStatus(conclusion.status ?? "draft");
   }, [open, conclusion]);
@@ -186,9 +184,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       diagnosisData: diagnosisText.trim()
         ? [{ title: diagnosisText.trim() }]
         : [],
-      weightKg: weightKg.trim() ? Number(weightKg) : null,
-      heightCm: heightCm.trim() ? Number(heightCm) : null,
-      temperature: temperature.trim() ? Number(temperature) : null,
+      weightKg: weightKg.trim() || null,
+      heightCm: heightCm.trim() || null,
+      temperature: temperature.trim() || null,
       internalComment: internalComment.trim() || null,
       status: targetStatus,
     };

@@ -17,7 +17,7 @@ export interface ConclusionDoctorShort {
   fullName: string;
 }
 
-export type ConclusionState = "not_created" | "draft" | "completed";
+export type ConclusionState = "not_created" | "draft" | "completed" | "not_required";
 
 // ── Conclusion slot ────────────────────────────────────────────────────────────
 
@@ -28,7 +28,8 @@ export type ConclusionState = "not_created" | "draft" | "completed";
 export interface ConclusionSlot {
   serviceLineId: number;
   service: ConclusionServiceShort;
-  doctor: ConclusionDoctorShort;
+  /** null when no employee is assigned to the service line */
+  doctor: ConclusionDoctorShort | null;
   requiresConclusion: boolean;
   state: ConclusionState;
   /** Full conclusion object — null when state is not_created */
@@ -59,9 +60,12 @@ export interface MedicalConclusion {
   conclusion: string | null;
   diagnosisData: DiagnosisDataItem[];
   photoUrls: string[];
-  weightKg: number | null;
-  heightCm: number | null;
-  temperature: number | null;
+  /** Decimal string from backend, e.g. "72.50" */
+  weightKg: string | null;
+  /** Decimal string from backend, e.g. "175.00" */
+  heightCm: string | null;
+  /** Decimal string from backend, e.g. "36.60" */
+  temperature: string | null;
   internalComment: string | null;
   status: ConclusionStatus;
   createdAt: string;
@@ -72,7 +76,6 @@ export interface MedicalConclusion {
 
 export interface MedicalConclusionRevision {
   id: number;
-  conclusionId: number;
   conclusion: string | null;
   anamnesis: string | null;
   objective: string | null;
@@ -95,9 +98,10 @@ export interface MedicalConclusionPayload {
   conclusion?: string | null;
   /** Free-form diagnosis data; send as array of objects or empty array */
   diagnosisData?: DiagnosisDataItem[];
-  weightKg?: number | null;
-  heightCm?: number | null;
-  temperature?: number | null;
+  /** Send as numeric string or null; backend accepts decimal strings */
+  weightKg?: string | null;
+  heightCm?: string | null;
+  temperature?: string | null;
   internalComment?: string | null;
   status?: ConclusionStatus;
 }

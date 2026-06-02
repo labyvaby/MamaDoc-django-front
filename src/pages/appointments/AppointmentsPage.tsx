@@ -318,7 +318,12 @@ const AppointmentsPage: React.FC = () => {
                 <DayView
                   appointmentsByHour={appointmentsByHour}
                   canUpdate={canUpdate}
-                  canViewConclusions={can("medical.conclusions.view")}
+                  canViewConclusions={can([
+                    "medical.conclusions.view",
+                    "medical.conclusions.create",
+                    "medical.conclusions.update",
+                    "medical.conclusions.manage",
+                  ])}
                   onEdit={setEditTarget}
                 />
               )}
@@ -352,7 +357,12 @@ const AppointmentTable: React.FC<{
   canUpdate: boolean;
   onEdit: (a: DjangoAppointment) => void;
 }> = ({ items, canUpdate, onEdit }) => {
-  const canViewConclusions = useCan("medical.conclusions.view");
+  const canViewConclusions = useCan([
+    "medical.conclusions.view",
+    "medical.conclusions.create",
+    "medical.conclusions.update",
+    "medical.conclusions.manage",
+  ]);
   return (
     <Box sx={{ overflowX: "auto" }}>
       {/* header row */}

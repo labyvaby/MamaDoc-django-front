@@ -43,6 +43,7 @@ const STATE_LABEL: Record<ConclusionState, string> = {
   not_created: "Не создано",
   draft: "Черновик",
   completed: "Готово",
+  not_required: "Не требуется",
 };
 
 const STATE_COLOR: Record<
@@ -52,6 +53,7 @@ const STATE_COLOR: Record<
   not_created: "default",
   draft: "warning",
   completed: "success",
+  not_required: "default",
 };
 
 // ── props ──────────────────────────────────────────────────────────────────────
@@ -65,7 +67,12 @@ type DjangoConclusionSlotsPanelProps = {
 const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   appointmentId,
 }) => {
-  const canView = useCan("medical.conclusions.view");
+  const canView = useCan([
+    "medical.conclusions.view",
+    "medical.conclusions.create",
+    "medical.conclusions.update",
+    "medical.conclusions.manage",
+  ]);
 
   const [slots, setSlots] = React.useState<ConclusionSlot[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -170,7 +177,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           conclusion={drawerSlot.conclusion}
           serviceLineId={drawerSlot.serviceLineId}
           serviceName={drawerSlot.service.name}
-          doctorName={drawerSlot.doctor.fullName}
+          doctorName={drawerSlot.doctor?.fullName ?? "—"}
           canEdit={drawerSlot.canEdit}
           canPrint={drawerSlot.canPrint}
           onSaved={handleSaved}
@@ -207,7 +214,7 @@ const SlotRow: React.FC<{
           {slot.service.name}
         </Typography>
         <Typography variant="caption" color="text.secondary" noWrap>
-          {slot.doctor.fullName}
+          {slot.doctor?.fullName ?? "—"}
         </Typography>
         {showNotCreatedMsg && (
           <Typography variant="caption" color="text.disabled">
