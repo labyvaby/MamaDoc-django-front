@@ -21,6 +21,7 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
@@ -39,6 +40,11 @@ import { AppointmentsEmptyState } from "../../components/appointments/Appointmen
 import DjangoAddAppointmentDrawer from "./DjangoAddAppointmentDrawer";
 import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
 import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
+import DjangoPaymentDrawer, {
+  PAYMENT_STATUS_LABELS,
+  PAYMENT_STATUS_COLOR,
+} from "./DjangoPaymentDrawer";
+import type { PaymentSummary } from "../../api/payments";
 import {
   getAppointments,
   getDayCounts,
@@ -109,7 +115,7 @@ function useAppointments(params: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.date?.format("YYYY-MM-DD"), params.status, params.search, params.branchId, version]);
 
-  return { items, loading, error, refresh };
+  return { items, setItems, loading, error, refresh };
 }
 
 // ── hook: day counts for current month ───────────────────────────────────────
@@ -147,13 +153,16 @@ const AppointmentsPage: React.FC = () => {
   const [view, setView] = React.useState<ViewMode>("list");
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
+  const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
 
   const canCreate = can("appointments.create");
   const canUpdate = can("appointments.update");
+  const canViewFinance = can("finance.view");
+  const canManageFinance = can("finance.manage");
 
   const branchId = activeBranch?.id ?? undefined;
 
-  const { items, loading, error, refresh } = useAppointments({
+  const { items, setItems, loading, error, refresh } = useAppointments({
     date, status, search, branchId,
   });
 
@@ -168,6 +177,27 @@ const AppointmentsPage: React.FC = () => {
     setStatus("all");
     setSearch("");
   }, []);
+
+  const handlePaymentSaved = React.useCallback(
+    (summary: PaymentSummary) => {
+      setItems((prev) =>
+        prev.map((appt) =>
+          appt.id === summary.appointmentId
+            ? {
+                ...appt,
+                paymentStatus: summary.paymentStatus,
+                paidTotal: summary.paidTotal,
+                discountAmount: summary.discountAmount,
+                payableAmount: summary.payableAmount,
+                debt: summary.debt,
+              }
+            : appt,
+        ),
+      );
+      setPaymentTarget(null);
+    },
+    [setItems],
+  );
 
   // Day view: group by hour
   const appointmentsByHour = React.useMemo(() => {
@@ -313,7 +343,14 @@ const AppointmentsPage: React.FC = () => {
                   </Typography>
                 </Stack>
               ) : view === "list" ? (
-                <AppointmentTable items={items} canUpdate={canUpdate} onEdit={setEditTarget} />
+                <AppointmentTable
+                  items={items}
+                  canUpdate={canUpdate}
+                  canViewFinance={canViewFinance}
+                  canManageFinance={canManageFinance}
+                  onEdit={setEditTarget}
+                  onPay={setPaymentTarget}
+                />
               ) : (
                 <DayView
                   appointmentsByHour={appointmentsByHour}
@@ -324,7 +361,10 @@ const AppointmentsPage: React.FC = () => {
                     "medical.conclusions.update",
                     "medical.conclusions.manage",
                   ])}
+                  canViewFinance={canViewFinance}
+                  canManageFinance={canManageFinance}
                   onEdit={setEditTarget}
+                  onPay={setPaymentTarget}
                 />
               )}
             </Box>
@@ -346,6 +386,13 @@ const AppointmentsPage: React.FC = () => {
         appointment={editTarget}
         onSaved={() => { setEditTarget(null); refresh(); }}
       />
+
+      <DjangoPaymentDrawer
+        open={!!paymentTarget}
+        onClose={() => setPaymentTarget(null)}
+        appointment={paymentTarget}
+        onSaved={handlePaymentSaved}
+      />
     </>
   );
 };
@@ -355,14 +402,18 @@ const AppointmentsPage: React.FC = () => {
 const AppointmentTable: React.FC<{
   items: DjangoAppointment[];
   canUpdate: boolean;
+  canViewFinance: boolean;
+  canManageFinance: boolean;
   onEdit: (a: DjangoAppointment) => void;
-}> = ({ items, canUpdate, onEdit }) => {
+  onPay: (a: DjangoAppointment) => void;
+}> = ({ items, canUpdate, canViewFinance, canManageFinance, onEdit, onPay }) => {
   const canViewConclusions = useCan([
     "medical.conclusions.view",
     "medical.conclusions.create",
     "medical.conclusions.update",
     "medical.conclusions.manage",
   ]);
+  const showPaymentCol = canViewFinance || canManageFinance;
   return (
     <Box sx={{ overflowX: "auto" }}>
       {/* header row */}
@@ -384,8 +435,13 @@ const AppointmentTable: React.FC<{
         <Typography variant="caption" fontWeight={600} sx={{ flex: 2, minWidth: 120 }}>Пациент</Typography>
         <Typography variant="caption" fontWeight={600} sx={{ flex: 2, minWidth: 120, display: { xs: "none", sm: "block" } }}>Услуга / врач</Typography>
         <Typography variant="caption" fontWeight={600} sx={{ width: 90, flexShrink: 0, display: { xs: "none", md: "block" } }}>Цена</Typography>
+        {showPaymentCol && (
+          <Typography variant="caption" fontWeight={600} sx={{ width: 110, flexShrink: 0, display: { xs: "none", md: "block" } }}>Оплата</Typography>
+        )}
         <Typography variant="caption" fontWeight={600} sx={{ width: 110, flexShrink: 0 }}>Статус</Typography>
-        {(canUpdate || canViewConclusions) && <Box sx={{ width: canUpdate ? 72 : 36, flexShrink: 0 }} />}
+        {(canUpdate || canViewConclusions || canManageFinance) && (
+          <Box sx={{ width: canUpdate ? (canManageFinance ? 108 : 72) : 36, flexShrink: 0 }} />
+        )}
       </Stack>
 
       <Stack divider={<Divider />}>
@@ -395,7 +451,10 @@ const AppointmentTable: React.FC<{
             appointment={appt}
             canUpdate={canUpdate}
             canViewConclusions={canViewConclusions}
+            canViewFinance={canViewFinance}
+            canManageFinance={canManageFinance}
             onEdit={onEdit}
+            onPay={onPay}
           />
         ))}
       </Stack>
@@ -409,8 +468,11 @@ const DayView: React.FC<{
   appointmentsByHour: Map<number, DjangoAppointment[]>;
   canUpdate: boolean;
   canViewConclusions: boolean;
+  canViewFinance: boolean;
+  canManageFinance: boolean;
   onEdit: (a: DjangoAppointment) => void;
-}> = ({ appointmentsByHour, canUpdate, canViewConclusions, onEdit }) => {
+  onPay: (a: DjangoAppointment) => void;
+}> = ({ appointmentsByHour, canUpdate, canViewConclusions, canViewFinance, canManageFinance, onEdit, onPay }) => {
   const hours = Array.from(appointmentsByHour.keys()).sort((a, b) => a - b);
   if (hours.length === 0) return <AppointmentsEmptyState />;
 
@@ -440,7 +502,10 @@ const DayView: React.FC<{
                 appointment={appt}
                 canUpdate={canUpdate}
                 canViewConclusions={canViewConclusions}
+                canViewFinance={canViewFinance}
+                canManageFinance={canManageFinance}
                 onEdit={onEdit}
+                onPay={onPay}
               />
             ))}
           </Stack>
@@ -456,8 +521,11 @@ const AppointmentRow: React.FC<{
   appointment: DjangoAppointment;
   canUpdate: boolean;
   canViewConclusions: boolean;
+  canViewFinance: boolean;
+  canManageFinance: boolean;
   onEdit: (a: DjangoAppointment) => void;
-}> = ({ appointment: appt, canUpdate, canViewConclusions, onEdit }) => {
+  onPay: (a: DjangoAppointment) => void;
+}> = ({ appointment: appt, canUpdate, canViewConclusions, canViewFinance, canManageFinance, onEdit, onPay }) => {
   const [expanded, setExpanded] = React.useState(false);
 
   const time = dayjs(appt.scheduledAt).format("HH:mm");
@@ -536,6 +604,10 @@ const AppointmentRow: React.FC<{
   const totalAmount = appt.totalAmount;
   const showTotal = totalAmount && totalAmount !== "0.00" && totalAmount !== "0";
 
+  // Payment display
+  const payStatus = appt.paymentStatus as import("../../api/payments").PaymentStatus | undefined;
+  const showPayment = (canViewFinance || canManageFinance) && !!payStatus;
+
   return (
     <Box>
       {/* main row */}
@@ -589,9 +661,29 @@ const AppointmentRow: React.FC<{
               {totalAmount} с
             </Typography>
           )}
+          {showPayment && appt.debt && appt.debt !== "0.00" && appt.debt !== "0" && (
+            <Typography variant="caption" color="warning.main" display="block">
+              долг: {appt.debt} с
+            </Typography>
+          )}
         </Box>
 
-        {/* status */}
+        {/* payment status chip */}
+        {(canViewFinance || canManageFinance) && (
+          <Box sx={{ width: 110, flexShrink: 0, display: { xs: "none", md: "block" } }}>
+            {showPayment && payStatus && (
+              <Chip
+                label={PAYMENT_STATUS_LABELS[payStatus] ?? payStatus}
+                size="small"
+                color={PAYMENT_STATUS_COLOR[payStatus] ?? "default"}
+                variant="outlined"
+                sx={{ fontSize: "0.68rem", height: 20 }}
+              />
+            )}
+          </Box>
+        )}
+
+        {/* appointment status */}
         <Box sx={{ width: 110, flexShrink: 0 }}>
           <Chip
             label={STATUS_LABELS[appt.status] ?? appt.status}
@@ -602,8 +694,15 @@ const AppointmentRow: React.FC<{
           />
         </Box>
 
-        {/* actions: edit + expand conclusions */}
-        <Box sx={{ width: canUpdate ? 72 : 36, flexShrink: 0, display: "flex", gap: 0.5 }}>
+        {/* actions: pay + edit + expand conclusions */}
+        <Box sx={{ width: canUpdate ? (canManageFinance ? 108 : 72) : 36, flexShrink: 0, display: "flex", gap: 0.5 }}>
+          {canManageFinance && (
+            <Tooltip title="Оплата">
+              <IconButton size="small" onClick={() => onPay(appt)}>
+                <PaymentsOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           {canUpdate && (
             <Tooltip title="Редактировать">
               <IconButton size="small" onClick={() => onEdit(appt)}>

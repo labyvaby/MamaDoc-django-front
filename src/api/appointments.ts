@@ -101,6 +101,12 @@ export interface DjangoAppointment {
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
+  // Payment fields (added by payment MVP)
+  paymentStatus?: string;
+  paidTotal?: string;
+  discountAmount?: string;
+  payableAmount?: string;
+  debt?: string;
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
