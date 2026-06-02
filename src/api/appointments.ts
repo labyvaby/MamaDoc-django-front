@@ -180,7 +180,7 @@ export function getAppointments(params?: {
   employeeId?: number;
   /** Filter by patient id. */
   patientId?: number;
-}): Promise<DjangoAppointment[]> {
+}, signal?: AbortSignal): Promise<DjangoAppointment[]> {
   const query = new URLSearchParams();
   if (params?.date) query.set("date", params.date);
   if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
@@ -191,7 +191,7 @@ export function getAppointments(params?: {
   if (params?.employeeId) query.set("employeeId", String(params.employeeId));
   if (params?.patientId) query.set("patientId", String(params.patientId));
   const qs = query.toString();
-  return apiRequest<DjangoAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`);
+  return apiRequest<DjangoAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`, { signal });
 }
 
 /**
@@ -204,13 +204,14 @@ export function getAppointments(params?: {
 export function getServiceProviders(params?: {
   serviceId?: number;
   branchId?: number;
-}): Promise<ServiceProvider[]> {
+}, signal?: AbortSignal): Promise<ServiceProvider[]> {
   const query = new URLSearchParams();
   if (params?.serviceId) query.set("serviceId", String(params.serviceId));
   if (params?.branchId) query.set("branchId", String(params.branchId));
   const qs = query.toString();
   return apiRequest<ServiceProvider[]>(
     `/appointments/service-providers/${qs ? `?${qs}` : ""}`,
+    { signal },
   );
 }
 
@@ -224,13 +225,14 @@ export function getDayCounts(params: {
   dateFrom: string;
   dateTo: string;
   branchId?: number;
-}): Promise<Record<string, number>> {
+}, signal?: AbortSignal): Promise<Record<string, number>> {
   const query = new URLSearchParams();
   query.set("dateFrom", params.dateFrom);
   query.set("dateTo", params.dateTo);
   if (params.branchId) query.set("branchId", String(params.branchId));
   return apiRequest<Record<string, number>>(
     `/appointments/day-counts/?${query.toString()}`,
+    { signal },
   );
 }
 

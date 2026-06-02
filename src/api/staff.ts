@@ -162,6 +162,6 @@ export function onboardEmployee(
   });
 }
 
-export function getDjangoEmployees(): Promise<DjangoEmployee[]> {
-  return apiRequest<DjangoEmployee[]>("/staff/employees/");
+export function getDjangoEmployees(signal?: AbortSignal): Promise<DjangoEmployee[]> {
+  return apiRequest<DjangoEmployee[]>("/staff/employees/", { signal });
 }

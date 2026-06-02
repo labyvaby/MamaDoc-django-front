@@ -144,6 +144,7 @@ export async function switchContext(payload: SwitchContextPayload): Promise<MeRe
       switching: false,
       lastFetchedAt: Date.now(),
     });
+    window.dispatchEvent(new Event('mamadoc:django-context-switched'));
     return meData;
   } catch (err) {
     setGlobal({ switching: false });

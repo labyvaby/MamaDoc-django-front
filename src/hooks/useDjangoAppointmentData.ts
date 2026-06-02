@@ -1,4 +1,5 @@
 import React from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getPatients, type DjangoPatient } from "../api/patients";
 import { getDjangoEmployees, type DjangoEmployee } from "../api/staff";
 import { getServices, type Service as CatalogService } from "../api/catalog";
@@ -6,6 +7,10 @@ import {
   getServiceProviders,
   type ServiceProvider,
 } from "../api/appointments";
+import {
+  djangoQueryKeys,
+  DJANGO_REFERENCE_STALE_TIME_MS,
+} from "../api/queryKeys";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -52,84 +57,62 @@ export interface UseDjangoAppointmentDataResult {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 export function useDjangoAppointmentData(enabled: boolean): UseDjangoAppointmentDataResult {
-  const [patients, setPatients] = React.useState<DjangoPatient[]>([]);
-  const [employees, setEmployees] = React.useState<DjangoEmployeeWithServices[]>([]);
-  const [services, setServices] = React.useState<DjangoCatalogServiceWithEmployees[]>([]);
-  const [serviceProviders, setServiceProviders] = React.useState<ServiceProvider[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const dataQuery = useQuery({
+    queryKey: djangoQueryKeys.appointments.formData(),
+    queryFn: async ({ signal }) => {
+      const [rawPatients, rawEmployees, rawServices, rawProviders] =
+        await Promise.all([
+          getPatients(signal),
+          getDjangoEmployees(signal),
+          getServices(signal),
+          getServiceProviders(undefined, signal),
+        ]);
 
-  React.useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+      return { rawPatients, rawEmployees, rawServices, rawProviders };
+    },
+    enabled,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
 
-    const load = async () => {
-      try {
-        // One round-trip instead of N+1: load patients, employees, services,
-        // and all service-provider pairs in a single parallel batch.
-        const [rawPatients, rawEmployees, rawServices, rawProviders] =
-          await Promise.all([
-            getPatients(),
-            getDjangoEmployees(),
-            getServices(),
-            // getServiceProviders replaces N calls to getEmployeeServices(id)
-            getServiceProviders(),
-          ]);
+  const patients = dataQuery.data?.rawPatients ?? [];
+  const serviceProviders = dataQuery.data?.rawProviders ?? [];
 
-        if (cancelled) return;
+  const { employees, services } = React.useMemo(() => {
+    const rawEmployees = dataQuery.data?.rawEmployees ?? [];
+    const rawServices = dataQuery.data?.rawServices ?? [];
 
-        // Build lookup maps from service-provider pairs
-        // employeeId → Set<serviceId>
-        const empToServices = new Map<number, Set<number>>();
-        // serviceId → Set<employeeId>
-        const serviceToEmps = new Map<number, Set<number>>();
+    const empToServices = new Map<number, Set<number>>();
+    const serviceToEmps = new Map<number, Set<number>>();
 
-        for (const sp of rawProviders) {
-          if (!empToServices.has(sp.employeeId)) {
-            empToServices.set(sp.employeeId, new Set());
-          }
-          empToServices.get(sp.employeeId)!.add(sp.serviceId);
-
-          if (!serviceToEmps.has(sp.serviceId)) {
-            serviceToEmps.set(sp.serviceId, new Set());
-          }
-          serviceToEmps.get(sp.serviceId)!.add(sp.employeeId);
-        }
-
-        const enrichedEmployees: DjangoEmployeeWithServices[] = rawEmployees.map(
-          (emp) => ({
-            ...emp,
-            assignedServiceIds: empToServices.get(emp.id) ?? new Set(),
-          }),
-        );
-
-        const enrichedServices: DjangoCatalogServiceWithEmployees[] = rawServices
-          .filter((s) => s.isActive)
-          .map((s) => ({
-            ...s,
-            assignedEmployeeIds: Array.from(serviceToEmps.get(s.id) ?? []),
-          }));
-
-        setPatients(rawPatients);
-        setEmployees(enrichedEmployees);
-        setServices(enrichedServices);
-        setServiceProviders(rawProviders);
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Ошибка загрузки данных");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    for (const sp of serviceProviders) {
+      if (!empToServices.has(sp.employeeId)) {
+        empToServices.set(sp.employeeId, new Set());
       }
-    };
+      empToServices.get(sp.employeeId)!.add(sp.serviceId);
 
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled]);
+      if (!serviceToEmps.has(sp.serviceId)) {
+        serviceToEmps.set(sp.serviceId, new Set());
+      }
+      serviceToEmps.get(sp.serviceId)!.add(sp.employeeId);
+    }
+
+    const enrichedEmployees: DjangoEmployeeWithServices[] = rawEmployees.map(
+      (emp) => ({
+        ...emp,
+        assignedServiceIds: empToServices.get(emp.id) ?? new Set(),
+      }),
+    );
+
+    const enrichedServices: DjangoCatalogServiceWithEmployees[] = rawServices
+      .filter((s) => s.isActive)
+      .map((s) => ({
+        ...s,
+        assignedEmployeeIds: Array.from(serviceToEmps.get(s.id) ?? []),
+      }));
+
+    return { employees: enrichedEmployees, services: enrichedServices };
+  }, [dataQuery.data?.rawEmployees, dataQuery.data?.rawServices, serviceProviders]);
 
   const getEmployeesForService = React.useCallback(
     (serviceId: number | null): DjangoEmployeeWithServices[] => {
@@ -164,8 +147,8 @@ export function useDjangoAppointmentData(enabled: boolean): UseDjangoAppointment
     employees,
     services,
     serviceProviders,
-    loading,
-    error,
+    loading: dataQuery.isLoading,
+    error: dataQuery.error instanceof Error ? dataQuery.error.message : null,
     getEmployeesForService,
     getServicesForEmployee,
     canEmployeeProvideService,

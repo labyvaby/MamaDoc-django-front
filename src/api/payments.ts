@@ -40,9 +40,11 @@ export interface ApplyPaymentPayload {
 
 export function getAppointmentPayments(
   appointmentId: number,
+  signal?: AbortSignal,
 ): Promise<PaymentSummary> {
   return apiRequest<PaymentSummary>(
     `/appointments/${appointmentId}/payments/`,
+    { signal },
   );
 }
 

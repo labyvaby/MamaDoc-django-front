@@ -12,6 +12,7 @@
  */
 
 import React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -35,6 +36,10 @@ import {
   type MedicalConclusion,
 } from "../../api/medical";
 import { useCan } from "../../hooks/useCan";
+import {
+  djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
+} from "../../api/queryKeys";
 import DjangoConclusionDrawer from "./DjangoConclusionDrawer";
 
 // ── state display ──────────────────────────────────────────────────────────────
@@ -74,44 +79,23 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
     "medical.conclusions.manage",
   ]);
 
-  const [slots, setSlots] = React.useState<ConclusionSlot[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [version, setVersion] = React.useState(0);
+  const queryClient = useQueryClient();
+  const queryKey = djangoQueryKeys.appointments.conclusionSlots(appointmentId);
+  const slotsQuery = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => getConclusionSlots(appointmentId, signal),
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    enabled: canView,
+  });
+  const slots = slotsQuery.data ?? [];
 
   // Drawer state
   const [drawerSlot, setDrawerSlot] = React.useState<ConclusionSlot | null>(null);
 
-  const refresh = React.useCallback(() => setVersion((v) => v + 1), []);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    getConclusionSlots(appointmentId)
-      .then((data) => {
-        if (!cancelled) {
-          setSlots(data);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Ошибка загрузки");
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appointmentId, version]);
-
   // Update slot in local state after save without full re-fetch
   const handleSaved = React.useCallback(
     (saved: MedicalConclusion) => {
-      setSlots((prev) =>
+      queryClient.setQueryData<ConclusionSlot[]>(queryKey, (prev = []) =>
         prev.map((slot) =>
           slot.serviceLineId === saved.serviceLineId
             ? {
@@ -122,9 +106,9 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
             : slot,
         ),
       );
-      refresh();
+      void queryClient.invalidateQueries({ queryKey });
     },
-    [refresh],
+    [queryClient, queryKey],
   );
 
   if (!canView) return null;
@@ -141,16 +125,16 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           <Typography variant="body2" fontWeight={600} color="text.secondary">
             Врачебные заключения
           </Typography>
-          {loading && <CircularProgress size={14} />}
+          {slotsQuery.isFetching && <CircularProgress size={14} />}
         </Stack>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
-            {error}
+        {slotsQuery.error && (
+          <Alert severity="error" sx={{ mb: 1 }}>
+            {slotsQuery.error instanceof Error ? slotsQuery.error.message : "Ошибка загрузки"}
           </Alert>
         )}
 
-        {!loading && slots.length === 0 && !error && (
+        {!slotsQuery.isLoading && slots.length === 0 && !slotsQuery.error && (
           <Typography variant="body2" color="text.disabled">
             Для этого приёма нет врачебных заключений
           </Typography>

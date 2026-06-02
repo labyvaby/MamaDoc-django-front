@@ -41,8 +41,8 @@ export type UpdatePatientPayload = Partial<Omit<CreatePatientPayload, "organizat
 
 // ── API functions ──────────────────────────────────────────────────────────
 
-export function getPatients(): Promise<DjangoPatient[]> {
-  return apiRequest<DjangoPatient[]>("/patients/");
+export function getPatients(signal?: AbortSignal): Promise<DjangoPatient[]> {
+  return apiRequest<DjangoPatient[]>("/patients/", { signal });
 }
 
 export function getPatient(id: number): Promise<DjangoPatient> {

@@ -77,8 +77,8 @@ export function updateCategory(
   });
 }
 
-export function getServices(): Promise<Service[]> {
-  return apiRequest<Service[]>("/catalog/services/");
+export function getServices(signal?: AbortSignal): Promise<Service[]> {
+  return apiRequest<Service[]>("/catalog/services/", { signal });
 }
 
 export function createService(payload: ServicePayload): Promise<Service> {

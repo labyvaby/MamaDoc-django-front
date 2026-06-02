@@ -1,4 +1,5 @@
 import React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -23,8 +24,13 @@ import {
   parseBackendError,
   type PaymentSummary,
   type PaymentStatus,
+  type ApplyPaymentPayload,
 } from "../../api/payments";
 import type { DjangoAppointment } from "../../api/appointments";
+import {
+  djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
+} from "../../api/queryKeys";
 
 // ── Payment status display ─────────────────────────────────────────────────────
 
@@ -88,23 +94,27 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   onSaved,
 }) => {
   const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
+  const appointmentId = appointment?.id ?? null;
 
-  const [summary, setSummary] = React.useState<PaymentSummary | null>(null);
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
+  const paymentQuery = useQuery({
+    queryKey: appointmentId
+      ? djangoQueryKeys.appointments.payments(appointmentId)
+      : ["django", "appointments", "payments", "closed"],
+    queryFn: ({ signal }) => getAppointmentPayments(appointmentId!, signal),
+    enabled: open && appointmentId !== null,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const summary = paymentQuery.data ?? null;
 
   const [discountStr, setDiscountStr] = React.useState("0");
   const [cashStr, setCashStr] = React.useState("0");
   const [cardStr, setCardStr] = React.useState("0");
   const [note, setNote] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  // Load summary when drawer opens
   React.useEffect(() => {
     if (!open || !appointment) {
-      setSummary(null);
-      setLoadError(null);
       setDiscountStr("0");
       setCashStr("0");
       setCardStr("0");
@@ -113,25 +123,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       return;
     }
 
-    setLoading(true);
-    setLoadError(null);
-
-    getAppointmentPayments(appointment.id)
-      .then((s) => {
-        setSummary(s);
-        setDiscountStr(s.discountAmount ?? "0");
-        setCashStr("0");
-        setCardStr("0");
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        const msg = parseBackendError(err);
-        setLoadError(msg);
-        setLoading(false);
-        // Fallback: use fields from appointment list row
-        setDiscountStr(appointment.discountAmount ?? "0");
-      });
-  }, [open, appointment]);
+    setDiscountStr(summary?.discountAmount ?? appointment.discountAmount ?? "0");
+    setCashStr("0");
+    setCardStr("0");
+    setSaveError(null);
+  }, [open, appointment, summary?.discountAmount]);
 
   // Derived calculations
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount ?? "0");
@@ -150,34 +146,41 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const cashInvalid = parseDecimal(cashStr) < 0;
   const cardInvalid = parseDecimal(cardStr) < 0;
   const submitDisabled =
-    saving || discountInvalid || cashInvalid || cardInvalid || overpaid;
+    discountInvalid || cashInvalid || cardInvalid || overpaid;
+
+  const applyMutation = useMutation({
+    mutationFn: (payload: ApplyPaymentPayload) => {
+      if (!appointmentId) throw new Error("Нет выбранного приёма");
+      return applyAppointmentPayment(appointmentId, payload);
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(
+        djangoQueryKeys.appointments.payments(result.appointmentId),
+        result,
+      );
+      notify?.({ type: "success", message: "Оплата сохранена" });
+      onSaved?.(result);
+      onClose();
+    },
+    onError: (err: unknown) => {
+      const msg = parseBackendError(err);
+      setSaveError(msg);
+      notify?.({ type: "error", message: msg });
+    },
+  });
 
   const handleSave = async () => {
     if (!appointment) return;
     setSaveError(null);
-    setSaving(true);
-    try {
-      const payments: { method: "cash" | "card"; amount: string }[] = [];
-      if (cash > 0) payments.push({ method: "cash", amount: fmt(cash) });
-      if (card > 0) payments.push({ method: "card", amount: fmt(card) });
+    const payments: { method: "cash" | "card"; amount: string }[] = [];
+    if (cash > 0) payments.push({ method: "cash", amount: fmt(cash) });
+    if (card > 0) payments.push({ method: "card", amount: fmt(card) });
 
-      const result = await applyAppointmentPayment(appointment.id, {
-        discountAmount: fmt(discount),
-        payments,
-        note: note.trim() || undefined,
-      });
-
-      notify?.({ type: "success", message: "Оплата сохранена" });
-      setSummary(result);
-      onSaved?.(result);
-      onClose();
-    } catch (err: unknown) {
-      const msg = parseBackendError(err);
-      setSaveError(msg);
-      notify?.({ type: "error", message: msg });
-    } finally {
-      setSaving(false);
-    }
+    applyMutation.mutate({
+      discountAmount: fmt(discount),
+      payments,
+      note: note.trim() || undefined,
+    });
   };
 
   const patientName = appointment?.patient?.fullName ?? "Бронирование";
@@ -217,17 +220,17 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           )}
         </Stack>
 
-        {loading && (
+        {paymentQuery.isLoading && (
           <Stack alignItems="center" py={3}>
             <CircularProgress size={28} />
           </Stack>
         )}
 
-        {loadError && !loading && (
-          <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>
+        {paymentQuery.error && !paymentQuery.isLoading && (
+          <Alert severity="warning" sx={{ mb: 2 }}>{parseBackendError(paymentQuery.error)}</Alert>
         )}
 
-        {!loading && (
+        {!paymentQuery.isLoading && (
           <Stack spacing={2.5}>
             {/* Total */}
             <Stack
@@ -352,15 +355,15 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         spacing={1.5}
         sx={{ px: 2.5, py: 2, borderTop: "1px solid", borderColor: "divider", flexShrink: 0 }}
       >
-        <Button variant="outlined" onClick={onClose} fullWidth disabled={saving}>
+        <Button variant="outlined" onClick={onClose} fullWidth disabled={applyMutation.isPending}>
           Отмена
         </Button>
         <Button
           variant="contained"
           onClick={handleSave}
           fullWidth
-          disabled={submitDisabled}
-          startIcon={saving ? <CircularProgress size={16} /> : undefined}
+          disabled={submitDisabled || applyMutation.isPending}
+          startIcon={applyMutation.isPending ? <CircularProgress size={16} /> : undefined}
         >
           Сохранить
         </Button>

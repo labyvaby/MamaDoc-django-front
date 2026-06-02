@@ -1,4 +1,5 @@
 import React from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -51,6 +52,11 @@ import {
   type DjangoAppointment,
   type DjangoAppointmentStatus,
 } from "../../api/appointments";
+import {
+  djangoQueryKeys,
+  DJANGO_LIST_STALE_TIME_MS,
+  DJANGO_POLL_INTERVAL_MS,
+} from "../../api/queryKeys";
 
 type ViewMode = "list" | "day";
 
@@ -83,60 +89,71 @@ function useAppointments(params: {
   search: string;
   branchId?: number;
 }) {
-  const [items, setItems] = React.useState<DjangoAppointment[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [version, setVersion] = React.useState(0);
-
-  const refresh = React.useCallback(() => setVersion((v) => v + 1), []);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    getAppointments({
+  const queryClient = useQueryClient();
+  const queryParams = React.useMemo(
+    () => ({
       date: params.date?.format("YYYY-MM-DD") ?? undefined,
       status: params.status === "all" ? undefined : params.status,
       search: params.search || undefined,
       branchId: params.branchId,
-    })
-      .then((data) => {
-        if (!cancelled) { setItems(data); setLoading(false); }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Ошибка загрузки");
-          setLoading(false);
-        }
-      });
+    }),
+    [params.date, params.status, params.search, params.branchId],
+  );
+  const queryKey = djangoQueryKeys.appointments.list(queryParams);
+  const query = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => getAppointments(queryParams, signal),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+  });
 
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.date?.format("YYYY-MM-DD"), params.status, params.search, params.branchId, version]);
+  const setItems = React.useCallback(
+    (
+      updater:
+        | DjangoAppointment[]
+        | ((prev: DjangoAppointment[]) => DjangoAppointment[]),
+    ) => {
+      queryClient.setQueryData<DjangoAppointment[]>(queryKey, (prev = []) =>
+        typeof updater === "function" ? updater(prev) : updater,
+      );
+    },
+    [queryClient, queryKey],
+  );
 
-  return { items, setItems, loading, error, refresh };
+  return {
+    items: query.data ?? [],
+    setItems,
+    loading: query.isLoading,
+    error: query.error instanceof Error ? query.error.message : null,
+    refresh: query.refetch,
+  };
 }
 
 // ── hook: day counts for current month ───────────────────────────────────────
 
 function useDayCounts(date: Dayjs | null, branchId?: number) {
-  const [counts, setCounts] = React.useState<Record<string, number>>({});
+  const monthKey = (date ?? dayjs()).format("YYYY-MM");
+  const params = React.useMemo(
+    () => {
+      const base = dayjs(`${monthKey}-01`);
+      return {
+        dateFrom: base.startOf("month").format("YYYY-MM-DD"),
+        dateTo: base.endOf("month").format("YYYY-MM-DD"),
+        branchId,
+      };
+    },
+    [monthKey, branchId],
+  );
+  const query = useQuery({
+    queryKey: djangoQueryKeys.appointments.dayCounts(params),
+    queryFn: ({ signal }) => getDayCounts(params, signal),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
 
-  React.useEffect(() => {
-    const base = date ?? dayjs();
-    const from = base.startOf("month").format("YYYY-MM-DD");
-    const to = base.endOf("month").format("YYYY-MM-DD");
-    let cancelled = false;
-
-    getDayCounts({ dateFrom: from, dateTo: to, branchId })
-      .then((data) => { if (!cancelled) setCounts(data); })
-      .catch(() => { /* day-counts is optional — silently ignore */ });
-
-    return () => { cancelled = true; };
-  }, [date?.format("YYYY-MM"), branchId]);
-
-  return counts;
+  return query.data ?? {};
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -324,7 +341,7 @@ const AppointmentsPage: React.FC = () => {
                 </Stack>
               ) : error ? (
                 <Box p={2}>
-                  <Alert severity="error" onClose={refresh}>
+                  <Alert severity="error" onClose={() => { void refresh(); }}>
                     {error}
                   </Alert>
                 </Box>

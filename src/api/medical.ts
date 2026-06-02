@@ -114,9 +114,11 @@ export interface MedicalConclusionPayload {
  */
 export function getConclusionSlots(
   appointmentId: number,
+  signal?: AbortSignal,
 ): Promise<ConclusionSlot[]> {
   return apiRequest<ConclusionSlot[]>(
     `/appointments/${appointmentId}/conclusion-slots/`,
+    { signal },
   );
 }
 

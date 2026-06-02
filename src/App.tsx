@@ -1,5 +1,6 @@
 import { Refine } from "@refinedev/core";
 import { RefineKbar, RefineKbarProvider } from "@refinedev/kbar";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   RefineSnackbarProvider,
@@ -41,6 +42,7 @@ import { CallNotification } from "./components/CallNotification";
 import { lazy, Suspense, useEffect } from "react";
 import { useAuthIdentitySync } from "./hooks/useAuthIdentitySync";
 import { IS_DJANGO_BACKEND } from "./config/backend";
+import { djangoQueryKeys } from "./api/queryKeys";
 // 🔥 SUPABASE
 import { dataProvider } from "@refinedev/supabase";
 import { supabase } from "./utility/supabaseClient";
@@ -150,6 +152,25 @@ const RootRedirect = () => {
   return <Navigate to={IS_DJANGO_BACKEND ? "/appointments" : "/home"} replace />;
 };
 
+const DjangoQueryCacheReset = () => {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!IS_DJANGO_BACKEND) return;
+
+    const reset = () => {
+      void queryClient.removeQueries({ queryKey: djangoQueryKeys.all });
+    };
+
+    window.addEventListener("mamadoc:django-context-switched", reset);
+    return () => {
+      window.removeEventListener("mamadoc:django-context-switched", reset);
+    };
+  }, [queryClient]);
+
+  return null;
+};
+
 function App() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -175,12 +196,22 @@ function App() {
 
     // Приоритет 1: Самые часто используемые страницы
     const prefetchPriority = () => {
+      if (IS_DJANGO_BACKEND) {
+        import("./pages/appointments/AppointmentsPage");
+        import("./pages/employes");
+        return;
+      }
       import("./pages/home");
       import("./pages/expenses");
     };
 
     // Приоритет 2: Менее важные страницы загружаем позже
     const prefetchSecondary = () => {
+      if (IS_DJANGO_BACKEND) {
+        import("./pages/services");
+        import("./pages/patients");
+        return;
+      }
       import("./pages/employes");
       import("./pages/services");
       import("./pages/products");
@@ -188,6 +219,10 @@ function App() {
 
     // Приоритет 3: Редко используемые страницы загружаем в последнюю очередь
     const prefetchTertiary = () => {
+      if (IS_DJANGO_BACKEND) {
+        import("./pages/settings/RolesSettingsPage");
+        return;
+      }
       import("./pages/storage");
       import("./pages/warehouses");
     };
@@ -791,6 +826,7 @@ function App() {
                     </Routes>
 
                     <AuthHelper />
+                    <DjangoQueryCacheReset />
                     <CallNotification />
                     <RefineKbar />
                     <UnsavedChangesNotifier />
