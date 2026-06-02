@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Chip,
+  Collapse,
   CircularProgress,
   Divider,
   IconButton,
@@ -20,12 +21,15 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { useCanChecker } from "../../hooks/useCan";
+import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import {
   AppointmentFilters,
@@ -34,6 +38,7 @@ import {
 import { AppointmentsEmptyState } from "../../components/appointments/AppointmentsEmptyState";
 import DjangoAddAppointmentDrawer from "./DjangoAddAppointmentDrawer";
 import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
+import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
 import {
   getAppointments,
   getDayCounts,
@@ -313,6 +318,7 @@ const AppointmentsPage: React.FC = () => {
                 <DayView
                   appointmentsByHour={appointmentsByHour}
                   canUpdate={canUpdate}
+                  canViewConclusions={can("medical.conclusions.view")}
                   onEdit={setEditTarget}
                 />
               )}
@@ -345,46 +351,56 @@ const AppointmentTable: React.FC<{
   items: DjangoAppointment[];
   canUpdate: boolean;
   onEdit: (a: DjangoAppointment) => void;
-}> = ({ items, canUpdate, onEdit }) => (
-  <Box sx={{ overflowX: "auto" }}>
-    {/* header row */}
-    <Stack
-      direction="row"
-      spacing={1}
-      sx={{
-        px: 2,
-        py: 0.75,
-        borderBottom: "1px solid",
-        borderColor: "divider",
-        bgcolor: "action.hover",
-        position: "sticky",
-        top: 0,
-        zIndex: 1,
-      }}
-    >
-      <Typography variant="caption" fontWeight={600} sx={{ width: 52, flexShrink: 0 }}>Время</Typography>
-      <Typography variant="caption" fontWeight={600} sx={{ flex: 2, minWidth: 120 }}>Пациент</Typography>
-      <Typography variant="caption" fontWeight={600} sx={{ flex: 2, minWidth: 120, display: { xs: "none", sm: "block" } }}>Услуга / врач</Typography>
-      <Typography variant="caption" fontWeight={600} sx={{ width: 90, flexShrink: 0, display: { xs: "none", md: "block" } }}>Цена</Typography>
-      <Typography variant="caption" fontWeight={600} sx={{ width: 110, flexShrink: 0 }}>Статус</Typography>
-      {canUpdate && <Box sx={{ width: 36, flexShrink: 0 }} />}
-    </Stack>
+}> = ({ items, canUpdate, onEdit }) => {
+  const canViewConclusions = useCan("medical.conclusions.view");
+  return (
+    <Box sx={{ overflowX: "auto" }}>
+      {/* header row */}
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          px: 2,
+          py: 0.75,
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          bgcolor: "action.hover",
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+        }}
+      >
+        <Typography variant="caption" fontWeight={600} sx={{ width: 52, flexShrink: 0 }}>Время</Typography>
+        <Typography variant="caption" fontWeight={600} sx={{ flex: 2, minWidth: 120 }}>Пациент</Typography>
+        <Typography variant="caption" fontWeight={600} sx={{ flex: 2, minWidth: 120, display: { xs: "none", sm: "block" } }}>Услуга / врач</Typography>
+        <Typography variant="caption" fontWeight={600} sx={{ width: 90, flexShrink: 0, display: { xs: "none", md: "block" } }}>Цена</Typography>
+        <Typography variant="caption" fontWeight={600} sx={{ width: 110, flexShrink: 0 }}>Статус</Typography>
+        {(canUpdate || canViewConclusions) && <Box sx={{ width: canUpdate ? 72 : 36, flexShrink: 0 }} />}
+      </Stack>
 
-    <Stack divider={<Divider />}>
-      {items.map((appt) => (
-        <AppointmentRow key={appt.id} appointment={appt} canUpdate={canUpdate} onEdit={onEdit} />
-      ))}
-    </Stack>
-  </Box>
-);
+      <Stack divider={<Divider />}>
+        {items.map((appt) => (
+          <AppointmentRow
+            key={appt.id}
+            appointment={appt}
+            canUpdate={canUpdate}
+            canViewConclusions={canViewConclusions}
+            onEdit={onEdit}
+          />
+        ))}
+      </Stack>
+    </Box>
+  );
+};
 
 // ── Day view ──────────────────────────────────────────────────────────────────
 
 const DayView: React.FC<{
   appointmentsByHour: Map<number, DjangoAppointment[]>;
   canUpdate: boolean;
+  canViewConclusions: boolean;
   onEdit: (a: DjangoAppointment) => void;
-}> = ({ appointmentsByHour, canUpdate, onEdit }) => {
+}> = ({ appointmentsByHour, canUpdate, canViewConclusions, onEdit }) => {
   const hours = Array.from(appointmentsByHour.keys()).sort((a, b) => a - b);
   if (hours.length === 0) return <AppointmentsEmptyState />;
 
@@ -409,7 +425,13 @@ const DayView: React.FC<{
           </Typography>
           <Stack divider={<Divider />}>
             {appointmentsByHour.get(h)!.map((appt) => (
-              <AppointmentRow key={appt.id} appointment={appt} canUpdate={canUpdate} onEdit={onEdit} />
+              <AppointmentRow
+                key={appt.id}
+                appointment={appt}
+                canUpdate={canUpdate}
+                canViewConclusions={canViewConclusions}
+                onEdit={onEdit}
+              />
             ))}
           </Stack>
         </Box>
@@ -423,8 +445,11 @@ const DayView: React.FC<{
 const AppointmentRow: React.FC<{
   appointment: DjangoAppointment;
   canUpdate: boolean;
+  canViewConclusions: boolean;
   onEdit: (a: DjangoAppointment) => void;
-}> = ({ appointment: appt, canUpdate, onEdit }) => {
+}> = ({ appointment: appt, canUpdate, canViewConclusions, onEdit }) => {
+  const [expanded, setExpanded] = React.useState(false);
+
   const time = dayjs(appt.scheduledAt).format("HH:mm");
   const patientName = appt.patient?.fullName ?? "Бронирование";
   const patientPhone = appt.patient?.phone ?? "";
@@ -502,80 +527,110 @@ const AppointmentRow: React.FC<{
   const showTotal = totalAmount && totalAmount !== "0.00" && totalAmount !== "0";
 
   return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={1}
-      sx={{
-        px: 2,
-        py: 0.75,
-        minWidth: 0,
-        "&:hover": { bgcolor: "action.hover" },
-        transition: "background 150ms",
-      }}
-    >
-      {/* time */}
-      <Box sx={{ width: 52, flexShrink: 0 }}>
-        <Stack direction="row" alignItems="center" spacing={0.5}>
-          <Typography variant="body2" fontWeight={600} lineHeight={1}>
-            {time}
-          </Typography>
-          {appt.isNight
-            ? <NightlightOutlined sx={{ fontSize: 11, color: "text.disabled" }} />
-            : <WbSunnyOutlined sx={{ fontSize: 11, color: "warning.light" }} />
-          }
-        </Stack>
-      </Box>
-
-      {/* patient */}
-      <Box sx={{ flex: 2, minWidth: 120 }}>
-        <Typography variant="body2" fontWeight={500} noWrap>
-          {patientName}
-        </Typography>
-        {patientPhone && (
-          <Typography variant="caption" color="text.secondary" noWrap display="block">
-            {patientPhone}
-          </Typography>
-        )}
-      </Box>
-
-      {/* service / employee */}
-      <Box sx={{ flex: 2, minWidth: 120, display: { xs: "none", sm: "block" } }}>
-        {serviceCell}
-        {employeeCell}
-      </Box>
-
-      {/* totalAmount */}
-      <Box sx={{ width: 90, flexShrink: 0, display: { xs: "none", md: "block" } }}>
-        {showTotal && (
-          <Typography variant="body2" fontWeight={500} color="text.secondary">
-            {totalAmount} с
-          </Typography>
-        )}
-      </Box>
-
-      {/* status */}
-      <Box sx={{ width: 110, flexShrink: 0 }}>
-        <Chip
-          label={STATUS_LABELS[appt.status] ?? appt.status}
-          size="small"
-          color={STATUS_COLOR[appt.status] ?? "default"}
-          variant="outlined"
-          sx={{ fontSize: "0.68rem", height: 20 }}
-        />
-      </Box>
-
-      {/* edit */}
-      {canUpdate && (
-        <Box sx={{ width: 36, flexShrink: 0 }}>
-          <Tooltip title="Редактировать">
-            <IconButton size="small" onClick={() => onEdit(appt)}>
-              <EditOutlined fontSize="small" />
-            </IconButton>
-          </Tooltip>
+    <Box>
+      {/* main row */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        spacing={1}
+        sx={{
+          px: 2,
+          py: 0.75,
+          minWidth: 0,
+          "&:hover": { bgcolor: "action.hover" },
+          transition: "background 150ms",
+        }}
+      >
+        {/* time */}
+        <Box sx={{ width: 52, flexShrink: 0 }}>
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <Typography variant="body2" fontWeight={600} lineHeight={1}>
+              {time}
+            </Typography>
+            {appt.isNight
+              ? <NightlightOutlined sx={{ fontSize: 11, color: "text.disabled" }} />
+              : <WbSunnyOutlined sx={{ fontSize: 11, color: "warning.light" }} />
+            }
+          </Stack>
         </Box>
+
+        {/* patient */}
+        <Box sx={{ flex: 2, minWidth: 120 }}>
+          <Typography variant="body2" fontWeight={500} noWrap>
+            {patientName}
+          </Typography>
+          {patientPhone && (
+            <Typography variant="caption" color="text.secondary" noWrap display="block">
+              {patientPhone}
+            </Typography>
+          )}
+        </Box>
+
+        {/* service / employee */}
+        <Box sx={{ flex: 2, minWidth: 120, display: { xs: "none", sm: "block" } }}>
+          {serviceCell}
+          {employeeCell}
+        </Box>
+
+        {/* totalAmount */}
+        <Box sx={{ width: 90, flexShrink: 0, display: { xs: "none", md: "block" } }}>
+          {showTotal && (
+            <Typography variant="body2" fontWeight={500} color="text.secondary">
+              {totalAmount} с
+            </Typography>
+          )}
+        </Box>
+
+        {/* status */}
+        <Box sx={{ width: 110, flexShrink: 0 }}>
+          <Chip
+            label={STATUS_LABELS[appt.status] ?? appt.status}
+            size="small"
+            color={STATUS_COLOR[appt.status] ?? "default"}
+            variant="outlined"
+            sx={{ fontSize: "0.68rem", height: 20 }}
+          />
+        </Box>
+
+        {/* actions: edit + expand conclusions */}
+        <Box sx={{ width: canUpdate ? 72 : 36, flexShrink: 0, display: "flex", gap: 0.5 }}>
+          {canUpdate && (
+            <Tooltip title="Редактировать">
+              <IconButton size="small" onClick={() => onEdit(appt)}>
+                <EditOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {canViewConclusions && (
+            <Tooltip title={expanded ? "Скрыть заключения" : "Заключения врачей"}>
+              <IconButton size="small" onClick={() => setExpanded((v) => !v)}>
+                {expanded
+                  ? <ExpandLessOutlined fontSize="small" />
+                  : <ExpandMoreOutlined fontSize="small" />
+                }
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      </Stack>
+
+      {/* expandable conclusions panel */}
+      {canViewConclusions && (
+        <Collapse in={expanded} unmountOnExit>
+          <Box
+            sx={{
+              px: 3,
+              py: 1.5,
+              borderTop: "1px solid",
+              borderColor: "divider",
+              bgcolor: (t) => t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "grey.50",
+            }}
+          >
+            <DjangoConclusionSlotsPanel appointmentId={appt.id} />
+          </Box>
+        </Collapse>
       )}
-    </Stack>
+    </Box>
   );
 };
 
