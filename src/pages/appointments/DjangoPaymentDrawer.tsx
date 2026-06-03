@@ -31,6 +31,7 @@ import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../api/queryKeys";
+import PatientBalancePanel from "./PatientBalancePanel";
 
 // ── Payment status display ─────────────────────────────────────────────────────
 
@@ -264,6 +265,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             </Typography>
           )}
         </Stack>
+
+        {/* Patient balance panel — shown only for real patients, not bookings */}
+        {appointment?.patient?.id && (
+          <PatientBalancePanel patientId={appointment.patient.id} />
+        )}
 
         {/* Cancelled/no_show notice */}
         {isCancelled && (

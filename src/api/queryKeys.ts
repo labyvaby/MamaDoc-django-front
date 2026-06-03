@@ -22,6 +22,13 @@ export const djangoQueryKeys = {
       ["django", "appointments", appointmentId, "conclusion-slots"] as const,
   },
 
+  patients: {
+    balance: (patientId: number) =>
+      ["django", "patients", patientId, "balance"] as const,
+    transactions: (patientId: number) =>
+      ["django", "patients", patientId, "balance-transactions"] as const,
+  },
+
   reference: {
     patients: ["django", "reference", "patients"] as const,
     employees: ["django", "reference", "employees"] as const,
