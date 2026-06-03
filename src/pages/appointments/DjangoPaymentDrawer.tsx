@@ -12,6 +12,7 @@ import {
   InputAdornment,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -54,10 +55,17 @@ export const PAYMENT_STATUS_COLOR: Record<
   refunded: "error",
 };
 
+// ── Method labels (including balance) ─────────────────────────────────────────
+
+const METHOD_LABELS: Record<string, string> = {
+  cash: "Наличные",
+  card: "Карта",
+  balance: "Баланс пациента",
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseDecimal(s: string): number {
-  // Accept both "." and "," as decimal separator
   const n = parseFloat(s.replace(",", "."));
   return isNaN(n) ? 0 : n;
 }
@@ -76,6 +84,14 @@ function computeStatus(
   if (paid >= payable && payable > 0) return "paid";
   if (paid > 0 && paid < payable) return "partial";
   return "unpaid";
+}
+
+// Backend error messages that need user-friendly rewrites
+function mapSaveError(raw: string): string {
+  if (raw.includes("уже содержит оплату с баланса") || raw.includes("replace-all")) {
+    return "Этот приём уже оплачивался с баланса. Изменение оплаты с баланса пока недоступно без возврата.";
+  }
+  return raw;
 }
 
 const CANCELLED_STATUSES = new Set(["cancelled", "no_show"]);
@@ -101,9 +117,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const appointmentId = appointment?.id ?? null;
+  const patientId = appointment?.patient?.id ?? null;
 
-  // Track whether the user has touched the discount field since opening.
-  // When true we stop syncing from summary — user input wins.
+  // Track whether the user has touched discount — when true, user input wins over summary
   const discountTouchedRef = React.useRef(false);
 
   const paymentQuery = useQuery({
@@ -113,19 +129,27 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     queryFn: ({ signal }) => getAppointmentPayments(appointmentId!, signal),
     enabled: open && appointmentId !== null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    // Always re-fetch when drawer opens so repeated opens show fresh data
     refetchOnMount: "always",
   });
   const summary = paymentQuery.data ?? null;
 
+  // Read available balance from cache (loaded by PatientBalancePanel) — no extra request
+  const cachedBalance = patientId
+    ? queryClient.getQueryData<{ balance: string }>(
+        djangoQueryKeys.patients.balance(patientId),
+      )
+    : undefined;
+  const availableBalance = parseDecimal(cachedBalance?.balance ?? "0");
+
+  // Form state
   const [discountStr, setDiscountStr] = React.useState("0");
   const [cashStr, setCashStr] = React.useState("0");
   const [cardStr, setCardStr] = React.useState("0");
+  const [balanceStr, setBalanceStr] = React.useState("0");
   const [note, setNote] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  // Reset all form state when drawer opens for a new appointment (or closes).
-  // We separate "on open" from "on summary arrives" to avoid overwriting user input.
+  // Reset on appointment change or close
   const prevAppointmentIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     if (!open || appointmentId === null) {
@@ -133,25 +157,25 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setDiscountStr("0");
       setCashStr("0");
       setCardStr("0");
+      setBalanceStr("0");
       setNote("");
       setSaveError(null);
       prevAppointmentIdRef.current = null;
       return;
     }
-
     if (appointmentId !== prevAppointmentIdRef.current) {
-      // Different appointment — reset unconditionally before summary loads
       discountTouchedRef.current = false;
       setDiscountStr(appointment?.discountAmount ?? "0");
       setCashStr("0");
       setCardStr("0");
+      setBalanceStr("0");
       setNote("");
       setSaveError(null);
       prevAppointmentIdRef.current = appointmentId;
     }
   }, [open, appointmentId, appointment?.discountAmount]);
 
-  // Once summary arrives (and user hasn't touched discount yet), seed from summary.
+  // Seed discount from summary once (only if user hasn't touched it)
   const summaryDiscountRef = React.useRef<string | undefined>(undefined);
   React.useEffect(() => {
     if (!summary) return;
@@ -161,19 +185,20 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     setDiscountStr(summary.discountAmount ?? "0");
   }, [summary]);
 
-  // Derived calculations — use payableAmount from summary when available
+  // Derived calculations
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount ?? "0");
   const discountRaw = parseDecimal(discountStr);
   const discount = Math.max(0, Math.min(discountRaw, total));
-  // Prefer backend-computed payableAmount if discount hasn't been changed by user
   const payable = discountTouchedRef.current || !summary
     ? Math.max(0, total - discount)
     : parseDecimal(summary.payableAmount);
   const cash = Math.max(0, parseDecimal(cashStr));
   const card = Math.max(0, parseDecimal(cardStr));
-  const paidTotal = cash + card;
+  const balanceUsed = Math.max(0, parseDecimal(balanceStr));
+  const paidTotal = cash + card + balanceUsed;
   const debt = Math.max(0, payable - paidTotal);
-  const overpaid = paidTotal > payable + 0.001; // float tolerance
+  const overpaid = paidTotal > payable + 0.001;
+  const balanceExceeded = balanceUsed > availableBalance + 0.001;
 
   const statusPreview = computeStatus(payable, paidTotal, discount, total);
 
@@ -181,7 +206,15 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const cashInvalid = parseDecimal(cashStr) < 0;
   const cardInvalid = parseDecimal(cardStr) < 0;
-  const submitDisabled = discountInvalid || cashInvalid || cardInvalid || overpaid;
+  const balanceInvalid = parseDecimal(balanceStr) < 0 || balanceExceeded;
+  const submitDisabled =
+    discountInvalid || cashInvalid || cardInvalid || balanceInvalid || overpaid;
+
+  // Quick-fill: fill balance field with min(remaining debt, available balance)
+  const handleBalanceQuickFill = () => {
+    const fill = Math.min(debt, availableBalance);
+    if (fill > 0) setBalanceStr(fmt(fill));
+  };
 
   const applyMutation = useMutation({
     mutationFn: (payload: ApplyPaymentPayload) => {
@@ -189,26 +222,32 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       return applyAppointmentPayment(appointmentId, payload);
     },
     onSuccess: (result) => {
-      // Update payment cache so next open shows fresh data immediately
       queryClient.setQueryData(
         djangoQueryKeys.appointments.payments(result.appointmentId),
         result,
       );
-      // Invalidate so background refetch runs — catches any server-side divergence
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.payments(result.appointmentId),
       });
-      // Invalidate all appointment lists so every filter sees fresh payment fields
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.all,
       });
+      // Refresh patient balance if balance was used
+      if (patientId && balanceUsed > 0) {
+        void queryClient.invalidateQueries({
+          queryKey: djangoQueryKeys.patients.balance(patientId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: djangoQueryKeys.patients.transactions(patientId),
+        });
+      }
       notify?.({ type: "success", message: "Оплата сохранена" });
-      // Close first, then notify parent — avoids double-close via handlePaymentSaved
       onClose();
       onSaved?.(result);
     },
     onError: (err: unknown) => {
-      const msg = parseBackendError(err);
+      const raw = parseBackendError(err);
+      const msg = mapSaveError(raw);
       setSaveError(msg);
       notify?.({ type: "error", message: msg });
     },
@@ -224,12 +263,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     applyMutation.mutate({
       discountAmount: fmt(discount),
       payments,
+      balanceAmount: balanceUsed > 0 ? fmt(balanceUsed) : undefined,
       note: note.trim() || undefined,
     });
   };
 
   const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
   const patientName = appointment?.patient?.fullName ?? "Бронирование";
+  const hasPatient = !!patientId;
 
   return (
     <Drawer
@@ -266,14 +307,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           )}
         </Stack>
 
-        {/* Patient balance panel — shown only for real patients, not bookings */}
-        {appointment?.patient?.id && (
-          <PatientBalancePanel patientId={appointment.patient.id} />
-        )}
+        {/* Patient balance panel — no extra request, reads from shared cache */}
+        {hasPatient && <PatientBalancePanel patientId={patientId!} />}
 
         {/* Cancelled/no_show notice */}
         {isCancelled && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2, mt: hasPatient ? 0 : 0 }}>
             Приём отменён или помечен как неявка — оплата недоступна.
           </Alert>
         )}
@@ -334,6 +373,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
                 Метод оплаты
               </Typography>
+
               <TextField
                 label="Наличные"
                 size="small"
@@ -343,7 +383,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
                 inputProps={{ inputMode: "decimal" }}
                 fullWidth
+                disabled={isCancelled}
               />
+
               <TextField
                 label="Карта"
                 size="small"
@@ -353,7 +395,45 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
                 inputProps={{ inputMode: "decimal" }}
                 fullWidth
+                disabled={isCancelled}
               />
+
+              {/* Balance field — only for real patients */}
+              {hasPatient && (
+                <Stack spacing={0.5}>
+                  <TextField
+                    label="С баланса пациента"
+                    size="small"
+                    value={balanceStr}
+                    onChange={(e) => setBalanceStr(e.target.value)}
+                    error={balanceInvalid || overpaid}
+                    helperText={
+                      balanceExceeded
+                        ? `Недостаточно средств. Доступно: ${fmt(availableBalance)} с`
+                        : availableBalance > 0
+                          ? `Доступно: ${fmt(availableBalance)} с`
+                          : "Баланс: 0.00 с"
+                    }
+                    InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
+                    inputProps={{ inputMode: "decimal" }}
+                    fullWidth
+                    disabled={isCancelled}
+                  />
+                  {availableBalance > 0 && debt > 0.001 && (
+                    <Tooltip title={`Списать ${fmt(Math.min(debt, availableBalance))} с — покрыть остаток долга`}>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleBalanceQuickFill}
+                        sx={{ textTransform: "none", alignSelf: "flex-start", px: 0 }}
+                        disabled={isCancelled}
+                      >
+                        С баланса на остаток ({fmt(Math.min(debt, availableBalance))} с)
+                      </Button>
+                    </Tooltip>
+                  )}
+                </Stack>
+              )}
             </Stack>
 
             {overpaid && (
@@ -370,6 +450,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 <Typography variant="body2" color="text.secondary">Внесено</Typography>
                 <Typography variant="body2" fontWeight={500}>{fmt(paidTotal)} с</Typography>
               </Stack>
+              {balanceUsed > 0.001 && (
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="body2" color="text.secondary">в т.ч. с баланса</Typography>
+                  <Typography variant="body2" color="info.main">{fmt(balanceUsed)} с</Typography>
+                </Stack>
+              )}
               <Stack direction="row" justifyContent="space-between">
                 <Typography variant="body2" color="text.secondary">Долг</Typography>
                 <Typography
@@ -403,7 +489,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   {summary.payments.map((p) => (
                     <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="caption" color="text.secondary">
-                        {p.method === "cash" ? "Наличные" : "Карта"}
+                        {METHOD_LABELS[p.method] ?? p.method}
                       </Typography>
                       <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
                     </Stack>

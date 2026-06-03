@@ -3,7 +3,7 @@ export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type PaymentMethod = "cash" | "card";
+export type PaymentMethod = "cash" | "card" | "balance";
 
 export type PaymentStatus =
   | "unpaid"
@@ -35,6 +35,8 @@ export interface PaymentSummary {
 export interface ApplyPaymentPayload {
   discountAmount: string;
   payments: { method: PaymentMethod; amount: string }[];
+  /** Amount to deduct from patient balance (omit or "0.00" if not using balance) */
+  balanceAmount?: string;
   note?: string;
 }
 
