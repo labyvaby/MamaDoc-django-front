@@ -33,12 +33,12 @@ import {
 
 // ── Transaction type labels ────────────────────────────────────────────────────
 
-const TX_LABELS: Partial<Record<BalanceTransactionType, string>> = {
+const TX_LABELS: Record<BalanceTransactionType, string> = {
   top_up: "Пополнение",
   deduct: "Списание",
-  bonus_top_up: "Бонусы +",
-  bonus_deduct: "Бонусы −",
-  refund: "Возврат",
+  bonus_accrual: "Начисление бонусов",
+  bonus_redeem: "Списание бонусов",
+  correction: "Корректировка",
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────

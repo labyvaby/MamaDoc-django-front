@@ -15,9 +15,9 @@ export interface PatientBalance {
 export type BalanceTransactionType =
   | "top_up"
   | "deduct"
-  | "bonus_top_up"
-  | "bonus_deduct"
-  | "refund";
+  | "bonus_accrual"
+  | "bonus_redeem"
+  | "correction";
 
 export interface PatientBalanceTransaction {
   id: number;
