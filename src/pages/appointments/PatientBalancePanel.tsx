@@ -38,7 +38,7 @@ const TX_LABELS: Record<BalanceTransactionType, string> = {
   deduct: "Списание",
   bonus_accrual: "Начисление бонусов",
   bonus_redeem: "Списание бонусов",
-  correction: "Корректировка",
+  correction: "Коррекция",
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────
