@@ -522,8 +522,11 @@ const SidebarSecondary: React.FC = () => {
         ) && (
           <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         )}
-        {/* /cashbox — Supabase-only, скрыт в Django */}
-        {show("management") && !IS_DJANGO_BACKEND && hasAccessToCashbox && (
+        {/* /cashbox — Supabase mode uses role check; Django mode uses finance.view */}
+        {show("management") && (IS_DJANGO_BACKEND
+          ? (isSuper || can('finance.view'))
+          : hasAccessToCashbox
+        ) && (
           <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
         )}
         {show("management") && isSuper && (

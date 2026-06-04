@@ -70,6 +70,7 @@ const SkudSettingsPage = lazy(() => import("./pages/settings/SkudSettingsPage").
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
 const CashboxPage = lazy(() => import("./pages/cashbox"));
+const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
@@ -583,11 +584,19 @@ function App() {
                         <Route
                           path="cashbox"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant', 'receptionist']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <CashboxPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="finance.view">
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoCashboxPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant', 'receptionist']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <CashboxPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            )
                           }
                         />
                         <Route
