@@ -29,6 +29,25 @@ export const djangoQueryKeys = {
       ["django", "patients", patientId, "balance-transactions"] as const,
   },
 
+  cashbox: {
+    summary: (filters: Record<string, unknown>) =>
+      ["django", "cashbox", "summary", filters] as const,
+    entries: (entryType: string, filters: Record<string, unknown>) =>
+      ["django", "cashbox", "entries", entryType, filters] as const,
+  },
+
+  expenses: {
+    all: ["django", "expenses"] as const,
+    list: (filters: Record<string, unknown>) =>
+      ["django", "expenses", "list", filters] as const,
+    categories: (organizationId: number | null | undefined) =>
+      ["django", "expenses", "categories", organizationId ?? null] as const,
+  },
+
+  organization: {
+    branches: ["django", "organization", "branches"] as const,
+  },
+
   reference: {
     patients: ["django", "reference", "patients"] as const,
     employees: ["django", "reference", "employees"] as const,
