@@ -4,38 +4,53 @@ import { apiRequest, ApiError } from "./client";
 
 /**
  * Extract a human-readable message from a backend error response.
- * Backend returns either:
- *   { "error": "…" }            — string message
- *   { "errors": { field: [msgs] } }  — field-level validation errors
+ *
+ * Supported envelopes (in priority order):
+ *   { "error": "…" }                        — single string message
+ *   { "detail": [{ "msg": "…" }, …] }       — Django/Pydantic array
+ *   { "detail": "…" }                        — DRF string detail
+ *   { "errors": { field: [msgs] } }          — field-level validation errors
  */
 export function parseBackendError(err: unknown): string {
   if (err instanceof ApiError) {
-    const p = err.payload;
+    const p = err.payload as Record<string, unknown> | null | undefined;
     if (p && typeof p === "object") {
-      if ("error" in p && typeof (p as Record<string, unknown>).error === "string") {
-        return (p as Record<string, unknown>).error as string;
+      // { error: "..." }
+      if (typeof p.error === "string") return p.error;
+
+      // { detail: [{ msg: "..." }, ...] }  — Django/Pydantic validation list
+      if (Array.isArray(p.detail)) {
+        const msgs = (p.detail as unknown[])
+          .map((item) => {
+            if (item && typeof item === "object" && "msg" in item) {
+              return String((item as Record<string, unknown>).msg);
+            }
+            return String(item);
+          })
+          .filter(Boolean);
+        if (msgs.length) return msgs.join("; ");
       }
-      if ("errors" in p) {
-        const errors = (p as Record<string, unknown>).errors;
-        if (errors && typeof errors === "object") {
-          const parts = Object.entries(errors as Record<string, unknown>).map(
-            ([field, msgs]) => {
-              const msgStr = Array.isArray(msgs)
-                ? msgs
-                    .map((m) =>
-                      typeof m === "object" && m !== null
-                        ? Object.values(m as Record<string, unknown>)
-                            .flat()
-                            .join(", ")
-                        : String(m),
-                    )
-                    .join(", ")
-                : String(msgs);
-              return field === "__all__" ? msgStr : `${field}: ${msgStr}`;
-            },
-          );
-          if (parts.length) return parts.join("; ");
-        }
+
+      // { detail: "..." }  — DRF string detail
+      if (typeof p.detail === "string" && p.detail) return p.detail;
+
+      // { errors: { field: [...] } }
+      if (p.errors && typeof p.errors === "object") {
+        const parts = Object.entries(p.errors as Record<string, unknown>).map(
+          ([field, msgs]) => {
+            const msgStr = Array.isArray(msgs)
+              ? msgs
+                  .map((m) =>
+                    typeof m === "object" && m !== null
+                      ? Object.values(m as Record<string, unknown>).flat().join(", ")
+                      : String(m),
+                  )
+                  .join(", ")
+              : String(msgs);
+            return field === "__all__" ? msgStr : `${field}: ${msgStr}`;
+          },
+        );
+        if (parts.length) return parts.join("; ");
       }
     }
   }
