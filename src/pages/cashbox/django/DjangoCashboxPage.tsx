@@ -27,6 +27,7 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { ApiError } from "../../../api/client";
+import type { CashboxShift, CashboxShiftSummary } from "../../../api/cashboxShifts";
 
 import CashboxFiltersBar, {
   initialFilterState,
@@ -36,25 +37,28 @@ import CashboxFiltersBar, {
 import CashboxSummaryPanel from "./CashboxSummaryPanel";
 import CashboxEntriesTable, { PAGE_SIZE } from "./CashboxEntriesTable";
 import ExpensesPanel from "./expenses/ExpensesPanel";
+import CurrentShiftPanel from "./shifts/CurrentShiftPanel";
+import ShiftOpenDialog from "./shifts/ShiftOpenDialog";
+import ShiftCloseDialog from "./shifts/ShiftCloseDialog";
+import ShiftHistoryPanel from "./shifts/ShiftHistoryPanel";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type TabValue = CashboxEntryType | "expenses-manage";
+type TabValue = CashboxEntryType | "expenses-manage" | "shifts-history";
 
 const DjangoCashboxPage: React.FC = () => {
   usePageTitle("Касса");
   const canView = useCan("finance.view");
   const canManageExpenses = useCan("finance.expense.manage");
+  const canOpenShift = useCan("finance.cashbox.shift.open");
+  const canCloseShift = useCan(["finance.cashbox.shift.close", "finance.cashbox.shift.manage"]);
+
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
   const isSuper = isSuperAdmin();
 
-  // Multi-org: user has memberships in more than one organization
   const isMultiOrg = (memberships ?? []).length > 1;
-  // organizationId required for: superuser or multi-org user
   const orgRequired = isSuper || isMultiOrg;
-  // The org id to include in expense create payloads (undefined for single-org regular users)
   const orgIdForExpenses = orgRequired ? (activeOrganization?.id ?? undefined) : undefined;
-  // Block expense creation if org is required but not selected
   const expenseNeedsOrg = orgRequired && !activeOrganization;
 
   const [filters, setFilters] = React.useState<FilterState>(initialFilterState);
@@ -62,6 +66,21 @@ const DjangoCashboxPage: React.FC = () => {
   const [paymentsPage, setPaymentsPage] = React.useState(1);
   const [refundsPage, setRefundsPage] = React.useState(1);
   const [expenseEntriesPage, setExpenseEntriesPage] = React.useState(1);
+
+  // Shift dialog state
+  const [openShiftDialogOpen, setOpenShiftDialogOpen] = React.useState(false);
+  const [closeShiftDialogOpen, setCloseShiftDialogOpen] = React.useState(false);
+  // Current shift / summary exposed from CurrentShiftPanel
+  const [currentShift, setCurrentShift] = React.useState<CashboxShift | null>(null);
+  const [currentShiftSummary, setCurrentShiftSummary] = React.useState<CashboxShiftSummary | null>(null);
+
+  // Stable callbacks — avoid re-render loops in CurrentShiftPanel
+  const handleShiftLoaded = React.useCallback((sh: CashboxShift | null) => {
+    setCurrentShift(sh);
+  }, []);
+  const handleSummaryLoaded = React.useCallback((s: CashboxShiftSummary | null) => {
+    setCurrentShiftSummary(s);
+  }, []);
 
   // Reset branchId and pages when org changes
   const prevOrgIdRef = React.useRef<number | null | undefined>(activeOrganization?.id);
@@ -98,6 +117,11 @@ const DjangoCashboxPage: React.FC = () => {
 
   const superNeedsOrg = isSuper && !activeOrganization;
   const queriesEnabled = !permLoading && canView && apiParams !== null && !superNeedsOrg;
+
+  // branchId for current shift (from filter bar)
+  const selectedBranchId = filters.branchId !== "" ? filters.branchId : undefined;
+  // organizationId for shifts
+  const orgIdForShifts = orgRequired ? (activeOrganization?.id ?? undefined) : undefined;
 
   // ── Branches query ────────────────────────────────────────────────────────
   const branchesQuery = useQuery({
@@ -185,7 +209,6 @@ const DjangoCashboxPage: React.FC = () => {
   // ── Derived values for ExpensesPanel ─────────────────────────────────────
   const expenseFilters = apiParams
     ? {
-        // Use orgIdForExpenses (multi-org aware) instead of apiParams.organizationId
         organizationId: orgIdForExpenses,
         branchId: apiParams.branchId,
         dateFrom: apiParams.dateFrom,
@@ -217,6 +240,23 @@ const DjangoCashboxPage: React.FC = () => {
 
         {is400 && !superNeedsOrg && (
           <Alert severity="error">{summaryError ?? entriesError}</Alert>
+        )}
+
+        {/* Current shift panel — always visible when branch selected, regardless of date range */}
+        {!superNeedsOrg && (canView || canOpenShift) && (
+          <CurrentShiftPanel
+            selectedBranchId={selectedBranchId}
+            organizationId={orgIdForShifts}
+            branches={branches}
+            canOpen={canOpenShift}
+            canClose={canCloseShift}
+            queriesEnabled={!permLoading && canView}
+            onShiftOpened={handleShiftLoaded}
+            onOpenShiftClick={() => setOpenShiftDialogOpen(true)}
+            onCloseShiftClick={() => setCloseShiftDialogOpen(true)}
+            onSummaryLoaded={handleSummaryLoaded}
+            onShiftLoaded={handleShiftLoaded}
+          />
         )}
 
         {!superNeedsOrg && apiParams !== null && !is400 && (
@@ -292,6 +332,9 @@ const DjangoCashboxPage: React.FC = () => {
                 {canManageExpenses && (
                   <Tab value="expenses-manage" label="Управление расходами" />
                 )}
+                {canView && (
+                  <Tab value="shifts-history" label="История смен" />
+                )}
               </Tabs>
 
               {/* Entries: payment / refund / expense cashbox entries */}
@@ -327,10 +370,42 @@ const DjangoCashboxPage: React.FC = () => {
                   expenseNeedsOrg={expenseNeedsOrg}
                 />
               )}
+
+              {/* Shifts history tab */}
+              {tab === "shifts-history" && (
+                <ShiftHistoryPanel
+                  organizationId={orgIdForShifts}
+                  branches={branches}
+                  queriesEnabled={!permLoading && canView}
+                />
+              )}
             </Box>
           </Stack>
         )}
       </Stack>
+
+      {/* Shift dialogs */}
+      <ShiftOpenDialog
+        open={openShiftDialogOpen}
+        organizationId={orgIdForShifts}
+        branches={branches}
+        defaultBranchId={selectedBranchId}
+        onClose={() => setOpenShiftDialogOpen(false)}
+        onOpened={(shift) => {
+          setCurrentShift(shift);
+          setOpenShiftDialogOpen(false);
+        }}
+      />
+      <ShiftCloseDialog
+        open={closeShiftDialogOpen}
+        shift={currentShift}
+        summary={currentShiftSummary}
+        onClose={() => setCloseShiftDialogOpen(false)}
+        onClosed={(shift) => {
+          setCurrentShift(shift);
+          setCloseShiftDialogOpen(false);
+        }}
+      />
     </Box>
   );
 };

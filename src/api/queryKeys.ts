@@ -44,6 +44,16 @@ export const djangoQueryKeys = {
       ["django", "expenses", "categories", organizationId ?? null] as const,
   },
 
+  shifts: {
+    current: (filters: Record<string, unknown>) =>
+      ["django", "shifts", "current", filters] as const,
+    list: (filters: Record<string, unknown>) =>
+      ["django", "shifts", "list", filters] as const,
+    summary: (id: number) =>
+      ["django", "shifts", id, "summary"] as const,
+    all: ["django", "shifts"] as const,
+  },
+
   organization: {
     branches: ["django", "organization", "branches"] as const,
   },
