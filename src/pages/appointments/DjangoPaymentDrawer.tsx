@@ -33,6 +33,7 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import PatientBalancePanel from "./PatientBalancePanel";
+import AppointmentRefundsPanel from "./AppointmentRefundsPanel";
 
 // ── Payment status display ─────────────────────────────────────────────────────
 
@@ -202,13 +203,17 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
   const statusPreview = computeStatus(payable, paidTotal, discount, total);
 
+  const hasRefunds = (summary?.refunds?.length ?? 0) > 0 || parseDecimal(summary?.refundedTotal ?? "0") > 0;
+  // After a refund the backend blocks further apply — mirror that guard in the UI
+  const applyBlockedByRefund = hasRefunds;
+
   // Validation
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const cashInvalid = parseDecimal(cashStr) < 0;
   const cardInvalid = parseDecimal(cardStr) < 0;
   const balanceInvalid = parseDecimal(balanceStr) < 0 || balanceExceeded;
   const submitDisabled =
-    discountInvalid || cashInvalid || cardInvalid || balanceInvalid || overpaid;
+    discountInvalid || cashInvalid || cardInvalid || balanceInvalid || overpaid || applyBlockedByRefund;
 
   // Quick-fill: fill balance field with min(remaining debt, available balance)
   const handleBalanceQuickFill = () => {
@@ -230,7 +235,10 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         queryKey: djangoQueryKeys.appointments.payments(result.appointmentId),
       });
       void queryClient.invalidateQueries({
-        queryKey: djangoQueryKeys.appointments.all,
+        queryKey: ["django", "appointments", "list"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["django", "appointments", "day-counts"],
       });
       // Refresh patient balance if balance was used
       if (patientId && balanceUsed > 0) {
@@ -267,6 +275,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       note: note.trim() || undefined,
     });
   };
+
+  const handleSummaryUpdated = React.useCallback((updated: PaymentSummary) => {
+    if (!updated.appointmentId) return;
+    queryClient.setQueryData(
+      djangoQueryKeys.appointments.payments(updated.appointmentId),
+      updated,
+    );
+  }, [queryClient]);
 
   const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
   const patientName = appointment?.patient?.fullName ?? "Бронирование";
@@ -329,6 +345,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           </Alert>
         )}
 
+        {/* Payment form — hidden for cancelled/no_show */}
         {!paymentQuery.isLoading && !isCancelled && (
           <Stack spacing={2.5}>
             {/* Total */}
@@ -456,6 +473,23 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   <Typography variant="body2" color="info.main">{fmt(balanceUsed)} с</Typography>
                 </Stack>
               )}
+              {/* Show refunded/net only when refunds exist on this appointment */}
+              {summary && parseDecimal(summary.refundedTotal ?? "0") > 0 && (
+                <>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="body2" color="text.secondary">Возвращено</Typography>
+                    <Typography variant="body2" fontWeight={600} color="error.main">
+                      − {summary.refundedTotal} с
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="body2" color="text.secondary">Чистая оплата</Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {summary.paidNet ?? fmt(parseDecimal(summary.paidTotal) - parseDecimal(summary.refundedTotal ?? "0"))} с
+                    </Typography>
+                  </Stack>
+                </>
+              )}
               <Stack direction="row" justifyContent="space-between">
                 <Typography variant="body2" color="text.secondary">Долг</Typography>
                 <Typography
@@ -478,8 +512,15 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               </Stack>
             </Stack>
 
-            {/* Previous payments history */}
-            {summary && summary.payments.length > 0 && (
+            {/* Block-apply notice when refunds exist */}
+            {applyBlockedByRefund && (
+              <Alert severity="info" icon={false} sx={{ py: 0.5, fontSize: "0.75rem" }}>
+                Изменение оплаты недоступно — по приёму уже оформлен возврат.
+              </Alert>
+            )}
+
+            {/* Previous payments history (shown only when no refunds — refunds panel shows richer view) */}
+            {summary && summary.payments.length > 0 && !hasRefunds && (
               <>
                 <Divider />
                 <Stack spacing={0.75}>
@@ -511,6 +552,17 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
             {saveError && <Alert severity="error">{saveError}</Alert>}
           </Stack>
+        )}
+
+        {/* Refunds panel — always shown when summary is loaded, including cancelled/no_show.
+            Refund button visibility is gated by finance.refund permission inside the panel. */}
+        {!paymentQuery.isLoading && summary && appointmentId !== null && (
+          <AppointmentRefundsPanel
+            appointmentId={appointmentId}
+            patientId={patientId}
+            summary={summary}
+            onSummaryUpdated={handleSummaryUpdated}
+          />
         )}
       </Box>
 
