@@ -180,7 +180,12 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
       setGlobal({ loading: showLoading, lastFetchedAt: Date.now() });
 
       if (IS_DJANGO_BACKEND) {
-        const meData = (await getCurrentUser()) as MeResponse;
+        const meData = (await getCurrentUser()) as MeResponse | null;
+        if (!meData || !meData.user) {
+          // Backend returned null or malformed response (e.g. unauthenticated 200)
+          setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true });
+          return;
+        }
         setGlobal(buildStateFromMe(meData));
         return;
       }
