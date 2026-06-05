@@ -16,6 +16,7 @@ import { EMPLOYEE_PHOTOS_BUCKET, EMPLOYEE_PASSPORTS_BUCKET, EMPLOYEES_WRITE, set
 import { DB_TABLES } from "../../../utility/constants";
 import { supabase } from "../../../utility/supabaseClient";
 import { useNotification, useList } from "@refinedev/core";
+import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { PhoneCountryCodeSelect, CustomDatePicker } from "../../../components/ui";
 import dayjs from "dayjs";
 import {
@@ -73,7 +74,7 @@ const AddEmployeeDrawer: React.FC<AddEmployeeDrawerProps> = ({ open, onClose, on
   const { result: specializationsResult } = useList<{ id: string, name: string }>({
     resource: DB_TABLES.SPECIALIZATIONS,
     queryOptions: {
-      enabled: open && selectedRole?.name === "doctor",
+      enabled: !IS_DJANGO_BACKEND && open && selectedRole?.name === "doctor",
     },
     pagination: { mode: "off" },
     sorters: [{ field: "name", order: "asc" }],

@@ -19,6 +19,7 @@ import { formatDateRu } from "../../../utility/format";
 import { EMPLOYEE_SERVICES_TABLE, fetchEmployeeSpecialization } from "../api";
 import { useOne } from "@refinedev/core";
 import { DB_TABLES } from "../../../utility/constants";
+import { IS_DJANGO_BACKEND } from "../../../config/backend";
 
 export type EmployeeCardProps = {
   emp: EmployesRow | null;
@@ -104,7 +105,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({ emp, allServices, onOpenSer
     resource: DB_TABLES.ROLES,
     id: emp?.role_id || "",
     queryOptions: {
-      enabled: !!emp?.role_id,
+      enabled: !IS_DJANGO_BACKEND && !!emp?.role_id,
     },
   });
 
@@ -126,7 +127,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({ emp, allServices, onOpenSer
     resource: DB_TABLES.SPECIALIZATIONS,
     id: localSpecId,
     queryOptions: {
-      enabled: !!localSpecId,
+      enabled: !IS_DJANGO_BACKEND && !!localSpecId,
     },
   });
   const specializationName = specData?.name;

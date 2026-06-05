@@ -9,13 +9,17 @@ import {
   Divider,
   Drawer,
   IconButton,
-  InputAdornment,
+  Paper,
   Stack,
   TextField,
   Tooltip,
   Typography,
+  alpha,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import { useNotification } from "@refinedev/core";
 
@@ -56,7 +60,40 @@ export const PAYMENT_STATUS_COLOR: Record<
   refunded: "error",
 };
 
-// ── Method labels ─────────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+const noSpinnersSx = {
+  "& input[type=number]": { MozAppearance: "textfield" },
+  "& input[type=number]::-webkit-outer-spin-button": { WebkitAppearance: "none", margin: 0 },
+  "& input[type=number]::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
+};
+
+function parseDecimal(s: string | number | undefined | null): number {
+  if (s == null) return 0;
+  const n = parseFloat(String(s).replace(",", "."));
+  return isNaN(n) ? 0 : n;
+}
+
+function fmt(n: number): string {
+  return n.toFixed(2);
+}
+
+function computeStatus(payable: number, paid: number, discount: number, total: number): PaymentStatus {
+  if (payable <= 0 && discount > 0 && total > 0 && paid === 0) return "discounted";
+  if (paid >= payable && payable > 0) return "paid";
+  if (paid > 0 && paid < payable) return "partial";
+  return "unpaid";
+}
+
+function mapSaveError(raw: string): string {
+  if (raw.includes("уже содержит оплату с баланса") || raw.includes("replace-all"))
+    return "Этот приём уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.";
+  if (raw.includes("недостаточно бонусов") || raw.includes("insufficient bonus"))
+    return "Недостаточно бонусов на счёте пациента.";
+  return raw;
+}
+
+const CANCELLED_STATUSES = new Set(["cancelled", "no_show"]);
 
 const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
@@ -65,49 +102,12 @@ const METHOD_LABELS: Record<string, string> = {
   bonus: "Бонусы",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function parseDecimal(s: string): number {
-  const n = parseFloat(s.replace(",", "."));
-  return isNaN(n) ? 0 : n;
-}
-
-function fmt(n: number): string {
-  return n.toFixed(2);
-}
-
-function computeStatus(
-  payable: number,
-  paid: number,
-  discount: number,
-  total: number,
-): PaymentStatus {
-  if (payable <= 0 && discount > 0 && total > 0 && paid === 0) return "discounted";
-  if (paid >= payable && payable > 0) return "paid";
-  if (paid > 0 && paid < payable) return "partial";
-  return "unpaid";
-}
-
-// Backend error messages that need user-friendly rewrites
-function mapSaveError(raw: string): string {
-  if (raw.includes("уже содержит оплату с баланса") || raw.includes("replace-all")) {
-    return "Этот приём уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.";
-  }
-  if (raw.includes("недостаточно бонусов") || raw.includes("insufficient bonus")) {
-    return "Недостаточно бонусов на счёте пациента.";
-  }
-  return raw;
-}
-
-const CANCELLED_STATUSES = new Set(["cancelled", "no_show"]);
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export type DjangoPaymentDrawerProps = {
   open: boolean;
   onClose: () => void;
   appointment: DjangoAppointment | null;
-  /** Called after successful apply. Drawer is already closed by the time this fires. */
   onSaved?: (summary: PaymentSummary) => void;
 };
 
@@ -124,7 +124,6 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const appointmentId = appointment?.id ?? null;
   const patientId = appointment?.patient?.id ?? null;
 
-  // Track whether the user has touched discount — when true, user input wins over summary
   const discountTouchedRef = React.useRef(false);
 
   const paymentQuery = useQuery({
@@ -138,32 +137,32 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   });
   const summary = paymentQuery.data ?? null;
 
-  // Read available balance/bonuses from cache (loaded by PatientBalancePanel) — no extra request
+  // Read patient balance from cache (loaded by PatientBalancePanel)
   const cachedBalance = patientId
     ? queryClient.getQueryData<{ balance: string; bonuses: string }>(
         djangoQueryKeys.patients.balance(patientId),
       )
     : undefined;
-  const availableBalance = parseDecimal(cachedBalance?.balance ?? "0");
-  const availableBonuses = parseDecimal(cachedBalance?.bonuses ?? "0");
+  const availableBalance = parseDecimal(cachedBalance?.balance);
+  const availableBonuses = parseDecimal(cachedBalance?.bonuses);
 
   // Form state
   const [discountStr, setDiscountStr] = React.useState("0");
-  const [cashStr, setCashStr] = React.useState("0");
-  const [cardStr, setCardStr] = React.useState("0");
+  const [cash, setCash] = React.useState<number | "">("");
+  const [card, setCard] = React.useState<number | "">("");
   const [balanceStr, setBalanceStr] = React.useState("0");
   const [bonusStr, setBonusStr] = React.useState("0");
   const [note, setNote] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  // Reset on appointment change or close
+  // Reset
   const prevAppointmentIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     if (!open || appointmentId === null) {
       discountTouchedRef.current = false;
       setDiscountStr("0");
-      setCashStr("0");
-      setCardStr("0");
+      setCash("");
+      setCard("");
       setBalanceStr("0");
       setBonusStr("0");
       setNote("");
@@ -174,8 +173,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     if (appointmentId !== prevAppointmentIdRef.current) {
       discountTouchedRef.current = false;
       setDiscountStr(appointment?.discountAmount ?? "0");
-      setCashStr("0");
-      setCardStr("0");
+      setCash("");
+      setCard("");
       setBalanceStr("0");
       setBonusStr("0");
       setNote("");
@@ -184,61 +183,62 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     }
   }, [open, appointmentId, appointment?.discountAmount]);
 
-  // Seed discount from summary once (only if user hasn't touched it)
+  // Seed discount from summary
   const summaryDiscountRef = React.useRef<string | undefined>(undefined);
   React.useEffect(() => {
-    if (!summary) return;
-    if (discountTouchedRef.current) return;
+    if (!summary || discountTouchedRef.current) return;
     if (summary.discountAmount === summaryDiscountRef.current) return;
     summaryDiscountRef.current = summary.discountAmount;
     setDiscountStr(summary.discountAmount ?? "0");
   }, [summary]);
 
-  // Derived calculations
-  const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount ?? "0");
+  // Derived
+  const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount);
   const discountRaw = parseDecimal(discountStr);
   const discount = Math.max(0, Math.min(discountRaw, total));
   const payable = discountTouchedRef.current || !summary
     ? Math.max(0, total - discount)
     : parseDecimal(summary.payableAmount);
-  const cash = Math.max(0, parseDecimal(cashStr));
-  const card = Math.max(0, parseDecimal(cardStr));
+  const cashNum = Number(cash || 0);
+  const cardNum = Number(card || 0);
   const balanceUsed = Math.max(0, parseDecimal(balanceStr));
   const bonusUsed = Math.max(0, parseDecimal(bonusStr));
-  const paidTotal = cash + card + balanceUsed + bonusUsed;
-  const debt = Math.max(0, payable - paidTotal);
-  const overpaid = paidTotal > payable + 0.001;
+  const totalPaid = cashNum + cardNum + balanceUsed + bonusUsed;
+  const debt = Math.max(0, payable - totalPaid);
+  const overpaid = totalPaid > payable + 0.001;
   const balanceExceeded = balanceUsed > availableBalance + 0.001;
   const bonusExceeded = bonusUsed > availableBonuses + 0.001;
+  const statusPreview = computeStatus(payable, totalPaid, discount, total);
 
-  const statusPreview = computeStatus(payable, paidTotal, discount, total);
-
-  const hasRefunds = (summary?.refunds?.length ?? 0) > 0 || parseDecimal(summary?.refundedTotal ?? "0") > 0;
-  // After a refund the backend blocks further apply — mirror that guard in the UI
+  const hasRefunds = (summary?.refunds?.length ?? 0) > 0 || parseDecimal(summary?.refundedTotal) > 0;
   const applyBlockedByRefund = hasRefunds;
-  // After a bonus payment the backend blocks replace-all — mirror in UI
   const hasBonusPayment = (summary?.payments ?? []).some((p) => p.method === "bonus");
   const applyBlockedByBonus = hasBonusPayment;
 
-  // Validation
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
-  const cashInvalid = parseDecimal(cashStr) < 0;
-  const cardInvalid = parseDecimal(cardStr) < 0;
-  const balanceInvalid = parseDecimal(balanceStr) < 0 || balanceExceeded;
-  const bonusInvalid = parseDecimal(bonusStr) < 0 || bonusExceeded;
   const submitDisabled =
-    discountInvalid || cashInvalid || cardInvalid || balanceInvalid || bonusInvalid ||
-    overpaid || applyBlockedByRefund || applyBlockedByBonus;
+    discountInvalid || overpaid || balanceExceeded || bonusExceeded ||
+    applyBlockedByRefund || applyBlockedByBonus;
 
-  // Quick-fill: fill balance field with min(remaining debt, available balance)
+  const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
+  const patientName = appointment?.patient?.fullName ?? "Бронирование";
+  const hasPatient = !!patientId;
+
+  // Quick-fill handlers
+  const handleCash100 = () => {
+    setCash(Math.max(0, payable - balanceUsed - bonusUsed));
+    setCard(0);
+  };
+  const handleCard100 = () => {
+    setCard(Math.max(0, payable - balanceUsed - bonusUsed));
+    setCash(0);
+  };
   const handleBalanceQuickFill = () => {
     const fill = Math.min(debt, availableBalance);
     if (fill > 0) setBalanceStr(fmt(fill));
   };
-
-  // Quick-fill: fill bonus field with min(remaining debt after other payments, available bonuses)
   const handleBonusQuickFill = () => {
-    const debtAfterOthers = Math.max(0, payable - cash - card - balanceUsed);
+    const debtAfterOthers = Math.max(0, payable - cashNum - cardNum - balanceUsed);
     const fill = Math.min(debtAfterOthers, availableBonuses);
     if (fill > 0) setBonusStr(fmt(fill));
   };
@@ -249,27 +249,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       return applyAppointmentPayment(appointmentId, payload);
     },
     onSuccess: (result) => {
-      queryClient.setQueryData(
-        djangoQueryKeys.appointments.payments(result.appointmentId),
-        result,
-      );
-      void queryClient.invalidateQueries({
-        queryKey: djangoQueryKeys.appointments.payments(result.appointmentId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["django", "appointments", "list"],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["django", "appointments", "day-counts"],
-      });
-      // Refresh patient balance/transactions if balance or bonuses were used
+      queryClient.setQueryData(djangoQueryKeys.appointments.payments(result.appointmentId), result);
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.payments(result.appointmentId) });
+      void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "list"] });
+      void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "day-counts"] });
       if (patientId && (balanceUsed > 0 || bonusUsed > 0)) {
-        void queryClient.invalidateQueries({
-          queryKey: djangoQueryKeys.patients.balance(patientId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: djangoQueryKeys.patients.transactions(patientId),
-        });
+        void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.balance(patientId) });
+        void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.transactions(patientId) });
       }
       notify?.({ type: "success", message: "Оплата сохранена" });
       onClose();
@@ -287,9 +273,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     if (!appointment) return;
     setSaveError(null);
     const payments: { method: "cash" | "card"; amount: string }[] = [];
-    if (cash > 0) payments.push({ method: "cash", amount: fmt(cash) });
-    if (card > 0) payments.push({ method: "card", amount: fmt(card) });
-
+    if (cashNum > 0) payments.push({ method: "cash", amount: fmt(cashNum) });
+    if (cardNum > 0) payments.push({ method: "card", amount: fmt(cardNum) });
     applyMutation.mutate({
       discountAmount: fmt(discount),
       payments,
@@ -299,59 +284,59 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     });
   };
 
-  const handleSummaryUpdated = React.useCallback((updated: PaymentSummary) => {
-    if (!updated.appointmentId) return;
-    queryClient.setQueryData(
-      djangoQueryKeys.appointments.payments(updated.appointmentId),
-      updated,
-    );
-  }, [queryClient]);
-
-  const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
-  const patientName = appointment?.patient?.fullName ?? "Бронирование";
-  const hasPatient = !!patientId;
+  const handleSummaryUpdated = React.useCallback(
+    (updated: PaymentSummary) => {
+      if (!updated.appointmentId) return;
+      queryClient.setQueryData(djangoQueryKeys.appointments.payments(updated.appointmentId), updated);
+    },
+    [queryClient],
+  );
 
   return (
     <Drawer
       anchor="right"
       open={open}
       onClose={applyMutation.isPending ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 420 }, display: "flex", flexDirection: "column" } }}
+      PaperProps={{
+        sx: { width: { xs: "100%", sm: 420 }, display: "flex", flexDirection: "column" },
+      }}
     >
       {/* Header */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ px: 2.5, py: 1.5, borderBottom: "1px solid", borderColor: "divider", flexShrink: 0 }}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 2,
+          py: 1.5,
+          flexShrink: 0,
+        }}
       >
         <Stack direction="row" alignItems="center" spacing={1}>
           <PaymentsOutlined color="primary" />
-          <Typography variant="h6" fontWeight={600}>Оплата</Typography>
+          <Typography variant="h6">Оплата приёма</Typography>
         </Stack>
-        <IconButton size="small" onClick={onClose} disabled={applyMutation.isPending}>
+        <IconButton onClick={onClose} disabled={applyMutation.isPending}>
           <CloseOutlined />
         </IconButton>
-      </Stack>
+      </Box>
 
       {/* Body */}
-      <Box sx={{ flex: 1, overflow: "auto", p: 2.5 }}>
-        {/* Patient info */}
-        <Stack spacing={0.25} mb={2}>
-          <Typography variant="subtitle2" fontWeight={600}>{patientName}</Typography>
-          {appointment?.patient?.phone && (
-            <Typography variant="caption" color="text.secondary">
-              {appointment.patient.phone}
-            </Typography>
-          )}
-        </Stack>
-
-        {/* Patient balance panel — no extra request, reads from shared cache */}
+      <Stack
+        spacing={3}
+        sx={{
+          p: 3,
+          flex: 1,
+          overflowY: "auto",
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
+        }}
+      >
+        {/* Patient balance panel */}
         {hasPatient && <PatientBalancePanel patientId={patientId!} />}
 
-        {/* Cancelled/no_show notice */}
         {isCancelled && (
-          <Alert severity="warning" sx={{ mb: 2, mt: hasPatient ? 0 : 0 }}>
+          <Alert severity="warning">
             Приём отменён или помечен как неявка — оплата недоступна.
           </Alert>
         )}
@@ -363,272 +348,374 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         )}
 
         {paymentQuery.error && !paymentQuery.isLoading && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            {parseBackendError(paymentQuery.error)}
+          <Alert severity="warning">{parseBackendError(paymentQuery.error)}</Alert>
+        )}
+
+        {/* ── Main payment card ── */}
+        {!paymentQuery.isLoading && !isCancelled && (
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              bgcolor: (theme) => alpha(theme.palette.success.main, 0.04),
+              border: "1px solid",
+              borderColor: (theme) => alpha(theme.palette.success.main, 0.2),
+              borderRadius: 2,
+            }}
+          >
+            <Stack spacing={2}>
+              {/* Patient info */}
+              <Box>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mb: 0.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}
+                >
+                  Пациент
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                  {patientName}
+                </Typography>
+              </Box>
+
+              {/* Balance/bonus quick-fill */}
+              {hasPatient && (
+                <Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    display="block"
+                    sx={{ mb: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}
+                  >
+                    Счёт пациента
+                  </Typography>
+                  <Stack spacing={1}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Stack direction="row" alignItems="center" spacing={0.75}>
+                        <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
+                        <Typography variant="body2">
+                          Баланс:{" "}
+                          <strong style={{ color: "var(--mui-palette-success-main)" }}>
+                            {availableBalance.toLocaleString()} с
+                          </strong>
+                        </Typography>
+                      </Stack>
+                      {(availableBalance > 0 || balanceUsed > 0) && (
+                        <Tooltip title={balanceUsed > 0 ? "Убрать" : "Использовать баланс"}>
+                          <Button
+                            size="small"
+                            variant={balanceUsed > 0 ? "contained" : "outlined"}
+                            color="success"
+                            sx={{ minWidth: "auto", px: 1.5, fontSize: "0.7rem", textTransform: "none", py: 0.25 }}
+                            onClick={() => {
+                              if (balanceUsed > 0) {
+                                setBalanceStr("0");
+                              } else {
+                                handleBalanceQuickFill();
+                              }
+                            }}
+                          >
+                            {balanceUsed > 0 ? `− ${balanceUsed.toLocaleString()} с` : "Использовать"}
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </Stack>
+
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Stack direction="row" alignItems="center" spacing={0.75}>
+                        <CardGiftcardOutlined sx={{ fontSize: 16, color: "warning.main" }} />
+                        <Typography variant="body2">
+                          Бонусы:{" "}
+                          <strong style={{ color: "var(--mui-palette-warning-main)" }}>
+                            {availableBonuses.toLocaleString()} с
+                          </strong>
+                        </Typography>
+                      </Stack>
+                      {(availableBonuses > 0 || bonusUsed > 0) && (
+                        <Tooltip title={bonusUsed > 0 ? "Убрать" : "Использовать бонусы"}>
+                          <Button
+                            size="small"
+                            variant={bonusUsed > 0 ? "contained" : "outlined"}
+                            color="warning"
+                            sx={{ minWidth: "auto", px: 1.5, fontSize: "0.7rem", textTransform: "none", py: 0.25 }}
+                            onClick={() => {
+                              if (bonusUsed > 0) {
+                                setBonusStr("0");
+                              } else {
+                                handleBonusQuickFill();
+                              }
+                            }}
+                          >
+                            {bonusUsed > 0 ? `− ${bonusUsed.toLocaleString()} с` : "Использовать"}
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </Stack>
+                  </Stack>
+                </Box>
+              )}
+
+              <Divider sx={{ my: 1 }} />
+
+              <Stack spacing={2}>
+                {/* Price + discount side-by-side */}
+                <Stack direction="row" spacing={2} alignItems="flex-start">
+                  <Box flex={1}>
+                    <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                      Стоимость
+                    </Typography>
+                    <Typography variant="h6" fontWeight={600}>
+                      {total.toLocaleString()} с
+                    </Typography>
+                  </Box>
+                  <Box flex={1}>
+                    <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                      Скидка
+                    </Typography>
+                    <TextField
+                      type="number"
+                      size="small"
+                      fullWidth
+                      value={discountStr}
+                      onChange={(e) => {
+                        discountTouchedRef.current = true;
+                        setDiscountStr(e.target.value);
+                      }}
+                      error={discountInvalid}
+                      helperText={discountInvalid ? `0 — ${fmt(total)}` : ""}
+                      InputProps={{ endAdornment: <Typography variant="caption" sx={{ ml: 0.5 }}>с</Typography> }}
+                      inputProps={{ min: 0, style: { textAlign: "center" } }}
+                      sx={noSpinnersSx}
+                      disabled={isCancelled}
+                    />
+                  </Box>
+                </Stack>
+
+                {/* Cash + Card side-by-side (original layout) */}
+                <Stack direction="row" spacing={2}>
+                  <Stack flex={1} spacing={0.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Наличные
+                      </Typography>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleCash100}
+                        sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
+                        disabled={isCancelled}
+                      >
+                        100%
+                      </Button>
+                    </Stack>
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      spacing={0}
+                      sx={{
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      <Box px={1}>
+                        <AccountBalanceWalletOutlined color="action" fontSize="small" />
+                      </Box>
+                      <TextField
+                        variant="standard"
+                        fullWidth
+                        type="number"
+                        value={cash}
+                        onChange={(e) => {
+                          if (e.target.value === "") {
+                            setCash("");
+                          } else {
+                            const val = Number(e.target.value);
+                            const maxAllowed = Math.max(0, payable - cardNum - balanceUsed - bonusUsed);
+                            setCash(Math.min(val, maxAllowed));
+                          }
+                        }}
+                        InputProps={{ disableUnderline: true }}
+                        sx={{ py: 0.5, ...noSpinnersSx }}
+                        placeholder="0"
+                        disabled={isCancelled}
+                      />
+                    </Stack>
+                  </Stack>
+
+                  <Stack flex={1} spacing={0.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Безналичные
+                      </Typography>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleCard100}
+                        sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
+                        disabled={isCancelled}
+                      >
+                        100%
+                      </Button>
+                    </Stack>
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      spacing={0}
+                      sx={{
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      <Box px={1}>
+                        <CreditCardOutlined color="action" fontSize="small" />
+                      </Box>
+                      <TextField
+                        variant="standard"
+                        fullWidth
+                        type="number"
+                        value={card}
+                        onChange={(e) => {
+                          if (e.target.value === "") {
+                            setCard("");
+                          } else {
+                            const val = Number(e.target.value);
+                            const maxAllowed = Math.max(0, payable - cashNum - balanceUsed - bonusUsed);
+                            setCard(Math.min(val, maxAllowed));
+                          }
+                        }}
+                        InputProps={{ disableUnderline: true }}
+                        sx={{ py: 0.5, ...noSpinnersSx }}
+                        placeholder="0"
+                        disabled={isCancelled}
+                      />
+                    </Stack>
+                  </Stack>
+                </Stack>
+
+                {/* Balance/bonus used display */}
+                {(balanceUsed > 0 || bonusUsed > 0) && (
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 1.25,
+                      bgcolor: (t) => alpha(t.palette.success.main, 0.06),
+                      border: "1px solid",
+                      borderColor: (t) => alpha(t.palette.success.main, 0.2),
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Stack spacing={0.5}>
+                      {balanceUsed > 0 && (
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography variant="caption" color="success.main">Со счёта</Typography>
+                          <Typography variant="caption" color="success.main" fontWeight={600}>
+                            − {balanceUsed.toLocaleString()} с
+                          </Typography>
+                        </Stack>
+                      )}
+                      {bonusUsed > 0 && (
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography variant="caption" color="warning.main">Бонусами</Typography>
+                          <Typography variant="caption" color="warning.main" fontWeight={600}>
+                            − {bonusUsed.toLocaleString()} с
+                          </Typography>
+                        </Stack>
+                      )}
+                    </Stack>
+                  </Paper>
+                )}
+
+                <Divider sx={{ my: 1 }} />
+
+                {/* Итого */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    Итого к оплате
+                  </Typography>
+                  <Typography variant="h5" fontWeight={700} color="success.main">
+                    {payable.toLocaleString()} с
+                  </Typography>
+                </Stack>
+
+                {/* Status + debt */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2" color="text.secondary">Статус</Typography>
+                  <Chip
+                    label={PAYMENT_STATUS_LABELS[statusPreview] ?? statusPreview}
+                    size="small"
+                    color={PAYMENT_STATUS_COLOR[statusPreview] ?? "default"}
+                    sx={{ fontWeight: 600 }}
+                  />
+                </Stack>
+
+                {debt > 0 && (
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 1.5,
+                      bgcolor: (t) => alpha(t.palette.error.main, 0.08),
+                      border: "1px solid",
+                      borderColor: (t) => alpha(t.palette.error.main, 0.3),
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="body2" color="error.main" fontWeight={600}>Долг</Typography>
+                      <Typography variant="h6" color="error.main" fontWeight={700}>
+                        {debt.toLocaleString()} с
+                      </Typography>
+                    </Stack>
+                  </Paper>
+                )}
+
+                {overpaid && (
+                  <Alert severity="error" sx={{ py: 0.5 }}>
+                    Переплата: внесено больше суммы к оплате
+                  </Alert>
+                )}
+              </Stack>
+            </Stack>
+          </Paper>
+        )}
+
+        {/* Refund / bonus block guards */}
+        {applyBlockedByRefund && (
+          <Alert severity="info" icon={false}>
+            Изменение оплаты недоступно — по приёму уже оформлен возврат.
+          </Alert>
+        )}
+        {!applyBlockedByRefund && applyBlockedByBonus && (
+          <Alert severity="info" icon={false}>
+            Изменение оплаты недоступно — по приёму уже списаны бонусы. Для корректировки оформите возврат.
           </Alert>
         )}
 
-        {/* Payment form — hidden for cancelled/no_show */}
-        {!paymentQuery.isLoading && !isCancelled && (
-          <Stack spacing={2.5}>
-            {/* Total */}
-            <Stack
-              direction="row"
-              justifyContent="space-between"
-              alignItems="center"
-              sx={{ bgcolor: "action.hover", borderRadius: 1, px: 2, py: 1.25 }}
-            >
-              <Typography variant="body2" color="text.secondary">Сумма приёма</Typography>
-              <Typography variant="subtitle1" fontWeight={700}>{fmt(total)} с</Typography>
-            </Stack>
-
+        {/* Payment history */}
+        {summary && summary.payments.length > 0 && !hasRefunds && !isCancelled && (
+          <>
             <Divider />
-
-            {/* Discount */}
-            <TextField
-              label="Скидка"
-              size="small"
-              value={discountStr}
-              onChange={(e) => {
-                discountTouchedRef.current = true;
-                setDiscountStr(e.target.value);
-              }}
-              error={discountInvalid}
-              helperText={discountInvalid ? `Скидка: от 0 до ${fmt(total)}` : " "}
-              InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
-              inputProps={{ inputMode: "decimal" }}
-              fullWidth
-            />
-
-            {/* Payable */}
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="body2" color="text.secondary">К оплате</Typography>
-              <Typography variant="body1" fontWeight={600}>{fmt(payable)} с</Typography>
-            </Stack>
-
-            <Divider />
-
-            {/* Payment inputs */}
-            <Stack spacing={1.5}>
+            <Stack spacing={0.75}>
               <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
-                Метод оплаты
+                История платежей
               </Typography>
-
-              <TextField
-                label="Наличные"
-                size="small"
-                value={cashStr}
-                onChange={(e) => setCashStr(e.target.value)}
-                error={cashInvalid || overpaid}
-                InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
-                inputProps={{ inputMode: "decimal" }}
-                fullWidth
-                disabled={isCancelled}
-              />
-
-              <TextField
-                label="Карта"
-                size="small"
-                value={cardStr}
-                onChange={(e) => setCardStr(e.target.value)}
-                error={cardInvalid || overpaid}
-                InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
-                inputProps={{ inputMode: "decimal" }}
-                fullWidth
-                disabled={isCancelled}
-              />
-
-              {/* Balance field — only for real patients */}
-              {hasPatient && (
-                <Stack spacing={0.5}>
-                  <TextField
-                    label="С баланса пациента"
-                    size="small"
-                    value={balanceStr}
-                    onChange={(e) => setBalanceStr(e.target.value)}
-                    error={balanceInvalid || overpaid}
-                    helperText={
-                      balanceExceeded
-                        ? `Недостаточно средств. Доступно: ${fmt(availableBalance)} с`
-                        : availableBalance > 0
-                          ? `Доступно: ${fmt(availableBalance)} с`
-                          : "Баланс: 0.00 с"
-                    }
-                    InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
-                    inputProps={{ inputMode: "decimal" }}
-                    fullWidth
-                    disabled={isCancelled}
-                  />
-                  {availableBalance > 0 && debt > 0.001 && (
-                    <Tooltip title={`Списать ${fmt(Math.min(debt, availableBalance))} с — покрыть остаток долга`}>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={handleBalanceQuickFill}
-                        sx={{ textTransform: "none", alignSelf: "flex-start", px: 0 }}
-                        disabled={isCancelled}
-                      >
-                        С баланса на остаток ({fmt(Math.min(debt, availableBalance))} с)
-                      </Button>
-                    </Tooltip>
-                  )}
-                </Stack>
-              )}
-
-              {/* Bonus field — only for real patients */}
-              {hasPatient && (
-                <Stack spacing={0.5}>
-                  <TextField
-                    label="Списать бонусы"
-                    size="small"
-                    value={bonusStr}
-                    onChange={(e) => setBonusStr(e.target.value)}
-                    error={bonusInvalid || overpaid}
-                    helperText={
-                      bonusExceeded
-                        ? `Недостаточно бонусов. Доступно: ${fmt(availableBonuses)} с`
-                        : availableBonuses > 0
-                          ? `Доступно бонусов: ${fmt(availableBonuses)} с`
-                          : "Бонусы: 0.00 с"
-                    }
-                    InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
-                    inputProps={{ inputMode: "decimal" }}
-                    fullWidth
-                    disabled={isCancelled}
-                  />
-                  {availableBonuses > 0 && debt > 0.001 && (
-                    <Tooltip title={`Списать бонусами ${fmt(Math.min(Math.max(0, payable - cash - card - balanceUsed), availableBonuses))} с — покрыть остаток долга`}>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={handleBonusQuickFill}
-                        sx={{ textTransform: "none", alignSelf: "flex-start", px: 0 }}
-                        disabled={isCancelled}
-                      >
-                        Бонусами на остаток ({fmt(Math.min(Math.max(0, payable - cash - card - balanceUsed), availableBonuses))} с)
-                      </Button>
-                    </Tooltip>
-                  )}
-                </Stack>
-              )}
-            </Stack>
-
-            {overpaid && (
-              <Alert severity="error" sx={{ py: 0.5 }}>
-                Переплата: внесено больше суммы к оплате
-              </Alert>
-            )}
-
-            <Divider />
-
-            {/* Summary */}
-            <Stack spacing={1}>
-              <Stack direction="row" justifyContent="space-between">
-                <Typography variant="body2" color="text.secondary">Внесено</Typography>
-                <Typography variant="body2" fontWeight={500}>{fmt(paidTotal)} с</Typography>
-              </Stack>
-              {balanceUsed > 0.001 && (
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">в т.ч. с баланса</Typography>
-                  <Typography variant="body2" color="info.main">{fmt(balanceUsed)} с</Typography>
-                </Stack>
-              )}
-              {bonusUsed > 0.001 && (
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">в т.ч. бонусами</Typography>
-                  <Typography variant="body2" color="success.main">{fmt(bonusUsed)} с</Typography>
-                </Stack>
-              )}
-              {/* Show refunded/net only when refunds exist on this appointment */}
-              {summary && parseDecimal(summary.refundedTotal ?? "0") > 0 && (
-                <>
-                  <Stack direction="row" justifyContent="space-between">
-                    <Typography variant="body2" color="text.secondary">Возвращено</Typography>
-                    <Typography variant="body2" fontWeight={600} color="error.main">
-                      − {summary.refundedTotal} с
-                    </Typography>
-                  </Stack>
-                  <Stack direction="row" justifyContent="space-between">
-                    <Typography variant="body2" color="text.secondary">Чистая оплата</Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {summary.paidNet ?? fmt(parseDecimal(summary.paidTotal) - parseDecimal(summary.refundedTotal ?? "0"))} с
-                    </Typography>
-                  </Stack>
-                </>
-              )}
-              <Stack direction="row" justifyContent="space-between">
-                <Typography variant="body2" color="text.secondary">Долг</Typography>
-                <Typography
-                  variant="body2"
-                  fontWeight={600}
-                  color={debt > 0.001 ? "warning.main" : "text.secondary"}
-                >
-                  {fmt(debt)} с
-                </Typography>
-              </Stack>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="body2" color="text.secondary">Статус</Typography>
-                <Chip
-                  label={PAYMENT_STATUS_LABELS[statusPreview] ?? statusPreview}
-                  size="small"
-                  color={PAYMENT_STATUS_COLOR[statusPreview] ?? "default"}
-                  variant="outlined"
-                  sx={{ fontSize: "0.7rem", height: 22 }}
-                />
-              </Stack>
-            </Stack>
-
-            {/* Block-apply notice when refunds exist */}
-            {applyBlockedByRefund && (
-              <Alert severity="info" icon={false} sx={{ py: 0.5, fontSize: "0.75rem" }}>
-                Изменение оплаты недоступно — по приёму уже оформлен возврат.
-              </Alert>
-            )}
-
-            {/* Block-apply notice when bonus payment exists (backend blocks replace-all) */}
-            {!applyBlockedByRefund && applyBlockedByBonus && (
-              <Alert severity="info" icon={false} sx={{ py: 0.5, fontSize: "0.75rem" }}>
-                Изменение оплаты недоступно — по приёму уже списаны бонусы. Для корректировки оформите возврат.
-              </Alert>
-            )}
-
-            {/* Previous payments history (shown only when no refunds — refunds panel shows richer view) */}
-            {summary && summary.payments.length > 0 && !hasRefunds && (
-              <>
-                <Divider />
-                <Stack spacing={0.75}>
-                  <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
-                    История платежей
+              {summary.payments.map((p) => (
+                <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="caption" color="text.secondary">
+                    {METHOD_LABELS[p.method] ?? p.method}
                   </Typography>
-                  {summary.payments.map((p) => (
-                    <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
-                      <Typography variant="caption" color="text.secondary">
-                        {METHOD_LABELS[p.method] ?? p.method}
-                      </Typography>
-                      <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
-                    </Stack>
-                  ))}
+                  <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
                 </Stack>
-              </>
-            )}
-
-            {/* Note */}
-            <TextField
-              label="Комментарий"
-              size="small"
-              multiline
-              minRows={2}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              fullWidth
-            />
-
-            {saveError && <Alert severity="error">{saveError}</Alert>}
-          </Stack>
+              ))}
+            </Stack>
+          </>
         )}
 
-        {/* Refunds panel — always shown when summary is loaded, including cancelled/no_show.
-            Refund button visibility is gated by finance.refund permission inside the panel. */}
+        {/* Refunds panel */}
         {!paymentQuery.isLoading && summary && appointmentId !== null && (
           <AppointmentRefundsPanel
             appointmentId={appointmentId}
@@ -637,32 +724,45 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             onSummaryUpdated={handleSummaryUpdated}
           />
         )}
-      </Box>
+
+        {/* Comment */}
+        {!isCancelled && (
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+              Комментарий администратора
+            </Typography>
+            <TextField
+              fullWidth
+              multiline
+              rows={2}
+              size="small"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Добавьте комментарий (необязательно)"
+            />
+          </Stack>
+        )}
+
+        {saveError && <Alert severity="error">{saveError}</Alert>}
+      </Stack>
 
       {/* Footer */}
-      <Stack
-        direction="row"
-        spacing={1.5}
-        sx={{ px: 2.5, py: 2, borderTop: "1px solid", borderColor: "divider", flexShrink: 0 }}
-      >
+      <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider", flexShrink: 0 }}>
         <Button
-          variant="outlined"
-          onClick={onClose}
           fullWidth
-          disabled={applyMutation.isPending}
-        >
-          Отмена
-        </Button>
-        <Button
           variant="contained"
-          onClick={handleSave}
-          fullWidth
+          size="large"
           disabled={submitDisabled || applyMutation.isPending || isCancelled}
-          startIcon={applyMutation.isPending ? <CircularProgress size={16} /> : undefined}
+          onClick={handleSave}
+          startIcon={applyMutation.isPending ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
-          Сохранить
+          {applyMutation.isPending
+            ? "Сохранение…"
+            : summary?.payments && summary.payments.length > 0
+            ? "Обновить оплату"
+            : "Подтвердить оплату"}
         </Button>
-      </Stack>
+      </Box>
     </Drawer>
   );
 };

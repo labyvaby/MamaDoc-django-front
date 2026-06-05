@@ -1,17 +1,15 @@
 /**
  * DjangoAddAppointmentDrawer
  *
- * Django-only drawer for creating a new appointment.
- * Uses Django REST endpoints exclusively; Supabase is never touched here.
+ * Single-form drawer for creating a new appointment.
+ * Visually matches original HomeAddAppointmentDrawer UX.
+ * Django REST endpoints only — no Supabase.
  *
- * Key features:
- * - Loads patients via GET /api/patients/
- * - Loads employees + their EmployeeService assignments
- * - Loads catalog services via GET /api/catalog/services/
- * - Cross-filter: selecting a service shows only employees who can provide it;
- *   selecting an employee shows only services assigned to them.
- * - Validates that the employee/service pair is a valid EmployeeService before submit.
- * - Guarded by useCan("appointments.create").
+ * Flow (all on one scrollable page):
+ *   1. Date/time + day/night toggle
+ *   2. Patient autocomplete (+ "Добавить пациента" inline)
+ *   3. Card: "Услуги и врачи"  — service rows
+ *   4. Complaints / admin comment
  */
 
 import React from "react";
@@ -20,24 +18,27 @@ import {
   Autocomplete,
   Box,
   Button,
+  Card,
+  CardContent,
   CircularProgress,
   Divider,
   Drawer,
   FormControlLabel,
+  Grid,
   IconButton,
-  InputAdornment,
   Stack,
   Switch,
   TextField,
   Typography,
 } from "@mui/material";
+import { ToggleButton, ToggleButtonGroup } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
-import { ToggleButton, ToggleButtonGroup } from "@mui/material";
 import dayjs from "dayjs";
+import "dayjs/locale/ru";
 import { useNotification } from "@refinedev/core";
 
 import { CustomDateTimePicker } from "../../components/ui";
@@ -51,32 +52,14 @@ import type {
   DjangoEmployeeWithServices,
   DjangoCatalogServiceWithEmployees,
 } from "../../hooks/useDjangoAppointmentData";
-
-// ── types ─────────────────────────────────────────────────────────────────────
-
-export type DjangoAddAppointmentDrawerProps = {
-  open: boolean;
-  onClose: () => void;
-  onCreated?: () => void;
-  /** Pre-fill date/time (ISO string) */
-  initialDate?: string | null;
-  /** Pre-fill employee */
-  initialEmployeeId?: number | null;
-};
-
-type ServiceRow = {
-  serviceId: number | null;
-  employeeId: number | null;
-  quantity: number;
-  unitPrice: string;
-  discountAmount: string;
-};
+import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function inferWorkMode(iso: string): "day" | "night" {
-  const m = iso.match(/T(\d{2}):/);
-  const h = m ? Number(m[1]) : 12;
+  const m = String(iso || "").match(/T(\d{2}):/);
+  if (!m) return "day";
+  const h = Number(m[1]);
   return h >= 8 && h < 20 ? "day" : "night";
 }
 
@@ -89,6 +72,22 @@ function nowRounded(): string {
   const mi = String(t.getMinutes()).padStart(2, "0");
   return roundDateTimeLocalToStep(`${yyyy}-${mm}-${dd}T${hh}:${mi}`, 15);
 }
+
+type ServiceRow = {
+  serviceId: number | null;
+  employeeId: number | null;
+  quantity: number;
+};
+
+// ── types ─────────────────────────────────────────────────────────────────────
+
+export type DjangoAddAppointmentDrawerProps = {
+  open: boolean;
+  onClose: () => void;
+  onCreated?: () => void;
+  initialDate?: string | null;
+  initialEmployeeId?: number | null;
+};
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -105,23 +104,23 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
   const data = useDjangoAppointmentData(open);
 
-  // ── form ────────────────────────────────────────────────────────────────
+  // form state
   const [scheduledAt, setScheduledAt] = React.useState<string>("");
   const [workMode, setWorkMode] = React.useState<"day" | "night">("day");
   const [isBooking, setIsBooking] = React.useState(false);
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
-    { serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
+    { serviceId: null, employeeId: null, quantity: 1 },
   ]);
   const [complaints, setComplaints] = React.useState("");
-  const [doctorComplaints, setDoctorComplaints] = React.useState("");
   const [adminComment, setAdminComment] = React.useState("");
   const [touched, setTouched] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [addPatientOpen, setAddPatientOpen] = React.useState(false);
 
-  // ── init ────────────────────────────────────────────────────────────────
+  // ── init / reset ─────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) {
       setScheduledAt("");
@@ -129,9 +128,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       setIsBooking(false);
       setSelectedPatient(null);
       setPatientSearch("");
-      setServiceRows([{ serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" }]);
+      setServiceRows([{ serviceId: null, employeeId: null, quantity: 1 }]);
       setComplaints("");
-      setDoctorComplaints("");
       setAdminComment("");
       setTouched(false);
       setSaving(false);
@@ -146,16 +144,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   React.useEffect(() => {
     if (open && initialEmployeeId) {
       setServiceRows((prev) =>
-        prev.map((r, i) =>
-          i === 0 ? { ...r, employeeId: initialEmployeeId } : r,
-        ),
+        prev.map((r, i) => (i === 0 ? { ...r, employeeId: initialEmployeeId } : r)),
       );
     }
   }, [open, initialEmployeeId]);
 
-  // ── patient search (client-side filter) ─────────────────────────────────
+  // ── patient search ────────────────────────────────────────────────────────
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {
-    if (!patientSearch.trim()) return data.patients.slice(0, 20);
+    if (!patientSearch.trim()) return data.patients.slice(0, 15);
     const q = patientSearch.toLowerCase();
     return data.patients
       .filter(
@@ -166,16 +162,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       .slice(0, 30);
   }, [data.patients, patientSearch]);
 
-  // ── validation ───────────────────────────────────────────────────────────
-  const validRows = serviceRows.filter(
-    (r) => r.serviceId !== null && r.employeeId !== null,
-  );
-
+  // ── validation ────────────────────────────────────────────────────────────
+  const validRows = serviceRows.filter((r) => r.serviceId !== null && r.employeeId !== null);
   const incompatibleRows = validRows.filter(
-    (r) =>
-      !data.canEmployeeProvideService(r.employeeId, r.serviceId),
+    (r) => !data.canEmployeeProvideService(r.employeeId, r.serviceId),
   );
-
   const isValid =
     !!scheduledAt &&
     (isBooking || !!selectedPatient) &&
@@ -183,7 +174,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     validRows.length > 0 &&
     incompatibleRows.length === 0;
 
-  // ── submit ───────────────────────────────────────────────────────────────
+  // ── submit ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setTouched(true);
     if (!isValid) return;
@@ -197,14 +188,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         isNight: workMode === "night",
         isBooking,
         complaints: complaints.trim() || null,
-        doctorComplaints: doctorComplaints.trim() || null,
         adminComment: adminComment.trim() || null,
         services: validRows.map((r) => ({
           serviceId: r.serviceId!,
           employeeId: r.employeeId!,
           quantity: r.quantity > 0 ? r.quantity : 1,
-          ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
-          ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
         })),
       });
       notify?.({ type: "success", message: "Приём успешно создан!" });
@@ -217,11 +205,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     }
   };
 
-  // ── row helpers ──────────────────────────────────────────────────────────
-  const updateRow = (
-    index: number,
-    patch: Partial<ServiceRow>,
-  ) => {
+  // ── row helpers ───────────────────────────────────────────────────────────
+  const updateRow = (index: number, patch: Partial<ServiceRow>) => {
     setServiceRows((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], ...patch };
@@ -231,77 +216,66 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
   if (!canCreate) return null;
 
+  // ── render ────────────────────────────────────────────────────────────────
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={saving ? undefined : onClose}
-      PaperProps={{
-        sx: {
-          width: { xs: "100vw", sm: 480, md: 520 },
-          maxWidth: "100vw",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        },
-      }}
-    >
-      {/* ── header ── */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        px={2}
-        py={1.5}
-        sx={{ flexShrink: 0 }}
-      >
-        <Typography variant="h6">Новый приём</Typography>
-        <IconButton onClick={saving ? undefined : onClose} size="small">
-          <CloseOutlined />
-        </IconButton>
-      </Stack>
-      <Divider />
-
-      {/* ── body ── */}
-      <Box
-        sx={{
-          flex: 1,
-          overflowY: "auto",
-          p: 2,
-          minHeight: 0,
-          scrollbarWidth: "none",
-          "&::-webkit-scrollbar": { display: "none" },
+    <>
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={saving ? undefined : onClose}
+        PaperProps={{
+          sx: {
+            width: { xs: "100vw", sm: 480, md: 520 },
+            maxWidth: "100vw",
+            display: "flex",
+            flexDirection: "column",
+            overscrollBehavior: "contain",
+          },
         }}
       >
-        <Stack spacing={2.5}>
-          {/* ── error ── */}
-          {(saveError || data.error) && (
-            <Alert
-              severity="error"
-              onClose={() => setSaveError(null)}
-            >
-              {saveError ?? data.error}
-            </Alert>
-          )}
+        {/* ── header ── */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 2,
+            py: 1,
+            flexShrink: 0,
+          }}
+        >
+          <Typography variant="h6">Добавить приём</Typography>
+          <IconButton onClick={saving ? undefined : onClose}>
+            <CloseOutlined />
+          </IconButton>
+        </Box>
+        <Divider />
 
-          {/* ── data loading ── */}
-          {data.loading && (
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <CircularProgress size={16} />
-              <Typography variant="caption" color="text.secondary">
-                Загрузка справочников…
-              </Typography>
-            </Stack>
-          )}
+        {/* ── scrollable body ── */}
+        <Box
+          sx={{
+            p: 2,
+            flex: 1,
+            overflowY: "auto",
+            scrollbarWidth: "none",
+            "&::-webkit-scrollbar": { display: "none" },
+          }}
+        >
+          <Stack spacing={2.5}>
+            {saveError && (
+              <Alert severity="error" onClose={() => setSaveError(null)}>
+                {saveError}
+              </Alert>
+            )}
 
-          {/* ── date/time + day/night ── */}
-          <Stack spacing={1}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Дата и время приёма *
+            {/* ── Date/time + day/night ── */}
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Дата и время приёма
             </Typography>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box flex={1}>
+            <Grid container spacing={1.5} alignItems="stretch">
+              <Grid item xs={12} sm={7.5}>
                 <CustomDateTimePicker
+                  label="Дата и время *"
                   value={scheduledAt ? dayjs(scheduledAt) : null}
                   onChange={(val) => {
                     const s = val ? val.format() : "";
@@ -313,387 +287,384 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                   slotProps={{
                     textField: {
                       fullWidth: true,
-                      size: "small",
+                      InputLabelProps: { shrink: true },
                       error: touched && !scheduledAt,
                       helperText: touched && !scheduledAt ? "Выберите дату и время" : "",
                     },
                   }}
                 />
-              </Box>
-              <ToggleButtonGroup
-                exclusive
-                value={workMode}
-                onChange={(_, v) => { if (v) setWorkMode(v); }}
-                size="small"
-              >
-                <ToggleButton value="day" aria-label="День">
-                  <WbSunnyOutlined fontSize="small" />
-                </ToggleButton>
-                <ToggleButton value="night" aria-label="Ночь">
-                  <NightlightOutlined fontSize="small" />
-                </ToggleButton>
-              </ToggleButtonGroup>
-            </Stack>
-          </Stack>
+              </Grid>
+              <Grid item xs={12} sm={4.5} sx={{ display: "flex", alignItems: "center" }}>
+                <Box sx={{ width: 1 }}>
+                  <ToggleButtonGroup
+                    exclusive
+                    value={workMode}
+                    onChange={(_, v) => { if (v) setWorkMode(v); }}
+                    size="small"
+                    sx={{
+                      width: 1,
+                      bgcolor: "action.hover",
+                      borderRadius: 1.5,
+                      p: "3px",
+                      border: "none",
+                      "& .MuiToggleButton-root": {
+                        flex: 1,
+                        border: "none",
+                        borderRadius: 1,
+                        py: 0.75,
+                        transition: "all 0.2s ease-in-out",
+                        bgcolor: "transparent",
+                        color: "text.disabled",
+                        "&:hover": { bgcolor: "action.selected" },
+                        "&.Mui-selected": {
+                          bgcolor: "primary.main",
+                          color: "primary.contrastText",
+                          fontWeight: 600,
+                          "&:hover": { bgcolor: "primary.dark" },
+                        },
+                      },
+                    }}
+                  >
+                    <ToggleButton value="day" aria-label="Дневной">
+                      <WbSunnyOutlined
+                        sx={{ fontSize: 20, color: workMode === "day" ? "primary.contrastText" : "text.disabled" }}
+                      />
+                    </ToggleButton>
+                    <ToggleButton value="night" aria-label="Ночной">
+                      <NightlightOutlined
+                        sx={{ fontSize: 20, color: workMode === "night" ? "primary.contrastText" : "text.disabled" }}
+                      />
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+              </Grid>
+            </Grid>
 
-          {/* ── booking toggle ── */}
-          <FormControlLabel
-            control={
-              <Switch
-                checked={isBooking}
-                onChange={(e) => setIsBooking(e.target.checked)}
-                size="small"
-              />
-            }
-            label={
-              <Typography variant="body2">
-                Бронирование (без пациента)
-              </Typography>
-            }
-          />
-
-          {/* ── patient ── */}
-          {!isBooking && (
+            {/* ── Patient ── */}
             <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Пациент *
-              </Typography>
-              <Autocomplete<DjangoPatient>
-                options={filteredPatients}
-                value={selectedPatient}
-                loading={data.loading}
-                inputValue={patientSearch}
-                onInputChange={(_, v) => setPatientSearch(v)}
-                onChange={(_, v) => setSelectedPatient(v)}
-                getOptionLabel={(p) =>
-                  `${p.fullName}${p.phone ? ` — ${p.phone}` : ""}`
-                }
-                filterOptions={(x) => x}
-                isOptionEqualToValue={(a, b) => a.id === b.id}
-                renderOption={(props, p) => (
-                  <li {...props} key={p.id}>
-                    <Stack>
-                      <Typography variant="body2">{p.fullName}</Typography>
-                      {p.phone && (
-                        <Typography variant="caption" color="text.secondary">
-                          {p.phone}
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                  Пациент *
+                </Typography>
+                <Button size="small" onClick={() => setAddPatientOpen(true)}>
+                  + Добавить пациента
+                </Button>
+              </Stack>
+
+              <Box sx={{ mb: 0.5 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={isBooking}
+                      onChange={(e) => {
+                        setIsBooking(e.target.checked);
+                        if (e.target.checked) setSelectedPatient(null);
+                      }}
+                      color="primary"
+                      size="small"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      Бронирование (без пациента)
+                    </Typography>
+                  }
+                />
+              </Box>
+
+              {!isBooking && (
+                <Autocomplete<DjangoPatient>
+                  options={filteredPatients}
+                  loading={data.loading}
+                  value={selectedPatient}
+                  inputValue={patientSearch}
+                  onInputChange={(_, v) => setPatientSearch(v)}
+                  onChange={(_, v) => setSelectedPatient(v)}
+                  getOptionLabel={(p) => `${p.fullName || "Нет ФИО"} — ${p.phone || "Нет телефона"}`}
+                  filterOptions={(x) => x}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  renderOption={(props, p) => (
+                    <li {...props} key={p.id}>
+                      <Box sx={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+                        <Stack sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" noWrap>{p.fullName || "Нет ФИО"}</Typography>
+                          {p.phone && (
+                            <Typography variant="caption" color="text.secondary">{p.phone}</Typography>
+                          )}
+                        </Stack>
+                      </Box>
+                    </li>
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Поиск по ФИО или телефону"
+                      fullWidth
+                      error={touched && !isBooking && !selectedPatient}
+                      helperText={touched && !isBooking && !selectedPatient ? "Выберите пациента" : ""}
+                    />
+                  )}
+                />
+              )}
+            </Stack>
+
+            {/* ── Services card (only after patient or booking selected) ── */}
+            {(selectedPatient || isBooking) && (
+              <>
+                <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
+                  <CardContent sx={{ p: 2 }}>
+                    <Stack spacing={2}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                          Услуги и специалисты
                         </Typography>
+                      </Stack>
+                      <Divider />
+
+                      {data.loading && (
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                          <CircularProgress size={14} />
+                          <Typography variant="caption" color="text.secondary">Загрузка справочников…</Typography>
+                        </Stack>
+                      )}
+
+                      {data.error && <Alert severity="error" sx={{ py: 0 }}>{data.error}</Alert>}
+
+                      {serviceRows.map((row, index) => {
+                        const availableEmployees = data.getEmployeesForService(row.serviceId);
+                        const availableServices = data.getServicesForEmployee(row.employeeId);
+
+                        const selectedEmployee =
+                          availableEmployees.find((e) => e.id === row.employeeId) ??
+                          data.employees.find((e) => e.id === row.employeeId) ??
+                          null;
+                        const selectedService =
+                          availableServices.find((s) => s.id === row.serviceId) ??
+                          data.services.find((s) => s.id === row.serviceId) ??
+                          null;
+
+                        const incompatible =
+                          row.serviceId !== null &&
+                          row.employeeId !== null &&
+                          !data.canEmployeeProvideService(row.employeeId, row.serviceId);
+
+                        return (
+                          <React.Fragment key={index}>
+                            {index > 0 && <Divider />}
+                            <Stack spacing={1.5}>
+                              {/* Employee first (как в оригинале) */}
+                              {index === 0 && (
+                                <Typography variant="caption" color="text.secondary">
+                                  Врач / Исполнитель
+                                </Typography>
+                              )}
+                              <Autocomplete<DjangoEmployeeWithServices>
+                                fullWidth
+                                options={row.serviceId !== null ? availableEmployees : data.employees}
+                                loading={data.loading}
+                                value={selectedEmployee}
+                                onChange={(_, v) => {
+                                  updateRow(index, {
+                                    employeeId: v?.id ?? null,
+                                    serviceId:
+                                      row.serviceId !== null && v
+                                        ? data.canEmployeeProvideService(v.id, row.serviceId)
+                                          ? row.serviceId
+                                          : null
+                                        : row.serviceId,
+                                  });
+                                }}
+                                getOptionLabel={(e) => e.fullName}
+                                isOptionEqualToValue={(a, b) => a.id === b.id}
+                                renderInput={(params) => (
+                                  <TextField
+                                    {...params}
+                                    placeholder="Исполнитель"
+                                    size="small"
+                                    fullWidth
+                                    error={touched && !row.employeeId}
+                                    helperText={touched && !row.employeeId ? "Выберите исполнителя" : ""}
+                                  />
+                                )}
+                              />
+
+                              {index === 0 && (
+                                <Typography variant="caption" color="text.secondary">
+                                  Наименование услуги
+                                </Typography>
+                              )}
+                              <Stack direction="row" spacing={1} alignItems="flex-start">
+                                <Autocomplete<DjangoCatalogServiceWithEmployees>
+                                  sx={{ flex: 1 }}
+                                  options={row.employeeId !== null ? availableServices : data.services}
+                                  loading={data.loading}
+                                  value={selectedService}
+                                  onChange={(_, v) => {
+                                    updateRow(index, {
+                                      serviceId: v?.id ?? null,
+                                      employeeId:
+                                        row.employeeId !== null && v
+                                          ? data.canEmployeeProvideService(row.employeeId, v.id)
+                                            ? row.employeeId
+                                            : null
+                                          : row.employeeId,
+                                    });
+                                  }}
+                                  getOptionLabel={(s) => `${s.name} — ${s.basePrice} с`}
+                                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                                  renderOption={(props, s) => (
+                                    <li {...props} key={s.id}>
+                                      <Stack>
+                                        <Typography variant="body2">{s.name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                          {s.basePrice} с{s.durationMinutes ? ` · ${s.durationMinutes} мин` : ""}
+                                        </Typography>
+                                      </Stack>
+                                    </li>
+                                  )}
+                                  renderInput={(params) => (
+                                    <TextField
+                                      {...params}
+                                      placeholder="Услуга"
+                                      size="small"
+                                      fullWidth
+                                      error={touched && !row.serviceId}
+                                      helperText={touched && !row.serviceId ? "Выберите услугу" : ""}
+                                    />
+                                  )}
+                                />
+                                {serviceRows.length > 1 && (
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() =>
+                                      setServiceRows((prev) => prev.filter((_, i) => i !== index))
+                                    }
+                                    sx={{ mt: 0.5 }}
+                                  >
+                                    <DeleteOutlined fontSize="small" />
+                                  </IconButton>
+                                )}
+                              </Stack>
+
+                              {/* Price display */}
+                              {selectedService && (
+                                <Typography variant="caption" color="text.secondary">
+                                  Цена: <strong>{selectedService.basePrice} с</strong>
+                                  {selectedService.durationMinutes ? ` · ${selectedService.durationMinutes} мин` : ""}
+                                </Typography>
+                              )}
+
+                              {incompatible && (
+                                <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                  Этот специалист не оказывает выбранную услугу
+                                </Alert>
+                              )}
+                            </Stack>
+                          </React.Fragment>
+                        );
+                      })}
+
+                      <Button
+                        size="small"
+                        startIcon={<AddOutlined />}
+                        onClick={() =>
+                          setServiceRows((prev) => [
+                            ...prev,
+                            {
+                              serviceId: null,
+                              employeeId: prev[prev.length - 1]?.employeeId ?? null,
+                              quantity: 1,
+                            },
+                          ])
+                        }
+                        disabled={data.loading}
+                        sx={{ alignSelf: "flex-start" }}
+                      >
+                        Ещё услугу
+                      </Button>
+
+                      {touched && validRows.length === 0 && (
+                        <Alert severity="error" sx={{ py: 0 }}>
+                          Добавьте хотя бы одну услугу с исполнителем
+                        </Alert>
                       )}
                     </Stack>
-                  </li>
-                )}
-                renderInput={(params) => (
+                  </CardContent>
+                </Card>
+
+                {/* ── Complaints ── */}
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                    Жалобы при обращении
+                  </Typography>
                   <TextField
-                    {...params}
+                    value={complaints}
+                    onChange={(e) => setComplaints(e.target.value)}
+                    multiline
+                    minRows={2}
+                    fullWidth
                     size="small"
-                    placeholder="Поиск по ФИО или телефону"
-                    error={touched && !isBooking && !selectedPatient}
+                    placeholder="Необязательно"
+                  />
+                </Stack>
+
+                {/* ── Admin comment (required for booking) ── */}
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                    Комментарий администратора{isBooking ? " *" : ""}
+                  </Typography>
+                  <TextField
+                    value={adminComment}
+                    onChange={(e) => setAdminComment(e.target.value)}
+                    multiline
+                    minRows={2}
+                    fullWidth
+                    size="small"
+                    placeholder={isBooking ? "Причина бронирования (обязательно)" : "Необязательно"}
+                    error={touched && isBooking && !adminComment.trim()}
                     helperText={
-                      touched && !isBooking && !selectedPatient
-                        ? "Выберите пациента"
+                      touched && isBooking && !adminComment.trim()
+                        ? "Обязательное поле для бронирования"
                         : ""
                     }
                   />
-                )}
-              />
-            </Stack>
-          )}
+                </Stack>
+              </>
+            )}
+          </Stack>
+        </Box>
 
-          {/* ── services ── */}
-          {(selectedPatient || isBooking) && (
-            <Stack spacing={1.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Услуги *
-              </Typography>
+        {/* ── footer ── */}
+        <Divider />
+        <Box sx={{ p: 2, flexShrink: 0 }}>
+          <Stack direction="row" spacing={1} justifyContent="flex-end">
+            <Button onClick={saving ? undefined : onClose} disabled={saving}>
+              Отмена
+            </Button>
+            <Button
+              variant="contained"
+              disabled={saving || data.loading}
+              onMouseEnter={() => { if (!touched) setTouched(true); }}
+              onClick={handleSave}
+              startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
+            >
+              {saving ? "Сохранение…" : "Сохранить"}
+            </Button>
+          </Stack>
+        </Box>
+      </Drawer>
 
-              {serviceRows.map((row, index) => {
-                const availableEmployees = data.getEmployeesForService(row.serviceId);
-                const availableServices = data.getServicesForEmployee(row.employeeId);
-
-                const selectedEmployee =
-                  availableEmployees.find((e) => e.id === row.employeeId) ??
-                  data.employees.find((e) => e.id === row.employeeId) ??
-                  null;
-
-                const selectedService =
-                  availableServices.find((s) => s.id === row.serviceId) ??
-                  data.services.find((s) => s.id === row.serviceId) ??
-                  null;
-
-                const incompatible =
-                  row.serviceId !== null &&
-                  row.employeeId !== null &&
-                  !data.canEmployeeProvideService(row.employeeId, row.serviceId);
-
-                return (
-                  <Stack
-                    key={index}
-                    spacing={1}
-                    sx={{
-                      p: 1.5,
-                      border: "1px solid",
-                      borderColor: incompatible ? "error.light" : "divider",
-                      borderRadius: 1,
-                    }}
-                  >
-                    {/* Employee select */}
-                    <Autocomplete<DjangoEmployeeWithServices>
-                      options={
-                        row.serviceId !== null ? availableEmployees : data.employees
-                      }
-                      value={selectedEmployee}
-                      onChange={(_, v) => {
-                        updateRow(index, {
-                          employeeId: v?.id ?? null,
-                          // Clear incompatible service
-                          serviceId:
-                            row.serviceId !== null && v
-                              ? data.canEmployeeProvideService(v.id, row.serviceId)
-                                ? row.serviceId
-                                : null
-                              : row.serviceId,
-                        });
-                      }}
-                      getOptionLabel={(e) => e.fullName}
-                      isOptionEqualToValue={(a, b) => a.id === b.id}
-                      loading={data.loading}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          size="small"
-                          placeholder="Исполнитель"
-                          error={touched && !row.employeeId}
-                          helperText={
-                            touched && !row.employeeId
-                              ? "Выберите исполнителя"
-                              : ""
-                          }
-                        />
-                      )}
-                    />
-
-                    {/* Service select */}
-                    <Stack direction="row" spacing={1} alignItems="flex-start">
-                      <Autocomplete<DjangoCatalogServiceWithEmployees>
-                        sx={{ flex: 1 }}
-                        options={
-                          row.employeeId !== null
-                            ? availableServices
-                            : data.services
-                        }
-                        value={selectedService}
-                        onChange={(_, v) => {
-                          updateRow(index, {
-                            serviceId: v?.id ?? null,
-                            // Clear incompatible employee
-                            employeeId:
-                              row.employeeId !== null && v
-                                ? data.canEmployeeProvideService(row.employeeId, v.id)
-                                  ? row.employeeId
-                                  : null
-                                : row.employeeId,
-                          });
-                        }}
-                        getOptionLabel={(s) =>
-                          `${s.name} — ${s.basePrice} с`
-                        }
-                        isOptionEqualToValue={(a, b) => a.id === b.id}
-                        loading={data.loading}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            size="small"
-                            placeholder="Услуга"
-                            error={touched && !row.serviceId}
-                            helperText={
-                              touched && !row.serviceId
-                                ? "Выберите услугу"
-                                : ""
-                            }
-                          />
-                        )}
-                      />
-                      {serviceRows.length > 1 && (
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() =>
-                            setServiceRows((prev) =>
-                              prev.filter((_, i) => i !== index),
-                            )
-                          }
-                          sx={{ mt: 0.5 }}
-                        >
-                          <DeleteOutlined fontSize="small" />
-                        </IconButton>
-                      )}
-                    </Stack>
-
-                    {/* quantity / unitPrice / discountAmount */}
-                    <Stack direction="row" spacing={1}>
-                      <TextField
-                        label="Кол-во"
-                        size="small"
-                        type="number"
-                        value={row.quantity}
-                        onChange={(e) =>
-                          updateRow(index, { quantity: Math.max(1, Number(e.target.value)) })
-                        }
-                        inputProps={{ min: 1, step: 1 }}
-                        sx={{ width: 80 }}
-                      />
-                      <TextField
-                        label="Цена"
-                        size="small"
-                        value={row.unitPrice}
-                        onChange={(e) => updateRow(index, { unitPrice: e.target.value })}
-                        placeholder="По умолчанию"
-                        InputProps={{
-                          endAdornment: <InputAdornment position="end">с</InputAdornment>,
-                        }}
-                        sx={{ flex: 1 }}
-                      />
-                      <TextField
-                        label="Скидка"
-                        size="small"
-                        value={row.discountAmount}
-                        onChange={(e) => updateRow(index, { discountAmount: e.target.value })}
-                        placeholder="0"
-                        InputProps={{
-                          endAdornment: <InputAdornment position="end">с</InputAdornment>,
-                        }}
-                        sx={{ flex: 1 }}
-                      />
-                    </Stack>
-
-                    {incompatible && (
-                      <Alert severity="error" sx={{ py: 0 }}>
-                        Этот сотрудник не оказывает выбранную услугу
-                      </Alert>
-                    )}
-                    {/* No providers for this service */}
-                    {row.serviceId !== null &&
-                      !data.loading &&
-                      data.getEmployeesForService(row.serviceId).length === 0 && (
-                        <Alert severity="warning" sx={{ py: 0 }}>
-                          Нет сотрудников для этой услуги. Назначьте исполнителя в настройках.
-                        </Alert>
-                      )}
-                  </Stack>
-                );
-              })}
-
-              <Button
-                size="small"
-                startIcon={<AddOutlined />}
-                onClick={() =>
-                  setServiceRows((prev) => [
-                    ...prev,
-                    {
-                      serviceId: null,
-                      employeeId: prev[prev.length - 1]?.employeeId ?? null,
-                      quantity: 1,
-                      unitPrice: "",
-                      discountAmount: "",
-                    },
-                  ])
-                }
-                sx={{ alignSelf: "flex-start" }}
-              >
-                Добавить услугу
-              </Button>
-
-              {touched && validRows.length === 0 && (
-                <Alert severity="error">
-                  Добавьте хотя бы одну услугу с исполнителем
-                </Alert>
-              )}
-            </Stack>
-          )}
-
-          {/* ── text fields ── */}
-          {(selectedPatient || isBooking) && (
-            <>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Жалобы при обращении
-                </Typography>
-                <TextField
-                  value={complaints}
-                  onChange={(e) => setComplaints(e.target.value)}
-                  multiline
-                  minRows={2}
-                  fullWidth
-                  size="small"
-                  placeholder="Необязательно"
-                />
-              </Stack>
-
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Жалобы (врач)
-                </Typography>
-                <TextField
-                  value={doctorComplaints}
-                  onChange={(e) => setDoctorComplaints(e.target.value)}
-                  multiline
-                  minRows={2}
-                  fullWidth
-                  size="small"
-                  placeholder="Необязательно"
-                />
-              </Stack>
-
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Комментарий администратора{isBooking ? " *" : ""}
-                </Typography>
-                <TextField
-                  value={adminComment}
-                  onChange={(e) => setAdminComment(e.target.value)}
-                  multiline
-                  minRows={2}
-                  fullWidth
-                  size="small"
-                  placeholder={
-                    isBooking
-                      ? "Обязательное поле для бронирования"
-                      : "Необязательно"
-                  }
-                  error={touched && isBooking && !adminComment.trim()}
-                  helperText={
-                    touched && isBooking && !adminComment.trim()
-                      ? "Обязательное поле для бронирования"
-                      : ""
-                  }
-                />
-              </Stack>
-            </>
-          )}
-        </Stack>
-      </Box>
-
-      {/* ── footer ── */}
-      <Divider />
-      <Box sx={{ p: 2, flexShrink: 0 }}>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button onClick={saving ? undefined : onClose} disabled={saving}>
-            Отмена
-          </Button>
-          <Button
-            variant="contained"
-            disabled={saving || data.loading}
-            onMouseEnter={() => { if (!touched) setTouched(true); }}
-            onClick={handleSave}
-            startIcon={
-              saving ? <CircularProgress size={18} color="inherit" /> : undefined
-            }
-          >
-            {saving ? "Сохранение…" : "Сохранить"}
-          </Button>
-        </Stack>
-      </Box>
-    </Drawer>
+      {/* Inline add-patient drawer */}
+      <DjangoAddPatientDrawer
+        open={addPatientOpen}
+        onClose={() => setAddPatientOpen(false)}
+        onCreated={(p: DjangoPatient) => {
+          setSelectedPatient(p);
+          setAddPatientOpen(false);
+        }}
+      />
+    </>
   );
 };
 

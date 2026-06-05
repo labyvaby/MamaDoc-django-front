@@ -71,8 +71,10 @@ const EmployeesPage: React.FC = () => {
   // Загружаем услуги для отображения в карточке
   const [allServices, setAllServices] = React.useState<ServiceDto[]>([]);
 
+  // In Django-mode, roles come from Django RBAC API — not from Refine dataProvider.
   const { result: rolesData } = useList({
     resource: "roles",
+    queryOptions: { enabled: !IS_DJANGO_BACKEND },
   });
   const roles = rolesData?.data || [];
 
