@@ -79,8 +79,8 @@ export interface AppointmentServiceShort {
 
 export interface AppointmentServiceLine {
   id: number;
-  service: AppointmentServiceShort;
-  employee: AppointmentEmployeeShort;
+  service: AppointmentServiceShort | null;
+  employee: AppointmentEmployeeShort | null;
   /** Effective unit price for this line */
   price: string;
   durationMinutes: number | null;

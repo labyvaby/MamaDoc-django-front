@@ -589,7 +589,7 @@ const AppointmentRow: React.FC<{
   const uniqueEmployees = Array.from(
     new Map(
       appt.services
-        .filter((sl) => sl.employee != null)
+        .filter((sl): sl is typeof sl & { employee: NonNullable<typeof sl.employee> } => sl.employee != null)
         .map((sl) => [sl.employee.id, sl.employee.fullName]),
     ).entries(),
   );
