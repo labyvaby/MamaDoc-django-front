@@ -421,115 +421,142 @@ const SidebarSecondary: React.FC = () => {
 
       {/* ── Список пунктов меню ── */}
       <List sx={{ py: 0, mt: (!siderCollapsed || isMobile) ? 0.5 : 0 }}>
-        {/* ── Моя работа ── */}
-        {/* /home — Supabase-only (create_full_appointment RPC), скрыт в Django */}
-        {show("my-work") && !IS_DJANGO_BACKEND && (isSuper || (!isNurse && !isDoctor())) && (
-          <SidebarMenuItem to="/home" icon={<HomeOutlined />} label="Регистратура" collapsed={siderCollapsed} />
-        )}
-        {/* /doctor — Supabase-only, скрыт в Django */}
-        {show("my-work") && !IS_DJANGO_BACKEND && (isSuper || (!isNurse && !isAdmin() && !isRegistrator())) && (
-          <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label="Кабинет врача" collapsed={siderCollapsed} />
-        )}
-        {/* /nurse — Supabase-only, скрыт в Django */}
-        {show("my-work") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || isNurse) && (
-          <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
-        )}
-        {show("my-work") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('patients.view'))
-          : (isSuper || !isNurse)
-        ) && (
-          <SidebarMenuItem to="/patient-search" icon={<SearchOutlined />} label="Все пациенты" collapsed={siderCollapsed} />
-        )}
-        {/* /schedule — Supabase-only, скрыт в Django */}
-        {show("my-work") && !IS_DJANGO_BACKEND && (
-          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
-        )}
-        {/* /work-shifts — Supabase-only SKUD, скрыт в Django-mode */}
-        {show("my-work") && !IS_DJANGO_BACKEND && <SidebarSkudItem collapsed={siderCollapsed} />}
 
-        {/* ── Организация ── */}
-        {show("org") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('staff.view'))
-          : (isSuper || !isNurse)
-        ) && (
-          <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
-        )}
-        {show("org") && IS_DJANGO_BACKEND && (isSuper || can('patients.view')) && (
-          <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label="Пациенты" collapsed={siderCollapsed} />
-        )}
-        {show("org") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('appointments.view'))
-          : true
-        ) && (
+        {/* ══════════════════════════════════════════
+            МОЯ РАБОТА
+            В Django-mode: Регистратура → /appointments
+            Остальные → placeholder (видны в меню, не скрыты)
+            ══════════════════════════════════════════ */}
+
+        {/* Регистратура — в Django-mode ведёт на /appointments */}
+        {show("my-work") && (isSuper || (!isNurse && !isDoctor())) && (
           <SidebarMenuItem
-            to={IS_DJANGO_BACKEND ? "/appointments" : "/all-appointments"}
-            icon={<HistoryOutlined />}
-            label={IS_DJANGO_BACKEND ? "Приёмы" : "Все приемы"}
+            to={IS_DJANGO_BACKEND ? "/appointments" : "/home"}
+            icon={<HomeOutlined />}
+            label="Регистратура"
             collapsed={siderCollapsed}
           />
         )}
-        {/* /all-procedures — Supabase-only, скрыт в Django */}
-        {show("org") && !IS_DJANGO_BACKEND && (
+
+        {/* Кабинет врача */}
+        {show("my-work") && (isSuper || (!isNurse && !isAdmin() && !isRegistrator())) && (
+          <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label="Кабинет врача" collapsed={siderCollapsed} />
+        )}
+
+        {/* Процедурный кабинет */}
+        {show("my-work") && (isSuper || isAdmin() || isNurse) && (
+          <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
+        )}
+
+        {/* Все пациенты */}
+        {show("my-work") && (isSuper || (IS_DJANGO_BACKEND ? can('patients.view') : !isNurse)) && (
+          <SidebarMenuItem
+            to={IS_DJANGO_BACKEND ? "/patients" : "/patient-search"}
+            icon={<SearchOutlined />}
+            label="Все пациенты"
+            collapsed={siderCollapsed}
+          />
+        )}
+
+        {/* Расписание */}
+        {show("my-work") && (
+          <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
+        )}
+
+        {/* СКУД */}
+        {show("my-work") && <SidebarSkudItem collapsed={siderCollapsed} />}
+
+        {/* ══════════════════════════════════════════
+            ОРГАНИЗАЦИЯ
+            ══════════════════════════════════════════ */}
+
+        {/* Сотрудники */}
+        {show("org") && (isSuper || (IS_DJANGO_BACKEND ? can('staff.view') : !isNurse)) && (
+          <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+        )}
+
+        {/* Все приемы — в Django-mode ведёт на /all-appointments (placeholder) */}
+        {show("org") && (
+          <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
+        )}
+
+        {/* Все процедуры */}
+        {show("org") && (
           <SidebarMenuItem to="/all-procedures" icon={<MedicalServicesOutlined />} label="Все процедуры" collapsed={siderCollapsed} />
         )}
-        {show("org") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('catalog.view'))
-          : true
-        ) && (
+
+        {/* Услуги */}
+        {show("org") && (isSuper || (IS_DJANGO_BACKEND ? can('catalog.view') : true)) && (
           <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
         )}
-        {show("org") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('catalog.view'))
-          : (isSuper || isDoctor())
-        ) && (
+
+        {/* Диагнозы */}
+        {show("org") && (isSuper || (IS_DJANGO_BACKEND ? can('catalog.view') : isDoctor())) && (
           <SidebarMenuItem to="/settings/diagnoses" icon={<ScienceOutlined />} label="Диагнозы" collapsed={siderCollapsed} />
         )}
 
-        {/* ── Склады ── */}
-        {/* /products — Supabase Realtime, скрыт в Django-mode до миграции */}
-        {show("storage") && !IS_DJANGO_BACKEND && (
+        {/* ══════════════════════════════════════════
+            СКЛАДЫ
+            ══════════════════════════════════════════ */}
+
+        {/* Товары */}
+        {show("storage") && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
-        {/* /sales — Supabase warehouse, скрыт в Django */}
-        {show("storage") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || isRegistrator()) && (
+
+        {/* Продажи товаров */}
+        {show("storage") && (isSuper || isAdmin() || isRegistrator()) && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
-        {/* /storage /warehouses — Supabase service layer, скрыты в Django-mode до миграции */}
-        {show("storage") && !IS_DJANGO_BACKEND && (isSuper || isAdmin()) && (
+
+        {/* Движение товара + Склад */}
+        {show("storage") && (isSuper || isAdmin()) && (
           <>
             <SidebarMenuItem to="/storage" icon={<Inventory2Outlined />} label="Движение товара" collapsed={siderCollapsed} />
             <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Склад" collapsed={siderCollapsed} />
           </>
         )}
 
-        {/* ── Управление ── */}
-        {/* /salary-reports — Supabase-only, скрыт в Django */}
-        {show("management") && !IS_DJANGO_BACKEND && (
+        {/* ══════════════════════════════════════════
+            УПРАВЛЕНИЕ
+            ══════════════════════════════════════════ */}
+
+        {/* Отчет по ЗП */}
+        {show("management") && (
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
-        {/* /reports — Supabase AppointmentsAggregated, скрыт в Django-mode до миграции */}
-        {show("management") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || hasRole(['accountant'])) && (
+
+        {/* Отчеты */}
+        {show("management") && (isSuper || isAdmin() || hasRole(['accountant'])) && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
-        {/* В Django-mode расходы живут внутри /cashbox, отдельной /expenses нет */}
-        {show("management") && !IS_DJANGO_BACKEND && (
-          <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
+
+        {/* Расходы — в Django-mode живут как вкладка внутри /cashbox */}
+        {show("management") && (
+          <SidebarMenuItem
+            to={IS_DJANGO_BACKEND ? "/cashbox" : "/expenses"}
+            icon={<PaymentsOutlined />}
+            label="Расходы"
+            collapsed={siderCollapsed}
+          />
         )}
-        {/* /cashbox — Supabase mode uses role check; Django mode uses finance.view */}
-        {show("management") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('finance.view'))
-          : hasAccessToCashbox
-        ) && (
+
+        {/* Касса */}
+        {show("management") && (IS_DJANGO_BACKEND ? (isSuper || can('finance.view')) : hasAccessToCashbox) && (
           <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
         )}
+
+        {/* Нагрузка */}
         {show("management") && isSuper && (
           <SidebarMenuItem to="/admin/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
         )}
+
+        {/* Уведомления */}
         {show("management") && isSuper && (
           <SidebarMenuItem to="/settings/notifications" icon={<NotificationsOutlined />} label="Уведомления" collapsed={siderCollapsed} />
         )}
-        {/* Settings shell (Django mode only) — visible when the caller
-            has at least one of the four settings permissions. */}
+
+        {/* Настройки (Django-mode only) */}
         {show("management") && IS_DJANGO_BACKEND && (
           isSuper
           || can('organization.view')

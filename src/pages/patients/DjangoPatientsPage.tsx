@@ -1,33 +1,37 @@
 import React from "react";
 import {
   Box,
-  Card,
-  CardContent,
-  Stack,
-  Typography,
-  CircularProgress,
-  IconButton,
-  Tooltip,
-  Divider,
-  Chip,
-  Drawer,
-  TextField,
   Button,
-  MenuItem,
-  Switch,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Divider,
+  Drawer,
   FormControlLabel,
-  ToggleButtonGroup,
-  ToggleButton,
+  IconButton,
   InputAdornment,
+  MenuItem,
+  Stack,
+  Switch,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import PhoneOutlinedIcon from "@mui/icons-material/PhoneOutlined";
-import SearchIcon from "@mui/icons-material/Search";
-import ClearIcon from "@mui/icons-material/Clear";
+import ConstructionOutlined from "@mui/icons-material/ConstructionOutlined";
+import dayjs from "dayjs";
+import "dayjs/locale/ru";
 
-import { PageHeader } from "../../components/ui";
+dayjs.locale("ru");
+
+import { PageHeader, AppBottomSheet } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -37,10 +41,26 @@ import {
   createPatient,
   updatePatient,
 } from "../../api/patients";
-import type { DjangoPatient, CreatePatientPayload, UpdatePatientPayload, PatientGender } from "../../api/patients";
+import type {
+  DjangoPatient,
+  CreatePatientPayload,
+  UpdatePatientPayload,
+  PatientGender,
+} from "../../api/patients";
+import {
+  getPatientBalance,
+  type PatientBalance,
+} from "../../api/patientBalance";
+import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import type { RbacBranch } from "../../api/auth";
 
-// ── Constants ──────────────────────────────────────────────────────────────
+import PatientListPanel from "./components/PatientListPanel";
+import PatientCard from "./components/PatientCard";
+import PatientHistoryPanel from "./components/PatientHistoryPanel";
+import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
+import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
+
+// ── Constants / helpers ──────────────────────────────────────────────────────
 
 const GENDER_LABELS: Record<PatientGender, string> = {
   male: "Мужской",
@@ -48,22 +68,7 @@ const GENDER_LABELS: Record<PatientGender, string> = {
   unknown: "Не указан",
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU");
-  } catch {
-    return iso;
-  }
-}
-
-function formatPhone(p: string | null | undefined): string {
-  return p || "—";
-}
-
-// ── Patient Form Drawer ────────────────────────────────────────────────────
+// ── Patient add/edit drawer (Django API) ─────────────────────────────────────
 
 interface PatientFormProps {
   open: boolean;
@@ -115,7 +120,7 @@ const PatientFormDrawer: React.FC<PatientFormProps> = ({
           ? String(initial.branch.id)
           : defaultBranchId != null
           ? String(defaultBranchId)
-          : ""
+          : "",
       );
       setAddress(initial?.address ?? "");
       setNotes(initial?.notes ?? "");
@@ -138,60 +143,36 @@ const PatientFormDrawer: React.FC<PatientFormProps> = ({
     setSaving(true);
     try {
       let saved: DjangoPatient;
+      const common = {
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        secondaryPhone: secondaryPhone.trim() || null,
+        birthDate: birthDate || null,
+        gender,
+        branchId: branchId ? Number(branchId) : null,
+        address: address.trim() || null,
+        notes: notes.trim() || null,
+        source: source.trim() || null,
+        isActive,
+      };
       if (isEdit && initial) {
-        const payload: UpdatePatientPayload = {
-          fullName: fullName.trim(),
-          phone: phone.trim(),
-          secondaryPhone: secondaryPhone.trim() || null,
-          birthDate: birthDate || null,
-          gender,
-          branchId: branchId ? Number(branchId) : null,
-          address: address.trim() || null,
-          notes: notes.trim() || null,
-          source: source.trim() || null,
-          isActive,
-        };
-        saved = await updatePatient(initial.id, payload);
+        saved = await updatePatient(initial.id, common as UpdatePatientPayload);
       } else {
-        const payload: CreatePatientPayload = {
-          fullName: fullName.trim(),
-          phone: phone.trim(),
-          secondaryPhone: secondaryPhone.trim() || null,
-          birthDate: birthDate || null,
-          gender,
-          branchId: branchId ? Number(branchId) : null,
-          address: address.trim() || null,
-          notes: notes.trim() || null,
-          source: source.trim() || null,
-          isActive,
-        };
-        saved = await createPatient(payload);
+        saved = await createPatient(common as CreatePatientPayload);
       }
       notify?.({ type: "success", message: isEdit ? "Пациент обновлён" : "Пациент создан" });
       onSaved(saved);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Ошибка сохранения";
-      notify?.({ type: "error", message: msg });
+      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка сохранения" });
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={onClose}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 480 } } }}
-    >
+    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: "100%", sm: 480 } } }}>
       <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        {/* Header */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          sx={{ px: 2.5, py: 2, borderBottom: 1, borderColor: "divider" }}
-        >
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 2, borderBottom: 1, borderColor: "divider" }}>
           <Typography variant="h6" fontWeight={600}>
             {isEdit ? "Редактировать пациента" : "Новый пациент"}
           </Typography>
@@ -200,7 +181,6 @@ const PatientFormDrawer: React.FC<PatientFormProps> = ({
           </IconButton>
         </Stack>
 
-        {/* Body */}
         <Box sx={{ flex: 1, overflowY: "auto", px: 2.5, py: 2 }}>
           {!allowed ? (
             <Typography color="text.secondary">Недостаточно прав</Typography>
@@ -209,138 +189,48 @@ const PatientFormDrawer: React.FC<PatientFormProps> = ({
               <TextField
                 label="ФИО"
                 value={fullName}
-                onChange={(e) => {
-                  setFullName(e.target.value);
-                  if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: "" }));
-                }}
-                fullWidth
-                size="small"
-                required
-                error={!!errors.fullName}
-                helperText={errors.fullName}
+                onChange={(e) => { setFullName(e.target.value); if (errors.fullName) setErrors((p) => ({ ...p, fullName: "" })); }}
+                fullWidth size="small" required error={!!errors.fullName} helperText={errors.fullName}
               />
               <TextField
                 label="Телефон"
                 value={phone}
-                onChange={(e) => {
-                  setPhone(e.target.value);
-                  if (errors.phone) setErrors((prev) => ({ ...prev, phone: "" }));
-                }}
-                fullWidth
-                size="small"
-                required
-                error={!!errors.phone}
-                helperText={errors.phone}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <PhoneOutlinedIcon fontSize="small" color="action" />
-                    </InputAdornment>
-                  ),
-                }}
+                onChange={(e) => { setPhone(e.target.value); if (errors.phone) setErrors((p) => ({ ...p, phone: "" })); }}
+                fullWidth size="small" required error={!!errors.phone} helperText={errors.phone}
+                InputProps={{ startAdornment: <InputAdornment position="start"><PhoneOutlinedIcon fontSize="small" color="action" /></InputAdornment> }}
               />
               <TextField
                 label="Доп. телефон"
                 value={secondaryPhone}
                 onChange={(e) => setSecondaryPhone(e.target.value)}
-                fullWidth
-                size="small"
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <PhoneOutlinedIcon fontSize="small" color="action" />
-                    </InputAdornment>
-                  ),
-                }}
+                fullWidth size="small"
+                InputProps={{ startAdornment: <InputAdornment position="start"><PhoneOutlinedIcon fontSize="small" color="action" /></InputAdornment> }}
               />
-              <TextField
-                label="Дата рождения"
-                type="date"
-                value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
-              <TextField
-                label="Пол"
-                select
-                value={gender}
-                onChange={(e) => setGender(e.target.value as PatientGender)}
-                fullWidth
-                size="small"
-              >
+              <TextField label="Дата рождения" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} fullWidth size="small" InputLabelProps={{ shrink: true }} />
+              <TextField label="Пол" select value={gender} onChange={(e) => setGender(e.target.value as PatientGender)} fullWidth size="small">
                 {(["unknown", "male", "female"] as PatientGender[]).map((g) => (
-                  <MenuItem key={g} value={g}>
-                    {GENDER_LABELS[g]}
-                  </MenuItem>
+                  <MenuItem key={g} value={g}>{GENDER_LABELS[g]}</MenuItem>
                 ))}
               </TextField>
               {branches.length > 0 && (
-                <TextField
-                  label="Филиал"
-                  select
-                  value={branchId}
-                  onChange={(e) => setBranchId(e.target.value)}
-                  fullWidth
-                  size="small"
-                >
+                <TextField label="Филиал" select value={branchId} onChange={(e) => setBranchId(e.target.value)} fullWidth size="small">
                   <MenuItem value="">— Не указан —</MenuItem>
                   {branches.map((b) => (
-                    <MenuItem key={b.id} value={String(b.id)}>
-                      {b.name}
-                    </MenuItem>
+                    <MenuItem key={b.id} value={String(b.id)}>{b.name}</MenuItem>
                   ))}
                 </TextField>
               )}
-              <TextField
-                label="Адрес"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                fullWidth
-                size="small"
-              />
-              <TextField
-                label="Источник"
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                fullWidth
-                size="small"
-                placeholder="Откуда узнали о клинике"
-              />
-              <TextField
-                label="Примечания"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                fullWidth
-                size="small"
-                multiline
-                rows={3}
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={isActive}
-                    onChange={(e) => setIsActive(e.target.checked)}
-                  />
-                }
-                label="Активен"
-              />
+              <TextField label="Адрес" value={address} onChange={(e) => setAddress(e.target.value)} fullWidth size="small" />
+              <TextField label="Источник" value={source} onChange={(e) => setSource(e.target.value)} fullWidth size="small" placeholder="Откуда узнали о клинике" />
+              <TextField label="Примечания" value={notes} onChange={(e) => setNotes(e.target.value)} fullWidth size="small" multiline rows={3} />
+              <FormControlLabel control={<Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />} label="Активен" />
             </Stack>
           )}
         </Box>
 
-        {/* Footer */}
         {allowed && (
-          <Stack
-            direction="row"
-            spacing={1}
-            justifyContent="flex-end"
-            sx={{ px: 2.5, py: 2, borderTop: 1, borderColor: "divider" }}
-          >
-            <Button variant="outlined" onClick={onClose} disabled={saving}>
-              Отмена
-            </Button>
+          <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ px: 2.5, py: 2, borderTop: 1, borderColor: "divider" }}>
+            <Button variant="outlined" onClick={onClose} disabled={saving}>Отмена</Button>
             <Button variant="contained" onClick={handleSave} disabled={saving}>
               {saving ? <CircularProgress size={18} /> : "Сохранить"}
             </Button>
@@ -351,204 +241,213 @@ const PatientFormDrawer: React.FC<PatientFormProps> = ({
   );
 };
 
-// ── Patient Row ────────────────────────────────────────────────────────────
+// ── "В разработке" placeholder for Old conclusions tab ───────────────────────
 
-interface PatientRowProps {
-  patient: DjangoPatient;
-  canUpdate: boolean;
-  onEdit: () => void;
-}
-
-const PatientRow: React.FC<PatientRowProps> = ({ patient: p, canUpdate, onEdit }) => (
-  <Box sx={{ px: 2, py: 1.5, "&:hover": { bgcolor: "action.hover" } }}>
-    <Stack
-      direction={{ xs: "column", sm: "row" }}
-      alignItems={{ xs: "flex-start", sm: "center" }}
-      justifyContent="space-between"
-      gap={1}
-    >
-      {/* Left: name + meta */}
-      <Stack direction="row" alignItems="center" gap={1.5} sx={{ minWidth: 0, flex: 1 }}>
-        <Box
-          sx={{
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            bgcolor: p.isActive ? "primary.lighter" : "action.disabledBackground",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <PersonOutlinedIcon sx={{ fontSize: 20, color: p.isActive ? "primary.main" : "text.disabled" }} />
-        </Box>
-
-        <Stack sx={{ minWidth: 0, flex: 1 }}>
-          <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap">
-            <Typography
-              variant="subtitle2"
-              noWrap
-              sx={{ opacity: p.isActive ? 1 : 0.55 }}
-            >
-              {p.fullName}
-            </Typography>
-            {!p.isActive && (
-              <Chip
-                label="Неактивен"
-                size="small"
-                color="default"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-          </Stack>
-
-          <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 0.25 }}>
-            <Typography variant="caption" color="text.secondary">
-              {formatPhone(p.phone)}
-            </Typography>
-            {p.secondaryPhone && (
-              <Typography variant="caption" color="text.secondary">
-                {p.secondaryPhone}
-              </Typography>
-            )}
-            {p.birthDate && (
-              <Typography variant="caption" color="text.secondary">
-                {formatDate(p.birthDate)}
-              </Typography>
-            )}
-            {p.gender !== "unknown" && (
-              <Typography variant="caption" color="text.secondary">
-                {GENDER_LABELS[p.gender]}
-              </Typography>
-            )}
-          </Stack>
-
-          <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 0.125 }}>
-            {p.branch && (
-              <Typography variant="caption" color="text.disabled">
-                {p.branch.name}
-              </Typography>
-            )}
-            {p.source && (
-              <Typography variant="caption" color="text.disabled">
-                Источник: {p.source}
-              </Typography>
-            )}
-          </Stack>
-        </Stack>
-      </Stack>
-
-      {/* Right: actions */}
-      {canUpdate && (
-        <Tooltip title="Редактировать">
-          <IconButton size="small" onClick={onEdit} sx={{ flexShrink: 0 }}>
-            <EditOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      )}
-    </Stack>
+const OldConclusionsPlaceholder: React.FC = () => (
+  <Box
+    sx={{
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 1.5,
+      p: 3,
+      color: "text.secondary",
+      border: "1px dashed",
+      borderColor: "divider",
+      borderRadius: 1,
+      bgcolor: "background.paper",
+    }}
+  >
+    <ConstructionOutlined sx={{ fontSize: 36, color: "primary.main", opacity: 0.7 }} />
+    <Typography variant="subtitle1" fontWeight={600} align="center">
+      Старые заключения в разработке
+    </Typography>
+    <Typography variant="body2" align="center" sx={{ maxWidth: 320 }}>
+      Перенос архивных заключений на новый backend ещё в работе.
+    </Typography>
   </Box>
 );
 
-// ── Main Page ──────────────────────────────────────────────────────────────
+// ── Main page ────────────────────────────────────────────────────────────────
 
 const DjangoPatientsPage: React.FC = () => {
-  usePageTitle("Пациенты");
+  usePageTitle("Все пациенты");
 
-  const { hasPermission, isSuperAdmin, loading: permLoading, activeBranch, activeMembership } = usePermissions();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
+
+  const {
+    hasPermission,
+    isSuperAdmin,
+    loading: permLoading,
+    activeBranch,
+    activeMembership,
+  } = usePermissions();
 
   const canView = isSuperAdmin() || hasPermission("patients.view");
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
   const canUpdate = isSuperAdmin() || hasPermission("patients.update");
+  const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
 
-  // Available branches from active membership
   const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
 
-  // Data
+  // ── List data ──────────────────────────────────────────────────────────────
   const [patients, setPatients] = React.useState<DjangoPatient[]>([]);
   const [loadingData, setLoadingData] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Filters
   const [search, setSearch] = React.useState("");
-  const [activeFilter, setActiveFilter] = React.useState<"all" | "active" | "inactive">("all");
+  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  React.useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(id);
+  }, [search]);
 
-  // Form drawer
+  const [selected, setSelected] = React.useState<DjangoPatient | null>(null);
+
+  // ── Selected patient: balance + history (Django API, AbortSignal) ──────────
+  const [balance, setBalance] = React.useState<PatientBalance | null>(null);
+  const [history, setHistory] = React.useState<DjangoAppointment[]>([]);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [historyError, setHistoryError] = React.useState<string | null>(null);
+
+  // ── Drawers / tabs ─────────────────────────────────────────────────────────
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<DjangoPatient | null>(null);
+  const [topUpOpen, setTopUpOpen] = React.useState(false);
+  const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
+  const [mergeInfoOpen, setMergeInfoOpen] = React.useState(false);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
-  const load = React.useCallback(async () => {
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [mobileTab, setMobileTab] = React.useState(0);
+  const [tabletTab, setTabletTab] = React.useState(0);
+  const [desktopRightTab, setDesktopRightTab] = React.useState(0);
+
+  // ── Load list ──────────────────────────────────────────────────────────────
+  const load = React.useCallback(async (signal?: AbortSignal) => {
     setLoadingData(true);
     setError(null);
     try {
-      const data = await getPatients();
+      const data = await getPatients(signal);
       setPatients(data);
     } catch (e) {
+      if ((e as { name?: string })?.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
     } finally {
       setLoadingData(false);
     }
   }, []);
 
-  // Refetch when permissions are ready (covers initial load + context switch)
   const activeOrgId = activeMembership?.organization?.id;
   const activeBranchId = activeBranch?.id;
   React.useEffect(() => {
-    if (!permLoading && canView) {
-      load();
-    }
+    if (permLoading || !canView) return;
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permLoading, canView, activeOrgId, activeBranchId]);
 
-  // ── Filter ────────────────────────────────────────────────────────────────
-  const filtered = React.useMemo(() => {
-    let list = patients;
-    if (activeFilter === "active") list = list.filter((p) => p.isActive);
-    if (activeFilter === "inactive") list = list.filter((p) => !p.isActive);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (p) =>
-          p.fullName.toLowerCase().includes(q) ||
-          (p.phone && p.phone.includes(q)) ||
-          (p.secondaryPhone && p.secondaryPhone.includes(q))
-      );
+  // Keep selected patient in sync with fresh list data (without losing selection)
+  React.useEffect(() => {
+    if (!selected) return;
+    const fresh = patients.find((p) => p.id === selected.id);
+    if (fresh && fresh !== selected) setSelected(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patients]);
+
+  // Load balance + history for the selected patient; cancel on switch (no stale data)
+  React.useEffect(() => {
+    if (!selected) {
+      setBalance(null);
+      setHistory([]);
+      setHistoryError(null);
+      return;
     }
-    return list;
-  }, [patients, search, activeFilter]);
+    const ctrl = new AbortController();
+    const pid = selected.id;
+    setBalance(null);
+    setHistory([]);
+    setHistoryError(null);
+    setHistoryLoading(true);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleAdd = () => {
-    setEditing(null);
-    setFormOpen(true);
+    if (canViewFinance) {
+      getPatientBalance(pid, ctrl.signal)
+        .then((b) => setBalance(b))
+        .catch(() => { /* ignore (abort / 404) */ });
+    }
+
+    getAppointments({ patientId: pid }, ctrl.signal)
+      .then((rows) => {
+        const sorted = [...rows].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
+        setHistory(sorted);
+      })
+      .catch((e) => {
+        if ((e as { name?: string })?.name === "AbortError") return;
+        setHistoryError(e instanceof Error ? e.message : "Ошибка загрузки истории");
+      })
+      .finally(() => setHistoryLoading(false));
+
+    return () => ctrl.abort();
+  }, [selected?.id, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filtered list ────────────────────────────────────────────────────────────
+  const filtered = React.useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    if (!q) return patients;
+    return patients.filter(
+      (p) =>
+        p.fullName.toLowerCase().includes(q) ||
+        (p.phone && p.phone.toLowerCase().includes(q)) ||
+        (p.secondaryPhone && p.secondaryPhone.toLowerCase().includes(q)),
+    );
+  }, [patients, debouncedSearch]);
+
+  // ── Derived "last appointment" for the card ──────────────────────────────────
+  const last = history[0];
+  const lastDateTime = last ? dayjs(last.scheduledAt).format("D MMMM YYYY, HH:mm") : undefined;
+  const lastService = last
+    ? last.services.length === 1
+      ? last.services[0].service?.name ?? undefined
+      : last.services.length > 1
+      ? `${last.services.length} услуг`
+      : undefined
+    : undefined;
+  const lastComplaints = last?.complaints ?? undefined;
+
+  // ── Handlers ──────────────────────────────────────────────────────────────────
+  const handleSelect = (p: DjangoPatient) => {
+    setSelected(p);
+    setDesktopRightTab(0);
+    setTabletTab(0);
+    if (isMobile) {
+      setMobileTab(0);
+      setMobileOpen(true);
+    }
   };
 
-  const handleEdit = (p: DjangoPatient) => {
-    setEditing(p);
-    setFormOpen(true);
-  };
+  const handleAdd = () => { setEditing(null); setFormOpen(true); };
+  const handleEdit = () => { if (selected) { setEditing(selected); setFormOpen(true); } };
+
+  const handleMerge = () => setMergeInfoOpen(true);
 
   const handleSaved = (saved: DjangoPatient) => {
     setFormOpen(false);
     setEditing(null);
-    // Optimistically update list to avoid full refetch lag
     setPatients((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = saved;
-        return next;
-      }
+      if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
       return [saved, ...prev];
     });
-    // Full refetch to get server-authoritative state
-    load();
+    setSelected(saved); // keep selected card fresh, no full reload
   };
 
-  // ── Guards ────────────────────────────────────────────────────────────────
+  // ── Guards ──────────────────────────────────────────────────────────────────
   if (permLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
@@ -556,121 +455,150 @@ const DjangoPatientsPage: React.FC = () => {
       </Box>
     );
   }
+  if (!canView) return <AccessDenied />;
 
-  if (!canView) {
-    return <AccessDenied />;
-  }
+  // ── Shared panel nodes ────────────────────────────────────────────────────────
+  const cardNode = (
+    <PatientCard
+      patient={selected}
+      balance={balance}
+      lastDateTime={lastDateTime}
+      lastService={lastService}
+      lastComplaints={lastComplaints}
+      onEdit={canUpdate ? handleEdit : undefined}
+      onTopUp={canUpdate ? () => setTopUpOpen(true) : undefined}
+      onMerge={canUpdate ? handleMerge : undefined}
+    />
+  );
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const historyNode = (
+    <PatientHistoryPanel
+      selected={!!selected}
+      loading={historyLoading}
+      error={historyError}
+      history={history}
+      canViewFinance={canViewFinance}
+      onClick={(appt) => setHistoryDetail(appt)}
+    />
+  );
+
+  const listNode = (
+    <PatientListPanel
+      loading={loadingData}
+      error={error}
+      patients={filtered}
+      selectedId={selected?.id ?? null}
+      onSelect={handleSelect}
+    />
+  );
+
+  const noSelection = (
+    <Box sx={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed", borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
+      <Typography color="text.secondary">Выберите пациента слева</Typography>
+    </Box>
+  );
+
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <PageHeader
-        title="Пациенты"
+        title="Все пациенты"
         showTitle={false}
-        addButtonText={canCreate ? "Добавить пациента" : undefined}
+        addButtonText="Добавить пациент"
         onAdd={canCreate ? handleAdd : undefined}
         showSearch
         searchVal={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Поиск по ФИО или телефону"
+        searchPlaceholder="Поиск..."
         loading={loadingData}
-        actions={
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={activeFilter}
-            onChange={(_, v) => { if (v) setActiveFilter(v); }}
-            sx={{ height: 36 }}
-          >
-            <ToggleButton value="all" sx={{ px: 1.5, fontSize: "0.75rem" }}>Все</ToggleButton>
-            <ToggleButton value="active" sx={{ px: 1.5, fontSize: "0.75rem" }}>Активные</ToggleButton>
-            <ToggleButton value="inactive" sx={{ px: 1.5, fontSize: "0.75rem" }}>Неактивные</ToggleButton>
-          </ToggleButtonGroup>
-        }
       />
 
       <Box
-        sx={(theme) => ({
-          px: theme.appLayout.page.paddingX,
-          pb: 2,
+        sx={(t) => ({
+          px: t.appLayout.page.paddingX,
+          pb: 1,
           flex: 1,
           minHeight: 0,
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
+          gap: 2,
+          overflow: "hidden",
         })}
       >
-        {/* Stats row */}
-        {!loadingData && !error && patients.length > 0 && (
-          <Stack direction="row" gap={1} sx={{ mb: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              Всего: {patients.length}
-            </Typography>
-            {filtered.length !== patients.length && (
-              <Typography variant="caption" color="text.secondary">
-                · Найдено: {filtered.length}
-              </Typography>
+        {/* Left: patient list */}
+        <Box sx={{ flex: isMobile ? "1 1 auto" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, height: "100%" }}>
+          {listNode}
+        </Box>
+
+        {/* Tablet (md–lg): single right column with tabs Карточка / История / Старые */}
+        {isTablet && (
+          <Box sx={{ flex: "7 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+            {selected ? (
+              <>
+                <Tabs value={tabletTab} onChange={(_, v) => setTabletTab(v)} variant="fullWidth" sx={{ flexShrink: 0, mb: 1 }}>
+                  <Tab label="Карточка" />
+                  <Tab label="История" />
+                  <Tab label="Старые зак." />
+                </Tabs>
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  {tabletTab === 0 && cardNode}
+                  {tabletTab === 1 && historyNode}
+                  {tabletTab === 2 && <OldConclusionsPlaceholder />}
+                </Box>
+              </>
+            ) : (
+              noSelection
             )}
-          </Stack>
+          </Box>
         )}
 
-        <Card
-          variant="outlined"
-          sx={{ flex: 1, display: "flex", flexDirection: "column" }}
-        >
-          <CardContent sx={{ p: 0, flex: 1, minHeight: 0, overflowY: "auto" }}>
-            {loadingData ? (
-              <Stack alignItems="center" sx={{ py: 6 }}>
-                <CircularProgress size={28} />
-              </Stack>
-            ) : error ? (
-              <Stack alignItems="center" spacing={1} sx={{ py: 6 }}>
-                <Typography color="error" variant="body2">
-                  {error}
-                </Typography>
-                <Button size="small" onClick={load}>
-                  Повторить
-                </Button>
-              </Stack>
-            ) : filtered.length === 0 ? (
-              <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8 }}>
-                <PersonOutlinedIcon sx={{ fontSize: 48, color: "text.disabled" }} />
-                <Typography variant="body2" color="text.secondary">
-                  {patients.length === 0
-                    ? "Пациентов пока нет"
-                    : "Нет пациентов, соответствующих фильтру"}
-                </Typography>
-                {search && (
-                  <Button
-                    size="small"
-                    startIcon={<ClearIcon />}
-                    onClick={() => setSearch("")}
-                  >
-                    Сбросить поиск
-                  </Button>
-                )}
-              </Stack>
-            ) : (
-              <Stack divider={<Divider flexItem />}>
-                {filtered.map((p) => (
-                  <PatientRow
-                    key={p.id}
-                    patient={p}
-                    canUpdate={canUpdate}
-                    onEdit={() => handleEdit(p)}
-                  />
-                ))}
-              </Stack>
-            )}
-          </CardContent>
-        </Card>
+        {/* Desktop (>= lg): three columns — card + (history / old conclusions tabs) */}
+        {isDesktop && (
+          <>
+            <Box sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>
+              {selected ? cardNode : (
+                <Box sx={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed", borderColor: "divider", borderRadius: 1, bgcolor: "background.paper" }}>
+                  <Typography color="text.secondary">Карточка пациента</Typography>
+                </Box>
+              )}
+            </Box>
+            <Box sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+              <Tabs value={desktopRightTab} onChange={(_, v) => setDesktopRightTab(v)} sx={{ flexShrink: 0, borderBottom: 1, borderColor: "divider", mb: 1 }}>
+                <Tab label="История приёмов" />
+                <Tab label="Старые заключения" />
+              </Tabs>
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                {desktopRightTab === 0 ? historyNode : <OldConclusionsPlaceholder />}
+              </Box>
+            </Box>
+          </>
+        )}
       </Box>
 
+      {/* Mobile: details bottom sheet with tabs */}
+      {isMobile && (
+        <AppBottomSheet
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          header={
+            <Tabs value={mobileTab} onChange={(_, v) => setMobileTab(v)} variant="fullWidth" sx={{ flexShrink: 0 }}>
+              <Tab label="Карточка" />
+              <Tab label="История" />
+              <Tab label="Старые зак." />
+            </Tabs>
+          }
+        >
+          <Box sx={{ p: 2 }}>
+            {mobileTab === 0 && cardNode}
+            {mobileTab === 1 && historyNode}
+            {mobileTab === 2 && <OldConclusionsPlaceholder />}
+          </Box>
+        </AppBottomSheet>
+      )}
+
+      {/* Add / Edit patient drawer */}
       <PatientFormDrawer
         open={formOpen}
-        onClose={() => {
-          setFormOpen(false);
-          setEditing(null);
-        }}
+        onClose={() => { setFormOpen(false); setEditing(null); }}
         onSaved={handleSaved}
         initial={editing}
         branches={branches}
@@ -678,6 +606,53 @@ const DjangoPatientsPage: React.FC = () => {
         canCreate={canCreate}
         canUpdate={canUpdate}
       />
+
+      {/* Top-up balance drawer */}
+      <BalanceTopUpDrawer
+        open={topUpOpen}
+        onClose={() => setTopUpOpen(false)}
+        patientId={selected?.id ?? null}
+        patientFio={selected?.fullName ?? ""}
+        branchId={defaultBranchId}
+        onSuccess={(b) => setBalance(b)}
+      />
+
+      {/* History detail viewer */}
+      <Drawer
+        anchor="right"
+        open={!!historyDetail}
+        onClose={() => setHistoryDetail(null)}
+        PaperProps={{ sx: { width: { xs: "100%", sm: 520 } } }}
+      >
+        {historyDetail && (
+          <AppointmentDetailsPanel
+            appointment={historyDetail}
+            canUpdate={false}
+            canManageFinance={false}
+            canViewFinance={canViewFinance}
+            canViewConclusions={false}
+            onEdit={() => {}}
+            onPay={() => {}}
+            onClose={() => setHistoryDetail(null)}
+          />
+        )}
+      </Drawer>
+
+      {/* Merge — not yet available on Django backend */}
+      <Dialog open={mergeInfoOpen} onClose={() => setMergeInfoOpen(false)}>
+        <DialogTitle>Объединение пациентов</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Объединение дублей пациентов ещё переносится на новый backend и будет
+            доступно позже.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMergeInfoOpen(false)} variant="contained">
+            Понятно
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -455,11 +455,13 @@ function App() {
                         <Route
                           path="patient-search"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant', 'doctor', 'nurse']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <PatientSearchPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/patients">
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant', 'doctor', 'nurse']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <PatientSearchPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
@@ -507,7 +509,7 @@ function App() {
                         <Route
                           path="products"
                           element={
-                            <LegacyRouteGuard redirectTo="/access-denied">
+                            <LegacyRouteGuard title="Товары в разработке">
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <ProductsPage />
@@ -520,7 +522,7 @@ function App() {
                         <Route
                           path="storage"
                           element={
-                            <LegacyRouteGuard redirectTo="/access-denied">
+                            <LegacyRouteGuard title="Движение товара в разработке">
                               <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <StoragePage />
@@ -532,7 +534,7 @@ function App() {
                         <Route
                           path="warehouses"
                           element={
-                            <LegacyRouteGuard redirectTo="/access-denied">
+                            <LegacyRouteGuard title="Склад в разработке">
                               <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <WarehousesPage />
@@ -544,7 +546,7 @@ function App() {
                         <Route
                           path="schedule"
                           element={
-                            <LegacyRouteGuard redirectTo="/appointments">
+                            <LegacyRouteGuard title="Расписание в разработке">
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <SchedulePage />
@@ -556,7 +558,7 @@ function App() {
                         <Route
                           path="doctor"
                           element={
-                            <LegacyRouteGuard redirectTo="/appointments">
+                            <LegacyRouteGuard title="Кабинет врача в разработке">
                               <ProtectedRoute allowedRoles={['doctor']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DoctorWorkPage />
@@ -568,7 +570,7 @@ function App() {
                         <Route
                           path="nurse"
                           element={
-                            <LegacyRouteGuard redirectTo="/appointments">
+                            <LegacyRouteGuard title="Процедурный кабинет в разработке">
                               <ProtectedRoute allowedRoles={['nurse', 'admin', 'superadmin', 'receptionist']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <NursePage />
@@ -580,7 +582,7 @@ function App() {
                         <Route
                           path="work-shifts"
                           element={
-                            <LegacyRouteGuard redirectTo="/access-denied">
+                            <LegacyRouteGuard title="СКУД в разработке">
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <WorkShiftsPage />
@@ -592,7 +594,7 @@ function App() {
                         <Route
                           path="sales"
                           element={
-                            <LegacyRouteGuard redirectTo="/cashbox">
+                            <LegacyRouteGuard title="Продажи товаров в разработке">
                               <ProtectedRoute allowedRoles={['admin', 'superadmin', 'registrator', 'receptionist']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <SalesPage />
@@ -622,7 +624,7 @@ function App() {
                         <Route
                           path="reports"
                           element={
-                            <LegacyRouteGuard redirectTo="/access-denied">
+                            <LegacyRouteGuard title="Отчеты в разработке">
                               <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <ReportsPage />
@@ -634,7 +636,7 @@ function App() {
                         <Route
                           path="salary-reports"
                           element={
-                            <LegacyRouteGuard redirectTo="/access-denied">
+                            <LegacyRouteGuard title="Отчет по ЗП в разработке">
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <SalaryReportsPage />
@@ -646,7 +648,7 @@ function App() {
                         <Route
                           path="all-appointments"
                           element={
-                            <LegacyRouteGuard redirectTo="/appointments">
+                            <LegacyRouteGuard title="Все приемы в разработке">
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <AllAppointmentsPage />
@@ -658,7 +660,7 @@ function App() {
                         <Route
                           path="all-procedures"
                           element={
-                            <LegacyRouteGuard redirectTo="/appointments">
+                            <LegacyRouteGuard title="Все процедуры в разработке">
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <AllProceduresPage />
@@ -683,31 +685,37 @@ function App() {
                         <Route
                           path="settings/diagnoses"
                           element={
-                            <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <DiagnosesPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard title="Диагнозы в разработке">
+                              <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DiagnosesPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="settings/notifications"
                           element={
-                            <ProtectedRoute allowedRoles={['superadmin']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <NotificationSettingsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard title="Уведомления в разработке">
+                              <ProtectedRoute allowedRoles={['superadmin']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <NotificationSettingsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="admin/load"
                           element={
-                            <ProtectedRoute allowedRoles={['superadmin']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <LoadAnalyticsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard title="Нагрузка в разработке">
+                              <ProtectedRoute allowedRoles={['superadmin']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <LoadAnalyticsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         {IS_DJANGO_BACKEND && (
