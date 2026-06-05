@@ -56,12 +56,13 @@ export const PAYMENT_STATUS_COLOR: Record<
   refunded: "error",
 };
 
-// ── Method labels (including balance) ─────────────────────────────────────────
+// ── Method labels ─────────────────────────────────────────────────────────────
 
 const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
   card: "Карта",
   balance: "Баланс пациента",
+  bonus: "Бонусы",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -90,7 +91,10 @@ function computeStatus(
 // Backend error messages that need user-friendly rewrites
 function mapSaveError(raw: string): string {
   if (raw.includes("уже содержит оплату с баланса") || raw.includes("replace-all")) {
-    return "Этот приём уже оплачивался с баланса. Изменение оплаты с баланса пока недоступно без возврата.";
+    return "Этот приём уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.";
+  }
+  if (raw.includes("недостаточно бонусов") || raw.includes("insufficient bonus")) {
+    return "Недостаточно бонусов на счёте пациента.";
   }
   return raw;
 }
@@ -134,19 +138,21 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   });
   const summary = paymentQuery.data ?? null;
 
-  // Read available balance from cache (loaded by PatientBalancePanel) — no extra request
+  // Read available balance/bonuses from cache (loaded by PatientBalancePanel) — no extra request
   const cachedBalance = patientId
-    ? queryClient.getQueryData<{ balance: string }>(
+    ? queryClient.getQueryData<{ balance: string; bonuses: string }>(
         djangoQueryKeys.patients.balance(patientId),
       )
     : undefined;
   const availableBalance = parseDecimal(cachedBalance?.balance ?? "0");
+  const availableBonuses = parseDecimal(cachedBalance?.bonuses ?? "0");
 
   // Form state
   const [discountStr, setDiscountStr] = React.useState("0");
   const [cashStr, setCashStr] = React.useState("0");
   const [cardStr, setCardStr] = React.useState("0");
   const [balanceStr, setBalanceStr] = React.useState("0");
+  const [bonusStr, setBonusStr] = React.useState("0");
   const [note, setNote] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
@@ -159,6 +165,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCashStr("0");
       setCardStr("0");
       setBalanceStr("0");
+      setBonusStr("0");
       setNote("");
       setSaveError(null);
       prevAppointmentIdRef.current = null;
@@ -170,6 +177,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCashStr("0");
       setCardStr("0");
       setBalanceStr("0");
+      setBonusStr("0");
       setNote("");
       setSaveError(null);
       prevAppointmentIdRef.current = appointmentId;
@@ -196,29 +204,43 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const cash = Math.max(0, parseDecimal(cashStr));
   const card = Math.max(0, parseDecimal(cardStr));
   const balanceUsed = Math.max(0, parseDecimal(balanceStr));
-  const paidTotal = cash + card + balanceUsed;
+  const bonusUsed = Math.max(0, parseDecimal(bonusStr));
+  const paidTotal = cash + card + balanceUsed + bonusUsed;
   const debt = Math.max(0, payable - paidTotal);
   const overpaid = paidTotal > payable + 0.001;
   const balanceExceeded = balanceUsed > availableBalance + 0.001;
+  const bonusExceeded = bonusUsed > availableBonuses + 0.001;
 
   const statusPreview = computeStatus(payable, paidTotal, discount, total);
 
   const hasRefunds = (summary?.refunds?.length ?? 0) > 0 || parseDecimal(summary?.refundedTotal ?? "0") > 0;
   // After a refund the backend blocks further apply — mirror that guard in the UI
   const applyBlockedByRefund = hasRefunds;
+  // After a bonus payment the backend blocks replace-all — mirror in UI
+  const hasBonusPayment = (summary?.payments ?? []).some((p) => p.method === "bonus");
+  const applyBlockedByBonus = hasBonusPayment;
 
   // Validation
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const cashInvalid = parseDecimal(cashStr) < 0;
   const cardInvalid = parseDecimal(cardStr) < 0;
   const balanceInvalid = parseDecimal(balanceStr) < 0 || balanceExceeded;
+  const bonusInvalid = parseDecimal(bonusStr) < 0 || bonusExceeded;
   const submitDisabled =
-    discountInvalid || cashInvalid || cardInvalid || balanceInvalid || overpaid || applyBlockedByRefund;
+    discountInvalid || cashInvalid || cardInvalid || balanceInvalid || bonusInvalid ||
+    overpaid || applyBlockedByRefund || applyBlockedByBonus;
 
   // Quick-fill: fill balance field with min(remaining debt, available balance)
   const handleBalanceQuickFill = () => {
     const fill = Math.min(debt, availableBalance);
     if (fill > 0) setBalanceStr(fmt(fill));
+  };
+
+  // Quick-fill: fill bonus field with min(remaining debt after other payments, available bonuses)
+  const handleBonusQuickFill = () => {
+    const debtAfterOthers = Math.max(0, payable - cash - card - balanceUsed);
+    const fill = Math.min(debtAfterOthers, availableBonuses);
+    if (fill > 0) setBonusStr(fmt(fill));
   };
 
   const applyMutation = useMutation({
@@ -240,8 +262,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       void queryClient.invalidateQueries({
         queryKey: ["django", "appointments", "day-counts"],
       });
-      // Refresh patient balance if balance was used
-      if (patientId && balanceUsed > 0) {
+      // Refresh patient balance/transactions if balance or bonuses were used
+      if (patientId && (balanceUsed > 0 || bonusUsed > 0)) {
         void queryClient.invalidateQueries({
           queryKey: djangoQueryKeys.patients.balance(patientId),
         });
@@ -272,6 +294,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       discountAmount: fmt(discount),
       payments,
       balanceAmount: balanceUsed > 0 ? fmt(balanceUsed) : undefined,
+      bonusAmount: bonusUsed > 0 ? fmt(bonusUsed) : undefined,
       note: note.trim() || undefined,
     });
   };
@@ -451,6 +474,43 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   )}
                 </Stack>
               )}
+
+              {/* Bonus field — only for real patients */}
+              {hasPatient && (
+                <Stack spacing={0.5}>
+                  <TextField
+                    label="Списать бонусы"
+                    size="small"
+                    value={bonusStr}
+                    onChange={(e) => setBonusStr(e.target.value)}
+                    error={bonusInvalid || overpaid}
+                    helperText={
+                      bonusExceeded
+                        ? `Недостаточно бонусов. Доступно: ${fmt(availableBonuses)} с`
+                        : availableBonuses > 0
+                          ? `Доступно бонусов: ${fmt(availableBonuses)} с`
+                          : "Бонусы: 0.00 с"
+                    }
+                    InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
+                    inputProps={{ inputMode: "decimal" }}
+                    fullWidth
+                    disabled={isCancelled}
+                  />
+                  {availableBonuses > 0 && debt > 0.001 && (
+                    <Tooltip title={`Списать бонусами ${fmt(Math.min(Math.max(0, payable - cash - card - balanceUsed), availableBonuses))} с — покрыть остаток долга`}>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleBonusQuickFill}
+                        sx={{ textTransform: "none", alignSelf: "flex-start", px: 0 }}
+                        disabled={isCancelled}
+                      >
+                        Бонусами на остаток ({fmt(Math.min(Math.max(0, payable - cash - card - balanceUsed), availableBonuses))} с)
+                      </Button>
+                    </Tooltip>
+                  )}
+                </Stack>
+              )}
             </Stack>
 
             {overpaid && (
@@ -471,6 +531,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 <Stack direction="row" justifyContent="space-between">
                   <Typography variant="body2" color="text.secondary">в т.ч. с баланса</Typography>
                   <Typography variant="body2" color="info.main">{fmt(balanceUsed)} с</Typography>
+                </Stack>
+              )}
+              {bonusUsed > 0.001 && (
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="body2" color="text.secondary">в т.ч. бонусами</Typography>
+                  <Typography variant="body2" color="success.main">{fmt(bonusUsed)} с</Typography>
                 </Stack>
               )}
               {/* Show refunded/net only when refunds exist on this appointment */}
@@ -516,6 +582,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             {applyBlockedByRefund && (
               <Alert severity="info" icon={false} sx={{ py: 0.5, fontSize: "0.75rem" }}>
                 Изменение оплаты недоступно — по приёму уже оформлен возврат.
+              </Alert>
+            )}
+
+            {/* Block-apply notice when bonus payment exists (backend blocks replace-all) */}
+            {!applyBlockedByRefund && applyBlockedByBonus && (
+              <Alert severity="info" icon={false} sx={{ py: 0.5, fontSize: "0.75rem" }}>
+                Изменение оплаты недоступно — по приёму уже списаны бонусы. Для корректировки оформите возврат.
               </Alert>
             )}
 

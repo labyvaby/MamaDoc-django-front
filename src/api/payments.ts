@@ -3,7 +3,7 @@ export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type PaymentMethod = "cash" | "card" | "balance";
+export type PaymentMethod = "cash" | "card" | "balance" | "bonus";
 
 export type PaymentStatus =
   | "unpaid"
@@ -41,6 +41,10 @@ export interface PaymentSummary {
   refundedTotal?: string;
   /** paidTotal - refundedTotal */
   paidNet?: string;
+  /** Total bonus points redeemed for this appointment */
+  bonusPaid?: string;
+  /** Total bonus points refunded for this appointment */
+  bonusRefunded?: string;
   debt: string;
   paymentStatus: PaymentStatus;
   /** Appointment workflow status mirrored from backend (cancelled/no_show → debt always "0.00") */
@@ -54,6 +58,8 @@ export interface ApplyPaymentPayload {
   payments: { method: PaymentMethod; amount: string }[];
   /** Amount to deduct from patient balance (omit or "0.00" if not using balance) */
   balanceAmount?: string;
+  /** Amount to deduct from patient bonuses (omit or "0.00" if not using bonuses) */
+  bonusAmount?: string;
   note?: string;
 }
 

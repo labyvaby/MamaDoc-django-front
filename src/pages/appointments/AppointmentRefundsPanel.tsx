@@ -35,6 +35,7 @@ const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
   card: "Карта",
   balance: "Баланс пациента",
+  bonus: "Бонусы",
 };
 
 function parseDecimal(s: string | undefined): number {
@@ -116,8 +117,8 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
       void queryClient.invalidateQueries({
         queryKey: ["django", "appointments", "day-counts"],
       });
-      // If refund method is balance, refresh patient balance cache
-      if (patientId && state?.payment.method === "balance") {
+      // Refresh patient balance/transactions when balance or bonus payment is refunded
+      if (patientId && (state?.payment.method === "balance" || state?.payment.method === "bonus")) {
         void queryClient.invalidateQueries({
           queryKey: djangoQueryKeys.patients.balance(patientId),
         });
