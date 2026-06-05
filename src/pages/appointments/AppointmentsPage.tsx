@@ -561,14 +561,14 @@ const AppointmentRow: React.FC<{
     serviceCount === 0 ? (
       <Typography variant="body2" color="text.disabled">—</Typography>
     ) : serviceCount === 1 ? (
-      <Typography variant="body2" noWrap>{firstService.service.name}</Typography>
+      <Typography variant="body2" noWrap>{firstService?.service?.name ?? "—"}</Typography>
     ) : (
       <Tooltip
         title={
           <List dense disablePadding>
             {appt.services.map((sl) => (
               <ListItem key={sl.id} disablePadding sx={{ py: 0.25 }}>
-                <Typography variant="caption">{sl.service.name}</Typography>
+                <Typography variant="caption">{sl.service?.name ?? "—"}</Typography>
               </ListItem>
             ))}
           </List>
@@ -587,11 +587,15 @@ const AppointmentRow: React.FC<{
 
   // Employee cell: 1 unique employee → name, multiple → "N исполнителей" with tooltip
   const uniqueEmployees = Array.from(
-    new Map(appt.services.map((sl) => [sl.employee.id, sl.employee.fullName])).entries(),
+    new Map(
+      appt.services
+        .filter((sl) => sl.employee != null)
+        .map((sl) => [sl.employee.id, sl.employee.fullName]),
+    ).entries(),
   );
   const employeeCell =
     uniqueEmployees.length === 0 ? (
-      <Typography variant="caption" color="text.disabled">—</Typography>
+      <Typography variant="caption" color="text.disabled">Без врача</Typography>
     ) : uniqueEmployees.length === 1 ? (
       <Typography variant="caption" color="text.secondary" noWrap display="block">
         {uniqueEmployees[0][1]}

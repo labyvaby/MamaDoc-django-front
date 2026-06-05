@@ -166,8 +166,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (appointment.services.length > 0) {
       setServiceRows(
         appointment.services.map((line) => ({
-          serviceId: line.service.id,
-          employeeId: line.employee.id,
+          serviceId: line.service?.id ?? null,
+          employeeId: line.employee?.id ?? null,
           quantity: line.quantity ?? 1,
           unitPrice: line.unitPrice ?? "",
           discountAmount: line.discountAmount ?? "",
