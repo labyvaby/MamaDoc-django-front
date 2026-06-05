@@ -101,6 +101,40 @@ export type DjangoAppointmentStatus =
   | "cancelled"
   | "no_show";
 
+// Raw shape as the backend actually sends it (snake_case fields that differ from our type)
+interface RawAppointment {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+/**
+ * Normalize a raw backend appointment object to DjangoAppointment.
+ *
+ * Backend contract differences:
+ *   startsAt      → scheduledAt
+ *   serviceLines  → services
+ *   status "canceled" (1 l) → "cancelled" (2 l)
+ */
+function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
+  // field renames
+  const scheduledAt: string = raw.scheduledAt ?? raw.startsAt ?? "";
+  const services: AppointmentServiceLine[] = Array.isArray(raw.services)
+    ? raw.services
+    : Array.isArray(raw.serviceLines)
+    ? raw.serviceLines
+    : [];
+  // backend typo: "canceled" → our canonical "cancelled"
+  const rawStatus: string = raw.status ?? "scheduled";
+  const status = (rawStatus === "canceled" ? "cancelled" : rawStatus) as DjangoAppointmentStatus;
+
+  return {
+    ...raw,
+    scheduledAt,
+    services,
+    status,
+  } as DjangoAppointment;
+}
+
 export interface DjangoAppointment {
   id: number;
   organizationId: number;
@@ -200,13 +234,16 @@ export function getAppointments(params?: {
   if (params?.date) query.set("date", params.date);
   if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params?.dateTo) query.set("dateTo", params.dateTo);
-  if (params?.status) query.set("status", params.status);
+  // backend uses single-l "canceled"; normalize before sending
+  if (params?.status) query.set("status", params.status === "cancelled" ? "canceled" : params.status);
   if (params?.search) query.set("search", params.search);
   if (params?.branchId) query.set("branchId", String(params.branchId));
   if (params?.employeeId) query.set("employeeId", String(params.employeeId));
   if (params?.patientId) query.set("patientId", String(params.patientId));
   const qs = query.toString();
-  return apiRequest<DjangoAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`, { signal });
+  return apiRequest<RawAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`, { signal }).then(
+    (list) => list.map(normalizeAppointment),
+  );
 }
 
 /**
@@ -252,24 +289,24 @@ export function getDayCounts(params: {
 }
 
 export function getAppointment(id: number): Promise<DjangoAppointment> {
-  return apiRequest<DjangoAppointment>(`/appointments/${id}/`);
+  return apiRequest<RawAppointment>(`/appointments/${id}/`).then(normalizeAppointment);
 }
 
 export function createAppointment(
   payload: CreateAppointmentPayload,
 ): Promise<DjangoAppointment> {
-  return apiRequest<DjangoAppointment>("/appointments/", {
+  return apiRequest<RawAppointment>("/appointments/", {
     method: "POST",
     body: payload,
-  });
+  }).then(normalizeAppointment);
 }
 
 export function updateAppointment(
   id: number,
   payload: UpdateAppointmentPayload,
 ): Promise<DjangoAppointment> {
-  return apiRequest<DjangoAppointment>(`/appointments/${id}/`, {
+  return apiRequest<RawAppointment>(`/appointments/${id}/`, {
     method: "PATCH",
     body: payload,
-  });
+  }).then(normalizeAppointment);
 }
