@@ -43,7 +43,9 @@ import { lazy, Suspense, useEffect } from "react";
 import { useAuthIdentitySync } from "./hooks/useAuthIdentitySync";
 import { IS_DJANGO_BACKEND } from "./config/backend";
 import { djangoQueryKeys } from "./api/queryKeys";
-// 🔥 SUPABASE
+import { LegacyRouteGuard } from "./components/routing/LegacyRouteGuard";
+import { djangoDataProvider } from "./config/djangoDataProvider";
+// 🔥 SUPABASE — только в Supabase-mode
 import { dataProvider } from "@refinedev/supabase";
 import { supabase } from "./utility/supabaseClient";
 
@@ -281,7 +283,7 @@ function App() {
                   localeText={ruRU.components.MuiLocalizationProvider.defaultProps.localeText}
                 >
                   <Refine
-                    dataProvider={dataProvider(supabase)}
+                    dataProvider={IS_DJANGO_BACKEND ? djangoDataProvider : dataProvider(supabase)}
                     notificationProvider={useNotificationProvider}
                     routerProvider={routerProvider}
                     resources={[
@@ -473,11 +475,13 @@ function App() {
                         <Route
                           path="expenses"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <ExpensesListPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/cashbox">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <ExpensesListPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
@@ -503,82 +507,98 @@ function App() {
                         <Route
                           path="products"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <ProductsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/access-denied">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <ProductsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
 
                         <Route
                           path="storage"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <StoragePage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/access-denied">
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <StoragePage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="warehouses"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <WarehousesPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/access-denied">
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <WarehousesPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="schedule"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <SchedulePage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/appointments">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SchedulePage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="doctor"
                           element={
-                            <ProtectedRoute allowedRoles={['doctor']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <DoctorWorkPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/appointments">
+                              <ProtectedRoute allowedRoles={['doctor']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DoctorWorkPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="nurse"
                           element={
-                            <ProtectedRoute allowedRoles={['nurse', 'admin', 'superadmin', 'receptionist']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <NursePage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/appointments">
+                              <ProtectedRoute allowedRoles={['nurse', 'admin', 'superadmin', 'receptionist']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <NursePage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="work-shifts"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <WorkShiftsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/access-denied">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <WorkShiftsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="sales"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin', 'registrator', 'receptionist']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <SalesPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/cashbox">
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'registrator', 'receptionist']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SalesPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
@@ -602,52 +622,62 @@ function App() {
                         <Route
                           path="reports"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <ReportsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/access-denied">
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <ReportsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="salary-reports"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <SalaryReportsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/access-denied">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SalaryReportsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="all-appointments"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <AllAppointmentsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/appointments">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <AllAppointmentsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route
                           path="all-procedures"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <AllProceduresPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/appointments">
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <AllProceduresPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
 
                         <Route
                           path="settings/skud"
                           element={
-                            <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <SkudSettingsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            <LegacyRouteGuard redirectTo="/settings">
+                              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SkudSettingsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            </LegacyRouteGuard>
                           }
                         />
                         <Route

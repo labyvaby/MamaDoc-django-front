@@ -444,7 +444,8 @@ const SidebarSecondary: React.FC = () => {
         {show("my-work") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
         )}
-        {show("my-work") && <SidebarSkudItem collapsed={siderCollapsed} />}
+        {/* /work-shifts — Supabase-only SKUD, скрыт в Django-mode */}
+        {show("my-work") && !IS_DJANGO_BACKEND && <SidebarSkudItem collapsed={siderCollapsed} />}
 
         {/* ── Организация ── */}
         {show("org") && (IS_DJANGO_BACKEND
@@ -485,20 +486,16 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* ── Склады ── */}
-        {show("storage") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('warehouse.view'))
-          : true
-        ) && (
+        {/* /products — Supabase Realtime, скрыт в Django-mode до миграции */}
+        {show("storage") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
         {/* /sales — Supabase warehouse, скрыт в Django */}
         {show("storage") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || isRegistrator()) && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
-        {show("storage") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('warehouse.manage'))
-          : (isSuper || isAdmin())
-        ) && (
+        {/* /storage /warehouses — Supabase service layer, скрыты в Django-mode до миграции */}
+        {show("storage") && !IS_DJANGO_BACKEND && (isSuper || isAdmin()) && (
           <>
             <SidebarMenuItem to="/storage" icon={<Inventory2Outlined />} label="Движение товара" collapsed={siderCollapsed} />
             <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Склад" collapsed={siderCollapsed} />
@@ -510,16 +507,12 @@ const SidebarSecondary: React.FC = () => {
         {show("management") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
-        {show("management") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('reports.view'))
-          : (isSuper || isAdmin() || hasRole(['accountant']))
-        ) && (
+        {/* /reports — Supabase AppointmentsAggregated, скрыт в Django-mode до миграции */}
+        {show("management") && !IS_DJANGO_BACKEND && (isSuper || isAdmin() || hasRole(['accountant'])) && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
-        {show("management") && (IS_DJANGO_BACKEND
-          ? (isSuper || can('finance.view'))
-          : true
-        ) && (
+        {/* В Django-mode расходы живут внутри /cashbox, отдельной /expenses нет */}
+        {show("management") && !IS_DJANGO_BACKEND && (
           <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         )}
         {/* /cashbox — Supabase mode uses role check; Django mode uses finance.view */}
