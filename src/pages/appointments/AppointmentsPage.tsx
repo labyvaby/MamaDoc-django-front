@@ -3,6 +3,12 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import {
   Alert,
   Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Drawer,
   IconButton,
   Stack,
@@ -29,8 +35,12 @@ import type { PaymentSummary } from "../../api/payments";
 import {
   getAppointments,
   getDayCounts,
+  updateAppointment,
+  deleteAppointment,
+  parseBackendError,
   type DjangoAppointment,
 } from "../../api/appointments";
+import { useNotification } from "@refinedev/core";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -111,7 +121,8 @@ function useDayCounts(date: Dayjs | null, branchId?: number) {
 const AppointmentsPage: React.FC = () => {
   usePageTitle("Регистратура");
   const { can } = useCanChecker();
-  const { activeBranch } = usePermissions();
+  const { activeBranch, isSuperAdmin } = usePermissions();
+  const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -129,8 +140,15 @@ const AppointmentsPage: React.FC = () => {
 
   const canCreate = can("appointments.create");
   const canUpdate = can("appointments.update");
+  const canDelete = isSuperAdmin() || can("appointments.delete");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
+
+  // confirm dialog for cancel / delete
+  const [confirm, setConfirm] = React.useState<
+    { mode: "cancel" | "delete"; appt: DjangoAppointment } | null
+  >(null);
+  const [confirmBusy, setConfirmBusy] = React.useState(false);
   const canViewConclusions = useCan([
     "medical.conclusions.view",
     "medical.conclusions.create",
@@ -192,6 +210,38 @@ const AppointmentsPage: React.FC = () => {
     setPaymentTarget(appt);
   }, []);
 
+  // "Пациент здесь": scheduled → waiting
+  const handleArrived = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        await updateAppointment(appt.id, { status: "waiting" });
+        void refresh();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refresh, notify],
+  );
+
+  const handleConfirm = React.useCallback(async () => {
+    if (!confirm) return;
+    setConfirmBusy(true);
+    try {
+      if (confirm.mode === "cancel") {
+        await updateAppointment(confirm.appt.id, { status: "cancelled" });
+      } else {
+        await deleteAppointment(confirm.appt.id);
+        setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
+      }
+      setConfirm(null);
+      void refresh();
+    } catch (e) {
+      notify?.({ type: "error", message: parseBackendError(e) });
+    } finally {
+      setConfirmBusy(false);
+    }
+  }, [confirm, refresh, notify]);
+
   const handleCreated = React.useCallback(() => {
     setCreateOpen(false);
     void refresh();
@@ -212,8 +262,12 @@ const AppointmentsPage: React.FC = () => {
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
       canViewConclusions={canViewConclusions}
+      canDelete={canDelete}
       onEdit={handleEdit}
       onPay={handlePay}
+      onArrived={handleArrived}
+      onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}
+      onDelete={(a) => setConfirm({ mode: "delete", appt: a })}
       onClose={() => setSelectedAppt(null)}
     />
   ) : null;
@@ -230,7 +284,7 @@ const AppointmentsPage: React.FC = () => {
         }}
       >
         {/* ── Top controls: like the original Регистратура ──
-            «Добавить прием» (large, left) + horizontal date pills + search. */}
+            «Добавить прием» (large, left) + horizontal date pills. */}
         <PageHeader
           title="Регистратура"
           showTitle={false}
@@ -239,10 +293,6 @@ const AppointmentsPage: React.FC = () => {
           dateNavigation={
             <DateNavigation date={dateStr} setDate={handleSetDate} dayCounts={dayCounts} />
           }
-          showSearch
-          searchVal={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Поиск по пациенту или телефону"
           loading={loading}
           actions={
             <Tooltip title="Обновить">
@@ -302,6 +352,9 @@ const AppointmentsPage: React.FC = () => {
               onSelect={handleSelect}
               onEdit={handleEdit}
               onPay={handlePay}
+              onAddSlot={canCreate ? (_dateIso) => {
+                setCreateOpen(true);
+              } : undefined}
             />
           </Box>
 
@@ -386,6 +439,28 @@ const AppointmentsPage: React.FC = () => {
         appointment={paymentTarget}
         onSaved={handlePaymentSaved}
       />
+
+      {/* Confirm cancel / delete */}
+      <Dialog open={!!confirm} onClose={() => (confirmBusy ? undefined : setConfirm(null))}>
+        <DialogTitle>
+          {confirm?.mode === "delete" ? "Удалить приём?" : "Отменить запись?"}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirm?.mode === "delete"
+              ? "Приём будет удалён без возможности восстановления."
+              : "Запись будет помечена как отменённая."}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirm(null)} disabled={confirmBusy} color="inherit">
+            Отмена
+          </Button>
+          <Button onClick={handleConfirm} disabled={confirmBusy} color="error" variant="contained">
+            {confirm?.mode === "delete" ? "Удалить" : "Подтвердить отмену"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

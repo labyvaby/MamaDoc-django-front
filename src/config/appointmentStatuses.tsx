@@ -55,6 +55,21 @@ export interface StatusConfig {
 /**
  * Базовая конфигурация статуса (без цветов, т.к. они зависят от темы)
  */
+// Django backend status → Russian display label
+export const DJANGO_STATUS_LABEL: Record<string, string> = {
+  scheduled: "Ожидаем",
+  waiting: "Пациент здесь",
+  in_progress: "В работе",
+  completed: "Завершено",
+  cancelled: "Отменено",
+  no_show: "Пациент не пришел",
+};
+
+// Normalize a backend (Django) status slug to the Russian label used in getStatusConfig
+export function normalizeDjangoStatus(status: string): string {
+  return DJANGO_STATUS_LABEL[status] ?? status;
+}
+
 export const getStatusConfig = (status: any): StatusConfig => {
   if (typeof status !== 'string') {
     return {
@@ -63,10 +78,12 @@ export const getStatusConfig = (status: any): StatusConfig => {
       label: status ? String(status) : "Ожидаем",
     };
   }
-  const statusLower = status.trim().toLowerCase();
+  // Normalise Django slugs → Russian labels so colour-matching below works
+  const resolved = DJANGO_STATUS_LABEL[status.trim()] ?? status;
+  const statusLower = resolved.trim().toLowerCase();
 
   // Отменено - красный
-  if (statusLower === APPOINTMENT_STATUSES.CANCELLED.toLowerCase() || statusLower === "отменен") {
+  if (statusLower === APPOINTMENT_STATUSES.CANCELLED.toLowerCase() || statusLower === "отменен" || statusLower === "cancelled") {
     return {
       color: "error",
       icon: <CancelIcon fontSize="small" />,
@@ -78,12 +95,13 @@ export const getStatusConfig = (status: any): StatusConfig => {
   if (
     statusLower === APPOINTMENT_STATUSES.PATIENT_ARRIVED.toLowerCase() ||
     statusLower === "в очереди" ||
-    statusLower === "прибыл"
+    statusLower === "прибыл" ||
+    statusLower === "waiting"
   ) {
     return {
       color: "success",
       icon: <CheckCircleIcon fontSize="small" />,
-      label: status,
+      label: resolved,
     };
   }
 
@@ -91,8 +109,8 @@ export const getStatusConfig = (status: any): StatusConfig => {
   if (statusLower === APPOINTMENT_STATUSES.PAID.toLowerCase()) {
     return {
       color: "success",
-      icon: <DoneIcon fontSize="small" />, // Заменяем значок доллара на галочку
-      label: status,
+      icon: <DoneIcon fontSize="small" />,
+      label: resolved,
     };
   }
 
@@ -101,25 +119,34 @@ export const getStatusConfig = (status: any): StatusConfig => {
     return {
       color: "secondary",
       icon: <DoneIcon fontSize="small" />,
-      label: status,
+      label: resolved,
     };
   }
 
   // В работе - желтый/оранжевый
-  if (statusLower === APPOINTMENT_STATUSES.IN_PROGRESS.toLowerCase() || statusLower === "в процессе") {
+  if (statusLower === APPOINTMENT_STATUSES.IN_PROGRESS.toLowerCase() || statusLower === "в процессе" || statusLower === "in_progress") {
     return {
       color: "warning",
       icon: <BuildIcon fontSize="small" />,
-      label: status,
+      label: resolved,
     };
   }
 
   // Завершено - серый/спокойный синий
-  if (statusLower === APPOINTMENT_STATUSES.COMPLETED.toLowerCase() || statusLower === "завершён") {
+  if (statusLower === APPOINTMENT_STATUSES.COMPLETED.toLowerCase() || statusLower === "завершён" || statusLower === "completed") {
     return {
       color: "default",
       icon: <DoneIcon fontSize="small" />,
-      label: status,
+      label: resolved,
+    };
+  }
+
+  // Пациент не пришел - серый
+  if (statusLower === APPOINTMENT_STATUSES.PATIENT_NOT_CAME.toLowerCase() || statusLower === "no_show") {
+    return {
+      color: "default",
+      icon: <CancelIcon fontSize="small" />,
+      label: resolved,
     };
   }
 
@@ -128,7 +155,7 @@ export const getStatusConfig = (status: any): StatusConfig => {
     return {
       color: "purple" as any,
       icon: <PieChartIcon fontSize="small" />,
-      label: status,
+      label: resolved,
     };
   }
 
@@ -146,7 +173,7 @@ export const getStatusConfig = (status: any): StatusConfig => {
     return {
       color: "success",
       icon: <CardGiftcardIcon fontSize="small" />,
-      label: status,
+      label: resolved,
     };
   }
 
@@ -154,7 +181,7 @@ export const getStatusConfig = (status: any): StatusConfig => {
   return {
     color: "warning",
     icon: <HourglassEmptyIcon fontSize="small" />,
-    label: status,
+    label: resolved,
   };
 };
 

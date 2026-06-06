@@ -1,7 +1,7 @@
 import React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getPatients, type DjangoPatient } from "../api/patients";
-import { getDjangoEmployees, type DjangoEmployee } from "../api/staff";
+import { getDjangoEmployees, type DjangoEmployeeListItem } from "../api/staff";
 import { getServices, type Service as CatalogService } from "../api/catalog";
 import {
   getServiceProviders,
@@ -14,18 +14,11 @@ import {
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-/**
- * Employee with the set of service IDs they can actively provide.
- * Built from the /appointments/service-providers/ response.
- */
-export interface DjangoEmployeeWithServices extends DjangoEmployee {
-  /** Service IDs this employee can actively provide. */
+export interface DjangoEmployeeWithServices extends DjangoEmployeeListItem {
   assignedServiceIds: Set<number>;
 }
 
-/** Catalog service enriched with the list of employee IDs that can provide it. */
 export interface DjangoCatalogServiceWithEmployees extends CatalogService {
-  /** IDs of employees who have an active EmployeeService assignment for this service. */
   assignedEmployeeIds: number[];
 }
 
@@ -33,42 +26,33 @@ export interface UseDjangoAppointmentDataResult {
   patients: DjangoPatient[];
   employees: DjangoEmployeeWithServices[];
   services: DjangoCatalogServiceWithEmployees[];
-  /** Raw service-provider pairs — useful for price/duration lookup. */
+  /** Always empty — service-providers are fetched per-serviceId via useServiceProvidersForService. */
   serviceProviders: ServiceProvider[];
   loading: boolean;
   error: string | null;
-  /**
-   * Given a selected serviceId, returns only employees who can provide it.
-   * Returns all employees when serviceId is null.
-   */
+  /** Returns all employees (no per-service filter without providers data). */
   getEmployeesForService(serviceId: number | null): DjangoEmployeeWithServices[];
-  /**
-   * Given a selected employeeId, returns only services assigned to them.
-   * Returns all services when employeeId is null.
-   */
+  /** Returns all services (no per-employee filter without providers data). */
   getServicesForEmployee(employeeId: number | null): DjangoCatalogServiceWithEmployees[];
-  /**
-   * True if the employee can provide the service.
-   * Always true when either arg is null.
-   */
   canEmployeeProvideService(employeeId: number | null, serviceId: number | null): boolean;
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
+/**
+ * Loads patients, employees, and services for the appointment form.
+ * Does NOT call service-providers (requires serviceId param — see useServiceProvidersForService).
+ */
 export function useDjangoAppointmentData(enabled: boolean): UseDjangoAppointmentDataResult {
   const dataQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.formData(),
     queryFn: async ({ signal }) => {
-      const [rawPatients, rawEmployees, rawServices, rawProviders] =
-        await Promise.all([
-          getPatients(signal),
-          getDjangoEmployees(signal),
-          getServices(signal),
-          getServiceProviders(undefined, signal),
-        ]);
-
-      return { rawPatients, rawEmployees, rawServices, rawProviders };
+      const [rawPatients, rawEmployees, rawServices] = await Promise.all([
+        getPatients(signal),
+        getDjangoEmployees(undefined, signal),
+        getServices(signal),
+      ]);
+      return { rawPatients, rawEmployees, rawServices };
     },
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
@@ -76,81 +60,70 @@ export function useDjangoAppointmentData(enabled: boolean): UseDjangoAppointment
   });
 
   const patients = dataQuery.data?.rawPatients ?? [];
-  const serviceProviders = dataQuery.data?.rawProviders ?? [];
 
   const { employees, services } = React.useMemo(() => {
-    const rawEmployees = dataQuery.data?.rawEmployees ?? [];
+    const rawEmployees = dataQuery.data?.rawEmployees?.results ?? [];
     const rawServices = dataQuery.data?.rawServices ?? [];
 
-    const empToServices = new Map<number, Set<number>>();
-    const serviceToEmps = new Map<number, Set<number>>();
-
-    for (const sp of serviceProviders) {
-      if (!empToServices.has(sp.employeeId)) {
-        empToServices.set(sp.employeeId, new Set());
-      }
-      empToServices.get(sp.employeeId)!.add(sp.serviceId);
-
-      if (!serviceToEmps.has(sp.serviceId)) {
-        serviceToEmps.set(sp.serviceId, new Set());
-      }
-      serviceToEmps.get(sp.serviceId)!.add(sp.employeeId);
-    }
-
-    const enrichedEmployees: DjangoEmployeeWithServices[] = rawEmployees.map(
-      (emp) => ({
-        ...emp,
-        assignedServiceIds: empToServices.get(emp.id) ?? new Set(),
-      }),
-    );
+    const enrichedEmployees: DjangoEmployeeWithServices[] = rawEmployees.map((emp) => ({
+      ...emp,
+      assignedServiceIds: new Set<number>(),
+    }));
 
     const enrichedServices: DjangoCatalogServiceWithEmployees[] = rawServices
       .filter((s) => s.isActive)
       .map((s) => ({
         ...s,
-        assignedEmployeeIds: Array.from(serviceToEmps.get(s.id) ?? []),
+        assignedEmployeeIds: [],
       }));
 
     return { employees: enrichedEmployees, services: enrichedServices };
-  }, [dataQuery.data?.rawEmployees, dataQuery.data?.rawServices, serviceProviders]);
+  }, [dataQuery.data?.rawEmployees, dataQuery.data?.rawServices]);
 
   const getEmployeesForService = React.useCallback(
-    (serviceId: number | null): DjangoEmployeeWithServices[] => {
-      if (serviceId === null) return employees;
-      return employees.filter((emp) => emp.assignedServiceIds.has(serviceId));
-    },
+    (_serviceId: number | null): DjangoEmployeeWithServices[] => employees,
     [employees],
   );
 
   const getServicesForEmployee = React.useCallback(
-    (employeeId: number | null): DjangoCatalogServiceWithEmployees[] => {
-      if (employeeId === null) return services;
-      const emp = employees.find((e) => e.id === employeeId);
-      if (!emp) return [];
-      return services.filter((s) => emp.assignedServiceIds.has(s.id));
-    },
-    [employees, services],
+    (_employeeId: number | null): DjangoCatalogServiceWithEmployees[] => services,
+    [services],
   );
 
   const canEmployeeProvideService = React.useCallback(
-    (employeeId: number | null, serviceId: number | null): boolean => {
-      if (employeeId === null || serviceId === null) return true;
-      const emp = employees.find((e) => e.id === employeeId);
-      if (!emp) return false;
-      return emp.assignedServiceIds.has(serviceId);
-    },
-    [employees],
+    (_employeeId: number | null, _serviceId: number | null): boolean => true,
+    [],
   );
 
   return {
     patients,
     employees,
     services,
-    serviceProviders,
+    serviceProviders: [],
     loading: dataQuery.isLoading,
     error: dataQuery.error instanceof Error ? dataQuery.error.message : null,
     getEmployeesForService,
     getServicesForEmployee,
     canEmployeeProvideService,
   };
+}
+
+// ── Per-serviceId lazy hook ───────────────────────────────────────────────────
+
+/**
+ * Fetches service-providers for a specific serviceId.
+ * Only fires when serviceId is non-null and drawerOpen is true.
+ */
+export function useServiceProvidersForService(
+  serviceId: number | null,
+  drawerOpen: boolean,
+): { providers: ServiceProvider[]; loading: boolean } {
+  const q = useQuery({
+    queryKey: [...djangoQueryKeys.appointments.serviceProviders(), serviceId],
+    queryFn: ({ signal }) => getServiceProviders({ serviceId: serviceId! }, signal),
+    enabled: drawerOpen && serviceId !== null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+  return { providers: q.data ?? [], loading: q.isLoading };
 }
