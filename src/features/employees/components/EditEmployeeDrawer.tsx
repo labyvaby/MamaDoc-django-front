@@ -6,7 +6,7 @@ import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import DrawerBase from "./DrawerBase";
 import type { EmployesRow, ServiceRow } from "../types";
-import { employeeFormUtils } from "../hooks/useEmployeesPage";
+import { employeeFormUtils } from "../hooks/employeeFormUtils";
 import { uploadFile } from "../../../utility/storage";
 import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 import PassportPhotoUploader from "./PassportPhotoUploader";

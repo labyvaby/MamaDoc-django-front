@@ -1,24 +1,21 @@
 import React from "react";
-import {
-  EMPLOYEES_SOURCE,
-  assignEmployeeToServices,
-  dedupeEmployees,
-  mapAnyToEmployee,
-  sanitizeKGLocal,
-  isKGLocalValid,
-  composeKGPhone,
-  parseKGLocalFrom,
-  fetchEmployeeServiceIds,
-  replaceEmployeeServices,
-} from "../api";
 import type { EmployesRow } from "../types";
-import { supabase } from "../../../utility/supabaseClient";
-import { fetchServices } from "../../../services/services";
-import { useSimplePageCache } from "../../../hooks/useSimplePageCache";
+import { IS_DJANGO_BACKEND } from "../../../config/backend";
+import { getDjangoEmployees } from "../../../api/staff";
+import { mapDjangoListItemToRow } from "../viewModel";
+import { usePermissions } from "../../../hooks/usePermissions";
 
-const PAGE_SIZE = 30;
+// Supabase-only helpers: loaded dynamically so supabaseClient stays out of Django bundle
+async function _supabaseFetchEmployees(supabase: any, table: string): Promise<EmployesRow[]> {
+  const { data, error } = await supabase.from(table).select("*").order("updated_at", { ascending: false });
+  if (error) throw error;
+  const { mapAnyToEmployee } = await import("../api");
+  const raw = Array.isArray(data) ? (data as unknown[]) : [];
+  return raw
+    .map((r) => typeof r === "object" && r !== null ? mapAnyToEmployee(r as Record<string, unknown>) : null)
+    .filter((x): x is EmployesRow => x !== null);
+}
 
-// Хелпер для безопасного получения сообщения об ошибке (без any)
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -38,12 +35,11 @@ export function useDebounced<T>(value: T, delay = 300) {
 
 export function translateAuthError(rawError: unknown): string {
   const msg = getErrorMessage(rawError).toLowerCase();
-  
   if (msg.includes("unable to validate email address") || msg.includes("invalid format") || msg.includes("invalid email")) {
-    return "Указанный email-адрес не существует, отклонен почтовым сервером или имеет неверный формат. Пожалуйста, проверьте правильность адреса (например, нет ли опечатки).";
+    return "Указанный email-адрес не существует, отклонён почтовым сервером или имеет неверный формат.";
   }
   if (msg.includes("already been registered") || msg.includes("already registered") || msg.includes("already exists")) {
-    return "Пользователь с такой почтой или номером телефона уже зарегистрирован в системе. Измените данные или сначала привяжите существующий аккаунт.";
+    return "Пользователь с такой почтой или номером телефона уже зарегистрирован.";
   }
   if (msg.includes("password should be at least")) {
     return "Пароль должен состоять минимум из 6 символов.";
@@ -52,164 +48,165 @@ export function translateAuthError(rawError: unknown): string {
     return "Неверный формат номера телефона.";
   }
   if (msg.includes("failed to fetch") || msg.includes("network error")) {
-    return "Сеть недоступна или сервер авторизации не отвечает.";
+    return "Сеть недоступна или сервер не отвечает.";
   }
-  return `Ошибка регистрации в системе безопасности: ${getErrorMessage(rawError)}`;
+  return `Ошибка: ${getErrorMessage(rawError)}`;
 }
 
+
 export function useEmployeesPageState() {
-  const [items, setItems] = React.useState<EmployesRow[]>([]);
+  const { activeOrganization, activeBranch, activeMembership } = usePermissions();
+  const orgId = activeOrganization?.id ?? null;
+  const branchId = activeBranch?.id ?? null;
+  const membershipId = activeMembership?.id ?? null;
+
+  // Cache key: unique per active tenant context — changing org/branch clears data
+  const contextKey = `${orgId ?? "null"}_${branchId ?? "null"}_${membershipId ?? "null"}`;
+  const prevContextKeyRef = React.useRef<string>(contextKey);
+
+  const [allItems, setAllItems] = React.useState<EmployesRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
+  // Search state (debounced for server-side search in Django mode)
   const [q, setQ] = React.useState("");
-  const qDebounced = useDebounced(q, 300);
+  const qDebounced = useDebounced(q, 400);
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState<null | EmployesRow>(null);
   const [detailsOpen, setDetailsOpen] = React.useState<null | EmployesRow>(null);
   const [deleteOpen, setDeleteOpen] = React.useState<null | EmployesRow>(null);
 
-  const [hasMore, setHasMore] = React.useState(true);
+  // Pagination state (server-side in Django mode)
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [totalCount, setTotalCount] = React.useState(0);
+  const [hasMore, setHasMore] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [page, setPage] = React.useState(0);
 
-  // Кеширование состояния страницы
-  const { restoreState } = useSimplePageCache('employees-page-v2', {
-    items,
-    q,
-    detailsOpen,
-  });
+  // AbortController ref for cancelling in-flight requests
+  const abortCtrlRef = React.useRef<AbortController | null>(null);
 
-  const fetchEmployees = React.useCallback(async (pageNum: number, isNewSearch = false) => {
+  const fetchEmployees = React.useCallback(async (page = 1, append = false) => {
+    // Cancel previous in-flight request
+    if (abortCtrlRef.current) {
+      abortCtrlRef.current.abort();
+    }
+    const ctrl = new AbortController();
+    abortCtrlRef.current = ctrl;
+
     try {
-      if (isNewSearch) {
-        setLoading(true);
-        setErrorMsg(null);
-      } else {
+      if (append) {
         setLoadingMore(true);
+      } else {
+        setLoading(true);
+        // Clear stale data immediately on first page to prevent showing wrong org data
+        if (page === 1) setAllItems([]);
       }
+      setErrorMsg(null);
 
-      const from = pageNum * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+      if (IS_DJANGO_BACKEND) {
+        const result = await getDjangoEmployees(
+          {
+            search: qDebounced.trim() || undefined,
+            page,
+            pageSize: 50,
+          },
+          ctrl.signal,
+        );
 
-      // 1. Формируем запрос
-      let query = supabase
-        .from(EMPLOYEES_SOURCE)
-        .select("*")
-        .range(from, to)
-        .range(from, to)
-        .order("updated_at", { ascending: false }); 
+        if (ctrl.signal.aborted) return;
 
-      // 2. Добавляем поиск, если есть запрос
-      if (qDebounced.trim()) {
-        const term = `%${qDebounced.trim()}%`;
-        // Новые колонки: full_name, phone
-        query = query.or(`full_name.ilike.${term},phone.ilike.${term}`);
+        const mapped = result.results.map(mapDjangoListItemToRow);
+        if (append) {
+          setAllItems((prev) => [...prev, ...mapped]);
+        } else {
+          setAllItems(mapped);
+        }
+        setTotalCount(result.count);
+        setHasMore(result.nextPage !== null);
+        setCurrentPage(page);
+      } else {
+        const { supabase } = await import("../../../utility/supabaseClient");
+        const { EMPLOYEES_SOURCE } = await import("../api");
+        const mapped = await _supabaseFetchEmployees(supabase, EMPLOYEES_SOURCE);
+        if (ctrl.signal.aborted) return;
+        setAllItems(mapped);
+        setHasMore(false);
       }
-
-      const { data, error } = await query;
-
-      console.log("DEBUG: fetchEmployees result", { data, error, from, to });
-
-      if (error) throw error;
-
-      // 3. Безопасный маппинг данных без any
-      const rawData = Array.isArray(data) ? (data as unknown[]) : [];
-      
-      const mapped: EmployesRow[] = rawData
-        .map((r) => {
-          if (typeof r === "object" && r !== null) {
-            return mapAnyToEmployee(r as Record<string, unknown>);
-          }
-          return null;
-        })
-        .filter((x): x is EmployesRow => x !== null);
-
-      // 4. Обновляем стейт
-      setItems((prev) => {
-        const newItems = isNewSearch ? mapped : prev.concat(mapped);
-        return isNewSearch ? newItems : dedupeEmployees(newItems);
-      });
-
-      setHasMore(mapped.length === PAGE_SIZE);
-
     } catch (e: unknown) {
+      if ((e as Error)?.name === "AbortError") return;
       const msg = getErrorMessage(e);
       console.error("Fetch employees error:", msg);
-      
-      if (msg.includes("does not exist")) {
-        setErrorMsg(`Ошибка базы данных: ${msg}. Проверьте названия колонок (ID vs id).`);
-      } else {
-        setErrorMsg("Не удалось загрузить сотрудников");
-      }
+      setErrorMsg("Не удалось загрузить сотрудников");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (!ctrl.signal.aborted) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [qDebounced]);
 
-  // Начальная загрузка с проверкой кеша
-  const isInitializedRef = React.useRef(false);
+  // Re-fetch when context (org/branch) changes — clear stale data first
   React.useEffect(() => {
-    if (!isInitializedRef.current) {
-      isInitializedRef.current = true;
-
-      // Восстанавливаем состояние из кеша
-      const cached = restoreState();
-      if (cached) {
-        setItems(cached.items);
-        setQ(cached.q);
-        setDetailsOpen(cached.detailsOpen);
-        setLoading(false);
-        return; // Пропускаем fetch
-      }
+    if (contextKey !== prevContextKeyRef.current) {
+      prevContextKeyRef.current = contextKey;
+      setAllItems([]);
+      setDetailsOpen(null);
+      setEditOpen(null);
+      setDeleteOpen(null);
+      setQ("");
+      setCurrentPage(1);
     }
+  }, [contextKey]);
 
-    setPage(0);
-    fetchEmployees(0, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qDebounced, fetchEmployees]);
-
-  // REALTIME: Подписка на изменения сотрудников и ролей
+  // Initial fetch + re-fetch when search or context changes.
+  // In Django mode: wait until activeMembership is resolved — avoids unauthenticated or
+  // pre-context requests that would return wrong-org data.
   React.useEffect(() => {
-    const channel = supabase
-      .channel("employees-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: EMPLOYEES_SOURCE },
-        () => {
-          console.log("Realtime: Employees changed, reloading...");
-          fetchEmployees(0, true);
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "roles" },
-        () => {
-          console.log("Realtime: Roles changed, reloading...");
-          fetchEmployees(0, true);
-        }
-      )
-      .subscribe();
-
+    if (IS_DJANGO_BACKEND && !membershipId) {
+      // Membership not yet resolved — clear stale state, don't fire request
+      setAllItems([]);
+      setLoading(false);
+      return;
+    }
+    void fetchEmployees(1, false);
     return () => {
-      supabase.removeChannel(channel);
+      abortCtrlRef.current?.abort();
     };
-  }, [fetchEmployees]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextKey, qDebounced]);
 
   const loadMore = React.useCallback(() => {
-    if (!loadingMore && hasMore && !loading) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchEmployees(nextPage, false);
+    if (hasMore && !loadingMore && !loading) {
+      void fetchEmployees(currentPage + 1, true);
     }
-  }, [loadingMore, hasMore, loading, page, fetchEmployees]);
+  }, [hasMore, loadingMore, loading, currentPage, fetchEmployees]);
+
+  // Filtered items (client-side search in Supabase mode; server-side in Django mode)
+  const filtered = React.useMemo(() => {
+    if (IS_DJANGO_BACKEND) return allItems; // server already filtered
+    if (!q.trim()) return allItems;
+    const term = q.trim().toLowerCase();
+    return allItems.filter(
+      (e) =>
+        (e.full_name || "").toLowerCase().includes(term) ||
+        (e.phone || "").toLowerCase().includes(term)
+    );
+  }, [allItems, q]);
+
+  const publicSetItems = React.useCallback(
+    (updater: EmployesRow[] | ((prev: EmployesRow[]) => EmployesRow[])) => {
+      setAllItems((prev) => {
+        return typeof updater === "function" ? updater(prev) : updater;
+      });
+    },
+    []
+  );
 
   return {
-    items,
-    setItems,
-    filtered: items,
+    items: allItems,
+    setItems: publicSetItems,
+    filtered,
     loading,
     errorMsg,
     addOpen,
@@ -225,17 +222,8 @@ export function useEmployeesPageState() {
     hasMore,
     loadingMore,
     loadMore,
+    refetch: () => void fetchEmployees(1, false),
+    totalCount,
   } as const;
 }
 
-export const employeeFormUtils = {
-  sanitizeKGLocal,
-  isKGLocalValid,
-  composeKGPhone,
-  parseKGLocalFrom,
-  assignEmployeeToServices,
-  fetchServices,
-  fetchEmployeeServiceIds,
-  replaceEmployeeServices,
-  translateAuthError,
-};

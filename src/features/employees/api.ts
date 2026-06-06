@@ -25,13 +25,14 @@ export const EMPLOYEE_PASSPORTS_BUCKET: string = "employee_passports";
 
 // Helpers - mostly simplified now that schema is strict
 export function getIdFrom(o: Record<string, unknown>): string {
-  if (typeof o.id === 'string') return o.id;
-  if (typeof o.ID === 'string') return o.ID;
+  if (typeof o.id === 'string' || typeof o.id === 'number') return String(o.id);
+  if (typeof o.ID === 'string' || typeof o.ID === 'number') return String(o.ID);
   return ""; 
 }
 
 export function getNameFrom(o: Record<string, unknown>): string {
   if (typeof o.full_name === 'string') return o.full_name;
+  if (typeof o.fullName === 'string') return o.fullName;
   if (typeof o.name === 'string') return o.name;
   return "";
 }
@@ -81,11 +82,11 @@ export function mapAnyToEmployee(o: Record<string, unknown>): Employee | null {
     role_id: typeof o.role_id === 'string' ? o.role_id : null,
     employee_type_id: typeof o.employee_type_id === 'string' ? o.employee_type_id : null,
     status: typeof o.status === 'string' ? o.status : null,
-    birth_date: typeof o.birth_date === 'string' ? o.birth_date : null,
-    photo_url: typeof o.photo_url === 'string' ? o.photo_url : null,
-    telegram_id: typeof o.telegram_id === 'string' ? o.telegram_id : null,
+    birth_date: typeof o.birth_date === 'string' ? o.birth_date : typeof o.birthDate === 'string' ? o.birthDate : null,
+    photo_url: typeof o.photo_url === 'string' ? o.photo_url : typeof o.photoUrl === 'string' ? o.photoUrl : null,
+    telegram_id: typeof o.telegram_id === 'string' ? o.telegram_id : typeof o.telegramId === 'string' ? o.telegramId : null,
     email: typeof o.email === 'string' ? o.email : null,
-    bank_account_number: typeof o.bank_account_number === 'string' ? o.bank_account_number : null,
+    bank_account_number: typeof o.bank_account_number === 'string' ? o.bank_account_number : typeof o.bankAccountNumber === 'string' ? o.bankAccountNumber : null,
     inn: typeof o.inn === 'string' ? o.inn : null,
     nickname: typeof o.nickname === 'string' ? o.nickname : null,
     salary_rules: o.salary_rules || null,

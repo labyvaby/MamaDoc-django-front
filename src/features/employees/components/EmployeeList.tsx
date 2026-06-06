@@ -19,6 +19,7 @@ import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import ListSubheader from "@mui/material/ListSubheader";
 import type { EmployesRow } from "../types";
+import { IS_DJANGO_BACKEND } from "../../../config/backend";
 
 export type EmployeeListProps = {
   items: EmployesRow[];
@@ -58,9 +59,14 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
           ? "не работает"
           : e.status;
 
-    // Ищем имя роли в массиве ролей
-    const roleObj = roles.find((r) => r.id === e.role_id);
-    const roleText = roleObj?.display_name || roleObj?.name || (e.role_id === "doctor" ? "Доктор" : e.role_id === "admin" ? "Управляющий" : statusText || "Сотрудник");
+    // В Django-режиме берём роль из _djangoRole, иначе из массива roles (Supabase)
+    let roleText: string;
+    if (IS_DJANGO_BACKEND) {
+      roleText = e._djangoRole?.name || statusText || "Сотрудник";
+    } else {
+      const roleObj = roles.find((r) => r.id === e.role_id);
+      roleText = roleObj?.display_name || roleObj?.name || (e.role_id === "doctor" ? "Доктор" : e.role_id === "admin" ? "Управляющий" : statusText || "Сотрудник");
+    }
 
     const photoUrl = e.photo_url || null;
     const hasPassports = e.passport_photos && e.passport_photos.length > 0;
@@ -73,7 +79,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
         sx={{ alignItems: "center" }}
         secondaryAction={
           (onEdit || onDelete || onOpenServices) && (
-            <Stack direction="row" spacing={0.5}>
+            <Stack direction="row" spacing={1}>
               {onOpenServices && (
                 <IconButton
                   aria-label="Услуги"
@@ -155,6 +161,39 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   const getGroupedItems = () => {
     if (!isGrouped) return items.map(renderItem);
 
+    if (IS_DJANGO_BACKEND) {
+      // В Django-режиме группируем по _djangoRole.id / name
+      const grouped: Record<string, { name: string; items: EmployesRow[] }> = {};
+      items.forEach((item) => {
+        const role = item._djangoRole;
+        const gId = role ? String(role.id) : "other";
+        const gName = role ? role.name : "Без доступа в систему";
+        if (!grouped[gId]) grouped[gId] = { name: gName, items: [] };
+        grouped[gId].items.push(item);
+      });
+
+      const elements: React.ReactNode[] = [];
+      Object.entries(grouped).forEach(([gId, group], idx) => {
+        elements.push(
+          <ListSubheader
+            key={`header-django-${gId}`}
+            sx={{
+              bgcolor: "background.default",
+              fontWeight: 600,
+              py: 0.5,
+              borderRadius: 1,
+              mt: idx > 0 ? 1 : 0,
+            }}
+          >
+            {group.name} ({group.items.length})
+          </ListSubheader>,
+        );
+        group.items.forEach((item) => elements.push(renderItem(item)));
+      });
+      return elements;
+    }
+
+    // Supabase: группировка по role_id из массива roles
     const grouped: Record<string, EmployesRow[]> = {};
 
     // Сначала распределяем по ролям

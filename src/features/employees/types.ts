@@ -1,6 +1,25 @@
 // Feature: Employees
 // New simplified types for 'Employees' table
 
+/** Minimal role shape stored on EmployesRow in Django mode */
+export type DjangoRoleShortLocal = {
+  id: number;
+  name: string;
+  code: string;
+};
+
+/** Minimal specialization shape stored on EmployesRow in Django mode */
+export type DjangoSpecializationShortLocal = {
+  id: number;
+  name: string;
+};
+
+/** Minimal branch shape stored on EmployesRow in Django mode */
+export type DjangoBranchShortLocal = {
+  id: number;
+  name: string;
+};
+
 export type Employee = {
   id: string;
   full_name: string;
@@ -21,8 +40,14 @@ export type Employee = {
   passport_photos?: string[] | null;
 
   created_at?: string;
-
   updated_at?: string;
+
+  /** Django-mode only: full role object from RBAC API */
+  _djangoRole?: DjangoRoleShortLocal | null;
+  /** Django-mode only: list of specializations */
+  _djangoSpecializations?: DjangoSpecializationShortLocal[];
+  /** Django-mode only: operational branches */
+  _djangoOperationalBranches?: DjangoBranchShortLocal[];
 };
 
 export type Specialization = {
