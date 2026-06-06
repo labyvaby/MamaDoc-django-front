@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import { apiRequest, ApiError } from "./client";
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
@@ -156,22 +157,28 @@ export interface DjangoAppointment {
   discountAmount?: string;
   payableAmount?: string;
   debt?: string;
+  // Medical conclusion flag — true if the appointment has at least one conclusion
+  hasMedicalConclusion?: boolean;
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
 export interface AppointmentServiceLineCreate {
   serviceId: number;
-  employeeId: number;
+  employeeId: number | null;
   quantity?: number;
   unitPrice?: string;
   discountAmount?: string;
+  /** Used locally to compute endsAt; not sent to backend. */
+  durationMinutes?: number;
 }
 
 export interface CreateAppointmentPayload {
   patientId?: number | null;
   branchId?: number | null;
   scheduledAt: string;
+  /** Optional override; computed from service durations if omitted. */
+  endsAt?: string;
   isNight?: boolean;
   isBooking?: boolean;
   complaints?: string | null;
@@ -185,12 +192,116 @@ export interface CreateAppointmentPayload {
 export interface UpdateAppointmentPayload {
   patientId?: number | null;
   scheduledAt?: string;
+  /** Optional override; computed from service durations if omitted. */
+  endsAt?: string;
   isNight?: boolean;
   status?: DjangoAppointmentStatus;
   complaints?: string | null;
   doctorComplaints?: string | null;
   adminComment?: string | null;
   services?: AppointmentServiceLineCreate[];
+}
+
+// ── Request denormalization ───────────────────────────────────────────────────
+
+/** Backend service line shape (write path). */
+interface BackendServiceLine {
+  serviceId: number;
+  employeeId: number | null;
+  quantity?: number;
+  unitPrice?: string;
+  discountAmount?: string;
+}
+
+/** Backend create body shape. */
+interface BackendCreateBody {
+  patientId?: number | null;
+  branchId?: number | null;
+  startsAt: string;
+  endsAt: string;
+  isNight?: boolean;
+  isBooking?: boolean;
+  complaints?: string | null;
+  doctorComplaints?: string | null;
+  adminComment?: string | null;
+  serviceLines: BackendServiceLine[];
+}
+
+/** Backend update body shape (all fields optional). */
+interface BackendUpdateBody {
+  patientId?: number | null;
+  branchId?: number | null;
+  startsAt?: string;
+  endsAt?: string;
+  isNight?: boolean;
+  isBooking?: boolean;
+  status?: string;
+  complaints?: string | null;
+  doctorComplaints?: string | null;
+  adminComment?: string | null;
+  serviceLines?: BackendServiceLine[];
+}
+
+function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
+  return services.map(({ serviceId, employeeId, quantity, unitPrice, discountAmount }) => {
+    const line: BackendServiceLine = { serviceId, employeeId: employeeId ?? null };
+    if (quantity !== undefined) line.quantity = quantity;
+    if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
+    if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
+    return line;
+  });
+}
+
+function computeEndsAt(startsAt: string, services: AppointmentServiceLineCreate[]): string {
+  // Sum durations across all service lines; fallback 30 min.
+  const totalMinutes = services.reduce((sum, s) => sum + (s.durationMinutes ?? 0), 0);
+  const duration = totalMinutes > 0 ? totalMinutes : 30;
+  return dayjs(startsAt).add(duration, "minute").toISOString();
+}
+
+function denormalizeCreatePayload(payload: CreateAppointmentPayload): BackendCreateBody {
+  if (!payload.scheduledAt) throw new Error("scheduledAt обязателен");
+  const startsAt = dayjs(payload.scheduledAt).toISOString();
+  const endsAt = payload.endsAt
+    ? dayjs(payload.endsAt).toISOString()
+    : computeEndsAt(startsAt, payload.services);
+
+  const body: BackendCreateBody = {
+    startsAt,
+    endsAt,
+    serviceLines: toBackendServiceLines(payload.services),
+  };
+  if (payload.patientId !== undefined) body.patientId = payload.patientId;
+  if (payload.branchId !== undefined) body.branchId = payload.branchId;
+  if (payload.isNight !== undefined) body.isNight = payload.isNight;
+  if (payload.isBooking !== undefined) body.isBooking = payload.isBooking;
+  if (payload.complaints !== undefined) body.complaints = payload.complaints;
+  if (payload.doctorComplaints !== undefined) body.doctorComplaints = payload.doctorComplaints;
+  if (payload.adminComment !== undefined) body.adminComment = payload.adminComment;
+  return body;
+}
+
+function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpdateBody {
+  const body: BackendUpdateBody = {};
+  if (payload.patientId !== undefined) body.patientId = payload.patientId;
+  if (payload.isNight !== undefined) body.isNight = payload.isNight;
+  if (payload.complaints !== undefined) body.complaints = payload.complaints;
+  if (payload.doctorComplaints !== undefined) body.doctorComplaints = payload.doctorComplaints;
+  if (payload.adminComment !== undefined) body.adminComment = payload.adminComment;
+  // status: map "cancelled" → "canceled" for backend
+  if (payload.status !== undefined) {
+    body.status = payload.status === "cancelled" ? "canceled" : payload.status;
+  }
+  if (payload.scheduledAt) {
+    body.startsAt = dayjs(payload.scheduledAt).toISOString();
+    body.endsAt = payload.endsAt
+      ? dayjs(payload.endsAt).toISOString()
+      : computeEndsAt(body.startsAt, payload.services ?? []);
+  }
+  if (payload.services !== undefined) {
+    body.serviceLines = toBackendServiceLines(payload.services);
+  }
+  return body;
 }
 
 // ── Service-providers ────────────────────────────────────────────────────────
@@ -297,7 +408,7 @@ export function createAppointment(
 ): Promise<DjangoAppointment> {
   return apiRequest<RawAppointment>("/appointments/", {
     method: "POST",
-    body: payload,
+    body: denormalizeCreatePayload(payload),
   }).then(normalizeAppointment);
 }
 
@@ -307,6 +418,10 @@ export function updateAppointment(
 ): Promise<DjangoAppointment> {
   return apiRequest<RawAppointment>(`/appointments/${id}/`, {
     method: "PATCH",
-    body: payload,
+    body: denormalizeUpdatePayload(payload),
   }).then(normalizeAppointment);
+}
+
+export function deleteAppointment(id: number): Promise<void> {
+  return apiRequest<void>(`/appointments/${id}/`, { method: "DELETE" });
 }

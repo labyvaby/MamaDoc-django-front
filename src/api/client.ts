@@ -1,7 +1,11 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+
+const API_URL = API_BASE;
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
+  /** Pass a FormData object to send multipart/form-data (skips JSON serialization) */
+  formData?: FormData;
 };
 
 export class ApiError extends Error {
@@ -20,16 +24,27 @@ export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const isFormData = options.formData !== undefined;
   const response = await fetch(`${API_URL}${path}`, {
     credentials: "include",
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    body:
-      options.body === undefined ? undefined : JSON.stringify(options.body),
+    headers: isFormData
+      ? { ...options.headers }  // let browser set multipart boundary
+      : {
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+    body: isFormData
+      ? options.formData
+      : options.body === undefined
+      ? undefined
+      : JSON.stringify(options.body),
   });
+
+  // 204 No Content — return undefined (void endpoints)
+  if (response.status === 204) {
+    return undefined as T;
+  }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

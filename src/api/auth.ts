@@ -53,14 +53,17 @@ export type RbacMembership = {
  */
 export type ActiveEmployee = {
   id: number;
-  fullName?: string;
-  firstName?: string;
-  lastName?: string;
-  /** Specialization code/name or any compact identifier. */
-  specialization?: string | null;
-  /** Optional branch id this employee belongs to. */
-  branchId?: number | null;
-  [key: string]: unknown;
+  fullName: string;
+  phone: string;
+  email: string;
+  nickname: string;
+  birthDate: string | null;
+  photoUrl: string | null;
+  telegramId: string;
+  bankAccountNumber: string;
+  inn: string;
+  status: string;
+  branch: { id: number; name: string } | null;
 } | null;
 
 /**
