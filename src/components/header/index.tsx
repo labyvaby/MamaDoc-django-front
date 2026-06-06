@@ -40,6 +40,7 @@ import { uploadFile } from "../../utility/storage";
 import { useNotification } from "@refinedev/core";
 import SaveIcon from "@mui/icons-material/Save";
 import CircularProgress from "@mui/material/CircularProgress";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
 
 export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
   sticky = true,
@@ -63,15 +64,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
   const [removedPassportUrls, setRemovedPassportUrls] = React.useState<string[]>([]);
 
 
-  const { employee: empFromPerms } = usePermissions();
+  const { employee: empFromPerms, role } = usePermissions();
 
   React.useEffect(() => {
     if (empFromPerms) {
       setEmployee(mapAnyToEmployee(empFromPerms));
-      const r = empFromPerms.roles;
+      const r = empFromPerms.roles || role;
       if (r) {
         setRoleInfo(r);
-        if (r.name === 'doctor' && empFromPerms.id) {
+        if (!IS_DJANGO_BACKEND && r.name === 'doctor' && empFromPerms.id) {
           fetchEmployeeSpecialization(String(empFromPerms.id)).then(async (specId) => {
             if (specId) {
               const { data: sData } = await supabase.from(DB_TABLES.SPECIALIZATIONS).select('name').eq('id', specId).single();
@@ -85,7 +86,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       setRoleInfo(null);
       setSpecializationName(null);
     }
-  }, [empFromPerms]);
+  }, [empFromPerms, role]);
 
   React.useEffect(() => {
     if (employee) {

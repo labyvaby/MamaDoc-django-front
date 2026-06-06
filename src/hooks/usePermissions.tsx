@@ -74,6 +74,7 @@ type RolePermissionsRow = { permissions?: Permission | Permission[] | null };
  */
 function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
   const { user, activeMembership, permissions: permCodes } = meData;
+  const activeEmployee = meData.activeEmployee ?? null;
 
   const roleName: RoleName = user.isSuperuser
     ? 'superadmin'
@@ -106,12 +107,14 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
 
   return {
     role,
-    employee: {
-      ...user,
-      activeMembership,
-      memberships: meData.memberships,
-      activeEmployee: meData.activeEmployee ?? null,
-    },
+    employee: activeEmployee
+      ? { ...activeEmployee, roles: role }
+      : {
+          id: user.id,
+          fullName: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username,
+          email: user.email,
+          roles: role,
+        },
     permissions,
     loaded: true,
     loading: false,
@@ -121,7 +124,7 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     activeMembership: activeMembership ?? null,
     activeOrganization: meData.activeOrganization ?? null,
     activeBranch: meData.activeBranch ?? null,
-    activeEmployee: meData.activeEmployee ?? null,
+    activeEmployee,
     enabledModules: meData.enabledModules ?? [],
   };
 }
