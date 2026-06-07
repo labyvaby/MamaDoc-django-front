@@ -39,7 +39,7 @@ const SpecializationBlock: React.FC<SpecializationBlockProps> = ({
   const [loadingAll, setLoadingAll] = React.useState(false);
   const [pendingId, setPendingId] = React.useState<number | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [adding, setAdding] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState("");
 
   React.useEffect(() => {
     if (!canView || !canManage) return;
@@ -76,7 +76,6 @@ const SpecializationBlock: React.FC<SpecializationBlockProps> = ({
       setError("Не удалось добавить специализацию");
     } finally {
       setPendingId(null);
-      setAdding(false);
     }
   };
 
@@ -135,49 +134,52 @@ const SpecializationBlock: React.FC<SpecializationBlockProps> = ({
       </Box>
 
       {canManage && (
-        <>
-          {adding ? (
-            <Autocomplete
+        <Autocomplete
+          size="small"
+          options={available}
+          getOptionLabel={(o) => o.name}
+          loading={loadingAll}
+          disabled={disabled || !!pendingId}
+          value={null}
+          inputValue={inputValue}
+          onInputChange={(_, val, reason) => {
+            if (reason !== "reset") setInputValue(val);
+          }}
+          onChange={(_, val) => {
+            if (val) {
+              setInputValue("");
+              handleLink(val);
+            }
+          }}
+          autoHighlight
+          noOptionsText={
+            loadingAll
+              ? "Загрузка…"
+              : allSpecs.length === 0
+              ? "В организации ещё нет специализаций"
+              : "Все специализации уже назначены"
+          }
+          renderInput={(params) => (
+            <TextField
+              {...params}
               size="small"
-              options={available}
-              getOptionLabel={(o) => o.name}
-              loading={loadingAll}
-              disabled={disabled || loadingAll}
-              onChange={(_, val) => {
-                if (val) handleLink(val);
-                else setAdding(false);
+              placeholder={
+                available.length === 0
+                  ? "Нет доступных специализаций"
+                  : "Выберите специализацию"
+              }
+              InputProps={{
+                ...params.InputProps,
+                endAdornment: (
+                  <>
+                    {loadingAll || pendingId ? <CircularProgress size={16} /> : null}
+                    {params.InputProps.endAdornment}
+                  </>
+                ),
               }}
-              onBlur={() => setAdding(false)}
-              autoHighlight
-              openOnFocus
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Выберите специализацию"
-                  autoFocus
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {loadingAll ? <CircularProgress size={16} /> : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    ),
-                  }}
-                />
-              )}
             />
-          ) : (
-            <Typography
-              variant="body2"
-              color="primary"
-              sx={{ cursor: "pointer", width: "fit-content" }}
-              onClick={() => !disabled && setAdding(true)}
-            >
-              + Добавить специализацию
-            </Typography>
           )}
-        </>
+        />
       )}
     </Stack>
   );
