@@ -14,8 +14,8 @@ export const djangoQueryKeys = {
       ["django", "appointments", "day-counts", params] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
-    formData: () =>
-      ["django", "appointments", "form-data"] as const,
+    formData: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
+      ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "payments"] as const,
     conclusionSlots: (appointmentId: number) =>
@@ -58,9 +58,15 @@ export const djangoQueryKeys = {
     branches: ["django", "organization", "branches"] as const,
   },
 
+  catalog: {
+    services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
+      ["django", "catalog", "services", context] as const,
+  },
+
   reference: {
     patients: ["django", "reference", "patients"] as const,
     employees: ["django", "reference", "employees"] as const,
-    services: ["django", "reference", "services"] as const,
+    services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
+      ["django", "reference", "services", context] as const,
   },
 };

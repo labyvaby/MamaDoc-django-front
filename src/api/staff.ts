@@ -18,6 +18,11 @@ export interface DjangoSpecializationShort {
   name: string;
 }
 
+// ── Clinical role ────────────────────────────────────────────────────────────
+
+/** Professional type of employee — NOT an RBAC role. */
+export type ClinicalRole = "doctor" | "nurse" | "other";
+
 // ── Employee shapes ──────────────────────────────────────────────────────────
 
 /** Full employee (GET /employees/<id>/, POST, PATCH) */
@@ -38,6 +43,7 @@ export interface DjangoEmployee {
   /** Empty string when caller lacks staff.private.view */
   inn: string;
   status: "active" | "inactive" | "fired";
+  clinicalRole: ClinicalRole;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -56,6 +62,7 @@ export interface DjangoEmployeeListItem {
   phone: string;
   email: string;
   status: "active" | "inactive" | "fired";
+  clinicalRole: ClinicalRole;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -77,6 +84,7 @@ export interface CreateEmployeePayload {
   email?: string | null;
   notes?: string | null;
   status?: "active" | "inactive" | "fired";
+  clinicalRole?: ClinicalRole;
   organizationId?: number | null;
 }
 
@@ -95,6 +103,7 @@ export interface OnboardEmployeePayload {
   fullName: string;
   roleId: number;
   employeeBranchIds: number[];
+  clinicalRole?: ClinicalRole;
 
   organizationId?: number | null;
 
@@ -128,6 +137,7 @@ export interface UpdateEmployeePayload {
   telegramId?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  clinicalRole?: ClinicalRole;
 }
 
 // ── Onboard response ─────────────────────────────────────────────────────────
@@ -236,6 +246,24 @@ export interface GetEmployeesParams {
   pageSize?: number;
 }
 
+function normalizeEmployeeListItem(item: DjangoEmployeeListItem): DjangoEmployeeListItem {
+  return {
+    ...item,
+    specializations: Array.isArray(item.specializations) ? item.specializations : [],
+    operationalBranches: Array.isArray(item.operationalBranches) ? item.operationalBranches : [],
+  };
+}
+
+function normalizeEmployee(employee: DjangoEmployee): DjangoEmployee {
+  return {
+    ...employee,
+    specializations: Array.isArray(employee.specializations) ? employee.specializations : [],
+    operationalBranches: Array.isArray(employee.operationalBranches)
+      ? employee.operationalBranches
+      : [],
+  };
+}
+
 export function getDjangoEmployees(
   params?: GetEmployeesParams,
   signal?: AbortSignal,
@@ -247,14 +275,24 @@ export function getDjangoEmployees(
   if (params?.page != null) qs.set("page", String(params.page));
   if (params?.pageSize != null) qs.set("pageSize", String(params.pageSize));
   const query = qs.toString() ? `?${qs.toString()}` : "";
-  return apiRequest<PaginatedDjangoEmployees>(`/staff/employees/${query}`, { signal });
+  return apiRequest<PaginatedDjangoEmployees>(`/staff/employees/${query}`, { signal }).then(
+    (payload) => ({
+      count: Number(payload?.count ?? 0),
+      nextPage: payload?.nextPage ?? null,
+      results: Array.isArray(payload?.results)
+        ? payload.results.map(normalizeEmployeeListItem)
+        : [],
+    }),
+  );
 }
 
 export function getDjangoEmployee(
   employeeId: number,
   signal?: AbortSignal,
 ): Promise<DjangoEmployee> {
-  return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/`, { signal });
+  return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/`, { signal }).then(
+    normalizeEmployee,
+  );
 }
 
 export function updateEmployee(
@@ -264,7 +302,7 @@ export function updateEmployee(
   return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/`, {
     method: "PATCH",
     body: payload,
-  });
+  }).then(normalizeEmployee);
 }
 
 export function fireEmployee(
@@ -273,7 +311,7 @@ export function fireEmployee(
   return apiRequest<DjangoEmployee>(`/staff/employees/${employeeId}/fire/`, {
     method: "POST",
     body: { confirm: true },
-  });
+  }).then(normalizeEmployee);
 }
 
 export function onboardEmployee(
@@ -282,7 +320,12 @@ export function onboardEmployee(
   return apiRequest<OnboardEmployeeResponse>("/staff/employees/onboard/", {
     method: "POST",
     body: payload,
-  });
+  }).then((response) => ({
+    ...response,
+    employee: normalizeEmployee(response.employee),
+    employeeBranches: Array.isArray(response.employeeBranches) ? response.employeeBranches : [],
+    userBranches: Array.isArray(response.userBranches) ? response.userBranches : [],
+  }));
 }
 
 // ── API functions — Services ──────────────────────────────────────────────────
@@ -294,7 +337,7 @@ export function getEmployeeServices(
   return apiRequest<EmployeeServiceAssignment[]>(
     `/staff/employees/${employeeId}/services/`,
     { signal },
-  );
+  ).then((items) => (Array.isArray(items) ? items : []));
 }
 
 export function assignEmployeeService(
@@ -323,7 +366,9 @@ export function updateEmployeeService(
 export function getSpecializations(
   signal?: AbortSignal,
 ): Promise<DjangoSpecialization[]> {
-  return apiRequest<DjangoSpecialization[]>("/staff/specializations/", { signal });
+  return apiRequest<DjangoSpecialization[]>("/staff/specializations/", { signal }).then(
+    (items) => (Array.isArray(items) ? items : []),
+  );
 }
 
 export function createSpecialization(
@@ -364,7 +409,7 @@ export function getEmployeeDocuments(
   return apiRequest<EmployeeDocumentItem[]>(
     `/staff/employees/${employeeId}/documents/`,
     { signal },
-  );
+  ).then((items) => (Array.isArray(items) ? items : []));
 }
 
 export function uploadEmployeeDocument(

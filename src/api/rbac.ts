@@ -60,11 +60,15 @@ export interface RoleUpdatePayload {
 // ── API functions ───────────────────────────────────────────────────────────
 
 export function getPermissions(): Promise<RbacPermission[]> {
-  return apiRequest<RbacPermission[]>("/rbac/permissions/");
+  return apiRequest<RbacPermission[]>("/rbac/permissions/").then((items) =>
+    Array.isArray(items) ? items : [],
+  );
 }
 
 export function getRoles(): Promise<RbacRole[]> {
-  return apiRequest<RbacRole[]>("/rbac/roles/");
+  return apiRequest<RbacRole[]>("/rbac/roles/").then((items) =>
+    Array.isArray(items) ? items : [],
+  );
 }
 
 export function getRole(id: number): Promise<RbacRole> {

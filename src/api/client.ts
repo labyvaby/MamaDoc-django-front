@@ -25,21 +25,31 @@ export async function apiRequest<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const isFormData = options.formData !== undefined;
-  const response = await fetch(`${API_URL}${path}`, {
-    credentials: "include",
-    ...options,
-    headers: isFormData
-      ? { ...options.headers }  // let browser set multipart boundary
-      : {
-          "Content-Type": "application/json",
-          ...options.headers,
-        },
-    body: isFormData
-      ? options.formData
-      : options.body === undefined
-      ? undefined
-      : JSON.stringify(options.body),
-  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      credentials: "include",
+      ...options,
+      headers: isFormData
+        ? { ...options.headers }  // let browser set multipart boundary
+        : {
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
+      body: isFormData
+        ? options.formData
+        : options.body === undefined
+        ? undefined
+        : JSON.stringify(options.body),
+    });
+  } catch (err) {
+    // AbortError — пробрасываем как есть, не маскируем под ApiError
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    // Сетевые ошибки (DNS, offline, CORS preflight fail) — status=0
+    const message = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(message, 0, null);
+  }
 
   // 204 No Content — return undefined (void endpoints)
   if (response.status === 204) {

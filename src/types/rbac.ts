@@ -2,6 +2,15 @@
  * Типы для системы RBAC (Role-Based Access Control)
  */
 
+/**
+ * Статус Django-аутентификации.
+ * - loading         — первый запрос ещё не завершён
+ * - authenticated   — /auth/me/ вернул валидного пользователя
+ * - unauthenticated — /auth/me/ вернул 401 (нет сессии)
+ * - unavailable     — сеть / 502 / 503 / 504: сервер временно недоступен
+ */
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'unavailable';
+
 // Типы ролей в системе
 export type RoleName = 'superadmin' | 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'registrator' | 'accountant' | 'manager' | 'owner';
 
@@ -97,6 +106,13 @@ export interface UserPermissions {
   switchContext?: (
     payload: import('../api/auth').SwitchContextPayload,
   ) => Promise<import('../api/auth').MeResponse>;
+  // ── Django auth status ──────────────────────────────────────────────────────
+  /** Текущий статус Django-аутентификации (только Django-режим). */
+  authStatus?: AuthStatus;
+  /** Последняя ошибка при проверке сессии (только Django-режим, только unavailable). */
+  authError?: string | null;
+  /** Принудительно повторить запрос /auth/me/ без reload страницы (только Django-режим). */
+  retryAuth?: () => void;
 }
 
 // Конфигурация защищенного маршрута
