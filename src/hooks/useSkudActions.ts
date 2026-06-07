@@ -6,6 +6,7 @@ import { useNotification } from "@refinedev/core";
 import { usePermissions } from "./usePermissions";
 import { useWorkShift } from "./useWorkShift";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { IS_DJANGO_BACKEND } from "../config/backend";
 
 dayjs.extend(duration);
 
@@ -50,16 +51,17 @@ export const useSkudActions = (
         retry: false,
     });
 
-    // 2. Fetch Allowed IP from Settings (Cached 5 mins)
+    // 2. Fetch Allowed IP from Settings (Cached 5 mins, Supabase only)
     const { data: dbAllowedIp } = useQuery({
         queryKey: ['appSettings', 'skud_api_url'],
         queryFn: async () => {
+            if (IS_DJANGO_BACKEND) return null;
             const { data } = await supabase
                 .from("app_settings")
                 .select("value")
                 .eq("key", "skud_api_url")
                 .single();
-            return data?.value as string | null;
+            return (data?.value ?? null) as string | null;
         },
         staleTime: 5 * 60 * 1000,
     });
