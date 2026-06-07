@@ -59,6 +59,7 @@ import PatientCard from "./components/PatientCard";
 import PatientHistoryPanel from "./components/PatientHistoryPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
+import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 
 // ── Constants / helpers ──────────────────────────────────────────────────────
 
@@ -317,6 +318,7 @@ const DjangoPatientsPage: React.FC = () => {
   const [historyError, setHistoryError] = React.useState<string | null>(null);
 
   // ── Drawers / tabs ─────────────────────────────────────────────────────────
+  const [addOpen, setAddOpen] = React.useState(false);
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<DjangoPatient | null>(null);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
@@ -431,7 +433,7 @@ const DjangoPatientsPage: React.FC = () => {
     }
   };
 
-  const handleAdd = () => { setEditing(null); setFormOpen(true); };
+  const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) { setEditing(selected); setFormOpen(true); } };
 
   const handleMerge = () => setMergeInfoOpen(true);
@@ -595,7 +597,19 @@ const DjangoPatientsPage: React.FC = () => {
         </AppBottomSheet>
       )}
 
-      {/* Add / Edit patient drawer */}
+      {/* Add patient drawer (new UX: photo, INN, blacklist) */}
+      <DjangoAddPatientDrawer
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={(p) => {
+          setAddOpen(false);
+          setPatients((prev) => [p, ...prev]);
+          setSelected(p);
+        }}
+        branchId={defaultBranchId}
+      />
+
+      {/* Edit patient drawer */}
       <PatientFormDrawer
         open={formOpen}
         onClose={() => { setFormOpen(false); setEditing(null); }}

@@ -16,6 +16,10 @@ export interface DjangoPatient {
   address: string | null;
   notes: string | null;
   source: string | null;
+  photoUrl: string | null;
+  inn: string;
+  isBlacklisted: boolean;
+  blacklistReason: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -34,6 +38,9 @@ export interface CreatePatientPayload {
   address?: string | null;
   notes?: string | null;
   source?: string | null;
+  inn?: string;
+  isBlacklisted?: boolean;
+  blacklistReason?: string;
   isActive?: boolean;
 }
 
@@ -63,5 +70,34 @@ export function updatePatient(
   return apiRequest<DjangoPatient>(`/patients/${id}/`, {
     method: "PATCH",
     body: payload,
+  });
+}
+
+export function uploadPatientPhoto(
+  patientId: number,
+  file: File,
+): Promise<DjangoPatient> {
+  const form = new FormData();
+  form.append("photo", file);
+  return apiRequest<DjangoPatient>(`/patients/${patientId}/photo/`, {
+    method: "PUT",
+    formData: form,
+  });
+}
+
+export function deletePatientPhoto(patientId: number): Promise<void> {
+  return apiRequest<void>(`/patients/${patientId}/photo/`, {
+    method: "DELETE",
+  });
+}
+
+export function getSimilarPatients(
+  phone: string,
+  signal?: AbortSignal,
+): Promise<DjangoPatient[]> {
+  const last9 = phone.replace(/\D/g, "").slice(-9);
+  if (last9.length < 7) return Promise.resolve([]);
+  return apiRequest<DjangoPatient[]>(`/patients/?search=${encodeURIComponent(last9)}`, {
+    signal,
   });
 }

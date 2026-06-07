@@ -1,13 +1,15 @@
 /**
  * DjangoAddPatientDrawer
  *
- * Django-API-only version of AddPatientDrawer.
- * Visual UX matches the original AddPatientDrawer.
+ * Django-API version of AddPatientDrawer.
+ * Fields: photo, ФИО, phone, birth date, ИНН, blacklist (role-gated).
+ * Duplicate warning Collapse in footer.
  * No Supabase calls.
  */
 
 import React from "react";
 import {
+  Alert,
   Box,
   Button,
   CircularProgress,
@@ -17,14 +19,13 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
-  MenuItem,
   Stack,
   Switch,
   TextField,
   Typography,
-  Alert,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import { useNotification } from "@refinedev/core";
 import { CustomDatePicker } from "../ui";
 import dayjs from "dayjs";
@@ -36,9 +37,14 @@ import {
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { PhoneCountryCodeSelect } from "../ui";
-import { useHasRole } from "../../hooks/usePermissions";
-import { createPatient, type DjangoPatient } from "../../api/patients";
+import { useCan } from "../../hooks/useCan";
+import {
+  createPatient,
+  uploadPatientPhoto,
+  type DjangoPatient,
+} from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
+import PatientPhotoUploader from "./PatientPhotoUploader";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +53,7 @@ type Props = {
   onClose: () => void;
   onCreated?: (p: DjangoPatient) => void;
   initialPhone?: string;
+  branchId?: number | null;
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -56,31 +63,53 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   onClose,
   onCreated,
   initialPhone,
+  branchId,
 }) => {
   const { open: notify } = useNotification();
-  const canManageBlacklist = useHasRole(["superadmin", "admin", "receptionist"]);
+  const canManageBlacklist = useCan("patients.manage");
 
+  // ── fields ─────────────────────────────────────────────────────────────────
+  const [photoFile, setPhotoFile] = React.useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
   const [fio, setFio] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
   const [birth, setBirth] = React.useState("");
-  const [gender, setGender] = React.useState<"male" | "female" | "unknown">("unknown");
-  const [notes, setNotes] = React.useState("");
+  const [inn, setInn] = React.useState("");
+  const [isBlacklisted, setIsBlacklisted] = React.useState(false);
+  const [blacklistReason, setBlacklistReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [duplicates, setDuplicates] = React.useState<DjangoPatient[]>([]);
+
+  // ── pick photo ─────────────────────────────────────────────────────────────
+  const handlePickPhoto = React.useCallback((f: File | null) => {
+    setPhotoFile(f);
+    if (f) {
+      const reader = new FileReader();
+      reader.onload = () => setPhotoPreview(reader.result as string);
+      reader.readAsDataURL(f);
+    } else {
+      setPhotoPreview(null);
+    }
+  }, []);
 
   // ── reset ─────────────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) {
+      setPhotoFile(null);
+      setPhotoPreview(null);
       setFio("");
       setPhone("");
       setPhoneCountryCode(DEFAULT_PHONE_COUNTRY_CODE);
       setBirth("");
-      setGender("unknown");
-      setNotes("");
+      setInn("");
+      setIsBlacklisted(false);
+      setBlacklistReason("");
       setBusy(false);
       setError(null);
+      setDuplicates([]);
       return;
     }
     if (initialPhone) {
@@ -90,6 +119,31 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
     }
   }, [open, initialPhone]);
 
+  // ── duplicate check on phone ───────────────────────────────────────────────
+  React.useEffect(() => {
+    if (!open) return;
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 7) {
+      setDuplicates([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const id = setTimeout(async () => {
+      try {
+        const { getSimilarPatients } = await import("../../api/patients");
+        const fullPhone = composePhone(phoneCountryCode, phone) ?? "";
+        const list = await getSimilarPatients(fullPhone, ctrl.signal);
+        if (!ctrl.signal.aborted) setDuplicates(list);
+      } catch {
+        // ignore
+      }
+    }, 500);
+    return () => {
+      clearTimeout(id);
+      ctrl.abort();
+    };
+  }, [phone, phoneCountryCode, open]);
+
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     const fioTrim = fio.trim();
@@ -97,17 +151,35 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       notify?.({ type: "error", message: "Введите ФИО пациента" });
       return;
     }
+    if (isBlacklisted && !blacklistReason.trim()) {
+      notify?.({ type: "error", message: "Укажите причину добавления в чёрный список" });
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const fullPhone = composePhone(phoneCountryCode, phone);
+      const fullPhone = composePhone(phoneCountryCode, phone) ?? "";
       const patient = await createPatient({
         fullName: fioTrim,
-        phone: fullPhone ?? "",
+        phone: fullPhone,
         birthDate: birth || null,
-        gender,
-        notes: notes.trim() || null,
+        branchId: branchId ?? null,
+        inn: inn.trim() || undefined,
+        isBlacklisted: canManageBlacklist ? isBlacklisted : undefined,
+        blacklistReason: canManageBlacklist && isBlacklisted ? blacklistReason.trim() : undefined,
       });
+
+      if (photoFile) {
+        try {
+          await uploadPatientPhoto(patient.id, photoFile);
+        } catch {
+          notify?.({
+            type: "error",
+            message: "Пациент добавлен, но фото не удалось загрузить",
+          });
+        }
+      }
+
       notify?.({ type: "success", message: "Пациент добавлен" });
       onCreated?.(patient);
       onClose();
@@ -120,6 +192,8 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
     }
   };
 
+  const hasDuplicates = duplicates.length > 0;
+
   return (
     <Drawer
       anchor="right"
@@ -127,7 +201,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       onClose={busy ? undefined : onClose}
       PaperProps={{
         sx: {
-          width: { xs: "100vw", sm: 480, md: 520 },
+          width: { xs: 320, sm: 480, md: 520 },
           maxWidth: "100vw",
           display: "flex",
           flexDirection: "column",
@@ -171,9 +245,21 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
           }}
         >
           <Stack spacing={3}>
-            {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+            {error && (
+              <Alert severity="error" onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
 
-            {/* ФИО */}
+            {/* ── Фото ── */}
+            <PatientPhotoUploader
+              photoFile={photoFile}
+              photoPreview={photoPreview}
+              onPickPhoto={handlePickPhoto}
+              inputId="add-patient-photo"
+            />
+
+            {/* ── ФИО ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                 ФИО *
@@ -184,10 +270,11 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 fullWidth
                 autoFocus
                 placeholder="Введите ФИО пациента"
+                disabled={busy}
               />
             </Stack>
 
-            {/* Телефон */}
+            {/* ── Телефон ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Телефон
@@ -199,6 +286,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                   setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                 }}
                 fullWidth
+                disabled={busy}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
@@ -222,7 +310,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
               />
             </Stack>
 
-            {/* Дата рождения */}
+            {/* ── Дата рождения ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Дата рождения
@@ -235,44 +323,73 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     fullWidth: true,
                     InputLabelProps: { shrink: true },
                     placeholder: "дд.мм.гггг",
+                    disabled: busy,
                   },
                 }}
               />
             </Stack>
 
-            {/* Пол */}
+            {/* ── ИНН ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Пол
+                ИНН
               </Typography>
               <TextField
-                select
-                value={gender}
-                onChange={(e) => setGender(e.target.value as "male" | "female" | "unknown")}
+                value={inn}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 14);
+                  setInn(v);
+                }}
                 fullWidth
-                size="small"
-              >
-                <MenuItem value="unknown">Не указан</MenuItem>
-                <MenuItem value="male">Мужской</MenuItem>
-                <MenuItem value="female">Женский</MenuItem>
-              </TextField>
-            </Stack>
-
-            {/* Примечания */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Примечания
-              </Typography>
-              <TextField
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                multiline
-                minRows={2}
-                fullWidth
-                size="small"
-                placeholder="Необязательно"
+                placeholder="000000000000"
+                disabled={busy}
+                inputProps={{ inputMode: "numeric" }}
+                helperText={`${inn.length}/14`}
               />
             </Stack>
+
+            {/* ── Чёрный список (role-gated) ── */}
+            {canManageBlacklist && (
+              <Stack spacing={1}>
+                <Divider />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={isBlacklisted}
+                      onChange={(e) => {
+                        setIsBlacklisted(e.target.checked);
+                        if (!e.target.checked) setBlacklistReason("");
+                      }}
+                      disabled={busy}
+                      color="error"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      В чёрном списке
+                    </Typography>
+                  }
+                />
+                <Collapse in={isBlacklisted}>
+                  <TextField
+                    value={blacklistReason}
+                    onChange={(e) => setBlacklistReason(e.target.value)}
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    placeholder="Укажите причину"
+                    disabled={busy}
+                    required={isBlacklisted}
+                    error={isBlacklisted && !blacklistReason.trim()}
+                    helperText={
+                      isBlacklisted && !blacklistReason.trim()
+                        ? "Обязательно для чёрного списка"
+                        : undefined
+                    }
+                  />
+                </Collapse>
+              </Stack>
+            )}
           </Stack>
         </Box>
 
@@ -280,6 +397,27 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
         <Box
           sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}
         >
+          {/* duplicate warning */}
+          <Collapse in={hasDuplicates}>
+            <Box sx={{ px: 2, pt: 1.5 }}>
+              <Alert
+                severity="warning"
+                icon={<WarningAmberOutlined fontSize="small" />}
+                sx={{ py: 0.5 }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Возможный дубль
+                </Typography>
+                {duplicates.slice(0, 3).map((d) => (
+                  <Typography key={d.id} variant="body2">
+                    {d.fullName}
+                    {d.birthDate ? ` · ${dayjs(d.birthDate).format("DD.MM.YYYY")}` : ""}
+                  </Typography>
+                ))}
+              </Alert>
+            </Box>
+          </Collapse>
+
           <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ p: 2 }}>
             <Button onClick={onClose} disabled={busy}>
               Отмена
