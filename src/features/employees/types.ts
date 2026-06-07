@@ -38,6 +38,8 @@ export type Employee = {
   nickname?: string | null;
   salary_rules?: any | null;
   passport_photos?: string[] | null;
+  /** Professional type — NOT RBAC role */
+  clinicalRole?: "doctor" | "nurse" | "other" | null;
 
   created_at?: string;
   updated_at?: string;

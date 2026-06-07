@@ -3,14 +3,11 @@ import {
   Alert,
   Autocomplete,
   Chip,
-  Collapse,
   Divider,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
   Stack,
-  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -21,13 +18,11 @@ import { useNotification } from "@refinedev/core";
 import DrawerBase from "./DrawerBase";
 import {
   onboardEmployee,
-  createEmployee,
   type OnboardEmployeeResponse,
-  type DjangoEmployee,
 } from "../../../api/staff";
-import { getBranches, type DjangoBranch } from "../../../api/organization";
 import { getRoles, type RbacRole } from "../../../api/rbac";
 import { usePermissions } from "../../../hooks/usePermissions";
+import type { RbacBranch } from "../../../api/auth";
 import { mapDjangoFullToRow } from "../viewModel";
 import type { EmployesRow } from "../types";
 
@@ -50,6 +45,14 @@ function validateEmail(val: string): string {
   return "";
 }
 
+function generateTempPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const suffix = Array.from({ length: 10 }, () =>
+    alphabet[Math.floor(Math.random() * alphabet.length)],
+  ).join("");
+  return `MamaDoc-${suffix}`;
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
@@ -58,10 +61,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   onCreated,
 }) => {
   const { open: notify } = useNotification();
-  const { activeOrganization, activeBranch } = usePermissions();
-
-  // ── access toggle ─────────────────────────────────────────────────────────────
-  const [grantAccess, setGrantAccess] = React.useState(false);
+  const { activeOrganization, activeBranch, activeMembership } = usePermissions();
 
   // ── base form state ───────────────────────────────────────────────────────────
   const [fullName, setFullName] = React.useState("");
@@ -71,7 +71,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
   const [notes, setNotes] = React.useState("");
 
-  // ── account fields (shown when grantAccess === true) ─────────────────────────
+  // ── account fields ───────────────────────────────────────────────────────────
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [username, setUsername] = React.useState("");
@@ -80,29 +80,35 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   // ── selects data ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
-  const [branches, setBranches] = React.useState<DjangoBranch[]>([]);
   const [loadingDeps, setLoadingDeps] = React.useState(false);
 
-  // ── selected values (account mode) ───────────────────────────────────────────
+  const branches: RbacBranch[] = React.useMemo(
+    () => (activeMembership?.branches ?? []).filter((branch) => branch.isActive),
+    [activeMembership],
+  );
+
+  // ── selected values ──────────────────────────────────────────────────────────
   const [roleId, setRoleId] = React.useState<number | "">("");
-  const [employeeBranches, setEmployeeBranches] = React.useState<DjangoBranch[]>([]);
-  const [userAccessBranches, setUserAccessBranches] = React.useState<DjangoBranch[]>([]);
+  const [employeeBranches, setEmployeeBranches] = React.useState<RbacBranch[]>([]);
+  const [userAccessBranches, setUserAccessBranches] = React.useState<RbacBranch[]>([]);
   const [overrideUserAccess, setOverrideUserAccess] = React.useState(false);
+
+  // ── clinical role ─────────────────────────────────────────────────────────────
+  const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
 
   // ── submit state ─────────────────────────────────────────────────────────────
   const [busy, setBusy] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
-  // ── load roles + branches when access toggle is on and drawer opens ───────────
+  // ── load roles when drawer opens ──────────────────────────────────────────────
   React.useEffect(() => {
-    if (!open || !grantAccess) return;
+    if (!open) return;
     let cancelled = false;
     setLoadingDeps(true);
-    Promise.all([getRoles(), getBranches()])
-      .then(([r, b]) => {
+    getRoles()
+      .then((r) => {
         if (!cancelled) {
           setRoles(r);
-          setBranches(b);
         }
       })
       .catch((err) => {
@@ -115,12 +121,22 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, grantAccess, notify]);
+  }, [open, notify]);
+
+  // ── preselect current branch when available ──────────────────────────────────
+  React.useEffect(() => {
+    if (!open || employeeBranches.length > 0) return;
+    const current = activeBranch
+      ? branches.find((branch) => branch.id === activeBranch.id)
+      : null;
+    if (current) {
+      setEmployeeBranches([current]);
+    }
+  }, [open, activeBranch, branches, employeeBranches.length]);
 
   // ── reset on close ────────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) {
-      setGrantAccess(false);
       setFullName("");
       setPhone("");
       setEmail("");
@@ -128,7 +144,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setFirstName("");
       setLastName("");
       setUsername("");
-      setPassword("");
+      setPassword(generateTempPassword());
       setShowPassword(false);
       setStatus("active");
       setNotes("");
@@ -136,19 +152,42 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setEmployeeBranches([]);
       setUserAccessBranches([]);
       setOverrideUserAccess(false);
+      setClinicalRole("other");
       setSubmitError(null);
       setBusy(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (open) {
+      setPassword((current) => current || generateTempPassword());
     }
   }, [open]);
 
   // ── validation ────────────────────────────────────────────────────────────────
   const canSubmit = React.useMemo(() => {
     if (!fullName.trim() || emailError || busy) return false;
-    if (grantAccess) {
-      return roleId !== "" && employeeBranches.length > 0;
-    }
-    return true;
-  }, [fullName, emailError, busy, grantAccess, roleId, employeeBranches]);
+    const hasLogin = Boolean(username.trim() || email.trim() || phone.trim());
+    const hasPassword = password.trim().length >= 8;
+    return (
+      hasLogin
+      && hasPassword
+      && roleId !== ""
+      && employeeBranches.length > 0
+      && branches.length > 0
+    );
+  }, [
+    fullName,
+    emailError,
+    busy,
+    username,
+    email,
+    phone,
+    password,
+    roleId,
+    employeeBranches,
+    branches,
+  ]);
 
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -156,42 +195,31 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     setSubmitError(null);
     setBusy(true);
     try {
-      let employeeRow: EmployesRow;
-
-      if (grantAccess) {
-        const payload = {
-          fullName: fullName.trim(),
-          roleId: roleId as number,
-          employeeBranchIds: employeeBranches.map((b) => b.id),
-          organizationId: activeOrganization?.id ?? undefined,
-          email: email.trim() || undefined,
-          phone: phone.trim() || undefined,
-          username: username.trim() || undefined,
-          password: password.trim() || undefined,
-          firstName: firstName.trim() || undefined,
-          lastName: lastName.trim() || undefined,
-          userBranchAccessIds: overrideUserAccess
-            ? userAccessBranches.map((b) => b.id)
-            : undefined,
-          status,
-          notes: notes.trim() || undefined,
-        };
-        const res: OnboardEmployeeResponse = await onboardEmployee(payload);
-        employeeRow = mapDjangoFullToRow(res.employee);
-        notify?.({ type: "success", message: `Сотрудник ${res.employee.fullName} создан` });
-      } else {
-        const emp: DjangoEmployee = await createEmployee({
-          fullName: fullName.trim(),
-          phone: phone.trim() || null,
-          email: email.trim() || null,
-          notes: notes.trim() || null,
-          status,
-          branchId: activeBranch?.id ?? null,
-          organizationId: activeOrganization?.id ?? null,
-        });
-        employeeRow = mapDjangoFullToRow(emp);
-        notify?.({ type: "success", message: `Сотрудник ${emp.fullName} создан` });
-      }
+      const payload = {
+        fullName: fullName.trim(),
+        roleId: roleId as number,
+        employeeBranchIds: employeeBranches.map((b) => b.id),
+        organizationId: activeOrganization?.id ?? undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        username: username.trim() || undefined,
+        password: password.trim(),
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+        userBranchAccessIds: overrideUserAccess
+          ? userAccessBranches.map((b) => b.id)
+          : undefined,
+        branchId: employeeBranches[0]?.id ?? activeBranch?.id ?? null,
+        status,
+        notes: notes.trim() || undefined,
+        clinicalRole,
+      };
+      const res: OnboardEmployeeResponse = await onboardEmployee(payload);
+      const employeeRow: EmployesRow = mapDjangoFullToRow(res.employee);
+      notify?.({
+        type: "success",
+        message: `Сотрудник ${res.employee.fullName} создан. Логин: ${res.user.username}`,
+      });
 
       onCreated(employeeRow);
       onClose();
@@ -291,6 +319,26 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </TextField>
         </Stack>
 
+        {/* ── Тип сотрудника ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Тип сотрудника
+          </Typography>
+          <TextField
+            select
+            value={clinicalRole}
+            onChange={(e) =>
+              setClinicalRole(e.target.value as "doctor" | "nurse" | "other")
+            }
+            fullWidth
+            disabled={busy}
+          >
+            <MenuItem value="doctor">Врач</MenuItem>
+            <MenuItem value="nurse">Медсестра</MenuItem>
+            <MenuItem value="other">Другой сотрудник</MenuItem>
+          </TextField>
+        </Stack>
+
         {/* ── Заметки ── */}
         <Stack spacing={0.5}>
           <Typography variant="body2" color="text.secondary" fontWeight={600}>
@@ -310,31 +358,13 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
         <Divider />
 
-        {/* ── Предоставить доступ в систему ── */}
-        <FormControlLabel
-          control={
-            <Switch
-              checked={grantAccess}
-              onChange={(e) => setGrantAccess(e.target.checked)}
-              disabled={busy}
-            />
-          }
-          label={
-            <Stack>
-              <Typography variant="body2" fontWeight={600}>
-                Предоставить доступ в систему
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Создать учётную запись пользователя с ролью и доступом к CRM
-              </Typography>
-            </Stack>
-          }
-          sx={{ alignItems: "flex-start", ml: 0 }}
-        />
+        <Alert severity="info">
+          При сохранении автоматически создаётся пользователь для входа в систему,
+          членство в организации и карточка сотрудника.
+        </Alert>
 
-        {/* ── Поля учётной записи (только при grantAccess) ── */}
-        <Collapse in={grantAccess} unmountOnExit>
-          <Stack spacing={2.5}>
+        {/* ── Поля учётной записи ── */}
+        <Stack spacing={2.5}>
             {/* ── Имя / Фамилия ── */}
             <Stack direction="row" spacing={1.5}>
               <Stack spacing={0.5} flex={1}>
@@ -366,21 +396,22 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             {/* ── Username ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Логин (username)
+                Логин
               </Typography>
               <TextField
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 fullWidth
-                placeholder="ivanov_ivan"
+                placeholder="Можно оставить пустым, если указан телефон или email"
                 disabled={busy}
+                helperText="Если не указан, backend использует email или телефон"
               />
             </Stack>
 
             {/* ── Password ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Пароль (необязательно)
+                Пароль *
               </Typography>
               <TextField
                 value={password}
@@ -389,6 +420,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 placeholder="Минимум 8 символов"
                 type={showPassword ? "text" : "password"}
                 disabled={busy}
+                error={password.trim().length > 0 && password.trim().length < 8}
+                helperText="Передайте этот пароль сотруднику для первого входа"
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -442,31 +475,35 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               <Typography variant="caption" color="text.secondary">
                 Где сотрудник работает операционно
               </Typography>
-              <Autocomplete
-                multiple
-                options={branches}
-                value={employeeBranches}
-                getOptionLabel={(b) => b.name}
-                isOptionEqualToValue={(a, b) => a.id === b.id}
-                onChange={(_, val) => setEmployeeBranches(val)}
-                disabled={loadingDeps || busy}
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip
-                      label={option.name}
-                      size="small"
-                      {...getTagProps({ index })}
-                      key={option.id}
+              {branches.length === 0 ? (
+                <Alert severity="warning">Нет доступных филиалов</Alert>
+              ) : (
+                <Autocomplete
+                  multiple
+                  options={branches}
+                  value={employeeBranches}
+                  getOptionLabel={(b) => b.name}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  onChange={(_, val) => setEmployeeBranches(val)}
+                  disabled={loadingDeps || busy}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip
+                        label={option.name}
+                        size="small"
+                        {...getTagProps({ index })}
+                        key={option.id}
+                      />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
                     />
-                  ))
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
-                  />
-                )}
-              />
+                  )}
+                />
+              )}
             </Stack>
 
             {/* ── Доступ к CRM ── */}
@@ -506,8 +543,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 )}
               />
             </Stack>
-          </Stack>
-        </Collapse>
+        </Stack>
       </Stack>
     </DrawerBase>
   );

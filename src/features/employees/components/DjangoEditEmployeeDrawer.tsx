@@ -53,6 +53,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [notes, setNotes] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -72,6 +73,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setNotes(record.nickname || "");
     setBankAccountNumber(record.bank_account_number || "");
     setInn(record.inn || "");
+    setClinicalRole(
+      record.clinicalRole === "doctor" || record.clinicalRole === "nurse"
+        ? record.clinicalRole
+        : "other",
+    );
     setSpecializations(record._djangoSpecializations ?? []);
     setError(null);
 
@@ -86,6 +92,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setNotes(full.notes || "");
         setBankAccountNumber(full.bankAccountNumber || "");
         setInn(full.inn || "");
+        setClinicalRole(full.clinicalRole ?? "other");
         setSpecializations(full.specializations ?? []);
       })
       .catch((e) => {
@@ -117,6 +124,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         telegramId: telegramId.trim() || null,
         birthDate: birthDate || null,
         notes: notes.trim() || null,
+        clinicalRole,
       };
       if (canManagePrivate) {
         payload.bankAccountNumber = bankAccountNumber.trim() || null;
@@ -140,6 +148,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         photo_url: updated.photoUrl || null,
         nickname: updated.notes || null,
         role_id: updated.role ? String(updated.role.id) : null,
+        clinicalRole: updated.clinicalRole ?? "other",
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
         _djangoOperationalBranches: updated.operationalBranches ?? [],
@@ -227,6 +236,25 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 {opt.label}
               </MenuItem>
             ))}
+          </TextField>
+        </Stack>
+
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+            Тип сотрудника
+          </Typography>
+          <TextField
+            select
+            value={clinicalRole}
+            onChange={(e) =>
+              setClinicalRole(e.target.value as "doctor" | "nurse" | "other")
+            }
+            fullWidth
+            disabled={busy}
+          >
+            <MenuItem value="doctor">Врач</MenuItem>
+            <MenuItem value="nurse">Медсестра</MenuItem>
+            <MenuItem value="other">Другой сотрудник</MenuItem>
           </TextField>
         </Stack>
 

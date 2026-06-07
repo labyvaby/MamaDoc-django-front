@@ -32,8 +32,8 @@ import {
   type EmployeeServiceAssignment,
 } from "../../../api/staff";
 import { getServices, type Service } from "../../../api/catalog";
-import { getBranches, type DjangoBranch } from "../../../api/organization";
 import { useCan } from "../../../hooks/useCan";
+import { usePermissions } from "../../../hooks/usePermissions";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -81,11 +81,13 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   const { open: notify } = useNotification();
   const canView = useCan("staff.view");
   const canEdit = useCan("staff.update");
+  const { activeMembership } = usePermissions();
+
+  const availableBranches = activeMembership?.branches ?? [];
 
   // ── server data ───────────────────────────────────────────────────────────
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
   const [services, setServices] = React.useState<Service[]>([]);
-  const [branches, setBranches] = React.useState<DjangoBranch[]>([]);
   const [loadingData, setLoadingData] = React.useState(false);
   const [dataError, setDataError] = React.useState<string | null>(null);
 
@@ -100,19 +102,18 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   React.useEffect(() => {
     if (!open || !canView) return;
     let cancelled = false;
+    const controller = new AbortController();
     setLoadingData(true);
     setDataError(null);
 
     Promise.all([
       getEmployeeServices(employeeId),
-      getServices(),
-      getBranches(),
+      getServices(null, controller.signal),
     ])
-      .then(([a, s, b]) => {
+      .then(([a, s]) => {
         if (!cancelled) {
           setAssignments(a);
           setServices(s.filter((sv) => sv.isActive));
-          setBranches(b.filter((br) => br.isActive));
         }
       })
       .catch((err: unknown) => {
@@ -125,8 +126,27 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [open, canView, employeeId]);
+
+  // ── reload services when branch changes in new-assignment form ────────────
+  React.useEffect(() => {
+    if (!showForm || editingId !== null) return;
+    let cancelled = false;
+    const controller = new AbortController();
+
+    getServices(form.branchId, controller.signal)
+      .then((s) => {
+        if (!cancelled) setServices(s.filter((sv) => sv.isActive));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [form.branchId, showForm, editingId]);
 
   // ── reset on close ────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -411,7 +431,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                         SelectProps={{ displayEmpty: true }}
                       >
                         <MenuItem value="">Все доступные филиалы</MenuItem>
-                        {branches.map((b) => (
+                        {availableBranches.map((b) => (
                           <MenuItem key={b.id} value={b.id}>
                             {b.name}
                           </MenuItem>
