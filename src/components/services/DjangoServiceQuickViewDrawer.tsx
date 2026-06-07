@@ -14,6 +14,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import MedicalServicesIcon from "@mui/icons-material/MedicalServices";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import { getService } from "../../api/catalog";
 import type { Service } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
@@ -148,6 +149,24 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                     <Typography variant="body2" fontWeight={500}>
                       {service.durationMinutes} мин
                     </Typography>
+                  </Stack>
+                )}
+                {service.branches.length > 0 && (
+                  <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                    <LocationOnOutlinedIcon fontSize="small" color="action" sx={{ mt: 0.25 }} />
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Филиалы:
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                        {service.branches.map((b) => (
+                          <Chip key={b.id} label={b.name} size="small" variant="outlined" />
+                        ))}
+                        {service.hasHiddenBranches && (
+                          <Chip label="…" size="small" variant="outlined" />
+                        )}
+                      </Stack>
+                    </Box>
                   </Stack>
                 )}
               </Stack>

@@ -4,6 +4,7 @@ import {
   Card,
   CardContent,
   Button,
+  Chip,
   Divider,
   Stack,
   Typography,
@@ -33,7 +34,7 @@ const BATCH_SIZE = 20;
 const DjangoServicesPage: React.FC = () => {
   usePageTitle("Услуги");
   const { open: notify } = useNotification();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, activeBranch } = usePermissions();
 
   const canView = hasPermission("catalog.view");
   const canCreate = hasPermission("catalog.create");
@@ -64,21 +65,26 @@ const DjangoServicesPage: React.FC = () => {
   // Поиск
   const [searchQuery, setSearchQuery] = React.useState("");
 
-  const loadAll = React.useCallback(async () => {
+  const activeBranchId = activeBranch?.id ?? null;
+
+  const loadAll = React.useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const svcs = await getServices();
+      const svcs = await getServices(activeBranchId, signal);
       setAllServices(svcs);
     } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
       setErrorMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeBranchId]);
 
   React.useEffect(() => {
-    loadAll();
+    const controller = new AbortController();
+    loadAll(controller.signal);
+    return () => controller.abort();
   }, [loadAll]);
 
   // Перезагружать при переключении контекста (org/branch)
@@ -141,95 +147,110 @@ const DjangoServicesPage: React.FC = () => {
     }
   };
 
-  const ServiceListItem: React.FC<{ s: Service }> = ({ s }) => (
-    <Box
-      onClick={() => {
-        setSelectedServiceId(s.id);
-        setDetailsOpen(true);
-      }}
-      sx={{
-        px: 2,
-        py: 2,
-        cursor: "pointer",
-        "&:hover": { bgcolor: "action.hover" },
-      }}
-    >
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "flex-start", sm: "center" }}
-        justifyContent="space-between"
-        gap={1.5}
+  const ServiceListItem: React.FC<{ s: Service }> = ({ s }) => {
+    const canEditThis = canUpdate && !s.hasHiddenBranches;
+    const canDeleteThis = canDelete && !s.hasHiddenBranches;
+
+    return (
+      <Box
+        onClick={() => {
+          setSelectedServiceId(s.id);
+          setDetailsOpen(true);
+        }}
+        sx={{
+          px: 2,
+          py: 2,
+          cursor: "pointer",
+          "&:hover": { bgcolor: "action.hover" },
+        }}
       >
-        {/* Фото + название */}
-        <Stack direction="row" alignItems="center" gap={1.5} sx={{ minWidth: 0, flex: 1 }}>
-          <Box
-            sx={{
-              width: 80,
-              height: 80,
-              overflow: "hidden",
-              borderRadius: 1,
-              flexShrink: 0,
-              bgcolor: s.imageUrl ? "transparent" : "action.hover",
-              opacity: s.isActive ? 1 : 0.6,
-            }}
-          >
-            {s.imageUrl && (
-              <Box
-                component="img"
-                src={s.imageUrl}
-                alt=""
-                sx={{ width: 1, height: 1, objectFit: "cover", display: "block" }}
-              />
-            )}
-          </Box>
-          <Stack sx={{ minWidth: 0, flex: 1 }}>
-            <Typography variant="subtitle1" noWrap sx={{ opacity: s.isActive ? 1 : 0.6 }}>
-              {s.name || "Без названия"}
-            </Typography>
-            {!s.isActive && (
-              <Typography variant="caption" color="error">
-                Неактивна
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ xs: "flex-start", sm: "center" }}
+          justifyContent="space-between"
+          gap={1.5}
+        >
+          {/* Фото + название + филиалы */}
+          <Stack direction="row" alignItems="center" gap={1.5} sx={{ minWidth: 0, flex: 1 }}>
+            <Box
+              sx={{
+                width: 80,
+                height: 80,
+                overflow: "hidden",
+                borderRadius: 1,
+                flexShrink: 0,
+                bgcolor: s.imageUrl ? "transparent" : "action.hover",
+                opacity: s.isActive ? 1 : 0.6,
+              }}
+            >
+              {s.imageUrl && (
+                <Box
+                  component="img"
+                  src={s.imageUrl}
+                  alt=""
+                  sx={{ width: 1, height: 1, objectFit: "cover", display: "block" }}
+                />
+              )}
+            </Box>
+            <Stack sx={{ minWidth: 0, flex: 1 }} gap={0.5}>
+              <Typography variant="subtitle1" noWrap sx={{ opacity: s.isActive ? 1 : 0.6 }}>
+                {s.name || "Без названия"}
               </Typography>
+              {!s.isActive && (
+                <Typography variant="caption" color="error">
+                  Неактивна
+                </Typography>
+              )}
+              {s.branches.length > 0 && (
+                <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                  {s.branches.map((b) => (
+                    <Chip key={b.id} label={b.name} size="small" variant="outlined" />
+                  ))}
+                  {s.hasHiddenBranches && (
+                    <Chip label="…" size="small" variant="outlined" color="default" />
+                  )}
+                </Stack>
+              )}
+            </Stack>
+          </Stack>
+
+          {/* Цена + иконки */}
+          <Stack
+            direction="row"
+            alignItems="center"
+            gap={1.25}
+            sx={{ minWidth: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Typography variant="subtitle2" color="text.primary" sx={{ whiteSpace: "nowrap" }}>
+              {Number(s.basePrice)} сом
+            </Typography>
+            {canEditThis && (
+              <Tooltip title="Редактировать">
+                <IconButton size="small" onClick={() => handleEdit(s)}>
+                  <EditOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+            {canDeleteThis && (
+              <Tooltip title="Удалить">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => {
+                    setConfirmRow(s);
+                    setConfirmOpen(true);
+                  }}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             )}
           </Stack>
         </Stack>
-
-        {/* Цена + иконки */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          gap={1.25}
-          sx={{ minWidth: 0 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Typography variant="subtitle2" color="text.primary" sx={{ whiteSpace: "nowrap" }}>
-            {Number(s.basePrice)} сом
-          </Typography>
-          {canUpdate && (
-            <Tooltip title="Редактировать">
-              <IconButton size="small" onClick={() => handleEdit(s)}>
-                <EditOutlinedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          {canDelete && (
-            <Tooltip title="Удалить">
-              <IconButton
-                size="small"
-                color="error"
-                onClick={() => {
-                  setConfirmRow(s);
-                  setConfirmOpen(true);
-                }}
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Stack>
-      </Stack>
-    </Box>
-  );
+      </Box>
+    );
+  };
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
