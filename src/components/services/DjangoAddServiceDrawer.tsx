@@ -1,7 +1,10 @@
 import React from "react";
 import {
+  Alert,
+  Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Divider,
   Drawer,
@@ -19,6 +22,8 @@ import { useNotification } from "@refinedev/core";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
 import { createService, uploadServiceImage } from "../../api/catalog";
+import { usePermissions } from "../../hooks/usePermissions";
+import type { RbacBranch } from "../../api/auth";
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -42,6 +47,12 @@ type Props = {
 
 const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
   const { open: notify } = useNotification();
+  const { activeMembership, activeBranch } = usePermissions();
+
+  const availableBranches: RbacBranch[] = React.useMemo(
+    () => activeMembership?.branches ?? [],
+    [activeMembership],
+  );
 
   const [name, setName] = React.useState("");
   const [price, setPrice] = React.useState("");
@@ -50,8 +61,20 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const [isActive, setIsActive] = React.useState(true);
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
+  const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+
+  // Pre-select activeBranch when drawer opens (not all branches).
+  React.useEffect(() => {
+    if (open) {
+      const preselected = activeBranch
+        ? availableBranches.filter((b) => b.id === activeBranch.id)
+        : [];
+      setSelectedBranches(preselected);
+    }
+  }, [open, activeBranch, availableBranches]);
 
   React.useEffect(() => {
     if (!open) {
@@ -62,8 +85,10 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       setIsActive(true);
       setPhotoFile(null);
       setPhotoPreview(null);
+      setSelectedBranches([]);
       setBusy(false);
       setTouched(false);
+      setSubmitError(null);
     }
   }, [open]);
 
@@ -94,14 +119,27 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       notify?.({ type: "error", message: "Заполните название и положительную стоимость услуги" });
       return;
     }
+
+    let effectiveBranchIds: number[];
+    if (selectedBranches.length > 0) {
+      effectiveBranchIds = selectedBranches.map((b) => b.id);
+    } else if (activeBranch && availableBranches.some((b) => b.id === activeBranch.id)) {
+      effectiveBranchIds = [activeBranch.id];
+    } else {
+      notify?.({ type: "error", message: "Выберите филиал в сайдбаре или укажите филиалы вручную" });
+      return;
+    }
+
     setBusy(true);
+    setSubmitError(null);
     try {
       const service = await createService({
         name: name.trim(),
-        description: description.trim() || null,
+        description: description.trim(),
         durationMinutes: durNum > 0 ? durNum : 30,
         basePrice: String(priceNum),
         isActive,
+        branchIds: effectiveBranchIds,
       });
       if (photoFile) {
         try {
@@ -114,15 +152,19 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       onCreated?.();
       onClose();
     } catch (e) {
-      notify?.({ type: "error", message: e instanceof Error ? e.message : "Не удалось создать услугу" });
+      const msg = e instanceof Error ? e.message : "Не удалось создать услугу";
+      setSubmitError(msg);
     } finally {
       setBusy(false);
     }
   };
 
-  const submitDisabled = !name.trim() || !price || Number(price) <= 0;
+  const noBranches = availableBranches.length === 0;
+  const hasEffectiveBranch = selectedBranches.length > 0 || (!!activeBranch && availableBranches.some((b) => b.id === activeBranch.id));
+  const submitDisabled = !name.trim() || !price || Number(price) <= 0 || noBranches;
   const nameError = touched && !name.trim();
   const priceError = touched && (!price || Number(price) <= 0);
+  const branchError = touched && !hasEffectiveBranch;
 
   return (
     <Drawer
@@ -161,6 +203,12 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
           }}
         >
           <Stack spacing={2.5}>
+            {submitError && (
+              <Alert severity="error" onClose={() => setSubmitError(null)}>
+                {submitError}
+              </Alert>
+            )}
+
             <ServicePhotoUploader
               photoFile={photoFile}
               photoPreview={photoPreview}
@@ -180,7 +228,51 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                 fullWidth
                 error={nameError}
                 helperText={nameError ? "Обязательное поле" : ""}
+                disabled={busy}
               />
+            </Stack>
+
+            {/* Филиалы */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Филиалы
+              </Typography>
+              {noBranches ? (
+                <Alert severity="warning">Сначала создайте филиал</Alert>
+              ) : (
+                <Autocomplete
+                  multiple
+                  options={availableBranches}
+                  getOptionLabel={(o) => o.name}
+                  value={selectedBranches}
+                  onChange={(_, val) => setSelectedBranches(val)}
+                  disabled={busy}
+                  renderTags={(val, getTagProps) =>
+                    val.map((opt, idx) => (
+                      <Chip
+                        {...getTagProps({ index: idx })}
+                        key={opt.id}
+                        label={opt.name}
+                        size="small"
+                      />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder={
+                        selectedBranches.length === 0
+                          ? activeBranch
+                            ? `По умолчанию: ${activeBranch.name}. Можно выбрать несколько филиалов.`
+                            : "Выберите один или несколько филиалов"
+                          : ""
+                      }
+                      error={branchError}
+                      helperText={branchError ? "Выберите филиал в сайдбаре или укажите филиалы вручную" : ""}
+                    />
+                  )}
+                />
+              )}
             </Stack>
 
             {/* Стоимость + Длительность */}
@@ -199,6 +291,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                   placeholder="0"
                   error={priceError}
                   helperText={priceError ? "Введите положительную стоимость" : ""}
+                  disabled={busy}
                 />
               </Stack>
               <Stack spacing={0.5} sx={{ flex: 1 }}>
@@ -213,6 +306,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                   InputProps={{ endAdornment: <InputAdornment position="end">мин</InputAdornment> }}
                   fullWidth
                   placeholder="30"
+                  disabled={busy}
                 />
               </Stack>
             </Stack>
@@ -229,6 +323,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                 fullWidth
                 multiline
                 rows={3}
+                disabled={busy}
               />
             </Stack>
 

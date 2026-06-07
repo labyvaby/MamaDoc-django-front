@@ -2,6 +2,11 @@ import { apiRequest, API_BASE } from "./client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export interface BranchRef {
+  id: number;
+  name: string;
+}
+
 export interface Service {
   id: number;
   organizationId: number;
@@ -13,48 +18,80 @@ export interface Service {
   isActive: boolean;
   imageUrl: string | null;
   sortOrder: number;
+  /** Branches visible to the current user. */
+  branches: BranchRef[];
+  /** True when the service is also assigned to branches outside the caller's scope. */
+  hasHiddenBranches: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 // ── Payloads ───────────────────────────────────────────────────────────────
 
-export interface ServicePayload {
+export interface ServiceCreatePayload {
   name: string;
-  /** Slug is optional — backend auto-generates from name if omitted. */
+  /** Required: at least one active branch in the organization. */
+  branchIds: number[];
   slug?: string;
-  description?: string | null;
+  description?: string;
   durationMinutes?: number;
   basePrice?: string;
   isActive?: boolean;
   sortOrder?: number;
 }
 
+export interface ServiceUpdatePayload {
+  name?: string;
+  slug?: string;
+  description?: string;
+  durationMinutes?: number;
+  basePrice?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  /**
+   * When present and non-empty → sync branch assignments.
+   * When absent → do not change branches.
+   * Empty array → the backend returns 400.
+   */
+  branchIds?: number[];
+}
+
+function normalizeService(service: Service): Service {
+  return {
+    ...service,
+    branches: Array.isArray(service.branches) ? service.branches : [],
+    hasHiddenBranches: Boolean(service.hasHiddenBranches),
+  };
+}
+
 // ── API functions ──────────────────────────────────────────────────────────
 
-export function getServices(signal?: AbortSignal): Promise<Service[]> {
-  return apiRequest<Service[]>("/catalog/services/", { signal });
+export function getServices(branchId?: number | null, signal?: AbortSignal): Promise<Service[]> {
+  const params = branchId != null ? `?branchId=${branchId}` : "";
+  return apiRequest<Service[]>(`/catalog/services/${params}`, { signal }).then((services) =>
+    (Array.isArray(services) ? services : []).map(normalizeService),
+  );
 }
 
 export function getService(id: number): Promise<Service> {
-  return apiRequest<Service>(`/catalog/services/${id}/`);
+  return apiRequest<Service>(`/catalog/services/${id}/`).then(normalizeService);
 }
 
-export function createService(payload: ServicePayload): Promise<Service> {
+export function createService(payload: ServiceCreatePayload): Promise<Service> {
   return apiRequest<Service>("/catalog/services/", {
     method: "POST",
     body: payload,
-  });
+  }).then(normalizeService);
 }
 
 export function updateService(
   id: number,
-  payload: Partial<ServicePayload>,
+  payload: ServiceUpdatePayload,
 ): Promise<Service> {
   return apiRequest<Service>(`/catalog/services/${id}/`, {
     method: "PATCH",
     body: payload,
-  });
+  }).then(normalizeService);
 }
 
 export function deleteService(id: number): Promise<void> {
@@ -77,7 +114,8 @@ export async function uploadServiceImage(id: number, file: File): Promise<Servic
     const text = await resp.text().catch(() => resp.statusText);
     throw new Error(text || `HTTP ${resp.status}`);
   }
-  return resp.json() as Promise<Service>;
+  const service = (await resp.json()) as Service;
+  return normalizeService(service);
 }
 
 /**
