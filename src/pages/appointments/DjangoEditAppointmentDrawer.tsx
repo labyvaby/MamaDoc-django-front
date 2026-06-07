@@ -55,6 +55,8 @@ export type DjangoEditAppointmentDrawerProps = {
 };
 
 type ServiceRow = {
+  /** id of the existing AppointmentServiceLine, null for new rows */
+  lineId: number | null;
   serviceId: number | null;
   employeeId: number | null;
   quantity: number;
@@ -99,7 +101,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const { open: notify } = useNotification();
   const canUpdate = useCan("appointments.update");
 
-  const data = useDjangoAppointmentData(open);
+  const data = useDjangoAppointmentData(open, appointment?.branchId ?? null);
 
   // ── form ────────────────────────────────────────────────────────────────
   const [scheduledAt, setScheduledAt] = React.useState<string>("");
@@ -108,7 +110,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
-    { serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
+    { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
   ]);
   // Товары — В разработке (Django API не поддерживает в MVP)
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
@@ -147,7 +149,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       setSelectedPatient(null);
       setPatientSearch("");
       setServiceRows([
-        { serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
+        { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
       ]);
       setProductRows([]);
       setComplaints("");
@@ -171,6 +173,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (appointment.services.length > 0) {
       setServiceRows(
         appointment.services.map((line) => ({
+          lineId: line.id ?? null,
           serviceId: line.service?.id ?? null,
           employeeId: line.employee?.id ?? null,
           quantity: line.quantity ?? 1,
@@ -180,7 +183,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       );
     } else {
       setServiceRows([
-        { serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
+        { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
       ]);
     }
   }, [open, appointment]);
@@ -262,17 +265,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         complaints: complaints.trim() || null,
         doctorComplaints: doctorComplaints.trim() || null,
         adminComment: adminComment.trim() || null,
-        services: validRows.map((r) => {
-          const catalogService = data.services.find((s) => s.id === r.serviceId);
-          return {
-            serviceId: r.serviceId!,
-            employeeId: r.employeeId,
-            quantity: r.quantity > 0 ? r.quantity : 1,
-            durationMinutes: catalogService?.durationMinutes,
-            ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
-            ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
-          };
-        }),
+        services: validRows.map((r) => ({
+          ...(r.lineId != null ? { id: r.lineId } : {}),
+          serviceId: r.serviceId!,
+          employeeId: r.employeeId,
+          quantity: r.quantity > 0 ? r.quantity : 1,
+          ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
+          ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
+        })),
       });
       notify?.({ type: "success", message: "Приём обновлён" });
       onSaved?.(updated);
@@ -683,6 +683,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                             setServiceRows((prev) => [
                               ...prev,
                               {
+                                lineId: null,
                                 serviceId: null,
                                 employeeId: prev[prev.length - 1]?.employeeId ?? null,
                                 quantity: 1,

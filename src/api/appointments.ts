@@ -84,7 +84,8 @@ export interface AppointmentServiceLine {
   employee: AppointmentEmployeeShort | null;
   /** Effective unit price for this line */
   price: string;
-  durationMinutes: number | null;
+  /** Duration snapshot — always set after migration 0012 */
+  durationMinutes: number;
   quantity: number;
   /** Unit price before any discount (may equal price when no override) */
   unitPrice: string;
@@ -164,21 +165,19 @@ export interface DjangoAppointment {
 // ── Create ────────────────────────────────────────────────────────────────────
 
 export interface AppointmentServiceLineCreate {
+  /** When set, identifies an existing line to update in-place (diff semantics). */
+  id?: number | null;
   serviceId: number;
   employeeId: number | null;
   quantity?: number;
   unitPrice?: string;
   discountAmount?: string;
-  /** Used locally to compute endsAt; not sent to backend. */
-  durationMinutes?: number;
 }
 
 export interface CreateAppointmentPayload {
   patientId?: number | null;
   branchId?: number | null;
   scheduledAt: string;
-  /** Optional override; computed from service durations if omitted. */
-  endsAt?: string;
   isNight?: boolean;
   isBooking?: boolean;
   complaints?: string | null;
@@ -192,8 +191,6 @@ export interface CreateAppointmentPayload {
 export interface UpdateAppointmentPayload {
   patientId?: number | null;
   scheduledAt?: string;
-  /** Optional override; computed from service durations if omitted. */
-  endsAt?: string;
   isNight?: boolean;
   status?: DjangoAppointmentStatus;
   complaints?: string | null;
@@ -206,6 +203,7 @@ export interface UpdateAppointmentPayload {
 
 /** Backend service line shape (write path). */
 interface BackendServiceLine {
+  id?: number;
   serviceId: number;
   employeeId: number | null;
   quantity?: number;
@@ -218,7 +216,6 @@ interface BackendCreateBody {
   patientId?: number | null;
   branchId?: number | null;
   startsAt: string;
-  endsAt: string;
   isNight?: boolean;
   isBooking?: boolean;
   complaints?: string | null;
@@ -232,7 +229,6 @@ interface BackendUpdateBody {
   patientId?: number | null;
   branchId?: number | null;
   startsAt?: string;
-  endsAt?: string;
   isNight?: boolean;
   isBooking?: boolean;
   status?: string;
@@ -243,8 +239,9 @@ interface BackendUpdateBody {
 }
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
-  return services.map(({ serviceId, employeeId, quantity, unitPrice, discountAmount }) => {
+  return services.map(({ id, serviceId, employeeId, quantity, unitPrice, discountAmount }) => {
     const line: BackendServiceLine = { serviceId, employeeId: employeeId ?? null };
+    if (id != null) line.id = id;
     if (quantity !== undefined) line.quantity = quantity;
     if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
     if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
@@ -252,23 +249,11 @@ function toBackendServiceLines(services: AppointmentServiceLineCreate[]): Backen
   });
 }
 
-function computeEndsAt(startsAt: string, services: AppointmentServiceLineCreate[]): string {
-  // Sum durations across all service lines; fallback 30 min.
-  const totalMinutes = services.reduce((sum, s) => sum + (s.durationMinutes ?? 0), 0);
-  const duration = totalMinutes > 0 ? totalMinutes : 30;
-  return dayjs(startsAt).add(duration, "minute").toISOString();
-}
-
 function denormalizeCreatePayload(payload: CreateAppointmentPayload): BackendCreateBody {
   if (!payload.scheduledAt) throw new Error("scheduledAt обязателен");
   const startsAt = dayjs(payload.scheduledAt).toISOString();
-  const endsAt = payload.endsAt
-    ? dayjs(payload.endsAt).toISOString()
-    : computeEndsAt(startsAt, payload.services);
-
   const body: BackendCreateBody = {
     startsAt,
-    endsAt,
     serviceLines: toBackendServiceLines(payload.services),
   };
   if (payload.patientId !== undefined) body.patientId = payload.patientId;
@@ -294,9 +279,6 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
   }
   if (payload.scheduledAt) {
     body.startsAt = dayjs(payload.scheduledAt).toISOString();
-    body.endsAt = payload.endsAt
-      ? dayjs(payload.endsAt).toISOString()
-      : computeEndsAt(body.startsAt, payload.services ?? []);
   }
   if (payload.services !== undefined) {
     body.serviceLines = toBackendServiceLines(payload.services);
@@ -353,7 +335,7 @@ export function getAppointments(params?: {
   if (params?.patientId) query.set("patientId", String(params.patientId));
   const qs = query.toString();
   return apiRequest<RawAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`, { signal }).then(
-    (list) => list.map(normalizeAppointment),
+    (list) => (Array.isArray(list) ? list : []).map(normalizeAppointment),
   );
 }
 
@@ -375,7 +357,7 @@ export function getServiceProviders(params?: {
   return apiRequest<ServiceProvider[]>(
     `/appointments/service-providers/${qs ? `?${qs}` : ""}`,
     { signal },
-  );
+  ).then((items) => (Array.isArray(items) ? items : []));
 }
 
 // ── Day counts ────────────────────────────────────────────────────────────────

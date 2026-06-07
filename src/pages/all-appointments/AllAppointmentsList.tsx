@@ -36,7 +36,6 @@ import "dayjs/locale/ru";
 dayjs.locale("ru");
 
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { usePermissions } from "../../hooks/usePermissions";
 import { PageHeader, AppBottomSheet } from "../../components/ui";
 import { useCanChecker } from "../../hooks/useCan";
 import {
@@ -58,13 +57,11 @@ const MONTH_NAMES = [
 export const AllAppointmentsList: React.FC = () => {
   usePageTitle("Все приемы");
   const { can } = useCanChecker();
-  const { isSuperAdmin } = usePermissions();
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const canUpdate = can("appointments.update");
-  const canDelete = isSuperAdmin() || can("appointments.delete");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
   const canViewConclusions = can("medical.conclusions.view");
@@ -250,7 +247,6 @@ export const AllAppointmentsList: React.FC = () => {
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
       canViewConclusions={canViewConclusions}
-      canDelete={canDelete}
       onEdit={setEditTarget}
       onPay={setPaymentTarget}
       onArrived={handleArrived}
@@ -635,7 +631,6 @@ export const AllAppointmentsList: React.FC = () => {
                 canManageFinance={canManageFinance}
                 canViewFinance={canViewFinance}
                 canViewConclusions={canViewConclusions}
-                canDelete={canDelete}
                 onEdit={setEditTarget}
                 onPay={setPaymentTarget}
                 onArrived={handleArrived}

@@ -88,7 +88,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onClose,
 }) => {
   const theme = useTheme();
-  const { isDoctor, isNurse, isAdmin, isRegistrator, isSuperAdmin, activeEmployee } = usePermissions();
+  const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
 
   const [showConclusions, setShowConclusions] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -127,7 +127,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const isNurseRole = isNurse();
   const isAdminRole = isAdmin();
   const isRegistratorRole = isRegistrator();
-  const isSuperAdminRole = isSuperAdmin();
   const isNonDoctor = !isDoctorRole && !isNurseRole;
 
   const activeEmployeeId = activeEmployee?.id ?? null;
@@ -351,7 +350,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       </IconButton>
                     </Tooltip>
                   )}
-                  {isSuperAdminRole && canDelete && onDelete && (
+                  {canDelete && onDelete && (
                     <Tooltip title="Удалить">
                       <span>
                         <IconButton
@@ -799,7 +798,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         <DialogContent>
           <DialogContentText>
             {confirmAction === "delete"
-              ? "Это действие необратимо. Приём будет полностью удалён."
+              ? "Удалить можно только ошибочно созданный приём без оплат, возвратов и медицинских заключений."
               : "Запись будет переведена в статус «Отменено». Она не удалится из истории."}
           </DialogContentText>
         </DialogContent>

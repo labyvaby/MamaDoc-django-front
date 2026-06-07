@@ -41,16 +41,22 @@ export interface UseDjangoAppointmentDataResult {
 
 /**
  * Loads patients, employees, and services for the appointment form.
+ * ``branchId`` filters services to those available in the specified branch.
  * Does NOT call service-providers (requires serviceId param — see useServiceProvidersForService).
  */
-export function useDjangoAppointmentData(enabled: boolean): UseDjangoAppointmentDataResult {
+export function useDjangoAppointmentData(
+  enabled: boolean,
+  branchId?: number | null,
+): UseDjangoAppointmentDataResult {
+  const ctx = { branchId: branchId ?? null };
+
   const dataQuery = useQuery({
-    queryKey: djangoQueryKeys.appointments.formData(),
+    queryKey: djangoQueryKeys.appointments.formData(ctx),
     queryFn: async ({ signal }) => {
       const [rawPatients, rawEmployees, rawServices] = await Promise.all([
         getPatients(signal),
         getDjangoEmployees(undefined, signal),
-        getServices(signal),
+        getServices(branchId ?? null, signal),
       ]);
       return { rawPatients, rawEmployees, rawServices };
     },

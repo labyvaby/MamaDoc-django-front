@@ -89,7 +89,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const canCreate = useCan("appointments.create");
   const { activeBranch } = usePermissions();
 
-  const data = useDjangoAppointmentData(open);
+  const data = useDjangoAppointmentData(open, activeBranch?.id ?? null);
 
   // ── form state ───────────────────────────────────────────────────────────
   const [scheduledAt, setScheduledAt] = React.useState<string>("");
@@ -184,15 +184,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         isBooking,
         complaints: complaints.trim() || null,
         adminComment: adminComment.trim() || null,
-        services: validRows.map((r) => {
-          const catalogService = data.services.find((s) => s.id === r.serviceId);
-          return {
-            serviceId: r.serviceId!,
-            employeeId: r.employeeId,
-            quantity: r.quantity > 0 ? r.quantity : 1,
-            durationMinutes: catalogService?.durationMinutes,
-          };
-        }),
+        services: validRows.map((r) => ({
+          serviceId: r.serviceId!,
+          employeeId: r.employeeId,
+          quantity: r.quantity > 0 ? r.quantity : 1,
+        })),
       });
       notify?.({ type: "success", message: "Приём успешно создан!" });
       onCreated?.();
