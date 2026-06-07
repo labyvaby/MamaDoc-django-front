@@ -11,7 +11,11 @@ import {
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import { useNotification } from "@refinedev/core";
 import DrawerBase from "./DrawerBase";
-import { updateEmployee, getDjangoEmployee } from "../../../api/staff";
+import {
+  updateEmployee,
+  getDjangoEmployee,
+  uploadEmployeePhoto,
+} from "../../../api/staff";
 import type { DjangoSpecializationShort } from "../../../api/staff";
 import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
@@ -19,6 +23,7 @@ import { CustomDatePicker } from "../../../components/ui";
 import dayjs from "dayjs";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
+import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 
 export type DjangoEditEmployeeDrawerProps = {
   record: EmployesRow | null;
@@ -43,6 +48,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const canViewDocs = useCan("staff.documents.view");
   const canManageDocs = useCan("staff.documents.manage");
 
+  const [photoFile, setPhotoFile] = React.useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
   const [fullName, setFullName] = React.useState("");
   const [specializations, setSpecializations] = React.useState<DjangoSpecializationShort[]>([]);
   const [phone, setPhone] = React.useState("");
@@ -50,16 +57,28 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [status, setStatus] = React.useState<"active" | "inactive">("active");
   const [telegramId, setTelegramId] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
-  const [notes, setNotes] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  const handlePickPhoto = React.useCallback((f: File | null) => {
+    setPhotoFile(f);
+    if (f) {
+      const reader = new FileReader();
+      reader.onload = () => setPhotoPreview(reader.result as string);
+      reader.readAsDataURL(f);
+    } else {
+      setPhotoPreview(null);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (!record) return;
 
+    setPhotoFile(null);
+    setPhotoPreview(record.photo_url || null);
     setFullName(record.full_name || "");
     setPhone(record.phone || "");
     setEmail(record.email || "");
@@ -70,7 +89,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     );
     setTelegramId(record.telegram_id || "");
     setBirthDate(record.birth_date || "");
-    setNotes(record.nickname || "");
     setBankAccountNumber(record.bank_account_number || "");
     setInn(record.inn || "");
     setClinicalRole(
@@ -87,9 +105,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     getDjangoEmployee(empId, ctrl.signal)
       .then((full) => {
         if (ctrl.signal.aborted) return;
+        setPhotoPreview(full.photoUrl || null);
         setTelegramId(full.telegramId || "");
         setBirthDate(full.birthDate || "");
-        setNotes(full.notes || "");
         setBankAccountNumber(full.bankAccountNumber || "");
         setInn(full.inn || "");
         setClinicalRole(full.clinicalRole ?? "other");
@@ -123,7 +141,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         status,
         telegramId: telegramId.trim() || null,
         birthDate: birthDate || null,
-        notes: notes.trim() || null,
         clinicalRole,
       };
       if (canManagePrivate) {
@@ -132,6 +149,14 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       }
 
       await updateEmployee(empId, payload);
+
+      if (photoFile) {
+        try {
+          await uploadEmployeePhoto(empId, photoFile);
+        } catch {
+          notify?.({ type: "error", message: "Данные сохранены, но фото не удалось загрузить" });
+        }
+      }
 
       const updated = await getDjangoEmployee(empId);
 
@@ -146,7 +171,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         bank_account_number: updated.bankAccountNumber || null,
         inn: updated.inn || null,
         photo_url: updated.photoUrl || null,
-        nickname: updated.notes || null,
+        nickname: record.nickname || null,
         role_id: updated.role ? String(updated.role.id) : null,
         clinicalRole: updated.clinicalRole ?? "other",
         _djangoRole: updated.role ?? null,
@@ -177,6 +202,14 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     >
       <Stack spacing={3}>
         {error && <Alert severity="error">{error}</Alert>}
+
+        {/* ── Фото ── */}
+        <ServicePhotoUploader
+          photoFile={photoFile}
+          photoPreview={photoPreview}
+          onPickPhoto={handlePickPhoto}
+          inputId="edit-employee-photo"
+        />
 
         <Stack spacing={0.5}>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -246,9 +279,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           <TextField
             select
             value={clinicalRole}
-            onChange={(e) =>
-              setClinicalRole(e.target.value as "doctor" | "nurse" | "other")
-            }
+            onChange={(e) => {
+              const next = e.target.value as "doctor" | "nurse" | "other";
+              setClinicalRole(next);
+            }}
             fullWidth
             disabled={busy}
           >
@@ -257,6 +291,21 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <MenuItem value="other">Другой сотрудник</MenuItem>
           </TextField>
         </Stack>
+
+        {/* ── Специализации (только для врача) ── */}
+        {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
+          <>
+            <Divider />
+            <SpecializationBlock
+              employeeId={Number(record.id)}
+              currentSpecializations={specializations}
+              onSpecializationsChange={setSpecializations}
+              canView={canViewSpecs}
+              canManage={canManageSpecs}
+              disabled={busy}
+            />
+          </>
+        )}
 
         <Stack spacing={0.5}>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -285,22 +334,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             onChange={(e) => setTelegramId(e.target.value)}
             fullWidth
             placeholder="@username или числовой ID"
-            disabled={busy}
-          />
-        </Stack>
-
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Заметки
-          </Typography>
-          <TextField
-            value={notes}
-            onChange={(e) => setNotes(e.target.value.slice(0, 100))}
-            fullWidth
-            multiline
-            minRows={2}
-            placeholder="Дополнительная информация (до 100 символов)"
-            helperText={`${notes.length}/100`}
             disabled={busy}
           />
         </Stack>
@@ -348,20 +381,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 helperText={`${inn.length}/14`}
               />
             </Stack>
-          </>
-        )}
-
-        {(canViewSpecs || canManageSpecs) && record && (
-          <>
-            <Divider />
-            <SpecializationBlock
-              employeeId={Number(record.id)}
-              currentSpecializations={specializations}
-              onSpecializationsChange={setSpecializations}
-              canView={canViewSpecs}
-              canManage={canManageSpecs}
-              disabled={busy}
-            />
           </>
         )}
 
