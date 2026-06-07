@@ -18,13 +18,19 @@ import { useNotification } from "@refinedev/core";
 import DrawerBase from "./DrawerBase";
 import {
   onboardEmployee,
+  uploadEmployeePhoto,
+  getDjangoEmployee,
+  getSpecializations,
   type OnboardEmployeeResponse,
+  type DjangoSpecialization,
 } from "../../../api/staff";
 import { getRoles, type RbacRole } from "../../../api/rbac";
 import { usePermissions } from "../../../hooks/usePermissions";
 import type { RbacBranch } from "../../../api/auth";
 import { mapDjangoFullToRow } from "../viewModel";
 import type { EmployesRow } from "../types";
+import { useCan } from "../../../hooks/useCan";
+import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 
 export type OnboardEmployeeDrawerProps = {
   open: boolean;
@@ -62,6 +68,12 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 }) => {
   const { open: notify } = useNotification();
   const { activeOrganization, activeBranch, activeMembership } = usePermissions();
+  const canViewSpecs = useCan("staff.specializations.view");
+  const canManageSpecs = useCan("staff.specializations.manage");
+
+  // ── photo state ───────────────────────────────────────────────────────────────
+  const [photoFile, setPhotoFile] = React.useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
 
   // ── base form state ───────────────────────────────────────────────────────────
   const [fullName, setFullName] = React.useState("");
@@ -69,7 +81,6 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [email, setEmail] = React.useState("");
   const [emailError, setEmailError] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
-  const [notes, setNotes] = React.useState("");
 
   // ── account fields ───────────────────────────────────────────────────────────
   const [firstName, setFirstName] = React.useState("");
@@ -80,6 +91,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   // ── selects data ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
+  const [allSpecializations, setAllSpecializations] = React.useState<DjangoSpecialization[]>([]);
   const [loadingDeps, setLoadingDeps] = React.useState(false);
 
   const branches: RbacBranch[] = React.useMemo(
@@ -93,24 +105,28 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [userAccessBranches, setUserAccessBranches] = React.useState<RbacBranch[]>([]);
   const [overrideUserAccess, setOverrideUserAccess] = React.useState(false);
 
-  // ── clinical role ─────────────────────────────────────────────────────────────
+  // ── clinical role + specializations ──────────────────────────────────────────
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
+  const [selectedSpecializations, setSelectedSpecializations] = React.useState<DjangoSpecialization[]>([]);
 
   // ── submit state ─────────────────────────────────────────────────────────────
   const [busy, setBusy] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
-  // ── load roles when drawer opens ──────────────────────────────────────────────
+  // ── load roles + specializations when drawer opens ────────────────────────────
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoadingDeps(true);
-    getRoles()
-      .then((r) => {
-        if (!cancelled) {
-          setRoles(r);
-        }
-      })
+    const tasks: Promise<unknown>[] = [
+      getRoles().then((r) => { if (!cancelled) setRoles(r); }),
+    ];
+    if (canViewSpecs || canManageSpecs) {
+      tasks.push(
+        getSpecializations().then((s) => { if (!cancelled) setAllSpecializations(s); }),
+      );
+    }
+    Promise.all(tasks)
       .catch((err) => {
         if (!cancelled)
           notify?.({ type: "error", message: `Ошибка загрузки данных: ${err?.message ?? err}` });
@@ -121,7 +137,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, notify]);
+  }, [open, notify, canViewSpecs, canManageSpecs]);
 
   // ── preselect current branch when available ──────────────────────────────────
   React.useEffect(() => {
@@ -137,6 +153,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   // ── reset on close ────────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) {
+      setPhotoFile(null);
+      setPhotoPreview(null);
       setFullName("");
       setPhone("");
       setEmail("");
@@ -147,12 +165,12 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setPassword(generateTempPassword());
       setShowPassword(false);
       setStatus("active");
-      setNotes("");
       setRoleId("");
       setEmployeeBranches([]);
       setUserAccessBranches([]);
       setOverrideUserAccess(false);
       setClinicalRole("other");
+      setSelectedSpecializations([]);
       setSubmitError(null);
       setBusy(false);
     }
@@ -189,6 +207,18 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     branches,
   ]);
 
+  // ── photo pick handler ────────────────────────────────────────────────────────
+  const handlePickPhoto = React.useCallback((f: File | null) => {
+    setPhotoFile(f);
+    if (f) {
+      const reader = new FileReader();
+      reader.onload = () => setPhotoPreview(reader.result as string);
+      reader.readAsDataURL(f);
+    } else {
+      setPhotoPreview(null);
+    }
+  }, []);
+
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -211,16 +241,32 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           : undefined,
         branchId: employeeBranches[0]?.id ?? activeBranch?.id ?? null,
         status,
-        notes: notes.trim() || undefined,
         clinicalRole,
+        specializationIds:
+          clinicalRole === "doctor" && selectedSpecializations.length > 0
+            ? selectedSpecializations.map((s) => s.id)
+            : undefined,
       };
       const res: OnboardEmployeeResponse = await onboardEmployee(payload);
-      const employeeRow: EmployesRow = mapDjangoFullToRow(res.employee);
+      let employeeRow: EmployesRow = mapDjangoFullToRow(res.employee);
+
+      if (photoFile) {
+        try {
+          await uploadEmployeePhoto(res.employee.id, photoFile);
+          const fresh = await getDjangoEmployee(res.employee.id);
+          employeeRow = mapDjangoFullToRow(fresh);
+        } catch {
+          notify?.({
+            type: "error",
+            message: "Сотрудник создан, но фото не удалось загрузить",
+          });
+        }
+      }
+
       notify?.({
         type: "success",
         message: `Сотрудник ${res.employee.fullName} создан. Логин: ${res.user.username}`,
       });
-
       onCreated(employeeRow);
       onClose();
     } catch (err: unknown) {
@@ -248,6 +294,14 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             {submitError}
           </Alert>
         )}
+
+        {/* ── Фото ── */}
+        <ServicePhotoUploader
+          photoFile={photoFile}
+          photoPreview={photoPreview}
+          onPickPhoto={handlePickPhoto}
+          inputId="onboard-employee-photo"
+        />
 
         {/* ── ФИО ── */}
         <Stack spacing={0.5}>
@@ -327,9 +381,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           <TextField
             select
             value={clinicalRole}
-            onChange={(e) =>
-              setClinicalRole(e.target.value as "doctor" | "nurse" | "other")
-            }
+            onChange={(e) => {
+              const next = e.target.value as "doctor" | "nurse" | "other";
+              setClinicalRole(next);
+              if (next !== "doctor") setSelectedSpecializations([]);
+            }}
             fullWidth
             disabled={busy}
           >
@@ -339,22 +395,45 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </TextField>
         </Stack>
 
-        {/* ── Заметки ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Заметки
-          </Typography>
-          <TextField
-            value={notes}
-            onChange={(e) => setNotes(e.target.value.slice(0, 100))}
-            fullWidth
-            multiline
-            minRows={2}
-            placeholder="Дополнительная информация (до 100 символов)"
-            helperText={`${notes.length}/100`}
-            disabled={busy}
-          />
-        </Stack>
+        {/* ── Специализации (только для врача) ── */}
+        {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && (
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Специализации
+            </Typography>
+            <Autocomplete
+              multiple
+              options={allSpecializations}
+              getOptionLabel={(s) => s.name}
+              value={selectedSpecializations}
+              onChange={(_, val) => setSelectedSpecializations(val)}
+              disabled={busy || loadingDeps || !canManageSpecs}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              renderTags={(val, getTagProps) =>
+                val.map((opt, idx) => (
+                  <Chip
+                    {...getTagProps({ index: idx })}
+                    key={opt.id}
+                    label={opt.name}
+                    size="small"
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={
+                    loadingDeps
+                      ? "Загрузка…"
+                      : !canManageSpecs
+                      ? "Нет прав на изменение"
+                      : "Выберите специализации"
+                  }
+                />
+              )}
+            />
+          </Stack>
+        )}
 
         <Divider />
 
