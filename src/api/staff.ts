@@ -328,6 +328,26 @@ export function onboardEmployee(
   }));
 }
 
+// ── API functions — Photo ─────────────────────────────────────────────────────
+
+export function uploadEmployeePhoto(
+  employeeId: number,
+  file: File,
+): Promise<DjangoEmployee> {
+  const formData = new FormData();
+  formData.append("photo", file);
+  return apiRequest<DjangoEmployee>(
+    `/staff/employees/${employeeId}/photo/`,
+    { method: "PUT", formData },
+  ).then(normalizeEmployee);
+}
+
+export function deleteEmployeePhoto(employeeId: number): Promise<void> {
+  return apiRequest<void>(`/staff/employees/${employeeId}/photo/`, {
+    method: "DELETE",
+  });
+}
+
 // ── API functions — Services ──────────────────────────────────────────────────
 
 export function getEmployeeServices(
