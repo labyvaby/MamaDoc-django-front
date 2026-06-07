@@ -17,7 +17,9 @@ import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
 import EmailIcon from "@mui/icons-material/Email";
 import smallIcon from "../../assets/img/icon_2s.png";
-import { getCurrentUser, login as djangoLogin } from "../../api";
+import { login as djangoLogin } from "../../api";
+import { applyMeResponse, usePermissions } from "../../hooks/usePermissions";
+import { ApiError } from "../../api/client";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import AuthLayout from "../../components/auth/AuthLayout";
@@ -56,32 +58,34 @@ const LoginPage: React.FC = () => {
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
   const [isResetting, setIsResetting] = React.useState(false);
 
+  // Django-режим: слушаем authStatus из глобального state (уже инициализирован)
+  const { authStatus } = usePermissions();
+  const didDjangoRedirect = React.useRef(false);
   React.useEffect(() => {
+    if (!IS_DJANGO_BACKEND) return;
+    if (didDjangoRedirect.current) return;
+    if (authStatus === 'authenticated') {
+      didDjangoRedirect.current = true;
+      navigate(redirectTo, { replace: true });
+    }
+  }, [authStatus, navigate, redirectTo]);
+
+  React.useEffect(() => {
+    if (IS_DJANGO_BACKEND) return;
+
     (async () => {
       // ПРОВЕРКА: Если мы пришли по ссылке восстановления пароля, УВОДИМ на страницу смены пароля
       if (window.location.hash.includes("type=recovery")) {
-        console.log("LoginPage: Recovery link detected, redirecting to update-password...");
         navigate("/update-password" + window.location.hash);
         return;
       }
 
       try {
-        if (IS_DJANGO_BACKEND) {
-          await getCurrentUser();
-          navigate(redirectTo, { replace: true });
-          return;
-        }
-
         const { data } = await supabase.auth.getSession();
         if (data?.session) {
-          // Если есть сессия, проверяем роль и редиректим соответственно
           const { data: employeeData } = await supabase
-            .from('Employees') // Standardized to Capitalized
-            .select(`
-              roles (
-                name
-              )
-            `)
+            .from('Employees')
+            .select(`roles ( name )`)
             .eq('auth_user_id', data.session.user.id)
             .maybeSingle();
 
@@ -110,34 +114,37 @@ const LoginPage: React.FC = () => {
   };
 
   const getErrorMessage = (error: unknown): string => {
+    // Django ApiError — разбираем по статусу, не показываем технический текст
+    if (error instanceof ApiError) {
+      if (error.status === 401) return "Неверный логин или пароль";
+      if (error.status === 429) return "Слишком много попыток. Пожалуйста, подождите немного";
+      if (error.status === 0 || error.status >= 500) {
+        return "Сервер временно недоступен. Проверьте подключение и попробуйте снова.";
+      }
+      // payload может содержать { detail: "..." } от Django
+      if (
+        error.payload &&
+        typeof error.payload === "object" &&
+        "detail" in error.payload
+      ) {
+        return String((error.payload as { detail: unknown }).detail);
+      }
+    }
+
     let message = "Произошла неизвестная ошибка";
     if (error instanceof Error) message = error.message;
     else if (typeof error === "object" && error !== null && "message" in error) {
       message = String((error as { message: unknown }).message);
     }
 
-    // Перевод распространенных ошибок Supabase
-    if (message.includes("Invalid credentials")) {
-      return "Неверный логин или пароль";
-    }
-    if (message.includes("Authentication required")) {
-      return "Необходимо войти в систему";
-    }
-    if (message.includes("Invalid login credentials")) {
-      return "Неверный email или пароль";
-    }
-    if (message.includes("User not found")) {
-      return "Пользователь с таким Email не найден";
-    }
-    if (message.includes("Email not confirmed")) {
-      return "Email не подтвержден. Пожалуйста, проверьте почту";
-    }
-    if (message.includes("Rate limit exceeded")) {
-      return "Слишком много попыток. Пожалуйста, подождите немного";
-    }
-    if (message.includes("Auth session missing")) {
-      return "Сессия авторизации отсутствует или истекла. Пожалуйста, перейдите по ссылке из письма снова";
-    }
+    // Перевод распространённых ошибок Supabase
+    if (message.includes("Invalid credentials")) return "Неверный логин или пароль";
+    if (message.includes("Authentication required")) return "Необходимо войти в систему";
+    if (message.includes("Invalid login credentials")) return "Неверный email или пароль";
+    if (message.includes("User not found")) return "Пользователь с таким Email не найден";
+    if (message.includes("Email not confirmed")) return "Email не подтверждён. Пожалуйста, проверьте почту";
+    if (message.includes("Rate limit exceeded")) return "Слишком много попыток. Пожалуйста, подождите немного";
+    if (message.includes("Auth session missing")) return "Сессия авторизации отсутствует или истекла. Пожалуйста, перейдите по ссылке из письма снова";
 
     return message;
   };
@@ -341,7 +348,10 @@ const LoginPage: React.FC = () => {
       // Сразу пробуем войти. Проверка связи с Сотрудником будет в handleLoginSuccess.
       const normalizedEmail = email.trim().toLowerCase();
       if (IS_DJANGO_BACKEND) {
-        await djangoLogin(normalizedEmail, password);
+        // djangoLogin возвращает MeResponse — сразу заполняем глобальный state,
+        // второй GET /auth/me/ не нужен
+        const meData = await djangoLogin(normalizedEmail, password);
+        applyMeResponse(meData);
         navigate(redirectTo, { replace: true });
         return;
       }

@@ -8,9 +8,10 @@ import type {
   ActiveEmployee,
   SwitchContextPayload,
 } from '../api/auth';
+import { ApiError } from '../api/client';
 import { IS_DJANGO_BACKEND } from '../config/backend';
 import { supabase } from '../utility/supabaseClient';
-import type { Role, Permission, UserPermissions, RoleName, PermissionCheck } from '../types/rbac';
+import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from '../types/rbac';
 import { getModuleCodeForPermission } from '../utils/moduleMapping';
 
 // Глобальное кэширование прав, чтобы исключить повторные запросы из разных мест
@@ -33,6 +34,9 @@ type GlobalState = {
   activeEmployee: ActiveEmployee;
   switching: boolean;
   enabledModules: string[];
+  // ── Django auth status ──────────────────────────────────────────────────
+  authStatus: AuthStatus;
+  authError: string | null;
 };
 
 let globalState: GlobalState = {
@@ -51,6 +55,8 @@ let globalState: GlobalState = {
   activeEmployee: null,
   switching: false,
   enabledModules: [],
+  authStatus: 'loading',
+  authError: null,
 };
 
 let inFlight: Promise<void> | null = null;
@@ -73,7 +79,22 @@ type RolePermissionsRow = { permissions?: Permission | Permission[] | null };
  * Used both by the initial fetch and by switchContext().
  */
 function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
-  const { user, activeMembership, permissions: permCodes } = meData;
+  const { user, activeMembership } = meData;
+  const permCodes = Array.isArray(meData.permissions) ? meData.permissions : [];
+  const memberships = Array.isArray(meData.memberships)
+    ? meData.memberships.map((membership) => ({
+        ...membership,
+        branches: Array.isArray(membership.branches) ? membership.branches : [],
+        permissions: Array.isArray(membership.permissions) ? membership.permissions : [],
+      }))
+    : [];
+  const normalizedActiveMembership = activeMembership
+    ? {
+        ...activeMembership,
+        branches: Array.isArray(activeMembership.branches) ? activeMembership.branches : [],
+        permissions: Array.isArray(activeMembership.permissions) ? activeMembership.permissions : [],
+      }
+    : null;
   const activeEmployee = meData.activeEmployee ?? null;
 
   const roleName: RoleName = user.isSuperuser
@@ -87,9 +108,9 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     : 'registrator';
 
   const role: Role = {
-    id: String(activeMembership?.id ?? user.id),
+    id: String(normalizedActiveMembership?.id ?? user.id),
     name: roleName,
-    display_name: activeMembership?.role?.name ?? roleName,
+    display_name: normalizedActiveMembership?.role?.name ?? roleName,
     description: 'Django RBAC user',
     created_at: '',
     updated_at: '',
@@ -120,13 +141,26 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     loading: false,
     employeeId: String(user.id),
     currentUserId: String(user.id),
-    memberships: meData.memberships ?? [],
-    activeMembership: activeMembership ?? null,
+    memberships,
+    activeMembership: normalizedActiveMembership,
     activeOrganization: meData.activeOrganization ?? null,
     activeBranch: meData.activeBranch ?? null,
     activeEmployee,
-    enabledModules: meData.enabledModules ?? [],
+    enabledModules: Array.isArray(meData.enabledModules) ? meData.enabledModules : [],
+    authStatus: 'authenticated' as AuthStatus,
+    authError: null,
   };
+}
+
+/**
+ * Заполнить глобальный state из MeResponse (после login или /auth/me/).
+ * Единая точка записи — предотвращает дублирование запросов.
+ */
+export function applyMeResponse(meData: MeResponse): void {
+  setGlobal({
+    ...buildStateFromMe(meData),
+    lastFetchedAt: Date.now(),
+  });
 }
 
 /**
@@ -169,7 +203,7 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
   // Уже идёт запрос — дождёмся его
   if (inFlight) return inFlight;
 
-  // Троттлинг даже для форсированных событиях (чтобы не спамить при Alt+Tab)
+  // Троттлинг даже для форсированных событий (чтобы не спамить при Alt+Tab)
   const now = Date.now();
   if (!force && globalState.loaded && (now - globalState.lastFetchedAt < COOLDOWN_MS)) {
     return;
@@ -183,13 +217,46 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
       setGlobal({ loading: showLoading, lastFetchedAt: Date.now() });
 
       if (IS_DJANGO_BACKEND) {
-        const meData = (await getCurrentUser()) as MeResponse | null;
-        if (!meData || !meData.user) {
-          // Backend returned null or malformed response (e.g. unauthenticated 200)
-          setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true });
-          return;
+        try {
+          const meData = (await getCurrentUser()) as MeResponse | null;
+          if (!meData || !meData.user) {
+            // Backend вернул null или некорректный ответ
+            setGlobal({
+              role: null, employee: null, permissions: [],
+              loading: false, loaded: true,
+              authStatus: 'unauthenticated', authError: null,
+            });
+            return;
+          }
+          setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
+        } catch (err) {
+          const isApiError = err instanceof ApiError;
+          const status = isApiError ? err.status : -1;
+
+          if (status === 401) {
+            // Нет сессии — чистый logout, очищаем всё
+            setGlobal({
+              role: null, employee: null, permissions: [],
+              memberships: [], activeMembership: null,
+              activeOrganization: null, activeBranch: null, activeEmployee: null,
+              enabledModules: [],
+              loading: false, loaded: true,
+              authStatus: 'unauthenticated', authError: null,
+            });
+          } else {
+            // 5xx, network (status=0), timeout — сервер временно недоступен.
+            // НЕ очищаем ранее загруженный tenant context.
+            const errMsg = isApiError
+              ? `Сервер недоступен (${status || 'сеть'})`
+              : 'Сетевая ошибка';
+            setGlobal({
+              loading: false,
+              loaded: globalState.loaded, // сохраняем предыдущее значение
+              authStatus: 'unavailable',
+              authError: errMsg,
+            });
+          }
         }
-        setGlobal(buildStateFromMe(meData));
         return;
       }
 
@@ -299,7 +366,8 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
         currentUserId: user.id
       });
     } catch (error) {
-      console.error('Ошибка загрузки прав доступа:', error);
+      // Supabase-ветка: любая ошибка — считаем сессию недействительной
+      console.error('Ошибка загрузки прав доступа (Supabase):', error);
       setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true });
     } finally {
       inFlight = null;
@@ -307,6 +375,17 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
   })();
 
   return inFlight;
+}
+
+/**
+ * Принудительно повторяет Django /auth/me/ без перезагрузки страницы.
+ * Сбрасывает cooldown, чтобы запрос прошёл немедленно.
+ */
+export function retryAuth(): void {
+  if (!IS_DJANGO_BACKEND) return;
+  // Сбрасываем lastFetchedAt, чтобы обойти COOLDOWN_MS
+  globalState = { ...globalState, lastFetchedAt: 0 };
+  void fetchPermissions({ force: true });
 }
 
 let authSub: { unsubscribe: () => void } | null = null;
@@ -478,6 +557,10 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     enabledModules: state.enabledModules,
     hasModule,
     canAccess,
+    // Django auth status
+    authStatus: state.authStatus,
+    authError: state.authError,
+    retryAuth,
   };
 };
 
