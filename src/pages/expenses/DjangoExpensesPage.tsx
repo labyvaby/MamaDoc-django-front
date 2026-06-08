@@ -552,7 +552,7 @@ const VoidDialog: React.FC<{
   const handleVoid = async () => {
     if (!expense) return;
     setError(null);
-    if (!reason.trim()) { setError("Укажите причину аннулирования"); return; }
+    if (reason.trim().length < 3) { setError("Причина аннулирования должна содержать минимум 3 символа"); return; }
     setBusy(true);
     try {
       const voided = await voidExpense(expense.id, { reason: reason.trim() });
@@ -588,7 +588,7 @@ const VoidDialog: React.FC<{
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>Отмена</Button>
-        <Button color="error" variant="contained" onClick={handleVoid} disabled={busy || !reason.trim()}>
+        <Button color="error" variant="contained" onClick={handleVoid} disabled={busy || reason.trim().length < 3}>
           {busy ? <CircularProgress size={16} color="inherit" /> : "Аннулировать"}
         </Button>
       </DialogActions>
