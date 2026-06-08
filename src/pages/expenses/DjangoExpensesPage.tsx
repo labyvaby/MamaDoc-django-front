@@ -38,11 +38,13 @@ import ExpandMore from "@mui/icons-material/ExpandMore";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { PageHeader } from "../../components/ui";
+import { PageHeader, AppBottomSheet, PaymentInfoBlock } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
+import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
 import {
   getExpenses,
   getExpenseCategories,
@@ -75,6 +77,23 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// ── DetailRow ──────────────────────────────────────────────────────────────────
+
+const DetailRow: React.FC<{ label: string; value?: string | null; children?: React.ReactNode }> = ({
+  label, value, children,
+}) => (
+  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+    <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0, minWidth: 80 }}>
+      {label}
+    </Typography>
+    {children ?? (
+      <Typography variant="body2" sx={{ fontWeight: 500, textAlign: "right" }}>
+        {value ?? "—"}
+      </Typography>
+    )}
+  </Stack>
+);
+
 // ── ExpenseDetailCard ──────────────────────────────────────────────────────────
 
 const ExpenseDetailCard: React.FC<{
@@ -86,97 +105,156 @@ const ExpenseDetailCard: React.FC<{
 
   if (!expense) {
     return (
-      <Box sx={{ p: 4, textAlign: "center" }}>
-        <ReceiptLongOutlined sx={{ fontSize: 48, color: "text.disabled", mb: 1 }} />
-        <Typography variant="body2" color="text.disabled">
-          Выберите расход из списка
-        </Typography>
+      <Box
+        sx={{
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: "1px dashed",
+          borderColor: "divider",
+          borderRadius: 1,
+          color: "text.secondary",
+        }}
+      >
+        <Typography>Выберите расход для просмотра</Typography>
       </Box>
     );
   }
 
   const amount = parseFloat(expense.amount);
-  const isCash = expense.method === "cash";
+  const title = expense.description || expense.categoryName || "Расход";
 
   return (
-    <Paper elevation={0} variant="outlined" sx={{ p: 3 }}>
-      <Stack spacing={2}>
-        <Stack direction="row" alignItems="center" spacing={1.5}>
-          <Avatar variant="rounded" sx={{ bgcolor: "action.selected", color: "text.secondary", width: 48, height: 48 }}>
-            <ReceiptLongOutlined />
-          </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={600} noWrap>
-              {expense.categoryName ?? "Без категории"}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {formatDateRu(expense.expenseDate)}
-            </Typography>
-          </Box>
-          {expense.isVoided && (
-            <Chip label="Аннулирован" size="small" color="error" variant="outlined" />
-          )}
-        </Stack>
-
-        <Divider />
-
-        <Stack spacing={1}>
-          <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">Сумма</Typography>
-            <Typography variant="body1" fontWeight={700} color={isCash ? "success.main" : "info.main"}>
-              {formatKGS(amount)}
-            </Typography>
-          </Stack>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="body2" color="text.secondary">Метод</Typography>
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              {isCash
-                ? <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
-                : <CreditCardOutlined sx={{ fontSize: 16, color: "info.main" }} />}
-              <Typography variant="body2">{isCash ? "Наличные" : "Карта"}</Typography>
-            </Stack>
-          </Stack>
-          {expense.branchName && (
-            <Stack direction="row" justifyContent="space-between">
-              <Typography variant="body2" color="text.secondary">Филиал</Typography>
-              <Typography variant="body2">{expense.branchName}</Typography>
-            </Stack>
-          )}
-          {expense.createdByName && (
-            <Stack direction="row" justifyContent="space-between">
-              <Typography variant="body2" color="text.secondary">Создал</Typography>
-              <Typography variant="body2">{expense.createdByName}</Typography>
-            </Stack>
-          )}
-          {expense.description && (
-            <Stack spacing={0.25}>
-              <Typography variant="body2" color="text.secondary">Описание</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{expense.description}</Typography>
-            </Stack>
-          )}
-          {expense.isVoided && expense.voidReason && (
-            <Stack spacing={0.25}>
-              <Typography variant="body2" color="text.secondary">Причина аннулирования</Typography>
-              <Typography variant="body2" color="error.main">{expense.voidReason}</Typography>
-            </Stack>
-          )}
-        </Stack>
-
-        {canManage && !expense.isVoided && (
-          <>
-            <Divider />
-            <Button
-              variant="outlined"
-              color="error"
-              size="small"
-              startIcon={<BlockOutlined />}
-              onClick={() => onVoid(expense)}
-            >
-              Аннулировать
-            </Button>
-          </>
+    <Paper
+      elevation={0}
+      variant="outlined"
+      sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 2 }}
+    >
+      {/* Шапка */}
+      <Box
+        sx={{
+          px: 2.5,
+          py: 1.5,
+          borderBottom: 1,
+          borderColor: "divider",
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          flexShrink: 0,
+        }}
+      >
+        <Avatar
+          variant="rounded"
+          sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: "primary.main", width: 44, height: 44 }}
+        >
+          <ReceiptLongOutlined />
+        </Avatar>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle1" fontWeight={600} noWrap title={title}>
+            {title}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" noWrap>
+            {expense.categoryName ?? "Без категории"}
+          </Typography>
+        </Box>
+        {expense.isVoided && (
+          <Chip label="Аннулирован" size="small" color="error" variant="outlined" sx={{ flexShrink: 0 }} />
         )}
-      </Stack>
+      </Box>
+
+      {/* Кнопка аннулировать (action panel) */}
+      {canManage && !expense.isVoided && (
+        <Box
+          sx={{
+            px: 2.5,
+            py: 1,
+            borderBottom: 1,
+            borderColor: "divider",
+            display: "flex",
+            justifyContent: "flex-end",
+            flexShrink: 0,
+          }}
+        >
+          <Tooltip title="Аннулировать расход">
+            <IconButton
+              size="small"
+              onClick={() => onVoid(expense)}
+              sx={{
+                border: `1px solid ${theme.palette.error.main}`,
+                color: "error.main",
+                borderRadius: 1,
+                px: 1.5,
+                py: 0.5,
+                gap: 0.5,
+                "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.06) },
+              }}
+            >
+              <BlockOutlined sx={{ fontSize: 16 }} />
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>Аннулировать</Typography>
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
+
+      {/* Тело — скроллируемое */}
+      <Box sx={{ flex: 1, overflowY: "auto", p: 2.5 }}>
+        <Stack spacing={2}>
+          {/* Платёжная информация */}
+          <PaymentInfoBlock
+            payment={{
+              baseTotal: amount,
+              cash: expense.method === "cash" ? amount : 0,
+              card: expense.method === "card" ? amount : 0,
+              finalTotal: amount,
+              debt: 0,
+              status: expense.isVoided ? "Отменено" : "Оплачено",
+            }}
+            variant="detailed"
+            showIcons
+          />
+
+          <Divider />
+
+          <Stack spacing={1.5}>
+            <DetailRow label="Дата" value={formatDateRu(expense.expenseDate)} />
+            <DetailRow label="Категория" value={expense.categoryName ?? "—"} />
+            {expense.branchName && (
+              <DetailRow label="Филиал" value={expense.branchName} />
+            )}
+            {expense.createdByName && (
+              <DetailRow label="Создал" value={expense.createdByName} />
+            )}
+            {expense.description && (
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary">Описание</Typography>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", fontWeight: 500 }}>
+                  {expense.description}
+                </Typography>
+              </Stack>
+            )}
+          </Stack>
+
+          {expense.isVoided && expense.voidReason && (
+            <>
+              <Divider />
+              <Box
+                sx={{
+                  p: 1.5,
+                  bgcolor: alpha(theme.palette.error.main, 0.05),
+                  borderRadius: 1.5,
+                  border: `1px solid ${alpha(theme.palette.error.main, 0.15)}`,
+                }}
+              >
+                <Typography variant="caption" color="error.main" sx={{ fontWeight: 600, display: "block", mb: 0.5 }}>
+                  Причина аннулирования
+                </Typography>
+                <Typography variant="body2">{expense.voidReason}</Typography>
+              </Box>
+            </>
+          )}
+        </Stack>
+      </Box>
     </Paper>
   );
 };
@@ -200,6 +278,7 @@ const AddExpenseDrawer: React.FC<AddDrawerProps> = ({
   categories,
   onCreated,
 }) => {
+  const theme = useTheme();
   const [categoryId, setCategoryId] = React.useState<number | "">("");
   const [method, setMethod] = React.useState<ExpenseMethod>("cash");
   const [amount, setAmount] = React.useState("");
@@ -207,6 +286,14 @@ const AddExpenseDrawer: React.FC<AddDrawerProps> = ({
   const [description, setDescription] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const isDirty = Boolean(categoryId || amount || description || expenseDate !== today());
+
+  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
+    isDirty,
+    isOpen: open,
+    onClose,
+  });
 
   React.useEffect(() => {
     if (open) {
@@ -225,6 +312,10 @@ const AddExpenseDrawer: React.FC<AddDrawerProps> = ({
     const parsed = parseFloat(amount.replace(",", "."));
     if (!categoryId) { setError("Выберите категорию"); return; }
     if (!amount || isNaN(parsed) || parsed <= 0) { setError("Введите корректную сумму"); return; }
+    if (description.trim().length < 3) {
+      setError("Описание обязательно и должно содержать минимум 3 символа");
+      return;
+    }
     setBusy(true);
     try {
       const created = await createExpense({
@@ -245,136 +336,201 @@ const AddExpenseDrawer: React.FC<AddDrawerProps> = ({
     }
   };
 
+  const parsed = parseFloat(amount.replace(",", "."));
+  const amountValid = !isNaN(parsed) && parsed > 0;
+
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={busy ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
-    >
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1 }}>
-        <Typography variant="h6">Добавить расход</Typography>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
-          <CloseOutlined />
-        </IconButton>
-      </Box>
-      <Divider />
-      <Box sx={{ p: 2, flex: 1, overflowY: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
-        <Stack spacing={3}>
-          {/* Категория */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Категория *
-            </Typography>
-            <TextField
-              select
-              size="small"
-              fullWidth
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
-              SelectProps={{ displayEmpty: true }}
-              disabled={busy}
+    <>
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={busy ? undefined : guardedClose}
+        PaperProps={{
+          sx: {
+            width: { xs: 320, sm: 480, md: 520 },
+            maxWidth: "100vw",
+            display: "flex",
+            flexDirection: "column",
+          },
+        }}
+      >
+        {/* Шапка */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 2.5,
+            py: 1.5,
+            flexShrink: 0,
+          }}
+        >
+          <Typography variant="h6" fontWeight={600}>Добавить расход</Typography>
+          <IconButton onClick={busy ? undefined : guardedClose} aria-label="Закрыть" edge="end">
+            <CloseOutlined />
+          </IconButton>
+        </Box>
+        <Divider />
+
+        {/* Форма */}
+        <Box
+          sx={{
+            p: 2.5,
+            flex: 1,
+            overflowY: "auto",
+            scrollbarWidth: "none",
+            "&::-webkit-scrollbar": { display: "none" },
+          }}
+        >
+          <Stack spacing={2.5}>
+            {/* Дата */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Дата расхода
+              </Typography>
+              <TextField
+                size="small"
+                fullWidth
+                type="date"
+                value={expenseDate}
+                onChange={(e) => setExpenseDate(e.target.value)}
+                disabled={busy}
+              />
+            </Stack>
+
+            {/* Категория */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Категория *
+              </Typography>
+              <TextField
+                select
+                size="small"
+                fullWidth
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
+                SelectProps={{ displayEmpty: true }}
+                disabled={busy}
+              >
+                <MenuItem value="">
+                  <Typography variant="body2" color="text.secondary">Выберите категорию</Typography>
+                </MenuItem>
+                {categories.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+
+            {/* Способ оплаты + Сумма — карточка */}
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2.5,
+                bgcolor: alpha(theme.palette.primary.main, 0.04),
+                borderColor: "divider",
+                borderRadius: 2,
+              }}
             >
-              <MenuItem value="">
-                <Typography variant="body2" color="text.secondary">Выберите категорию</Typography>
-              </MenuItem>
-              {categories.map((c) => (
-                <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-              ))}
-            </TextField>
-          </Stack>
+              <Stack spacing={2}>
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    Метод оплаты
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={method}
+                    exclusive
+                    onChange={(_, v) => v && setMethod(v)}
+                    fullWidth
+                    size="small"
+                    disabled={busy}
+                  >
+                    <ToggleButton value="cash">
+                      <AccountBalanceWalletOutlined sx={{ mr: 0.5, fontSize: 18 }} />
+                      Наличные
+                    </ToggleButton>
+                    <ToggleButton value="card">
+                      <CreditCardOutlined sx={{ mr: 0.5, fontSize: 18 }} />
+                      Карта
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
 
-          {/* Метод оплаты */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Метод оплаты
-            </Typography>
-            <ToggleButtonGroup
-              value={method}
-              exclusive
-              onChange={(_, v) => v && setMethod(v)}
-              fullWidth
-              size="small"
-              disabled={busy}
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    Сумма *
+                  </Typography>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    value={amount}
+                    onChange={(e) => { setError(null); setAmount(e.target.value); }}
+                    inputProps={{ min: 0, step: "any" }}
+                    InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
+                    disabled={busy}
+                    placeholder="0.00"
+                  />
+                </Stack>
+
+                {amountValid && (
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" color="text.secondary">ИТОГО</Typography>
+                    <Typography variant="subtitle1" fontWeight={700} color="primary.main">
+                      {formatKGS(parsed)}
+                    </Typography>
+                  </Stack>
+                )}
+              </Stack>
+            </Paper>
+
+            {/* Описание */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Описание *
+              </Typography>
+              <TextField
+                size="small"
+                fullWidth
+                multiline
+                minRows={3}
+                placeholder="Укажите назначение расхода (обязательно)"
+                value={description}
+                onChange={(e) => { setError(null); setDescription(e.target.value); }}
+                disabled={busy}
+                inputProps={{ maxLength: 1000 }}
+              />
+            </Stack>
+
+            {error && <Alert severity="error">{error}</Alert>}
+          </Stack>
+        </Box>
+
+        {/* Фиксированный футер */}
+        <Divider />
+        <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
+          <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+            <Button variant="outlined" onClick={guardedClose} disabled={busy}>
+              Отмена
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleSubmit}
+              disabled={busy || !amount || !categoryId || description.trim().length < 3}
+              startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
             >
-              <ToggleButton value="cash">
-                <AccountBalanceWalletOutlined sx={{ mr: 0.5, fontSize: 18 }} />
-                Наличные
-              </ToggleButton>
-              <ToggleButton value="card">
-                <CreditCardOutlined sx={{ mr: 0.5, fontSize: 18 }} />
-                Карта
-              </ToggleButton>
-            </ToggleButtonGroup>
+              {busy ? "Сохранение…" : "Сохранить"}
+            </Button>
           </Stack>
+        </Box>
+      </Drawer>
 
-          {/* Сумма */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Сумма *
-            </Typography>
-            <TextField
-              size="small"
-              fullWidth
-              type="number"
-              value={amount}
-              onChange={(e) => { setError(null); setAmount(e.target.value); }}
-              inputProps={{ min: 0, step: "any" }}
-              InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
-              disabled={busy}
-            />
-          </Stack>
-
-          {/* Дата */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Дата расхода
-            </Typography>
-            <TextField
-              size="small"
-              fullWidth
-              type="date"
-              value={expenseDate}
-              onChange={(e) => setExpenseDate(e.target.value)}
-              disabled={busy}
-            />
-          </Stack>
-
-          {/* Описание */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Описание
-            </Typography>
-            <TextField
-              size="small"
-              fullWidth
-              multiline
-              minRows={2}
-              placeholder="Необязательно"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={busy}
-            />
-          </Stack>
-
-          {error && <Alert severity="error">{error}</Alert>}
-        </Stack>
-      </Box>
-      <Divider />
-      <Box sx={{ px: 2, py: 1.5, flexShrink: 0 }}>
-        <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-          <Button variant="outlined" onClick={onClose} disabled={busy}>Отмена</Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmit}
-            disabled={busy || !amount || !categoryId}
-            startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
-          >
-            {busy ? "Сохранение…" : "Добавить"}
-          </Button>
-        </Stack>
-      </Box>
-    </Drawer>
+      <CloseGuardDialog
+        open={confirmOpen}
+        title="добавление расхода"
+        onConfirm={confirmClose}
+        onCancel={cancelClose}
+      />
+    </>
   );
 };
 
@@ -572,7 +728,7 @@ const DjangoExpensesPage: React.FC = () => {
     return list;
   }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter]);
 
-  // Вычисляем года, месяца и группировки для левой панели
+  // Вычисляем года, месяцы и группировки для левой панели
   const availableYears = React.useMemo(() => {
     const ys = new Set(allExpenses.map((e) => e.expenseDate.slice(0, 4)));
     return Array.from(ys).sort((a, b) => b.localeCompare(a));
@@ -925,26 +1081,16 @@ const DjangoExpensesPage: React.FC = () => {
             </Grid2>
           </Box>
 
-          {/* Mobile bottom sheet для деталей */}
-          {isMobile && selectedExpense && (
-            <Box
-              sx={{
-                position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1300,
-                bgcolor: "background.paper",
-                borderTop: "1px solid",
-                borderColor: "divider",
-                p: 2,
-                maxHeight: "60vh",
-                overflowY: "auto",
-              }}
+          {/* Mobile: AppBottomSheet для деталей */}
+          {isMobile && (
+            <AppBottomSheet
+              open={Boolean(selectedExpense)}
+              onClose={() => setSelectedExpense(null)}
             >
-              <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
-                <IconButton size="small" onClick={() => setSelectedExpense(null)}>
-                  <CloseOutlined fontSize="small" />
-                </IconButton>
-              </Stack>
-              <ExpenseDetailCard expense={selectedExpense} canManage={canManage} onVoid={setVoidTarget} />
-            </Box>
+              <Box sx={{ p: 2 }}>
+                <ExpenseDetailCard expense={selectedExpense} canManage={canManage} onVoid={setVoidTarget} />
+              </Box>
+            </AppBottomSheet>
           )}
         </Box>
       )}
