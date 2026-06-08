@@ -73,6 +73,7 @@ const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
 const CashboxPage = lazy(() => import("./pages/cashbox"));
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
+const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
@@ -477,13 +478,19 @@ function App() {
                         <Route
                           path="expenses"
                           element={
-                            <LegacyRouteGuard redirectTo="/cashbox">
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="finance.view">
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoExpensesPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <ExpensesListPage />
                                 </Suspense>
                               </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route

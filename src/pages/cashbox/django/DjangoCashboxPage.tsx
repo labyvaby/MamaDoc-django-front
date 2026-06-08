@@ -1,411 +1,145 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
+  Avatar,
   Box,
-  Divider,
+  Card,
+  CardContent,
+  Skeleton,
   Stack,
-  Tab,
-  Tabs,
   Typography,
+  alpha,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
+import { useQuery } from "@tanstack/react-query";
+
 import { PageHeader } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import {
-  getCashboxSummary,
-  getCashboxEntries,
-  parseBackendError,
-  type CashboxEntryType,
-} from "../../../api/cashbox";
-import { getBranches } from "../../../api/organization";
-import {
-  djangoQueryKeys,
-  DJANGO_DETAIL_STALE_TIME_MS,
-  DJANGO_REFERENCE_STALE_TIME_MS,
-} from "../../../api/queryKeys";
-import { ApiError } from "../../../api/client";
-import type { CashboxShift, CashboxShiftSummary } from "../../../api/cashboxShifts";
+import { getCashboxSummary } from "../../../api/cashbox";
+import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 
-import CashboxFiltersBar, {
-  initialFilterState,
-  filtersToApiParams,
-  type FilterState,
-} from "./CashboxFiltersBar";
-import CashboxSummaryPanel from "./CashboxSummaryPanel";
-import CashboxEntriesTable, { PAGE_SIZE } from "./CashboxEntriesTable";
-import ExpensesPanel from "./expenses/ExpensesPanel";
-import CurrentShiftPanel from "./shifts/CurrentShiftPanel";
-import ShiftOpenDialog from "./shifts/ShiftOpenDialog";
-import ShiftCloseDialog from "./shifts/ShiftCloseDialog";
-import ShiftHistoryPanel from "./shifts/ShiftHistoryPanel";
-
-// ── Component ─────────────────────────────────────────────────────────────────
-
-type TabValue = CashboxEntryType | "expenses-manage" | "shifts-history";
+function formatKGS(value: number): string {
+  return value.toLocaleString("ru-KG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " с";
+}
 
 const DjangoCashboxPage: React.FC = () => {
   usePageTitle("Касса");
+  const theme = useTheme();
   const canView = useCan("finance.view");
-  const canManageExpenses = useCan("finance.expense.manage");
-  const canOpenShift = useCan("finance.cashbox.shift.open");
-  const canCloseShift = useCan(["finance.cashbox.shift.close", "finance.cashbox.shift.manage"]);
-
-  const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
+  const { isSuperAdmin, activeOrganization, activeBranch, memberships, loading: permLoading } = usePermissions();
   const isSuper = isSuperAdmin();
-
   const isMultiOrg = (memberships ?? []).length > 1;
   const orgRequired = isSuper || isMultiOrg;
-  const orgIdForExpenses = orgRequired ? (activeOrganization?.id ?? undefined) : undefined;
-  const expenseNeedsOrg = orgRequired && !activeOrganization;
+  const needsOrg = orgRequired && !activeOrganization;
 
-  const [filters, setFilters] = React.useState<FilterState>(initialFilterState);
-  const [tab, setTab] = React.useState<TabValue>("payment");
-  const [paymentsPage, setPaymentsPage] = React.useState(1);
-  const [refundsPage, setRefundsPage] = React.useState(1);
-  const [expenseEntriesPage, setExpenseEntriesPage] = React.useState(1);
+  const filters = React.useMemo(() => {
+    const f: Record<string, unknown> = {};
+    if (isSuper && activeOrganization?.id) f.organizationId = activeOrganization.id;
+    if (activeBranch?.id) f.branchId = activeBranch.id;
+    return f;
+  }, [isSuper, activeOrganization?.id, activeBranch?.id]);
 
-  // Shift dialog state
-  const [openShiftDialogOpen, setOpenShiftDialogOpen] = React.useState(false);
-  const [closeShiftDialogOpen, setCloseShiftDialogOpen] = React.useState(false);
-  // Current shift / summary exposed from CurrentShiftPanel
-  const [currentShift, setCurrentShift] = React.useState<CashboxShift | null>(null);
-  const [currentShiftSummary, setCurrentShiftSummary] = React.useState<CashboxShiftSummary | null>(null);
-
-  // Stable callbacks — avoid re-render loops in CurrentShiftPanel
-  const handleShiftLoaded = React.useCallback((sh: CashboxShift | null) => {
-    setCurrentShift(sh);
-  }, []);
-  const handleSummaryLoaded = React.useCallback((s: CashboxShiftSummary | null) => {
-    setCurrentShiftSummary(s);
-  }, []);
-
-  // Reset branchId and pages when org changes
-  const prevOrgIdRef = React.useRef<number | null | undefined>(activeOrganization?.id);
-  React.useEffect(() => {
-    if (prevOrgIdRef.current !== activeOrganization?.id) {
-      prevOrgIdRef.current = activeOrganization?.id;
-      setFilters((f) => ({ ...f, branchId: "" }));
-      setPaymentsPage(1);
-      setRefundsPage(1);
-      setExpenseEntriesPage(1);
-    }
-  }, [activeOrganization?.id]);
-
-  const handleFiltersChange = React.useCallback((next: FilterState) => {
-    setFilters(next);
-    setPaymentsPage(1);
-    setRefundsPage(1);
-    setExpenseEntriesPage(1);
-  }, []);
-
-  // Build shared API params — null when range is invalid
-  const apiParams = React.useMemo(() => {
-    const base = filtersToApiParams(filters);
-    const rangeInvalid =
-      base.dateFrom && base.dateTo
-        ? new Date(base.dateFrom) > new Date(base.dateTo)
-        : false;
-    if (rangeInvalid) return null;
-    return {
-      ...base,
-      organizationId: isSuper ? (activeOrganization?.id ?? undefined) : undefined,
-    };
-  }, [filters, isSuper, activeOrganization?.id]);
-
-  const superNeedsOrg = isSuper && !activeOrganization;
-  const queriesEnabled = !permLoading && canView && apiParams !== null && !superNeedsOrg;
-
-  // branchId for current shift (from filter bar)
-  const selectedBranchId = filters.branchId !== "" ? filters.branchId : undefined;
-  // organizationId for shifts
-  const orgIdForShifts = orgRequired ? (activeOrganization?.id ?? undefined) : undefined;
-
-  // ── Branches query ────────────────────────────────────────────────────────
-  const branchesQuery = useQuery({
-    queryKey: djangoQueryKeys.organization.branches,
-    queryFn: () => getBranches(),
-    enabled: !permLoading && canView,
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-    retry: (count, err) => {
-      if ((err as ApiError)?.status === 403) return false;
-      return count < 1;
-    },
-  });
-  const branches = (branchesQuery.data ?? []).map((b) => ({ id: b.id, name: b.name }));
-
-  // ── Summary query ─────────────────────────────────────────────────────────
-  const summaryKey = djangoQueryKeys.cashbox.summary(apiParams ?? { _invalid: true });
   const summaryQuery = useQuery({
-    queryKey: summaryKey,
-    queryFn: ({ signal }) => getCashboxSummary(apiParams!, signal),
-    enabled: queriesEnabled,
+    queryKey: djangoQueryKeys.cashbox.summary(filters),
+    queryFn: ({ signal }) => getCashboxSummary(
+      {
+        organizationId: isSuper ? (activeOrganization?.id ?? undefined) : undefined,
+        branchId: activeBranch?.id ?? undefined,
+      },
+      signal,
+    ),
+    enabled: !permLoading && canView && !needsOrg,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    refetchInterval: queriesEnabled ? 60_000 : false,
-    retry: (count, err) => {
-      const status = (err as ApiError)?.status;
-      if (status === 400 || status === 403) return false;
-      return count < 1;
-    },
+    refetchInterval: !permLoading && canView && !needsOrg ? 60_000 : false,
   });
 
-  // ── Entries query (payment / refund / expense entries tab) ────────────────
-  const isEntriesTab =
-    tab === "payment" || tab === "refund" || tab === "expense";
-  const currentEntriesEntryType = isEntriesTab ? (tab as CashboxEntryType) : "payment";
-  const currentPage =
-    tab === "payment"
-      ? paymentsPage
-      : tab === "refund"
-        ? refundsPage
-        : expenseEntriesPage;
-  const setCurrentPage =
-    tab === "payment"
-      ? setPaymentsPage
-      : tab === "refund"
-        ? setRefundsPage
-        : setExpenseEntriesPage;
-
-  const entriesKey = djangoQueryKeys.cashbox.entries(currentEntriesEntryType, {
-    ...(apiParams ?? { _invalid: true }),
-    page: currentPage,
-    pageSize: PAGE_SIZE,
-  });
-  const entriesQuery = useQuery({
-    queryKey: entriesKey,
-    queryFn: ({ signal }) =>
-      getCashboxEntries(
-        {
-          ...apiParams!,
-          entryType: currentEntriesEntryType,
-          page: currentPage,
-          pageSize: PAGE_SIZE,
-        },
-        signal,
-      ),
-    enabled: queriesEnabled && isEntriesTab,
-    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    refetchInterval: queriesEnabled && isEntriesTab ? 60_000 : false,
-    retry: (count, err) => {
-      const status = (err as ApiError)?.status;
-      if (status === 400 || status === 403) return false;
-      return count < 1;
-    },
-  });
-
-  // ── Access denied ────────────────────────────────────────────────────────
   if (!permLoading && !canView) return <AccessDenied />;
 
-  // ── Error states ──────────────────────────────────────────────────────────
-  const is400 =
-    (summaryQuery.error as ApiError)?.status === 400 ||
-    (entriesQuery.error as ApiError)?.status === 400;
-
-  const summaryError = summaryQuery.error ? parseBackendError(summaryQuery.error) : null;
-  const entriesError = entriesQuery.error ? parseBackendError(entriesQuery.error) : null;
-
-  // ── Derived values for ExpensesPanel ─────────────────────────────────────
-  const expenseFilters = apiParams
-    ? {
-        organizationId: orgIdForExpenses,
-        branchId: apiParams.branchId,
-        dateFrom: apiParams.dateFrom,
-        dateTo: apiParams.dateTo,
-      }
+  const s = summaryQuery.data;
+  const cashBalance = s
+    ? parseFloat(s.cashIncome) - parseFloat(s.cashRefunds) - parseFloat(s.cashExpenses)
     : null;
 
   return (
-    <Box sx={{ p: { xs: 1.5, sm: 2.5 }, maxWidth: 1200, mx: "auto" }}>
-      <PageHeader title="Касса" />
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <PageHeader title="Касса" showTitle={false} showSearch={false} />
 
-      <Stack spacing={2.5} mt={2}>
-        {/* Filters */}
-        <CashboxFiltersBar
-          value={filters}
-          branches={branches}
-          onChange={handleFiltersChange}
-        />
+      {needsOrg && (
+        <Box sx={{ px: 3, pt: 2 }}>
+          <Alert severity="info">Выберите организацию, чтобы просмотреть данные кассы.</Alert>
+        </Box>
+      )}
 
-        {superNeedsOrg && (
-          <Alert severity="info">
-            Выберите организацию в контексте, чтобы просмотреть данные кассы.
-          </Alert>
-        )}
-
-        {apiParams === null && (
-          <Alert severity="warning">Некорректный диапазон дат — начальная дата позже конечной.</Alert>
-        )}
-
-        {is400 && !superNeedsOrg && (
-          <Alert severity="error">{summaryError ?? entriesError}</Alert>
-        )}
-
-        {/* Current shift panel — always visible when branch selected, regardless of date range */}
-        {!superNeedsOrg && (canView || canOpenShift) && (
-          <CurrentShiftPanel
-            selectedBranchId={selectedBranchId}
-            organizationId={orgIdForShifts}
-            branches={branches}
-            canOpen={canOpenShift}
-            canClose={canCloseShift}
-            queriesEnabled={!permLoading && canView}
-            onShiftOpened={handleShiftLoaded}
-            onOpenShiftClick={() => setOpenShiftDialogOpen(true)}
-            onCloseShiftClick={() => setCloseShiftDialogOpen(true)}
-            onSummaryLoaded={handleSummaryLoaded}
-            onShiftLoaded={handleShiftLoaded}
-          />
-        )}
-
-        {!superNeedsOrg && apiParams !== null && !is400 && (
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={2}
-            alignItems={{ md: "flex-start" }}
+      {!needsOrg && (
+        <Box
+          sx={{
+            px: theme.appLayout.page.paddingX,
+            flex: 1,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            overflow: "hidden",
+          }}
+        >
+          <Card
+            elevation={0}
+            sx={{
+              width: "100%",
+              maxWidth: 400,
+              background: `linear-gradient(145deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
+              borderRadius: 6,
+              boxShadow: `0 24px 80px ${alpha(theme.palette.success.main, 0.35)}`,
+              color: "white",
+              position: "relative",
+              overflow: "hidden",
+            }}
           >
-            {/* Summary panel */}
-            <Box sx={{ width: { xs: "100%", md: 260 }, flexShrink: 0 }}>
-              {summaryError && !is400 && (
-                <Alert severity="warning" sx={{ mb: 1, py: 0.5 }}>{summaryError}</Alert>
-              )}
-              <CashboxSummaryPanel
-                summary={summaryQuery.data}
-                isLoading={summaryQuery.isLoading}
-                isFetching={summaryQuery.isFetching}
-              />
-            </Box>
+            {/* Декоративные круги */}
+            <Box sx={{ position: "absolute", top: -80, right: -80, width: 220, height: 220, borderRadius: "50%", background: alpha("#fff", 0.08) }} />
+            <Box sx={{ position: "absolute", bottom: -60, left: -60, width: 180, height: 180, borderRadius: "50%", background: alpha("#fff", 0.05) }} />
+            <Box sx={{ position: "absolute", top: "50%", right: -40, width: 100, height: 100, borderRadius: "50%", background: alpha("#fff", 0.03) }} />
 
-            <Divider orientation="vertical" flexItem sx={{ display: { xs: "none", md: "block" } }} />
-            <Divider sx={{ display: { xs: "block", md: "none" } }} />
+            <CardContent sx={{ p: 4, position: "relative", zIndex: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 4 }}>
+                <Avatar sx={{ width: 60, height: 60, bgcolor: alpha("#fff", 0.2), backdropFilter: "blur(10px)" }}>
+                  <AccountBalanceWalletIcon sx={{ fontSize: 30, color: "white" }} />
+                </Avatar>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
+                    Касса
+                  </Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                    Баланс наличных
+                  </Typography>
+                </Box>
+              </Stack>
 
-            {/* Right: tabs + content */}
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Tabs
-                value={tab}
-                onChange={(_, v) => setTab(v as TabValue)}
-                variant="scrollable"
-                scrollButtons="auto"
-                allowScrollButtonsMobile
-                sx={{ mb: 1.5, borderBottom: "1px solid", borderColor: "divider" }}
-              >
-                <Tab
-                  value="payment"
-                  label={
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <span>Платежи</span>
-                      {summaryQuery.data && (
-                        <Typography variant="caption" color="text.secondary">
-                          ({summaryQuery.data.paymentCount})
-                        </Typography>
-                      )}
-                    </Stack>
-                  }
-                />
-                <Tab
-                  value="refund"
-                  label={
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <span>Возвраты</span>
-                      {summaryQuery.data && summaryQuery.data.refundCount > 0 && (
-                        <Typography variant="caption" color="error.main">
-                          ({summaryQuery.data.refundCount})
-                        </Typography>
-                      )}
-                    </Stack>
-                  }
-                />
-                <Tab
-                  value="expense"
-                  label={
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <span>Расходы (записи)</span>
-                      {summaryQuery.data && summaryQuery.data.expenseCount > 0 && (
-                        <Typography variant="caption" color="error.main">
-                          ({summaryQuery.data.expenseCount})
-                        </Typography>
-                      )}
-                    </Stack>
-                  }
-                />
-                {canManageExpenses && (
-                  <Tab value="expenses-manage" label="Управление расходами" />
-                )}
-                {canView && (
-                  <Tab value="shifts-history" label="История смен" />
-                )}
-              </Tabs>
-
-              {/* Entries: payment / refund / expense cashbox entries */}
-              {isEntriesTab && (
-                <>
-                  {entriesError && !is400 && (
-                    <Alert severity="warning" sx={{ mb: 1, py: 0.5 }}>{entriesError}</Alert>
-                  )}
-                  <CashboxEntriesTable
-                    entryType={currentEntriesEntryType}
-                    entries={entriesQuery.data?.results ?? []}
-                    total={entriesQuery.data?.count ?? 0}
-                    page={currentPage}
-                    pageSize={PAGE_SIZE}
-                    isLoading={entriesQuery.isLoading}
-                    isFetching={entriesQuery.isFetching}
-                    error={entriesError && !is400 ? entriesError : null}
-                    onPageChange={setCurrentPage}
+              <Box sx={{ textAlign: "center", mb: 4 }}>
+                {summaryQuery.isLoading ? (
+                  <Skeleton
+                    variant="text"
+                    width="60%"
+                    height={70}
+                    sx={{ bgcolor: alpha("#fff", 0.2), mx: "auto" }}
                   />
-                </>
-              )}
-
-              {/* Expenses management tab */}
-              {tab === "expenses-manage" && expenseFilters && (
-                <ExpensesPanel
-                  organizationId={expenseFilters.organizationId}
-                  branchId={expenseFilters.branchId}
-                  dateFrom={expenseFilters.dateFrom}
-                  dateTo={expenseFilters.dateTo}
-                  branches={branches}
-                  canManage={canManageExpenses}
-                  queriesEnabled={queriesEnabled}
-                  expenseNeedsOrg={expenseNeedsOrg}
-                />
-              )}
-
-              {/* Shifts history tab */}
-              {tab === "shifts-history" && (
-                <ShiftHistoryPanel
-                  organizationId={orgIdForShifts}
-                  branches={branches}
-                  queriesEnabled={!permLoading && canView}
-                />
-              )}
-            </Box>
-          </Stack>
-        )}
-      </Stack>
-
-      {/* Shift dialogs */}
-      <ShiftOpenDialog
-        open={openShiftDialogOpen}
-        organizationId={orgIdForShifts}
-        branches={branches}
-        defaultBranchId={selectedBranchId}
-        onClose={() => setOpenShiftDialogOpen(false)}
-        onOpened={(shift) => {
-          setCurrentShift(shift);
-          setOpenShiftDialogOpen(false);
-        }}
-      />
-      <ShiftCloseDialog
-        open={closeShiftDialogOpen}
-        shift={currentShift}
-        summary={currentShiftSummary}
-        onClose={() => setCloseShiftDialogOpen(false)}
-        onClosed={(shift) => {
-          setCurrentShift(shift);
-          setCloseShiftDialogOpen(false);
-        }}
-      />
+                ) : (
+                  <Typography
+                    variant="h2"
+                    fontWeight={900}
+                    sx={{ textShadow: "0 4px 20px rgba(0,0,0,0.15)", letterSpacing: -1 }}
+                  >
+                    {formatKGS(cashBalance ?? 0)}
+                  </Typography>
+                )}
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      )}
     </Box>
   );
 };

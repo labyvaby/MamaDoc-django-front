@@ -531,10 +531,10 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
 
-        {/* Расходы — в Django-mode живут как вкладка внутри /cashbox */}
+        {/* Расходы */}
         {show("management") && (
           <SidebarMenuItem
-            to={IS_DJANGO_BACKEND ? "/cashbox" : "/expenses"}
+            to="/expenses"
             icon={<PaymentsOutlined />}
             label="Расходы"
             collapsed={siderCollapsed}
