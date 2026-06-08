@@ -34,7 +34,6 @@ import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblem";
 import { Tooltip } from "@mui/material";
-// import { PageHeader } from "../../components/ui"; // Removed as per user request
 import { supabase } from "../../utility/supabaseClient";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
@@ -42,12 +41,15 @@ import { useNotification } from "@refinedev/core";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import ShiftFormSidebar from "../../components/schedule/ShiftFormSidebar";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
+import DjangoUnderConstructionPage from "../../components/routing/DjangoUnderConstructionPage";
 
 dayjs.extend(duration);
 
 
 const WorkShiftsPage: React.FC = () => {
     usePageTitle("СКУД");
+    if (IS_DJANGO_BACKEND) return <DjangoUnderConstructionPage title="СКУД в разработке" />;
     const { open: notify } = useNotification();
     const { isAdmin, isSuperAdmin } = usePermissions();
     const { employees } = useEmployees();

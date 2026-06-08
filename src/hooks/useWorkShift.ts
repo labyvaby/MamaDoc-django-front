@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { supabase } from '../utility/supabaseClient';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../hooks/usePermissions';
+import { IS_DJANGO_BACKEND } from '../config/backend';
 
 interface WorkShift {
     id: string;
@@ -15,7 +16,10 @@ const fetchWorkShift = async (employeeId: string | null): Promise<{ activeShift:
         return { activeShift: null, employeeId: null };
     }
 
-    // 3. Check for active shift
+    if (IS_DJANGO_BACKEND) {
+        return { activeShift: null, employeeId };
+    }
+
     const { data: activeShift, error: shiftError } = await supabase
         .from('WorkShifts')
         .select('*')
@@ -30,7 +34,7 @@ const fetchWorkShift = async (employeeId: string | null): Promise<{ activeShift:
     }
 
     return { activeShift: activeShift as WorkShift | null, employeeId };
-};  
+};
 
 export const useWorkShift = () => {
     const queryClient = useQueryClient();
@@ -40,12 +44,12 @@ export const useWorkShift = () => {
         queryKey: ['workShift', 'current', globalEmployeeId],
         queryFn: () => fetchWorkShift(globalEmployeeId ?? null),
         enabled: !!globalEmployeeId,
-        // Don't refetch too aggressively, relies on realtime
-        staleTime: 5 * 60 * 1000, 
+        staleTime: 5 * 60 * 1000,
     });
 
     useEffect(() => {
-        // Subscribe to work shifts changes to invalidate cache
+        if (IS_DJANGO_BACKEND) return;
+
         const channel = supabase
             .channel('work-shifts-changes')
             .on(
@@ -56,7 +60,6 @@ export const useWorkShift = () => {
                     table: 'WorkShifts',
                 },
                 () => {
-                    // Invalidate query to refetch data
                     queryClient.invalidateQueries({ queryKey: ['workShift'] });
                 }
             )

@@ -74,9 +74,10 @@ export const useSkudActions = (
     const { data: shiftsData, isLoading: historyLoading, refetch: refetchShifts, isFetching: historyFetching } = useQuery({
         queryKey: ['workShifts', 'history', currentUserEmployeeId, filterEmployeeId, filterStartDate, filterEndDate],
         queryFn: async () => {
+            if (IS_DJANGO_BACKEND) return [];
             // Need employee ID to fetch history
             if (!currentUserEmployeeId && !isAdmin()) return [];
-            
+
             let query = supabase
                 .from("WorkShifts")
                 .select(`*, employee:Employees(full_name)`)
@@ -104,7 +105,7 @@ export const useSkudActions = (
             if (error) throw error;
             return data as unknown as WorkShift[];
         },
-        enabled: enableHistory, // Enable fetching only if requested
+        enabled: enableHistory && !IS_DJANGO_BACKEND,
         staleTime: 5 * 60 * 1000, 
         placeholderData: keepPreviousData,
     });
@@ -114,12 +115,9 @@ export const useSkudActions = (
 
     // Realtime Subscription for History and Dashboard Updates
     React.useEffect(() => {
-        // Only set up subscription if we need it (history enabled)
-        // Note: The dashboard might also want this, so we could always enable it,
-        // but since they share query keys, this is fine.
         let channel: ReturnType<typeof supabase.channel> | null = null;
-        
-        if (enableHistory) {
+
+        if (!IS_DJANGO_BACKEND && enableHistory) {
             channel = supabase
                 .channel('workshifts-changes')
                 .on(
@@ -150,6 +148,10 @@ export const useSkudActions = (
 
     // Actions
     const handleStartShift = async () => {
+        if (IS_DJANGO_BACKEND) {
+            notify?.({ type: "error", message: "СКУД ещё не перенесён на Django" });
+            return;
+        }
         if (!currentUserEmployeeId) return;
 
         if (!isIpCorrect) {
@@ -168,13 +170,12 @@ export const useSkudActions = (
                 is_night_shift: isNight,
             });
             if (error) throw error;
-            
+
             notify?.({ type: "success", message: "Смена началась" });
-            
-            // Invalidate to update UI immediately
+
             queryClient.invalidateQueries({ queryKey: ['workShift', 'current'] });
             if (enableHistory) queryClient.invalidateQueries({ queryKey: ['workShifts', 'history'] });
-            
+
         } catch (e) {
             console.error(e);
             notify?.({ type: "error", message: "Ошибка начала смены" });
@@ -184,6 +185,10 @@ export const useSkudActions = (
     };
 
     const handleEndShift = async () => {
+        if (IS_DJANGO_BACKEND) {
+            notify?.({ type: "error", message: "СКУД ещё не перенесён на Django" });
+            return;
+        }
         if (!currentShift) return;
         try {
             setActionLoading(true);
@@ -192,12 +197,11 @@ export const useSkudActions = (
             }).eq("id", currentShift.id);
 
             if (error) throw error;
-            
+
             notify?.({ type: "success", message: "Смена завершена" });
-            
-            // Invalidate
+
             queryClient.invalidateQueries({ queryKey: ['workShift', 'current'] });
-             if (enableHistory) queryClient.invalidateQueries({ queryKey: ['workShifts', 'history'] });
+            if (enableHistory) queryClient.invalidateQueries({ queryKey: ['workShifts', 'history'] });
 
         } catch (e) {
             console.error(e);
