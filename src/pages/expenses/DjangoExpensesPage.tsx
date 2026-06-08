@@ -491,6 +491,7 @@ const DjangoExpensesPage: React.FC = () => {
       prevOrgId.current = orgId;
       prevBranchId.current = branchId;
       setSelectedExpense(null);
+      setSelectedCategoryId(null);
       setSelectedYear(null);
       setSelectedMonth(null);
       setSelectedDate(null);
@@ -619,26 +620,6 @@ const DjangoExpensesPage: React.FC = () => {
     [groupedByEmployee],
   );
 
-  // drag-to-scroll для чипов
-  const catScrollRef = React.useRef<HTMLDivElement>(null);
-  const dragging = React.useRef(false);
-  const startX = React.useRef(0);
-  const scrollLeft = React.useRef(0);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    dragging.current = true;
-    startX.current = e.pageX - (catScrollRef.current?.offsetLeft ?? 0);
-    scrollLeft.current = catScrollRef.current?.scrollLeft ?? 0;
-  };
-  const handleMouseLeave = () => { dragging.current = false; };
-  const handleMouseUp = () => { dragging.current = false; };
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragging.current || !catScrollRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - catScrollRef.current.offsetLeft;
-    catScrollRef.current.scrollLeft = scrollLeft.current - (x - startX.current);
-  };
-
   if (!permLoading && !canView) return <AccessDenied />;
 
   return (
@@ -652,6 +633,24 @@ const DjangoExpensesPage: React.FC = () => {
         searchVal={searchQuery}
         onSearchChange={setSearchQuery}
         searchPlaceholder="Поиск..."
+        actions={
+          <TextField
+            select
+            size="small"
+            value={selectedCategoryId ?? ""}
+            onChange={(e) => setSelectedCategoryId(e.target.value === "" ? null : Number(e.target.value))}
+            disabled={categoriesQuery.isLoading || categories.length === 0}
+            SelectProps={{ displayEmpty: true }}
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="">
+              {categoriesQuery.isLoading ? "Загрузка..." : categories.length === 0 ? "Категорий нет" : "Все категории"}
+            </MenuItem>
+            {categories.map((cat) => (
+              <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
+            ))}
+          </TextField>
+        }
       />
 
       {needsOrg && (
@@ -674,45 +673,6 @@ const DjangoExpensesPage: React.FC = () => {
             "&::-webkit-scrollbar": { display: "none" },
           }}
         >
-          {/* Чипы категорий */}
-          <Box sx={(t) => ({ px: t.appLayout.page.paddingX, mb: 2 })}>
-            <Box
-              ref={catScrollRef}
-              onMouseDown={handleMouseDown}
-              onMouseLeave={handleMouseLeave}
-              onMouseUp={handleMouseUp}
-              onMouseMove={handleMouseMove}
-              sx={{
-                display: "flex",
-                overflowX: "auto",
-                scrollbarWidth: "none",
-                "&::-webkit-scrollbar": { display: "none" },
-                gap: 1.5,
-                pb: 1,
-                cursor: "grab",
-                userSelect: "none",
-              }}
-            >
-              <Chip
-                label="Все категории"
-                onClick={() => setSelectedCategoryId(null)}
-                variant={selectedCategoryId === null ? "filled" : "outlined"}
-                color={selectedCategoryId === null ? "primary" : "default"}
-                sx={{ fontWeight: 500 }}
-              />
-              {categories.map((cat) => (
-                <Chip
-                  key={cat.id}
-                  label={cat.name}
-                  onClick={() => setSelectedCategoryId(cat.id === selectedCategoryId ? null : cat.id)}
-                  variant={selectedCategoryId === cat.id ? "filled" : "outlined"}
-                  color={selectedCategoryId === cat.id ? "primary" : "default"}
-                  sx={{ fontWeight: 500 }}
-                />
-              ))}
-            </Box>
-          </Box>
-
           {/* 3-колоночный грид */}
           <Box sx={(t) => ({ px: t.appLayout.page.paddingX, flex: 1, display: "flex", flexDirection: "column", minHeight: 0 })}>
             <Grid2 container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
