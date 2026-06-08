@@ -74,6 +74,7 @@ const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPa
 const CashboxPage = lazy(() => import("./pages/cashbox"));
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
+const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
@@ -781,6 +782,16 @@ function App() {
                                 <RequirePermission permission="rbac.memberships.view">
                                   <Suspense fallback={<LinearProgress />}>
                                     <MembershipsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/expense-categories"
+                              element={
+                                <RequirePermission permission="finance.expense.manage">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ExpenseCategoriesSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

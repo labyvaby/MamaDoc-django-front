@@ -119,6 +119,22 @@ export function createExpenseCategory(
   });
 }
 
+export function getExpenseCategoriesPage(
+  filters: { organizationId?: number; isActive?: boolean; page?: number; pageSize?: number } = {},
+  signal?: AbortSignal,
+): Promise<ExpenseCategoriesResponse> {
+  const q = new URLSearchParams();
+  if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
+  if (filters.isActive != null) q.set("isActive", String(filters.isActive));
+  if (filters.page != null) q.set("page", String(filters.page));
+  if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
+  const qs = q.toString();
+  return apiRequest<ExpenseCategoriesResponse>(
+    `/finance/expense-categories/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
 export function getExpenses(
   filters: ExpensesFilters = {},
   signal?: AbortSignal,
