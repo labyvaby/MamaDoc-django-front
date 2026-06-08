@@ -8,23 +8,14 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Divider,
   Drawer,
-  FormControlLabel,
-  IconButton,
-  InputAdornment,
-  MenuItem,
   Stack,
-  Switch,
   Tab,
   Tabs,
-  TextField,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import PhoneOutlinedIcon from "@mui/icons-material/PhoneOutlined";
 import ConstructionOutlined from "@mui/icons-material/ConstructionOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -33,19 +24,13 @@ dayjs.locale("ru");
 
 import { PageHeader, AppBottomSheet } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
   getPatients,
-  createPatient,
-  updatePatient,
 } from "../../api/patients";
 import type {
   DjangoPatient,
-  CreatePatientPayload,
-  UpdatePatientPayload,
-  PatientGender,
 } from "../../api/patients";
 import {
   getPatientBalance,
@@ -53,6 +38,7 @@ import {
 } from "../../api/patientBalance";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import type { RbacBranch } from "../../api/auth";
+import { useNotification } from "@refinedev/core";
 
 import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
@@ -60,187 +46,8 @@ import PatientHistoryPanel from "./components/PatientHistoryPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
+import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 
-// ── Constants / helpers ──────────────────────────────────────────────────────
-
-const GENDER_LABELS: Record<PatientGender, string> = {
-  male: "Мужской",
-  female: "Женский",
-  unknown: "Не указан",
-};
-
-// ── Patient add/edit drawer (Django API) ─────────────────────────────────────
-
-interface PatientFormProps {
-  open: boolean;
-  onClose: () => void;
-  onSaved: (p: DjangoPatient) => void;
-  initial?: DjangoPatient | null;
-  branches: RbacBranch[];
-  defaultBranchId?: number | null;
-  canCreate: boolean;
-  canUpdate: boolean;
-}
-
-const PatientFormDrawer: React.FC<PatientFormProps> = ({
-  open,
-  onClose,
-  onSaved,
-  initial,
-  branches,
-  defaultBranchId,
-  canCreate,
-  canUpdate,
-}) => {
-  const { open: notify } = useNotification();
-  const isEdit = !!initial;
-  const allowed = isEdit ? canUpdate : canCreate;
-
-  const [fullName, setFullName] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [secondaryPhone, setSecondaryPhone] = React.useState("");
-  const [birthDate, setBirthDate] = React.useState("");
-  const [gender, setGender] = React.useState<PatientGender>("unknown");
-  const [branchId, setBranchId] = React.useState<string>("");
-  const [address, setAddress] = React.useState("");
-  const [notes, setNotes] = React.useState("");
-  const [source, setSource] = React.useState("");
-  const [isActive, setIsActive] = React.useState(true);
-  const [saving, setSaving] = React.useState(false);
-  const [errors, setErrors] = React.useState<Record<string, string>>({});
-
-  React.useEffect(() => {
-    if (open) {
-      setFullName(initial?.fullName ?? "");
-      setPhone(initial?.phone ?? "");
-      setSecondaryPhone(initial?.secondaryPhone ?? "");
-      setBirthDate(initial?.birthDate ?? "");
-      setGender(initial?.gender ?? "unknown");
-      setBranchId(
-        initial?.branch?.id != null
-          ? String(initial.branch.id)
-          : defaultBranchId != null
-          ? String(defaultBranchId)
-          : "",
-      );
-      setAddress(initial?.address ?? "");
-      setNotes(initial?.notes ?? "");
-      setSource(initial?.source ?? "");
-      setIsActive(initial?.isActive ?? true);
-      setErrors({});
-    }
-  }, [open, initial, defaultBranchId]);
-
-  const validate = (): boolean => {
-    const errs: Record<string, string> = {};
-    if (!fullName.trim()) errs.fullName = "ФИО обязательно";
-    if (!phone.trim()) errs.phone = "Телефон обязателен";
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
-  const handleSave = async () => {
-    if (!validate()) return;
-    setSaving(true);
-    try {
-      let saved: DjangoPatient;
-      const common = {
-        fullName: fullName.trim(),
-        phone: phone.trim(),
-        secondaryPhone: secondaryPhone.trim() || null,
-        birthDate: birthDate || null,
-        gender,
-        branchId: branchId ? Number(branchId) : null,
-        address: address.trim() || null,
-        notes: notes.trim() || null,
-        source: source.trim() || null,
-        isActive,
-      };
-      if (isEdit && initial) {
-        saved = await updatePatient(initial.id, common as UpdatePatientPayload);
-      } else {
-        saved = await createPatient(common as CreatePatientPayload);
-      }
-      notify?.({ type: "success", message: isEdit ? "Пациент обновлён" : "Пациент создан" });
-      onSaved(saved);
-    } catch (e) {
-      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка сохранения" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: "100%", sm: 480 } } }}>
-      <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 2, borderBottom: 1, borderColor: "divider" }}>
-          <Typography variant="h6" fontWeight={600}>
-            {isEdit ? "Редактировать пациента" : "Новый пациент"}
-          </Typography>
-          <IconButton size="small" onClick={onClose}>
-            <CloseOutlined />
-          </IconButton>
-        </Stack>
-
-        <Box sx={{ flex: 1, overflowY: "auto", px: 2.5, py: 2 }}>
-          {!allowed ? (
-            <Typography color="text.secondary">Недостаточно прав</Typography>
-          ) : (
-            <Stack spacing={2}>
-              <TextField
-                label="ФИО"
-                value={fullName}
-                onChange={(e) => { setFullName(e.target.value); if (errors.fullName) setErrors((p) => ({ ...p, fullName: "" })); }}
-                fullWidth size="small" required error={!!errors.fullName} helperText={errors.fullName}
-              />
-              <TextField
-                label="Телефон"
-                value={phone}
-                onChange={(e) => { setPhone(e.target.value); if (errors.phone) setErrors((p) => ({ ...p, phone: "" })); }}
-                fullWidth size="small" required error={!!errors.phone} helperText={errors.phone}
-                InputProps={{ startAdornment: <InputAdornment position="start"><PhoneOutlinedIcon fontSize="small" color="action" /></InputAdornment> }}
-              />
-              <TextField
-                label="Доп. телефон"
-                value={secondaryPhone}
-                onChange={(e) => setSecondaryPhone(e.target.value)}
-                fullWidth size="small"
-                InputProps={{ startAdornment: <InputAdornment position="start"><PhoneOutlinedIcon fontSize="small" color="action" /></InputAdornment> }}
-              />
-              <TextField label="Дата рождения" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} fullWidth size="small" InputLabelProps={{ shrink: true }} />
-              <TextField label="Пол" select value={gender} onChange={(e) => setGender(e.target.value as PatientGender)} fullWidth size="small">
-                {(["unknown", "male", "female"] as PatientGender[]).map((g) => (
-                  <MenuItem key={g} value={g}>{GENDER_LABELS[g]}</MenuItem>
-                ))}
-              </TextField>
-              {branches.length > 0 && (
-                <TextField label="Филиал" select value={branchId} onChange={(e) => setBranchId(e.target.value)} fullWidth size="small">
-                  <MenuItem value="">— Не указан —</MenuItem>
-                  {branches.map((b) => (
-                    <MenuItem key={b.id} value={String(b.id)}>{b.name}</MenuItem>
-                  ))}
-                </TextField>
-              )}
-              <TextField label="Адрес" value={address} onChange={(e) => setAddress(e.target.value)} fullWidth size="small" />
-              <TextField label="Источник" value={source} onChange={(e) => setSource(e.target.value)} fullWidth size="small" placeholder="Откуда узнали о клинике" />
-              <TextField label="Примечания" value={notes} onChange={(e) => setNotes(e.target.value)} fullWidth size="small" multiline rows={3} />
-              <FormControlLabel control={<Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />} label="Активен" />
-            </Stack>
-          )}
-        </Box>
-
-        {allowed && (
-          <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ px: 2.5, py: 2, borderTop: 1, borderColor: "divider" }}>
-            <Button variant="outlined" onClick={onClose} disabled={saving}>Отмена</Button>
-            <Button variant="contained" onClick={handleSave} disabled={saving}>
-              {saving ? <CircularProgress size={18} /> : "Сохранить"}
-            </Button>
-          </Stack>
-        )}
-      </Box>
-    </Drawer>
-  );
-};
 
 // ── "В разработке" placeholder for Old conclusions tab ───────────────────────
 
@@ -319,8 +126,7 @@ const DjangoPatientsPage: React.FC = () => {
 
   // ── Drawers / tabs ─────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = React.useState(false);
-  const [formOpen, setFormOpen] = React.useState(false);
-  const [editing, setEditing] = React.useState<DjangoPatient | null>(null);
+  const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
   const [mergeInfoOpen, setMergeInfoOpen] = React.useState(false);
@@ -434,19 +240,18 @@ const DjangoPatientsPage: React.FC = () => {
   };
 
   const handleAdd = () => setAddOpen(true);
-  const handleEdit = () => { if (selected) { setEditing(selected); setFormOpen(true); } };
+  const handleEdit = () => { if (selected) setEditOpen(true); };
 
   const handleMerge = () => setMergeInfoOpen(true);
 
-  const handleSaved = (saved: DjangoPatient) => {
-    setFormOpen(false);
-    setEditing(null);
+  const handleUpdated = (saved: DjangoPatient) => {
+    setEditOpen(false);
     setPatients((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
-      return [saved, ...prev];
+      return prev;
     });
-    setSelected(saved); // keep selected card fresh, no full reload
+    setSelected(saved);
   };
 
   // ── Guards ──────────────────────────────────────────────────────────────────
@@ -610,15 +415,11 @@ const DjangoPatientsPage: React.FC = () => {
       />
 
       {/* Edit patient drawer */}
-      <PatientFormDrawer
-        open={formOpen}
-        onClose={() => { setFormOpen(false); setEditing(null); }}
-        onSaved={handleSaved}
-        initial={editing}
-        branches={branches}
-        defaultBranchId={defaultBranchId}
-        canCreate={canCreate}
-        canUpdate={canUpdate}
+      <DjangoEditPatientDrawer
+        open={editOpen}
+        patient={selected}
+        onClose={() => setEditOpen(false)}
+        onUpdated={handleUpdated}
       />
 
       {/* Top-up balance drawer */}
