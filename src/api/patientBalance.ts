@@ -31,9 +31,19 @@ export interface PatientBalanceTransaction {
   bonusesAfter: string;
   comment: string;
   createdById: number | null;
+  createdByName: string | null;
+  branchId: number | null;
+  branchName: string | null;
   appointmentId: number | null;
   paymentId: number | null;
   createdAt: string;
+}
+
+export interface PatientBalanceTransactionsResponse {
+  results: PatientBalanceTransaction[];
+  count: number;
+  next: string | null;
+  previous: string | null;
 }
 
 export interface BalanceTopUpPayload {
@@ -64,12 +74,21 @@ export function topUpPatientBalance(
   });
 }
 
-export function getPatientBalanceTransactions(
+export async function getPatientBalanceTransactions(
   patientId: number,
+  params?: { page?: number; pageSize?: number },
   signal?: AbortSignal,
-): Promise<PatientBalanceTransaction[]> {
-  return apiRequest<PatientBalanceTransaction[]>(
-    `/patients/${patientId}/balance/transactions/`,
-    { signal },
-  );
+): Promise<PatientBalanceTransactionsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.page != null) qs.set("page", String(params.page));
+  if (params?.pageSize != null) qs.set("pageSize", String(params.pageSize));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  const payload = await apiRequest<
+    PatientBalanceTransactionsResponse | PatientBalanceTransaction[]
+  >(`/patients/${patientId}/balance/transactions/${query}`, { signal });
+  // Backward-compat: old backend returns plain array, new backend returns paginated object.
+  if (Array.isArray(payload)) {
+    return { results: payload, count: payload.length, next: null, previous: null };
+  }
+  return payload;
 }
