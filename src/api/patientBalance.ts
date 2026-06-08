@@ -74,6 +74,16 @@ export function topUpPatientBalance(
   });
 }
 
+export function deductPatientBalance(
+  patientId: number,
+  payload: BalanceTopUpPayload,
+): Promise<PatientBalance> {
+  return apiRequest<PatientBalance>(`/patients/${patientId}/balance/deduct/`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function getPatientBalanceTransactions(
   patientId: number,
   params?: { page?: number; pageSize?: number },

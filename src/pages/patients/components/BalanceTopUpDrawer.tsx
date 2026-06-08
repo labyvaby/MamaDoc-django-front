@@ -27,6 +27,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   topUpPatientBalance,
+  deductPatientBalance,
   getPatientBalanceTransactions,
   type PatientBalance,
   type BalanceTopUpPayload,
@@ -266,24 +267,26 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
     setError(null);
     setSuccess(false);
     const parsed = parseFloat(amount.replace(",", "."));
-    if (!amount || isNaN(parsed) || parsed <= 0) {
+    if (!amount || isNaN(parsed) || parsed === 0) {
       setError("Введите корректную сумму");
       return;
     }
     if (!patientId) return;
     setSubmitting(true);
     try {
+      const abs = Math.abs(parsed).toFixed(2);
       const payload: BalanceTopUpPayload = {
-        amount: type === "balance" ? parsed.toFixed(2) : "0.00",
-        bonusesAmount: type === "bonuses" ? parsed.toFixed(2) : "0.00",
+        amount: type === "balance" ? abs : "0.00",
+        bonusesAmount: type === "bonuses" ? abs : "0.00",
         comment: comment.trim() || undefined,
         branchId: branchId ?? null,
       };
-      const updated = await topUpPatientBalance(patientId, payload);
+      const updated = await (parsed < 0
+        ? deductPatientBalance(patientId, payload)
+        : topUpPatientBalance(patientId, payload));
       setSuccess(true);
       setAmount("");
       setComment("");
-      // Invalidate history so it refreshes when user switches to History tab.
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.patients.transactions(patientId),
       });
@@ -350,11 +353,11 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
               </Box>
 
               <TextField
-                label="Сумма"
+                label="Сумма (отрицательная — списание)"
                 value={amount}
                 onChange={(e) => { setError(null); setSuccess(false); setAmount(e.target.value); }}
                 type="number"
-                inputProps={{ min: 0, step: "any" }}
+                inputProps={{ step: "any" }}
                 InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
                 fullWidth
                 size="small"
@@ -389,7 +392,7 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
                 disabled={submitting || !amount}
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : undefined}
               >
-                {submitting ? "Сохранение…" : "Пополнить"}
+                {submitting ? "Сохранение…" : parseFloat(amount.replace(",", ".")) < 0 ? "Списать" : "Пополнить"}
               </Button>
             </Stack>
           </Box>
