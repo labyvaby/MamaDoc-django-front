@@ -71,11 +71,12 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
     },
   });
 
-  // Transactions — only load when expanded
+  // Transactions — only load when expanded (first page, 10 items)
   const [txExpanded, setTxExpanded] = React.useState(false);
   const txQuery = useQuery({
-    queryKey: djangoQueryKeys.patients.transactions(patientId),
-    queryFn: ({ signal }) => getPatientBalanceTransactions(patientId, signal),
+    queryKey: djangoQueryKeys.patients.transactionsPage(patientId, { page: 1, pageSize: 10 }),
+    queryFn: ({ signal }) =>
+      getPatientBalanceTransactions(patientId, { page: 1, pageSize: 10 }, signal),
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     enabled: txExpanded,
     retry: false,
@@ -144,7 +145,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
   if (isAccessDenied) return null;
 
   const balance = balanceQuery.data;
-  const transactions = txQuery.data ?? [];
+  const transactions = txQuery.data?.results ?? [];
 
   return (
     <Box>
@@ -311,7 +312,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                   Нет операций
                 </Typography>
               )}
-              {transactions.slice(0, 10).map((tx) => (
+              {transactions.map((tx) => (
                 <Stack
                   key={tx.id}
                   direction="row"
@@ -347,9 +348,9 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                   </Stack>
                 </Stack>
               ))}
-              {transactions.length > 10 && (
+              {(txQuery.data?.count ?? 0) > 10 && (
                 <Typography variant="caption" color="text.disabled" display="block" mt={0.5}>
-                  Показаны последние 10 из {transactions.length}
+                  Показаны последние 10 из {txQuery.data?.count}
                 </Typography>
               )}
             </Box>

@@ -25,8 +25,12 @@ export const djangoQueryKeys = {
   patients: {
     balance: (patientId: number) =>
       ["django", "patients", patientId, "balance"] as const,
+    // Root key — use for invalidateQueries to bust all pages.
     transactions: (patientId: number) =>
       ["django", "patients", patientId, "balance-transactions"] as const,
+    // Keyed by page params — use for individual page queries.
+    transactionsPage: (patientId: number, params: { page: number; pageSize: number }) =>
+      ["django", "patients", patientId, "balance-transactions", params] as const,
   },
 
   cashbox: {

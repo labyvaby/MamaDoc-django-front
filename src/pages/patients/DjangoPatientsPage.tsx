@@ -100,6 +100,7 @@ const DjangoPatientsPage: React.FC = () => {
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
   const canUpdate = isSuperAdmin() || hasPermission("patients.update");
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
+  const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
 
   const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
@@ -273,7 +274,7 @@ const DjangoPatientsPage: React.FC = () => {
       lastService={lastService}
       lastComplaints={lastComplaints}
       onEdit={canUpdate ? handleEdit : undefined}
-      onTopUp={canUpdate ? () => setTopUpOpen(true) : undefined}
+      onTopUp={canManageFinance ? () => setTopUpOpen(true) : undefined}
       onMerge={canUpdate ? handleMerge : undefined}
     />
   );
