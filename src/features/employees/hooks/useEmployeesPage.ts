@@ -108,6 +108,7 @@ export function useEmployeesPageState() {
         const result = await getDjangoEmployees(
           {
             search: qDebounced.trim() || undefined,
+            branchId: branchId ?? undefined,
             page,
             pageSize: 50,
           },

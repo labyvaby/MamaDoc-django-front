@@ -14,7 +14,7 @@ export const djangoQueryKeys = {
       ["django", "appointments", "day-counts", params] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
-    formData: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
+    formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "payments"] as const,

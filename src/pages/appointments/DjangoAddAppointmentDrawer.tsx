@@ -87,9 +87,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 }) => {
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
-  const { activeBranch } = usePermissions();
+  const { activeBranch, activeOrganization, activeMembership } = usePermissions();
 
-  const data = useDjangoAppointmentData(open, activeBranch?.id ?? null);
+  const data = useDjangoAppointmentData(
+    open,
+    activeBranch?.id ?? null,
+    activeOrganization?.id ?? null,
+    activeMembership?.id ?? null,
+  );
 
   // ── form state ───────────────────────────────────────────────────────────
   const [scheduledAt, setScheduledAt] = React.useState<string>("");

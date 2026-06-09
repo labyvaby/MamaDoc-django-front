@@ -89,9 +89,17 @@ const DjangoServicesPage: React.FC = () => {
 
   // Перезагружать при переключении контекста (org/branch)
   React.useEffect(() => {
-    const handler = () => loadAll();
+    let ctrl: AbortController | null = null;
+    const handler = () => {
+      ctrl?.abort();
+      ctrl = new AbortController();
+      loadAll(ctrl.signal);
+    };
     window.addEventListener("mamadoc:django-context-switched", handler);
-    return () => window.removeEventListener("mamadoc:django-context-switched", handler);
+    return () => {
+      window.removeEventListener("mamadoc:django-context-switched", handler);
+      ctrl?.abort();
+    };
   }, [loadAll]);
 
   // Фильтрация + инфинит

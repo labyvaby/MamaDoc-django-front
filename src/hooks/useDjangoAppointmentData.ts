@@ -47,15 +47,17 @@ export interface UseDjangoAppointmentDataResult {
 export function useDjangoAppointmentData(
   enabled: boolean,
   branchId?: number | null,
+  orgId?: number | null,
+  membershipId?: number | null,
 ): UseDjangoAppointmentDataResult {
-  const ctx = { branchId: branchId ?? null };
+  const ctx = { orgId: orgId ?? null, branchId: branchId ?? null, membershipId: membershipId ?? null };
 
   const dataQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.formData(ctx),
     queryFn: async ({ signal }) => {
       const [rawPatients, rawEmployees, rawServices] = await Promise.all([
         getPatients(signal),
-        getDjangoEmployees(undefined, signal),
+        getDjangoEmployees({ branchId: branchId ?? undefined }, signal),
         getServices(branchId ?? null, signal),
       ]);
       return { rawPatients, rawEmployees, rawServices };

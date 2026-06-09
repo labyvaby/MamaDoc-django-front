@@ -31,6 +31,7 @@ import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { formatKGS } from "../../utility/format";
 import { roundDateTimeLocalToStep } from "../../utility/time";
 import { useCan } from "../../hooks/useCan";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import {
   updateAppointment,
@@ -100,8 +101,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
 }) => {
   const { open: notify } = useNotification();
   const canUpdate = useCan("appointments.update");
+  const { activeOrganization, activeMembership } = usePermissions();
 
-  const data = useDjangoAppointmentData(open, appointment?.branchId ?? null);
+  const data = useDjangoAppointmentData(
+    open,
+    appointment?.branchId ?? null,
+    activeOrganization?.id ?? null,
+    activeMembership?.id ?? null,
+  );
 
   // ── form ────────────────────────────────────────────────────────────────
   const [scheduledAt, setScheduledAt] = React.useState<string>("");

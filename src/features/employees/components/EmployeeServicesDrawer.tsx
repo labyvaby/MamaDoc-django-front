@@ -81,9 +81,10 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   const { open: notify } = useNotification();
   const canView = useCan("staff.view");
   const canEdit = useCan("staff.update");
-  const { activeMembership } = usePermissions();
+  const { activeMembership, activeBranch } = usePermissions();
 
   const availableBranches = activeMembership?.branches ?? [];
+  const activeBranchId = activeBranch?.id ?? null;
 
   // ── server data ───────────────────────────────────────────────────────────
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
@@ -108,7 +109,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
 
     Promise.all([
       getEmployeeServices(employeeId),
-      getServices(null, controller.signal),
+      getServices(activeBranchId, controller.signal),
     ])
       .then(([a, s]) => {
         if (!cancelled) {
@@ -128,7 +129,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
       cancelled = true;
       controller.abort();
     };
-  }, [open, canView, employeeId]);
+  }, [open, canView, employeeId, activeBranchId]);
 
   // ── reload services when branch changes in new-assignment form ────────────
   React.useEffect(() => {
