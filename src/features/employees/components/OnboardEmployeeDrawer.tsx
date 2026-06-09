@@ -33,7 +33,7 @@ import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
-import { composePhone, type PhoneCountryCode } from "../../../utility/phone";
+import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
   validatePhoneLocal,
@@ -330,16 +330,14 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             <TextField
               value={phoneLocal}
               onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, "");
+                const maxLen = getPhoneLocalMaxLength(phoneCountry);
+                const digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
                 setPhoneLocal(digits);
               }}
-              onBlur={() => touch("phone")}
               fullWidth
-              placeholder="Номер"
+              placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
               disabled={busy}
-              inputProps={{ inputMode: "numeric" }}
-              error={Boolean(showError("phone"))}
-              helperText={showError("phone")}
+              inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: getPhoneLocalMaxLength(phoneCountry) }}
             />
           </Box>
         </Stack>

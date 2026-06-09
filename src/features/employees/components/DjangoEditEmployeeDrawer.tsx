@@ -30,6 +30,7 @@ import ServicePhotoUploader from "../../../components/services/ServicePhotoUploa
 import {
   parsePhone,
   composePhone,
+  getPhoneLocalMaxLength,
   type PhoneCountryCode,
 } from "../../../utility/phone";
 import {
@@ -302,18 +303,15 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <TextField
               value={phoneLocal}
               onChange={(e) => {
-                // Only digits allowed
-                const digits = e.target.value.replace(/\D/g, "");
+                const maxLen = getPhoneLocalMaxLength(phoneCountry);
+                const digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
                 setPhoneLocal(digits);
                 setServerError(null);
               }}
-              onBlur={() => touch("phone")}
               fullWidth
-              placeholder="Номер"
+              placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
               disabled={busy}
-              inputProps={{ inputMode: "numeric" }}
-              error={Boolean(showError("phone"))}
-              helperText={showError("phone")}
+              inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: getPhoneLocalMaxLength(phoneCountry) }}
             />
           </Box>
         </Stack>
