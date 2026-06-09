@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   Autocomplete,
+  Box,
   Chip,
   Divider,
   IconButton,
@@ -31,25 +32,21 @@ import { mapDjangoFullToRow } from "../viewModel";
 import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
+import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
+import { composePhone, type PhoneCountryCode } from "../../../utility/phone";
+import {
+  validateFullName,
+  validatePhoneLocal,
+  validateEmail,
+  validateUsername,
+  validatePassword,
+} from "../employeeValidation";
 
 export type OnboardEmployeeDrawerProps = {
   open: boolean;
   onClose: () => void;
   onCreated: (row: EmployesRow) => void;
 };
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function validateEmail(val: string): string {
-  if (!val.trim()) return "";
-  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
-  if (!ok) return "Некорректный формат email";
-  const lower = val.toLowerCase();
-  if (lower.endsWith("@mai.ru")) return "Опечатка? Возможно, @mail.ru";
-  if (lower.endsWith("@gmai.com") || lower.endsWith("@gamil.com"))
-    return "Опечатка? Возможно, @gmail.com";
-  return "";
-}
 
 function generateTempPassword(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -58,8 +55,6 @@ function generateTempPassword(): string {
   ).join("");
   return `MamaDoc-${suffix}`;
 }
-
-// ── component ─────────────────────────────────────────────────────────────────
 
 const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   open,
@@ -71,49 +66,78 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const canViewSpecs = useCan("staff.specializations.view");
   const canManageSpecs = useCan("staff.specializations.manage");
 
-  // ── photo state ───────────────────────────────────────────────────────────────
+  // ── photo ─────────────────────────────────────────────────────────────────────
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
 
-  // ── base form state ───────────────────────────────────────────────────────────
+  // ── employee fields ───────────────────────────────────────────────────────────
   const [fullName, setFullName] = React.useState("");
-  const [phone, setPhone] = React.useState("");
+  const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryCode>("+996");
+  const [phoneLocal, setPhoneLocal] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [emailError, setEmailError] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
+  const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
 
-  // ── account fields ───────────────────────────────────────────────────────────
+  // ── account fields ────────────────────────────────────────────────────────────
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
 
-  // ── selects data ─────────────────────────────────────────────────────────────
+  // ── role / branch ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [allSpecializations, setAllSpecializations] = React.useState<DjangoSpecialization[]>([]);
   const [loadingDeps, setLoadingDeps] = React.useState(false);
-
   const branches: RbacBranch[] = React.useMemo(
-    () => (activeMembership?.branches ?? []).filter((branch) => branch.isActive),
+    () => (activeMembership?.branches ?? []).filter((b) => b.isActive),
     [activeMembership],
   );
-
-  // ── selected values ──────────────────────────────────────────────────────────
   const [roleId, setRoleId] = React.useState<number | "">("");
   const [employeeBranches, setEmployeeBranches] = React.useState<RbacBranch[]>([]);
   const [userAccessBranches, setUserAccessBranches] = React.useState<RbacBranch[]>([]);
   const [overrideUserAccess, setOverrideUserAccess] = React.useState(false);
-
-  // ── clinical role + specializations ──────────────────────────────────────────
-  const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   const [selectedSpecializations, setSelectedSpecializations] = React.useState<DjangoSpecialization[]>([]);
 
-  // ── submit state ─────────────────────────────────────────────────────────────
+  // ── touched + submit state ────────────────────────────────────────────────────
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
+  const [submitAttempted, setSubmitAttempted] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
-  // ── load roles + specializations when drawer opens ────────────────────────────
+  // ── derived validation ────────────────────────────────────────────────────────
+  const errors = React.useMemo(() => ({
+    fullName: validateFullName(fullName),
+    phone: validatePhoneLocal(phoneLocal, phoneCountry),
+    email: validateEmail(email),
+    username: validateUsername(username),
+    password: validatePassword(password),
+  }), [fullName, phoneLocal, phoneCountry, email, username, password]);
+
+  const hasLogin = Boolean(username.trim() || email.trim() || phoneLocal.trim());
+  const hasRequiredFields =
+    !errors.fullName &&
+    !errors.phone &&
+    !errors.email &&
+    !errors.username &&
+    !errors.password &&
+    hasLogin &&
+    password.length >= 8 &&
+    roleId !== "" &&
+    employeeBranches.length > 0 &&
+    branches.length > 0;
+
+  const canSubmit = hasRequiredFields && !busy;
+
+  const showError = (field: string) =>
+    (touched[field] || submitAttempted) ? errors[field as keyof typeof errors] : "";
+
+  const touch = (field: string) =>
+    setTouched((prev) => ({ ...prev, [field]: true }));
+
+  const isWarning = (field: string) => showError(field)?.startsWith("Опечатка");
+
+  // ── load roles + specializations ──────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -129,25 +153,19 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     Promise.all(tasks)
       .catch((err) => {
         if (!cancelled)
-          notify?.({ type: "error", message: `Ошибка загрузки данных: ${err?.message ?? err}` });
+          notify?.({ type: "error", message: `Ошибка загрузки: ${err?.message ?? err}` });
       })
-      .finally(() => {
-        if (!cancelled) setLoadingDeps(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => { if (!cancelled) setLoadingDeps(false); });
+    return () => { cancelled = true; };
   }, [open, notify, canViewSpecs, canManageSpecs]);
 
-  // ── preselect current branch when available ──────────────────────────────────
+  // ── preselect current branch ──────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open || employeeBranches.length > 0) return;
     const current = activeBranch
-      ? branches.find((branch) => branch.id === activeBranch.id)
+      ? branches.find((b) => b.id === activeBranch.id)
       : null;
-    if (current) {
-      setEmployeeBranches([current]);
-    }
+    if (current) setEmployeeBranches([current]);
   }, [open, activeBranch, branches, employeeBranches.length]);
 
   // ── reset on close ────────────────────────────────────────────────────────────
@@ -156,23 +174,25 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setPhotoFile(null);
       setPhotoPreview(null);
       setFullName("");
-      setPhone("");
+      setPhoneCountry("+996");
+      setPhoneLocal("");
       setEmail("");
-      setEmailError("");
       setFirstName("");
       setLastName("");
       setUsername("");
       setPassword(generateTempPassword());
       setShowPassword(false);
       setStatus("active");
+      setClinicalRole("other");
       setRoleId("");
       setEmployeeBranches([]);
       setUserAccessBranches([]);
       setOverrideUserAccess(false);
-      setClinicalRole("other");
       setSelectedSpecializations([]);
       setSubmitError(null);
       setBusy(false);
+      setTouched({});
+      setSubmitAttempted(false);
     }
   }, [open]);
 
@@ -182,32 +202,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     }
   }, [open]);
 
-  // ── validation ────────────────────────────────────────────────────────────────
-  const canSubmit = React.useMemo(() => {
-    if (!fullName.trim() || emailError || busy) return false;
-    const hasLogin = Boolean(username.trim() || email.trim() || phone.trim());
-    const hasPassword = password.trim().length >= 8;
-    return (
-      hasLogin
-      && hasPassword
-      && roleId !== ""
-      && employeeBranches.length > 0
-      && branches.length > 0
-    );
-  }, [
-    fullName,
-    emailError,
-    busy,
-    username,
-    email,
-    phone,
-    password,
-    roleId,
-    employeeBranches,
-    branches,
-  ]);
-
-  // ── photo pick handler ────────────────────────────────────────────────────────
+  // ── photo ─────────────────────────────────────────────────────────────────────
   const handlePickPhoto = React.useCallback((f: File | null) => {
     setPhotoFile(f);
     if (f) {
@@ -221,19 +216,22 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    setSubmitAttempted(true);
     if (!canSubmit) return;
+
     setSubmitError(null);
     setBusy(true);
     try {
+      const composedPhone = composePhone(phoneCountry, phoneLocal);
       const payload = {
         fullName: fullName.trim(),
         roleId: roleId as number,
         employeeBranchIds: employeeBranches.map((b) => b.id),
         organizationId: activeOrganization?.id ?? undefined,
         email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
+        phone: composedPhone ?? undefined,
         username: username.trim() || undefined,
-        password: password.trim(),
+        password,                       // no trim on passwords
         firstName: firstName.trim() || undefined,
         lastName: lastName.trim() || undefined,
         userBranchAccessIds: overrideUserAccess
@@ -256,10 +254,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           const fresh = await getDjangoEmployee(res.employee.id);
           employeeRow = mapDjangoFullToRow(fresh);
         } catch {
-          notify?.({
-            type: "error",
-            message: "Сотрудник создан, но фото не удалось загрузить",
-          });
+          notify?.({ type: "error", message: "Сотрудник создан, но фото не удалось загрузить" });
         }
       }
 
@@ -270,8 +265,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       onCreated(employeeRow);
       onClose();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Не удалось создать сотрудника";
+      const msg = err instanceof Error ? err.message : "Не удалось создать сотрудника";
       setSubmitError(msg);
     } finally {
       setBusy(false);
@@ -286,7 +280,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       busy={busy}
       onSubmit={handleSubmit}
       submitLabel="Создать"
-      submitDisabled={!canSubmit}
+      submitDisabled={submitAttempted && !canSubmit}
     >
       <Stack spacing={2.5}>
         {submitError && (
@@ -311,10 +305,14 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           <TextField
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
+            onBlur={() => touch("fullName")}
             fullWidth
             placeholder="Иванов Иван Иванович"
             required
             disabled={busy}
+            inputProps={{ maxLength: 255 }}
+            error={Boolean(showError("fullName"))}
+            helperText={showError("fullName")}
           />
         </Stack>
 
@@ -323,14 +321,27 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           <Typography variant="body2" color="text.secondary" fontWeight={600}>
             Телефон
           </Typography>
-          <TextField
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            fullWidth
-            placeholder="+996 XXX XXX XXX"
-            inputProps={{ inputMode: "tel" }}
-            disabled={busy}
-          />
+          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+            <PhoneCountryCodeSelect
+              value={phoneCountry}
+              onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
+              disabled={busy}
+            />
+            <TextField
+              value={phoneLocal}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, "");
+                setPhoneLocal(digits);
+              }}
+              onBlur={() => touch("phone")}
+              fullWidth
+              placeholder="Номер"
+              disabled={busy}
+              inputProps={{ inputMode: "numeric" }}
+              error={Boolean(showError("phone"))}
+              helperText={showError("phone")}
+            />
+          </Box>
         </Stack>
 
         {/* ── Email ── */}
@@ -340,16 +351,17 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </Typography>
           <TextField
             value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setEmailError(validateEmail(e.target.value));
-            }}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => touch("email")}
             fullWidth
             placeholder="example@mail.com"
             type="email"
-            error={!!emailError}
-            helperText={emailError}
             disabled={busy}
+            error={Boolean(showError("email") && !isWarning("email"))}
+            helperText={showError("email")}
+            FormHelperTextProps={{
+              sx: isWarning("email") ? { color: "warning.main" } : undefined,
+            }}
           />
         </Stack>
 
@@ -361,9 +373,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           <TextField
             select
             value={status}
-            onChange={(e) =>
-              setStatus(e.target.value as "active" | "inactive" | "fired")
-            }
+            onChange={(e) => setStatus(e.target.value as "active" | "inactive" | "fired")}
             fullWidth
             disabled={busy}
           >
@@ -442,167 +452,132 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           членство в организации и карточка сотрудника.
         </Alert>
 
-        {/* ── Поля учётной записи ── */}
+        {/* ── Учётная запись ── */}
         <Stack spacing={2.5}>
-            {/* ── Имя / Фамилия ── */}
-            <Stack direction="row" spacing={1.5}>
-              <Stack spacing={0.5} flex={1}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Имя
-                </Typography>
-                <TextField
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  fullWidth
-                  placeholder="Иван"
-                  disabled={busy}
-                />
-              </Stack>
-              <Stack spacing={0.5} flex={1}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Фамилия
-                </Typography>
-                <TextField
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  fullWidth
-                  placeholder="Иванов"
-                  disabled={busy}
-                />
-              </Stack>
-            </Stack>
-
-            {/* ── Username ── */}
-            <Stack spacing={0.5}>
+          {/* ── Имя / Фамилия ── */}
+          <Stack direction="row" spacing={1.5}>
+            <Stack spacing={0.5} flex={1}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Логин
+                Имя
               </Typography>
               <TextField
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
                 fullWidth
-                placeholder="Можно оставить пустым, если указан телефон или email"
+                placeholder="Иван"
                 disabled={busy}
-                helperText="Если не указан, backend использует email или телефон"
               />
             </Stack>
-
-            {/* ── Password ── */}
-            <Stack spacing={0.5}>
+            <Stack spacing={0.5} flex={1}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Пароль *
+                Фамилия
               </Typography>
               <TextField
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
                 fullWidth
-                placeholder="Минимум 8 символов"
-                type={showPassword ? "text" : "password"}
+                placeholder="Иванов"
                 disabled={busy}
-                error={password.trim().length > 0 && password.trim().length < 8}
-                helperText="Передайте этот пароль сотруднику для первого входа"
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        size="small"
-                        onClick={() => setShowPassword((v) => !v)}
-                        edge="end"
-                      >
-                        {showPassword ? (
-                          <VisibilityOffOutlined fontSize="small" />
-                        ) : (
-                          <VisibilityOutlined fontSize="small" />
-                        )}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
               />
             </Stack>
+          </Stack>
 
-            {/* ── Роль ── */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Роль *
-              </Typography>
-              <TextField
-                select
-                value={roleId}
-                onChange={(e) => setRoleId(Number(e.target.value))}
-                fullWidth
-                required
-                disabled={loadingDeps || busy}
-                SelectProps={{ displayEmpty: true }}
-              >
-                <MenuItem value="" disabled>
-                  {loadingDeps ? "Загрузка…" : "Выберите роль"}
+          {/* ── Логин ── */}
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Логин
+            </Typography>
+            <TextField
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onBlur={() => touch("username")}
+              fullWidth
+              placeholder="Можно оставить пустым, если указан телефон или email"
+              disabled={busy}
+              inputProps={{ maxLength: 150 }}
+              error={Boolean(showError("username"))}
+              helperText={showError("username") || "Если не указан, backend использует email или телефон"}
+            />
+          </Stack>
+
+          {/* ── Пароль ── */}
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Пароль *
+            </Typography>
+            <TextField
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onBlur={() => touch("password")}
+              fullWidth
+              placeholder="Минимум 8 символов"
+              type={showPassword ? "text" : "password"}
+              disabled={busy}
+              error={Boolean(showError("password"))}
+              helperText={showError("password") || "Передайте этот пароль сотруднику для первого входа"}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => setShowPassword((v) => !v)}
+                      edge="end"
+                    >
+                      {showPassword ? (
+                        <VisibilityOffOutlined fontSize="small" />
+                      ) : (
+                        <VisibilityOutlined fontSize="small" />
+                      )}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Stack>
+
+          {/* ── Роль ── */}
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Роль *
+            </Typography>
+            <TextField
+              select
+              value={roleId}
+              onChange={(e) => setRoleId(Number(e.target.value))}
+              fullWidth
+              required
+              disabled={loadingDeps || busy}
+              SelectProps={{ displayEmpty: true }}
+            >
+              <MenuItem value="" disabled>
+                {loadingDeps ? "Загрузка…" : "Выберите роль"}
+              </MenuItem>
+              {roles.map((r) => (
+                <MenuItem key={r.id} value={r.id}>
+                  {r.name}
                 </MenuItem>
-                {roles.map((r) => (
-                  <MenuItem key={r.id} value={r.id}>
-                    {r.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Stack>
+              ))}
+            </TextField>
+          </Stack>
 
-            {/* ── Филиалы работы ── */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Филиалы работы *
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Где сотрудник работает операционно
-              </Typography>
-              {branches.length === 0 ? (
-                <Alert severity="warning">Нет доступных филиалов</Alert>
-              ) : (
-                <Autocomplete
-                  multiple
-                  options={branches}
-                  value={employeeBranches}
-                  getOptionLabel={(b) => b.name}
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  onChange={(_, val) => setEmployeeBranches(val)}
-                  disabled={loadingDeps || busy}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        label={option.name}
-                        size="small"
-                        {...getTagProps({ index })}
-                        key={option.id}
-                      />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
-                    />
-                  )}
-                />
-              )}
-            </Stack>
-
-            {/* ── Доступ к CRM ── */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Доступ в CRM (филиалы)
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Оставьте пустым — будет совпадать с филиалами работы
-              </Typography>
+          {/* ── Филиалы работы ── */}
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Филиалы работы *
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Где сотрудник работает операционно
+            </Typography>
+            {branches.length === 0 ? (
+              <Alert severity="warning">Нет доступных филиалов</Alert>
+            ) : (
               <Autocomplete
                 multiple
                 options={branches}
-                value={userAccessBranches}
+                value={employeeBranches}
                 getOptionLabel={(b) => b.name}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
-                onChange={(_, val) => {
-                  setUserAccessBranches(val);
-                  setOverrideUserAccess(val.length > 0);
-                }}
+                onChange={(_, val) => setEmployeeBranches(val)}
                 disabled={loadingDeps || busy}
                 renderTags={(value, getTagProps) =>
                   value.map((option, index) => (
@@ -617,11 +592,50 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    placeholder={loadingDeps ? "Загрузка…" : "Как у филиалов работы"}
+                    placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
                   />
                 )}
               />
-            </Stack>
+            )}
+          </Stack>
+
+          {/* ── Доступ в CRM ── */}
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Доступ в CRM (филиалы)
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Оставьте пустым — будет совпадать с филиалами работы
+            </Typography>
+            <Autocomplete
+              multiple
+              options={branches}
+              value={userAccessBranches}
+              getOptionLabel={(b) => b.name}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              onChange={(_, val) => {
+                setUserAccessBranches(val);
+                setOverrideUserAccess(val.length > 0);
+              }}
+              disabled={loadingDeps || busy}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    label={option.name}
+                    size="small"
+                    {...getTagProps({ index })}
+                    key={option.id}
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={loadingDeps ? "Загрузка…" : "Как у филиалов работы"}
+                />
+              )}
+            />
+          </Stack>
         </Stack>
       </Stack>
     </DrawerBase>

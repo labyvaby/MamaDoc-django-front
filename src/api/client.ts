@@ -20,6 +20,66 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Extract a human-readable error message from a backend error payload.
+ *
+ * Handles the following shapes:
+ *   { error: "..." }                       — DMR string error
+ *   { detail: "..." }                      — DRF string detail
+ *   { detail: [{ msg: "..." }, ...] }      — msgspec validation list
+ *   { errors: { field: ["msg", ...] } }    — field-level errors dict
+ *   { <field>: ["msg", ...] }              — Django validation dict
+ */
+export function extractErrorMessage(payload: unknown, status: number): string {
+  if (!payload || typeof payload !== "object") {
+    return `Ошибка сервера (${status})`;
+  }
+  const p = payload as Record<string, unknown>;
+
+  // { error: "..." }
+  if (typeof p.error === "string" && p.error) return p.error;
+
+  // { detail: "..." }
+  if (typeof p.detail === "string" && p.detail) return p.detail;
+
+  // { detail: [{ msg: "..." }, ...] } — msgspec validation errors
+  if (Array.isArray(p.detail)) {
+    const msgs = p.detail
+      .map((item: unknown) =>
+        item && typeof item === "object" && "msg" in item
+          ? String((item as Record<string, unknown>).msg)
+          : null,
+      )
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+
+  // { errors: { field: ["msg", ...] } }
+  if (p.errors && typeof p.errors === "object" && !Array.isArray(p.errors)) {
+    const parts: string[] = [];
+    for (const [field, msgs] of Object.entries(p.errors as Record<string, unknown>)) {
+      if (Array.isArray(msgs)) {
+        parts.push(`${field}: ${msgs.join(", ")}`);
+      } else if (typeof msgs === "string") {
+        parts.push(`${field}: ${msgs}`);
+      }
+    }
+    if (parts.length) return parts.join("; ");
+  }
+
+  // Django validation dict — keys are field names, values are string[]
+  const fieldErrors: string[] = [];
+  for (const [key, val] of Object.entries(p)) {
+    if (key === "error" || key === "detail" || key === "errors") continue;
+    if (Array.isArray(val)) {
+      fieldErrors.push(`${key}: ${val.join(", ")}`);
+    }
+  }
+  if (fieldErrors.length) return fieldErrors.join("; ");
+
+  return `Ошибка сервера (${status})`;
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
@@ -58,11 +118,7 @@ export async function apiRequest<T>(
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "error" in payload
-        ? String(payload.error)
-        : `API request failed with status ${response.status}`;
-    throw new ApiError(message, response.status, payload);
+    throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
   }
 
   return payload as T;
