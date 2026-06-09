@@ -12,18 +12,14 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Drawer,
   Grid2,
   IconButton,
-  InputAdornment,
   List,
   ListItemButton,
   MenuItem,
   Paper,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -35,29 +31,27 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader, AppBottomSheet, PaymentInfoBlock } from "../../components/ui";
+import { DjangoAddExpenseDrawer } from "../../components/expenses/DjangoAddExpenseDrawer";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
-import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
-import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
 import {
   getExpenses,
   getExpenseCategories,
-  createExpense,
   voidExpense,
   parseBackendError,
   type Expense,
-  type ExpenseMethod,
 } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
 
-// ── Вспомогательные функции ────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -71,10 +65,6 @@ function formatKGS(value: number): string {
 function formatDateRu(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 // ── DetailRow ──────────────────────────────────────────────────────────────────
@@ -122,8 +112,10 @@ const ExpenseDetailCard: React.FC<{
     );
   }
 
-  const amount = parseFloat(expense.amount);
-  const title = expense.description || expense.categoryName || "Расход";
+  const cashAmt = parseFloat(expense.cashAmount);
+  const cardAmt = parseFloat(expense.cardAmount);
+  const total = parseFloat(expense.amount);
+  const title = expense.name || expense.categoryName || "Расход";
 
   return (
     <Paper
@@ -131,6 +123,27 @@ const ExpenseDetailCard: React.FC<{
       variant="outlined"
       sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 2 }}
     >
+      {/* Фото */}
+      {expense.photoUrl && (
+        <Box
+          sx={{
+            width: "100%",
+            height: 180,
+            overflow: "hidden",
+            flexShrink: 0,
+            borderBottom: 1,
+            borderColor: "divider",
+          }}
+        >
+          <Box
+            component="img"
+            src={expense.photoUrl}
+            alt="Фото расхода"
+            sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </Box>
+      )}
+
       {/* Шапка */}
       <Box
         sx={{
@@ -163,7 +176,7 @@ const ExpenseDetailCard: React.FC<{
         )}
       </Box>
 
-      {/* Кнопка аннулировать (action panel) */}
+      {/* Кнопка аннулирования */}
       {canManage && !expense.isVoided && (
         <Box
           sx={{
@@ -203,10 +216,10 @@ const ExpenseDetailCard: React.FC<{
           {/* Платёжная информация */}
           <PaymentInfoBlock
             payment={{
-              baseTotal: amount,
-              cash: expense.method === "cash" ? amount : 0,
-              card: expense.method === "card" ? amount : 0,
-              finalTotal: amount,
+              baseTotal: total,
+              cash: cashAmt,
+              card: cardAmt,
+              finalTotal: total,
               debt: 0,
               status: expense.isVoided ? "Отменено" : "Оплачено",
             }}
@@ -219,15 +232,21 @@ const ExpenseDetailCard: React.FC<{
           <Stack spacing={1.5}>
             <DetailRow label="Дата" value={formatDateRu(expense.expenseDate)} />
             <DetailRow label="Категория" value={expense.categoryName ?? "—"} />
+            {expense.employeeName && (
+              <DetailRow label="Получатель" value={expense.employeeName} />
+            )}
             {expense.branchName && (
               <DetailRow label="Филиал" value={expense.branchName} />
             )}
             {expense.createdByName && (
               <DetailRow label="Создал" value={expense.createdByName} />
             )}
+            {expense.affectsMonth && (
+              <DetailRow label="Месяц" value={expense.affectsMonth} />
+            )}
             {expense.description && (
               <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary">Описание</Typography>
+                <Typography variant="body2" color="text.secondary">Комментарий</Typography>
                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", fontWeight: 500 }}>
                   {expense.description}
                 </Typography>
@@ -256,281 +275,6 @@ const ExpenseDetailCard: React.FC<{
         </Stack>
       </Box>
     </Paper>
-  );
-};
-
-// ── AddExpenseDrawer ───────────────────────────────────────────────────────────
-
-type AddDrawerProps = {
-  open: boolean;
-  onClose: () => void;
-  organizationId?: number;
-  branchId?: number;
-  categories: { id: number; name: string }[];
-  onCreated: (exp: Expense) => void;
-};
-
-const AddExpenseDrawer: React.FC<AddDrawerProps> = ({
-  open,
-  onClose,
-  organizationId,
-  branchId,
-  categories,
-  onCreated,
-}) => {
-  const theme = useTheme();
-  const [categoryId, setCategoryId] = React.useState<number | "">("");
-  const [method, setMethod] = React.useState<ExpenseMethod>("cash");
-  const [amount, setAmount] = React.useState("");
-  const [expenseDate, setExpenseDate] = React.useState(today());
-  const [description, setDescription] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const isDirty = Boolean(categoryId || amount || description || expenseDate !== today());
-
-  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
-    isDirty,
-    isOpen: open,
-    onClose,
-  });
-
-  React.useEffect(() => {
-    if (open) {
-      setCategoryId("");
-      setMethod("cash");
-      setAmount("");
-      setExpenseDate(today());
-      setDescription("");
-      setError(null);
-      setBusy(false);
-    }
-  }, [open]);
-
-  const handleSubmit = async () => {
-    setError(null);
-    const parsed = parseFloat(amount.replace(",", "."));
-    if (!categoryId) { setError("Выберите категорию"); return; }
-    if (!amount || isNaN(parsed) || parsed <= 0) { setError("Введите корректную сумму"); return; }
-    if (description.trim().length < 3) {
-      setError("Описание обязательно и должно содержать минимум 3 символа");
-      return;
-    }
-    setBusy(true);
-    try {
-      const created = await createExpense({
-        organizationId,
-        branchId,
-        categoryId: categoryId as number,
-        method,
-        amount: parsed.toFixed(2),
-        expenseDate,
-        description: description.trim(),
-      });
-      onCreated(created);
-      onClose();
-    } catch (e) {
-      setError(parseBackendError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const parsed = parseFloat(amount.replace(",", "."));
-  const amountValid = !isNaN(parsed) && parsed > 0;
-
-  return (
-    <>
-      <Drawer
-        anchor="right"
-        open={open}
-        onClose={busy ? undefined : guardedClose}
-        PaperProps={{
-          sx: {
-            width: { xs: 320, sm: 480, md: 520 },
-            maxWidth: "100vw",
-            display: "flex",
-            flexDirection: "column",
-          },
-        }}
-      >
-        {/* Шапка */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            px: 2.5,
-            py: 1.5,
-            flexShrink: 0,
-          }}
-        >
-          <Typography variant="h6" fontWeight={600}>Добавить расход</Typography>
-          <IconButton onClick={busy ? undefined : guardedClose} aria-label="Закрыть" edge="end">
-            <CloseOutlined />
-          </IconButton>
-        </Box>
-        <Divider />
-
-        {/* Форма */}
-        <Box
-          sx={{
-            p: 2.5,
-            flex: 1,
-            overflowY: "auto",
-            scrollbarWidth: "none",
-            "&::-webkit-scrollbar": { display: "none" },
-          }}
-        >
-          <Stack spacing={2.5}>
-            {/* Дата */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Дата расхода
-              </Typography>
-              <TextField
-                size="small"
-                fullWidth
-                type="date"
-                value={expenseDate}
-                onChange={(e) => setExpenseDate(e.target.value)}
-                disabled={busy}
-              />
-            </Stack>
-
-            {/* Категория */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Категория *
-              </Typography>
-              <TextField
-                select
-                size="small"
-                fullWidth
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
-                SelectProps={{ displayEmpty: true }}
-                disabled={busy}
-              >
-                <MenuItem value="">
-                  <Typography variant="body2" color="text.secondary">Выберите категорию</Typography>
-                </MenuItem>
-                {categories.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                ))}
-              </TextField>
-            </Stack>
-
-            {/* Способ оплаты + Сумма — карточка */}
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2.5,
-                bgcolor: alpha(theme.palette.primary.main, 0.04),
-                borderColor: "divider",
-                borderRadius: 2,
-              }}
-            >
-              <Stack spacing={2}>
-                <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                    Метод оплаты
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={method}
-                    exclusive
-                    onChange={(_, v) => v && setMethod(v)}
-                    fullWidth
-                    size="small"
-                    disabled={busy}
-                  >
-                    <ToggleButton value="cash">
-                      <AccountBalanceWalletOutlined sx={{ mr: 0.5, fontSize: 18 }} />
-                      Наличные
-                    </ToggleButton>
-                    <ToggleButton value="card">
-                      <CreditCardOutlined sx={{ mr: 0.5, fontSize: 18 }} />
-                      Карта
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                </Stack>
-
-                <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                    Сумма *
-                  </Typography>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    type="number"
-                    value={amount}
-                    onChange={(e) => { setError(null); setAmount(e.target.value); }}
-                    inputProps={{ min: 0, step: "any" }}
-                    InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
-                    disabled={busy}
-                    placeholder="0.00"
-                  />
-                </Stack>
-
-                {amountValid && (
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="body2" color="text.secondary">ИТОГО</Typography>
-                    <Typography variant="subtitle1" fontWeight={700} color="primary.main">
-                      {formatKGS(parsed)}
-                    </Typography>
-                  </Stack>
-                )}
-              </Stack>
-            </Paper>
-
-            {/* Описание */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Описание *
-              </Typography>
-              <TextField
-                size="small"
-                fullWidth
-                multiline
-                minRows={3}
-                placeholder="Укажите назначение расхода (обязательно)"
-                value={description}
-                onChange={(e) => { setError(null); setDescription(e.target.value); }}
-                disabled={busy}
-                inputProps={{ maxLength: 1000 }}
-              />
-            </Stack>
-
-            {error && <Alert severity="error">{error}</Alert>}
-          </Stack>
-        </Box>
-
-        {/* Фиксированный футер */}
-        <Divider />
-        <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
-          <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-            <Button variant="outlined" onClick={guardedClose} disabled={busy}>
-              Отмена
-            </Button>
-            <Button
-              variant="contained"
-              onClick={handleSubmit}
-              disabled={busy || !amount || !categoryId || description.trim().length < 3}
-              startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
-            >
-              {busy ? "Сохранение…" : "Сохранить"}
-            </Button>
-          </Stack>
-        </Box>
-      </Drawer>
-
-      <CloseGuardDialog
-        open={confirmOpen}
-        title="добавление расхода"
-        onConfirm={confirmClose}
-        onCancel={cancelClose}
-      />
-    </>
   );
 };
 
@@ -714,21 +458,27 @@ const DjangoExpensesPage: React.FC = () => {
       const q = searchQuery.toLowerCase();
       list = list.filter(
         (e) =>
+          e.name?.toLowerCase().includes(q) ||
           e.categoryName?.toLowerCase().includes(q) ||
           e.description?.toLowerCase().includes(q) ||
+          e.employeeName?.toLowerCase().includes(q) ||
           e.createdByName?.toLowerCase().includes(q),
       );
     }
     if (selectedDate) {
       list = list.filter((e) => e.expenseDate === selectedDate);
     }
-    if (selectedEmployeeFilter) {
-      list = list.filter((e) => e.createdByName === selectedEmployeeFilter);
+    if (selectedEmployeeFilter !== null) {
+      if (selectedEmployeeFilter === "") {
+        list = list.filter((e) => !e.employeeName);
+      } else {
+        list = list.filter((e) => e.employeeName === selectedEmployeeFilter);
+      }
     }
     return list;
   }, [allExpenses, searchQuery, selectedDate, selectedEmployeeFilter]);
 
-  // Вычисляем года, месяцы и группировки для левой панели
+  // Вычисляем года и месяцы для левой панели
   const availableYears = React.useMemo(() => {
     const ys = new Set(allExpenses.map((e) => e.expenseDate.slice(0, 4)));
     return Array.from(ys).sort((a, b) => b.localeCompare(a));
@@ -746,7 +496,7 @@ const DjangoExpensesPage: React.FC = () => {
       .map((ym) => ({ value: ym, monthIndex: Number(ym.slice(5, 7)) - 1 }));
   }, [allExpenses, selectedYear]);
 
-  // Группировка по сотрудникам для выбранного месяца
+  // Группировка по employeeName (получателю) для выбранного месяца
   const monthExpenses = React.useMemo(() => {
     if (!selectedMonth) return allExpenses;
     return allExpenses.filter((e) => e.expenseDate.startsWith(selectedMonth));
@@ -755,22 +505,25 @@ const DjangoExpensesPage: React.FC = () => {
   const groupedByEmployee = React.useMemo(() => {
     const map = new Map<string, { total: number; days: Map<string, number> }>();
     monthExpenses.forEach((e) => {
-      const name = e.createdByName ?? "Система";
-      const entry = map.get(name) ?? { total: 0, days: new Map() };
+      // null employeeName → "Без сотрудника" (key = "")
+      const key = e.employeeName ?? "";
+      const label = e.employeeName ?? "Без сотрудника";
+      const entry = map.get(label) ?? { total: 0, days: new Map() };
       entry.total += parseFloat(e.amount);
       entry.days.set(e.expenseDate, (entry.days.get(e.expenseDate) ?? 0) + parseFloat(e.amount));
-      map.set(name, entry);
+      map.set(label, entry);
+      void key;
     });
-    return Array.from(map.entries()).map(([employeeName, { total, days }]) => ({
-      employeeName,
+    return Array.from(map.entries()).map(([label, { total, days }]) => ({
+      employeeLabel: label,
+      employeeFilterKey: label === "Без сотрудника" ? "" : label,
       total,
       days: Array.from(days.entries())
         .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([date, total]) => ({ date, total })),
+        .map(([date, amt]) => ({ date, total: amt })),
     }));
   }, [monthExpenses]);
 
-  // Месячный итог
   const monthTotal = React.useMemo(
     () => groupedByEmployee.reduce((s, e) => s + e.total, 0),
     [groupedByEmployee],
@@ -829,7 +582,6 @@ const DjangoExpensesPage: React.FC = () => {
             "&::-webkit-scrollbar": { display: "none" },
           }}
         >
-          {/* 3-колоночный грид */}
           <Box sx={(t) => ({ px: t.appLayout.page.paddingX, flex: 1, display: "flex", flexDirection: "column", minHeight: 0 })}>
             <Grid2 container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
 
@@ -914,16 +666,16 @@ const DjangoExpensesPage: React.FC = () => {
                         </Box>
                       )}
 
-                      {/* Сотрудники */}
+                      {/* Сотрудники / получатели */}
                       {selectedMonth && groupedByEmployee.length > 0 && (
                         <Stack spacing={0.5}>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Сотрудники</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Получатели</Typography>
                           <List dense sx={{ py: 0 }}>
                             {groupedByEmployee.map((emp) => {
-                              const isExpanded = expandedEmployee === emp.employeeName;
-                              const isSelected = selectedEmployeeFilter === emp.employeeName;
+                              const isExpanded = expandedEmployee === emp.employeeLabel;
+                              const isSelected = selectedEmployeeFilter === emp.employeeFilterKey && selectedEmployeeFilter !== null;
                               return (
-                                <React.Fragment key={emp.employeeName}>
+                                <React.Fragment key={emp.employeeLabel}>
                                   <ListItemButton
                                     selected={isSelected}
                                     onClick={() => {
@@ -932,14 +684,15 @@ const DjangoExpensesPage: React.FC = () => {
                                         setSelectedEmployeeFilter(null);
                                         setSelectedDate(null);
                                       } else {
-                                        setExpandedEmployee(emp.employeeName);
-                                        setSelectedEmployeeFilter(emp.employeeName);
+                                        setExpandedEmployee(emp.employeeLabel);
+                                        setSelectedEmployeeFilter(emp.employeeFilterKey);
                                         setSelectedDate(null);
                                       }
                                     }}
                                     sx={{ borderRadius: 1, mb: 0.5, pr: 1 }}
                                   >
-                                    <Typography variant="body2" sx={{ flex: 1, fontWeight: isSelected ? 600 : 400 }}>{emp.employeeName}</Typography>
+                                    <PersonOutlineOutlined sx={{ fontSize: 16, mr: 1, color: "text.secondary" }} />
+                                    <Typography variant="body2" sx={{ flex: 1, fontWeight: isSelected ? 600 : 400 }}>{emp.employeeLabel}</Typography>
                                     <Typography variant="body2" sx={{ fontWeight: 600, mr: 1 }}>{formatKGS(emp.total)}</Typography>
                                     {isExpanded ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
                                   </ListItemButton>
@@ -949,7 +702,7 @@ const DjangoExpensesPage: React.FC = () => {
                                         <ListItemButton
                                           key={day.date}
                                           sx={{ borderRadius: 1, mb: 0.5, pl: 3, bgcolor: selectedDate === day.date ? "action.selected" : "transparent" }}
-                                          onClick={() => { setSelectedEmployeeFilter(emp.employeeName); setSelectedDate(day.date); }}
+                                          onClick={() => { setSelectedEmployeeFilter(emp.employeeFilterKey); setSelectedDate(day.date); }}
                                         >
                                           <Typography variant="body2" sx={{ flex: 1, color: "text.secondary" }}>{formatDateRu(day.date)}</Typography>
                                           <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatKGS(day.total)}</Typography>
@@ -1004,7 +757,10 @@ const DjangoExpensesPage: React.FC = () => {
                             const dayStr = exp.expenseDate ? formatDateRu(exp.expenseDate) : "Без даты";
                             const isNewDay = dayStr !== currentDay;
                             if (isNewDay) currentDay = dayStr;
-                            const isCash = exp.method === "cash";
+                            const cashAmt = parseFloat(exp.cashAmount);
+                            const cardAmt = parseFloat(exp.cardAmount);
+                            const isMixed = cashAmt > 0 && cardAmt > 0;
+                            const isCash = !isMixed && cashAmt > 0;
                             return (
                               <React.Fragment key={exp.id}>
                                 {isNewDay && (
@@ -1023,23 +779,41 @@ const DjangoExpensesPage: React.FC = () => {
                                   }}
                                   onClick={() => setSelectedExpense(exp)}
                                 >
-                                  <Avatar variant="rounded" sx={{ mr: 2, width: 40, height: 40, bgcolor: "action.selected", color: "text.secondary" }}>
-                                    <ReceiptLongOutlined />
-                                  </Avatar>
+                                  {exp.photoUrl ? (
+                                    <Box
+                                      component="img"
+                                      src={exp.photoUrl}
+                                      alt=""
+                                      sx={{ mr: 2, width: 40, height: 40, borderRadius: 1, objectFit: "cover", flexShrink: 0 }}
+                                    />
+                                  ) : (
+                                    <Avatar variant="rounded" sx={{ mr: 2, width: 40, height: 40, bgcolor: "action.selected", color: "text.secondary" }}>
+                                      <ReceiptLongOutlined />
+                                    </Avatar>
+                                  )}
                                   <Box sx={{ flex: 1, minWidth: 0 }}>
                                     <Typography variant="body1" sx={{ fontWeight: 500 }} noWrap>
-                                      {exp.categoryName ?? "Без категории"}
+                                      {exp.name || exp.categoryName || "Расход"}
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" noWrap>
-                                      {exp.description || exp.createdByName || ""}
+                                      {exp.employeeName ?? exp.categoryName ?? ""}
                                     </Typography>
                                   </Box>
                                   <Stack direction="row" spacing={0.5} alignItems="center">
-                                    <Tooltip title={isCash ? "Наличные" : "Карта"}>
-                                      {isCash
-                                        ? <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
-                                        : <CreditCardOutlined sx={{ fontSize: 16, color: "info.main" }} />}
-                                    </Tooltip>
+                                    {isMixed ? (
+                                      <>
+                                        <AccountBalanceWalletOutlined sx={{ fontSize: 14, color: "success.main" }} />
+                                        <CreditCardOutlined sx={{ fontSize: 14, color: "info.main" }} />
+                                      </>
+                                    ) : isCash ? (
+                                      <Tooltip title="Наличные">
+                                        <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
+                                      </Tooltip>
+                                    ) : (
+                                      <Tooltip title="Карта">
+                                        <CreditCardOutlined sx={{ fontSize: 16, color: "info.main" }} />
+                                      </Tooltip>
+                                    )}
                                     <Typography variant="body1" sx={{ fontWeight: 600 }}>
                                       {formatKGS(parseFloat(exp.amount))}
                                     </Typography>
@@ -1088,6 +862,13 @@ const DjangoExpensesPage: React.FC = () => {
               onClose={() => setSelectedExpense(null)}
             >
               <Box sx={{ p: 2 }}>
+                <IconButton
+                  onClick={() => setSelectedExpense(null)}
+                  size="small"
+                  sx={{ position: "absolute", top: 8, right: 8 }}
+                >
+                  <CloseOutlined fontSize="small" />
+                </IconButton>
                 <ExpenseDetailCard expense={selectedExpense} canManage={canManage} onVoid={setVoidTarget} />
               </Box>
             </AppBottomSheet>
@@ -1096,15 +877,15 @@ const DjangoExpensesPage: React.FC = () => {
       )}
 
       {/* Drawer создания расхода */}
-      <AddExpenseDrawer
+      <DjangoAddExpenseDrawer
         open={addOpen}
         onClose={() => setAddOpen(false)}
         organizationId={orgId}
         branchId={branchId}
-        categories={categories}
         onCreated={(exp) => {
           void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
           setSelectedExpense(exp);
+          setAddOpen(false);
         }}
       />
 

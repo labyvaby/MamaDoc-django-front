@@ -26,7 +26,6 @@ import {
   createExpense,
   getExpenseCategories,
   parseBackendError,
-  type ExpenseMethod,
 } from "../../../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../../api/queryKeys";
 import CategoryCreateDialog from "./CategoryCreateDialog";
@@ -49,10 +48,11 @@ type Props = {
 const INITIAL_FORM = {
   branchId: "" as number | "",
   categoryId: "" as number | "",
-  method: "cash" as ExpenseMethod,
-  amount: "",
+  cashAmount: "",
+  cardAmount: "",
   expenseDate: dayjs().format("YYYY-MM-DD"),
   description: "",
+  name: "",
 };
 
 type FormState = typeof INITIAL_FORM;
@@ -83,16 +83,20 @@ const ExpenseCreateDialog: React.FC<Props> = ({
 
   // ── Mutation ────────────────────────────────────────────────────────────────
   const mutation = useMutation({
-    mutationFn: () =>
-      createExpense({
+    mutationFn: () => {
+      const cash = parseFloat(form.cashAmount) || 0;
+      const card = parseFloat(form.cardAmount) || 0;
+      return createExpense({
         organizationId,
         branchId: form.branchId !== "" ? form.branchId : undefined,
         categoryId: form.categoryId as number,
-        method: form.method,
-        amount: form.amount,
+        name: form.name.trim() || form.description.trim() || "Расход",
+        cashAmount: cash > 0 ? cash.toFixed(2) : undefined,
+        cardAmount: card > 0 ? card.toFixed(2) : undefined,
         expenseDate: form.expenseDate,
-        description: form.description.trim(),
-      }),
+        description: form.description.trim() || undefined,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
       queryClient.invalidateQueries({ queryKey: ["django", "cashbox", "summary"] });
@@ -111,10 +115,10 @@ const ExpenseCreateDialog: React.FC<Props> = ({
   function validate(): boolean {
     const errs: FormErrors = {};
     if (form.categoryId === "") errs.categoryId = "Выберите категорию";
-    const amt = parseFloat(form.amount);
-    if (!form.amount || isNaN(amt) || amt <= 0) errs.amount = "Сумма должна быть больше 0";
+    const cash = parseFloat(form.cashAmount) || 0;
+    const card = parseFloat(form.cardAmount) || 0;
+    if (cash <= 0 && card <= 0) errs.cashAmount = "Укажите хотя бы одну ненулевую сумму";
     if (!form.expenseDate) errs.expenseDate = "Укажите дату";
-    if (form.description.trim().length < 3) errs.description = "Описание минимум 3 символа";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -204,31 +208,39 @@ const ExpenseCreateDialog: React.FC<Props> = ({
               </Stack>
             </Box>
 
-            {/* Method */}
-            <FormControl size="small" fullWidth>
-              <InputLabel>Метод *</InputLabel>
-              <Select
-                value={form.method}
-                label="Метод *"
-                onChange={(e) => set("method", e.target.value as ExpenseMethod)}
-                disabled={mutation.isPending}
-              >
-                <MenuItem value="cash">Наличные</MenuItem>
-                <MenuItem value="card">Карта</MenuItem>
-              </Select>
-            </FormControl>
-
-            {/* Amount */}
+            {/* Name */}
             <TextField
               size="small"
               fullWidth
-              label="Сумма *"
+              label="Название"
+              value={form.name}
+              onChange={(e) => set("name", e.target.value)}
+              disabled={mutation.isPending}
+            />
+
+            {/* Cash amount */}
+            <TextField
+              size="small"
+              fullWidth
+              label="Наличные"
               type="number"
-              inputProps={{ min: 0.01, step: "0.01" }}
-              value={form.amount}
-              onChange={(e) => set("amount", e.target.value)}
-              error={!!errors.amount}
-              helperText={errors.amount}
+              inputProps={{ min: 0, step: "0.01" }}
+              value={form.cashAmount}
+              onChange={(e) => set("cashAmount", e.target.value)}
+              error={!!errors.cashAmount}
+              helperText={errors.cashAmount}
+              disabled={mutation.isPending}
+            />
+
+            {/* Card amount */}
+            <TextField
+              size="small"
+              fullWidth
+              label="Карта"
+              type="number"
+              inputProps={{ min: 0, step: "0.01" }}
+              value={form.cardAmount}
+              onChange={(e) => set("cardAmount", e.target.value)}
               disabled={mutation.isPending}
             />
 
@@ -250,13 +262,11 @@ const ExpenseCreateDialog: React.FC<Props> = ({
             <TextField
               size="small"
               fullWidth
-              label="Описание *"
+              label="Комментарий"
               multiline
               minRows={2}
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
-              error={!!errors.description}
-              helperText={errors.description ?? "Минимум 3 символа"}
               disabled={mutation.isPending}
             />
           </Stack>

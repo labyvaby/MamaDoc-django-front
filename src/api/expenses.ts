@@ -3,25 +3,35 @@ export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type ExpenseMethod = "cash" | "card";
+export type ExpenseMethod = "cash" | "card" | "mixed";
+export type ExpenseCategoryKind = "general" | "advance" | "salary";
 
 export interface ExpenseCategory {
   id: number;
   organizationId: number;
   name: string;
+  kind: ExpenseCategoryKind;
   isActive: boolean;
 }
 
 export interface Expense {
   id: number;
+  name: string;
   branchId: number | null;
   branchName: string | null;
   categoryId: number | null;
   categoryName: string | null;
+  categoryKind: ExpenseCategoryKind;
   method: ExpenseMethod;
+  cashAmount: string;
+  cardAmount: string;
   amount: string;
   expenseDate: string;
   description: string;
+  employeeId: number | null;
+  employeeName: string | null;
+  affectsMonth: string | null;
+  photoUrl: string | null;
   isVoided: boolean;
   voidedById: number | null;
   voidedAt: string | null;
@@ -48,6 +58,7 @@ export interface ExpenseCategoriesResponse {
 export interface CreateCategoryPayload {
   organizationId?: number;
   name: string;
+  kind?: ExpenseCategoryKind;
   isActive?: boolean;
 }
 
@@ -55,10 +66,12 @@ export interface CreateExpensePayload {
   organizationId?: number;
   branchId?: number;
   categoryId: number;
-  method: ExpenseMethod;
-  amount: string;
+  name: string;
+  cashAmount?: number | string;
+  cardAmount?: number | string;
   expenseDate: string;
-  description: string;
+  description?: string;
+  employeeId?: number | null;
 }
 
 export interface VoidExpensePayload {
@@ -77,6 +90,10 @@ export interface ExpensesFilters {
   pageSize?: number;
 }
 
+export interface UpdateCategoryKindPayload {
+  kind: ExpenseCategoryKind;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildExpenseParams(filters: ExpensesFilters): URLSearchParams {
@@ -84,7 +101,7 @@ function buildExpenseParams(filters: ExpensesFilters): URLSearchParams {
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.categoryId != null) q.set("categoryId", String(filters.categoryId));
-  if (filters.method) q.set("method", filters.method);
+  if (filters.method) q.set("method", filters.method);  // still supported for cashbox filter
   if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) q.set("dateTo", filters.dateTo);
   if (filters.isVoided != null) q.set("isVoided", String(filters.isVoided));
@@ -154,5 +171,14 @@ export function voidExpense(expenseId: number, payload: VoidExpensePayload): Pro
   return apiRequest<Expense>(`/finance/expenses/${expenseId}/void/`, {
     method: "POST",
     body: payload,
+  });
+}
+
+export function uploadExpensePhoto(expenseId: number, file: File): Promise<Expense> {
+  const formData = new FormData();
+  formData.append("photo", file);
+  return apiRequest<Expense>(`/finance/expenses/${expenseId}/photo/`, {
+    method: "PUT",
+    formData,
   });
 }

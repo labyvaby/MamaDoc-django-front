@@ -19,12 +19,12 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import BlockIcon from "@mui/icons-material/Block";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { getExpenses, parseBackendError, type Expense } from "../../../../api/expenses";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../../api/queryKeys";
 import { ApiError } from "../../../../api/client";
-import ExpenseCreateDialog from "./ExpenseCreateDialog";
+import { DjangoAddExpenseDrawer } from "../../../../components/expenses/DjangoAddExpenseDrawer";
 import ExpenseVoidDialog from "./ExpenseVoidDialog";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -32,8 +32,9 @@ import ExpenseVoidDialog from "./ExpenseVoidDialog";
 const PAGE_SIZE = 20;
 
 const METHOD_LABELS: Record<string, string> = {
-  cash: "Наличные",
+  cash: "Нал.",
   card: "Карта",
+  mixed: "Смеш.",
 };
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -58,7 +59,6 @@ const ExpensesPanel: React.FC<Props> = ({
   branchId,
   dateFrom,
   dateTo,
-  branches,
   canManage,
   queriesEnabled,
   expenseNeedsOrg = false,
@@ -66,6 +66,7 @@ const ExpensesPanel: React.FC<Props> = ({
   const [page, setPage] = React.useState(1);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [voidTarget, setVoidTarget] = React.useState<Expense | null>(null);
+  const queryClient = useQueryClient();
 
   // Reset to page 1 when filters change
   const filtersKey = `${organizationId}-${branchId}-${dateFrom}-${dateTo}`;
@@ -163,11 +164,13 @@ const ExpensesPanel: React.FC<Props> = ({
             <TableHead>
               <TableRow sx={{ bgcolor: "action.hover" }}>
                 <TableCell sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>Дата</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Название</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Категория</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Описание</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Филиал</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Получатель</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Метод</TableCell>
-                <TableCell sx={{ fontWeight: 700 }} align="right">Сумма</TableCell>
+                <TableCell sx={{ fontWeight: 700 }} align="right">Нал.</TableCell>
+                <TableCell sx={{ fontWeight: 700 }} align="right">Карта</TableCell>
+                <TableCell sx={{ fontWeight: 700 }} align="right">Итого</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Создал</TableCell>
                 {canManage && <TableCell />}
               </TableRow>
@@ -175,14 +178,14 @@ const ExpensesPanel: React.FC<Props> = ({
             <TableBody>
               {expensesQuery.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={canManage ? 8 : 7} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={canManage ? 10 : 9} align="center" sx={{ py: 4 }}>
                     <CircularProgress size={24} />
                   </TableCell>
                 </TableRow>
               )}
               {!expensesQuery.isLoading && expenses.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canManage ? 8 : 7} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={canManage ? 10 : 9} align="center" sx={{ py: 3 }}>
                     <Typography variant="body2" color="text.disabled">
                       Расходов нет
                     </Typography>
@@ -200,39 +203,43 @@ const ExpensesPanel: React.FC<Props> = ({
                   }}
                 >
                   <TableCell sx={{ whiteSpace: "nowrap", color: "text.secondary", fontSize: "0.75rem" }}>
-                    {exp.expenseDate
-                      ? dayjs(exp.expenseDate).format("DD.MM.YY")
-                      : "—"}
+                    {exp.expenseDate ? dayjs(exp.expenseDate).format("DD.MM.YY") : "—"}
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" noWrap sx={{ maxWidth: 120 }}>
+                    <Tooltip title={exp.name || ""}>
+                      <Typography variant="body2" noWrap sx={{ maxWidth: 130 }}>
+                        {exp.name || "—"}
+                      </Typography>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" noWrap sx={{ maxWidth: 110 }}>
                       {exp.categoryName ?? "—"}
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    {exp.description ? (
-                      <Tooltip title={exp.description}>
-                        <Typography variant="body2" noWrap sx={{ maxWidth: 160 }}>
-                          {exp.description}
-                        </Typography>
-                      </Tooltip>
-                    ) : (
-                      <Typography variant="caption" color="text.disabled">—</Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" noWrap sx={{ maxWidth: 100 }}>
-                      {exp.branchName ?? "—"}
+                    <Typography variant="body2" noWrap sx={{ maxWidth: 110 }}>
+                      {exp.employeeName ?? "—"}
                     </Typography>
                   </TableCell>
                   <TableCell>
                     <Chip
                       label={METHOD_LABELS[exp.method] ?? exp.method}
                       size="small"
-                      color={exp.method === "cash" ? "success" : "default"}
+                      color={exp.method === "cash" ? "success" : exp.method === "card" ? "default" : "warning"}
                       variant="outlined"
                       sx={{ fontSize: "0.7rem", height: 20 }}
                     />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" color={parseFloat(exp.cashAmount) > 0 ? "success.main" : "text.disabled"} noWrap>
+                      {parseFloat(exp.cashAmount) > 0 ? `${exp.cashAmount} с` : "—"}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" color={parseFloat(exp.cardAmount) > 0 ? "info.main" : "text.disabled"} noWrap>
+                      {parseFloat(exp.cardAmount) > 0 ? `${exp.cardAmount} с` : "—"}
+                    </Typography>
                   </TableCell>
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={600} color="error.main" noWrap>
@@ -290,15 +297,19 @@ const ExpensesPanel: React.FC<Props> = ({
         </Stack>
       )}
 
-      {/* Dialogs */}
-      <ExpenseCreateDialog
+      {/* Shared add drawer */}
+      <DjangoAddExpenseDrawer
         open={createOpen}
-        organizationId={organizationId}
-        branches={branches}
         onClose={() => setCreateOpen(false)}
-        onCreated={() => setCreateOpen(false)}
-        expenseNeedsOrg={expenseNeedsOrg}
+        organizationId={organizationId}
+        branchId={branchId}
+        onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+          void queryClient.invalidateQueries({ queryKey: ["django", "cashbox", "summary"] });
+          setCreateOpen(false);
+        }}
       />
+
       <ExpenseVoidDialog
         open={voidTarget !== null}
         expense={voidTarget}
