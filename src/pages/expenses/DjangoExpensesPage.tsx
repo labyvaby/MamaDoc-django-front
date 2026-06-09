@@ -29,6 +29,7 @@ import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWall
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -45,6 +46,7 @@ import {
   getExpenses,
   getExpenseCategories,
   voidExpense,
+  uploadExpensePhoto,
   parseBackendError,
   type Expense,
 } from "../../api/expenses";
@@ -86,12 +88,42 @@ const DetailRow: React.FC<{ label: string; value?: string | null; children?: Rea
 
 // ── ExpenseDetailCard ──────────────────────────────────────────────────────────
 
+const PHOTO_ACCEPT = "image/jpeg,image/jpg,image/png,image/webp";
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
 const ExpenseDetailCard: React.FC<{
   expense: Expense | null;
   canManage: boolean;
   onVoid: (exp: Expense) => void;
-}> = ({ expense, canManage, onVoid }) => {
+  onPhotoUploaded: (exp: Expense) => void;
+}> = ({ expense, canManage, onVoid, onPhotoUploaded }) => {
   const theme = useTheme();
+  const [photoUploading, setPhotoUploading] = React.useState(false);
+  const [photoError, setPhotoError] = React.useState<string | null>(null);
+  const photoInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setPhotoError(null);
+  }, [expense?.id]);
+
+  const handlePhotoFile = async (file: File) => {
+    if (!expense) return;
+    if (file.size > PHOTO_MAX_BYTES) {
+      setPhotoError("Фото не должно превышать 5 МБ");
+      return;
+    }
+    setPhotoError(null);
+    setPhotoUploading(true);
+    try {
+      const updated = await uploadExpensePhoto(expense.id, file);
+      onPhotoUploaded(updated);
+    } catch (e) {
+      setPhotoError(parseBackendError(e));
+    } finally {
+      setPhotoUploading(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
 
   if (!expense) {
     return (
@@ -176,7 +208,7 @@ const ExpenseDetailCard: React.FC<{
         )}
       </Box>
 
-      {/* Кнопка аннулирования */}
+      {/* Кнопки управления */}
       {canManage && !expense.isVoided && (
         <Box
           sx={{
@@ -185,10 +217,41 @@ const ExpenseDetailCard: React.FC<{
             borderBottom: 1,
             borderColor: "divider",
             display: "flex",
-            justifyContent: "flex-end",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 1,
             flexShrink: 0,
+            flexWrap: "wrap",
           }}
         >
+          {/* Прикрепить фото — только если фото ещё нет */}
+          {!expense.photoUrl && (
+            <>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept={PHOTO_ACCEPT}
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handlePhotoFile(f);
+                }}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={photoUploading ? <CircularProgress size={14} color="inherit" /> : <ImageOutlined sx={{ fontSize: 16 }} />}
+                onClick={() => { setPhotoError(null); photoInputRef.current?.click(); }}
+                disabled={photoUploading}
+                sx={{ textTransform: "none" }}
+              >
+                {photoUploading ? "Загрузка..." : "Прикрепить фото"}
+              </Button>
+            </>
+          )}
+          {/* Заполнитель, чтобы кнопка аннулирования была справа когда нет фото-кнопки */}
+          {expense.photoUrl && <Box sx={{ flex: 1 }} />}
+
           <Tooltip title="Аннулировать расход">
             <IconButton
               size="small"
@@ -207,6 +270,13 @@ const ExpenseDetailCard: React.FC<{
               <Typography variant="caption" sx={{ fontWeight: 600 }}>Аннулировать</Typography>
             </IconButton>
           </Tooltip>
+        </Box>
+      )}
+
+      {/* Ошибка загрузки фото */}
+      {photoError && (
+        <Box sx={{ px: 2.5, pt: 1, flexShrink: 0 }}>
+          <Alert severity="error" onClose={() => setPhotoError(null)}>{photoError}</Alert>
         </Box>
       )}
 
@@ -848,6 +918,10 @@ const DjangoExpensesPage: React.FC = () => {
                       expense={selectedExpense}
                       canManage={canManage}
                       onVoid={setVoidTarget}
+                      onPhotoUploaded={(updated) => {
+                        setSelectedExpense(updated);
+                        void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+                      }}
                     />
                   </Box>
                 </Grid2>
@@ -869,7 +943,15 @@ const DjangoExpensesPage: React.FC = () => {
                 >
                   <CloseOutlined fontSize="small" />
                 </IconButton>
-                <ExpenseDetailCard expense={selectedExpense} canManage={canManage} onVoid={setVoidTarget} />
+                <ExpenseDetailCard
+                  expense={selectedExpense}
+                  canManage={canManage}
+                  onVoid={setVoidTarget}
+                  onPhotoUploaded={(updated) => {
+                    setSelectedExpense(updated);
+                    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+                  }}
+                />
               </Box>
             </AppBottomSheet>
           )}

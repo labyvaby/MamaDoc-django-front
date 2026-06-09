@@ -22,6 +22,7 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { useQuery } from "@tanstack/react-query";
+import { useSnackbar } from "notistack";
 
 import { CustomDatePicker, AppBottomSheet } from "../ui";
 import { useCloseGuard } from "../../hooks/useCloseGuard";
@@ -74,6 +75,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   onCreated,
 }) => {
   const theme = useTheme();
+  const { enqueueSnackbar } = useSnackbar();
 
   // Form state
   const [expenseDate, setExpenseDate] = React.useState<Dayjs | null>(dayjs());
@@ -215,9 +217,12 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
           const withPhoto = await uploadExpensePhoto(created.id, photoFile);
           onCreated(withPhoto);
         } catch {
-          // Photo upload failed — still treat create as success, warn user
-          setError("Расход создан, но фото не удалось загрузить (попробуйте позже)");
           onCreated(created);
+          onClose();
+          enqueueSnackbar(
+            "Расход создан, но фото не загрузилось. Его можно прикрепить из карточки расхода",
+            { variant: "warning", persist: true },
+          );
           return;
         }
       } else {
