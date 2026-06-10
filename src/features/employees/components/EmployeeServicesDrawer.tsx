@@ -81,10 +81,19 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   const { open: notify } = useNotification();
   const canView = useCan("staff.view");
   const canEdit = useCan("staff.update");
-  const { activeMembership, activeBranch } = usePermissions();
+  const { activeOrganization, activeMembership, activeBranch } = usePermissions();
 
   const availableBranches = activeMembership?.branches ?? [];
   const activeBranchId = activeBranch?.id ?? null;
+
+  // Unique tenant context key — if it changes while drawer is open, abort and close.
+  const contextKey = `${activeOrganization?.id ?? "null"}_${activeMembership?.id ?? "null"}_${activeBranchId ?? "null"}`;
+  // currentContextKeyRef always holds the latest rendered key (updated every render).
+  const currentContextKeyRef = React.useRef(contextKey);
+  currentContextKeyRef.current = contextKey;
+  // previousContextKeyRef holds the key from the previous render cycle (used for
+  // change detection in the close effect below).
+  const previousContextKeyRef = React.useRef(contextKey);
 
   // ── server data ───────────────────────────────────────────────────────────
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
@@ -99,37 +108,60 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
+  // ── close drawer and clear state when tenant context changes ─────────────
+  React.useEffect(() => {
+    const prev = previousContextKeyRef.current;
+    previousContextKeyRef.current = contextKey;
+    if (contextKey === prev) return;
+    // Context switched while drawer might be open — close it to prevent stale data.
+    if (open) {
+      onClose();
+    }
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setSaveError(null);
+    setAssignments([]);
+    setServices([]);
+    setDataError(null);
+  }, [contextKey, open, onClose]);
+
   // ── load data on open ─────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open || !canView) return;
-    let cancelled = false;
+    const capturedContextKey = contextKey;
     const controller = new AbortController();
     setLoadingData(true);
     setDataError(null);
+    // Clear stale assignments immediately so old-context data is never shown.
+    setAssignments([]);
 
     Promise.all([
-      getEmployeeServices(employeeId),
+      getEmployeeServices(employeeId, controller.signal),
       getServices(activeBranchId, controller.signal),
     ])
       .then(([a, s]) => {
-        if (!cancelled) {
-          setAssignments(a);
-          setServices(s.filter((sv) => sv.isActive));
-        }
+        // Discard result if context changed since we started.
+        if (controller.signal.aborted) return;
+        if (capturedContextKey !== currentContextKeyRef.current) return;
+        setAssignments(a);
+        setServices(s.filter((sv) => sv.isActive));
       })
       .catch((err: unknown) => {
-        if (!cancelled)
-          setDataError(err instanceof Error ? err.message : "Ошибка загрузки данных");
+        if (controller.signal.aborted) return;
+        if (capturedContextKey !== currentContextKeyRef.current) return;
+        setDataError(err instanceof Error ? err.message : "Ошибка загрузки данных");
       })
       .finally(() => {
-        if (!cancelled) setLoadingData(false);
+        if (!controller.signal.aborted && capturedContextKey === currentContextKeyRef.current) {
+          setLoadingData(false);
+        }
       });
 
     return () => {
-      cancelled = true;
       controller.abort();
     };
-  }, [open, canView, employeeId, activeBranchId]);
+  }, [open, canView, employeeId, activeBranchId, contextKey]);
 
   // ── reload services when branch changes in new-assignment form ────────────
   React.useEffect(() => {
@@ -188,14 +220,17 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
 
   // ── toggle active state ───────────────────────────────────────────────────
   const handleToggleActive = async (a: EmployeeServiceAssignment, isActive: boolean) => {
+    const capturedContextKey = currentContextKeyRef.current;
     try {
       const updated = await updateEmployeeService(employeeId, a.id, { isActive });
+      if (capturedContextKey !== currentContextKeyRef.current) return;
       setAssignments((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
       notify?.({
         type: "success",
         message: isActive ? "Услуга активирована" : "Услуга деактивирована",
       });
     } catch (err: unknown) {
+      if (capturedContextKey !== currentContextKeyRef.current) return;
       notify?.({
         type: "error",
         message: err instanceof Error ? err.message : "Не удалось изменить статус",
@@ -206,6 +241,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   // ── save form ─────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!form.serviceId) return;
+    const capturedContextKey = currentContextKeyRef.current;
     setSaveError(null);
     setSaving(true);
     try {
@@ -219,6 +255,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
             : null,
           notes: form.notes.trim() || null,
         });
+        if (capturedContextKey !== currentContextKeyRef.current) return;
         setAssignments((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
         notify?.({ type: "success", message: "Назначение обновлено" });
       } else {
@@ -233,13 +270,16 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
             : null,
           notes: form.notes.trim(),
         });
+        if (capturedContextKey !== currentContextKeyRef.current) return;
         setAssignments((prev) => [...prev, created]);
         notify?.({ type: "success", message: "Услуга назначена" });
       }
+      if (capturedContextKey !== currentContextKeyRef.current) return;
       setShowForm(false);
       setEditingId(null);
       setForm(EMPTY_FORM);
     } catch (err: unknown) {
+      if (capturedContextKey !== currentContextKeyRef.current) return;
       setSaveError(err instanceof Error ? err.message : "Ошибка сохранения");
     } finally {
       setSaving(false);

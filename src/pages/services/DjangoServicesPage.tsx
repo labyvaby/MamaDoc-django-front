@@ -34,7 +34,7 @@ const BATCH_SIZE = 20;
 const DjangoServicesPage: React.FC = () => {
   usePageTitle("Услуги");
   const { open: notify } = useNotification();
-  const { hasPermission, activeBranch } = usePermissions();
+  const { hasPermission, activeOrganization, activeMembership, activeBranch } = usePermissions();
 
   const canView = hasPermission("catalog.view");
   const canCreate = hasPermission("catalog.create");
@@ -65,42 +65,77 @@ const DjangoServicesPage: React.FC = () => {
   // Поиск
   const [searchQuery, setSearchQuery] = React.useState("");
 
+  const orgId = activeOrganization?.id ?? null;
+  const membershipId = activeMembership?.id ?? null;
   const activeBranchId = activeBranch?.id ?? null;
 
-  const loadAll = React.useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setErrorMsg(null);
-    try {
-      const svcs = await getServices(activeBranchId, signal);
-      setAllServices(svcs);
-    } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") return;
-      setErrorMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [activeBranchId]);
+  // Unique key per tenant context — changes trigger a reload with stale-data clear
+  const contextKey = `${orgId ?? "null"}_${membershipId ?? "null"}_${activeBranchId ?? "null"}`;
 
-  React.useEffect(() => {
-    const controller = new AbortController();
-    loadAll(controller.signal);
-    return () => controller.abort();
-  }, [loadAll]);
+  // Monotone sequence counter: each load gets an id; only the latest may commit
+  const loadSeqRef = React.useRef(0);
+  const abortCtrlRef = React.useRef<AbortController | null>(null);
+  // Ref updated synchronously on every render so async callbacks can compare
+  // against the current context key rather than a stale closure value.
+  const currentContextKeyRef = React.useRef<string>(contextKey);
+  currentContextKeyRef.current = contextKey;
 
-  // Перезагружать при переключении контекста (org/branch)
+  // Single loader: aborts previous request, guards against stale write
+  const loadAll = React.useCallback(
+    async (capturedContextKey: string) => {
+      abortCtrlRef.current?.abort();
+      const ctrl = new AbortController();
+      abortCtrlRef.current = ctrl;
+      const seq = ++loadSeqRef.current;
+
+      setLoading(true);
+      setErrorMsg(null);
+      // Clear stale data immediately so old org's data is never shown
+      setAllServices([]);
+
+      try {
+        const svcs = await getServices(activeBranchId, ctrl.signal);
+        // Discard result if a newer load started or context changed since request started
+        if (seq !== loadSeqRef.current) return;
+        if (capturedContextKey !== currentContextKeyRef.current) return;
+        setAllServices(svcs);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        if (seq !== loadSeqRef.current) return;
+        if (capturedContextKey !== currentContextKeyRef.current) return;
+        setErrorMsg(e instanceof Error ? e.message : String(e));
+      } finally {
+        // Only clear loading for the current request, not a superseded one
+        if (
+          seq === loadSeqRef.current
+          && !ctrl.signal.aborted
+          && capturedContextKey === currentContextKeyRef.current
+        ) {
+          setLoading(false);
+        }
+      }
+    },
+    [activeBranchId, contextKey],
+  );
+
+  // Single effect — fires whenever tenant context changes
   React.useEffect(() => {
-    let ctrl: AbortController | null = null;
-    const handler = () => {
-      ctrl?.abort();
-      ctrl = new AbortController();
-      loadAll(ctrl.signal);
-    };
-    window.addEventListener("mamadoc:django-context-switched", handler);
+    // Immediately close stale drawers and clear UI state
+    setDetailsOpen(false);
+    setSelectedServiceId(null);
+    setEditOpen(false);
+    setEditingRec(null);
+    setConfirmOpen(false);
+    setConfirmRow(null);
+    setVisibleCount(BATCH_SIZE);
+    setSearchQuery("");
+
+    void loadAll(contextKey);
+
     return () => {
-      window.removeEventListener("mamadoc:django-context-switched", handler);
-      ctrl?.abort();
+      abortCtrlRef.current?.abort();
     };
-  }, [loadAll]);
+  }, [contextKey, loadAll]);
 
   // Фильтрация + инфинит
   const filtered = React.useMemo(() => {
@@ -114,9 +149,10 @@ const DjangoServicesPage: React.FC = () => {
     [filtered, visibleCount],
   );
 
+  // Reset visible count when search changes
   React.useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [filtered.length, searchQuery]);
+  }, [searchQuery]);
 
   // IntersectionObserver
   React.useEffect(() => {
@@ -145,7 +181,7 @@ const DjangoServicesPage: React.FC = () => {
     if (!confirmRow) return;
     try {
       await deleteService(confirmRow.id);
-      await loadAll();
+      void loadAll(contextKey);
       notify?.({ type: "success", message: "Услуга удалена" });
     } catch (e) {
       notify?.({ type: "error", message: e instanceof Error ? e.message : "Не удалось удалить услугу" });
@@ -332,7 +368,7 @@ const DjangoServicesPage: React.FC = () => {
         onClose={() => setAddOpen(false)}
         onCreated={() => {
           setAddOpen(false);
-          loadAll();
+          void loadAll(contextKey);
         }}
       />
 
@@ -348,7 +384,7 @@ const DjangoServicesPage: React.FC = () => {
           onUpdated={() => {
             setEditOpen(false);
             setEditingRec(null);
-            loadAll();
+            void loadAll(contextKey);
           }}
         />
       )}

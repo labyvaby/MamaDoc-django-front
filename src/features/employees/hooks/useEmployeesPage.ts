@@ -63,6 +63,10 @@ export function useEmployeesPageState() {
   // Cache key: unique per active tenant context — changing org/branch clears data
   const contextKey = `${orgId ?? "null"}_${branchId ?? "null"}_${membershipId ?? "null"}`;
   const prevContextKeyRef = React.useRef<string>(contextKey);
+  // Ref updated synchronously on every render so async callbacks can compare
+  // against the *current* context key rather than a stale closure value.
+  const currentContextKeyRef = React.useRef<string>(contextKey);
+  currentContextKeyRef.current = contextKey;
 
   const [allItems, setAllItems] = React.useState<EmployesRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -93,6 +97,8 @@ export function useEmployeesPageState() {
     }
     const ctrl = new AbortController();
     abortCtrlRef.current = ctrl;
+    // Capture context at call time for stale-write detection after await
+    const requestContextKey = currentContextKeyRef.current;
 
     try {
       if (append) {
@@ -115,7 +121,9 @@ export function useEmployeesPageState() {
           ctrl.signal,
         );
 
+        // Discard result if request was aborted or context changed since the request started
         if (ctrl.signal.aborted) return;
+        if (requestContextKey !== currentContextKeyRef.current) return;
 
         const mapped = result.results.map(mapDjangoListItemToRow);
         if (append) {
@@ -131,21 +139,24 @@ export function useEmployeesPageState() {
         const { EMPLOYEES_SOURCE } = await import("../api");
         const mapped = await _supabaseFetchEmployees(supabase, EMPLOYEES_SOURCE);
         if (ctrl.signal.aborted) return;
+        if (requestContextKey !== currentContextKeyRef.current) return;
         setAllItems(mapped);
         setHasMore(false);
       }
     } catch (e: unknown) {
       if ((e as Error)?.name === "AbortError") return;
+      if (ctrl.signal.aborted) return;
+      if (requestContextKey !== currentContextKeyRef.current) return;
       const msg = getErrorMessage(e);
       console.error("Fetch employees error:", msg);
       setErrorMsg("Не удалось загрузить сотрудников");
     } finally {
-      if (!ctrl.signal.aborted) {
+      if (!ctrl.signal.aborted && requestContextKey === currentContextKeyRef.current) {
         setLoading(false);
         setLoadingMore(false);
       }
     }
-  }, [qDebounced]);
+  }, [contextKey, qDebounced, branchId]);
 
   // Re-fetch when context (org/branch) changes — clear stale data first
   React.useEffect(() => {
@@ -174,8 +185,7 @@ export function useEmployeesPageState() {
     return () => {
       abortCtrlRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextKey, qDebounced]);
+  }, [contextKey, qDebounced, fetchEmployees, membershipId]);
 
   const loadMore = React.useCallback(() => {
     if (hasMore && !loadingMore && !loading) {
