@@ -39,7 +39,7 @@ import { RequirePermission } from "./components/rbac/RequirePermission";
 import { CallNotification } from "./components/CallNotification";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
-import { lazy, Suspense, useEffect } from "react";
+import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useAuthIdentitySync } from "./hooks/useAuthIdentitySync";
 import { IS_DJANGO_BACKEND } from "./config/backend";
 import { djangoQueryKeys } from "./api/queryKeys";
@@ -178,6 +178,31 @@ const DjangoQueryCacheReset = () => {
   }, [queryClient]);
 
   return null;
+};
+
+/**
+ * Пересоздаёт текущую страницу при смене активной организации/филиала.
+ *
+ * Страницы загружают данные при монтировании, поэтому remount подтягивает
+ * данные нового контекста без полной перезагрузки приложения — шапка,
+ * сайдбар и бандл остаются на месте. Счётчик растёт только при явном
+ * switchContext() (событие mamadoc:django-context-switched), так что
+ * первоначальная загрузка /auth/me/ лишнего remount не вызывает.
+ */
+const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
+  const [contextVersion, setContextVersion] = useState(0);
+
+  useEffect(() => {
+    if (!IS_DJANGO_BACKEND) return;
+
+    const bump = () => setContextVersion((v) => v + 1);
+    window.addEventListener("mamadoc:django-context-switched", bump);
+    return () => {
+      window.removeEventListener("mamadoc:django-context-switched", bump);
+    };
+  }, []);
+
+  return <Fragment key={contextVersion}>{children}</Fragment>;
 };
 
 function App() {
@@ -437,7 +462,9 @@ function App() {
                                   }
                                 }}
                               >
-                                <Outlet />
+                                <DjangoContextRemount>
+                                  <Outlet />
+                                </DjangoContextRemount>
                               </ThemedLayout>
                             </MobileSidebarProvider>
                           </RequireAuth>
