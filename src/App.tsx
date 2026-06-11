@@ -61,6 +61,10 @@ const ServicesPage = lazy(() => import("./pages/services"));
 const ProductsPage = lazy(() => import("./pages/products"));
 const StoragePage = lazy(() => import("./pages/storage"));
 const WarehousesPage = lazy(() => import("./pages/warehouses"));
+const DjangoStoragePage = lazy(() => import("./pages/storage/django"));
+const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
+const DjangoProductsPage = lazy(() => import("./pages/products/django"));
+const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const SalesPage = lazy(() => import("./pages/sales"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
@@ -517,38 +521,56 @@ function App() {
                         <Route
                           path="products"
                           element={
-                            <LegacyRouteGuard title="Товары в разработке">
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission={["warehouse.view", "warehouse.sales.view"]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoProductsPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
                               <ProtectedRoute deniedRoles={[]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <ProductsPage />
                                 </Suspense>
                               </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            )
                           }
                         />
 
                         <Route
                           path="storage"
                           element={
-                            <LegacyRouteGuard title="Движение товара в разработке">
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="warehouse.view">
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoStoragePage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
                               <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <StoragePage />
                                 </Suspense>
                               </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route
                           path="warehouses"
                           element={
-                            <LegacyRouteGuard title="Склад в разработке">
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="warehouse.view">
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoWarehousesPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
                               <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <WarehousesPage />
                                 </Suspense>
                               </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route
@@ -602,13 +624,19 @@ function App() {
                         <Route
                           path="sales"
                           element={
-                            <LegacyRouteGuard title="Продажи товаров в разработке">
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission={["warehouse.sales.view", "warehouse.view"]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoSalesPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
                               <ProtectedRoute allowedRoles={['admin', 'superadmin', 'registrator', 'receptionist']}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <SalesPage />
                                 </Suspense>
                               </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route

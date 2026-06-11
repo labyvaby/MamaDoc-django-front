@@ -500,17 +500,17 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Товары */}
-        {show("storage") && (
+        {show("storage") && (isSuper || (IS_DJANGO_BACKEND ? can(['warehouse.view', 'warehouse.sales.view']) : true)) && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
 
         {/* Продажи товаров */}
-        {show("storage") && (isSuper || isAdmin() || isRegistrator()) && (
+        {show("storage") && (isSuper || (IS_DJANGO_BACKEND ? can(['warehouse.sales.view', 'warehouse.view']) : (isAdmin() || isRegistrator()))) && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
 
         {/* Движение товара + Склад */}
-        {show("storage") && (isSuper || isAdmin()) && (
+        {show("storage") && (isSuper || (IS_DJANGO_BACKEND ? can('warehouse.view') : isAdmin())) && (
           <>
             <SidebarMenuItem to="/storage" icon={<Inventory2Outlined />} label="Движение товара" collapsed={siderCollapsed} />
             <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Склад" collapsed={siderCollapsed} />
