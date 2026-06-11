@@ -36,6 +36,11 @@ export type MovementProductOption = {
 
 const productFilter = createFilterOptions<MovementProductOption>();
 
+export type MovementWarehouseOption = {
+    id: number;
+    label: string;
+};
+
 interface DjangoAddMovementDrawerProps {
     open: boolean;
     onClose: () => void;
@@ -47,9 +52,16 @@ interface DjangoAddMovementDrawerProps {
         selectedProduct?: MovementProductOption | null,
         amount?: number,
         paymentMethod?: "cash" | "cashless",
+        warehouseId?: number,
     ) => Promise<void>;
     availableProducts?: MovementProductOption[];
     editingMovement?: DjangoStockMovement | null;
+    /**
+     * Если передан — в режиме «новый товар» появляется обязательный выбор
+     * склада (нужно странице «Движение товара», где склад не задан контекстом).
+     */
+    warehouses?: MovementWarehouseOption[];
+    defaultWarehouseId?: number | null;
 }
 
 export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = ({
@@ -60,6 +72,8 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     onConfirm,
     availableProducts = [],
     editingMovement = null,
+    warehouses,
+    defaultWarehouseId = null,
 }) => {
     const [quantity, setQuantity] = useState<string>("");
     const [amount, setAmount] = useState<string>("");
@@ -67,6 +81,11 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     const [loading, setLoading] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<MovementProductOption | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<"cash" | "cashless">("cash");
+    const [selectedWarehouse, setSelectedWarehouse] = useState<MovementWarehouseOption | null>(null);
+
+    // Селект склада показываем только в режиме нового товара и только если
+    // страница передала список (на странице «Склад» склад задан колонкой).
+    const showWarehouseSelect = !product && !editingMovement && !!warehouses;
 
     useEffect(() => {
         if (open) {
@@ -80,8 +99,12 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
             setLoading(false);
             setSelectedProduct(null);
             setPaymentMethod(editingMovement?.paymentMethod ?? "cash");
+            setSelectedWarehouse(
+                warehouses?.find((w) => w.id === defaultWarehouseId) ?? null,
+            );
         }
-    }, [open, product, editingMovement]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, product, editingMovement, defaultWarehouseId]);
 
     const handleSubmit = async () => {
         const qty = parseFloat(quantity);
@@ -89,10 +112,18 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
         if (isNaN(qty) || qty <= 0) return;
         if (isNaN(amt) || amt <= 0) return;
         if (!product && !selectedProduct && !editingMovement) return;
+        if (showWarehouseSelect && !selectedWarehouse) return;
 
         try {
             setLoading(true);
-            await onConfirm(qty, comment, selectedProduct, amt, mode === "in" ? paymentMethod : undefined);
+            await onConfirm(
+                qty,
+                comment,
+                selectedProduct,
+                amt,
+                mode === "in" ? paymentMethod : undefined,
+                selectedWarehouse?.id,
+            );
             onClose();
         } catch (e) {
             console.error(e);
@@ -110,7 +141,9 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
 
     const amtNum = parseFloat(amount) || 0;
     const qtyNum = parseFloat(quantity) || 0;
-    const isValid = qtyNum > 0 && amtNum > 0 && (!!product || !!selectedProduct || !!editingMovement);
+    const isValid = qtyNum > 0 && amtNum > 0
+        && (!!product || !!selectedProduct || !!editingMovement)
+        && (!showWarehouseSelect || !!selectedWarehouse);
 
     const accentColor = mode === "in" ? "success" : "error";
 
@@ -205,6 +238,26 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                 />
                             )}
                         </Box>
+
+                        {/* Склад (только для нового товара на странице движения) */}
+                        {showWarehouseSelect && (
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                                    Склад *
+                                </Typography>
+                                <Autocomplete<MovementWarehouseOption, false, false, false>
+                                    options={warehouses ?? []}
+                                    getOptionLabel={(o) => o.label || ""}
+                                    value={selectedWarehouse}
+                                    onChange={(_, v) => setSelectedWarehouse(v)}
+                                    isOptionEqualToValue={(o, v) => o.id === v.id}
+                                    renderInput={(params) => (
+                                        <TextField {...params} placeholder="Выберите склад..." size="small" />
+                                    )}
+                                    noOptionsText="Нет складов"
+                                />
+                            </Box>
+                        )}
 
                         <Divider />
 

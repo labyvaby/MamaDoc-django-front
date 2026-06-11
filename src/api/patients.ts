@@ -52,6 +52,21 @@ export function getPatients(signal?: AbortSignal): Promise<DjangoPatient[]> {
   return apiRequest<DjangoPatient[]>("/patients/", { signal });
 }
 
+/**
+ * Серверный поиск пациентов (по ФИО или телефону) с лимитом.
+ * Для автокомплитов — не тянет всю базу на клиент.
+ */
+export function searchPatients(
+  search: string,
+  limit = 10,
+  signal?: AbortSignal,
+): Promise<DjangoPatient[]> {
+  const q = new URLSearchParams();
+  if (search) q.set("search", search);
+  q.set("limit", String(limit));
+  return apiRequest<DjangoPatient[]>(`/patients/?${q.toString()}`, { signal });
+}
+
 export function getPatient(id: number): Promise<DjangoPatient> {
   return apiRequest<DjangoPatient>(`/patients/${id}/`);
 }

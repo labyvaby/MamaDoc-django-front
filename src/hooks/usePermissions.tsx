@@ -72,6 +72,30 @@ const setGlobal = (patch: Partial<GlobalState>) => {
   notify();
 };
 
+// Протухшая сессия: любой API-запрос вернул 401 (событие из api/client.ts) —
+// переводим приложение в unauthenticated, RequireAuth уведёт на /login.
+// Без этого пользователь видел бесконечные «Ошибка загрузки» до полного F5.
+if (IS_DJANGO_BACKEND && typeof window !== 'undefined') {
+  window.addEventListener('mamadoc:api-unauthorized', () => {
+    if (globalState.authStatus !== 'authenticated') return;
+    setGlobal({
+      role: null,
+      employee: null,
+      permissions: [],
+      memberships: [],
+      activeMembership: null,
+      activeOrganization: null,
+      activeBranch: null,
+      activeEmployee: null,
+      enabledModules: [],
+      loading: false,
+      loaded: true,
+      authStatus: 'unauthenticated',
+      authError: null,
+    });
+  });
+}
+
 type RolePermissionsRow = { permissions?: Permission | Permission[] | null };
 
 /**

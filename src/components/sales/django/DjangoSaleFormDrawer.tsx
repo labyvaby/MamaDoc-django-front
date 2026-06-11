@@ -23,8 +23,10 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { DjangoSale, SaleWriteData, createSale, updateSale } from "../../../api/sales";
-import { getPatients, DjangoPatient } from "../../../api/patients";
-import { ApiError } from "../../../api/client";
+import { searchPatients, DjangoPatient } from "../../../api/patients";
+import { getBranches, DjangoBranch } from "../../../api/organization";
+import { ApiError, isAbortError } from "../../../api/client";
+import { usePermissions } from "../../../hooks/usePermissions";
 
 // CSS to hide spin buttons
 const noSpinnersSx = {
@@ -69,12 +71,18 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     onSaved,
 }) => {
     const { open: notify } = useNotification();
+    const { activeBranch } = usePermissions();
     const isEdit = !!sale;
     const [loading, setLoading] = useState(false);
     const [touched, setTouched] = useState(false);
     const [patients, setPatients] = useState<PatientOption[]>([]);
     const [patientInput, setPatientInput] = useState("");
     const [patientsLoading, setPatientsLoading] = useState(false);
+
+    // Org-wide режим (филиал не выбран): продажа требует явного филиала.
+    const showBranchSelect = !isEdit && !activeBranch;
+    const [branches, setBranches] = useState<DjangoBranch[]>([]);
+    const [selectedBranch, setSelectedBranch] = useState<DjangoBranch | null>(null);
 
     // Form State
     const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
@@ -94,21 +102,48 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     const isDirty = touched || !!selectedPatient || productLines.some((l) => l.productId) || !!cash || !!card || !!comment;
     const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({ isDirty: isDirty && !isEdit, isOpen: open, onClose });
 
-    // Пациенты организации (для автокомплита)
+    // Серверный поиск пациентов (debounce + отмена) — всю базу на клиент
+    // не тянем; пустой запрос отдаёт первые 10 для подсказки.
     useEffect(() => {
         if (!open) return;
-        setPatientsLoading(true);
-        getPatients()
-            .then((rows: DjangoPatient[]) => {
+        const query = patientInput.trim();
+        if (query.length === 1) return; // ждём минимум 2 символа
+
+        const controller = new AbortController();
+        const timer = setTimeout(async () => {
+            try {
+                setPatientsLoading(true);
+                const rows: DjangoPatient[] = await searchPatients(
+                    query.length >= 2 ? query : "",
+                    10,
+                    controller.signal,
+                );
                 setPatients(rows.map((p) => ({
                     id: p.id,
                     fullName: p.fullName || "Без имени",
                     phone: p.phone,
                 })));
-            })
-            .catch((e) => console.error("Failed to load patients", e))
-            .finally(() => setPatientsLoading(false));
-    }, [open]);
+            } catch (e) {
+                if (isAbortError(e)) return;
+                console.error("Failed to search patients", e);
+            } finally {
+                if (!controller.signal.aborted) setPatientsLoading(false);
+            }
+        }, query ? 350 : 0);
+
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
+    }, [open, patientInput]);
+
+    // Филиалы — только когда нужен явный выбор (org-wide создание).
+    useEffect(() => {
+        if (!open || !showBranchSelect) return;
+        getBranches()
+            .then((rows) => setBranches(rows.filter((b) => b.isActive)))
+            .catch((e) => console.error("Failed to load branches", e));
+    }, [open, showBranchSelect]);
 
     // Reset / prefill on open
     useEffect(() => {
@@ -136,6 +171,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 setDiscountPercent(0);
                 setComment("");
             }
+            setSelectedBranch(null);
             setTouched(false);
         }
     }, [open, sale]);
@@ -151,8 +187,10 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
         }, 0);
     }, [productLines, availableProducts]);
 
-    const discountAmount = Math.round((baseTotal * discountPercent) / 100);
-    const finalTotal = Math.max(0, baseTotal - discountAmount);
+    // Округление до копеек — так же считает бэкенд (quantize 0.01),
+    // иначе статус «Оплачено/Частично» может разойтись с показанным итогом.
+    const discountAmount = Math.round(baseTotal * discountPercent) / 100;
+    const finalTotal = Math.max(0, Math.round((baseTotal - discountAmount) * 100) / 100);
 
     const paidCash = Number(cash || 0);
     const paidCard = Number(card || 0);
@@ -165,21 +203,22 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
         setTouched(true);
         const validLines = productLines.filter((line) => line.productId && line.quantity && line.quantity > 0);
         if (validLines.length === 0) return;
+        if (showBranchSelect && !selectedBranch) return;
 
         const data: SaleWriteData = {
             patientId: selectedPatient?.id ?? null,
             comment,
-            lines: validLines.map((line) => {
-                const product = availableProducts.find((p) => p.id === line.productId);
-                return {
-                    productId: line.productId as number,
-                    quantity: typeof line.quantity === "number" ? line.quantity : 1,
-                    price: product?.price || 0,
-                };
-            }),
+            // Цены не отправляем — бэкенд берёт их из прайс-листа товара.
+            lines: validLines.map((line) => ({
+                productId: line.productId as number,
+                quantity: typeof line.quantity === "number" ? line.quantity : 1,
+            })),
             discountPercent,
             paidCash,
             paidCard,
+            ...(showBranchSelect && selectedBranch
+                ? { branchId: selectedBranch.id }
+                : {}),
         };
 
         try {
@@ -230,6 +269,31 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 }}
             >
 
+                {/* Филиал (только в org-wide режиме) */}
+                {showBranchSelect && (
+                    <Stack spacing={0.5}>
+                        <Typography variant="body2" color={touched && !selectedBranch ? "error" : "text.secondary"} sx={{ fontWeight: 600 }}>
+                            Филиал продажи *
+                        </Typography>
+                        <Autocomplete<DjangoBranch, false, false, false>
+                            options={branches}
+                            getOptionLabel={(b) => b.name}
+                            value={selectedBranch}
+                            onChange={(_, v) => setSelectedBranch(v)}
+                            isOptionEqualToValue={(o, v) => o.id === v.id}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    placeholder="Выберите филиал..."
+                                    error={touched && !selectedBranch}
+                                    helperText={touched && !selectedBranch ? "Обязательное поле" : ""}
+                                />
+                            )}
+                            noOptionsText="Нет филиалов"
+                        />
+                    </Stack>
+                )}
+
                 {/* Patient */}
                 <Stack spacing={0.5}>
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -242,14 +306,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                         onChange={(_, newValue) => setSelectedPatient(newValue)}
                         inputValue={patientInput}
                         onInputChange={(_, val) => setPatientInput(val)}
-                        filterOptions={(options, state) => {
-                            const q = state.inputValue.trim().toLowerCase();
-                            if (!q) return options.slice(0, 10);
-                            return options.filter((o) =>
-                                o.fullName.toLowerCase().includes(q) ||
-                                (o.phone || "").includes(q),
-                            );
-                        }}
+                        filterOptions={(x) => x}
                         loading={patientsLoading}
                         isOptionEqualToValue={(o, v) => o.id === v.id}
                         noOptionsText={patientInput.length < 2 ? "Введите имя или телефон" : "Не найдено"}
@@ -648,7 +705,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                     fullWidth
                     size="large"
                     onClick={handleSubmit}
-                    disabled={!hasValidProduct || loading}
+                    disabled={!hasValidProduct || loading || (showBranchSelect && !selectedBranch)}
                 >
                     {loading ? "Сохранение..." : isEdit ? "Сохранить изменения" : "Оформить продажу"}
                 </Button>

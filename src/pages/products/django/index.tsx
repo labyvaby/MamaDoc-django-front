@@ -29,8 +29,9 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
+import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { ApiError } from "../../../api/client";
+import { ApiError, isAbortError } from "../../../api/client";
 import {
   getProducts,
   deleteProduct,
@@ -45,9 +46,11 @@ const DjangoProductsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { loading: permLoading } = usePermissions();
+  const { loading: permLoading, activeBranch } = usePermissions();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
   const canManage = useCan("warehouse.manage");
+  // Остаток привязан к складу филиала — в org-wide режиме поле недоступно.
+  const stockEditable = !!activeBranch;
 
   // Drawers
   const [formDrawerOpen, setFormDrawerOpen] = React.useState(false);
@@ -69,20 +72,25 @@ const DjangoProductsPage: React.FC = () => {
   // Selection state (Desktop & Mobile)
   const [selectedProduct, setSelectedProduct] = React.useState<DjangoProduct | null>(null);
 
+  const productsAbortRef = React.useRef<AbortController | null>(null);
   const fetchProducts = React.useCallback(async () => {
+    productsAbortRef.current?.abort();
+    const controller = new AbortController();
+    productsAbortRef.current = controller;
     try {
       setLoading(true);
-      const data = await getProducts();
+      const data = await getProducts(controller.signal);
       setProducts(data);
       // Обновим выбранный товар свежими данными.
       setSelectedProduct((prev) =>
         prev ? data.find((p) => p.id === prev.id) ?? null : null,
       );
     } catch (e) {
+      if (isAbortError(e)) return;
       console.error("Failed to load products:", e);
       notify?.({ type: "error", message: "Не удалось загрузить список товаров" });
     } finally {
-      setLoading(false);
+      if (productsAbortRef.current === controller) setLoading(false);
     }
   }, [notify]);
 
@@ -91,6 +99,13 @@ const DjangoProductsPage: React.FC = () => {
       fetchProducts();
     }
   }, [permLoading, canView, fetchProducts]);
+
+  // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
+  useFocusRefetch(() => {
+    if (!permLoading && canView) {
+      fetchProducts();
+    }
+  });
 
   // Auto-select first product on desktop if none selected
   React.useEffect(() => {
@@ -338,6 +353,7 @@ const DjangoProductsPage: React.FC = () => {
         onClose={() => setFormDrawerOpen(false)}
         product={editingProduct}
         onSaved={fetchProducts}
+        stockEditable={stockEditable}
       />
 
       <ProductFilterDrawer

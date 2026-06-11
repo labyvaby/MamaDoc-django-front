@@ -10,8 +10,9 @@ import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
+import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { ApiError } from "../../../api/client";
+import { ApiError, isAbortError } from "../../../api/client";
 import {
     getWarehouses,
     getStock,
@@ -21,6 +22,7 @@ import {
     getProducts,
     DjangoStockItem,
     DjangoStockMovement,
+    DjangoWarehouse,
 } from "../../../api/warehouse";
 
 // Components
@@ -38,9 +40,10 @@ const DjangoStoragePage: React.FC = () => {
     const { open: notify } = useNotification();
     const canView = useCan("warehouse.view");
     const canManage = useCan("warehouse.manage");
-    const { loading: permLoading } = usePermissions();
+    const { loading: permLoading, activeBranch } = usePermissions();
 
     // State
+    const [warehouses, setWarehouses] = React.useState<DjangoWarehouse[]>([]);
     const [stock, setStock] = React.useState<DjangoStockItem[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -59,19 +62,26 @@ const DjangoStoragePage: React.FC = () => {
     // All Products for Selector
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
 
-    // Fetch Inventory (все видимые склады контекста)
+    // Fetch Inventory (все видимые склады контекста).
+    // Отменяем предыдущий запрос: быстрые повторные вызовы не должны
+    // позволить старому ответу перетереть свежие данные.
+    const inventoryAbortRef = React.useRef<AbortController | null>(null);
     const fetchInventory = React.useCallback(async () => {
+        inventoryAbortRef.current?.abort();
+        const controller = new AbortController();
+        inventoryAbortRef.current = controller;
         try {
             setLoading(true);
-            const data = await getStock();
+            const data = await getStock(undefined, controller.signal);
             setStock(data);
             return data;
         } catch (e) {
+            if (isAbortError(e)) return [];
             console.error(e);
             notify?.({ type: "error", message: "Ошибка загрузки склада" });
             return [];
         } finally {
-            setLoading(false);
+            if (inventoryAbortRef.current === controller) setLoading(false);
         }
     }, [notify]);
 
@@ -80,37 +90,63 @@ const DjangoStoragePage: React.FC = () => {
         try {
             const prods = await getProducts();
             setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
-        } catch (e) { console.error("Failed to load products for selector", e); }
+        } catch (e) {
+            if (isAbortError(e)) return;
+            console.error("Failed to load products for selector", e);
+        }
+    }, []);
+
+    // Видимые склады — для выбора склада при приходе нового товара.
+    const fetchWarehouses = React.useCallback(async () => {
+        try {
+            setWarehouses(await getWarehouses());
+        } catch (e) {
+            if (isAbortError(e)) return;
+            console.error("Failed to load warehouses", e);
+        }
     }, []);
 
     React.useEffect(() => {
         if (!permLoading && canView) {
             fetchInventory();
             fetchProductsForSelector();
+            fetchWarehouses();
         }
-    }, [permLoading, canView, fetchInventory, fetchProductsForSelector]);
+    }, [permLoading, canView, fetchInventory, fetchProductsForSelector, fetchWarehouses]);
+
+    // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
+    useFocusRefetch(() => {
+        if (!permLoading && canView) {
+            fetchInventory();
+            fetchProductsForSelector();
+            fetchWarehouses();
+        }
+    });
 
     // Fetch Movements when Item Selected
     React.useEffect(() => {
         if (selectedItem) {
+            const controller = new AbortController();
             const loadMovements = async () => {
                 try {
                     setLoadingMovements(true);
                     const data = await getStockMovements({
                         productId: selectedItem.productId,
                         warehouseId: selectedItem.warehouseId,
-                    });
+                    }, controller.signal);
                     setMovements(data);
                 } catch (e) {
+                    if (isAbortError(e)) return;
                     console.error(e);
                 } finally {
-                    setLoadingMovements(false);
+                    if (!controller.signal.aborted) setLoadingMovements(false);
                 }
             };
             loadMovements();
-        } else {
-            setMovements([]);
+            return () => controller.abort();
         }
+        setMovements([]);
+        return undefined;
     }, [selectedItem]);
 
     // Auto-select first item on desktop
@@ -151,20 +187,25 @@ const DjangoStoragePage: React.FC = () => {
         selectedProd?: MovementProductOption | null,
         amount?: number,
         paymentMethod?: "cash" | "cashless",
+        warehouseIdFromDrawer?: number,
     ) => {
         const targetProductId = editingMovement?.productId ?? selectedItem?.productId ?? selectedProd?.id ?? undefined;
         const newProductName = !targetProductId && selectedProd?.id === null ? selectedProd.label : undefined;
         if (!targetProductId && !newProductName) return;
 
-        // Ensure we have a warehouse ID. If new item, use the primary warehouse.
-        let warehouseId = editingMovement?.warehouseId || selectedItem?.warehouseId;
-        if (!warehouseId) {
-            const warehouses = await getWarehouses();
-            warehouseId = (warehouses.find((w) => w.isPrimary && !w.isLinked) || warehouses[0])?.id;
-        }
+        // Склад: у существующей позиции — её склад; у нового товара — явный
+        // выбор в дровере (никаких «первых попавшихся» складов организации).
+        const warehouseId = editingMovement?.warehouseId
+            || selectedItem?.warehouseId
+            || warehouseIdFromDrawer;
 
         if (!warehouseId) {
-            notify?.({ type: "error", message: "Сначала создайте склад в разделе «Склад»" });
+            notify?.({
+                type: "error",
+                message: warehouses.length === 0
+                    ? "Сначала создайте склад в разделе «Склад»"
+                    : "Выберите склад",
+            });
             return;
         }
 
@@ -230,6 +271,25 @@ const DjangoStoragePage: React.FC = () => {
         );
     }, [stock, searchQuery]);
 
+    // Опции склада для дровера: подключённые склады помечаем филиалом.
+    const warehouseOptions = React.useMemo(
+        () => warehouses.map((w) => ({
+            id: w.id,
+            label: w.isLinked ? `${w.name} — филиал: ${w.branchName}` : w.name,
+        })),
+        [warehouses],
+    );
+
+    // Дефолт: основной склад активного филиала. В org-wide режиме дефолта
+    // нет — пользователь выбирает склад явно.
+    const defaultWarehouseId = React.useMemo(() => {
+        if (!activeBranch) return null;
+        const primary = warehouses.find((w) => w.isPrimary && !w.isLinked)
+            || warehouses.find((w) => !w.isLinked)
+            || warehouses[0];
+        return primary?.id ?? null;
+    }, [warehouses, activeBranch]);
+
     if (!permLoading && !canView) return <AccessDenied />;
 
     return (
@@ -290,6 +350,8 @@ const DjangoStoragePage: React.FC = () => {
                 onConfirm={handleConfirmMovement}
                 availableProducts={availableProducts}
                 editingMovement={editingMovement}
+                warehouses={warehouseOptions}
+                defaultWarehouseId={defaultWarehouseId}
             />
 
             {/* Mobile Sheet */}

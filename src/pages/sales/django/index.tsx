@@ -25,8 +25,9 @@ import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
+import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { ApiError } from "../../../api/client";
+import { ApiError, isAbortError } from "../../../api/client";
 import {
     getSales,
     getSaleDayTotals,
@@ -105,7 +106,14 @@ const DjangoSalesPage: React.FC = () => {
         return { from: null, to: null };
     }, [selectedDate, selectedMonth, selectedYear]);
 
+    // Отмена предыдущего запроса: при быстрой смене фильтров/поиска старый
+    // ответ не должен перетереть свежие данные.
+    const salesAbortRef = useRef<AbortController | null>(null);
     const fetchSales = useCallback(async (reset = true) => {
+        salesAbortRef.current?.abort();
+        const controller = new AbortController();
+        salesAbortRef.current = controller;
+
         if (reset) {
             setLoading(true);
             offsetRef.current = 0;
@@ -121,7 +129,7 @@ const DjangoSalesPage: React.FC = () => {
                 search: searchQuery || null,
                 limit: PAGE_SIZE + 1,
                 offset: offsetRef.current,
-            });
+            }, controller.signal);
             const page = data.slice(0, PAGE_SIZE);
 
             if (reset) {
@@ -134,11 +142,14 @@ const DjangoSalesPage: React.FC = () => {
             setHasMore(data.length > PAGE_SIZE);
             offsetRef.current += page.length;
         } catch (e) {
+            if (isAbortError(e)) return;
             console.error(e);
             notify?.({ type: "error", message: "Ошибка загрузки продаж" });
         } finally {
-            setLoading(false);
-            setLoadingMore(false);
+            if (salesAbortRef.current === controller) {
+                setLoading(false);
+                setLoadingMore(false);
+            }
         }
     }, [getDateRange, searchQuery, notify]);
 
@@ -205,6 +216,14 @@ const DjangoSalesPage: React.FC = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [permLoading, canView, selectedYear]);
+
+    // Обновление при возврате фокуса — продажи коллег подтянутся без F5.
+    useFocusRefetch(() => {
+        if (!permLoading && canView) {
+            fetchSales(true);
+            fetchDayTotals(selectedYear);
+        }
+    });
 
     // Доступные годы из dayTotals
     const availableYears = React.useMemo(() => {

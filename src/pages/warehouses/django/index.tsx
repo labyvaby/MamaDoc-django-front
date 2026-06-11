@@ -17,8 +17,9 @@ import { PageHeader } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
+import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { ApiError } from "../../../api/client";
+import { ApiError, isAbortError } from "../../../api/client";
 import {
     getWarehouses,
     getStock,
@@ -112,23 +113,30 @@ const DjangoWarehousesPage: React.FC = () => {
         }
     }, [permLoading, canView, loadInitialData]);
 
-    // 2. Fetch Stock when Warehouse changes
+    // 2. Fetch Stock when Warehouse changes.
+    // Отмена предыдущего запроса: при быстром перещёлкивании складов
+    // старый ответ не должен перетереть данные нового склада.
+    const stockAbortRef = React.useRef<AbortController | null>(null);
     const fetchStock = React.useCallback(async () => {
+        stockAbortRef.current?.abort();
         if (!selectedWarehouseId) {
             setStock([]);
             return [];
         }
+        const controller = new AbortController();
+        stockAbortRef.current = controller;
         try {
             setLoadingStock(true);
-            const data = await getStock(selectedWarehouseId);
+            const data = await getStock(selectedWarehouseId, controller.signal);
             setStock(data);
             return data;
         } catch (e) {
+            if (isAbortError(e)) return [];
             console.error(e);
             notify?.({ type: "error", message: "Ошибка загрузки остатков" });
             return [];
         } finally {
-            setLoadingStock(false);
+            if (stockAbortRef.current === controller) setLoadingStock(false);
         }
     }, [selectedWarehouseId, notify]);
 
@@ -136,21 +144,37 @@ const DjangoWarehousesPage: React.FC = () => {
         fetchStock();
     }, [fetchStock]);
 
+    // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
+    useFocusRefetch(() => {
+        if (!permLoading && canView) {
+            loadInitialData();
+            fetchStock();
+        }
+    });
+
     // 3. Fetch Movements when Item Selected (for Details)
     React.useEffect(() => {
         if (selectedItem && isDetailsOpen) {
+            const controller = new AbortController();
             const loadMoves = async () => {
                 try {
                     setLoadingMovements(true);
                     const data = await getStockMovements({
                         productId: selectedItem.productId,
                         warehouseId: selectedItem.warehouseId,
-                    });
+                    }, controller.signal);
                     setMovements(data);
-                } catch (e) { console.error(e); } finally { setLoadingMovements(false); }
+                } catch (e) {
+                    if (isAbortError(e)) return;
+                    console.error(e);
+                } finally {
+                    if (!controller.signal.aborted) setLoadingMovements(false);
+                }
             };
             loadMoves();
+            return () => controller.abort();
         }
+        return undefined;
     }, [selectedItem, isDetailsOpen]);
 
     // Handlers

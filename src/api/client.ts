@@ -116,10 +116,22 @@ export async function apiRequest<T>(
     return undefined as T;
   }
 
+  // Сессия протухла посреди работы: уведомляем приложение глобально,
+  // usePermissions переведёт authStatus в unauthenticated и RequireAuth
+  // уведёт на /login вместо бесконечных «Ошибка загрузки».
+  if (response.status === 401) {
+    window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
+  }
+
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
   }
 
   return payload as T;
+}
+
+/** true для отменённых запросов (AbortController) — такие ошибки не показываем. */
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
 }

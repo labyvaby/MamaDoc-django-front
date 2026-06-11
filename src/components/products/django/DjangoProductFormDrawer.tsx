@@ -81,6 +81,11 @@ type DjangoProductFormDrawerProps = {
     /** null → создание нового товара. */
     product: DjangoProduct | null;
     onSaved?: () => void;
+    /**
+     * Остаток можно задавать только при выбранном филиале (иначе бэкенд
+     * не знает, в склад какого филиала оформить приход/корректировку).
+     */
+    stockEditable?: boolean;
 };
 
 export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = ({
@@ -88,6 +93,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     onClose,
     product,
     onSaved,
+    stockEditable = true,
 }) => {
     const { open: notify } = useNotification();
     const isEdit = !!product;
@@ -156,13 +162,14 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
             if (isEdit && product) {
                 saved = await updateProduct(product.id, {
                     ...common,
-                    // Остаток сверяется с текущим через корректировку.
-                    stock: Number(values.stock) || 0,
+                    // Остаток сверяется с текущим через корректировку —
+                    // только в контексте филиала.
+                    ...(stockEditable ? { stock: Number(values.stock) || 0 } : {}),
                 });
             } else {
                 saved = await createProduct({
                     ...common,
-                    initialStock: Number(values.stock) || 0,
+                    ...(stockEditable ? { initialStock: Number(values.stock) || 0 } : {}),
                 });
             }
 
@@ -386,6 +393,8 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                         setValues((s) => ({ ...s, stock: Number(e.target.value) || 0 }))
                                     }
                                     fullWidth
+                                    disabled={!stockEditable}
+                                    helperText={!stockEditable ? "Доступно при выбранном филиале" : ""}
                                     InputProps={{
                                         endAdornment: <Typography variant="caption" color="text.secondary">{values.unit || "шт"}</Typography>,
                                     }}

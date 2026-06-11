@@ -45,7 +45,8 @@ export type SaleDayTotal = {
 export type SaleLineInput = {
     productId: number;
     quantity: number;
-    price: number;
+    // Цена НЕ отправляется: бэкенд берёт её из прайс-листа товара
+    // (а при правке — из снимка существующей строки).
 };
 
 export type SaleWriteData = {
@@ -55,6 +56,8 @@ export type SaleWriteData = {
     paidCash?: number;
     paidCard?: number;
     comment?: string;
+    /** Обязателен в org-wide режиме (филиал не выбран в свитчере). */
+    branchId?: number;
 };
 
 // ── Raw payloads (decimal-safe strings from the backend) ─────────────────────
