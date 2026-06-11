@@ -3,8 +3,8 @@ export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type CashboxMethod = "cash" | "card" | "balance";
-export type CashboxEntryType = "payment" | "refund" | "expense";
+export type CashboxMethod = "cash" | "card" | "balance" | "mixed";
+export type CashboxEntryType = "payment" | "refund" | "expense" | "sale" | "supply";
 
 export interface CashboxFilters {
   date?: string;
@@ -39,8 +39,19 @@ export interface CashboxSummary {
   cashExpenses: string;
   cardExpenses: string;
   totalExpenses: string;
+  /** netIncome + salesTotal − totalExpenses − supplyTotal */
   netCashFlow: string;
   expenseCount: number;
+  // Продажи товаров (приход кассы)
+  salesCashIncome: string;
+  salesCardIncome: string;
+  salesTotal: string;
+  saleCount: number;
+  // Закупки — приходы товара с суммой (расход кассы)
+  supplyCashExpenses: string;
+  supplyCardExpenses: string;
+  supplyTotal: string;
+  supplyCount: number;
 }
 
 export interface CashboxEntry {

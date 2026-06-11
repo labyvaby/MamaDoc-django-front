@@ -125,6 +125,52 @@ const CashboxSummaryPanel: React.FC<Props> = ({ summary, isLoading, isFetching }
           loading={isLoading}
         />
 
+        {/* Продажи товаров (приход) */}
+        {(isLoading || parseFloat(summary?.salesTotal ?? "0") > 0) && (
+          <>
+            <Divider sx={{ my: 0.5 }} />
+            <Typography variant="caption" color="text.disabled" fontWeight={600} textTransform="uppercase">
+              Продажи товаров
+            </Typography>
+            <SummaryRow
+              label="Всего продаж"
+              value={fmt(summary?.salesTotal)}
+              color="success.main"
+              bold
+              loading={isLoading}
+            />
+            {(isLoading || parseFloat(summary?.salesCashIncome ?? "0") > 0) && (
+              <SummaryRow label="  ↳ наличными" value={fmt(summary?.salesCashIncome)} color="text.secondary" loading={isLoading} />
+            )}
+            {(isLoading || parseFloat(summary?.salesCardIncome ?? "0") > 0) && (
+              <SummaryRow label="  ↳ картой" value={fmt(summary?.salesCardIncome)} color="text.secondary" loading={isLoading} />
+            )}
+          </>
+        )}
+
+        {/* Закупки товара (расход) */}
+        {(isLoading || parseFloat(summary?.supplyTotal ?? "0") > 0) && (
+          <>
+            <Divider sx={{ my: 0.5 }} />
+            <Typography variant="caption" color="text.disabled" fontWeight={600} textTransform="uppercase">
+              Закупки товара
+            </Typography>
+            <SummaryRow
+              label="Всего закупок"
+              value={`− ${fmt(summary?.supplyTotal)}`}
+              color="error.main"
+              bold
+              loading={isLoading}
+            />
+            {(isLoading || parseFloat(summary?.supplyCashExpenses ?? "0") > 0) && (
+              <SummaryRow label="  ↳ наличными" value={fmt(summary?.supplyCashExpenses)} color="text.secondary" loading={isLoading} />
+            )}
+            {(isLoading || parseFloat(summary?.supplyCardExpenses ?? "0") > 0) && (
+              <SummaryRow label="  ↳ картой" value={fmt(summary?.supplyCardExpenses)} color="text.secondary" loading={isLoading} />
+            )}
+          </>
+        )}
+
         {/* Expenses section */}
         {(isLoading || parseFloat(summary?.totalExpenses ?? "0") > 0) && (
           <>

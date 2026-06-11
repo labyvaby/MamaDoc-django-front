@@ -60,8 +60,13 @@ const DjangoCashboxPage: React.FC = () => {
   if (!permLoading && !canView) return <AccessDenied />;
 
   const s = summaryQuery.data;
+  // Наличные в ящике: приёмы + продажи товаров − возвраты − расходы − закупки.
   const cashBalance = s
-    ? parseFloat(s.cashIncome) - parseFloat(s.cashRefunds) - parseFloat(s.cashExpenses)
+    ? parseFloat(s.cashIncome)
+      + parseFloat(s.salesCashIncome ?? "0")
+      - parseFloat(s.cashRefunds)
+      - parseFloat(s.cashExpenses)
+      - parseFloat(s.supplyCashExpenses ?? "0")
     : null;
 
   return (
