@@ -4,6 +4,7 @@ import { getPatients, type DjangoPatient } from "../api/patients";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../api/staff";
 import { getServices, type Service as CatalogService } from "../api/catalog";
 import {
+  getServiceAssignments,
   getServiceProviders,
   type ServiceProvider,
 } from "../api/appointments";
@@ -26,13 +27,13 @@ export interface UseDjangoAppointmentDataResult {
   patients: DjangoPatient[];
   employees: DjangoEmployeeWithServices[];
   services: DjangoCatalogServiceWithEmployees[];
-  /** Always empty — service-providers are fetched per-serviceId via useServiceProvidersForService. */
+  /** Unused — kept for backward compat; the matrix comes via service-assignments. */
   serviceProviders: ServiceProvider[];
   loading: boolean;
   error: string | null;
-  /** Returns all employees (no per-service filter without providers data). */
+  /** Employees who provide the service (all employees when serviceId is null). */
   getEmployeesForService(serviceId: number | null): DjangoEmployeeWithServices[];
-  /** Returns all services (no per-employee filter without providers data). */
+  /** Services the employee provides (all services when employeeId is null). */
   getServicesForEmployee(employeeId: number | null): DjangoCatalogServiceWithEmployees[];
   canEmployeeProvideService(employeeId: number | null, serviceId: number | null): boolean;
 }
@@ -40,9 +41,9 @@ export interface UseDjangoAppointmentDataResult {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 /**
- * Loads patients, employees, and services for the appointment form.
- * ``branchId`` filters services to those available in the specified branch.
- * Does NOT call service-providers (requires serviceId param — see useServiceProvidersForService).
+ * Loads patients, employees, services, and the service↔employee assignment
+ * matrix for the appointment form. ``branchId`` narrows services and the
+ * matrix to the specified branch (matching appointment save-time validation).
  */
 export function useDjangoAppointmentData(
   enabled: boolean,
@@ -55,12 +56,13 @@ export function useDjangoAppointmentData(
   const dataQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.formData(ctx),
     queryFn: async ({ signal }) => {
-      const [rawPatients, rawEmployees, rawServices] = await Promise.all([
+      const [rawPatients, rawEmployees, rawServices, rawAssignments] = await Promise.all([
         getPatients(signal),
         getDjangoEmployees({ branchId: branchId ?? undefined }, signal),
         getServices(branchId ?? null, signal),
+        getServiceAssignments(branchId ?? undefined, signal),
       ]);
-      return { rawPatients, rawEmployees, rawServices };
+      return { rawPatients, rawEmployees, rawServices, rawAssignments };
     },
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
@@ -69,38 +71,73 @@ export function useDjangoAppointmentData(
 
   const patients = dataQuery.data?.rawPatients ?? [];
 
-  const { employees, services } = React.useMemo(() => {
+  const { employees, services, empByService, svcByEmployee } = React.useMemo(() => {
     const rawEmployees = dataQuery.data?.rawEmployees?.results ?? [];
     const rawServices = dataQuery.data?.rawServices ?? [];
+    const pairs = dataQuery.data?.rawAssignments ?? [];
+
+    // Build both directions of the service↔employee matrix once.
+    const empByService = new Map<number, Set<number>>();
+    const svcByEmployee = new Map<number, Set<number>>();
+    for (const { serviceId, employeeId } of pairs) {
+      let emps = empByService.get(serviceId);
+      if (!emps) empByService.set(serviceId, (emps = new Set<number>()));
+      emps.add(employeeId);
+      let svcs = svcByEmployee.get(employeeId);
+      if (!svcs) svcByEmployee.set(employeeId, (svcs = new Set<number>()));
+      svcs.add(serviceId);
+    }
 
     const enrichedEmployees: DjangoEmployeeWithServices[] = rawEmployees.map((emp) => ({
       ...emp,
-      assignedServiceIds: new Set<number>(),
+      assignedServiceIds: svcByEmployee.get(emp.id) ?? new Set<number>(),
     }));
 
     const enrichedServices: DjangoCatalogServiceWithEmployees[] = rawServices
       .filter((s) => s.isActive)
       .map((s) => ({
         ...s,
-        assignedEmployeeIds: [],
+        assignedEmployeeIds: [...(empByService.get(s.id) ?? [])],
       }));
 
-    return { employees: enrichedEmployees, services: enrichedServices };
-  }, [dataQuery.data?.rawEmployees, dataQuery.data?.rawServices]);
+    return {
+      employees: enrichedEmployees,
+      services: enrichedServices,
+      empByService,
+      svcByEmployee,
+    };
+  }, [
+    dataQuery.data?.rawEmployees,
+    dataQuery.data?.rawServices,
+    dataQuery.data?.rawAssignments,
+  ]);
 
   const getEmployeesForService = React.useCallback(
-    (_serviceId: number | null): DjangoEmployeeWithServices[] => employees,
-    [employees],
+    (serviceId: number | null): DjangoEmployeeWithServices[] => {
+      if (serviceId === null) return employees;
+      const allowed = empByService.get(serviceId);
+      if (!allowed) return [];
+      return employees.filter((e) => allowed.has(e.id));
+    },
+    [employees, empByService],
   );
 
   const getServicesForEmployee = React.useCallback(
-    (_employeeId: number | null): DjangoCatalogServiceWithEmployees[] => services,
-    [services],
+    (employeeId: number | null): DjangoCatalogServiceWithEmployees[] => {
+      if (employeeId === null) return services;
+      const allowed = svcByEmployee.get(employeeId);
+      if (!allowed) return [];
+      return services.filter((s) => allowed.has(s.id));
+    },
+    [services, svcByEmployee],
   );
 
   const canEmployeeProvideService = React.useCallback(
-    (_employeeId: number | null, _serviceId: number | null): boolean => true,
-    [],
+    (employeeId: number | null, serviceId: number | null): boolean => {
+      if (employeeId === null || serviceId === null) return true;
+      return svcByEmployee.get(employeeId)?.has(serviceId) ?? false;
+    },
+    [svcByEmployee],
   );
 
   return {

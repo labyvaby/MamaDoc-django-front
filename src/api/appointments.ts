@@ -360,6 +360,33 @@ export function getServiceProviders(params?: {
   ).then((items) => (Array.isArray(items) ? items : []));
 }
 
+// ── Service-assignments (bulk service↔employee matrix) ───────────────────────
+
+/** One active service↔employee pair from GET /api/appointments/service-assignments/. */
+export interface ServiceAssignment {
+  serviceId: number;
+  employeeId: number;
+}
+
+/**
+ * GET /api/appointments/service-assignments/
+ * Bulk matrix of active service↔employee pairs powering the appointment-form
+ * filter (service→doctors and doctor→services). ``branchId`` narrows to pairs
+ * usable in that branch, matching appointment save-time validation.
+ */
+export function getServiceAssignments(
+  branchId?: number,
+  signal?: AbortSignal,
+): Promise<ServiceAssignment[]> {
+  const query = new URLSearchParams();
+  if (branchId != null) query.set("branchId", String(branchId));
+  const qs = query.toString();
+  return apiRequest<ServiceAssignment[]>(
+    `/appointments/service-assignments/${qs ? `?${qs}` : ""}`,
+    { signal },
+  ).then((list) => (Array.isArray(list) ? list : []));
+}
+
 // ── Day counts ────────────────────────────────────────────────────────────────
 
 /**
