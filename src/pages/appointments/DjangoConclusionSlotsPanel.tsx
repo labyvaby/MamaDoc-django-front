@@ -141,6 +141,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
               <SlotRow
                 key={slot.serviceLineId}
                 slot={slot}
+                appointmentId={appointmentId}
                 onOpen={() => setDrawerSlot(slot)}
               />
             ))}
@@ -170,8 +171,9 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
 
 const SlotRow: React.FC<{
   slot: ConclusionSlot;
+  appointmentId: number;
   onOpen: () => void;
-}> = ({ slot, onOpen }) => {
+}> = ({ slot, appointmentId, onOpen }) => {
   const hasConclusion = slot.conclusion !== null;
   const showCreate = slot.canEdit && slot.state === "not_created";
   const showEdit = slot.canEdit && slot.state !== "not_created";
@@ -247,19 +249,41 @@ const SlotRow: React.FC<{
           </Button>
         )}
         {slot.canPrint && hasConclusion && (
-          <Tooltip title="PDF-печать будет доступна в следующей версии">
-            <span>
+          <>
+            <Tooltip title="Печать заключения (PDF)">
               <Button
                 size="small"
                 variant="text"
                 startIcon={<PrintOutlined />}
-                disabled
+                onClick={() =>
+                  window.open(
+                    `/print/conclusion/${appointmentId}?lineId=${slot.serviceLineId}`,
+                    "_blank",
+                    "noopener",
+                  )
+                }
                 sx={{ whiteSpace: "nowrap" }}
               >
                 Печать
               </Button>
-            </span>
-          </Tooltip>
+            </Tooltip>
+            <Tooltip title="Печать справки (PDF)">
+              <Button
+                size="small"
+                variant="text"
+                onClick={() =>
+                  window.open(
+                    `/print/certificate/${appointmentId}?lineId=${slot.serviceLineId}`,
+                    "_blank",
+                    "noopener",
+                  )
+                }
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Справка
+              </Button>
+            </Tooltip>
+          </>
         )}
       </Stack>
     </Stack>

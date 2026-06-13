@@ -4,6 +4,8 @@ import { supabase } from "../../utility/supabaseClient";
 import { Box, CircularProgress, Typography } from "@mui/material";
 import dayjs from "dayjs";
 import { generateConclusionPDF } from "../../utility/pdfGenerator";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
+import { loadDjangoPrintData } from "./djangoPrintData";
 
 type PrintData = {
     patientFio: string;
@@ -43,6 +45,39 @@ export const ConclusionPrintPage: React.FC = () => {
         try {
             setDataLoading(true);
             setError(null);
+
+            if (IS_DJANGO_BACKEND) {
+                const lineIdRaw = new URLSearchParams(window.location.search).get("lineId");
+                const d = await loadDjangoPrintData(
+                    Number(appointmentId),
+                    lineIdRaw ? Number(lineIdRaw) : null,
+                );
+                const c = d.conclusion;
+                const diag = c?.diagnosisData ?? [];
+                const diagnosisStr = diag.length > 0
+                    ? diag
+                        .map((x) => (x.diagnosisCode ? `${x.diagnosisCode} - ${x.title ?? ""}` : x.title ?? ""))
+                        .join("; ")
+                    : "—";
+                setData({
+                    patientFio: d.patientFio,
+                    patientDob: d.patientDob,
+                    appointmentDate: d.appt.scheduledAt
+                        ? dayjs(d.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
+                        : "—",
+                    weight: c?.weightKg ?? "—",
+                    height: c?.heightCm ?? "—",
+                    temperature: c?.temperature ?? "—",
+                    complaints: d.appt.complaints ?? "—",
+                    doctorComplaints: c?.complaints ?? d.appt.doctorComplaints ?? "—",
+                    diagnosis: diagnosisStr,
+                    anamnesis: c?.anamnesis ?? "",
+                    objective: c?.objective ?? "",
+                    recommendations: c?.conclusion ?? "—",
+                    doctorFio: d.doctorFio,
+                });
+                return;
+            }
 
             const urlParams = new URLSearchParams(window.location.search);
             const doctorId = urlParams.get("doctorId");

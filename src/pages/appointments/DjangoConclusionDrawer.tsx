@@ -477,11 +477,36 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             </Stack>
           )}
 
-          {/* ── print placeholder ── */}
+          {/* ── print ── */}
           {canPrint && conclusion && (
-            <Alert severity="info" icon={false}>
-              PDF-печать будет доступна в следующей версии.
-            </Alert>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() =>
+                  window.open(
+                    `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+                    "_blank",
+                    "noopener",
+                  )
+                }
+              >
+                Печать заключения
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() =>
+                  window.open(
+                    `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+                    "_blank",
+                    "noopener",
+                  )
+                }
+              >
+                Справка
+              </Button>
+            </Stack>
           )}
         </Stack>
       </Box>

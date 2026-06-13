@@ -4,6 +4,8 @@ import { supabase } from "../../utility/supabaseClient";
 import { Box, CircularProgress, Typography } from "@mui/material";
 import dayjs from "dayjs";
 import { generateCertificatePDF } from "../../utility/pdfGenerator";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
+import { loadDjangoPrintData } from "./djangoPrintData";
 
 export const CertificatePrintPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -20,6 +22,23 @@ export const CertificatePrintPage: React.FC = () => {
         try {
             setDataLoading(true);
             setError(null);
+
+            if (IS_DJANGO_BACKEND) {
+                const lineIdRaw = new URLSearchParams(window.location.search).get("lineId");
+                const d = await loadDjangoPrintData(
+                    Number(appointmentId),
+                    lineIdRaw ? Number(lineIdRaw) : null,
+                );
+                const blob = await generateCertificatePDF({
+                    patientFio: d.patientFio,
+                    patientDob: d.patientDob,
+                    conclusion: d.conclusion?.conclusion ?? "",
+                    doctorFio: d.doctorFio,
+                    issueDate: dayjs().format("DD.MM.YYYY"),
+                });
+                setPdfUrl(URL.createObjectURL(blob));
+                return;
+            }
 
             // 1. Fetch Appointment & Patient Data
             const { data: aptData, error: aptError } = await supabase
