@@ -78,6 +78,7 @@ const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPa
 const CashboxPage = lazy(() => import("./pages/cashbox"));
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
+const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
@@ -707,13 +708,21 @@ function App() {
                         <Route
                           path="salary-reports"
                           element={
-                            <LegacyRouteGuard title="Отчет по ЗП в разработке">
-                              <ProtectedRoute deniedRoles={[]}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="payroll.view">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <SalaryReportsPage />
+                                  <DjangoSalaryReportsPage />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard title="Отчет по ЗП в разработке">
+                                <ProtectedRoute deniedRoles={[]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SalaryReportsPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route

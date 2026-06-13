@@ -522,7 +522,7 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Отчет по ЗП */}
-        {show("management") && (
+        {show("management") && (IS_DJANGO_BACKEND ? (isSuper || can('payroll.view')) : true) && (
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
 
