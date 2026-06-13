@@ -615,13 +615,21 @@ function App() {
                         <Route
                           path="doctor"
                           element={
-                            <LegacyRouteGuard title="Кабинет врача в разработке">
-                              <ProtectedRoute allowedRoles={['doctor']}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="appointments.view">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <DoctorWorkPage />
+                                  <AppointmentsPage scope="me" />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard title="Кабинет врача в разработке">
+                                <ProtectedRoute allowedRoles={['doctor']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DoctorWorkPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route

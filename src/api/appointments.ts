@@ -318,8 +318,8 @@ export function getAppointments(params?: {
   search?: string;
   /** Filter by branch id. */
   branchId?: number;
-  /** Filter by employee id. */
-  employeeId?: number;
+  /** Filter by employee id, or "me" for the signed-in doctor's own appointments. */
+  employeeId?: number | "me";
   /** Filter by patient id. */
   patientId?: number;
 }, signal?: AbortSignal): Promise<DjangoAppointment[]> {
@@ -370,11 +370,13 @@ export function getDayCounts(params: {
   dateFrom: string;
   dateTo: string;
   branchId?: number;
+  employeeId?: number | "me";
 }, signal?: AbortSignal): Promise<Record<string, number>> {
   const query = new URLSearchParams();
   query.set("dateFrom", params.dateFrom);
   query.set("dateTo", params.dateTo);
   if (params.branchId) query.set("branchId", String(params.branchId));
+  if (params.employeeId) query.set("employeeId", String(params.employeeId));
   return apiRequest<Record<string, number>>(
     `/appointments/day-counts/?${query.toString()}`,
     { signal },

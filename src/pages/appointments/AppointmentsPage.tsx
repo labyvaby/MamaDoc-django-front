@@ -58,6 +58,7 @@ function useAppointments(params: {
   date: Dayjs | null;
   search: string;
   branchId?: number;
+  employeeId?: number | "me";
 }) {
   const queryClient = useQueryClient();
   const queryParams = React.useMemo(
@@ -65,8 +66,9 @@ function useAppointments(params: {
       date: params.date?.format("YYYY-MM-DD") ?? undefined,
       search: params.search || undefined,
       branchId: params.branchId,
+      employeeId: params.employeeId,
     }),
-    [params.date, params.search, params.branchId],
+    [params.date, params.search, params.branchId, params.employeeId],
   );
   const queryKey = djangoQueryKeys.appointments.list(queryParams);
   const query = useQuery({
@@ -95,7 +97,7 @@ function useAppointments(params: {
   };
 }
 
-function useDayCounts(date: Dayjs | null, branchId?: number) {
+function useDayCounts(date: Dayjs | null, branchId?: number, employeeId?: number | "me") {
   const monthKey = (date ?? dayjs()).format("YYYY-MM");
   const params = React.useMemo(() => {
     const base = dayjs(`${monthKey}-01`);
@@ -103,8 +105,9 @@ function useDayCounts(date: Dayjs | null, branchId?: number) {
       dateFrom: base.startOf("month").format("YYYY-MM-DD"),
       dateTo: base.endOf("month").format("YYYY-MM-DD"),
       branchId,
+      employeeId,
     };
-  }, [monthKey, branchId]);
+  }, [monthKey, branchId, employeeId]);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.appointments.dayCounts(params),
@@ -118,8 +121,14 @@ function useDayCounts(date: Dayjs | null, branchId?: number) {
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
-const AppointmentsPage: React.FC = () => {
-  usePageTitle("Регистратура");
+type AppointmentsPageProps = {
+  /** "me" → кабинет врача: только свои приёмы, без создания. */
+  scope?: "me";
+};
+
+const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
+  const isDoctorCabinet = scope === "me";
+  usePageTitle(isDoctorCabinet ? "Кабинет врача" : "Регистратура");
   const { can } = useCanChecker();
   const { activeBranch, isSuperAdmin } = usePermissions();
   const { open: notify } = useNotification();
@@ -138,7 +147,8 @@ const AppointmentsPage: React.FC = () => {
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
 
-  const canCreate = can("appointments.create");
+  // В кабинете врача создание приёмов скрыто — это рабочий список своих приёмов.
+  const canCreate = !isDoctorCabinet && can("appointments.create");
   const canUpdate = can("appointments.update");
   const canDelete = isSuperAdmin() || can("appointments.delete");
   const canViewFinance = can("finance.view");
@@ -162,9 +172,10 @@ const AppointmentsPage: React.FC = () => {
     date,
     search,
     branchId,
+    employeeId: isDoctorCabinet ? "me" : undefined,
   });
 
-  const dayCounts = useDayCounts(date, branchId);
+  const dayCounts = useDayCounts(date, branchId, isDoctorCabinet ? "me" : undefined);
 
   // Keep selectedAppt in sync with fresh list data
   React.useEffect(() => {
@@ -286,7 +297,7 @@ const AppointmentsPage: React.FC = () => {
         {/* ── Top controls: like the original Регистратура ──
             «Добавить прием» (large, left) + horizontal date pills. */}
         <PageHeader
-          title="Регистратура"
+          title={isDoctorCabinet ? "Кабинет врача" : "Регистратура"}
           showTitle={false}
           addButtonText="Добавить прием"
           onAdd={canCreate ? () => setCreateOpen(true) : undefined}
