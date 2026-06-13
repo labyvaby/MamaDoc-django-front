@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -59,6 +60,7 @@ function useAppointments(params: {
   search: string;
   branchId?: number;
   employeeId?: number | "me";
+  nightOnly?: boolean;
 }) {
   const queryClient = useQueryClient();
   const queryParams = React.useMemo(
@@ -67,8 +69,9 @@ function useAppointments(params: {
       search: params.search || undefined,
       branchId: params.branchId,
       employeeId: params.employeeId,
+      nightOnly: params.nightOnly || undefined,
     }),
-    [params.date, params.search, params.branchId, params.employeeId],
+    [params.date, params.search, params.branchId, params.employeeId, params.nightOnly],
   );
   const queryKey = djangoQueryKeys.appointments.list(queryParams);
   const query = useQuery({
@@ -137,6 +140,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const [search, setSearch] = React.useState("");
+  const [nightOnly, setNightOnly] = React.useState(false);
 
   // DateNavigation (shared with the original Регистратура) works in string dates
   const dateStr = date.format("YYYY-MM-DD");
@@ -173,6 +177,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     search,
     branchId,
     employeeId: isDoctorCabinet ? "me" : undefined,
+    nightOnly,
   });
 
   const dayCounts = useDayCounts(date, branchId, isDoctorCabinet ? "me" : undefined);
@@ -306,13 +311,22 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           }
           loading={loading}
           actions={
-            <Tooltip title="Обновить">
-              <span>
-                <IconButton size="small" onClick={() => { void refresh(); }}>
-                  <RefreshOutlined fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip
+                label="Только ночные"
+                size="small"
+                color={nightOnly ? "primary" : "default"}
+                variant={nightOnly ? "filled" : "outlined"}
+                onClick={() => setNightOnly((v) => !v)}
+              />
+              <Tooltip title="Обновить">
+                <span>
+                  <IconButton size="small" onClick={() => { void refresh(); }}>
+                    <RefreshOutlined fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Stack>
           }
         />
 

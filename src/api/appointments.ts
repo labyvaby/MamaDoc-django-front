@@ -322,6 +322,8 @@ export function getAppointments(params?: {
   employeeId?: number | "me";
   /** Filter by patient id. */
   patientId?: number;
+  /** When true, only night appointments (?nightOnly=true). */
+  nightOnly?: boolean;
 }, signal?: AbortSignal): Promise<DjangoAppointment[]> {
   const query = new URLSearchParams();
   if (params?.date) query.set("date", params.date);
@@ -333,6 +335,7 @@ export function getAppointments(params?: {
   if (params?.branchId) query.set("branchId", String(params.branchId));
   if (params?.employeeId) query.set("employeeId", String(params.employeeId));
   if (params?.patientId) query.set("patientId", String(params.patientId));
+  if (params?.nightOnly) query.set("nightOnly", "true");
   const qs = query.toString();
   return apiRequest<RawAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`, { signal }).then(
     (list) => (Array.isArray(list) ? list : []).map(normalizeAppointment),
