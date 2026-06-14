@@ -65,6 +65,14 @@ export const djangoQueryKeys = {
       ["django", "payroll", employeeId, "rules"] as const,
   },
 
+  attendance: {
+    all: ["django", "attendance"] as const,
+    active: ["django", "attendance", "active"] as const,
+    list: (filters: Record<string, unknown>) =>
+      ["django", "attendance", "list", filters] as const,
+    officeIp: ["django", "attendance", "office-ip"] as const,
+  },
+
   organization: {
     branches: ["django", "organization", "branches"] as const,
   },

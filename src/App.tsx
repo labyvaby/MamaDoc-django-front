@@ -69,10 +69,12 @@ const SalesPage = lazy(() => import("./pages/sales"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
 const WorkShiftsPage = lazy(() => import("./pages/work-shifts"));
+const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
 const DoctorWorkPage = lazy(() => import("./pages/doctor"));
 const NursePage = lazy(() => import("./pages/nurse"));
 const SkudSettingsPage = lazy(() => import("./pages/settings/SkudSettingsPage").then(module => ({ default: module.SkudSettingsPage })));
+const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSettingsPage"));
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
 const CashboxPage = lazy(() => import("./pages/cashbox"));
@@ -648,13 +650,21 @@ function App() {
                         <Route
                           path="work-shifts"
                           element={
-                            <LegacyRouteGuard title="СКУД в разработке">
-                              <ProtectedRoute deniedRoles={[]}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="attendance.view">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <WorkShiftsPage />
+                                  <DjangoWorkShiftsPage />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard title="СКУД в разработке">
+                                <ProtectedRoute deniedRoles={[]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <WorkShiftsPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route
@@ -753,13 +763,21 @@ function App() {
                         <Route
                           path="settings/skud"
                           element={
-                            <LegacyRouteGuard redirectTo="/settings">
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="attendance.manage">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <SkudSettingsPage />
+                                  <DjangoSkudSettingsPage />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard redirectTo="/settings">
+                                <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SkudSettingsPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route

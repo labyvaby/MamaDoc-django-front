@@ -57,6 +57,7 @@ import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { useWorkShift } from "../../hooks/useWorkShift";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useSkudActions } from "../../hooks/useSkudActions";
+import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
@@ -464,7 +465,9 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* СКУД */}
-        {show("my-work") && <SidebarSkudItem collapsed={siderCollapsed} />}
+        {show("my-work") && (!IS_DJANGO_BACKEND || isSuper || can('attendance.view')) && (
+          <SidebarSkudItem collapsed={siderCollapsed} />
+        )}
 
         {/* ══════════════════════════════════════════
             ОРГАНИЗАЦИЯ
@@ -694,15 +697,14 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
 };
 
 // Custom SKUD item with quick actions
-const SidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
-  const {
-    currentShift,
-    handleStartShift,
-    handleEndShift,
-    actionLoading,
-    isIpCorrect
-  } = useSkudActions();
-
+const SkudItemView: React.FC<{
+  collapsed?: boolean;
+  hasShift: boolean;
+  isIpCorrect: boolean;
+  actionLoading: boolean;
+  onStart: () => void;
+  onStop: () => void;
+}> = ({ collapsed, hasShift, isIpCorrect, actionLoading, onStart, onStop }) => {
   // If collapsed, show standard item with icon
   if (collapsed) {
     return <SidebarMenuItem to="/work-shifts" icon={<AccessTimeOutlined />} label="СКУД" collapsed={true} />;
@@ -712,20 +714,20 @@ const SidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
   const handlePlay = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    handleStartShift();
+    onStart();
   };
 
   const handleStop = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    handleEndShift();
+    onStop();
   };
 
   const labelContent = (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
       <Typography variant="body2" sx={{ fontWeight: 'medium' }}>СКУД</Typography>
       <Box sx={{ display: 'flex', gap: 0.5, mr: -1 }}>
-        {!currentShift ? (
+        {!hasShift ? (
           <IconButton
             size="small"
             onClick={handlePlay}
@@ -754,6 +756,42 @@ const SidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
 
   return <SidebarMenuItem to="/work-shifts" icon={<AccessTimeOutlined />} label={labelContent} collapsed={false} />;
 };
+
+const LegacySidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
+  const { currentShift, handleStartShift, handleEndShift, actionLoading, isIpCorrect } = useSkudActions();
+  return (
+    <SkudItemView
+      collapsed={collapsed}
+      hasShift={Boolean(currentShift)}
+      isIpCorrect={isIpCorrect}
+      actionLoading={actionLoading}
+      onStart={handleStartShift}
+      onStop={handleEndShift}
+    />
+  );
+};
+
+const DjangoSidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
+  const { currentShift, handleStartShift, handleEndShift, actionLoading, isIpCorrect } =
+    useDjangoSkudActions();
+  return (
+    <SkudItemView
+      collapsed={collapsed}
+      hasShift={Boolean(currentShift)}
+      isIpCorrect={isIpCorrect}
+      actionLoading={actionLoading}
+      onStart={handleStartShift}
+      onStop={handleEndShift}
+    />
+  );
+};
+
+const SidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) =>
+  IS_DJANGO_BACKEND ? (
+    <DjangoSidebarSkudItem collapsed={collapsed} />
+  ) : (
+    <LegacySidebarSkudItem collapsed={collapsed} />
+  );
 
 // Bottom area (copyright / version)
 const SidebarFooter: React.FC = () => {
