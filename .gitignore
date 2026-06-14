@@ -187,3 +187,4 @@ pids/
 .agent/rules/
 .claude/
 .claude/*
+AGENTS.md
