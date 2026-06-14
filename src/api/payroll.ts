@@ -19,6 +19,9 @@ export interface PayrollReport {
   year: number;
   month: number;
   organizationId: number;
+  /** "draft" (live) | "locked" (frozen snapshots). */
+  status: string;
+  lockedAt: string | null;
   totalNet: string;
   rows: PayrollRow[];
 }
@@ -67,6 +70,26 @@ export function getPayrollReport(
   }
   const qs = q.toString();
   return apiRequest<PayrollReport>(`/payroll/report/${qs ? `?${qs}` : ""}`, { signal });
+}
+
+/** POST /api/payroll/periods/lock/ — freeze the month into snapshots. */
+export function lockPeriod(year: number, month: number): Promise<PayrollReport> {
+  return apiRequest<PayrollReport>("/payroll/periods/lock/", {
+    method: "POST",
+    body: { year, month },
+  });
+}
+
+/** POST /api/payroll/periods/recalculate/ — recompute a frozen month. */
+export function recalculatePeriod(
+  year: number,
+  month: number,
+  reason: string,
+): Promise<PayrollReport> {
+  return apiRequest<PayrollReport>("/payroll/periods/recalculate/", {
+    method: "POST",
+    body: { year, month, reason },
+  });
 }
 
 /** GET /api/payroll/employees/<id>/rules/ — the employee's salary rule. */

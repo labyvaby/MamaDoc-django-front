@@ -2,8 +2,14 @@ import React from "react";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Paper,
   Stack,
   Table,
@@ -11,10 +17,12 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { PageHeader, MonthNavigation } from "../../../components/ui";
@@ -22,7 +30,12 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { getPayrollReport, type PayrollRow } from "../../../api/payroll";
+import {
+  getPayrollReport,
+  lockPeriod,
+  recalculatePeriod,
+  type PayrollRow,
+} from "../../../api/payroll";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
 
@@ -140,6 +153,40 @@ const DjangoSalaryReportsPage: React.FC = () => {
     placeholderData: keepPreviousData,
   });
 
+  const canManage = useCan("payroll.manage");
+  const { open: notify } = useNotification();
+  const [busy, setBusy] = React.useState(false);
+  const [recalcOpen, setRecalcOpen] = React.useState(false);
+  const [reason, setReason] = React.useState("");
+
+  const handleLock = async () => {
+    setBusy(true);
+    try {
+      await lockPeriod(year, month);
+      await query.refetch();
+      notify?.({ type: "success", message: "Месяц заморожен" });
+    } catch (e) {
+      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRecalc = async () => {
+    setBusy(true);
+    try {
+      await recalculatePeriod(year, month, reason);
+      await query.refetch();
+      setRecalcOpen(false);
+      setReason("");
+      notify?.({ type: "success", message: "Пересчитано" });
+    } catch (e) {
+      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!permLoading && !canView) return <AccessDenied />;
 
   const report = query.data;
@@ -153,6 +200,33 @@ const DjangoSalaryReportsPage: React.FC = () => {
         showTitle={false}
         showSearch={false}
         dateNavigation={<MonthNavigation date={date} setDate={setDate} />}
+        actions={
+          <Stack direction="row" spacing={1} alignItems="center">
+            {report && (
+              <Chip
+                size="small"
+                label={report.status === "locked" ? "Заморожен" : "Черновик"}
+                color={report.status === "locked" ? "success" : "default"}
+                variant={report.status === "locked" ? "filled" : "outlined"}
+              />
+            )}
+            {canManage && report?.status === "draft" && (
+              <Button size="small" variant="outlined" disabled={busy} onClick={handleLock}>
+                Заморозить
+              </Button>
+            )}
+            {canManage && report?.status === "locked" && (
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={busy}
+                onClick={() => setRecalcOpen(true)}
+              >
+                Пересчитать
+              </Button>
+            )}
+          </Stack>
+        }
       />
 
       {needsOrg ? (
@@ -211,6 +285,36 @@ const DjangoSalaryReportsPage: React.FC = () => {
           )}
         </Box>
       )}
+
+      <Dialog open={recalcOpen} onClose={() => (busy ? undefined : setRecalcOpen(false))}>
+        <DialogTitle>Пересчитать месяц</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Снимки будут пересчитаны заново. Укажите причину (для истории).
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={2}
+            label="Причина"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRecalcOpen(false)} disabled={busy} color="inherit">
+            Отмена
+          </Button>
+          <Button
+            onClick={handleRecalc}
+            disabled={busy || !reason.trim()}
+            variant="contained"
+          >
+            Пересчитать
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
