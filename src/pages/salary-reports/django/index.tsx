@@ -56,12 +56,23 @@ function groupByRole(rows: PayrollRow[]): Record<string, PayrollRow[]> {
   return groups;
 }
 
-const COLUMNS: { key: keyof PayrollRow; label: string; money?: boolean }[] = [
+const COLUMNS: {
+  key: keyof PayrollRow;
+  label: string;
+  money?: boolean;
+  render?: (row: PayrollRow) => React.ReactNode;
+}[] = [
   { key: "fullName", label: "Сотрудник" },
   { key: "appointmentsCount", label: "Приёмы" },
   { key: "servicePercentPay", label: "Услуги %", money: true },
   { key: "serviceFixedPay", label: "Фикс", money: true },
   { key: "appointmentPay", label: "За приёмы", money: true },
+  {
+    key: "dayHours",
+    label: "Часы (д/н)",
+    render: (r) => `${r.dayHours} / ${r.nightHours}`,
+  },
+  { key: "hourlyPay", label: "Почасовая", money: true },
   { key: "earnings", label: "Начислено", money: true },
   { key: "advances", label: "Авансы", money: true },
   { key: "netSalary", label: "К выплате", money: true },
@@ -101,9 +112,11 @@ const RoleTable: React.FC<{ title: string; rows: PayrollRow[] }> = ({ title, row
                   align={c.key === "fullName" ? "left" : "right"}
                   sx={c.key === "netSalary" ? { fontWeight: 700 } : undefined}
                 >
-                  {c.money
-                    ? formatKGS(row[c.key] as string)
-                    : String(row[c.key])}
+                  {c.render
+                    ? c.render(row)
+                    : c.money
+                      ? formatKGS(row[c.key] as string)
+                      : String(row[c.key])}
                 </TableCell>
               ))}
             </TableRow>

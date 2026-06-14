@@ -10,6 +10,9 @@ export interface PayrollRow {
   servicePercentPay: string;
   serviceFixedPay: string;
   appointmentPay: string;
+  dayHours: string;
+  nightHours: string;
+  hourlyPay: string;
   earnings: string;
   advances: string;
   netSalary: string;
