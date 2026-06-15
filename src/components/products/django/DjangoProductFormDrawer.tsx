@@ -12,8 +12,8 @@ import {
     CardContent,
     Avatar,
     Paper,
-    Tabs,
-    Tab,
+    ToggleButton,
+    ToggleButtonGroup,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
@@ -27,21 +27,6 @@ import {
 } from "../../../api/warehouse";
 import { ApiError } from "../../../api/client";
 import { AppCard } from "../../ui";
-
-// Custom styles for the toggle tabs
-const toggleTabStyles = (theme: any, color: string) => ({
-    minHeight: 40,
-    borderRadius: 1,
-    textTransform: "none",
-    fontSize: "0.875rem",
-    fontWeight: 500,
-    color: "text.secondary",
-    "&.Mui-selected": {
-        color: theme.palette.getContrastText(color),
-        bgcolor: color,
-    },
-    transition: "all 0.2s",
-});
 
 const noSpinnersSx = {
     "& input[type=number]": { MozAppearance: "textfield" },
@@ -208,7 +193,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                         alignItems: "center",
                         justifyContent: "space-between",
                         px: 2,
-                        py: 1,
+                        py: 1.5,
                     }}
                 >
                     <Typography variant="h6">{isEdit ? "Редактировать товар" : "Добавить товар"}</Typography>
@@ -342,23 +327,33 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                             }}
                         >
                             <Typography variant="body2">Статус продажи</Typography>
-                            <Tabs
-                                value={values.isForSale ? 0 : 1}
-                                onChange={(_, v) =>
-                                    setValues((s) => ({ ...s, isForSale: v === 0 }))
-                                }
-                                sx={{ minHeight: 32 }}
-                                TabIndicatorProps={{ style: { display: "none" } }}
+                            <ToggleButtonGroup
+                                exclusive
+                                size="small"
+                                value={values.isForSale ? "active" : "hidden"}
+                                onChange={(_, v) => {
+                                    if (v) setValues((s) => ({ ...s, isForSale: v === "active" }));
+                                }}
                             >
-                                <Tab
-                                    label="Активно"
-                                    sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })}
-                                />
-                                <Tab
-                                    label="Недоступно"
-                                    sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })}
-                                />
-                            </Tabs>
+                                <ToggleButton
+                                    value="active"
+                                    sx={{
+                                        textTransform: "none",
+                                        px: 2,
+                                        py: 0.5,
+                                        "&.Mui-selected": {
+                                            bgcolor: "success.main",
+                                            color: "success.contrastText",
+                                            "&:hover": { bgcolor: "success.dark" },
+                                        },
+                                    }}
+                                >
+                                    Активно
+                                </ToggleButton>
+                                <ToggleButton value="hidden" sx={{ textTransform: "none", px: 2, py: 0.5 }}>
+                                    Недоступно
+                                </ToggleButton>
+                            </ToggleButtonGroup>
                         </Paper>
 
                         {/* Price & Stock */}
@@ -433,23 +428,21 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 <InfoOutlinedIcon fontSize="small" color="action" />
                                 <Typography variant="body2">Капельница</Typography>
                             </Stack>
-                            <Tabs
-                                value={values.isInfusion ? 0 : 1}
-                                onChange={(_, v) =>
-                                    setValues((s) => ({ ...s, isInfusion: v === 0 }))
-                                }
-                                sx={{ minHeight: 32 }}
-                                TabIndicatorProps={{ style: { display: "none" } }}
+                            <ToggleButtonGroup
+                                exclusive
+                                size="small"
+                                value={values.isInfusion ? "yes" : "no"}
+                                onChange={(_, v) => {
+                                    if (v) setValues((s) => ({ ...s, isInfusion: v === "yes" }));
+                                }}
                             >
-                                <Tab
-                                    label="Да"
-                                    sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.primary.main), minHeight: 32, py: 0, px: 2 })}
-                                />
-                                <Tab
-                                    label="Нет"
-                                    sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })}
-                                />
-                            </Tabs>
+                                <ToggleButton value="yes" sx={{ textTransform: "none", px: 2, py: 0.5 }}>
+                                    Да
+                                </ToggleButton>
+                                <ToggleButton value="no" sx={{ textTransform: "none", px: 2, py: 0.5 }}>
+                                    Нет
+                                </ToggleButton>
+                            </ToggleButtonGroup>
                         </Paper>
 
                     </Stack>

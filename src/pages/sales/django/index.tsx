@@ -15,6 +15,8 @@ import {
     CircularProgress,
     ToggleButtonGroup,
     ToggleButton,
+    Chip,
+    alpha,
 } from "@mui/material";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import InventoryIcon from "@mui/icons-material/Inventory";
@@ -370,7 +372,7 @@ const DjangoSalesPage: React.FC = () => {
                             sx={{ height: { xs: "auto", md: "100%" }, overflow: "hidden", display: "flex", flexDirection: "column" }}
                         >
                             <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                                     Фильтры
                                 </Typography>
                                 <Button
@@ -490,7 +492,16 @@ const DjangoSalesPage: React.FC = () => {
                                                         <ListItemButton
                                                             key={day.date}
                                                             selected={selectedDate === day.date}
-                                                            sx={{ borderRadius: 1, mb: 0.5 }}
+                                                            sx={{
+                                                                borderRadius: 1.5,
+                                                                mb: 0.5,
+                                                                border: 1,
+                                                                borderColor: selectedDate === day.date ? "primary.main" : "transparent",
+                                                                "&.Mui-selected": {
+                                                                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                                                                    "&:hover": { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12) },
+                                                                },
+                                                            }}
                                                             onClick={() => setSelectedDate(selectedDate === day.date ? null : day.date)}
                                                         >
                                                             <Typography variant="body2" sx={{ flex: 1 }}>
@@ -526,7 +537,17 @@ const DjangoSalesPage: React.FC = () => {
                                                         <ListItemButton
                                                             key={product.name}
                                                             selected={selectedProduct === product.name}
-                                                            sx={{ borderRadius: 1, mb: 0.5, pr: 1 }}
+                                                            sx={{
+                                                                borderRadius: 1.5,
+                                                                mb: 0.5,
+                                                                pr: 1,
+                                                                border: 1,
+                                                                borderColor: selectedProduct === product.name ? "primary.main" : "transparent",
+                                                                "&.Mui-selected": {
+                                                                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                                                                    "&:hover": { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12) },
+                                                                },
+                                                            }}
                                                             onClick={() => setSelectedProduct(selectedProduct === product.name ? null : product.name)}
                                                         >
                                                             <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
@@ -537,9 +558,12 @@ const DjangoSalesPage: React.FC = () => {
                                                                     {formatKGS(product.total)}
                                                                 </Typography>
                                                             </Box>
-                                                            <Box sx={{ bgcolor: "primary.main", color: "primary.contrastText", borderRadius: 10, px: 0.8, py: 0.2, fontSize: "0.75rem", fontWeight: 600, minWidth: 20, textAlign: "center" }}>
-                                                                {product.count}
-                                                            </Box>
+                                                            <Chip
+                                                                label={product.count}
+                                                                size="small"
+                                                                color="primary"
+                                                                sx={{ height: 20, minWidth: 28, fontWeight: 600, "& .MuiChip-label": { px: 0.75 } }}
+                                                            />
                                                         </ListItemButton>
                                                     ))}
                                                 </List>

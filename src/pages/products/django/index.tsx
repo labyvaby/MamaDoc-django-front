@@ -2,17 +2,15 @@ import React from "react";
 import {
   Box,
   Typography,
-  List,
-  ListItemButton,
   Avatar,
   Stack,
   Divider,
   Grid2,
   useMediaQuery,
   Chip,
-  CircularProgress,
   IconButton,
   Button,
+  ButtonBase,
   alpha,
   Collapse,
   Paper,
@@ -23,8 +21,10 @@ import { useNotification } from "@refinedev/core";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import FilterListIcon from "@mui/icons-material/FilterList";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 
-import { PageHeader, AppBottomSheet, AppCard } from "../../../components/ui";
+import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -264,70 +264,102 @@ const DjangoProductsPage: React.FC = () => {
 
               <Box sx={{ overflowY: "auto", flex: 1 }}>
                 {loading ? (
-                  <Box sx={{ p: 4, textAlign: "center" }}>
-                    <CircularProgress size={24} />
-                  </Box>
+                  <ListLoadingSkeleton rows={6} />
                 ) : filteredProducts.length === 0 ? (
-                  <Box sx={{ p: 4, textAlign: "center" }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {products.length === 0 ? "Список товаров пуст" : "Ничего не найдено"}
-                    </Typography>
-                  </Box>
+                  <ListEmptyState
+                    icon={<Inventory2OutlinedIcon />}
+                    title={products.length === 0 ? "Товаров пока нет" : "Ничего не найдено"}
+                    description={
+                      products.length === 0
+                        ? "Добавьте первый товар, чтобы он появился в каталоге."
+                        : "Под текущий поиск или фильтры ничего не подошло."
+                    }
+                  />
                 ) : (
-                  <List sx={{ py: 0.5 }}>
-                    {filteredProducts.map((p) => (
-                      <ListItemButton
-                        key={p.id}
-                        onClick={() => {
-                          if (selectedProduct?.id !== p.id) {
-                            setSelectedProduct(p);
-                          }
-                        }}
-                        selected={selectedProduct?.id === p.id}
-                        sx={{
-                          px: 2,
-                          py: 1.5,
-                          borderBottom: 1,
-                          borderColor: "divider",
-                          "&.Mui-selected": { bgcolor: "action.selected" },
-                          "&:hover": { bgcolor: "action.hover" },
-                        }}
-                      >
-                        <Avatar
-                          variant="rounded"
-                          src={p.imageUrl || undefined}
+                  <Stack spacing={1} sx={{ p: 1.5 }}>
+                    {filteredProducts.map((p) => {
+                      const isSelected = selectedProduct?.id === p.id;
+                      const inStock = p.stock > 0;
+                      return (
+                        <ButtonBase
+                          key={p.id}
+                          focusRipple
+                          onClick={() => {
+                            if (selectedProduct?.id !== p.id) {
+                              setSelectedProduct(p);
+                            }
+                          }}
                           sx={{
-                            mr: 2,
-                            width: 48,
-                            height: 48,
-                            bgcolor: "action.selected",
-                            color: "text.secondary",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1.5,
+                            width: "100%",
+                            textAlign: "left",
+                            p: 1.25,
+                            borderRadius: 2,
+                            border: 1,
+                            borderColor: isSelected ? "primary.main" : "divider",
+                            bgcolor: (theme) =>
+                              isSelected ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
+                            transition:
+                              "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                            "&:hover": {
+                              borderColor: "primary.main",
+                              boxShadow: (theme) => `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                            },
+                            "&:active": { transform: "translateY(0.5px)" },
                           }}
                         >
-                          {p.name.charAt(0)}
-                        </Avatar>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="body1" sx={{ fontWeight: 500 }} noWrap>
-                            {p.name}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" noWrap>
-                            {p.category ? `${p.category} • ` : ""}
-                            {p.barcode || "-"}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ textAlign: "right" }}>
-                          {p.price > 0 && (
-                            <Typography variant="body2" fontWeight={600}>
-                              {p.price.toLocaleString()}
+                          <Avatar
+                            variant="rounded"
+                            src={p.imageUrl || undefined}
+                            sx={{
+                              flexShrink: 0,
+                              width: 48,
+                              height: 48,
+                              borderRadius: 2,
+                              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                              color: "primary.main",
+                            }}
+                          >
+                            {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
+                          </Avatar>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                              {p.name}
                             </Typography>
-                          )}
-                          <Typography variant="caption" color={p.stock > 0 ? "success.main" : "error.main"}>
-                            {p.stock} {p.unit}
-                          </Typography>
-                        </Box>
-                      </ListItemButton>
-                    ))}
-                  </List>
+                            <Typography variant="caption" color="text.secondary" noWrap display="block">
+                              {p.category ? `${p.category} • ` : ""}
+                              {p.barcode || "—"}
+                            </Typography>
+                          </Box>
+                          <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
+                            {p.price > 0 && (
+                              <Typography variant="body2" fontWeight={700}>
+                                {p.price.toLocaleString()}
+                              </Typography>
+                            )}
+                            <Chip
+                              size="small"
+                              label={`${p.stock} ${p.unit || "шт"}`}
+                              sx={{
+                                height: 20,
+                                fontSize: "0.7rem",
+                                fontWeight: 600,
+                                bgcolor: (theme) =>
+                                  alpha(
+                                    inStock ? theme.palette.success.main : theme.palette.error.main,
+                                    0.12,
+                                  ),
+                                color: inStock ? "success.dark" : "error.main",
+                                "& .MuiChip-label": { px: 0.75 },
+                              }}
+                            />
+                          </Stack>
+                        </ButtonBase>
+                      );
+                    })}
+                  </Stack>
                 )}
               </Box>
             </Paper>
@@ -411,16 +443,17 @@ const ProductDetailCard: React.FC<{
         sx={{
           height: "100%",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
           border: "1px dashed",
           borderColor: "divider",
           borderRadius: 4,
-          color: "text.secondary",
           bgcolor: "background.paper",
         }}
       >
-        <Typography>Выберите товар для просмотра</Typography>
+        <ListEmptyState
+          icon={<TouchAppOutlinedIcon />}
+          title="Выберите товар"
+          description="Нажмите на товар в списке слева, чтобы увидеть детали, цену и остаток."
+        />
       </Box>
     );
   }

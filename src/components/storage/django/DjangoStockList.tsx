@@ -6,7 +6,6 @@ import {
   Stack,
   IconButton,
   Paper,
-  CircularProgress,
   Chip,
   ButtonBase,
   alpha,
@@ -14,6 +13,7 @@ import {
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import { DjangoStockItem } from "../../../api/warehouse";
+import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
 
 interface DjangoStockListProps {
   stock: DjangoStockItem[];
@@ -47,6 +47,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
         flexDirection: "column",
         minHeight: 0,
         bgcolor: "background.paper",
+        position: "relative",
       }}
     >
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}>
@@ -79,18 +80,20 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
         )}
       </Stack>
 
+      {!loading && stock.length === 0 && (
+        <Box sx={{ position: "absolute", inset: 0, display: "flex", pointerEvents: "none" }}>
+          <ListEmptyState
+            icon={<Inventory2OutlinedIcon />}
+            title="Товаров пока нет"
+            description="На этом складе ещё нет остатков. Оформите приход товара, чтобы он появился здесь."
+          />
+        </Box>
+      )}
+
       <Box sx={{ overflowY: "auto", flex: 1 }}>
         {loading ? (
-          <Box sx={{ p: 4, textAlign: "center" }}>
-            <CircularProgress size={24} />
-          </Box>
-        ) : stock.length === 0 ? (
-          <Box sx={{ p: 4, textAlign: "center" }}>
-            <Typography variant="body2" color="text.secondary">
-              Список пуст
-            </Typography>
-          </Box>
-        ) : (
+          <ListLoadingSkeleton rows={6} />
+        ) : stock.length === 0 ? null : (
           <Stack spacing={1} sx={{ p: 1.5 }}>
             {stock.map((item) => {
               const inStock = item.quantity > 0;

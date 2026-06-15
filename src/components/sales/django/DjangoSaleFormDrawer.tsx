@@ -15,6 +15,7 @@ import {
     Paper,
     alpha,
     Tooltip,
+    CircularProgress,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
@@ -707,7 +708,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                     onClick={handleSubmit}
                     disabled={!hasValidProduct || loading || (showBranchSelect && !selectedBranch)}
                 >
-                    {loading ? "Сохранение..." : isEdit ? "Сохранить изменения" : "Оформить продажу"}
+                    {loading ? <CircularProgress size={24} color="inherit" /> : isEdit ? "Сохранить изменения" : "Оформить продажу"}
                 </Button>
             </Box>
         </Drawer>
