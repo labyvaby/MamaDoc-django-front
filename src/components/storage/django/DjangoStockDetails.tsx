@@ -181,7 +181,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                                     <Typography
                                         variant="h3"
                                         fontWeight={700}
-                                        color={inStock ? "success.dark" : "error.main"}
+                                        color={inStock ? "success.main" : "error.main"}
                                         sx={{ lineHeight: 1 }}
                                     >
                                         {item.quantity}

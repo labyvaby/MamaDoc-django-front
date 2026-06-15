@@ -358,7 +358,7 @@ const DjangoProductsPage: React.FC = () => {
                                     inStock ? theme.palette.success.main : theme.palette.error.main,
                                     0.12,
                                   ),
-                                color: inStock ? "success.dark" : "error.main",
+                                color: inStock ? "success.main" : "error.main",
                                 "& .MuiChip-label": { px: 0.75 },
                               }}
                             />
@@ -517,14 +517,14 @@ const ProductDetailCard: React.FC<{
                     color="error"
                     size="small"
                     onClick={onDelete}
-                    sx={{
+                    sx={(theme) => ({
                       border: "1px solid",
                       borderColor: "error.main",
                       "&:hover": {
                         borderColor: "error.dark",
-                        backgroundColor: "rgba(211, 47, 47, 0.08)",
+                        backgroundColor: alpha(theme.palette.error.main, 0.08),
                       },
-                    }}
+                    })}
                   >
                     <DeleteOutlineOutlined fontSize="small" />
                   </IconButton>
