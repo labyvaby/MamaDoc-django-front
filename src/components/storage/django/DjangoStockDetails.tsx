@@ -5,16 +5,23 @@ import {
     Stack,
     Button,
     Divider,
-    CircularProgress,
-    List,
-    ListItem,
-    ListItemText,
     IconButton,
+    Avatar,
+    Chip,
+    Skeleton,
+    alpha,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import { AppCard } from "../../ui";
+import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
+import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
+import TuneOutlinedIcon from "@mui/icons-material/TuneOutlined";
+import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
+import { AppCard, ListEmptyState } from "../../ui";
 import { formatDateRu } from "../../../utility/format";
 import { DjangoStockItem, DjangoStockMovement, MoveType } from "../../../api/warehouse";
 
@@ -32,6 +39,22 @@ interface DjangoStockDetailsProps {
 
 type FilterType = "all" | "receipt" | "consumption";
 
+const TYPE_TABS: { value: FilterType; label: string }[] = [
+    { value: "all", label: "Все" },
+    { value: "receipt", label: "Приход" },
+    { value: "consumption", label: "Списание" },
+];
+
+const DATE_RANGES: { value: number; label: string }[] = [
+    { value: 7, label: "7 дней" },
+    { value: 30, label: "30 дней" },
+    { value: 90, label: "90 дней" },
+    { value: 0, label: "Всё время" },
+];
+
+const formatTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+
 export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
     item,
     movements,
@@ -46,41 +69,44 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
     const [filter, setFilter] = React.useState<FilterType>("all");
     const [daysFilter, setDaysFilter] = React.useState<number>(7); // 7, 30, 90, 0 (all)
 
-    // Filter movements based on type and date range
     const filteredMovements = React.useMemo(() => {
         let filtered = movements;
-
         if (filter !== "all") {
             filtered = filtered.filter((move) => move.moveType === filter);
         }
-
         if (daysFilter > 0) {
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - daysFilter);
             filtered = filtered.filter((move) => new Date(move.createdAt) >= cutoffDate);
         }
-
         return filtered;
     }, [movements, filter, daysFilter]);
 
     if (!item) {
         return (
-            <Box
+            <AppCard
+                variant="outlined"
                 sx={{
                     height: "100%",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "1px dashed",
+                    flexDirection: "column",
                     borderColor: "divider",
-                    borderRadius: 1,
-                    color: "text.secondary",
+                    "&:hover": { boxShadow: "none" },
                 }}
+                disableContentPadding
             >
-                <Typography>Выберите товар для просмотра</Typography>
-            </Box>
+                <Box sx={{ flex: 1, display: "flex" }}>
+                    <ListEmptyState
+                        icon={<TouchAppOutlinedIcon />}
+                        title="Выберите товар"
+                        description="Нажмите на позицию в списке слева, чтобы увидеть остаток и историю движений."
+                    />
+                </Box>
+            </AppCard>
         );
     }
+
+    const inStock = item.quantity > 0;
 
     return (
         <AppCard
@@ -91,11 +117,13 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                 flexDirection: "column",
                 overflow: "hidden",
                 borderColor: "divider",
+                "&:hover": { boxShadow: "none" },
             }}
             title={item.productName}
             subheader={
                 <Typography variant="body2" color="text.secondary">
-                    Товар ID: {item.productBarcode || "Нет ID"}
+                    {item.productCategory || "Без категории"}
+                    {item.productBarcode ? ` • ${item.productBarcode}` : ""}
                 </Typography>
             }
             headerActions={
@@ -126,217 +154,303 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
         >
             <Box sx={{ flex: 1, overflowY: "auto", p: 3 }}>
                 <Stack spacing={3}>
-                    {/* Main Stats */}
-                    <Box>
-                        <Typography variant="body1" color="text.secondary" gutterBottom fontWeight={600}>
-                            Текущий остаток
-                        </Typography>
-                        <Typography variant="h3" fontWeight={700}>
-                            {item.quantity} {item.productUnit || "шт"}
-                        </Typography>
-                        <Typography variant="body2" color="text.primary" display="block" fontWeight={600} sx={{ mt: 1 }}>
-                            Склад: {warehouseName || item.warehouseName || "Неизвестно"}
-                        </Typography>
-                        {(warehouseAddress || item.warehouseAddress) && (
-                            <Typography variant="body2" color="text.secondary" display="block">
-                                Адрес: {warehouseAddress || item.warehouseAddress}
-                            </Typography>
-                        )}
-                        {item.lastUpdated && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                Обновлено: {formatDateRu(item.lastUpdated) + ", " + new Date(item.lastUpdated).toLocaleTimeString("ru-RU", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                })}
-                            </Typography>
-                        )}
+                    {/* Hero: текущий остаток */}
+                    <Box
+                        sx={{
+                            p: 2.5,
+                            borderRadius: 3,
+                            border: 1,
+                            borderColor: (theme) =>
+                                alpha(
+                                    inStock ? theme.palette.success.main : theme.palette.error.main,
+                                    0.25,
+                                ),
+                            bgcolor: (theme) =>
+                                alpha(
+                                    inStock ? theme.palette.success.main : theme.palette.error.main,
+                                    0.06,
+                                ),
+                        }}
+                    >
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                                    Текущий остаток
+                                </Typography>
+                                <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mt: 0.5 }}>
+                                    <Typography
+                                        variant="h3"
+                                        fontWeight={700}
+                                        color={inStock ? "success.main" : "error.main"}
+                                        sx={{ lineHeight: 1 }}
+                                    >
+                                        {item.quantity}
+                                    </Typography>
+                                    <Typography variant="h6" color="text.secondary" fontWeight={600}>
+                                        {item.productUnit || "шт"}
+                                    </Typography>
+                                </Stack>
+                            </Box>
+                            <Chip
+                                size="small"
+                                label={inStock ? "В наличии" : "Нет в наличии"}
+                                color={inStock ? "success" : "error"}
+                                variant={inStock ? "filled" : "outlined"}
+                                sx={{ fontWeight: 600, flexShrink: 0 }}
+                            />
+                        </Stack>
+
+                        <Divider sx={{ my: 1.5 }} />
+
+                        <Stack spacing={0.75}>
+                            <Stack direction="row" alignItems="center" spacing={1} color="text.secondary">
+                                <StorefrontOutlinedIcon sx={{ fontSize: 16 }} />
+                                <Typography variant="body2" color="text.primary" fontWeight={600} noWrap>
+                                    {warehouseName || item.warehouseName || "Неизвестно"}
+                                </Typography>
+                            </Stack>
+                            {(warehouseAddress || item.warehouseAddress) && (
+                                <Stack direction="row" alignItems="center" spacing={1} color="text.secondary">
+                                    <PlaceOutlinedIcon sx={{ fontSize: 16 }} />
+                                    <Typography variant="body2" color="text.secondary" noWrap>
+                                        {warehouseAddress || item.warehouseAddress}
+                                    </Typography>
+                                </Stack>
+                            )}
+                            {item.lastUpdated && (
+                                <Stack direction="row" alignItems="center" spacing={1} color="text.secondary">
+                                    <ScheduleOutlinedIcon sx={{ fontSize: 16 }} />
+                                    <Typography variant="body2" color="text.secondary">
+                                        Обновлено: {formatDateRu(item.lastUpdated)}, {formatTime(item.lastUpdated)}
+                                    </Typography>
+                                </Stack>
+                            )}
+                        </Stack>
                     </Box>
 
-                    <Divider />
-
-                    {/* History */}
+                    {/* История движений */}
                     <Box>
                         <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
                             История движений
                         </Typography>
 
-                        {/* Filter Tabs */}
-                        <Stack direction="row" spacing={2} sx={{ mb: 1.5 }}>
-                            {[
-                                { value: "all" as FilterType, label: "Все" },
-                                { value: "receipt" as FilterType, label: "Приход" },
-                                { value: "consumption" as FilterType, label: "Списание" },
-                            ].map((tab) => (
-                                <Box
-                                    key={tab.value}
-                                    onClick={() => setFilter(tab.value)}
-                                    sx={{
-                                        cursor: "pointer",
-                                        position: "relative",
-                                        pb: 0.5,
-                                        "&::after": {
-                                            content: '""',
-                                            position: "absolute",
-                                            bottom: 0,
-                                            left: 0,
-                                            right: 0,
-                                            height: 2,
-                                            bgcolor: filter === tab.value ? "primary.main" : "transparent",
-                                            transition: "all 0.2s",
-                                        },
-                                    }}
-                                >
-                                    <Typography
-                                        variant="body2"
+                        {/* Сегмент-контрол по типу */}
+                        <Box
+                            sx={{
+                                display: "inline-flex",
+                                p: 0.5,
+                                mb: 1.5,
+                                borderRadius: 2,
+                                bgcolor: "action.hover",
+                            }}
+                        >
+                            {TYPE_TABS.map((tab) => {
+                                const active = filter === tab.value;
+                                return (
+                                    <Box
+                                        key={tab.value}
+                                        component="button"
+                                        type="button"
+                                        onClick={() => setFilter(tab.value)}
                                         sx={{
-                                            fontWeight: filter === tab.value ? 600 : 400,
-                                            color: filter === tab.value ? "primary.main" : "text.secondary",
-                                            transition: "all 0.2s",
+                                            border: 0,
+                                            cursor: "pointer",
+                                            px: 1.75,
+                                            py: 0.5,
+                                            borderRadius: 1.5,
+                                            fontSize: "0.8125rem",
+                                            fontWeight: active ? 600 : 500,
+                                            fontFamily: "inherit",
+                                            color: active ? "primary.main" : "text.secondary",
+                                            bgcolor: active ? "background.paper" : "transparent",
+                                            boxShadow: active ? 1 : 0,
+                                            transition: "all .15s ease",
                                         }}
                                     >
                                         {tab.label}
-                                    </Typography>
-                                </Box>
-                            ))}
-                        </Stack>
+                                    </Box>
+                                );
+                            })}
+                        </Box>
 
-                        {/* Date Range Filter */}
-                        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 0.5 }}>
-                            {[
-                                { value: 7, label: "7 дней" },
-                                { value: 30, label: "30 дней" },
-                                { value: 90, label: "90 дней" },
-                                { value: 0, label: "Все время" },
-                            ].map((option) => (
-                                <Button
-                                    key={option.value}
-                                    size="small"
-                                    variant={daysFilter === option.value ? "contained" : "outlined"}
-                                    onClick={() => setDaysFilter(option.value)}
-                                    sx={{
-                                        minWidth: "auto",
-                                        px: 1.5,
-                                        py: 0.5,
-                                        fontSize: "0.75rem",
-                                    }}
-                                >
-                                    {option.label}
-                                </Button>
-                            ))}
+                        {/* Диапазон дат */}
+                        <Stack direction="row" spacing={0.75} sx={{ mb: 2, flexWrap: "wrap", gap: 0.75 }}>
+                            {DATE_RANGES.map((option) => {
+                                const active = daysFilter === option.value;
+                                return (
+                                    <Chip
+                                        key={option.value}
+                                        label={option.label}
+                                        size="small"
+                                        onClick={() => setDaysFilter(option.value)}
+                                        variant={active ? "filled" : "outlined"}
+                                        color={active ? "primary" : "default"}
+                                        sx={{ fontWeight: 500 }}
+                                    />
+                                );
+                            })}
                         </Stack>
 
                         {loadingMovements ? (
-                            <Box sx={{ p: 2, textAlign: "center" }}><CircularProgress size={20} /></Box>
+                            <MovementSkeleton />
                         ) : filteredMovements.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary">
-                                {filter === "all" ? "История пуста" : "Нет записей"}
-                            </Typography>
+                            <ListEmptyState
+                                icon={<HistoryOutlinedIcon />}
+                                title={filter === "all" ? "Движений пока нет" : "Нет записей"}
+                                description={
+                                    filter === "all"
+                                        ? "Здесь появятся приходы и списания по этому товару."
+                                        : "Под выбранные фильтры ничего не нашлось."
+                                }
+                            />
                         ) : (
-                            <Box
-                                sx={{
-                                    maxHeight: "400px",
-                                    overflowY: "auto",
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                    borderRadius: 1,
-                                }}
-                            >
-                                <List disablePadding>
-                                    {filteredMovements.map((move) => {
-                                        const title = getMoveTypeLabel(move.moveType);
-                                        const isEditable = canManage && canEditMovement(move) && !!onEditMovement;
-
-                                        return (
-                                            <ListItem
-                                                key={move.id}
-                                                divider
-                                                sx={{
-                                                    py: 1,
-                                                    px: 1.5,
-                                                    cursor: isEditable ? "pointer" : "default",
-                                                    "&:hover": isEditable ? {
-                                                        bgcolor: "action.hover",
-                                                    } : {},
-                                                }}
-                                                onClick={() => {
-                                                    if (isEditable) {
-                                                        onEditMovement?.(move);
-                                                    }
-                                                }}
-                                            >
-                                                <ListItemText
-                                                    disableTypography
-                                                    primary={
-                                                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                                            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
-                                                                <Typography variant="body2" fontWeight={600} sx={{ fontSize: "0.875rem" }} noWrap>
-                                                                    {title}
-                                                                </Typography>
-                                                                {isEditable && (
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        aria-label="Редактировать приход"
-                                                                        onClick={(event) => {
-                                                                            event.stopPropagation();
-                                                                            onEditMovement?.(move);
-                                                                        }}
-                                                                        sx={{ flexShrink: 0 }}
-                                                                    >
-                                                                        <EditOutlinedIcon fontSize="inherit" />
-                                                                    </IconButton>
-                                                                )}
-                                                            </Stack>
-                                                            <Typography
-                                                                variant="body2"
-                                                                fontWeight={700}
-                                                                color={getQuantityColor(move.moveType)}
-                                                                sx={{ fontSize: "0.875rem", ml: 1, flexShrink: 0 }}
-                                                            >
-                                                                {getQuantityDisplay(move.moveType, move.quantity)}
-                                                            </Typography>
-                                                        </Stack>
-                                                    }
-                                                    secondary={
-                                                        <React.Fragment>
-                                                            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.25 }}>
-                                                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
-                                                                    {formatDateRu(move.createdAt)} • {new Date(move.createdAt).toLocaleTimeString("ru-RU", {
-                                                                        hour: "2-digit",
-                                                                        minute: "2-digit",
-                                                                    })}
-                                                                    {move.createdByName ? ` • ${move.createdByName}` : ""}
-                                                                </Typography>
-                                                                {move.totalCost !== null && (
-                                                                    <Typography variant="caption" fontWeight={600} color="text.primary" sx={{ fontSize: "0.7rem" }}>
-                                                                        {new Intl.NumberFormat("ru-RU").format(move.totalCost)} сом
-                                                                    </Typography>
-                                                                )}
-                                                            </Stack>
-                                                            {move.comment && (
-                                                                <Box sx={{ mt: 1, p: 1, bgcolor: "action.hover", borderRadius: 1, border: "1px solid", borderColor: "divider" }}>
-                                                                    <Typography variant="body2" color="text.primary" sx={{ fontSize: "0.8125rem", whiteSpace: "pre-wrap" }}>
-                                                                        {move.comment}
-                                                                    </Typography>
-                                                                </Box>
-                                                            )}
-                                                        </React.Fragment>
-                                                    }
-                                                />
-                                            </ListItem>
-                                        );
-                                    })}
-                                </List>
-                            </Box>
+                            <Stack spacing={1}>
+                                {filteredMovements.map((move) => (
+                                    <MovementRow
+                                        key={move.id}
+                                        move={move}
+                                        editable={canManage && canEditMovement(move) && !!onEditMovement}
+                                        onEdit={() => onEditMovement?.(move)}
+                                    />
+                                ))}
+                            </Stack>
                         )}
                     </Box>
-
                 </Stack>
             </Box>
         </AppCard>
     );
 };
 
-// Helpers
+// ── Movement row ─────────────────────────────────────────────────────────────
+
+const MovementRow: React.FC<{
+    move: DjangoStockMovement;
+    editable: boolean;
+    onEdit: () => void;
+}> = ({ move, editable, onEdit }) => {
+    const visual = getMoveVisual(move.moveType);
+    return (
+        <Box
+            onClick={editable ? onEdit : undefined}
+            sx={{
+                display: "flex",
+                gap: 1.5,
+                p: 1.25,
+                borderRadius: 2,
+                border: 1,
+                borderColor: "divider",
+                bgcolor: "background.paper",
+                cursor: editable ? "pointer" : "default",
+                transition: "border-color .15s ease, background-color .15s ease",
+                "&:hover": editable
+                    ? { borderColor: "primary.main", bgcolor: "action.hover" }
+                    : {},
+            }}
+        >
+            <Avatar
+                variant="rounded"
+                sx={{
+                    flexShrink: 0,
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    bgcolor: (theme) => alpha(theme.palette[visual.color].main, 0.12),
+                    color: `${visual.color}.main`,
+                }}
+            >
+                {visual.icon}
+            </Avatar>
+
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                    <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                            {getMoveTypeLabel(move.moveType)}
+                        </Typography>
+                        {editable && (
+                            <IconButton
+                                size="small"
+                                aria-label="Редактировать приход"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEdit();
+                                }}
+                                sx={{ flexShrink: 0, color: "text.secondary", "&:hover": { color: "primary.main" } }}
+                            >
+                                <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                        )}
+                    </Stack>
+                    <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        color={`${visual.color}.main`}
+                        sx={{ flexShrink: 0 }}
+                    >
+                        {getQuantityDisplay(move.moveType, move.quantity)}
+                    </Typography>
+                </Stack>
+
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.25 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
+                        {formatDateRu(move.createdAt)} • {formatTime(move.createdAt)}
+                        {move.createdByName ? ` • ${move.createdByName}` : ""}
+                    </Typography>
+                    {move.totalCost !== null && (
+                        <Typography variant="caption" fontWeight={600} color="text.primary" sx={{ flexShrink: 0, ml: 1 }}>
+                            {new Intl.NumberFormat("ru-RU").format(move.totalCost)} сом
+                        </Typography>
+                    )}
+                </Stack>
+
+                {move.comment && (
+                    <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{
+                            mt: 0.75,
+                            pl: 1.25,
+                            borderLeft: 2,
+                            borderColor: "divider",
+                            fontSize: "0.8125rem",
+                            whiteSpace: "pre-wrap",
+                        }}
+                    >
+                        {move.comment}
+                    </Typography>
+                )}
+            </Box>
+        </Box>
+    );
+};
+
+const MovementSkeleton: React.FC = () => (
+    <Stack spacing={1}>
+        {Array.from({ length: 3 }).map((_, i) => (
+            <Box
+                key={i}
+                sx={{
+                    display: "flex",
+                    gap: 1.5,
+                    p: 1.25,
+                    borderRadius: 2,
+                    border: 1,
+                    borderColor: "divider",
+                }}
+            >
+                <Skeleton variant="rounded" width={36} height={36} sx={{ borderRadius: 2, flexShrink: 0 }} />
+                <Box sx={{ flex: 1 }}>
+                    <Skeleton variant="text" width="40%" height={20} />
+                    <Skeleton variant="text" width="65%" height={16} />
+                </Box>
+            </Box>
+        ))}
+    </Stack>
+);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 const getMoveTypeLabel = (type: MoveType) => {
     const map: Record<string, string> = {
         receipt: "Приход",
@@ -346,6 +460,24 @@ const getMoveTypeLabel = (type: MoveType) => {
         transfer_out: "Перемещение (Из)",
     };
     return map[type] || type;
+};
+
+type MoveColor = "success" | "error" | "primary";
+
+const getMoveVisual = (type: MoveType): { icon: React.ReactNode; color: MoveColor } => {
+    switch (type) {
+        case "receipt":
+            return { icon: <AddIcon sx={{ fontSize: 18 }} />, color: "success" };
+        case "transfer_in":
+            return { icon: <SwapHorizOutlinedIcon sx={{ fontSize: 18 }} />, color: "success" };
+        case "consumption":
+            return { icon: <RemoveIcon sx={{ fontSize: 18 }} />, color: "error" };
+        case "transfer_out":
+            return { icon: <SwapHorizOutlinedIcon sx={{ fontSize: 18 }} />, color: "error" };
+        case "adjustment":
+        default:
+            return { icon: <TuneOutlinedIcon sx={{ fontSize: 18 }} />, color: "primary" };
+    }
 };
 
 const canEditMovement = (move: DjangoStockMovement) => {
@@ -360,10 +492,4 @@ const getQuantityDisplay = (type: MoveType, quantity: number) => {
         return `+${quantity}`;
     }
     return quantity.toString();
-};
-
-const getQuantityColor = (type: MoveType) => {
-    if (["consumption", "transfer_out"].includes(type)) return "error.main";
-    if (["receipt", "transfer_in"].includes(type)) return "success.main";
-    return "text.primary";
 };

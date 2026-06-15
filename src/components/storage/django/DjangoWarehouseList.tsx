@@ -3,20 +3,22 @@ import {
     Box,
     Typography,
     Paper,
-    List,
-    ListItemButton,
     Stack,
     IconButton,
-    CircularProgress,
     Avatar,
     Chip,
     Tooltip,
+    ButtonBase,
+    Button,
+    alpha,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import StoreIcon from "@mui/icons-material/Store";
+import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
 import LinkOffIcon from "@mui/icons-material/LinkOff";
 import { DjangoWarehouse } from "../../../api/warehouse";
+import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
 
 interface DjangoWarehouseListProps {
     warehouses: DjangoWarehouse[];
@@ -50,119 +52,186 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                 flexDirection: "column",
                 height: "100%",
                 bgcolor: "background.paper",
+                position: "relative",
             }}
         >
             <Stack
                 direction="row"
                 alignItems="center"
                 justifyContent="space-between"
-                sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}
+                sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}
             >
-                <Typography variant="subtitle1" fontWeight={600}>
-                    Склады
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                    Склады ({warehouses.length})
                 </Typography>
                 {canManage && (
-                    <IconButton size="small" onClick={onAdd} color="primary">
-                        <AddIcon />
-                    </IconButton>
+                    <Tooltip title="Добавить склад">
+                        <IconButton size="small" onClick={onAdd} color="primary">
+                            <AddIcon />
+                        </IconButton>
+                    </Tooltip>
                 )}
             </Stack>
 
+            {!loading && warehouses.length === 0 && (
+                <Box sx={{ position: "absolute", inset: 0, display: "flex", pointerEvents: "none" }}>
+                    <ListEmptyState
+                        icon={<StorefrontOutlinedIcon />}
+                        title="Складов пока нет"
+                        description="Создайте первый склад, чтобы вести по нему остатки и движения товара."
+                        action={
+                            canManage ? (
+                                <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={onAdd}>
+                                    Создать склад
+                                </Button>
+                            ) : undefined
+                        }
+                    />
+                </Box>
+            )}
+
             <Box sx={{ flex: 1, overflowY: "auto" }}>
                 {loading ? (
-                    <Box sx={{ p: 4, textAlign: "center" }}>
-                        <CircularProgress size={24} />
-                    </Box>
-                ) : warehouses.length === 0 ? (
-                    <Box sx={{ p: 4, textAlign: "center" }}>
-                        <Typography variant="body2" color="text.secondary">
-                            Нет складов
-                        </Typography>
-                    </Box>
-                ) : (
-                    <List sx={{ py: 0.5 }}>
-                        {warehouses.map((w) => (
-                            <ListItemButton
-                                key={w.id}
-                                selected={selectedId === w.id}
-                                onClick={() => onSelect(w.id)}
-                                sx={{
-                                    py: 2,
-                                    px: 2,
-                                    borderBottom: 1,
-                                    borderColor: "divider",
-                                    flexDirection: "column",
-                                    alignItems: "flex-start",
-                                    "&.Mui-selected": { bgcolor: "action.selected" },
-                                }}
-                            >
-                                <Stack direction="row" alignItems="center" spacing={2} width="100%">
+                    <ListLoadingSkeleton rows={4} />
+                ) : warehouses.length === 0 ? null : (
+                    <Stack spacing={1} sx={{ p: 1.5 }}>
+                        {warehouses.map((w) => {
+                            const isSelected = selectedId === w.id;
+                            return (
+                                <ButtonBase
+                                    key={w.id}
+                                    onClick={() => onSelect(w.id)}
+                                    focusRipple
+                                    sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 1.5,
+                                        width: "100%",
+                                        textAlign: "left",
+                                        p: 1.25,
+                                        borderRadius: 2,
+                                        border: 1,
+                                        borderColor: isSelected ? "primary.main" : "divider",
+                                        bgcolor: (theme) =>
+                                            isSelected
+                                                ? alpha(theme.palette.primary.main, 0.08)
+                                                : "background.paper",
+                                        transition:
+                                            "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                                        "&:hover": {
+                                            borderColor: "primary.main",
+                                            boxShadow: (theme) =>
+                                                `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                                        },
+                                        "&:active": { transform: "translateY(0.5px)" },
+                                    }}
+                                >
                                     <Avatar
                                         variant="rounded"
                                         sx={{
-                                            bgcolor: w.isPrimary ? "primary.main" : "action.selected",
-                                            color: w.isPrimary ? "common.white" : "text.secondary",
+                                            flexShrink: 0,
+                                            width: 48,
+                                            height: 48,
+                                            borderRadius: 2,
+                                            bgcolor: (theme) =>
+                                                w.isPrimary
+                                                    ? theme.palette.primary.main
+                                                    : alpha(theme.palette.primary.main, 0.1),
+                                            color: w.isPrimary ? "common.white" : "primary.main",
                                         }}
                                     >
-                                        <StoreIcon />
+                                        <StoreIcon fontSize="small" />
                                     </Avatar>
-                                    <Box flex={1} minWidth={0}>
-                                        <Typography variant="subtitle2" fontWeight={600} noWrap>
+
+                                    <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                                             {w.name}
                                         </Typography>
                                         {w.address && (
-                                            <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                                            <Typography
+                                                variant="caption"
+                                                color="text.secondary"
+                                                display="block"
+                                                noWrap
+                                            >
                                                 {w.address}
                                             </Typography>
                                         )}
-                                        {w.isPrimary && !w.isLinked && (
-                                            <Typography variant="caption" color="primary" fontWeight={500}>
-                                                Основной
-                                            </Typography>
-                                        )}
-                                        {w.isLinked && (
-                                            <Chip
-                                                size="small"
-                                                label={`Филиал: ${w.branchName}`}
-                                                sx={{ mt: 0.5, height: 20, fontSize: "0.65rem" }}
-                                                color="info"
-                                                variant="outlined"
-                                            />
-                                        )}
+                                        <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }} flexWrap="wrap" useFlexGap>
+                                            {w.isPrimary && !w.isLinked && (
+                                                <Chip
+                                                    size="small"
+                                                    label="Основной"
+                                                    color="primary"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: "0.7rem",
+                                                        fontWeight: 500,
+                                                        "& .MuiChip-label": { px: 0.75 },
+                                                    }}
+                                                />
+                                            )}
+                                            {w.isLinked && (
+                                                <Chip
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="info"
+                                                    label={`Филиал: ${w.branchName}`}
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: "0.7rem",
+                                                        fontWeight: 500,
+                                                        "& .MuiChip-label": { px: 0.75 },
+                                                    }}
+                                                />
+                                            )}
+                                        </Stack>
                                     </Box>
-                                    {canManage && (
-                                        w.isLinked ? (
-                                            onUnlink && (
-                                                <Tooltip title="Отключить склад от филиала">
+
+                                    {canManage &&
+                                        (w.isLinked
+                                            ? onUnlink && (
+                                                  <Tooltip title="Отключить склад от филиала">
+                                                      <IconButton
+                                                          size="small"
+                                                          component="span"
+                                                          onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              onUnlink(w);
+                                                          }}
+                                                          sx={{
+                                                              flexShrink: 0,
+                                                              color: "text.secondary",
+                                                              "&:hover": { color: "error.main" },
+                                                          }}
+                                                      >
+                                                          <LinkOffIcon fontSize="small" />
+                                                      </IconButton>
+                                                  </Tooltip>
+                                              )
+                                            : (
+                                                <Tooltip title="Редактировать склад">
                                                     <IconButton
                                                         size="small"
+                                                        component="span"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            onUnlink(w);
+                                                            onEdit(w);
                                                         }}
-                                                        sx={{ opacity: selectedId === w.id ? 1 : 0.5 }}
+                                                        sx={{
+                                                            flexShrink: 0,
+                                                            color: "text.secondary",
+                                                            "&:hover": { color: "primary.main" },
+                                                        }}
                                                     >
-                                                        <LinkOffIcon fontSize="small" />
+                                                        <EditIcon fontSize="small" />
                                                     </IconButton>
                                                 </Tooltip>
-                                            )
-                                        ) : (
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onEdit(w);
-                                                }}
-                                                sx={{ opacity: selectedId === w.id ? 1 : 0.5 }}
-                                            >
-                                                <EditIcon fontSize="small" />
-                                            </IconButton>
-                                        )
-                                    )}
-                                </Stack>
-                            </ListItemButton>
-                        ))}
-                    </List>
+                                            ))}
+                                </ButtonBase>
+                            );
+                        })}
+                    </Stack>
                 )}
             </Box>
         </Paper>

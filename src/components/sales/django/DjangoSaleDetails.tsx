@@ -13,11 +13,12 @@ import {
     Chip,
 } from "@mui/material";
 import { Inventory, EditOutlined, DeleteOutline } from "@mui/icons-material";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { DjangoSale } from "../../../api/sales";
 import { formatKGS, formatDateRu } from "../../../utility/format";
 
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { PaymentInfoBlock } from "../../ui";
+import { PaymentInfoBlock, ListEmptyState } from "../../ui";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../../config/saleStatuses";
 
 interface DjangoSaleDetailsProps {
@@ -43,15 +44,16 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                 sx={{
                     height: "100%",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
                     border: "1px dashed",
                     borderColor: "divider",
-                    borderRadius: 1,
-                    color: "text.secondary",
+                    borderRadius: 2,
                 }}
             >
-                <Typography>Выберите продажу для просмотра</Typography>
+                <ListEmptyState
+                    icon={<ReceiptLongOutlinedIcon />}
+                    title="Выберите продажу"
+                    description="Нажмите на продажу в списке, чтобы увидеть состав, оплату и покупателя."
+                />
             </Box>
         );
     }
@@ -222,8 +224,9 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                             sx={{
                                                 width: 48,
                                                 height: 48,
-                                                bgcolor: "action.selected",
-                                                color: "text.secondary",
+                                                borderRadius: 2,
+                                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                                                color: "primary.main",
                                             }}
                                         >
                                             <Inventory />
