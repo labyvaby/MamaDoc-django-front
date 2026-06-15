@@ -2,14 +2,16 @@ import React from "react";
 import {
   Box,
   Typography,
-  List,
-  ListItemButton,
   Avatar,
   Stack,
   IconButton,
   Paper,
   CircularProgress,
+  Chip,
+  ButtonBase,
+  alpha,
 } from "@mui/material";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import { DjangoStockItem } from "../../../api/warehouse";
 
@@ -32,6 +34,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
   isFilterActive,
   warehouseName,
   warehouseAddress,
+  selectedItem,
 }) => {
   return (
     <Paper
@@ -88,55 +91,103 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
             </Typography>
           </Box>
         ) : (
-          <List sx={{ py: 0.5 }}>
-            {stock.map((item) => (
-              <ListItemButton
-                key={`${item.warehouseId}-${item.productId}`}
-                onClick={() => onSelect(item)}
-                sx={{
-                  px: 2,
-                  py: 1.5,
-                  borderBottom: 1,
-                  borderColor: "divider",
-                  "&:hover": { bgcolor: "action.hover" },
-                  minWidth: 0,
-                  overflow: "hidden",
-                }}
-              >
-                <Avatar
-                  variant="rounded"
-                  src={item.productImageUrl || undefined}
+          <Stack spacing={1} sx={{ p: 1.5 }}>
+            {stock.map((item) => {
+              const inStock = item.quantity > 0;
+              const isSelected =
+                selectedItem != null &&
+                selectedItem.warehouseId === item.warehouseId &&
+                selectedItem.productId === item.productId;
+              return (
+                <ButtonBase
+                  key={`${item.warehouseId}-${item.productId}`}
+                  onClick={() => onSelect(item)}
+                  focusRipple
                   sx={{
-                    mr: 2,
-                    flexShrink: 0,
-                    width: 40,
-                    height: 40,
-                    bgcolor: "action.selected",
-                    color: "text.secondary",
-                    fontSize: "1rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.5,
+                    width: "100%",
+                    textAlign: "left",
+                    p: 1.25,
+                    borderRadius: 2,
+                    border: 1,
+                    borderColor: isSelected ? "primary.main" : "divider",
+                    bgcolor: (theme) =>
+                      isSelected
+                        ? alpha(theme.palette.primary.main, 0.08)
+                        : "background.paper",
+                    transition: "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                    "&:hover": {
+                      borderColor: "primary.main",
+                      boxShadow: (theme) =>
+                        `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                    },
+                    "&:active": { transform: "translateY(0.5px)" },
                   }}
                 >
-                  {item.productName?.charAt(0)}
-                </Avatar>
-                <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                  <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
-                    {item.productName}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" noWrap display="block">
-                    {item.productCategory || "Без категории"}
-                  </Typography>
-                </Box>
-                <Box sx={{ textAlign: "right", ml: 1, flexShrink: 0 }}>
-                  <Typography variant="body2" fontWeight={600} color={item.quantity > 0 ? "text.primary" : "error.main"}>
-                    {item.quantity}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {item.productUnit || "шт"}
-                  </Typography>
-                </Box>
-              </ListItemButton>
-            ))}
-          </List>
+                  <Avatar
+                    variant="rounded"
+                    src={item.productImageUrl || undefined}
+                    sx={{
+                      flexShrink: 0,
+                      width: 48,
+                      height: 48,
+                      borderRadius: 2,
+                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                      color: "primary.main",
+                    }}
+                  >
+                    {item.productName?.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
+                  </Avatar>
+
+                  <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                      {item.productName}
+                    </Typography>
+                    <Chip
+                      label={item.productCategory || "Без категории"}
+                      size="small"
+                      sx={{
+                        mt: 0.5,
+                        height: 20,
+                        fontSize: "0.7rem",
+                        fontWeight: 500,
+                        bgcolor: "action.hover",
+                        color: "text.secondary",
+                        "& .MuiChip-label": { px: 0.75 },
+                      }}
+                    />
+                  </Box>
+
+                  <Stack
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{
+                      flexShrink: 0,
+                      minWidth: 56,
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: 1.5,
+                      bgcolor: (theme) =>
+                        alpha(
+                          inStock ? theme.palette.success.main : theme.palette.error.main,
+                          0.12
+                        ),
+                      color: inStock ? "success.dark" : "error.main",
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, lineHeight: 1.1 }}>
+                      {item.quantity}
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontSize: "0.65rem", opacity: 0.85 }}>
+                      {item.productUnit || "шт"}
+                    </Typography>
+                  </Stack>
+                </ButtonBase>
+              );
+            })}
+          </Stack>
         )}
       </Box>
     </Paper>
