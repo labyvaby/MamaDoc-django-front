@@ -9,6 +9,7 @@ import {
     Chip,
     Tooltip,
     ButtonBase,
+    Button,
     alpha,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
@@ -78,6 +79,13 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                         icon={<StorefrontOutlinedIcon />}
                         title="Складов пока нет"
                         description="Создайте первый склад, чтобы вести по нему остатки и движения товара."
+                        action={
+                            canManage ? (
+                                <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={onAdd}>
+                                    Создать склад
+                                </Button>
+                            ) : undefined
+                        }
                     />
                 </Box>
             )}

@@ -8,9 +8,11 @@ import {
   Paper,
   Chip,
   ButtonBase,
+  Button,
   alpha,
 } from "@mui/material";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import AddIcon from "@mui/icons-material/Add";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import { DjangoStockItem } from "../../../api/warehouse";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
@@ -24,6 +26,8 @@ interface DjangoStockListProps {
   warehouseName?: string;
   warehouseAddress?: string;
   selectedItem?: DjangoStockItem | null;
+  /** Если передан — в пустом состоянии показываем кнопку «Приход товара». */
+  onAdd?: () => void;
 }
 
 export const DjangoStockList: React.FC<DjangoStockListProps> = ({
@@ -35,6 +39,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
   warehouseName,
   warehouseAddress,
   selectedItem,
+  onAdd,
 }) => {
   return (
     <Paper
@@ -86,6 +91,13 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
             icon={<Inventory2OutlinedIcon />}
             title="Товаров пока нет"
             description="На этом складе ещё нет остатков. Оформите приход товара, чтобы он появился здесь."
+            action={
+              onAdd ? (
+                <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={onAdd}>
+                  Приход товара
+                </Button>
+              ) : undefined
+            }
           />
         </Box>
       )}

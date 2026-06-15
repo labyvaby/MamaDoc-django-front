@@ -274,6 +274,13 @@ const DjangoProductsPage: React.FC = () => {
                         ? "Добавьте первый товар, чтобы он появился в каталоге."
                         : "Под текущий поиск или фильтры ничего не подошло."
                     }
+                    action={
+                      products.length === 0 && canManage ? (
+                        <Button variant="contained" size="small" onClick={handleAddClick}>
+                          Добавить товар
+                        </Button>
+                      ) : undefined
+                    }
                   />
                 ) : (
                   <Stack spacing={1} sx={{ p: 1.5 }}>
@@ -469,6 +476,7 @@ const ProductDetailCard: React.FC<{
         flexDirection: "column",
         overflow: "hidden",
         borderColor: "divider",
+        "&:hover": { boxShadow: "none" },
       }}
       header={
         <Box

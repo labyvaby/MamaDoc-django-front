@@ -445,6 +445,13 @@ const DjangoSalesPage: React.FC = () => {
                                         </TextField>
                                     </Stack>
 
+                                    {/* Пустой каскад: продаж ещё нет — выбирать период не из чего */}
+                                    {!dayTotalsLoading && availableYears.length === 0 && (
+                                        <Typography variant="body2" color="text.secondary" sx={{ px: 0.5, py: 1 }}>
+                                            Продаж пока нет — выбор периода появится после первой продажи.
+                                        </Typography>
+                                    )}
+
                                     {/* Месяц */}
                                     {selectedYear && (
                                         <Stack spacing={0.5}>
@@ -486,6 +493,10 @@ const DjangoSalesPage: React.FC = () => {
                                                 <Box sx={{ display: "flex", justifyContent: "center", py: 1 }}>
                                                     <CircularProgress size={20} />
                                                 </Box>
+                                            ) : groupedByDay.length === 0 ? (
+                                                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+                                                    Нет продаж за выбранный месяц
+                                                </Typography>
                                             ) : (
                                                 <List dense sx={{ py: 0 }}>
                                                     {groupedByDay.map((day) => (
