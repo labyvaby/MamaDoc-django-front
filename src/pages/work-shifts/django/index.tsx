@@ -3,18 +3,14 @@ import {
   Box,
   Typography,
   Button,
-  Card,
-  CardContent,
+  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Chip,
-  Container,
-  CircularProgress,
   LinearProgress,
   Stack,
   IconButton,
@@ -26,7 +22,9 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  alpha,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
@@ -35,6 +33,8 @@ import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
@@ -51,6 +51,7 @@ import {
   type WorkShiftRow,
 } from "../../../api/attendance";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
+import { PageHeader, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
 import ShiftFormDrawer, { type EmployeeOption } from "./ShiftFormDrawer";
 
 dayjs.extend(duration);
@@ -69,6 +70,7 @@ const formatDuration = (start: string, end: string | null): string => {
 
 const DjangoWorkShiftsPage: React.FC = () => {
   usePageTitle("СКУД");
+  const theme = useTheme();
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
 
@@ -190,50 +192,140 @@ const DjangoWorkShiftsPage: React.FC = () => {
     return <Chip label="Завершено" color="info" size="small" />;
   };
 
+  // Фильтры в стиле склада — отдельная полноширинная строка под заголовком,
+  // чтобы подписи полей и даты не сжимались рядом с кнопкой «Добавить».
+  const filters = (
+    <Stack
+      direction="row"
+      spacing={1.5}
+      useFlexGap
+      flexWrap="wrap"
+      alignItems="center"
+      sx={{ width: "100%" }}
+    >
+      {canManage && (
+        <TextField
+          select
+          size="small"
+          label="Сотрудник"
+          value={selectedEmployeeId ?? ""}
+          onChange={(e) => setSelectedEmployeeId(e.target.value ? Number(e.target.value) : null)}
+          sx={{ flex: "1 1 220px", minWidth: 200 }}
+        >
+          <MenuItem value="">Все сотрудники</MenuItem>
+          {employees.map((emp) => (
+            <MenuItem key={emp.id} value={emp.id}>
+              {emp.fullName}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
+      <TextField
+        type="date"
+        size="small"
+        label="От"
+        value={startDate}
+        onChange={(e) => setStartDate(e.target.value)}
+        InputLabelProps={{ shrink: true }}
+        sx={{ flex: "1 1 170px", minWidth: 165 }}
+      />
+      <TextField
+        type="date"
+        size="small"
+        label="До"
+        value={endDate}
+        onChange={(e) => setEndDate(e.target.value)}
+        InputLabelProps={{ shrink: true }}
+        sx={{ flex: "1 1 170px", minWidth: 165 }}
+      />
+    </Stack>
+  );
+
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* ═══ STICKY TOP ZONE ═══ */}
+    <Box
+      sx={(t) => ({
+        height: {
+          xs: `calc(100dvh - ${t.appLayout.header.height.mobile}px)`,
+          md: `calc(100dvh - ${t.appLayout.header.height.desktop}px)`,
+        },
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        overflow: "hidden",
+      })}
+    >
+      <PageHeader
+        title="СКУД"
+        showTitle={false}
+        onAdd={canManage ? openCreate : undefined}
+        addButtonText="Добавить смену"
+      />
+
       <Box
-        sx={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          bgcolor: "background.default",
-          borderBottom: "1px solid",
-          borderColor: "divider",
-          flexShrink: 0,
-        }}
+        sx={(t) => ({
+          px: t.appLayout.page.paddingX,
+          pt: 1.5,
+          pb: t.appLayout.page.paddingY,
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+        })}
       >
-        <Container maxWidth="lg" sx={{ pt: 1, pb: 1 }}>
-          {canClock && (
+        {/* Фильтры */}
+        <Box sx={{ mb: 2 }}>{filters}</Box>
+
+        {/* Карточка отметки смены (для тех, кто может отмечаться) */}
+        {canClock && (
+          <Paper
+            elevation={0}
+            variant="outlined"
+            sx={{
+              mb: 2,
+              p: { xs: 1.75, sm: 2.5 },
+              borderRadius: 1.5,
+              borderColor: (t) =>
+                currentShift
+                  ? alpha(t.palette.success.main, 0.35)
+                  : "divider",
+              bgcolor: (t) =>
+                currentShift
+                  ? alpha(t.palette.success.main, 0.06)
+                  : "background.paper",
+            }}
+          >
             <Stack
-              direction="row"
-              alignItems="center"
+              direction={{ xs: "column", sm: "row" }}
+              alignItems={{ xs: "stretch", sm: "center" }}
               justifyContent="space-between"
-              spacing={1}
-              sx={{ mb: 1 }}
+              spacing={1.5}
             >
               <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+                  Моя смена
+                </Typography>
+                <Box sx={{ mt: 0.75 }}>
+                  {currentShift ? (
+                    <Chip
+                      icon={<AccessTimeIcon />}
+                      label={`Активна с ${dayjs(currentShift.clockIn).format("HH:mm")}`}
+                      color="success"
+                      size="small"
+                      variant="outlined"
+                    />
+                  ) : (
+                    <Chip label="Смена не начата" size="small" color="default" variant="outlined" />
+                  )}
+                </Box>
                 {!effectiveAllowedIp && (
-                  <Typography variant="caption" sx={{ color: "warning.main", display: "block" }}>
-                    IP не настроен
+                  <Typography variant="caption" sx={{ color: "warning.main", display: "block", mt: 0.75 }}>
+                    IP офиса не настроен — проверка отключена
                   </Typography>
                 )}
                 {effectiveAllowedIp && !isIpCorrect && (
-                  <Typography variant="caption" sx={{ color: "error.main", display: "block" }}>
-                    Не в офисном Wi-Fi
+                  <Typography variant="caption" sx={{ color: "error.main", display: "block", mt: 0.75 }}>
+                    Вы не в офисном Wi-Fi — начать смену нельзя
                   </Typography>
-                )}
-                {currentShift ? (
-                  <Chip
-                    icon={<AccessTimeIcon />}
-                    label={`Активна с ${dayjs(currentShift.clockIn).format("HH:mm")}`}
-                    color="success"
-                    size="small"
-                    variant="outlined"
-                  />
-                ) : (
-                  <Chip label="Смена не начата" size="small" color="default" variant="outlined" />
                 )}
               </Box>
               <Box sx={{ flexShrink: 0 }}>
@@ -241,105 +333,76 @@ const DjangoWorkShiftsPage: React.FC = () => {
                   <Button
                     variant="contained"
                     color="success"
-                    size="small"
                     startIcon={<PlayArrowIcon />}
                     onClick={handleStartShift}
                     disabled={actionLoading || !isIpCorrect}
+                    fullWidth
+                    sx={{ minHeight: theme.appLayout.controls.buttonHeight }}
                   >
-                    Начать
+                    Начать смену
                   </Button>
                 ) : (
                   <Button
                     variant="contained"
                     color="error"
-                    size="small"
                     startIcon={<StopIcon />}
                     onClick={handleEndShift}
                     disabled={actionLoading}
+                    fullWidth
+                    sx={{ minHeight: theme.appLayout.controls.buttonHeight }}
                   >
-                    Завершить
+                    Завершить смену
                   </Button>
                 )}
               </Box>
             </Stack>
+          </Paper>
+        )}
+
+        {/* Список смен */}
+        <Paper
+          elevation={0}
+          variant="outlined"
+          sx={{
+            borderRadius: 1.5,
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}
+          >
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              История смен{!loading ? ` (${shifts.length})` : ""}
+            </Typography>
+          </Stack>
+
+          {isFetching && !loading && (
+            <LinearProgress sx={{ height: 2 }} />
           )}
 
-          {/* Filters */}
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            {canManage && (
-              <TextField
-                select
-                size="small"
-                label="Сотрудник"
-                value={selectedEmployeeId ?? ""}
-                onChange={(e) => setSelectedEmployeeId(e.target.value ? Number(e.target.value) : null)}
-                sx={{ flex: "1 1 160px", minWidth: 0 }}
-              >
-                <MenuItem value="">Все</MenuItem>
-                {employees.map((emp) => (
-                  <MenuItem key={emp.id} value={emp.id}>
-                    {emp.fullName}
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
-            <TextField
-              type="date"
-              size="small"
-              label="От"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: "1 1 130px", minWidth: 0 }}
-            />
-            <TextField
-              type="date"
-              size="small"
-              label="До"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: "1 1 130px", minWidth: 0 }}
-            />
-            {canManage && (
-              <Button
-                variant="contained"
-                size="small"
-                onClick={openCreate}
-                sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-              >
-                + Добавить
-              </Button>
-            )}
-          </Stack>
-        </Container>
-        {isFetching && !loading && (
-          <Box sx={{ position: "absolute", bottom: 0, left: 0, right: 0, transform: "translateY(100%)" }}>
-            <LinearProgress sx={{ height: 2 }} />
-          </Box>
-        )}
-      </Box>
-
-      {/* ═══ SCROLLABLE LIST ═══ */}
-      <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0, position: "relative" }}>
-        <Container maxWidth="lg" sx={{ pt: 1.5, pb: { xs: 12, md: 4 } }}>
           {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-              <CircularProgress />
-            </Box>
+            <ListLoadingSkeleton rows={6} />
           ) : shifts.length === 0 ? (
-            <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
-              <Typography color="text.secondary">История пуста</Typography>
-            </Paper>
+            <ListEmptyState
+              icon={<EventBusyOutlinedIcon />}
+              title="Смен пока нет"
+              description="За выбранный период отметок нет. Измените период или добавьте смену вручную."
+              action={
+                canManage ? (
+                  <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={openCreate}>
+                    Добавить смену
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <>
               {/* Desktop table (md+) */}
-              <TableContainer
-                component={Paper}
-                variant="outlined"
-                elevation={0}
-                sx={{ display: { xs: "none", md: "block" } }}
-              >
+              <TableContainer sx={{ display: { xs: "none", md: "block" } }}>
                 <Table stickyHeader>
                   <TableHead>
                     <TableRow>
@@ -362,12 +425,13 @@ const DjangoWorkShiftsPage: React.FC = () => {
                         return (
                           <React.Fragment key={shift.id}>
                             {isNewDay && (
-                              <TableRow sx={{ position: "sticky", top: 56, zIndex: 2, bgcolor: "background.default" }}>
+                              <TableRow sx={{ position: "sticky", top: 56, zIndex: 2 }}>
                                 <TableCell
                                   colSpan={canManage ? 8 : 6}
                                   sx={{
                                     py: 1,
-                                    fontWeight: 600,
+                                    fontWeight: 700,
+                                    color: "text.secondary",
                                     borderBottom: "1px solid",
                                     borderColor: "divider",
                                     bgcolor: "background.default",
@@ -427,7 +491,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
               </TableContainer>
 
               {/* Mobile/tablet cards (xs, sm) */}
-              <Box sx={{ display: { xs: "block", md: "none" } }}>
+              <Box sx={{ display: { xs: "block", md: "none" }, p: 1.5 }}>
                 {(() => {
                   let currentDayStr = "";
                   return processedShifts.map((shift) => {
@@ -440,57 +504,64 @@ const DjangoWorkShiftsPage: React.FC = () => {
                             variant="caption"
                             fontWeight={700}
                             color="text.secondary"
-                            sx={{ display: "block", mt: 2, mb: 0.5, px: 0.5, textTransform: "uppercase", letterSpacing: 0.5 }}
+                            sx={{ display: "block", mt: 2, mb: 0.75, px: 0.5, textTransform: "uppercase", letterSpacing: 0.5 }}
                           >
                             {shift.dayStr}
                           </Typography>
                         )}
-                        <Card variant="outlined" sx={{ mb: 1 }}>
-                          <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
-                            <Stack direction="row" alignItems="flex-start" justifyContent="space-between">
-                              <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
-                                  {shift.isNightShift ? (
-                                    <NightlightOutlined sx={{ color: "warning.main", fontSize: "1rem" }} />
-                                  ) : (
-                                    <WbSunnyOutlined sx={{ color: "primary.main", fontSize: "1rem" }} />
-                                  )}
-                                  <Typography variant="body2" fontWeight={600}>
-                                    {shift.timeStart} — {shift.timeEnd === "—" ? "активна" : shift.timeEnd}
-                                  </Typography>
-                                  {shift.isAnomalous && (
-                                    <Tooltip title="Аномальная длительность (> 36ч)">
-                                      <ReportProblemIcon sx={{ color: "error.main", fontSize: "1rem" }} />
-                                    </Tooltip>
-                                  )}
-                                </Stack>
-                                <Stack direction="row" spacing={2} flexWrap="wrap">
-                                  <Typography variant="caption" color="text.secondary">
-                                    Длительность: <strong>{shift.durationStr}</strong>
-                                  </Typography>
-                                  {canManage && shift.employeeName && (
-                                    <Typography variant="caption" color="text.secondary" noWrap>
-                                      {shift.employeeName}
-                                    </Typography>
-                                  )}
-                                </Stack>
-                              </Box>
-                              <Stack direction="row" alignItems="center" spacing={0.5} ml={1} sx={{ flexShrink: 0 }}>
-                                {statusChip(shift)}
-                                {canManage && (
-                                  <>
-                                    <IconButton size="small" onClick={() => openEdit(shift)}>
-                                      <EditOutlined fontSize="small" />
-                                    </IconButton>
-                                    <IconButton size="small" color="error" onClick={() => setDeleteTarget(shift)}>
-                                      <DeleteOutline fontSize="small" />
-                                    </IconButton>
-                                  </>
+                        <Box
+                          sx={{
+                            mb: 1,
+                            p: 1.25,
+                            borderRadius: 1,
+                            border: 1,
+                            borderColor: "divider",
+                            bgcolor: "background.paper",
+                          }}
+                        >
+                          <Stack direction="row" alignItems="flex-start" justifyContent="space-between">
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
+                                {shift.isNightShift ? (
+                                  <NightlightOutlined sx={{ color: "warning.main", fontSize: "1rem" }} />
+                                ) : (
+                                  <WbSunnyOutlined sx={{ color: "primary.main", fontSize: "1rem" }} />
+                                )}
+                                <Typography variant="body2" fontWeight={600}>
+                                  {shift.timeStart} — {shift.timeEnd === "—" ? "активна" : shift.timeEnd}
+                                </Typography>
+                                {shift.isAnomalous && (
+                                  <Tooltip title="Аномальная длительность (> 36ч)">
+                                    <ReportProblemIcon sx={{ color: "error.main", fontSize: "1rem" }} />
+                                  </Tooltip>
                                 )}
                               </Stack>
+                              <Stack direction="row" spacing={2} flexWrap="wrap">
+                                <Typography variant="caption" color="text.secondary">
+                                  Длительность: <strong>{shift.durationStr}</strong>
+                                </Typography>
+                                {canManage && shift.employeeName && (
+                                  <Typography variant="caption" color="text.secondary" noWrap>
+                                    {shift.employeeName}
+                                  </Typography>
+                                )}
+                              </Stack>
+                            </Box>
+                            <Stack direction="row" alignItems="center" spacing={0.5} ml={1} sx={{ flexShrink: 0 }}>
+                              {statusChip(shift)}
+                              {canManage && (
+                                <>
+                                  <IconButton size="small" onClick={() => openEdit(shift)}>
+                                    <EditOutlined fontSize="small" />
+                                  </IconButton>
+                                  <IconButton size="small" color="error" onClick={() => setDeleteTarget(shift)}>
+                                    <DeleteOutline fontSize="small" />
+                                  </IconButton>
+                                </>
+                              )}
                             </Stack>
-                          </CardContent>
-                        </Card>
+                          </Stack>
+                        </Box>
                       </React.Fragment>
                     );
                   });
@@ -498,7 +569,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
               </Box>
             </>
           )}
-        </Container>
+        </Paper>
       </Box>
 
       <ShiftFormDrawer
