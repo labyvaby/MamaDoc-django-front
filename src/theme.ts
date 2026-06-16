@@ -1,4 +1,4 @@
-import { alpha, createTheme, responsiveFontSizes } from "@mui/material/styles";
+import { alpha, createTheme, responsiveFontSizes, lighten, darken } from "@mui/material/styles";
 import type { PaletteMode, Theme } from "@mui/material/styles";
 import { RefineThemes } from "@refinedev/mui";
 import "@mui/x-data-grid/themeAugmentation";
@@ -98,7 +98,52 @@ declare module "@mui/material/styles" {
 
 const APP_BREAKPOINTS = { xs: 0, sm: 360, md: 768, lg: 1200, xl: 1536 } as const;
 
-export function getAppTheme(mode: PaletteMode | string): Theme {
+// ---- THEME CUSTOMIZATION PRESETS -------------------------------------------
+// Поверхности (фон приложения + карточек) для светлого и тёмного режимов,
+// и скин карточек. Используются кастомайзером темы.
+
+export type SurfacePreset = {
+  key: string;
+  name: string;
+  /** Цвет фона приложения (background.default). */
+  default: string;
+  /** Цвет карточек/панелей (background.paper). */
+  paper: string;
+  /** Цвет образца-свотча в кастомайзере. */
+  swatch: string;
+};
+
+export const LIGHT_SURFACES: SurfacePreset[] = [
+  { key: "slate", name: "Slate", default: "#f1f5f9", paper: "#ffffff", swatch: "#e2e8f0" },
+  { key: "gray", name: "Gray", default: "#f4f4f5", paper: "#ffffff", swatch: "#e5e7eb" },
+  { key: "neutral", name: "Neutral", default: "#f5f5f4", paper: "#ffffff", swatch: "#e7e5e4" },
+];
+
+export const DARK_SURFACES: SurfacePreset[] = [
+  { key: "navy", name: "Navy", default: "#0f172a", paper: "#1e293b", swatch: "#1e293b" },
+  { key: "mirage", name: "Mirage", default: "#18212f", paper: "#212c3f", swatch: "#212c3f" },
+  { key: "mint", name: "Mint", default: "#0d1f1b", paper: "#15302a", swatch: "#15302a" },
+  { key: "cinder", name: "Cinder", default: "#141319", paper: "#1e1c26", swatch: "#1e1c26" },
+  { key: "black", name: "Black", default: "#000000", paper: "#121212", swatch: "#121212" },
+];
+
+export const DEFAULT_LIGHT_SURFACE = "slate";
+export const DEFAULT_DARK_SURFACE = "navy";
+
+export type CardSkin = "bordered" | "shadow";
+export const DEFAULT_CARD_SKIN: CardSkin = "bordered";
+
+export type ThemeCustomization = {
+  primaryColor?: string;
+  surface?: { default: string; paper: string };
+  cardSkin?: CardSkin;
+};
+
+export function getAppTheme(
+  mode: PaletteMode | string,
+  custom: ThemeCustomization = {},
+): Theme {
+  const { primaryColor, surface, cardSkin = DEFAULT_CARD_SKIN } = custom;
   const m = (mode === "dark" ? "dark" : "light") as PaletteMode;
   const base = m === "light" ? RefineThemes.Blue : RefineThemes.BlueDark;
 
@@ -169,10 +214,14 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
     },
   };
 
-  // Derive tokens from base to keep compatibility with Refine defaults
-  const primary = base.palette.primary.main;
-  const backgroundPaper = base.palette.background.paper;
-  const backgroundDefault = base.palette.background.default;
+  // Derive tokens from base to keep compatibility with Refine defaults.
+  // primaryColor (если задан в кастомайзере) переопределяет основной цвет —
+  // от него же зависят бордеры карточек, divider, акценты и т.п.
+  const primary = primaryColor || base.palette.primary.main;
+  const primaryLight = primaryColor ? lighten(primaryColor, 0.25) : base.palette.primary.light;
+  const primaryDark = primaryColor ? darken(primaryColor, 0.2) : base.palette.primary.dark;
+  const backgroundPaper = surface?.paper || base.palette.background.paper;
+  const backgroundDefault = surface?.default || base.palette.background.default;
 
   let theme = createTheme({
     ...base,
@@ -186,11 +235,12 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
       // Fine-tune neutrals and accents for a calmer, designer look
       primary: {
         ...base.palette.primary,
-        main: base.palette.primary.main,
-        light: base.palette.primary.light,
-        dark: base.palette.primary.dark,
+        main: primary,
+        light: primaryLight,
+        dark: primaryDark,
+        ...(primaryColor ? { contrastText: "#fff" } : {}),
         // Лёгкий тон для фонов активных состояний (кнопки фильтра и т.п.).
-        lighter: alpha(base.palette.primary.main, m === "dark" ? 0.24 : 0.12),
+        lighter: alpha(primary, m === "dark" ? 0.24 : 0.12),
       },
       secondary: {
         ...base.palette.secondary,
@@ -285,19 +335,12 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
         },
       },
       MuiCard: {
-        defaultProps: { elevation: 0 },
+        defaultProps: { elevation: 0, variant: "outlined" },
         styleOverrides: {
           root: {
             borderRadius: 14,
-            border: `1px solid ${alpha(primary, m === "dark" ? 0.18 : 0.1)}`,
             backgroundImage: "none",
             transition: "box-shadow .2s ease, transform .2s ease",
-            "&:hover": {
-              boxShadow:
-                m === "dark"
-                  ? "0 8px 28px rgba(0,0,0,0.35)"
-                  : "0 8px 28px rgba(2,6,23,0.08)",
-            },
           },
         },
       },
@@ -362,11 +405,22 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
           },
         },
       },
+      // Скин панелей (Card и Paper используют класс MuiPaper-outlined):
+      // bordered — рамка без тени; shadow — мягкая тень без рамки.
       MuiPaper: {
         styleOverrides: {
-          outlined: {
-            borderColor: alpha(primary, m === "dark" ? 0.18 : 0.1),
-          },
+          outlined:
+            cardSkin === "shadow"
+              ? {
+                  borderColor: "transparent",
+                  boxShadow:
+                    m === "dark"
+                      ? "0 1px 2px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30)"
+                      : "0 1px 2px rgba(2,6,23,0.04), 0 6px 20px rgba(2,6,23,0.07)",
+                }
+              : {
+                  borderColor: alpha(primary, m === "dark" ? 0.18 : 0.1),
+                },
         },
       },
       MuiTextField: {

@@ -330,7 +330,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                       sx={{
                         width: 1,
                         bgcolor: "grey.100",
-                        borderRadius: 1.5,
+                        borderRadius: 1,
                         p: "3px",
                         border: "none",
                         "& .MuiToggleButton-root": {

@@ -188,3 +188,6 @@ pids/
 .claude/
 .claude/*
 AGENTS.md
+
+# Internal docs (ТЗ, заметки)
+docs/

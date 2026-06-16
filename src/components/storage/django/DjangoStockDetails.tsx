@@ -158,7 +158,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                     <Box
                         sx={{
                             p: 2.5,
-                            borderRadius: 3,
+                            borderRadius: 1.5,
                             border: 1,
                             borderColor: (theme) =>
                                 alpha(
@@ -240,7 +240,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                                 display: "inline-flex",
                                 p: 0.5,
                                 mb: 1.5,
-                                borderRadius: 2,
+                                borderRadius: 1,
                                 bgcolor: "action.hover",
                             }}
                         >
@@ -257,7 +257,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                                             cursor: "pointer",
                                             px: 1.75,
                                             py: 0.5,
-                                            borderRadius: 1.5,
+                                            borderRadius: 1,
                                             fontSize: "0.8125rem",
                                             fontWeight: active ? 600 : 500,
                                             fontFamily: "inherit",
@@ -337,7 +337,7 @@ const MovementRow: React.FC<{
                 display: "flex",
                 gap: 1.5,
                 p: 1.25,
-                borderRadius: 2,
+                borderRadius: 1,
                 border: 1,
                 borderColor: "divider",
                 bgcolor: "background.paper",
@@ -354,7 +354,7 @@ const MovementRow: React.FC<{
                     flexShrink: 0,
                     width: 36,
                     height: 36,
-                    borderRadius: 2,
+                    borderRadius: 1,
                     bgcolor: (theme) => alpha(theme.palette[visual.color].main, 0.12),
                     color: `${visual.color}.main`,
                 }}
@@ -434,12 +434,12 @@ const MovementSkeleton: React.FC = () => (
                     display: "flex",
                     gap: 1.5,
                     p: 1.25,
-                    borderRadius: 2,
+                    borderRadius: 1,
                     border: 1,
                     borderColor: "divider",
                 }}
             >
-                <Skeleton variant="rounded" width={36} height={36} sx={{ borderRadius: 2, flexShrink: 0 }} />
+                <Skeleton variant="rounded" width={36} height={36} sx={{ borderRadius: 1, flexShrink: 0 }} />
                 <Box sx={{ flex: 1 }}>
                     <Skeleton variant="text" width="40%" height={20} />
                     <Skeleton variant="text" width="65%" height={16} />

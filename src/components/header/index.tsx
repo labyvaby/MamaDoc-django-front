@@ -1,12 +1,12 @@
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import { usePermissions } from "../../hooks/usePermissions";
-import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import TelegramIcon from "@mui/icons-material/Telegram";
 import EmailOutlined from "@mui/icons-material/EmailOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
-import appLogo from "../../assets/img/logo.png";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import { usePermissions } from "../../hooks/usePermissions";
 import appIcon from "../../assets/img/icon_2.png";
 
 import AppBar from "@mui/material/AppBar";
@@ -18,51 +18,86 @@ import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
 import Chip from "@mui/material/Chip";
+import { alpha } from "@mui/material/styles";
 
 import { RefineThemedLayoutHeaderProps } from "@refinedev/mui";
 import React from "react";
+import { useNavigate } from "react-router";
 import { useMobileSidebar } from "../sidebar/mobile-context";
 import { useRefresh } from "../../contexts/refresh-context";
 import { supabase } from "../../utility/supabaseClient";
 import { useTitleContext } from "../../contexts/title-context";
-import { mapAnyToEmployee } from "../../features/employees/api";
+import { mapAnyToEmployee, fetchEmployeeSpecialization } from "../../features/employees/api";
 import { Employee } from "../../features/employees/types";
 import { DB_TABLES } from "../../utility/constants";
-import { fetchEmployeeSpecialization, EMPLOYEE_PHOTOS_BUCKET, EMPLOYEE_PASSPORTS_BUCKET, EMPLOYEES_WRITE } from "../../features/employees/api";
-import PassportPhotoUploader from "../../features/employees/components/PassportPhotoUploader";
-import { uploadFile } from "../../utility/storage";
-import { useNotification } from "@refinedev/core";
-import SaveIcon from "@mui/icons-material/Save";
-import CircularProgress from "@mui/material/CircularProgress";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
+
+/** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
+const ProfileInfoRow: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value?: React.ReactNode;
+  active?: boolean;
+  monospace?: boolean;
+}> = ({ icon, label, value, active = true, monospace = false }) => (
+  <Box
+    sx={{
+      display: "flex",
+      alignItems: "center",
+      gap: 1.5,
+      p: 1.25,
+      borderRadius: 1,
+      border: 1,
+      borderColor: "divider",
+      bgcolor: "background.paper",
+    }}
+  >
+    <Box
+      sx={{
+        width: 40,
+        height: 40,
+        borderRadius: 1,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: active ? "primary.main" : "text.disabled",
+        bgcolor: (theme) =>
+          active ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
+        "& .MuiSvgIcon-root": { fontSize: 20 },
+      }}
+    >
+      {icon}
+    </Box>
+    <Box sx={{ minWidth: 0 }}>
+      <Typography variant="caption" color="text.secondary" display="block">
+        {label}
+      </Typography>
+      <Typography
+        variant="body2"
+        fontWeight={600}
+        noWrap
+        sx={monospace ? { fontFamily: "monospace" } : undefined}
+      >
+        {value || "—"}
+      </Typography>
+    </Box>
+  </Box>
+);
 
 export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
   sticky = true,
 }) => {
-  const [identity, setIdentity] = React.useState<{ name?: string; avatar?: string; email?: string } | null>(null);
   const [employee, setEmployee] = React.useState<Employee | null>(null);
   const [profileOpen, setProfileOpen] = React.useState(false);
+  const [roleInfo, setRoleInfo] = React.useState<{ name: string; display_name: string } | null>(null);
+  const [specializationName, setSpecializationName] = React.useState<string | null>(null);
+  const navigate = useNavigate();
   const { toggle } = useMobileSidebar();
   const { triggerRefresh, onRefresh } = useRefresh();
   const { title } = useTitleContext();
-
-
-
-  // --- NEW STATE ---
-  const [roleInfo, setRoleInfo] = React.useState<{ name: string; display_name: string } | null>(null);
-  const [specializationName, setSpecializationName] = React.useState<string | null>(null);
-  const { open: notify } = useNotification();
-  const [busy, setBusy] = React.useState(false);
-  const [passportPhotos, setPassportPhotos] = React.useState<string[]>([]);
-  const [passportFiles, setPassportFiles] = React.useState<File[]>([]);
-  const [removedPassportUrls, setRemovedPassportUrls] = React.useState<string[]>([]);
-
 
   const { employee: empFromPerms, role } = usePermissions();
 
@@ -72,10 +107,14 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
       const r = empFromPerms.roles || role;
       if (r) {
         setRoleInfo(r);
-        if (!IS_DJANGO_BACKEND && r.name === 'doctor' && empFromPerms.id) {
+        if (!IS_DJANGO_BACKEND && r.name === "doctor" && empFromPerms.id) {
           fetchEmployeeSpecialization(String(empFromPerms.id)).then(async (specId) => {
             if (specId) {
-              const { data: sData } = await supabase.from(DB_TABLES.SPECIALIZATIONS).select('name').eq('id', specId).single();
+              const { data: sData } = await supabase
+                .from(DB_TABLES.SPECIALIZATIONS)
+                .select("name")
+                .eq("id", specId)
+                .single();
               if (sData) setSpecializationName(sData.name);
             }
           });
@@ -88,60 +127,18 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
     }
   }, [empFromPerms, role]);
 
-  React.useEffect(() => {
-    if (employee) {
-      setPassportPhotos(Array.isArray(employee.passport_photos) ? employee.passport_photos : []);
-      setPassportFiles([]);
-      setRemovedPassportUrls([]);
-    }
-  }, [employee]);
+  const displayAvatar = employee?.photo_url || undefined;
+  const displayName = employee?.full_name || "Пользователь";
+  const displayEmail = employee?.email;
+  const roleText =
+    roleInfo?.display_name ||
+    (roleInfo?.name === "doctor" ? "Врач" : roleInfo?.name) ||
+    (employee?.status === "active" ? "Сотрудник" : "Пользователь");
 
-  const handleSavePassport = async () => {
-    if (!employee?.id) return;
-    try {
-      setBusy(true);
-      const newUploadedPassportUrls: string[] = [];
-      for (const file of passportFiles) {
-        try {
-          const url = await uploadFile(file, EMPLOYEE_PASSPORTS_BUCKET);
-          if (url) newUploadedPassportUrls.push(url);
-        } catch (e) {
-          console.error("Upload passport photo (self) failed:", e);
-        }
-      }
-
-      const finalPassportPhotos = [
-        ...passportPhotos.filter(url => !url.startsWith('data:') && !removedPassportUrls.includes(url)),
-        ...newUploadedPassportUrls
-      ];
-
-      const { error } = await supabase
-        .from(EMPLOYEES_WRITE)
-        .update({ passport_photos: finalPassportPhotos, updated_at: new Date().toISOString() })
-        .eq("id", employee.id);
-
-      if (error) throw error;
-
-      notify?.({ type: "success", message: "Паспортные данные обновлены" });
-      triggerRefresh();
-      setPassportFiles([]);
-      setRemovedPassportUrls([]);
-    } catch (e) {
-      console.error("Save passport failed:", e);
-      notify?.({ type: "error", message: "Не удалось сохранить паспортные данные" });
-    } finally {
-      setBusy(false);
-    }
+  const openProfilePage = () => {
+    setProfileOpen(false);
+    navigate("/profile");
   };
-
-
-
-  const displayAvatar = employee?.photo_url || identity?.avatar;
-  const displayName = employee?.full_name || identity?.name || "Пользователь";
-  const displayEmail = employee?.email || identity?.email;
-
-  // Role display logic
-  const roleText = roleInfo?.display_name || (roleInfo?.name === 'doctor' ? "Врач" : roleInfo?.name) || (employee?.status === 'active' ? "Сотрудник" : "Пользователь");
 
 
   return (
@@ -265,8 +262,6 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             <RefreshOutlined sx={{ fontSize: { xs: 18, sm: 20 } }} />
           </IconButton>
 
-
-
           {(displayAvatar || displayName) && (
             <Stack
               direction="row"
@@ -310,53 +305,56 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             </Stack>
           )}
 
+          {/* Модалка профиля — быстрый просмотр + переход на полную страницу */}
           <Dialog
             open={profileOpen}
             onClose={() => setProfileOpen(false)}
             maxWidth="xs"
             fullWidth
-            PaperProps={{
-              sx: {
-                borderRadius: 4,
-                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-                overflow: "hidden",
-              }
-            }}
+            PaperProps={{ sx: { borderRadius: 1.5, overflow: "hidden" } }}
           >
             <DialogContent sx={{ p: 0 }}>
-              {/* Header Background */}
-              <Box sx={{
-                height: 100,
-                bgcolor: (theme) => theme.palette.primary.light,
-                opacity: 0.15,
-                mb: -10, // pull up avatar
-              }} />
+              {/* Шапка: тонированная плашка + кнопка закрытия */}
+              <Box sx={{ position: "relative" }}>
+                <Box
+                  sx={{
+                    height: 88,
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                  }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={() => setProfileOpen(false)}
+                  sx={{ position: "absolute", top: 8, right: 8, color: "text.secondary" }}
+                  aria-label="Закрыть"
+                >
+                  <CloseOutlined fontSize="small" />
+                </IconButton>
+              </Box>
 
-              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", px: 3, pb: 4, gap: 1 }}>
+              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", px: 3, pb: 3 }}>
                 <Avatar
                   src={displayAvatar}
                   alt={displayName}
                   sx={{
                     width: 96,
                     height: 96,
-                    mb: 2,
+                    mt: "-48px",
                     border: (theme) => `4px solid ${theme.palette.background.paper}`,
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
                     zIndex: 1,
                   }}
                 />
 
-                <Box sx={{ textAlign: "center", mb: 2 }}>
-                  <Typography variant="h5" component="h2" fontWeight="700">
+                <Box sx={{ textAlign: "center", mt: 1.5, mb: 2.5 }}>
+                  <Typography variant="h6" component="h2" fontWeight={700}>
                     {displayName}
                   </Typography>
-                  {/* Role & Status */}
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'center', mt: 1 }}>
-                    <Typography variant="body1" color="text.secondary" fontWeight="500">
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, alignItems: "center", mt: 0.75 }}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={500}>
                       {roleText}
                     </Typography>
                     {specializationName && (
-                      <Typography variant="body2" color="primary" fontWeight="600">
+                      <Typography variant="body2" color="primary" fontWeight={600}>
                         {specializationName}
                       </Typography>
                     )}
@@ -366,129 +364,64 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                         size="small"
                         color={employee.status === "active" ? "success" : "default"}
                         variant="filled"
-                        sx={{ mt: 0.5, fontWeight: 600, fontSize: '0.75rem', height: 20 }}
+                        sx={{ mt: 0.5, fontWeight: 600, fontSize: "0.75rem", height: 20 }}
                       />
                     )}
                   </Box>
                 </Box>
 
-                <Stack spacing={2} sx={{ width: '100%' }}>
-
-                  {/* Phone */}
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Box sx={{ p: 1, borderRadius: '50%', bgcolor: 'action.hover' }}>
-                      <LocalPhoneOutlined color="primary" fontSize="small" />
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Телефон
-                      </Typography>
-                      <Typography variant="body2" fontWeight={500}>
-                        {employee?.phone || "—"}
-                      </Typography>
-                    </Box>
-                  </Stack>
-
-                  <Divider />
-
-                  {/* Telegram */}
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Box sx={{ p: 1, borderRadius: '50%', bgcolor: 'action.hover' }}>
-                      <TelegramIcon color={employee?.telegram_id ? "primary" : "disabled"} fontSize="small" />
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Telegram ID
-                      </Typography>
-                      <Typography variant="body2" fontWeight={500}>
-                        {employee?.telegram_id || "—"}
-                      </Typography>
-                    </Box>
-                  </Stack>
-
-                  <Divider />
-
-                  {/* Email */}
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Box sx={{ p: 1, borderRadius: '50%', bgcolor: 'action.hover' }}>
-                      <EmailOutlined color={displayEmail ? "primary" : "disabled"} fontSize="small" />
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Email
-                      </Typography>
-                      <Typography variant="body2" fontWeight={500}>
-                        {displayEmail || "—"}
-                      </Typography>
-                    </Box>
-                  </Stack>
-
-                  <Divider />
-
-                  {/* Bank Account */}
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Box sx={{ p: 1, borderRadius: '50%', bgcolor: 'action.hover' }}>
-                      <CreditCardOutlined color={employee?.bank_account_number ? "primary" : "disabled"} fontSize="small" />
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Банковский счет
-                      </Typography>
-                      <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'monospace' }}>
-                        {employee?.bank_account_number
-                          ? employee.bank_account_number.replace(/(.{4})/g, '$1 ').trim()
-                          : "—"}
-                      </Typography>
-                    </Box>
-                  </Stack>
-
-                  <Divider />
-
-                  <Box sx={{ mt: 1 }}>
-                    <PassportPhotoUploader
-                      photos={passportPhotos}
-                      onAddPhoto={(file) => {
-                        setPassportFiles((prev) => [...prev, file]);
-                        const reader = new FileReader();
-                        reader.onload = () => setPassportPhotos((prev) => [...prev, String(reader.result)]);
-                        reader.readAsDataURL(file);
-                      }}
-                      onRemovePhoto={(url) => {
-                        setPassportPhotos((prev) => prev.filter((u) => u !== url));
-                        if (url.startsWith('data:')) {
-                          // Find file by matching data URL? (omitted for brevity, similar to drawers)
-                        } else {
-                          setRemovedPassportUrls((prev) => [...prev, url]);
-                        }
-                      }}
-                      inputId="self-passport-photo-input"
-                    />
-                    {(passportFiles.length > 0 || removedPassportUrls.length > 0) && (
-                      <Button
-                        startIcon={busy ? <CircularProgress size={16} /> : <SaveIcon />}
-                        variant="contained"
-                        disabled={busy}
-                        onClick={handleSavePassport}
-                        sx={{ mt: 2, borderRadius: 24, px: 4, width: '100%' }}
-                      >
-                        Сохранить изменения
-                      </Button>
-                    )}
-                  </Box>
-
+                <Stack spacing={1} sx={{ width: "100%" }}>
+                  <ProfileInfoRow
+                    icon={<LocalPhoneOutlined />}
+                    label="Телефон"
+                    value={employee?.phone}
+                    active={Boolean(employee?.phone)}
+                  />
+                  <ProfileInfoRow
+                    icon={<TelegramIcon />}
+                    label="Telegram ID"
+                    value={employee?.telegram_id}
+                    active={Boolean(employee?.telegram_id)}
+                  />
+                  <ProfileInfoRow
+                    icon={<EmailOutlined />}
+                    label="Email"
+                    value={displayEmail}
+                    active={Boolean(displayEmail)}
+                  />
+                  <ProfileInfoRow
+                    icon={<CreditCardOutlined />}
+                    label="Банковский счет"
+                    value={
+                      employee?.bank_account_number
+                        ? employee.bank_account_number.replace(/(.{4})/g, "$1 ").trim()
+                        : undefined
+                    }
+                    active={Boolean(employee?.bank_account_number)}
+                    monospace
+                  />
                 </Stack>
 
                 <Button
-                  variant="outlined"
+                  variant="contained"
+                  fullWidth
+                  startIcon={<OpenInNewOutlined />}
+                  onClick={openProfilePage}
+                  sx={{ mt: 2.5 }}
+                >
+                  Открыть профиль
+                </Button>
+                <Button
+                  variant="text"
+                  fullWidth
                   onClick={() => setProfileOpen(false)}
-                  sx={{ mt: 3, borderRadius: 24, px: 4, width: '100%' }}
+                  sx={{ mt: 1 }}
                 >
                   Закрыть
                 </Button>
               </Box>
             </DialogContent>
           </Dialog>
-
 
         </Stack>
       </Toolbar>

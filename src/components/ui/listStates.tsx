@@ -15,18 +15,18 @@ const RowSkeleton: React.FC = () => (
             alignItems: "center",
             gap: 1.5,
             p: 1.25,
-            borderRadius: 2,
+            borderRadius: 1,
             border: 1,
             borderColor: "divider",
             bgcolor: "background.paper",
         }}
     >
-        <Skeleton variant="rounded" width={48} height={48} sx={{ borderRadius: 2, flexShrink: 0 }} />
+        <Skeleton variant="rounded" width={48} height={48} sx={{ borderRadius: 1, flexShrink: 0 }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
             <Skeleton variant="text" width="70%" height={20} />
             <Skeleton variant="rounded" width={84} height={18} sx={{ mt: 0.5, borderRadius: 1 }} />
         </Box>
-        <Skeleton variant="rounded" width={52} height={36} sx={{ borderRadius: 1.5, flexShrink: 0 }} />
+        <Skeleton variant="rounded" width={52} height={36} sx={{ borderRadius: 1, flexShrink: 0 }} />
     </Box>
 );
 
