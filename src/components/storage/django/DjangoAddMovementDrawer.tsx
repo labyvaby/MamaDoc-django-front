@@ -183,7 +183,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                         bgcolor: (theme) => alpha(theme.palette[accentColor].main, 0.04),
                         border: "1px solid",
                         borderColor: (theme) => alpha(theme.palette[accentColor].main, 0.2),
-                        borderRadius: 2,
+                        borderRadius: 1,
                     }}
                 >
                     <Stack spacing={2}>
@@ -351,7 +351,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                                         py: 1.25,
                                                         border: "1px solid",
                                                         borderColor: selected ? "success.main" : "divider",
-                                                        borderRadius: 1.5,
+                                                        borderRadius: 1,
                                                         color: selected ? "success.main" : "text.secondary",
                                                         bgcolor: selected
                                                             ? (theme) => alpha(theme.palette.success.main, 0.08)

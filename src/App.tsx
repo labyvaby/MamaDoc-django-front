@@ -29,6 +29,7 @@ import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
+import { ThemeCustomizerFab } from "./components/theme/ThemeCustomizerFab";
 import { RefreshProvider } from "./contexts/refresh-context";
 import { ClientSessionProvider } from "./contexts/client-session-context";
 import { TitleProvider } from "./contexts/title-context";
@@ -101,6 +102,7 @@ const ClientLoginPage = lazy(() => import("./pages/client/login"));
 const ClientProfilePage = lazy(() => import("./pages/client/profile"));
 const SsoPage = lazy(() => import("./pages/auth/sso"));
 const AuthCallbackPage = lazy(() => import("./pages/auth/callback"));
+const ProfilePage = lazy(() => import("./pages/profile"));
 
 
 // Вспомогательный компонент для обработки глобальных событий аутентификации
@@ -668,6 +670,14 @@ function App() {
                           }
                         />
                         <Route
+                          path="profile"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <ProfilePage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
                           path="sales"
                           element={
                             IS_DJANGO_BACKEND ? (
@@ -1001,6 +1011,7 @@ function App() {
                 </LocalizationProvider>
 
               </RefineSnackbarProvider>
+              <ThemeCustomizerFab />
             </RefreshProvider>
           </ColorModeContextProvider>
         </TitleProvider>

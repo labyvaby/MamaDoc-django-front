@@ -109,7 +109,7 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                         width: "100%",
                                         textAlign: "left",
                                         p: 1.25,
-                                        borderRadius: 2,
+                                        borderRadius: 1,
                                         border: 1,
                                         borderColor: isSelected ? "primary.main" : "divider",
                                         bgcolor: (theme) =>
@@ -132,7 +132,7 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                             flexShrink: 0,
                                             width: 48,
                                             height: 48,
-                                            borderRadius: 2,
+                                            borderRadius: 1,
                                             bgcolor: (theme) =>
                                                 w.isPrimary
                                                     ? theme.palette.primary.main

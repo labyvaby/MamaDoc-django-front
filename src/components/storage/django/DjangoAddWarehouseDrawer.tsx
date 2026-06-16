@@ -290,7 +290,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                                                 width: "100%",
                                                 textAlign: "left",
                                                 p: 1.25,
-                                                borderRadius: 2,
+                                                borderRadius: 1,
                                                 border: 1,
                                                 borderColor: selected ? "primary.main" : "divider",
                                                 bgcolor: (theme) =>
@@ -305,7 +305,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                                                     flexShrink: 0,
                                                     width: 44,
                                                     height: 44,
-                                                    borderRadius: 2,
+                                                    borderRadius: 1,
                                                     bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                                                     color: "primary.main",
                                                 }}

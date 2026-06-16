@@ -235,7 +235,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                     width: "100%",
                     textAlign: "left",
                     p: 1.25,
-                    borderRadius: 2,
+                    borderRadius: 1,
                     border: 1,
                     borderColor: isSelected ? "primary.main" : "divider",
                     bgcolor: (theme) =>
@@ -258,7 +258,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                       flexShrink: 0,
                       width: 48,
                       height: 48,
-                      borderRadius: 2,
+                      borderRadius: 1,
                       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                       color: "primary.main",
                     }}
@@ -293,7 +293,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                       minWidth: 56,
                       px: 1,
                       py: 0.5,
-                      borderRadius: 1.5,
+                      borderRadius: 1,
                       bgcolor: (theme) =>
                         alpha(
                           inStock ? theme.palette.success.main : theme.palette.error.main,
