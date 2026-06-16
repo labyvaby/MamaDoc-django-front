@@ -21,11 +21,6 @@ import {
   TextField,
   MenuItem,
   Tooltip,
-  Autocomplete,
-  ToggleButton,
-  ToggleButtonGroup,
-  FormControlLabel,
-  Checkbox,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -52,35 +47,13 @@ import {
   createShift,
   deleteShift,
   updateShift,
+  type ShiftWriteData,
   type WorkShiftRow,
 } from "../../../api/attendance";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
+import ShiftFormDrawer, { type EmployeeOption } from "./ShiftFormDrawer";
 
 dayjs.extend(duration);
-
-interface EmployeeOption {
-  id: number;
-  fullName: string;
-}
-
-interface ShiftDraft {
-  id: number | null;
-  employeeId: number | null;
-  employeeName: string;
-  clockInLocal: string;
-  clockOutLocal: string;
-  isNightShift: boolean;
-  hasLunch: boolean;
-}
-
-const toLocalInput = (iso: string | null): string =>
-  iso ? dayjs(iso).format("YYYY-MM-DDTHH:mm") : "";
-
-const nightFromLocal = (local: string): boolean => {
-  if (!local) return false;
-  const hour = dayjs(local).hour();
-  return hour < 8 || hour >= 20;
-};
 
 const formatDuration = (start: string, end: string | null): string => {
   if (!end) return "Активна";
@@ -90,122 +63,6 @@ const formatDuration = (start: string, end: string | null): string => {
   const minutes = dur.minutes().toString().padStart(2, "0");
   const seconds = dur.seconds().toString().padStart(2, "0");
   return `${totalHours}:${minutes}:${seconds}`;
-};
-
-// ── Shift form dialog (admin create / edit) ─────────────────────────────────
-
-const ShiftFormDialog: React.FC<{
-  open: boolean;
-  draft: ShiftDraft | null;
-  employees: EmployeeOption[];
-  onClose: () => void;
-  onSubmit: (draft: ShiftDraft) => Promise<void>;
-}> = ({ open, draft, employees, onClose, onSubmit }) => {
-  const [state, setState] = React.useState<ShiftDraft | null>(draft);
-  const [saving, setSaving] = React.useState(false);
-  const [nightOverride, setNightOverride] = React.useState<boolean | null>(null);
-
-  React.useEffect(() => {
-    setState(draft);
-    setNightOverride(null);
-  }, [draft]);
-
-  if (!state) return null;
-  const isEdit = state.id != null;
-  const night = nightOverride ?? nightFromLocal(state.clockInLocal);
-
-  const set = (patch: Partial<ShiftDraft>) =>
-    setState((s) => (s ? { ...s, ...patch } : s));
-
-  const canSave =
-    (isEdit || state.employeeId != null) && Boolean(state.clockInLocal);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await onSubmit({ ...state, isNightShift: night });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
-      <DialogTitle>{isEdit ? "Редактировать смену" : "Добавить смену"}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          {isEdit ? (
-            <TextField
-              label="Сотрудник"
-              value={state.employeeName}
-              size="small"
-              disabled
-              fullWidth
-            />
-          ) : (
-            <Autocomplete
-              options={employees}
-              getOptionLabel={(o) => o.fullName}
-              value={employees.find((e) => e.id === state.employeeId) ?? null}
-              onChange={(_, v) => set({ employeeId: v?.id ?? null })}
-              renderInput={(params) => (
-                <TextField {...params} label="Сотрудник" size="small" required />
-              )}
-            />
-          )}
-          <TextField
-            type="datetime-local"
-            label="Начало"
-            size="small"
-            value={state.clockInLocal}
-            onChange={(e) => set({ clockInLocal: e.target.value })}
-            InputLabelProps={{ shrink: true }}
-            fullWidth
-          />
-          <TextField
-            type="datetime-local"
-            label="Конец (пусто — активна)"
-            size="small"
-            value={state.clockOutLocal}
-            onChange={(e) => set({ clockOutLocal: e.target.value })}
-            InputLabelProps={{ shrink: true }}
-            fullWidth
-          />
-          <ToggleButtonGroup
-            value={night ? "night" : "day"}
-            exclusive
-            size="small"
-            onChange={(_, v) => v && setNightOverride(v === "night")}
-            fullWidth
-          >
-            <ToggleButton value="day">
-              <WbSunnyOutlined fontSize="small" sx={{ mr: 0.5 }} /> День
-            </ToggleButton>
-            <ToggleButton value="night">
-              <NightlightOutlined fontSize="small" sx={{ mr: 0.5 }} /> Ночь
-            </ToggleButton>
-          </ToggleButtonGroup>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={state.hasLunch}
-                onChange={(e) => set({ hasLunch: e.target.checked })}
-              />
-            }
-            label="Обед (1 час, вычитается из часов)"
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving} color="inherit">
-          Отмена
-        </Button>
-        <Button onClick={handleSave} disabled={saving || !canSave} variant="contained">
-          Сохранить
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
 };
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -266,7 +123,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
   );
 
   const [formOpen, setFormOpen] = React.useState(false);
-  const [draft, setDraft] = React.useState<ShiftDraft | null>(null);
+  const [editTarget, setEditTarget] = React.useState<WorkShiftRow | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<WorkShiftRow | null>(null);
   const [deleting, setDeleting] = React.useState(false);
 
@@ -274,52 +131,36 @@ const DjangoWorkShiftsPage: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.attendance.all });
 
   const openCreate = () => {
-    setDraft({
-      id: null,
-      employeeId: null,
-      employeeName: "",
-      clockInLocal: dayjs().format("YYYY-MM-DDTHH:mm"),
-      clockOutLocal: "",
-      isNightShift: false,
-      hasLunch: false,
-    });
+    setEditTarget(null);
     setFormOpen(true);
   };
 
   const openEdit = (shift: WorkShiftRow) => {
-    setDraft({
-      id: shift.id,
-      employeeId: shift.employeeId,
-      employeeName: shift.employeeName,
-      clockInLocal: toLocalInput(shift.clockIn),
-      clockOutLocal: toLocalInput(shift.clockOut),
-      isNightShift: shift.isNightShift,
-      hasLunch: shift.hasLunch,
-    });
+    setEditTarget(shift);
     setFormOpen(true);
   };
 
-  const submitForm = async (d: ShiftDraft) => {
+  const handleFormSubmit = async ({
+    editId,
+    rows,
+  }: {
+    editId: number | null;
+    rows: ShiftWriteData[];
+  }) => {
     try {
-      const clockIn = dayjs(d.clockInLocal).toISOString();
-      const clockOut = d.clockOutLocal ? dayjs(d.clockOutLocal).toISOString() : null;
-      if (d.id != null) {
-        await updateShift(d.id, {
-          clockIn,
-          clockOut,
-          isNightShift: d.isNightShift,
-          hasLunch: d.hasLunch,
-        });
+      if (editId != null) {
+        await updateShift(editId, rows[0]);
         notify?.({ type: "success", message: "Смена обновлена" });
       } else {
-        await createShift({
-          employeeId: d.employeeId ?? undefined,
-          clockIn,
-          clockOut,
-          isNightShift: d.isNightShift,
-          hasLunch: d.hasLunch,
+        // Weekday bulk-create persists each generated shift (one POST per day).
+        for (const row of rows) {
+          await createShift(row);
+        }
+        notify?.({
+          type: "success",
+          message:
+            rows.length > 1 ? `Создано смен: ${rows.length}` : "Смена добавлена",
         });
-        notify?.({ type: "success", message: "Смена добавлена" });
       }
       void invalidate();
       setFormOpen(false);
@@ -660,12 +501,21 @@ const DjangoWorkShiftsPage: React.FC = () => {
         </Container>
       </Box>
 
-      <ShiftFormDialog
+      <ShiftFormDrawer
         open={formOpen}
-        draft={draft}
+        shiftToEdit={editTarget}
         employees={employees}
         onClose={() => setFormOpen(false)}
-        onSubmit={submitForm}
+        onSubmit={handleFormSubmit}
+        onDelete={
+          editTarget
+            ? () => {
+                const target = editTarget;
+                setFormOpen(false);
+                setDeleteTarget(target);
+              }
+            : undefined
+        }
       />
 
       <Dialog open={Boolean(deleteTarget)} onClose={deleting ? undefined : () => setDeleteTarget(null)}>

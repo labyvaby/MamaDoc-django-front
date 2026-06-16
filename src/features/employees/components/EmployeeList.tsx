@@ -16,8 +16,6 @@ import {
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
-import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
-import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import ListSubheader from "@mui/material/ListSubheader";
 import type { EmployesRow } from "../types";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
@@ -27,10 +25,6 @@ export type EmployeeListProps = {
   onSelect: (e: EmployesRow) => void;
   onEdit?: (e: EmployesRow) => void;
   onDelete?: (e: EmployesRow) => void;
-  /** Django-only: открыть drawer управления услугами */
-  onOpenServices?: (e: EmployesRow) => void;
-  /** Django-only: открыть drawer правил зарплаты */
-  onOpenSalaryRules?: (e: EmployesRow) => void;
   listRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
   loading?: boolean;
@@ -45,8 +39,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   onSelect,
   onEdit,
   onDelete,
-  onOpenServices,
-  onOpenSalaryRules,
   listRef,
   onScroll,
   loading,
@@ -82,28 +74,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
         divider
         sx={{ alignItems: "center" }}
         secondaryAction={
-          (onEdit || onDelete || onOpenServices || onOpenSalaryRules) && (
+          (onEdit || onDelete) && (
             <Stack direction="row" spacing={1}>
-              {onOpenServices && (
-                <IconButton
-                  aria-label="Услуги"
-                  size="small"
-                  onClick={() => onOpenServices(e)}
-                  title="Управление услугами"
-                >
-                  <MedicalServicesOutlined fontSize="small" />
-                </IconButton>
-              )}
-              {onOpenSalaryRules && (
-                <IconButton
-                  aria-label="Зарплата"
-                  size="small"
-                  onClick={() => onOpenSalaryRules(e)}
-                  title="Правила зарплаты"
-                >
-                  <PaidOutlined fontSize="small" />
-                </IconButton>
-              )}
               {onEdit && (
                 <IconButton aria-label="Редактировать" onClick={() => onEdit(e)}>
                   <EditOutlined />

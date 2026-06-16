@@ -11,6 +11,7 @@ export interface WorkShiftRow {
   isNightShift: boolean;
   hasLunch: boolean;
   lunchMinutes: number;
+  lunchStart: string | null;
   durationSeconds: number | null;
   dayHours: string;
   nightHours: string;
@@ -33,6 +34,7 @@ export interface ShiftWriteData {
   clockOut?: string | null;
   isNightShift?: boolean | null;
   hasLunch?: boolean;
+  lunchStart?: string | null;
 }
 
 export interface ShiftListParams {

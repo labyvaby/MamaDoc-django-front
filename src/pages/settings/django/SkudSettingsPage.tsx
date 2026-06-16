@@ -6,11 +6,10 @@ import {
   CardContent,
   CardHeader,
   CircularProgress,
-  Container,
-  Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 
@@ -32,6 +31,7 @@ const DjangoSkudSettingsPage: React.FC = () => {
   const [ip, setIp] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const loadedRef = React.useRef(false);
+  const loading = query.isLoading;
 
   React.useEffect(() => {
     if (query.data && !loadedRef.current) {
@@ -47,11 +47,11 @@ const DjangoSkudSettingsPage: React.FC = () => {
       await queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.attendance.officeIp,
       });
-      notify?.({ type: "success", message: "Настройки сохранены" });
+      notify?.({ type: "success", message: "Настройки успешно сохранены" });
     } catch (e) {
       notify?.({
         type: "error",
-        message: e instanceof Error ? e.message : "Ошибка сохранения",
+        message: e instanceof Error ? e.message : "Ошибка при сохранении настроек",
       });
     } finally {
       setSaving(false);
@@ -59,41 +59,48 @@ const DjangoSkudSettingsPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: "100%", overflowY: "auto" }}>
-      <Container maxWidth="sm" sx={{ py: 3 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
-          Настройки СКУД
-        </Typography>
-        <Card variant="outlined">
-          <CardHeader
-            title="Конфигурация интеграции"
-            subheader="IP офиса для проверки начала смены"
-          />
-          <CardContent>
-            {query.isLoading ? (
-              <Stack alignItems="center" sx={{ py: 3 }}>
-                <CircularProgress />
-              </Stack>
-            ) : (
-              <Stack spacing={2}>
-                <TextField
-                  fullWidth
-                  label="IP адрес офиса для проверки СКУД"
-                  placeholder="Внешний IP офиса (например: 89.123.45.67)"
-                  helperText="Сотрудники смогут начать смену только если их внешний IP совпадает с этим значением. Оставьте пустым, чтобы отключить проверку."
-                  value={ip}
-                  onChange={(e) => setIp(e.target.value)}
-                />
-                <Box>
-                  <Button variant="contained" onClick={handleSave} disabled={saving}>
-                    Сохранить
-                  </Button>
-                </Box>
-              </Stack>
-            )}
-          </CardContent>
-        </Card>
-      </Container>
+    <Box sx={{ p: 3, maxWidth: 800, mx: "auto", height: "100%", overflowY: "auto" }}>
+      <Typography variant="h4" gutterBottom fontWeight={700}>
+        Настройки СКУД
+      </Typography>
+
+      <Card>
+        <CardHeader
+          title="Конфигурация интеграции"
+          subheader="Настройте параметры подключения к системе контроля доступа"
+        />
+        <CardContent>
+          <Box component="form" noValidate autoComplete="off">
+            <TextField
+              fullWidth
+              label="IP адрес офиса для проверки СКУД"
+              placeholder="Введите внешний IP адрес офиса (например: 89.123.456.78)"
+              value={ip}
+              onChange={(e) => setIp(e.target.value)}
+              disabled={loading || saving}
+              helperText="Сотрудники смогут начать смену только если их внешний IP совпадает с этим значением. Оставьте пустым, чтобы отключить проверку."
+              margin="normal"
+            />
+
+            <Box sx={{ mt: 3, display: "flex", justifyContent: "flex-end" }}>
+              <Button
+                variant="contained"
+                startIcon={
+                  saving ? (
+                    <CircularProgress size={20} color="inherit" />
+                  ) : (
+                    <SaveOutlined />
+                  )
+                }
+                onClick={handleSave}
+                disabled={loading || saving}
+              >
+                {saving ? "Сохранение..." : "Сохранить"}
+              </Button>
+            </Box>
+          </Box>
+        </CardContent>
+      </Card>
     </Box>
   );
 };

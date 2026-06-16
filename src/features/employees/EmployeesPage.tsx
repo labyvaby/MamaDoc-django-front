@@ -19,7 +19,6 @@ import EmployeeList from "./components/EmployeeList";
 import EmployeeCard from "./components/EmployeeCard";
 import OnboardEmployeeDrawer from "./components/OnboardEmployeeDrawer";
 import EmployeeServicesDrawer from "./components/EmployeeServicesDrawer";
-import DjangoSalaryRulesDrawer from "./components/DjangoSalaryRulesDrawer";
 import DjangoEditEmployeeDrawer from "./components/DjangoEditEmployeeDrawer";
 import DjangoFireEmployeeDialog from "./components/DjangoFireEmployeeDialog";
 import { useEmployeesPageState } from "./hooks/useEmployeesPage";
@@ -63,21 +62,6 @@ const EmployeesPage: React.FC = () => {
     [],
   );
 
-  const [salaryDrawer, setSalaryDrawer] = React.useState<{
-    open: boolean;
-    employeeId: number;
-    employeeName: string;
-  }>({ open: false, employeeId: 0, employeeName: "" });
-  const openSalaryDrawer = React.useCallback(
-    (id: number, name: string) =>
-      setSalaryDrawer({ open: true, employeeId: id, employeeName: name }),
-    [],
-  );
-  const closeSalaryDrawer = React.useCallback(
-    () => setSalaryDrawer((s) => ({ ...s, open: false })),
-    [],
-  );
-
   const { canManageEmployees, isAdmin } = usePermissions();
 
   // Django RBAC permissions
@@ -87,7 +71,6 @@ const EmployeesPage: React.FC = () => {
   const canStaffDelete = useCan("staff.delete"); // "уволить"
   const canMembershipsCreate = useCan("rbac.memberships.create");
   const canMembershipsUpdate = useCan("rbac.memberships.update");
-  const canPayrollView = useCan("payroll.view");
 
   const canOnboard =
     IS_DJANGO_BACKEND && canStaffCreate && (canMembershipsCreate || canMembershipsUpdate);
@@ -224,24 +207,6 @@ const EmployeesPage: React.FC = () => {
                 onSelect={(e) => state.setDetailsOpen(e)}
                 onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
                 onDelete={canFire ? (e) => state.setDeleteOpen(e) : undefined}
-                onOpenServices={
-                  IS_DJANGO_BACKEND
-                    ? (e) => {
-                        const id =
-                          typeof e.id === "number" ? e.id : Number(e.id);
-                        if (!isNaN(id)) openServicesDrawer(id, e.full_name);
-                      }
-                    : undefined
-                }
-                onOpenSalaryRules={
-                  IS_DJANGO_BACKEND && canPayrollView
-                    ? (e) => {
-                        const id =
-                          typeof e.id === "number" ? e.id : Number(e.id);
-                        if (!isNaN(id)) openSalaryDrawer(id, e.full_name);
-                      }
-                    : undefined
-                }
                 listRef={listRef}
                 onScroll={state.loadMore}
                 loading={state.loading}
@@ -326,16 +291,6 @@ const EmployeesPage: React.FC = () => {
           onClose={closeServicesDrawer}
           employeeId={servicesDrawer.employeeId}
           employeeName={servicesDrawer.employeeName}
-        />
-      )}
-
-      {/* --- DJANGO: Salary rules drawer --- */}
-      {IS_DJANGO_BACKEND && salaryDrawer.employeeId > 0 && (
-        <DjangoSalaryRulesDrawer
-          open={salaryDrawer.open}
-          onClose={closeSalaryDrawer}
-          employeeId={salaryDrawer.employeeId}
-          employeeName={salaryDrawer.employeeName}
         />
       )}
 

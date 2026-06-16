@@ -18,7 +18,6 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import EditOutlined from "@mui/icons-material/EditOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOff";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
@@ -48,18 +47,12 @@ type FormState = {
   serviceId: number | null;
   branchId: number | null;
   isActive: boolean;
-  priceOverride: string;
-  durationOverrideMinutes: string;
-  notes: string;
 };
 
 const EMPTY_FORM: FormState = {
   serviceId: null,
   branchId: null,
   isActive: true,
-  priceOverride: "",
-  durationOverrideMinutes: "",
-  notes: "",
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -71,6 +64,9 @@ function priceLabel(val: string | null): string {
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
+// Assignment only: pick an existing service (from the branch) and assign it.
+// Editing the service itself (price/duration/name) lives on the services page,
+// never here — so there is no per-assignment edit form.
 
 const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   open,
@@ -88,11 +84,8 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
 
   // Unique tenant context key — if it changes while drawer is open, abort and close.
   const contextKey = `${activeOrganization?.id ?? "null"}_${activeMembership?.id ?? "null"}_${activeBranchId ?? "null"}`;
-  // currentContextKeyRef always holds the latest rendered key (updated every render).
   const currentContextKeyRef = React.useRef(contextKey);
   currentContextKeyRef.current = contextKey;
-  // previousContextKeyRef holds the key from the previous render cycle (used for
-  // change detection in the close effect below).
   const previousContextKeyRef = React.useRef(contextKey);
 
   // ── server data ───────────────────────────────────────────────────────────
@@ -101,24 +94,19 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   const [loadingData, setLoadingData] = React.useState(false);
   const [dataError, setDataError] = React.useState<string | null>(null);
 
-  // ── form state ────────────────────────────────────────────────────────────
+  // ── add-form state ──────────────────────────────────────────────────────────
   const [showForm, setShowForm] = React.useState(false);
-  const [editingId, setEditingId] = React.useState<number | null>(null);
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  // ── close drawer and clear state when tenant context changes ─────────────
+  // ── close drawer + clear state when tenant context changes ──────────────────
   React.useEffect(() => {
     const prev = previousContextKeyRef.current;
     previousContextKeyRef.current = contextKey;
     if (contextKey === prev) return;
-    // Context switched while drawer might be open — close it to prevent stale data.
-    if (open) {
-      onClose();
-    }
+    if (open) onClose();
     setShowForm(false);
-    setEditingId(null);
     setForm(EMPTY_FORM);
     setSaveError(null);
     setAssignments([]);
@@ -133,7 +121,6 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     const controller = new AbortController();
     setLoadingData(true);
     setDataError(null);
-    // Clear stale assignments immediately so old-context data is never shown.
     setAssignments([]);
 
     Promise.all([
@@ -141,7 +128,6 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
       getServices(activeBranchId, controller.signal),
     ])
       .then(([a, s]) => {
-        // Discard result if context changed since we started.
         if (controller.signal.aborted) return;
         if (capturedContextKey !== currentContextKeyRef.current) return;
         setAssignments(a);
@@ -158,34 +144,29 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
         }
       });
 
-    return () => {
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [open, canView, employeeId, activeBranchId, contextKey]);
 
-  // ── reload services when branch changes in new-assignment form ────────────
+  // ── reload services when branch changes in the add form ─────────────────────
   React.useEffect(() => {
-    if (!showForm || editingId !== null) return;
+    if (!showForm) return;
     let cancelled = false;
     const controller = new AbortController();
-
     getServices(form.branchId, controller.signal)
       .then((s) => {
         if (!cancelled) setServices(s.filter((sv) => sv.isActive));
       })
       .catch(() => {});
-
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [form.branchId, showForm, editingId]);
+  }, [form.branchId, showForm]);
 
   // ── reset on close ────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) {
       setShowForm(false);
-      setEditingId(null);
       setForm(EMPTY_FORM);
       setSaveError(null);
       setAssignments([]);
@@ -193,32 +174,41 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     }
   }, [open]);
 
-  // ── open form for new assignment ──────────────────────────────────────────
+  // ── add a new assignment ──────────────────────────────────────────────────
   const handleAddClick = () => {
-    setEditingId(null);
     setForm(EMPTY_FORM);
     setSaveError(null);
     setShowForm(true);
   };
 
-  // ── open form to edit existing assignment ─────────────────────────────────
-  const handleEditClick = (a: EmployeeServiceAssignment) => {
-    setEditingId(a.id);
-    setForm({
-      serviceId: a.service.id,
-      branchId: a.branch?.id ?? null,
-      isActive: a.isActive,
-      priceOverride: a.priceOverride ?? "",
-      durationOverrideMinutes: a.durationOverrideMinutes != null
-        ? String(a.durationOverrideMinutes)
-        : "",
-      notes: a.notes,
-    });
+  const handleSave = async () => {
+    if (!form.serviceId) return;
+    const capturedContextKey = currentContextKeyRef.current;
     setSaveError(null);
-    setShowForm(true);
+    setSaving(true);
+    try {
+      const created = await assignEmployeeService(employeeId, {
+        serviceId: form.serviceId,
+        branchId: form.branchId ?? undefined,
+        isActive: form.isActive,
+        priceOverride: null,
+        durationOverrideMinutes: null,
+        notes: "",
+      });
+      if (capturedContextKey !== currentContextKeyRef.current) return;
+      setAssignments((prev) => [...prev, created]);
+      notify?.({ type: "success", message: "Услуга назначена" });
+      setShowForm(false);
+      setForm(EMPTY_FORM);
+    } catch (err: unknown) {
+      if (capturedContextKey !== currentContextKeyRef.current) return;
+      setSaveError(err instanceof Error ? err.message : "Ошибка сохранения");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // ── toggle active state ───────────────────────────────────────────────────
+  // ── activate / deactivate an assignment (so a wrong add can be undone) ──────
   const handleToggleActive = async (a: EmployeeServiceAssignment, isActive: boolean) => {
     const capturedContextKey = currentContextKeyRef.current;
     try {
@@ -238,55 +228,10 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     }
   };
 
-  // ── save form ─────────────────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (!form.serviceId) return;
-    const capturedContextKey = currentContextKeyRef.current;
-    setSaveError(null);
-    setSaving(true);
-    try {
-      if (editingId !== null) {
-        // update
-        const updated = await updateEmployeeService(employeeId, editingId, {
-          isActive: form.isActive,
-          priceOverride: form.priceOverride.trim() || null,
-          durationOverrideMinutes: form.durationOverrideMinutes.trim()
-            ? Number(form.durationOverrideMinutes)
-            : null,
-          notes: form.notes.trim() || null,
-        });
-        if (capturedContextKey !== currentContextKeyRef.current) return;
-        setAssignments((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-        notify?.({ type: "success", message: "Назначение обновлено" });
-      } else {
-        // create
-        const created = await assignEmployeeService(employeeId, {
-          serviceId: form.serviceId,
-          branchId: form.branchId ?? undefined,
-          isActive: form.isActive,
-          priceOverride: form.priceOverride.trim() || null,
-          durationOverrideMinutes: form.durationOverrideMinutes.trim()
-            ? Number(form.durationOverrideMinutes)
-            : null,
-          notes: form.notes.trim(),
-        });
-        if (capturedContextKey !== currentContextKeyRef.current) return;
-        setAssignments((prev) => [...prev, created]);
-        notify?.({ type: "success", message: "Услуга назначена" });
-      }
-      if (capturedContextKey !== currentContextKeyRef.current) return;
-      setShowForm(false);
-      setEditingId(null);
-      setForm(EMPTY_FORM);
-    } catch (err: unknown) {
-      if (capturedContextKey !== currentContextKeyRef.current) return;
-      setSaveError(err instanceof Error ? err.message : "Ошибка сохранения");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const selectedService = services.find((s) => s.id === form.serviceId) ?? null;
+  // Hide services that are already assigned from the picker.
+  const assignedServiceIds = new Set(assignments.map((a) => a.service.id));
+  const pickableServices = services.filter((s) => !assignedServiceIds.has(s.id));
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -341,14 +286,12 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
           "&::-webkit-scrollbar": { display: "none" },
         }}
       >
-        {/* data error */}
         {dataError && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDataError(null)}>
             {dataError}
           </Alert>
         )}
 
-        {/* loading */}
         {loadingData ? (
           <Stack alignItems="center" justifyContent="center" py={8} spacing={1}>
             <CircularProgress />
@@ -358,7 +301,6 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
           </Stack>
         ) : (
           <>
-            {/* ── assignment list ── */}
             {assignments.length === 0 && !showForm && (
               <Box
                 sx={{
@@ -386,7 +328,6 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                     key={a.id}
                     assignment={a}
                     canEdit={canEdit}
-                    onEdit={() => handleEditClick(a)}
                     onDeactivate={() => handleToggleActive(a, false)}
                     onActivate={() => handleToggleActive(a, true)}
                   />
@@ -394,7 +335,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
               </Stack>
             )}
 
-            {/* ── add / edit form ── */}
+            {/* ── add form (assignment only) ── */}
             {showForm && (
               <Box
                 sx={{
@@ -406,7 +347,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                 }}
               >
                 <Typography variant="subtitle2" fontWeight={600} mb={1.5}>
-                  {editingId !== null ? "Редактировать назначение" : "Новое назначение"}
+                  Назначить услугу
                 </Typography>
 
                 {saveError && (
@@ -416,115 +357,57 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                 )}
 
                 <Stack spacing={2}>
-                  {/* service — locked when editing */}
+                  {/* branch */}
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      Филиал
+                    </Typography>
+                    <TextField
+                      select
+                      value={form.branchId ?? ""}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          branchId: e.target.value === "" ? null : Number(e.target.value),
+                          serviceId: null,
+                        }))
+                      }
+                      fullWidth
+                      size="small"
+                      disabled={!canEdit}
+                      SelectProps={{ displayEmpty: true }}
+                    >
+                      <MenuItem value="">Все доступные филиалы</MenuItem>
+                      {availableBranches.map((b) => (
+                        <MenuItem key={b.id} value={b.id}>
+                          {b.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+
+                  {/* service — picked from the branch's existing services */}
                   <Stack spacing={0.5}>
                     <Typography variant="body2" color="text.secondary" fontWeight={600}>
                       Услуга *
                     </Typography>
-                    {editingId !== null ? (
-                      <TextField
-                        value={
-                          assignments.find((a) => a.id === editingId)?.service.name ?? ""
-                        }
-                        disabled
-                        fullWidth
-                        size="small"
-                      />
-                    ) : (
-                      <Autocomplete
-                        options={services}
-                        value={selectedService}
-                        getOptionLabel={(s) => s.name}
-                        isOptionEqualToValue={(a, b) => a.id === b.id}
-                        onChange={(_, val) =>
-                          setForm((f) => ({ ...f, serviceId: val?.id ?? null }))
-                        }
-                        disabled={!canEdit}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            placeholder="Выберите услугу"
-                            size="small"
-                          />
-                        )}
-                      />
-                    )}
-                  </Stack>
-
-                  {/* branch — only for new */}
-                  {editingId === null && (
-                    <Stack spacing={0.5}>
-                      <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                        Филиал
-                      </Typography>
-                      <TextField
-                        select
-                        value={form.branchId ?? ""}
-                        onChange={(e) =>
-                          setForm((f) => ({
-                            ...f,
-                            branchId: e.target.value === "" ? null : Number(e.target.value),
-                          }))
-                        }
-                        fullWidth
-                        size="small"
-                        disabled={!canEdit}
-                        SelectProps={{ displayEmpty: true }}
-                      >
-                        <MenuItem value="">Все доступные филиалы</MenuItem>
-                        {availableBranches.map((b) => (
-                          <MenuItem key={b.id} value={b.id}>
-                            {b.name}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                    </Stack>
-                  )}
-
-                  {/* price override */}
-                  <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                      Цена (переопределение)
-                    </Typography>
-                    <TextField
-                      value={form.priceOverride}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, priceOverride: e.target.value }))
+                    <Autocomplete
+                      options={pickableServices}
+                      value={selectedService}
+                      getOptionLabel={(s) => s.name}
+                      isOptionEqualToValue={(a, b) => a.id === b.id}
+                      onChange={(_, val) =>
+                        setForm((f) => ({ ...f, serviceId: val?.id ?? null }))
                       }
-                      placeholder={
-                        selectedService
-                          ? `Базовая: ${selectedService.basePrice} с`
-                          : "Оставьте пустым — будет базовая цена"
-                      }
-                      fullWidth
-                      size="small"
                       disabled={!canEdit}
-                      inputProps={{ inputMode: "decimal" }}
-                    />
-                  </Stack>
-
-                  {/* duration override */}
-                  <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                      Длительность, мин (переопределение)
-                    </Typography>
-                    <TextField
-                      value={form.durationOverrideMinutes}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          durationOverrideMinutes: e.target.value.replace(/[^0-9]/g, ""),
-                        }))
-                      }
-                      placeholder={
-                        selectedService
-                          ? `Базовая: ${selectedService.durationMinutes} мин`
-                          : "Оставьте пустым — будет базовая длительность"
-                      }
-                      fullWidth
-                      size="small"
-                      disabled={!canEdit}
-                      inputProps={{ inputMode: "numeric" }}
+                      noOptionsText="Нет доступных услуг в филиале"
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          placeholder="Выберите услугу"
+                          size="small"
+                        />
+                      )}
                     />
                   </Stack>
 
@@ -547,31 +430,11 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                     }
                   />
 
-                  {/* notes */}
-                  <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                      Заметки
-                    </Typography>
-                    <TextField
-                      value={form.notes}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, notes: e.target.value }))
-                      }
-                      fullWidth
-                      size="small"
-                      multiline
-                      minRows={2}
-                      disabled={!canEdit}
-                      placeholder="Дополнительная информация"
-                    />
-                  </Stack>
-
                   {/* form actions */}
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
                     <AppButton
                       onClick={() => {
                         setShowForm(false);
-                        setEditingId(null);
                         setForm(EMPTY_FORM);
                         setSaveError(null);
                       }}
@@ -590,8 +453,6 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                             <CircularProgress size={16} />
                             <span>Сохранение…</span>
                           </Stack>
-                        ) : editingId !== null ? (
-                          "Сохранить"
                         ) : (
                           "Добавить"
                         )}
@@ -620,12 +481,11 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   );
 };
 
-// ── AssignmentRow ─────────────────────────────────────────────────────────────
+// ── AssignmentRow (view + activate/deactivate, no edit) ─────────────────────────
 
 type AssignmentRowProps = {
   assignment: EmployeeServiceAssignment;
   canEdit: boolean;
-  onEdit: () => void;
   onDeactivate: () => void;
   onActivate: () => void;
 };
@@ -633,7 +493,6 @@ type AssignmentRowProps = {
 const AssignmentRow: React.FC<AssignmentRowProps> = ({
   assignment: a,
   canEdit,
-  onEdit,
   onDeactivate,
   onActivate,
 }) => (
@@ -658,9 +517,7 @@ const AssignmentRow: React.FC<AssignmentRowProps> = ({
           <Typography variant="body2" fontWeight={600} noWrap>
             {a.service.name}
           </Typography>
-          {!a.isActive && (
-            <Chip label="Неактивна" size="small" color="default" />
-          )}
+          {!a.isActive && <Chip label="Неактивна" size="small" color="default" />}
           {a.branch && (
             <Chip label={a.branch.name} size="small" variant="outlined" />
           )}
@@ -677,38 +534,18 @@ const AssignmentRow: React.FC<AssignmentRowProps> = ({
               {a.durationOverrideMinutes} мин
             </Typography>
           )}
-          {a.notes && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{
-                maxWidth: 200,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {a.notes}
-            </Typography>
-          )}
         </Stack>
       </Box>
 
       {canEdit && (
         <Stack direction="row" spacing={0.5} flexShrink={0}>
-          <Tooltip title="Редактировать">
-            <IconButton size="small" onClick={onEdit}>
-              <EditOutlined fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {a.isActive && (
+          {a.isActive ? (
             <Tooltip title="Деактивировать">
               <IconButton size="small" onClick={onDeactivate} color="warning">
                 <VisibilityOffOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
-          )}
-          {!a.isActive && (
+          ) : (
             <Tooltip title="Активировать">
               <IconButton size="small" color="success" onClick={onActivate}>
                 <CheckCircleOutlined fontSize="small" />
