@@ -335,13 +335,16 @@ const DjangoWarehousesPage: React.FC = () => {
 
     return (
         <Box
-            sx={{
-                height: { xs: "calc(100dvh - 56px)", md: "calc(100dvh - 64px)" },
+            sx={(theme) => ({
+                height: {
+                    xs: `calc(100dvh - ${theme.appLayout.header.height.mobile}px)`,
+                    md: `calc(100dvh - ${theme.appLayout.header.height.desktop}px)`,
+                },
                 display: "flex",
                 flexDirection: "column",
                 minHeight: 0,
                 overflow: "hidden",
-            }}
+            })}
         >
             <PageHeader
                 title="Склад"
@@ -427,6 +430,7 @@ const DjangoWarehousesPage: React.FC = () => {
                             loading={loadingStock}
                             warehouseName={selectedWarehouse?.name}
                             warehouseAddress={selectedWarehouse?.address}
+                            onAdd={canManage ? handleGlobalAddStock : undefined}
                         />
                     </Grid2>
 

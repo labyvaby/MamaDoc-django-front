@@ -12,16 +12,17 @@ import {
     Switch,
     ToggleButton,
     ToggleButtonGroup,
-    List,
-    ListItemButton,
     Avatar,
     CircularProgress,
     Autocomplete,
     Chip,
+    ButtonBase,
+    alpha,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import StoreIcon from "@mui/icons-material/Store";
 import AddBusinessOutlined from "@mui/icons-material/AddBusinessOutlined";
+import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
 import { useNotification } from "@refinedev/core";
 import {
     DjangoWarehouse,
@@ -252,7 +253,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                             onClick={handleSubmitCreate}
                             disabled={createDisabled}
                         >
-                            {loading ? "Сохранение..." : "Сохранить"}
+                            {loading ? <CircularProgress size={24} color="inherit" /> : "Сохранить"}
                         </Button>
                     </Box>
                 </>
@@ -264,56 +265,74 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                             станут доступны в текущем филиале.
                         </Typography>
                     </Stack>
-                    <Box sx={{ flex: 1, overflowY: "auto", px: 2 }}>
+                    <Box sx={{ flex: 1, overflowY: "auto" }}>
                         {loadingLinkable ? (
-                            <Box sx={{ p: 4, textAlign: "center" }}>
-                                <CircularProgress size={24} />
-                            </Box>
+                            <ListLoadingSkeleton rows={4} />
                         ) : linkable.length === 0 ? (
-                            <Box sx={{ p: 4, textAlign: "center" }}>
-                                <Typography variant="body2" color="text.secondary">
-                                    Нет складов для подключения
-                                </Typography>
-                            </Box>
+                            <ListEmptyState
+                                icon={<AddBusinessOutlined />}
+                                title="Нет складов для подключения"
+                                description="В других филиалах пока нет складов, которые можно подключить к текущему."
+                            />
                         ) : (
-                            <List>
-                                {linkable.map((w) => (
-                                    <ListItemButton
-                                        key={w.id}
-                                        selected={selectedLinkId === w.id}
-                                        onClick={() => setSelectedLinkId(w.id)}
-                                        sx={{
-                                            border: 1,
-                                            borderColor: selectedLinkId === w.id ? "primary.main" : "divider",
-                                            borderRadius: 1,
-                                            mb: 1,
-                                        }}
-                                    >
-                                        <Avatar
-                                            variant="rounded"
-                                            sx={{ mr: 2, bgcolor: "action.selected", color: "text.secondary" }}
+                            <Stack spacing={1} sx={{ p: 1.5 }}>
+                                {linkable.map((w) => {
+                                    const selected = selectedLinkId === w.id;
+                                    return (
+                                        <ButtonBase
+                                            key={w.id}
+                                            onClick={() => setSelectedLinkId(w.id)}
+                                            focusRipple
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 1.5,
+                                                width: "100%",
+                                                textAlign: "left",
+                                                p: 1.25,
+                                                borderRadius: 2,
+                                                border: 1,
+                                                borderColor: selected ? "primary.main" : "divider",
+                                                bgcolor: (theme) =>
+                                                    selected ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
+                                                transition: "border-color .15s ease, background-color .15s ease",
+                                                "&:hover": { borderColor: "primary.main" },
+                                            }}
                                         >
-                                            <StoreIcon />
-                                        </Avatar>
-                                        <Box flex={1} minWidth={0}>
-                                            <Typography variant="subtitle2" fontWeight={600} noWrap>
-                                                {w.name}
-                                            </Typography>
-                                            {w.address && (
-                                                <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                                                    {w.address}
+                                            <Avatar
+                                                variant="rounded"
+                                                sx={{
+                                                    flexShrink: 0,
+                                                    width: 44,
+                                                    height: 44,
+                                                    borderRadius: 2,
+                                                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                                                    color: "primary.main",
+                                                }}
+                                            >
+                                                <StoreIcon fontSize="small" />
+                                            </Avatar>
+                                            <Box flex={1} minWidth={0}>
+                                                <Typography variant="body2" fontWeight={600} noWrap>
+                                                    {w.name}
                                                 </Typography>
-                                            )}
-                                        </Box>
-                                        <Chip
-                                            size="small"
-                                            label={w.branchName}
-                                            variant="outlined"
-                                            sx={{ ml: 1, flexShrink: 0 }}
-                                        />
-                                    </ListItemButton>
-                                ))}
-                            </List>
+                                                {w.address && (
+                                                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                                                        {w.address}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                            <Chip
+                                                size="small"
+                                                label={w.branchName}
+                                                variant="outlined"
+                                                color="info"
+                                                sx={{ flexShrink: 0, fontWeight: 500 }}
+                                            />
+                                        </ButtonBase>
+                                    );
+                                })}
+                            </Stack>
                         )}
                     </Box>
                     <Box sx={{ p: 2, borderTop: 1, borderColor: "divider" }}>
@@ -324,7 +343,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                             onClick={handleSubmitLink}
                             disabled={selectedLinkId === null || loading}
                         >
-                            {loading ? "Подключение..." : "Подключить склад"}
+                            {loading ? <CircularProgress size={24} color="inherit" /> : "Подключить склад"}
                         </Button>
                     </Box>
                 </>

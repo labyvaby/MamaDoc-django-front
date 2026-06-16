@@ -328,65 +328,48 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
 
                             {/* Способ оплаты (только приход) */}
                             {mode === "in" && (
-                                <>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                                        Способ оплаты
+                                    </Typography>
                                     <Stack direction="row" spacing={1.5}>
-                                        <Stack flex={1} spacing={0.5}>
-                                            <Typography variant="caption" color="text.secondary" display="block">
-                                                Наличные
-                                            </Typography>
-                                            <Box
-                                                onClick={() => setPaymentMethod("cash")}
-                                                sx={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 1,
-                                                    p: 1.25,
-                                                    border: "1px solid",
-                                                    borderColor: paymentMethod === "cash" ? "success.main" : "divider",
-                                                    borderRadius: 1,
-                                                    bgcolor: paymentMethod === "cash"
-                                                        ? (theme) => alpha(theme.palette.success.main, 0.08)
-                                                        : "background.paper",
-                                                    cursor: "pointer",
-                                                    transition: "all 0.15s ease",
-                                                }}
-                                            >
-                                                <PaymentsOutlined sx={{ fontSize: 18, color: paymentMethod === "cash" ? "success.main" : "action.active" }} />
-                                                <Typography variant="body2" fontWeight={paymentMethod === "cash" ? 600 : 400}>
-                                                    Наличные
-                                                </Typography>
-                                            </Box>
-                                        </Stack>
-
-                                        <Stack flex={1} spacing={0.5}>
-                                            <Typography variant="caption" color="text.secondary" display="block">
-                                                Безналичные
-                                            </Typography>
-                                            <Box
-                                                onClick={() => setPaymentMethod("cashless")}
-                                                sx={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 1,
-                                                    p: 1.25,
-                                                    border: "1px solid",
-                                                    borderColor: paymentMethod === "cashless" ? "success.main" : "divider",
-                                                    borderRadius: 1,
-                                                    bgcolor: paymentMethod === "cashless"
-                                                        ? (theme) => alpha(theme.palette.success.main, 0.08)
-                                                        : "background.paper",
-                                                    cursor: "pointer",
-                                                    transition: "all 0.15s ease",
-                                                }}
-                                            >
-                                                <CreditCardOutlined sx={{ fontSize: 18, color: paymentMethod === "cashless" ? "success.main" : "action.active" }} />
-                                                <Typography variant="body2" fontWeight={paymentMethod === "cashless" ? 600 : 400}>
-                                                    Безнал
-                                                </Typography>
-                                            </Box>
-                                        </Stack>
+                                        {[
+                                            { value: "cash" as const, label: "Наличные", icon: <PaymentsOutlined sx={{ fontSize: 18 }} /> },
+                                            { value: "cashless" as const, label: "Безналичные", icon: <CreditCardOutlined sx={{ fontSize: 18 }} /> },
+                                        ].map((opt) => {
+                                            const selected = paymentMethod === opt.value;
+                                            return (
+                                                <Box
+                                                    key={opt.value}
+                                                    onClick={() => setPaymentMethod(opt.value)}
+                                                    sx={{
+                                                        flex: 1,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        gap: 1,
+                                                        py: 1.25,
+                                                        border: "1px solid",
+                                                        borderColor: selected ? "success.main" : "divider",
+                                                        borderRadius: 1.5,
+                                                        color: selected ? "success.main" : "text.secondary",
+                                                        bgcolor: selected
+                                                            ? (theme) => alpha(theme.palette.success.main, 0.08)
+                                                            : "background.paper",
+                                                        cursor: "pointer",
+                                                        transition: "all 0.15s ease",
+                                                        "&:hover": { borderColor: "success.main" },
+                                                    }}
+                                                >
+                                                    {opt.icon}
+                                                    <Typography variant="body2" fontWeight={selected ? 600 : 500} color={selected ? "text.primary" : "text.secondary"}>
+                                                        {opt.label}
+                                                    </Typography>
+                                                </Box>
+                                            );
+                                        })}
                                     </Stack>
-                                </>
+                                </Box>
                             )}
 
                             <Divider />

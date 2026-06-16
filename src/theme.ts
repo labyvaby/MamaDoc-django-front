@@ -86,6 +86,14 @@ declare module "@mui/material/styles" {
   interface ThemeOptions {
     appLayout?: Partial<AppLayoutConfig>;
   }
+  // Лёгкий тон для фонов активных состояний (например, активная кнопка
+  // фильтра): bgcolor: "primary.lighter".
+  interface PaletteColor {
+    lighter: string;
+  }
+  interface SimplePaletteColorOptions {
+    lighter?: string;
+  }
 }
 
 const APP_BREAKPOINTS = { xs: 0, sm: 360, md: 768, lg: 1200, xl: 1536 } as const;
@@ -181,6 +189,8 @@ export function getAppTheme(mode: PaletteMode | string): Theme {
         main: base.palette.primary.main,
         light: base.palette.primary.light,
         dark: base.palette.primary.dark,
+        // Лёгкий тон для фонов активных состояний (кнопки фильтра и т.п.).
+        lighter: alpha(base.palette.primary.main, m === "dark" ? 0.24 : 0.12),
       },
       secondary: {
         ...base.palette.secondary,
