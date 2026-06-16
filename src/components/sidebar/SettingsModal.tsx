@@ -28,7 +28,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   open,
   onClose,
 }) => {
-  const { mode, setMode } = React.useContext(ColorModeContext);
+  const { mode, setScheme } = React.useContext(ColorModeContext);
 
   const handleLogout = async () => {
     try {
@@ -44,7 +44,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleToggleTheme = () => {
-    setMode();
+    setScheme(mode === "dark" ? "light" : "dark");
   };
 
   return (
