@@ -106,6 +106,22 @@ export function deletePatientPhoto(patientId: number): Promise<void> {
   });
 }
 
+/**
+ * Объединяет дубликат в основного пациента.
+ * `primaryId` — карточка, которая останется; `duplicateId` — удаляется,
+ * все её приёмы/продажи/баланс переносятся на основного. Возвращает
+ * обновлённого основного пациента.
+ */
+export function mergePatients(
+  primaryId: number,
+  duplicateId: number,
+): Promise<DjangoPatient> {
+  return apiRequest<DjangoPatient>(`/patients/${primaryId}/merge/`, {
+    method: "POST",
+    body: { duplicateId },
+  });
+}
+
 export function getSimilarPatients(
   phone: string,
   signal?: AbortSignal,

@@ -1,13 +1,7 @@
 import React from "react";
 import {
   Box,
-  Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   Drawer,
   Stack,
   Tab,
@@ -47,6 +41,7 @@ import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
+import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
 
 
 // ── "В разработке" placeholder for Old conclusions tab ───────────────────────
@@ -130,7 +125,7 @@ const DjangoPatientsPage: React.FC = () => {
   const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
-  const [mergeInfoOpen, setMergeInfoOpen] = React.useState(false);
+  const [mergeOpen, setMergeOpen] = React.useState(false);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [mobileTab, setMobileTab] = React.useState(0);
@@ -243,7 +238,13 @@ const DjangoPatientsPage: React.FC = () => {
   const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
-  const handleMerge = () => setMergeInfoOpen(true);
+  const handleMerge = () => { if (selected) setMergeOpen(true); };
+
+  const handleMerged = () => {
+    setMergeOpen(false);
+    setSelected(null);
+    void load();
+  };
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
@@ -454,21 +455,13 @@ const DjangoPatientsPage: React.FC = () => {
         )}
       </Drawer>
 
-      {/* Merge — not yet available on Django backend */}
-      <Dialog open={mergeInfoOpen} onClose={() => setMergeInfoOpen(false)}>
-        <DialogTitle>Объединение пациентов</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Объединение дублей пациентов ещё переносится на новый backend и будет
-            доступно позже.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMergeInfoOpen(false)} variant="contained">
-            Понятно
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Объединение дублей пациентов */}
+      <MergePatientDrawer
+        open={mergeOpen}
+        onClose={() => setMergeOpen(false)}
+        initialPatient={selected}
+        onMerged={handleMerged}
+      />
     </Box>
   );
 };

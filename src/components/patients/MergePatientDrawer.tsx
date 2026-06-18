@@ -24,21 +24,20 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import MergeIcon from "@mui/icons-material/MergeType";
-import { supabase } from "../../utility/supabaseClient";
+import dayjs from "dayjs";
 import { useNotification } from "@refinedev/core";
-
-type PatientOption = {
-  id: string;
-  full_name: string;
-  phone?: string | null;
-  birth_date?: string | null;
-};
+import {
+  searchPatients,
+  mergePatients,
+  type DjangoPatient,
+} from "../../api/patients";
+import { parseBackendError } from "../../api/appointments";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   /** Пациент, с которого начинаем (уже выбран в списке) */
-  initialPatient: PatientOption | null;
+  initialPatient: DjangoPatient | null;
   onMerged: () => void;
 };
 
@@ -51,12 +50,13 @@ const MergePatientDrawer: React.FC<Props> = ({
   const { open: notify } = useNotification();
 
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [searchResults, setSearchResults] = React.useState<PatientOption[]>([]);
+  const [searchResults, setSearchResults] = React.useState<DjangoPatient[]>([]);
   const [searching, setSearching] = React.useState(false);
 
   // Какой из двух будет основным (primary)
-  const [primaryId, setPrimaryId] = React.useState<string>("");
-  const [selectedDuplicate, setSelectedDuplicate] = React.useState<PatientOption | null>(null);
+  const [primaryId, setPrimaryId] = React.useState<number | null>(null);
+  const [selectedDuplicate, setSelectedDuplicate] =
+    React.useState<DjangoPatient | null>(null);
 
   const [busy, setBusy] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -66,73 +66,72 @@ const MergePatientDrawer: React.FC<Props> = ({
       setSearchQuery("");
       setSearchResults([]);
       setSelectedDuplicate(null);
-      setPrimaryId(initialPatient?.id ?? "");
+      setPrimaryId(initialPatient?.id ?? null);
     } else {
-      setPrimaryId(initialPatient?.id ?? "");
+      setPrimaryId(initialPatient?.id ?? null);
     }
   }, [open, initialPatient]);
 
-  // Поиск с дебаунсом
+  // Поиск с дебаунсом (Django API, только в рамках своей организации)
   React.useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
       return;
     }
+    const ctrl = new AbortController();
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const { data } = await supabase.rpc("search_patients", {
-          p_query: searchQuery.trim(),
-          p_limit: 10,
-          p_offset: 0,
-        });
+        const data = await searchPatients(searchQuery.trim(), 10, ctrl.signal);
         // Исключаем самого initialPatient из результатов
-        setSearchResults(
-          (data ?? []).filter((p: PatientOption) => p.id !== initialPatient?.id)
-        );
+        setSearchResults(data.filter((p) => p.id !== initialPatient?.id));
+      } catch {
+        if (!ctrl.signal.aborted) setSearchResults([]);
       } finally {
-        setSearching(false);
+        if (!ctrl.signal.aborted) setSearching(false);
       }
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
   }, [searchQuery, initialPatient?.id]);
 
-  const canMerge =
-    initialPatient && selectedDuplicate && primaryId;
+  const canMerge = Boolean(
+    initialPatient && selectedDuplicate && primaryId != null,
+  );
 
-  const duplicateId = primaryId === initialPatient?.id
-    ? selectedDuplicate?.id
-    : initialPatient?.id;
+  const duplicateId =
+    primaryId === initialPatient?.id
+      ? selectedDuplicate?.id
+      : initialPatient?.id;
 
-  const primaryName = primaryId === initialPatient?.id
-    ? initialPatient?.full_name
-    : selectedDuplicate?.full_name;
+  const primaryName =
+    primaryId === initialPatient?.id
+      ? initialPatient?.fullName
+      : selectedDuplicate?.fullName;
 
-  const duplicateName = duplicateId === selectedDuplicate?.id
-    ? selectedDuplicate?.full_name
-    : initialPatient?.full_name;
+  const duplicateName =
+    duplicateId === selectedDuplicate?.id
+      ? selectedDuplicate?.fullName
+      : initialPatient?.fullName;
 
   const handleMerge = () => {
-    if (!initialPatient || !selectedDuplicate || !primaryId) return;
+    if (!initialPatient || !selectedDuplicate || primaryId == null) return;
     setConfirmOpen(true);
   };
 
   const handleConfirm = async () => {
-    if (!primaryId || !duplicateId) return;
+    if (primaryId == null || duplicateId == null) return;
     setConfirmOpen(false);
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("merge_patients", {
-        p_primary_id: primaryId,
-        p_duplicate_id: duplicateId,
-      });
-      if (error) throw error;
+      await mergePatients(primaryId, duplicateId);
       notify?.({ type: "success", message: "Пациенты объединены" });
       onMerged();
       onClose();
     } catch (e) {
-      console.error(e);
-      notify?.({ type: "error", message: "Не удалось объединить пациентов" });
+      notify?.({ type: "error", message: parseBackendError(e) });
     } finally {
       setBusy(false);
     }
@@ -208,7 +207,7 @@ const MergePatientDrawer: React.FC<Props> = ({
                     key={p.id}
                     onClick={() => {
                       setSelectedDuplicate(p);
-                      setSearchQuery(p.full_name);
+                      setSearchQuery(p.fullName);
                       setSearchResults([]);
                     }}
                     sx={{
@@ -222,7 +221,7 @@ const MergePatientDrawer: React.FC<Props> = ({
                       bgcolor: selectedDuplicate?.id === p.id ? "action.selected" : "transparent",
                     }}
                   >
-                    <Typography variant="body2" fontWeight={500}>{p.full_name}</Typography>
+                    <Typography variant="body2" fontWeight={500}>{p.fullName}</Typography>
                     {p.phone && (
                       <Typography variant="caption" color="text.secondary">{p.phone}</Typography>
                     )}
@@ -241,10 +240,13 @@ const MergePatientDrawer: React.FC<Props> = ({
               <Alert severity="warning" sx={{ mb: 2 }}>
                 Дубликат будет удалён, все его приёмы перенесены на основного
               </Alert>
-              <RadioGroup value={primaryId} onChange={(e) => setPrimaryId(e.target.value)}>
+              <RadioGroup
+                value={primaryId != null ? String(primaryId) : ""}
+                onChange={(e) => setPrimaryId(Number(e.target.value))}
+              >
                 <Box sx={{ border: "1px solid", borderColor: primaryId === patientA.id ? "primary.main" : "divider", borderRadius: 1, p: 1.5, mb: 1 }}>
                   <FormControlLabel
-                    value={patientA.id}
+                    value={String(patientA.id)}
                     control={<Radio size="small" />}
                     label={<PatientChip patient={patientA} compact />}
                     sx={{ m: 0, width: "100%" }}
@@ -252,7 +254,7 @@ const MergePatientDrawer: React.FC<Props> = ({
                 </Box>
                 <Box sx={{ border: "1px solid", borderColor: primaryId === patientB.id ? "primary.main" : "divider", borderRadius: 1, p: 1.5 }}>
                   <FormControlLabel
-                    value={patientB.id}
+                    value={String(patientB.id)}
                     control={<Radio size="small" />}
                     label={<PatientChip patient={patientB} compact />}
                     sx={{ m: 0, width: "100%" }}
@@ -300,7 +302,7 @@ const MergePatientDrawer: React.FC<Props> = ({
             <Typography variant="body1" fontWeight={600}>{duplicateName}</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            Все приёмы, звонки и баланс дубля будут перенесены на основного. Действие необратимо.
+            Все приёмы, продажи и баланс дубля будут перенесены на основного. Действие необратимо.
           </Typography>
         </Stack>
       </DialogContent>
@@ -315,25 +317,35 @@ const MergePatientDrawer: React.FC<Props> = ({
   );
 };
 
-const PatientChip: React.FC<{ patient: PatientOption; compact?: boolean }> = ({ patient, compact }) => {
-  const initials = patient.full_name
+const PatientChip: React.FC<{ patient: DjangoPatient; compact?: boolean }> = ({ patient, compact }) => {
+  const initials = patient.fullName
     .split(" ")
     .slice(0, 2)
     .map((w) => w[0])
     .join("")
     .toUpperCase();
 
+  const subtitle = [
+    patient.phone,
+    patient.birthDate ? dayjs(patient.birthDate).format("DD.MM.YYYY") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <Stack direction="row" alignItems="center" gap={1.5}>
-      <Avatar sx={{ width: compact ? 32 : 40, height: compact ? 32 : 40, fontSize: compact ? 13 : 15 }}>
+      <Avatar
+        src={patient.photoUrl ?? undefined}
+        sx={{ width: compact ? 32 : 40, height: compact ? 32 : 40, fontSize: compact ? 13 : 15 }}
+      >
         {initials}
       </Avatar>
       <Box>
         <Typography variant={compact ? "body2" : "body1"} fontWeight={500}>
-          {patient.full_name}
+          {patient.fullName}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          {[patient.phone, patient.birth_date].filter(Boolean).join(" · ")}
+          {subtitle}
         </Typography>
       </Box>
     </Stack>
