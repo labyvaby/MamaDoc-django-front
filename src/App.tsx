@@ -72,7 +72,6 @@ const WorkShiftsPage = lazy(() => import("./pages/work-shifts"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
 const DoctorWorkPage = lazy(() => import("./pages/doctor"));
-const NursePage = lazy(() => import("./pages/nurse"));
 const SkudSettingsPage = lazy(() => import("./pages/settings/SkudSettingsPage").then(module => ({ default: module.SkudSettingsPage })));
 const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSettingsPage"));
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
@@ -639,13 +638,11 @@ function App() {
                         <Route
                           path="nurse"
                           element={
-                            <LegacyRouteGuard title="Процедурный кабинет в разработке">
-                              <ProtectedRoute allowedRoles={['nurse', 'admin', 'superadmin', 'receptionist']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <NursePage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <RequirePermission permission="appointments.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <AppointmentsPage scope="nurse" />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
