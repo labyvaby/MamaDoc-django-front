@@ -177,7 +177,10 @@ const PatientCard: React.FC<Props> = ({
           {patient ? (
             <Stack spacing={2} sx={{ p: 2 }}>
               <Stack direction="row" alignItems="center" spacing={2}>
-                <Avatar sx={{ width: 64, height: 64, bgcolor: "primary.main", fontSize: "1.4rem", fontWeight: 700 }}>
+                <Avatar
+                  src={patient.photoUrl ?? undefined}
+                  sx={{ width: 64, height: 64, bgcolor: "primary.main", fontSize: "1.4rem", fontWeight: 700 }}
+                >
                   {getInitials(patient.fullName)}
                 </Avatar>
                 <Box sx={{ minWidth: 0 }}>

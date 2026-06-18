@@ -105,6 +105,7 @@ const PatientListPanel: React.FC<Props> = ({
                     <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: 1 }}>
                       <ListItemAvatar sx={{ minWidth: "auto" }}>
                         <Avatar
+                          src={p.photoUrl ?? undefined}
                           sx={{
                             width: 28,
                             height: 28,
