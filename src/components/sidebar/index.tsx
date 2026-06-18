@@ -69,6 +69,31 @@ import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
+// Сохраняет/восстанавливает позицию вертикального скролла контейнера навигации.
+// Нужно на случай, если ThemedLayout всё-таки размонтирует сайдбар при смене
+// маршрута: без этого новый DOM-узел встаёт на scrollTop=0 и пункт «уезжает»
+// наверх. Ключ в sessionStorage — чтобы позиция жила в пределах сессии.
+const SIDEBAR_SCROLL_KEY = "sidebar-scroll-top";
+
+function useSidebarScrollMemory() {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || 0);
+    if (saved > 0) el.scrollTop = saved;
+
+    const onScroll = () => {
+      sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  return ref;
+}
+
 const NAV_FILTER_TABS: { id: NavGroup; label: string; icon: React.ElementType }[] = [
   { id: "all",        label: "Все",          icon: GridViewOutlined },
   { id: "my-work",   label: "Моя работа",   icon: WorkOutlineOutlined },
@@ -125,6 +150,9 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   // mobile-only open state comes from shared header/sidebar context
   const { mobileOpen, setMobileOpen } = useMobileSidebar();
 
+  const desktopScrollRef = useSidebarScrollMemory();
+  const mobileScrollRef = useSidebarScrollMemory();
+
   const desktopWidth = siderCollapsed ? 64 : 260;
   const overlayWidth = 260;
 
@@ -179,7 +207,7 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
           {/* Лого + divider — не скроллируются */}
           <Box sx={{ flexShrink: 0 }}>{stickyTop}</Box>
           {/* Список пунктов — скроллируется */}
-          <Box sx={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0, msOverflowStyle: "none", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
+          <Box ref={desktopScrollRef} sx={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0, msOverflowStyle: "none", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
             {children}
           </Box>
           {/* Футер — не скроллируется */}
@@ -212,7 +240,7 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
         {/* Лого + divider — не скроллируются */}
         <Box sx={{ flexShrink: 0 }}>{stickyTop}</Box>
         {/* Список пунктов — скроллируется */}
-        <Box sx={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0, msOverflowStyle: "none", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
+        <Box ref={mobileScrollRef} sx={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0, msOverflowStyle: "none", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
           {children}
         </Box>
         {/* Футер — не скроллируется */}
@@ -567,7 +595,13 @@ const SidebarSecondary: React.FC = () => {
           || can('rbac.roles.view')
           || can('rbac.memberships.view')
         ) && (
-          <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} />
+          <SidebarMenuItem
+            to="/settings"
+            icon={<TuneOutlined />}
+            label="Настройки"
+            collapsed={siderCollapsed}
+            excludePaths={["/settings/notifications", "/settings/diagnoses"]}
+          />
         )}
       </List>
     </>
@@ -582,6 +616,13 @@ type SidebarMenuItemProps = {
   selected?: boolean;
   collapsed?: boolean;
   showBadge?: boolean;
+  /**
+   * Child paths that belong to a *different* menu item and must not light
+   * this one up. Used by a parent route (e.g. "/settings") so it stays
+   * inactive on sub-pages that have their own sidebar entry
+   * (e.g. "/settings/notifications").
+   */
+  excludePaths?: string[];
 };
 
 const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
@@ -591,12 +632,18 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   selected,
   collapsed,
   showBadge = false,
+  excludePaths,
 }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const collapsedFinal = (collapsed ?? false) && !isMobile;
-  const isActive = selected ?? (location.pathname === to || location.pathname.startsWith(to + "/"));
+  const matchesSelf =
+    location.pathname === to || location.pathname.startsWith(to + "/");
+  const matchesExcluded = (excludePaths ?? []).some(
+    (p) => location.pathname === p || location.pathname.startsWith(p + "/"),
+  );
+  const isActive = selected ?? (matchesSelf && !matchesExcluded);
 
   const text = (
     <Box

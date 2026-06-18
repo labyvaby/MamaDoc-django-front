@@ -108,6 +108,103 @@ export function logout() {
   });
 }
 
+/**
+ * Set a new password for the current user. The current password is not
+ * required (employees are created without one — login is by email/phone),
+ * so this also works for the first-time password set. The backend validates
+ * the new password and refreshes the session so the user stays logged in.
+ */
+export function changePassword(newPassword: string) {
+  return apiRequest<{ ok: true }>("/auth/change-password/", {
+    method: "POST",
+    body: { newPassword },
+  });
+}
+
+/** Self-service profile fields a user may edit about themselves. */
+export type ProfileUpdatePayload = {
+  fullName?: string;
+  phone?: string | null;
+  email?: string | null;
+  nickname?: string | null;
+  birthDate?: string | null;
+  telegramId?: string | null;
+  bankAccountNumber?: string | null;
+  inn?: string | null;
+};
+
+/** Returns the current user's own Employee profile (active organization). */
+export function getProfile() {
+  return apiRequest<{ profile: ActiveEmployee }>("/auth/profile/");
+}
+
+/** Updates the current user's own Employee profile (active organization). */
+export function updateProfile(payload: ProfileUpdatePayload) {
+  return apiRequest<{ profile: ActiveEmployee }>("/auth/profile/", {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+/** A document attached to the current user's own Employee profile. */
+export type ProfileDocument = {
+  id: number;
+  employeeId: number;
+  title: string;
+  fileUrl: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** List the current user's own profile documents. */
+export function getProfileDocuments() {
+  return apiRequest<{ documents: ProfileDocument[] }>(
+    "/auth/profile/documents/",
+  );
+}
+
+/** Upload a document to the current user's own profile (self-service). */
+export function uploadProfileDocument(file: File, title: string) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("title", title);
+  return apiRequest<{ document: ProfileDocument }>(
+    "/auth/profile/documents/",
+    { method: "POST", formData: form },
+  );
+}
+
+/** Delete a document from the current user's own profile. */
+export function deleteProfileDocument(documentId: number) {
+  return apiRequest<void>(`/auth/profile/documents/${documentId}/`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Request a one-time SMS login code for a phone number.
+ * Always resolves to `{ ok: true }` — the backend never reveals whether the
+ * phone belongs to a real account (no enumeration).
+ */
+export function requestOtp(phone: string) {
+  return apiRequest<{ ok: true }>("/auth/otp/request/", {
+    method: "POST",
+    body: { phone },
+  });
+}
+
+/**
+ * Verify an SMS login code. On success the backend opens a session and
+ * returns the same shape as /auth/login/ (the user; full context is then
+ * loaded via /auth/me/, mirroring the password login flow).
+ */
+export function verifyOtp(phone: string, code: string) {
+  return apiRequest<MeResponse>("/auth/otp/verify/", {
+    method: "POST",
+    body: { phone, code },
+  });
+}
+
 export function getCurrentUser() {
   return apiRequest<MeResponse>("/auth/me/");
 }
