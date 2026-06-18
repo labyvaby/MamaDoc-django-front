@@ -285,7 +285,7 @@ export function getAppTheme(
         default: backgroundDefault,
         paper: backgroundPaper,
       },
-      divider: alpha(base.palette.primary.main, m === "dark" ? 0.18 : 0.12),
+      divider: alpha(primary, m === "dark" ? 0.18 : 0.12),
     },
     shape: {
       // Базовый радиус для всего: карточки/кнопки переопределяются ниже
@@ -324,8 +324,8 @@ export function getAppTheme(
             WebkitTapHighlightColor: "transparent",
             backgroundImage:
               m === "dark"
-                ? "linear-gradient(180deg, rgba(15,18,24,0.9), rgba(15,18,24,0.9)), radial-gradient(1200px 600px at 0% 0%, rgba(67,97,238,0.06), transparent)"
-                : "radial-gradient(1200px 600px at 0% 0%, rgba(67,97,238,0.06), transparent)",
+                ? `linear-gradient(180deg, rgba(15,18,24,0.9), rgba(15,18,24,0.9)), radial-gradient(1200px 600px at 0% 0%, ${alpha(primary, 0.06)}, transparent)`
+                : `radial-gradient(1200px 600px at 0% 0%, ${alpha(primary, 0.06)}, transparent)`,
             backgroundRepeat: "no-repeat",
             backgroundAttachment: "fixed",
           },
