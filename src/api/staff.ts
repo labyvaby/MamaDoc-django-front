@@ -225,6 +225,11 @@ export interface SpecializationCreatePayload {
   organizationId?: number | null;
 }
 
+export interface SpecializationUpdatePayload {
+  name?: string;
+  isActive?: boolean;
+}
+
 // ── Document shapes ───────────────────────────────────────────────────────────
 
 export interface EmployeeDocumentItem {
@@ -385,8 +390,10 @@ export function updateEmployeeService(
 
 export function getSpecializations(
   signal?: AbortSignal,
+  options?: { includeInactive?: boolean },
 ): Promise<DjangoSpecialization[]> {
-  return apiRequest<DjangoSpecialization[]>("/staff/specializations/", { signal }).then(
+  const query = options?.includeInactive ? "?includeInactive=1" : "";
+  return apiRequest<DjangoSpecialization[]>(`/staff/specializations/${query}`, { signal }).then(
     (items) => (Array.isArray(items) ? items : []),
   );
 }
@@ -398,6 +405,16 @@ export function createSpecialization(
     method: "POST",
     body: payload,
   });
+}
+
+export function updateSpecialization(
+  specializationId: number,
+  payload: SpecializationUpdatePayload,
+): Promise<DjangoSpecialization> {
+  return apiRequest<DjangoSpecialization>(
+    `/staff/specializations/${specializationId}/`,
+    { method: "PATCH", body: payload },
+  );
 }
 
 export function linkSpecializationToEmployee(

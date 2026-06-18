@@ -16,6 +16,7 @@ import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import WorkOutlined from "@mui/icons-material/WorkOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -30,6 +31,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   branches: "branches.view",
   roles: "rbac.roles.view",
   memberships: "rbac.memberships.view",
+  specializations: "staff.specializations.view",
   expenseCategories: "finance.expense.manage",
 } as const;
 
@@ -66,6 +68,12 @@ const TABS: TabDef[] = [
     label: "Сотрудники и доступы",
     to: "/settings/memberships",
     icon: <GroupsOutlined fontSize="small" />,
+  },
+  {
+    key: "specializations",
+    label: "Специализации",
+    to: "/settings/specializations",
+    icon: <WorkOutlined fontSize="small" />,
   },
   {
     key: "expenseCategories",
