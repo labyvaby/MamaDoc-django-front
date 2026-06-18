@@ -222,7 +222,7 @@ const PatientCard: React.FC<Props> = ({
                         textDecoration: 'none',
                         mt: 0.5,
                         '&:hover': {
-                          color: 'primary.main',
+                          color: 'primary.onSurface',
                         },
                         '&:active': {
                           color: 'primary.dark',
@@ -232,7 +232,7 @@ const PatientCard: React.FC<Props> = ({
                       <PhoneInTalkOutlined
                         fontSize="small"
                         sx={{
-                          color: 'primary.main',
+                          color: 'primary.onSurface',
                         }}
                       />
                       <Typography variant="body2">{patient.phone}</Typography>

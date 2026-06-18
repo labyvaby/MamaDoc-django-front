@@ -43,7 +43,7 @@ const variantConfig = {
   },
   question: {
     icon: HelpOutline,
-    color: "primary.main",
+    color: "primary.onSurface",
     confirmColor: "primary" as const,
   },
 };

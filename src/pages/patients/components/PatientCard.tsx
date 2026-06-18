@@ -192,10 +192,10 @@ const PatientCard: React.FC<Props> = ({
                       sx={{
                         display: "flex", alignItems: "center", gap: 1,
                         color: "text.secondary", textDecoration: "none", mt: 0.5,
-                        "&:hover": { color: "primary.main" },
+                        "&:hover": { color: "primary.onSurface" },
                       }}
                     >
-                      <PhoneInTalkOutlined fontSize="small" sx={{ color: "primary.main" }} />
+                      <PhoneInTalkOutlined fontSize="small" sx={{ color: "primary.onSurface" }} />
                       <Typography variant="body2">{patient.phone}</Typography>
                     </Link>
                   ) : (

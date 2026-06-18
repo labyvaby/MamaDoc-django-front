@@ -155,7 +155,7 @@ const AddSlotButton: React.FC<{ timeStr: string; onClick: () => void }> = ({ tim
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      color: "primary.main",
+      color: "primary.onSurface",
       cursor: "pointer",
       transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05),

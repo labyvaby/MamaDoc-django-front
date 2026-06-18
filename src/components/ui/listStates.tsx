@@ -74,7 +74,7 @@ export const ListEmptyState: React.FC<ListEmptyStateProps> = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "primary.main",
+                color: "primary.onSurface",
                 bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                 "& .MuiSvgIcon-root": { fontSize: 30 },
             }}

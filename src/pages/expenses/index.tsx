@@ -978,8 +978,8 @@ const ExpensesListPage: React.FC = () => {
                           Итого за месяц
                         </Typography>
                         <Stack direction="row" alignItems="center" spacing={1}>
-                          <AccountBalanceWalletOutlined sx={{ color: 'primary.main', fontSize: 20 }} />
-                          <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.main' }}>
+                          <AccountBalanceWalletOutlined sx={{ color: 'primary.onSurface', fontSize: 20 }} />
+                          <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.onSurface' }}>
                             {formatKGS(groupedByEmployee.reduce((sum, emp) => sum + emp.total, 0))}
                           </Typography>
                         </Stack>

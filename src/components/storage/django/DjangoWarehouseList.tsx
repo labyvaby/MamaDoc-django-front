@@ -137,7 +137,7 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                                 w.isPrimary
                                                     ? theme.palette.primary.main
                                                     : alpha(theme.palette.primary.main, 0.1),
-                                            color: w.isPrimary ? "common.white" : "primary.main",
+                                            color: w.isPrimary ? "common.white" : "primary.onSurface",
                                         }}
                                     >
                                         <StoreIcon fontSize="small" />
@@ -221,7 +221,7 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                                         sx={{
                                                             flexShrink: 0,
                                                             color: "text.secondary",
-                                                            "&:hover": { color: "primary.main" },
+                                                            "&:hover": { color: "primary.onSurface" },
                                                         }}
                                                     >
                                                         <EditIcon fontSize="small" />

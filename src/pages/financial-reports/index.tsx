@@ -214,7 +214,7 @@ const FinancialReportsPage: React.FC = () => {
                                             <Typography variant="overline" color="primary">Мед. услуги</Typography>
                                             <Typography variant="h5" fontWeight={800}>{formatKGS(totals.services)}</Typography>
                                         </Box>
-                                        <Avatar sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: 'primary.main' }}>
+                                        <Avatar sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: 'primary.onSurface' }}>
                                             <AssessmentOutlined />
                                         </Avatar>
                                     </Stack>

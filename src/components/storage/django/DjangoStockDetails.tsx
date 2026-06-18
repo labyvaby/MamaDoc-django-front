@@ -261,7 +261,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                                             fontSize: "0.8125rem",
                                             fontWeight: active ? 600 : 500,
                                             fontFamily: "inherit",
-                                            color: active ? "primary.main" : "text.secondary",
+                                            color: active ? "primary.onSurface" : "text.secondary",
                                             bgcolor: active ? "background.paper" : "transparent",
                                             boxShadow: active ? 1 : 0,
                                             transition: "all .15s ease",
@@ -376,7 +376,7 @@ const MovementRow: React.FC<{
                                     e.stopPropagation();
                                     onEdit();
                                 }}
-                                sx={{ flexShrink: 0, color: "text.secondary", "&:hover": { color: "primary.main" } }}
+                                sx={{ flexShrink: 0, color: "text.secondary", "&:hover": { color: "primary.onSurface" } }}
                             >
                                 <EditOutlinedIcon sx={{ fontSize: 16 }} />
                             </IconButton>

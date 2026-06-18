@@ -29,7 +29,6 @@ import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
-import { ThemeCustomizerFab } from "./components/theme/ThemeCustomizerFab";
 import { RefreshProvider } from "./contexts/refresh-context";
 import { ClientSessionProvider } from "./contexts/client-session-context";
 import { TitleProvider } from "./contexts/title-context";
@@ -1029,7 +1028,6 @@ function App() {
                 </LocalizationProvider>
 
               </RefineSnackbarProvider>
-              <ThemeCustomizerFab />
             </RefreshProvider>
           </ColorModeContextProvider>
         </TitleProvider>

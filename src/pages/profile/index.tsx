@@ -3,7 +3,6 @@ import {
   Box,
   Stack,
   Typography,
-  Avatar,
   Chip,
   Tab,
   Tabs,
@@ -21,13 +20,12 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
-import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import dayjs from "dayjs";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
-import { PageHeader, AppCard } from "../../components/ui";
+import { PageHeader, AppCard, UserAvatar } from "../../components/ui";
 import { getCurrentUser } from "../../api/auth";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import ChangePasswordCard from "./ChangePasswordCard";
@@ -63,7 +61,7 @@ const InfoRow: React.FC<{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: active ? "primary.main" : "text.disabled",
+        color: active ? "primary.onSurface" : "text.disabled",
         bgcolor: (theme) =>
           active ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
         "& .MuiSvgIcon-root": { fontSize: 20 },
@@ -286,13 +284,12 @@ const ProfilePage: React.FC = () => {
           {/* Карточка пользователя (шапка профиля — над табами) */}
           <AppCard variant="outlined">
             <Stack direction="row" spacing={3} alignItems="center">
-              <Avatar
-                src={view.photoUrl || undefined}
-                alt={displayName}
-                sx={{ width: 112, height: 112, flexShrink: 0 }}
-              >
-                <PersonOutlineOutlined sx={{ fontSize: 56 }} />
-              </Avatar>
+              <UserAvatar
+                src={view.photoUrl}
+                name={displayName}
+                size={112}
+                sx={{ flexShrink: 0 }}
+              />
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
                   {displayName}

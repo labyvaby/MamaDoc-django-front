@@ -859,7 +859,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
                           right: 6, // СПРАВА
                           zIndex: 3,
                           fontSize: "0.9rem",
-                          color: isToday ? "primary.main" : "text.secondary",
+                          color: isToday ? "primary.onSurface" : "text.secondary",
                           bgcolor: isToday ? (theme) => alpha(theme.palette.primary.main, 0.1) : "transparent",
                           px: 0.8,
                           borderRadius: 1,

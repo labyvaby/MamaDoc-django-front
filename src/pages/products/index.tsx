@@ -281,7 +281,7 @@ const ProductsPage: React.FC = () => {
                     size="small"
                     onClick={() => setFilterDrawerOpen(true)}
                     sx={{
-                      color: isFilterActive ? "primary.main" : "text.secondary",
+                      color: isFilterActive ? "primary.onSurface" : "text.secondary",
                       bgcolor: isFilterActive ? "primary.lighter" : "transparent",
                     }}
                   >
