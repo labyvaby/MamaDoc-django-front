@@ -94,6 +94,7 @@ const OrganizationSettingsPage = lazy(() => import("./pages/settings/Organizatio
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
+const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 const SalaryReportsPage = lazy(() => import("./pages/salary-reports"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
@@ -209,6 +210,13 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
 
   return <Fragment key={contextVersion}>{children}</Fragment>;
 };
+
+// Стабильные ссылки для ThemedLayout. Если передавать инлайн-стрелки
+// (Sider={() => <Sidebar />}), React при каждом ререндере ThemedLayout видит
+// новый тип компонента и размонтирует/монтирует сайдбар заново — из-за чего
+// теряется позиция скролла (выбрасывает наверх при выборе пункта снизу).
+const renderHeader = () => <Header sticky />;
+const renderSider = () => <Sidebar />;
 
 function App() {
   const theme = useTheme();
@@ -456,8 +464,8 @@ function App() {
                           <RequireAuth>
                             <MobileSidebarProvider>
                               <ThemedLayout
-                                Header={() => <Header sticky />}
-                                Sider={() => <Sidebar />}
+                                Header={renderHeader}
+                                Sider={renderSider}
                                 childrenBoxProps={{
                                   sx: {
                                     p: 1,
@@ -882,6 +890,16 @@ function App() {
                                 <RequirePermission permission="rbac.memberships.view">
                                   <Suspense fallback={<LinearProgress />}>
                                     <MembershipsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/specializations"
+                              element={
+                                <RequirePermission permission="staff.specializations.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SpecializationsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }
