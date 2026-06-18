@@ -77,6 +77,11 @@ export const djangoQueryKeys = {
     branches: ["django", "organization", "branches"] as const,
   },
 
+  staff: {
+    specializations: (organizationId: number | null | undefined) =>
+      ["django", "staff", "specializations", organizationId ?? null] as const,
+  },
+
   catalog: {
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "catalog", "services", context] as const,

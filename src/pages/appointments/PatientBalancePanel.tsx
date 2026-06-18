@@ -146,6 +146,8 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
 
   const balance = balanceQuery.data;
   const transactions = txQuery.data?.results ?? [];
+  const balanceNum = balance ? parseFloat(balance.balance) : 0;
+  const isDebt = balanceNum < 0;
 
   return (
     <Box>
@@ -177,9 +179,18 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
         </Stack>
       ) : balance ? (
         <Stack spacing={1}>
+          {isDebt && (
+            <Alert severity="error" sx={{ py: 0.25 }}>
+              Задолженность: {Math.abs(balanceNum).toFixed(2)} с
+            </Alert>
+          )}
           <Stack direction="row" justifyContent="space-between">
             <Typography variant="body2" color="text.secondary">Баланс</Typography>
-            <Typography variant="body2" fontWeight={600}>
+            <Typography
+              variant="body2"
+              fontWeight={isDebt ? 700 : 600}
+              color={isDebt ? "error.main" : "text.primary"}
+            >
               {balance.balance} с
             </Typography>
           </Stack>

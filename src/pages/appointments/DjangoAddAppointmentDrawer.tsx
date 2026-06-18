@@ -26,6 +26,7 @@ import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import { useNotification } from "@refinedev/core";
+import { useQuery } from "@tanstack/react-query";
 
 import { CustomDateTimePicker } from "../../components/ui";
 import { roundDateTimeLocalToStep } from "../../utility/time";
@@ -34,6 +35,11 @@ import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { createAppointment, parseBackendError } from "../../api/appointments";
+import { getPatientBalance } from "../../api/patientBalance";
+import {
+  djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
+} from "../../api/queryKeys";
 import type { DjangoPatient } from "../../api/patients";
 import type {
   DjangoEmployeeWithServices,
@@ -153,6 +159,19 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       )
       .slice(0, 30);
   }, [data.patients, patientSearch]);
+
+  // ── selected patient balance (debt warning) ────────────────────────────────
+  const balanceQuery = useQuery({
+    queryKey: djangoQueryKeys.patients.balance(selectedPatient?.id ?? 0),
+    queryFn: ({ signal }) => getPatientBalance(selectedPatient!.id, signal),
+    enabled: !!selectedPatient && !isBooking,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    retry: false,
+  });
+  const patientBalanceNum = balanceQuery.data
+    ? parseFloat(balanceQuery.data.balance)
+    : 0;
+  const patientHasDebt = !!balanceQuery.data && patientBalanceNum < 0;
 
   // ── validation ────────────────────────────────────────────────────────────
   const validRows = serviceRows.filter((r) => r.serviceId !== null && r.employeeId !== null);
@@ -429,6 +448,15 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     />
                   )}
                 />
+              )}
+
+              {!isBooking && patientHasDebt && (
+                <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    У пациента задолженность:{" "}
+                    {formatKGS(Math.abs(patientBalanceNum))}
+                  </Typography>
+                </Alert>
               )}
             </Stack>
 
