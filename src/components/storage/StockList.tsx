@@ -68,7 +68,7 @@ export const StockList: React.FC<StockListProps> = ({
             size="small"
             onClick={onFilterClick}
             sx={{
-              color: isFilterActive ? "primary.main" : "text.secondary",
+              color: isFilterActive ? "primary.onSurface" : "text.secondary",
               bgcolor: isFilterActive ? "primary.lighter" : "transparent",
             }}
           >

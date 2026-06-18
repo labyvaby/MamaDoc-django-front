@@ -149,7 +149,7 @@ const AddSlotButton: React.FC<AddSlotButtonProps> = ({ timeStr, onClick }) => (
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      color: "primary.main", // Always primary
+      color: "primary.onSurface", // Always primary
       cursor: "pointer",
       transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05), // Light primary background

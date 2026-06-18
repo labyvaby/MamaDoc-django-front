@@ -404,12 +404,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           <Stack spacing={3}>
             {/* ── Date row ── */}
             <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" sx={{ mt: 0.5 }}>
-              <CalendarMonthOutlined fontSize="medium" sx={{ color: "primary.main" }} />
+              <CalendarMonthOutlined fontSize="medium" sx={{ color: "primary.onSurface" }} />
               <Typography variant="h6" fontWeight={700} color="text.primary">
                 {dayjs(appt.scheduledAt).format("D MMMM YYYY, HH:mm")}
               </Typography>
               {appt.isNight && (
-                <NightlightOutlined sx={{ fontSize: 22, color: "primary.main" }} />
+                <NightlightOutlined sx={{ fontSize: 22, color: "primary.onSurface" }} />
               )}
               <Stack direction="column" spacing={0} sx={{ ml: "auto" }}>
                 {appt.createdAt && (

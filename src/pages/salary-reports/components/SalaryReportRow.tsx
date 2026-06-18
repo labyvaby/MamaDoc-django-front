@@ -193,7 +193,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     <Box sx={{ px: 0.75, py: 0.15, borderRadius: 1, bgcolor: alpha(theme.palette.success.main, 0.12), color: 'success.dark', fontSize: '0.6rem', fontWeight: 700, whiteSpace: 'nowrap' }}>✓ Выплачено</Box>
                                 )}
                                 <Box sx={{ display: 'inline-block', px: 0.75, py: 0.1, borderRadius: 0.75, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                                    <Typography variant="caption" fontWeight={700} color="primary.main" sx={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                                    <Typography variant="caption" fontWeight={700} color="primary.onSurface" sx={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
                                         {row.role}
                                     </Typography>
                                 </Box>
@@ -202,7 +202,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                         <Stack direction="row" alignItems="center" spacing={0.5}>
                             <Box sx={{ textAlign: 'right' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.55rem', lineHeight: 1.2 }}>Итого ЗП</Typography>
-                                <Typography fontWeight={800} color="primary.main" sx={{ fontSize: '0.95rem', lineHeight: 1.1 }}>
+                                <Typography fontWeight={800} color="primary.onSurface" sx={{ fontSize: '0.95rem', lineHeight: 1.1 }}>
                                     {formatKGS(row.total_salary)}
                                 </Typography>
                             </Box>
@@ -299,7 +299,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                             <Typography variant="body2" fontWeight={800} color={day.isWeekend ? 'info.main' : 'text.primary'}>
                                                 {day.date}
                                             </Typography>
-                                            <Typography variant="body1" fontWeight={800} color="primary.main">
+                                            <Typography variant="body1" fontWeight={800} color="primary.onSurface">
                                                 {formatKGS(day.totalSalary)}
                                             </Typography>
                                         </Stack>
@@ -378,7 +378,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     <Divider sx={{ my: 0.75 }} />
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                                         <Typography variant="body2" fontWeight={800}>Итого к выплате</Typography>
-                                        <Typography variant="body1" fontWeight={800} color="primary.main">{formatKGS(row.total_salary)}</Typography>
+                                        <Typography variant="body1" fontWeight={800} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
                                     </Stack>
                                 </Box>
 
@@ -386,7 +386,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     <Typography
                                         variant="caption"
                                         fontWeight={800}
-                                        color="primary.main"
+                                        color="primary.onSurface"
                                         sx={{
                                             cursor: 'pointer',
                                             textTransform: 'uppercase',
@@ -515,7 +515,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                     <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.expenses_sum)}</Typography>
                 </TableCell>
                 <TableCell align="right">
-                    <Typography variant="body2" fontWeight={800} color="primary.main">{formatKGS(row.total_salary)}</Typography>
+                    <Typography variant="body2" fontWeight={800} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
                 </TableCell>
             </TableRow>
             <TableRow>
@@ -561,7 +561,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                                     {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Бонусы</TableCell>}
                                                     {cols.percent && <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Зарплата</TableCell>}
                                                     <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'error.main' }}>Аванс</TableCell>
-                                                    <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'primary.main' }}>К выплате</TableCell>
+                                                    <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'primary.onSurface' }}>К выплате</TableCell>
                                                 </TableRow>
                                             </TableHead>
                                             <TableBody>
@@ -640,7 +640,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                             <Divider sx={{ my: 0.75 }} />
                                             <Stack direction="row" justifyContent="space-between" alignItems="center">
                                                 <Typography variant="body2" fontWeight={800}>Итого к выплате</Typography>
-                                                <Typography variant="body1" fontWeight={800} color="primary.main">{formatKGS(row.total_salary)}</Typography>
+                                                <Typography variant="body1" fontWeight={800} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
                                             </Stack>
                                         </Box>
                                     )}

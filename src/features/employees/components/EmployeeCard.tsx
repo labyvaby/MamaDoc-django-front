@@ -376,13 +376,13 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                         gap: 1,
                         color: "text.secondary",
                         textDecoration: "none",
-                        "&:hover": { color: "primary.main" },
+                        "&:hover": { color: "primary.onSurface" },
                         "&:active": { color: "primary.dark" },
                       }}
                     >
                       <PhoneInTalkOutlined
                         fontSize="small"
-                        sx={{ color: "primary.main" }}
+                        sx={{ color: "primary.onSurface" }}
                       />
                       <Typography variant="body2">{phone}</Typography>
                     </Link>

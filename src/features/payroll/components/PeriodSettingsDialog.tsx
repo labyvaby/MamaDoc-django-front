@@ -190,7 +190,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'primary.main',
+                  color: 'primary.onSurface',
                 }}
               >
                 <TuneIcon fontSize="small" />

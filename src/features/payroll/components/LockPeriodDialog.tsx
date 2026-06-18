@@ -52,7 +52,7 @@ export const LockPeriodDialog: React.FC<Props> = ({
 
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary">Итого к выплате</Typography>
-            <Typography variant="h5" fontWeight={800} color="primary.main">{formatted}</Typography>
+            <Typography variant="h5" fontWeight={800} color="primary.onSurface">{formatted}</Typography>
             <Typography variant="caption" color="text.secondary">{employeeCount} сотрудников</Typography>
           </Stack>
 

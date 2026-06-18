@@ -192,8 +192,8 @@ const ClientProfilePage: React.FC = () => {
               <Box>
                 <Typography variant="h6" sx={{ lineHeight: 1.2 }}>{patient.fio}</Typography>
                 {patient.phone ? (
-                  <Link href={`tel:${patient.phone}`} sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", textDecoration: "none", mt: 0.5, "&:hover": { color: "primary.main" } }}>
-                    <PhoneInTalkOutlined fontSize="small" sx={{ color: "primary.main" }} />
+                  <Link href={`tel:${patient.phone}`} sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", textDecoration: "none", mt: 0.5, "&:hover": { color: "primary.onSurface" } }}>
+                    <PhoneInTalkOutlined fontSize="small" sx={{ color: "primary.onSurface" }} />
                     <Typography variant="body2">{patient.phone}</Typography>
                   </Link>
                 ) : (
@@ -333,7 +333,7 @@ const ClientProfilePage: React.FC = () => {
               <Stack spacing={0.75}>
                 <Stack direction="row" justifyContent="space-between">
                   <Typography variant="body2" color="text.secondary">Итого</Typography>
-                  <Typography variant="body2" fontWeight={700} color="primary.main">{formatKGS(detail.total_cost)}</Typography>
+                  <Typography variant="body2" fontWeight={700} color="primary.onSurface">{formatKGS(detail.total_cost)}</Typography>
                 </Stack>
                 {(detail.paid_cash ?? 0) > 0 && (
                   <Stack direction="row" justifyContent="space-between">

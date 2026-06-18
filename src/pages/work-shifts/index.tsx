@@ -453,7 +453,7 @@ const WorkShiftsPage: React.FC = () => {
                                                                     />
                                                                 ) : (
                                                                     <WbSunnyOutlined
-                                                                        sx={{ color: 'primary.main' }}
+                                                                        sx={{ color: 'primary.onSurface' }}
                                                                         titleAccess="Дневная смена"
                                                                     />
                                                                 )}
@@ -531,7 +531,7 @@ const WorkShiftsPage: React.FC = () => {
                                                                     {shift.isNight ? (
                                                                         <NightlightOutlined sx={{ color: 'warning.main', fontSize: '1rem' }} />
                                                                     ) : (
-                                                                        <WbSunnyOutlined sx={{ color: 'primary.main', fontSize: '1rem' }} />
+                                                                        <WbSunnyOutlined sx={{ color: 'primary.onSurface', fontSize: '1rem' }} />
                                                                     )}
                                                                     <Typography variant="body2" fontWeight={600}>
                                                                         {shift.timeStart} — {shift.timeEnd === "—" ? "активна" : shift.timeEnd}

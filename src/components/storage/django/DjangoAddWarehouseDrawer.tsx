@@ -307,7 +307,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                                                     height: 44,
                                                     borderRadius: 1,
                                                     bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                                                    color: "primary.main",
+                                                    color: "primary.onSurface",
                                                 }}
                                             >
                                                 <StoreIcon fontSize="small" />

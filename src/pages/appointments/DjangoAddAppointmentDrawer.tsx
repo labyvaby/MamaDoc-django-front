@@ -684,7 +684,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                             <Typography variant="h6" sx={{ fontWeight: 600 }}>
                               Общая стоимость
                             </Typography>
-                            <Typography variant="h6" sx={{ fontWeight: 700, color: "primary.main" }}>
+                            <Typography variant="h6" sx={{ fontWeight: 700, color: "primary.onSurface" }}>
                               {formatKGS(totalCost)}
                             </Typography>
                           </Stack>

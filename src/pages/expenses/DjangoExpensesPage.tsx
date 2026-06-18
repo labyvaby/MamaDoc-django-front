@@ -191,7 +191,7 @@ const ExpenseDetailCard: React.FC<{
       >
         <Avatar
           variant="rounded"
-          sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: "primary.main", width: 44, height: 44 }}
+          sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: "primary.onSurface", width: 44, height: 44 }}
         >
           <ReceiptLongOutlined />
         </Avatar>
@@ -728,8 +728,8 @@ const DjangoExpensesPage: React.FC = () => {
                             Итого за месяц
                           </Typography>
                           <Stack direction="row" alignItems="center" spacing={1}>
-                            <AccountBalanceWalletOutlined sx={{ color: "primary.main", fontSize: 20 }} />
-                            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: "primary.main" }}>
+                            <AccountBalanceWalletOutlined sx={{ color: "primary.onSurface", fontSize: 20 }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: "primary.onSurface" }}>
                               {formatKGS(monthTotal)}
                             </Typography>
                           </Stack>

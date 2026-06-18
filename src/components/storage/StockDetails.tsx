@@ -212,7 +212,7 @@ export const StockDetails: React.FC<StockDetailsProps> = ({
                                         variant="body2"
                                         sx={{
                                             fontWeight: filter === tab.value ? 600 : 400,
-                                            color: filter === tab.value ? "primary.main" : "text.secondary",
+                                            color: filter === tab.value ? "primary.onSurface" : "text.secondary",
                                             transition: "all 0.2s",
                                         }}
                                     >

@@ -253,7 +253,7 @@ const DjangoProductsPage: React.FC = () => {
                     size="small"
                     onClick={() => setFilterDrawerOpen(true)}
                     sx={{
-                      color: isFilterActive ? "primary.main" : "text.secondary",
+                      color: isFilterActive ? "primary.onSurface" : "text.secondary",
                       bgcolor: isFilterActive ? "primary.lighter" : "transparent",
                     }}
                   >
@@ -326,7 +326,7 @@ const DjangoProductsPage: React.FC = () => {
                               height: 48,
                               borderRadius: 2,
                               bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                              color: "primary.main",
+                              color: "primary.onSurface",
                             }}
                           >
                             {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}

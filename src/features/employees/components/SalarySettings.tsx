@@ -221,7 +221,7 @@ const SalarySettings: React.FC<SalarySettingsProps> = ({ employeeId, initialValu
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 bgcolor: state.fixed_salary.enabled ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
-                                color: state.fixed_salary.enabled ? "primary.main" : "text.disabled",
+                                color: state.fixed_salary.enabled ? "primary.onSurface" : "text.disabled",
                             }}
                         >
                             <AccessTime sx={{ fontSize: 18 }} />
@@ -361,7 +361,7 @@ const SalarySettings: React.FC<SalarySettingsProps> = ({ employeeId, initialValu
                                                                         fontSize: "0.65rem",
                                                                         borderRadius: 0.75,
                                                                         bgcolor: alpha(theme.palette.primary.main, 0.08),
-                                                                        color: "primary.main",
+                                                                        color: "primary.onSurface",
                                                                         fontWeight: 600,
                                                                         "& .MuiChip-label": { px: 0.5 },
                                                                         "& .MuiChip-deleteIcon": { m: 0 }

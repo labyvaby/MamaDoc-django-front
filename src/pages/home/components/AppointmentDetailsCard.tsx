@@ -613,12 +613,12 @@ const AppointmentDetailsCardBase: React.FC<AppointmentDetailsCardProps> = ({
             <Typography variant="caption">Загрузка...</Typography>
           ) : item ? (
             <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" sx={{ mt: 0.5 }}>
-              <CalendarMonthOutlined fontSize="medium" sx={{ color: 'primary.main' }} />
+              <CalendarMonthOutlined fontSize="medium" sx={{ color: 'primary.onSurface' }} />
               <Typography variant="h6" fontWeight={700} color="text.primary">
                 {item.formatted_date}
               </Typography>
               {isNight && (
-                <NightlightOutlined sx={{ fontSize: 22, color: 'primary.main' }} />
+                <NightlightOutlined sx={{ fontSize: 22, color: 'primary.onSurface' }} />
               )}
 
               {/* Метаданные создания и изменения */}

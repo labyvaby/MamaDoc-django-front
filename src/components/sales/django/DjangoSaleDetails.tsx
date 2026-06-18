@@ -226,7 +226,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                                 height: 48,
                                                 borderRadius: 2,
                                                 bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                                                color: "primary.main",
+                                                color: "primary.onSurface",
                                             }}
                                         >
                                             <Inventory />

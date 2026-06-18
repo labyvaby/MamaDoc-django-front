@@ -120,7 +120,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
             size="small"
             onClick={(e) => setAnchorEl(e.currentTarget)}
             sx={{
-              color: filterActive ? "primary.main" : "text.secondary",
+              color: filterActive ? "primary.onSurface" : "text.secondary",
               bgcolor: filterActive ? "primary.lighter" : "transparent",
             }}
           >
@@ -260,7 +260,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                       height: 48,
                       borderRadius: 1,
                       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                      color: "primary.main",
+                      color: "primary.onSurface",
                     }}
                   >
                     {item.productName?.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
