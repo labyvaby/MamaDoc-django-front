@@ -5,15 +5,11 @@ import {
   Box,
   Chip,
   Divider,
-  IconButton,
-  InputAdornment,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import { useNotification } from "@refinedev/core";
 
 import DrawerBase from "./DrawerBase";
@@ -38,8 +34,6 @@ import {
   validateFullName,
   validatePhoneLocal,
   validateEmail,
-  validateUsername,
-  validatePassword,
 } from "../employeeValidation";
 
 export type OnboardEmployeeDrawerProps = {
@@ -48,12 +42,40 @@ export type OnboardEmployeeDrawerProps = {
   onCreated: (row: EmployesRow) => void;
 };
 
-function generateTempPassword(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const suffix = Array.from({ length: 10 }, () =>
-    alphabet[Math.floor(Math.random() * alphabet.length)],
-  ).join("");
-  return `MamaDoc-${suffix}`;
+// Разбивает ФИО («Фамилия Имя Отчество») на поля учётной записи User:
+// первое слово → lastName, остальное → firstName.
+function splitFullName(fullName: string): { firstName?: string; lastName?: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  const [last, ...rest] = parts;
+  return { lastName: last, firstName: rest.join(" ") };
+}
+
+// Бэкенд может вернуть один и тот же системный набор ролей по разу на каждую
+// организацию/филиал — в выпадающем списке это выглядит как дубли
+// («Администратор», «Бухгалтер», … повторяются). Оставляем по одной роли на
+// `code` (а при его отсутствии — на `name`), предпочитая роль активной
+// организации.
+function dedupeRoles(roles: RbacRole[], activeOrgId?: number): RbacRole[] {
+  const byKey = new Map<string, RbacRole>();
+  for (const role of roles) {
+    const key = (role.code || role.name).trim().toLowerCase();
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, role);
+      continue;
+    }
+    // Предпочитаем роль активной организации, если такая нашлась.
+    if (
+      activeOrgId != null &&
+      role.organizationId === activeOrgId &&
+      existing.organizationId !== activeOrgId
+    ) {
+      byKey.set(key, role);
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
@@ -79,11 +101,9 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
 
   // ── account fields ────────────────────────────────────────────────────────────
-  const [firstName, setFirstName] = React.useState("");
-  const [lastName, setLastName] = React.useState("");
-  const [username, setUsername] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [showPassword, setShowPassword] = React.useState(false);
+  // Логин (username) деривируется бэкендом из email/телефона, пароль не
+  // задаётся при создании — сотрудник входит по SMS-коду (OTP).
+  // firstName / lastName выводятся из ФИО автоматически (см. splitFullName).
 
   // ── role / branch ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
@@ -110,19 +130,15 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     fullName: validateFullName(fullName),
     phone: validatePhoneLocal(phoneLocal, phoneCountry),
     email: validateEmail(email),
-    username: validateUsername(username),
-    password: validatePassword(password),
-  }), [fullName, phoneLocal, phoneCountry, email, username, password]);
+  }), [fullName, phoneLocal, phoneCountry, email]);
 
-  const hasLogin = Boolean(username.trim() || email.trim() || phoneLocal.trim());
+  // Логин выводится из email/телефона на бэкенде, поэтому требуем хотя бы одно.
+  const hasLogin = Boolean(email.trim() || phoneLocal.trim());
   const hasRequiredFields =
     !errors.fullName &&
     !errors.phone &&
     !errors.email &&
-    !errors.username &&
-    !errors.password &&
     hasLogin &&
-    password.length >= 8 &&
     roleId !== "" &&
     employeeBranches.length > 0 &&
     branches.length > 0;
@@ -143,7 +159,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     let cancelled = false;
     setLoadingDeps(true);
     const tasks: Promise<unknown>[] = [
-      getRoles().then((r) => { if (!cancelled) setRoles(r); }),
+      getRoles().then((r) => { if (!cancelled) setRoles(dedupeRoles(r, activeOrganization?.id)); }),
     ];
     if (canViewSpecs || canManageSpecs) {
       tasks.push(
@@ -157,7 +173,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       })
       .finally(() => { if (!cancelled) setLoadingDeps(false); });
     return () => { cancelled = true; };
-  }, [open, notify, canViewSpecs, canManageSpecs]);
+  }, [open, notify, canViewSpecs, canManageSpecs, activeOrganization?.id]);
 
   // ── preselect current branch ──────────────────────────────────────────────────
   React.useEffect(() => {
@@ -177,11 +193,6 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setPhoneCountry("+996");
       setPhoneLocal("");
       setEmail("");
-      setFirstName("");
-      setLastName("");
-      setUsername("");
-      setPassword(generateTempPassword());
-      setShowPassword(false);
       setStatus("active");
       setClinicalRole("other");
       setRoleId("");
@@ -193,12 +204,6 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setBusy(false);
       setTouched({});
       setSubmitAttempted(false);
-    }
-  }, [open]);
-
-  React.useEffect(() => {
-    if (open) {
-      setPassword((current) => current || generateTempPassword());
     }
   }, [open]);
 
@@ -223,6 +228,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     setBusy(true);
     try {
       const composedPhone = composePhone(phoneCountry, phoneLocal);
+      const { firstName, lastName } = splitFullName(fullName);
       const payload = {
         fullName: fullName.trim(),
         roleId: roleId as number,
@@ -230,10 +236,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         organizationId: activeOrganization?.id ?? undefined,
         email: email.trim() || undefined,
         phone: composedPhone ?? undefined,
-        username: username.trim() || undefined,
-        password,                       // no trim on passwords
-        firstName: firstName.trim() || undefined,
-        lastName: lastName.trim() || undefined,
+        firstName,
+        lastName,
         userBranchAccessIds: overrideUserAccess
           ? userAccessBranches.map((b) => b.id)
           : undefined,
@@ -445,94 +449,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
         <Divider />
 
-        <Alert severity="info">
-          При сохранении автоматически создаётся пользователь для входа в систему,
-          членство в организации и карточка сотрудника.
-        </Alert>
-
         {/* ── Учётная запись ── */}
         <Stack spacing={2.5}>
-          {/* ── Имя / Фамилия ── */}
-          <Stack direction="row" spacing={1.5}>
-            <Stack spacing={0.5} flex={1}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Имя
-              </Typography>
-              <TextField
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                fullWidth
-                placeholder="Иван"
-                disabled={busy}
-              />
-            </Stack>
-            <Stack spacing={0.5} flex={1}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Фамилия
-              </Typography>
-              <TextField
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                fullWidth
-                placeholder="Иванов"
-                disabled={busy}
-              />
-            </Stack>
-          </Stack>
-
-          {/* ── Логин ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Логин
-            </Typography>
-            <TextField
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onBlur={() => touch("username")}
-              fullWidth
-              placeholder="Можно оставить пустым, если указан телефон или email"
-              disabled={busy}
-              inputProps={{ maxLength: 150 }}
-              error={Boolean(showError("username"))}
-              helperText={showError("username") || "Если не указан, backend использует email или телефон"}
-            />
-          </Stack>
-
-          {/* ── Пароль ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Пароль *
-            </Typography>
-            <TextField
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onBlur={() => touch("password")}
-              fullWidth
-              placeholder="Минимум 8 символов"
-              type={showPassword ? "text" : "password"}
-              disabled={busy}
-              error={Boolean(showError("password"))}
-              helperText={showError("password") || "Передайте этот пароль сотруднику для первого входа"}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => setShowPassword((v) => !v)}
-                      edge="end"
-                    >
-                      {showPassword ? (
-                        <VisibilityOffOutlined fontSize="small" />
-                      ) : (
-                        <VisibilityOutlined fontSize="small" />
-                      )}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Stack>
-
           {/* ── Роль ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
