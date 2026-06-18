@@ -53,6 +53,7 @@ import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
 import { useMobileSidebar } from "./mobile-context";
 import { SettingsModal } from "./SettingsModal";
+import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { useWorkShift } from "../../hooks/useWorkShift";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -377,8 +378,8 @@ const SidebarSecondary: React.FC = () => {
               transition: "all 150ms",
               borderColor: activeGroup === "all" ? "primary.main" : "divider",
               bgcolor: activeGroup === "all" ? (t) => alpha(t.palette.primary.main, 0.1) : "transparent",
-              color: activeGroup === "all" ? "primary.main" : "text.secondary",
-              "&:hover": { borderColor: "primary.main", color: "primary.main" },
+              color: activeGroup === "all" ? "primary.onSurface" : "text.secondary",
+              "&:hover": { borderColor: "primary.main", color: "primary.onSurface" },
             }}
           >
             <GridViewOutlined sx={{ fontSize: 16 }} />
@@ -406,8 +407,8 @@ const SidebarSecondary: React.FC = () => {
                   transition: "all 150ms",
                   borderColor: activeGroup === id ? "primary.main" : "divider",
                   bgcolor: activeGroup === id ? (t) => alpha(t.palette.primary.main, 0.1) : "transparent",
-                  color: activeGroup === id ? "primary.main" : "text.secondary",
-                  "&:hover": { borderColor: "primary.main", color: "primary.main" },
+                  color: activeGroup === id ? "primary.onSurface" : "text.secondary",
+                  "&:hover": { borderColor: "primary.main", color: "primary.onSurface" },
                 }}
               >
                 <Icon sx={{ fontSize: 20 }} />
@@ -639,9 +640,9 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
           borderRadius: 4,
           my: 0.5,
           px: 1.4,
-          color: (theme) => (isActive ? theme.palette.primary.main : undefined),
+          color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           '& .MuiListItemIcon-root': {
-            color: (theme) => (isActive ? theme.palette.primary.main : undefined),
+            color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           },
           bgcolor: (theme) =>
             isActive
@@ -832,6 +833,7 @@ const SidebarFooter: React.FC = () => {
       >
         {isCollapsed ? (
           <Stack spacing={1} alignItems="center">
+            <ThemeCustomizerButton tooltipPlacement="right" />
             <Tooltip title="Настройки" placement="right">
               <IconButton onClick={() => setSettingsOpen(true)} size="small">
                 <SettingsOutlined fontSize="small" />
@@ -864,6 +866,7 @@ const SidebarFooter: React.FC = () => {
             </Box>
 
             <Stack direction="row" spacing={0.5}>
+              <ThemeCustomizerButton tooltipPlacement="top" />
               <Tooltip title="Настройки" placement="top">
                 <IconButton onClick={() => setSettingsOpen(true)} size="small">
                   <SettingsOutlined fontSize="small" />

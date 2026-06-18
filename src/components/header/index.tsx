@@ -10,7 +10,6 @@ import { usePermissions } from "../../hooks/usePermissions";
 import appIcon from "../../assets/img/icon_2.png";
 
 import AppBar from "@mui/material/AppBar";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
@@ -33,6 +32,7 @@ import { mapAnyToEmployee, fetchEmployeeSpecialization } from "../../features/em
 import { Employee } from "../../features/employees/types";
 import { DB_TABLES } from "../../utility/constants";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
+import { UserAvatar } from "../ui";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -63,7 +63,7 @@ const ProfileInfoRow: React.FC<{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: active ? "primary.main" : "text.disabled",
+        color: active ? "primary.onSurface" : "text.disabled",
         bgcolor: (theme) =>
           active ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
         "& .MuiSvgIcon-root": { fontSize: 20 },
@@ -282,14 +282,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                 }
               }}
             >
-              <Avatar
-                src={displayAvatar}
-                alt={displayName}
-                sx={{
-                  width: { xs: 28, sm: 32, md: 36 },
-                  height: { xs: 28, sm: 32, md: 36 },
-                }}
-              />
+              <UserAvatar src={displayAvatar} name={displayName} size={36} sx={{ width: { xs: 28, sm: 32, md: 36 }, height: { xs: 28, sm: 32, md: 36 } }} />
               <Typography
                 variant="subtitle2"
                 noWrap
@@ -333,12 +326,11 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
               </Box>
 
               <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", px: 3, pb: 3 }}>
-                <Avatar
+                <UserAvatar
                   src={displayAvatar}
-                  alt={displayName}
+                  name={displayName}
+                  size={96}
                   sx={{
-                    width: 96,
-                    height: 96,
                     mt: "-48px",
                     border: (theme) => `4px solid ${theme.palette.background.paper}`,
                     zIndex: 1,

@@ -161,7 +161,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
                 alignItems: "center",
                 justifyContent: "center",
                 bgcolor: value.enabled ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
-                color: value.enabled ? "primary.main" : "text.disabled",
+                color: value.enabled ? "primary.onSurface" : "text.disabled",
               }}
             >
               <AccessTime sx={{ fontSize: 18 }} />
@@ -310,7 +310,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
                                     fontSize: "0.65rem",
                                     borderRadius: 0.75,
                                     bgcolor: alpha(theme.palette.primary.main, 0.08),
-                                    color: "primary.main",
+                                    color: "primary.onSurface",
                                     fontWeight: 600,
                                     "& .MuiChip-label": { px: 0.5 },
                                     "& .MuiChip-deleteIcon": { m: 0 },

@@ -23,3 +23,5 @@ export { MonthNavigation } from "./MonthNavigation";
 export type { MonthNavigationProps } from "./MonthNavigation";
 export { ListLoadingSkeleton, ListEmptyState } from "./listStates";
 export type { ListEmptyStateProps } from "./listStates";
+export { UserAvatar } from "./UserAvatar";
+export type { UserAvatarProps } from "./UserAvatar";

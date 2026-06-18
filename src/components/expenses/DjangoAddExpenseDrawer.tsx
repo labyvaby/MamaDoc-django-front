@@ -472,7 +472,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                   <Typography variant="body2" color="text.secondary">
                     ИТОГО
                   </Typography>
-                  <Typography variant="subtitle1" fontWeight={700} color="primary.main">
+                  <Typography variant="subtitle1" fontWeight={700} color="primary.onSurface">
                     {formatKGS(total)}
                   </Typography>
                 </Stack>

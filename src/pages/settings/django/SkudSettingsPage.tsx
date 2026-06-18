@@ -105,7 +105,7 @@ const DjangoSkudSettingsPage: React.FC = () => {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  color: "primary.main",
+                  color: "primary.onSurface",
                   bgcolor: (t) => alpha(t.palette.primary.main, 0.1),
                 }}
               >

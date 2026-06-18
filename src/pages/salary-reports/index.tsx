@@ -471,7 +471,7 @@ const SalaryReportsPage: React.FC = () => {
                                     rendered.push(
                                         <Box key={group.label}>
                                             <Box sx={{ px: 1, py: 0.75, mb: 0.75, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: 1.5, border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}` }}>
-                                                <Typography variant="caption" fontWeight={800} color="primary.main" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.65rem' }}>
+                                                <Typography variant="caption" fontWeight={800} color="primary.onSurface" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.65rem' }}>
                                                     {group.label}
                                                 </Typography>
                                             </Box>
@@ -543,7 +543,7 @@ const SalaryReportsPage: React.FC = () => {
                                     rendered.push(
                                         <Paper key={group.label} variant="outlined" sx={{ borderRadius: 3, border: `1px solid ${theme.palette.divider}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
                                             <Box sx={{ px: 2, py: 1, bgcolor: alpha(theme.palette.primary.main, 0.05), borderBottom: `1px solid ${theme.palette.divider}` }}>
-                                                <Typography variant="subtitle2" fontWeight={800} color="primary.main">{group.label}</Typography>
+                                                <Typography variant="subtitle2" fontWeight={800} color="primary.onSurface">{group.label}</Typography>
                                             </Box>
                                             <Table size="small" sx={{ fontSize: '0.75rem', '& .MuiTableCell-root': { fontSize: '0.75rem', py: 0.6, px: 1 } }}>
                                                 <TableHead>
@@ -582,7 +582,7 @@ const SalaryReportsPage: React.FC = () => {
                                                         {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Бонусы</TableCell>}
                                                         {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Зарплата</TableCell>}
                                                         <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'error.main' }}>Аванс</TableCell>
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'primary.main' }}>К выплате</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'primary.onSurface' }}>К выплате</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
@@ -617,7 +617,7 @@ const SalaryReportsPage: React.FC = () => {
                                                         <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Ночные</TableCell>
                                                         <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Часы</TableCell>
                                                         <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'error.main' }}>Аванс</TableCell>
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'primary.main' }}>К выплате</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'primary.onSurface' }}>К выплате</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>

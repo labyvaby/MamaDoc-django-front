@@ -18,19 +18,25 @@ import React, {
 
 export type ColorScheme = "light" | "dark" | "system";
 
-/** Палитра доступных основных цветов для кастомайзера. */
+/**
+ * Палитра основных цветов для кастомайзера.
+ *
+ * Подобраны современные, достаточно насыщенные оттенки (диапазон Tailwind
+ * 600–700), которые читаемы белым текстом на заливке и не «теряются» при
+ * использовании как цвет текста/ссылок на светлых поверхностях.
+ */
 export const PRIMARY_PRESETS: { name: string; value: string }[] = [
-  { name: "Синий", value: "#4361ee" },
-  { name: "Индиго", value: "#4f46e5" },
-  { name: "Фиолетовый", value: "#7c3aed" },
-  { name: "Бирюзовый", value: "#0d9488" },
-  { name: "Зелёный", value: "#16a34a" },
-  { name: "Янтарный", value: "#d97706" },
-  { name: "Розовый", value: "#e11d48" },
-  { name: "Графит", value: "#475569" },
+  { name: "Ирис", value: "#5b5bd6" },     // мягкий индиго-фиолет (Linear/Radix) — премиальный, по умолчанию
+  { name: "Сапфир", value: "#2563eb" },   // blue-600 — насыщенный «электрический» синий
+  { name: "Бирюза", value: "#0d9488" },   // teal-600 — глубокий спокойный сине-зелёный
+  { name: "Изумруд", value: "#059669" },  // emerald-600 — свежий «медицинский» зелёный
+  { name: "Аметист", value: "#7c3aed" },  // violet-600 — трендовый фиолетовый
+  { name: "Фуксия", value: "#db2777" },   // pink-600 — яркая современная маджента
+  { name: "Рубин", value: "#e11d48" },    // rose-600 — сочный красно-розовый
+  { name: "Графит", value: "#475569" },   // slate-600 — нейтральный графитовый
 ];
 
-/** Цвет по умолчанию — соответствует базовой теме Refine Blue. */
+/** Цвет по умолчанию. */
 export const DEFAULT_PRIMARY = PRIMARY_PRESETS[0].value;
 
 type ColorModeContextType = {
@@ -135,7 +141,9 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     const surfaceKey = mode === "dark" ? darkSurface : lightSurface;
     const surface = surfacePresets.find((s) => s.key === surfaceKey);
     return getAppTheme(mode, {
-      primaryColor: primaryColor === DEFAULT_PRIMARY ? undefined : primaryColor,
+      // Применяем выбранный цвет всегда (включая дефолтный), чтобы свотч в
+      // кастомайзере совпадал с реальным цветом темы и контраст был предсказуем.
+      primaryColor,
       surface: surface ? { default: surface.default, paper: surface.paper } : undefined,
       cardSkin,
     });

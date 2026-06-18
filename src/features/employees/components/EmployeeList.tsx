@@ -116,7 +116,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                 {e.full_name || "Без имени"}
                 {hasPassports && (
                   <DescriptionOutlined 
-                    sx={{ fontSize: 16, color: 'primary.main', mb: -0.2 }} 
+                    sx={{ fontSize: 16, color: 'primary.onSurface', mb: -0.2 }} 
                     titleAccess="Паспорт загружен"
                   />
                 )}

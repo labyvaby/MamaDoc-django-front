@@ -357,7 +357,7 @@ const ReportsPage: React.FC = () => {
                                             <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
                                                 <Avatar sx={{
                                                     bgcolor: alpha(theme.palette.primary.main, 0.1),
-                                                    color: 'primary.main',
+                                                    color: 'primary.onSurface',
                                                     width: 40, height: 40
                                                 }}>
                                                     <AnalyticsOutlined />
@@ -373,7 +373,7 @@ const ReportsPage: React.FC = () => {
                                             <Grid2 container spacing={2}>
                                                 <Grid2 size={6}>
                                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        <PaymentsIcon sx={{ fontSize: 14, color: 'primary.main' }} /> Услуги
+                                                        <PaymentsIcon sx={{ fontSize: 14, color: 'primary.onSurface' }} /> Услуги
                                                     </Typography>
                                                     <Typography variant="subtitle1" fontWeight={800}>{formatKGS(Math.max(0, (day.cash_sum + day.card_sum + day.balance_sum + day.bonuses_sum + day.debt_sum) - day.products_sum))}</Typography>
                                                 </Grid2>

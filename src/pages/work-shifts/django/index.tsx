@@ -458,7 +458,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                                 {shift.isNightShift ? (
                                   <NightlightOutlined sx={{ color: "warning.main" }} titleAccess="Ночная смена" />
                                 ) : (
-                                  <WbSunnyOutlined sx={{ color: "primary.main" }} titleAccess="Дневная смена" />
+                                  <WbSunnyOutlined sx={{ color: "primary.onSurface" }} titleAccess="Дневная смена" />
                                 )}
                               </TableCell>
                               {canManage && <TableCell>{shift.employeeName}</TableCell>}
@@ -525,7 +525,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                                 {shift.isNightShift ? (
                                   <NightlightOutlined sx={{ color: "warning.main", fontSize: "1rem" }} />
                                 ) : (
-                                  <WbSunnyOutlined sx={{ color: "primary.main", fontSize: "1rem" }} />
+                                  <WbSunnyOutlined sx={{ color: "primary.onSurface", fontSize: "1rem" }} />
                                 )}
                                 <Typography variant="body2" fontWeight={600}>
                                   {shift.timeStart} — {shift.timeEnd === "—" ? "активна" : shift.timeEnd}

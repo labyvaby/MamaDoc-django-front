@@ -68,7 +68,7 @@ const OldConclusionsPlaceholder: React.FC = () => (
       bgcolor: "background.paper",
     }}
   >
-    <ConstructionOutlined sx={{ fontSize: 36, color: "primary.main", opacity: 0.7 }} />
+    <ConstructionOutlined sx={{ fontSize: 36, color: "primary.onSurface", opacity: 0.7 }} />
     <Typography variant="subtitle1" fontWeight={600} align="center">
       Старые заключения в разработке
     </Typography>

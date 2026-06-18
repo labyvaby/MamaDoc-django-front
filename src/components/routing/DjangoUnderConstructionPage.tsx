@@ -60,7 +60,7 @@ export const DjangoUnderConstructionPage: React.FC<Props> = ({
               alignItems: "center",
               justifyContent: "center",
               bgcolor: (t) => alpha(t.palette.primary.main, 0.1),
-              color: "primary.main",
+              color: "primary.onSurface",
             }}
           >
             <ConstructionOutlined sx={{ fontSize: 38 }} />

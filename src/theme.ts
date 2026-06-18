@@ -1,4 +1,4 @@
-import { alpha, createTheme, responsiveFontSizes, lighten, darken } from "@mui/material/styles";
+import { alpha, createTheme, responsiveFontSizes, lighten, darken, getContrastRatio } from "@mui/material/styles";
 import type { PaletteMode, Theme } from "@mui/material/styles";
 import { RefineThemes } from "@refinedev/mui";
 import "@mui/x-data-grid/themeAugmentation";
@@ -90,9 +90,17 @@ declare module "@mui/material/styles" {
   // фильтра): bgcolor: "primary.lighter".
   interface PaletteColor {
     lighter: string;
+    /**
+     * Контраст-безопасный вариант цвета для использования КАК ТЕКСТ/иконка на
+     * поверхности (background.paper): затемнён в светлой теме, осветлён — в
+     * тёмной, чтобы всегда читаться (≈AA). Не путать с contrastText (текст
+     * поверх заливки этого цвета).
+     */
+    onSurface: string;
   }
   interface SimplePaletteColorOptions {
     lighter?: string;
+    onSurface?: string;
   }
 }
 
@@ -116,7 +124,12 @@ export type SurfacePreset = {
 export const LIGHT_SURFACES: SurfacePreset[] = [
   { key: "slate", name: "Slate", default: "#f1f5f9", paper: "#ffffff", swatch: "#e2e8f0" },
   { key: "gray", name: "Gray", default: "#f4f4f5", paper: "#ffffff", swatch: "#e5e7eb" },
-  { key: "neutral", name: "Neutral", default: "#f5f5f4", paper: "#ffffff", swatch: "#e7e5e4" },
+  { key: "sky", name: "Sky", default: "#eff6ff", paper: "#ffffff", swatch: "#dbeafe" },
+  { key: "mist", name: "Mist", default: "#ecfeff", paper: "#ffffff", swatch: "#cffafe" },
+  { key: "sage", name: "Sage", default: "#f0fdf4", paper: "#ffffff", swatch: "#dcfce7" },
+  { key: "sand", name: "Sand", default: "#fffbeb", paper: "#ffffff", swatch: "#fef3c7" },
+  { key: "blush", name: "Blush", default: "#fff1f2", paper: "#ffffff", swatch: "#ffe4e6" },
+  { key: "lavender", name: "Lavender", default: "#f5f3ff", paper: "#ffffff", swatch: "#ede9fe" },
 ];
 
 export const DARK_SURFACES: SurfacePreset[] = [
@@ -223,6 +236,26 @@ export function getAppTheme(
   const backgroundPaper = surface?.paper || base.palette.background.paper;
   const backgroundDefault = surface?.default || base.palette.background.default;
 
+  // Автоподбор цвета текста НА ЗАЛИВКЕ основного цвета — выбираем тот вариант
+  // (белый/тёмный), у которого контраст ВЫШЕ, а не просто «тёмный если ≥3».
+  const useWhiteOnPrimary =
+    getContrastRatio(primary, "#ffffff") >= getContrastRatio(primary, "#000000");
+  const primaryContrastText = useWhiteOnPrimary ? "#fff" : "rgba(0, 0, 0, 0.87)";
+
+  // Контраст-безопасный вариант основного цвета для использования КАК ТЕКСТ на
+  // поверхности: подкручиваем яркость (темнее в светлой теме, светлее в тёмной),
+  // пока контраст к background.paper не достигнет ~AA (4.5:1).
+  const ensureOnSurface = (color: string, bg: string, dark: boolean, min = 4.5): string => {
+    let c = color;
+    let guard = 0;
+    while (getContrastRatio(c, bg) < min && guard < 24) {
+      c = dark ? lighten(c, 0.06) : darken(c, 0.06);
+      guard += 1;
+    }
+    return c;
+  };
+  const primaryOnSurface = ensureOnSurface(primary, backgroundPaper, m === "dark");
+
   let theme = createTheme({
     ...base,
     appLayout,
@@ -238,9 +271,11 @@ export function getAppTheme(
         main: primary,
         light: primaryLight,
         dark: primaryDark,
-        ...(primaryColor ? { contrastText: "#fff" } : {}),
+        contrastText: primaryContrastText,
         // Лёгкий тон для фонов активных состояний (кнопки фильтра и т.п.).
         lighter: alpha(primary, m === "dark" ? 0.24 : 0.12),
+        // Контраст-безопасный цвет для primary КАК ТЕКСТ на поверхности.
+        onSurface: primaryOnSurface,
       },
       secondary: {
         ...base.palette.secondary,
@@ -354,6 +389,17 @@ export function getAppTheme(
           containedPrimary: {
             backgroundImage:
               "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.06))",
+          },
+          // Текстовые/контурные primary-кнопки используют primary как ТЕКСТ —
+          // берём контраст-безопасный вариант (важно для тёмной темы и ссылок).
+          textPrimary: { color: primaryOnSurface },
+          outlinedPrimary: { color: primaryOnSurface },
+        },
+      },
+      MuiTab: {
+        styleOverrides: {
+          root: {
+            "&.Mui-selected": { color: primaryOnSurface },
           },
         },
       },

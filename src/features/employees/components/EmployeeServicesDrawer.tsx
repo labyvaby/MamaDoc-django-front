@@ -525,7 +525,7 @@ const AssignmentRow: React.FC<AssignmentRowProps> = ({
 
         <Stack direction="row" spacing={2} mt={0.5} flexWrap="wrap">
           {a.priceOverride && (
-            <Typography variant="caption" color="primary.main">
+            <Typography variant="caption" color="primary.onSurface">
               Цена: {priceLabel(a.priceOverride)}
             </Typography>
           )}
