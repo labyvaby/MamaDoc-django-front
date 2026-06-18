@@ -42,6 +42,7 @@ import {
   type RoleUpdatePayload,
 } from "../../api/rbac";
 import { ApiError } from "../../api/client";
+import { usePermissions } from "../../hooks/usePermissions";
 
 // ── Category label mapping ──────────────────────────────────────────────────
 
@@ -534,17 +535,20 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
         ) : (
           <Stack direction="row" flexWrap="wrap" gap={0.5}>
             {role.permissions.slice(0, 5).map((code) => (
-              <Tooltip
-                key={code}
-                title={permMap.get(code) ?? code}
-                arrow
-                placement="top"
-              >
+              <Tooltip key={code} title={code} arrow placement="top">
                 <Chip
-                  label={code}
+                  label={permMap.get(code) ?? code}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 20, fontSize: 10, fontFamily: "monospace" }}
+                  sx={{
+                    height: 20,
+                    fontSize: 10,
+                    maxWidth: 160,
+                    "& .MuiChip-label": {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    },
+                  }}
                 />
               </Tooltip>
             ))}
@@ -595,6 +599,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
 // ── RolesSettingsPage ───────────────────────────────────────────────────────
 
 const RolesSettingsPage: React.FC = () => {
+  const { activeOrganization } = usePermissions();
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -659,17 +664,27 @@ const RolesSettingsPage: React.FC = () => {
   };
 
 
+  // Суперюзеру бэкенд отдаёт роли всех организаций, из-за чего одинаковые
+  // системные роли («Администратор», «Бухгалтер», …) повторяются по разу на
+  // каждую организацию. Показываем только роли активной организации — иначе
+  // можно случайно отредактировать роль чужой клиники. Пока активная
+  // организация не определена, показываем всё как есть.
+  const orgRoles = React.useMemo(() => {
+    if (activeOrganization?.id == null) return roles;
+    return roles.filter((r) => r.organizationId === activeOrganization.id);
+  }, [roles, activeOrganization?.id]);
+
   // Filter
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return roles;
-    return roles.filter(
+    if (!q) return orgRoles;
+    return orgRoles.filter(
       (r) =>
         r.name.toLowerCase().includes(q) ||
         r.code.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q),
     );
-  }, [roles, search]);
+  }, [orgRoles, search]);
 
   // Separate system and custom roles
   const systemRoles = filtered.filter((r) => r.isSystem);
@@ -692,7 +707,7 @@ const RolesSettingsPage: React.FC = () => {
             </Typography>
             {!loading && (
               <Chip
-                label={roles.length}
+                label={orgRoles.length}
                 size="small"
                 color="default"
                 sx={{ height: 20 }}
@@ -764,7 +779,7 @@ const RolesSettingsPage: React.FC = () => {
         )}
 
         {/* Empty state */}
-        {!loading && !loadError && roles.length === 0 && (
+        {!loading && !loadError && orgRoles.length === 0 && (
           <Box
             sx={{
               flex: 1,
@@ -796,7 +811,7 @@ const RolesSettingsPage: React.FC = () => {
         )}
 
         {/* Search empty */}
-        {!loading && roles.length > 0 && filtered.length === 0 && (
+        {!loading && orgRoles.length > 0 && filtered.length === 0 && (
           <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
             <Typography variant="body2">
               Ничего не найдено по запросу «{search}».
