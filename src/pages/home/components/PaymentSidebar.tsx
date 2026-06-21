@@ -405,7 +405,7 @@ export const PaymentSidebar: React.FC<PaymentSidebarProps> = ({
                                     <Stack direction="row" alignItems="center" spacing={0.75}>
                                         <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: 'success.main' }} />
                                         <Typography variant="body2">
-                                            Баланс: <strong style={{ color: 'var(--mui-palette-success-main)' }}>{patientBalance?.balance?.toLocaleString() || 0} сом</strong>
+                                            Баланс: <Box component="strong" sx={{ color: 'success.main' }}>{patientBalance?.balance?.toLocaleString() || 0} сом</Box>
                                         </Typography>
                                     </Stack>
                                     {((patientBalance?.balance || 0) > 0 || balanceUsed > 0) && (
@@ -434,7 +434,7 @@ export const PaymentSidebar: React.FC<PaymentSidebarProps> = ({
                                     <Stack direction="row" alignItems="center" spacing={0.75}>
                                         <CardGiftcardOutlined sx={{ fontSize: 16, color: 'warning.main' }} />
                                         <Typography variant="body2">
-                                            Бонусы: <strong style={{ color: 'var(--mui-palette-warning-main)' }}>{patientBalance?.bonuses?.toLocaleString() || 0} сом</strong>
+                                            Бонусы: <Box component="strong" sx={{ color: 'warning.main' }}>{patientBalance?.bonuses?.toLocaleString() || 0} сом</Box>
                                         </Typography>
                                     </Stack>
                                     {((patientBalance?.bonuses || 0) > 0 || bonusesUsed > 0) && (

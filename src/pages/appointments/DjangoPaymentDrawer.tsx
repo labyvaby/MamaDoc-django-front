@@ -396,9 +396,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                         <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
                         <Typography variant="body2">
                           Баланс:{" "}
-                          <strong style={{ color: "var(--mui-palette-success-main)" }}>
+                          <Box component="strong" sx={{ color: "success.main" }}>
                             {availableBalance.toLocaleString()} с
-                          </strong>
+                          </Box>
                         </Typography>
                       </Stack>
                       {(availableBalance > 0 || balanceUsed > 0) && (
@@ -427,9 +427,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                         <CardGiftcardOutlined sx={{ fontSize: 16, color: "warning.main" }} />
                         <Typography variant="body2">
                           Бонусы:{" "}
-                          <strong style={{ color: "var(--mui-palette-warning-main)" }}>
+                          <Box component="strong" sx={{ color: "warning.main" }}>
                             {availableBonuses.toLocaleString()} с
-                          </strong>
+                          </Box>
                         </Typography>
                       </Stack>
                       {(availableBonuses > 0 || bonusUsed > 0) && (

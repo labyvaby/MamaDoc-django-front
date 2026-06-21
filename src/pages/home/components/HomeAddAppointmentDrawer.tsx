@@ -1386,10 +1386,13 @@ export const HomeAddAppointmentDrawer: React.FC<
                                       }}
                                     >
                                       {row.quantity} x {product.price || 0} ={" "}
-                                      <span style={{ color: "black" }}>
+                                      <Box
+                                        component="span"
+                                        sx={{ color: "text.primary", fontWeight: 600 }}
+                                      >
                                         {(product.price || 0) * row.quantity}{" "}
                                         сом
-                                      </span>
+                                      </Box>
                                     </Typography>
                                   </Stack>
                                 </Stack>
