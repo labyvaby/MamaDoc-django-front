@@ -110,7 +110,10 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
       : `${uniqueEmployees.length} исполнит.`;
 
   const payStatus = appt.paymentStatus;
-  const isCancelled = appt.status === "cancelled" || appt.status === "no_show";
+  const isCancelled =
+    appt.status === "canceled" ||
+    (appt.status as string) === "cancelled" ||
+    appt.status === "no_show";
   const showPayCol = canViewFinance || canManageFinance;
 
   const hasPaid = appt.paidTotal && appt.paidTotal !== "0.00" && appt.paidTotal !== "0";
@@ -220,8 +223,10 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
               />
             )}
 
-            {/* Payment status chip with method icons — like original */}
-            {showPayCol && payStatusSafe && hasPaid && payChipSx && (
+            {/* Payment status chip with method icons — like original.
+                У отменённых не показываем (статус-чип «Отменено» уже есть) —
+                иначе дублируется метка «Отменено». */}
+            {!isCancelled && showPayCol && payStatusSafe && hasPaid && payChipSx && (
               <Chip
                 label={
                   <Stack direction="row" alignItems="center" gap={0.5}>
@@ -233,7 +238,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
                 sx={payChipSx}
               />
             )}
-            {showPayCol && payStatusSafe && !hasPaid && payChipSx && (
+            {!isCancelled && showPayCol && payStatusSafe && !hasPaid && payChipSx && (
               <Chip
                 label={payDisplayLabel}
                 size="small"
@@ -249,8 +254,9 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
             )}
           </Stack>
 
-          {/* Total amount */}
-          {showPayCol && totalStr && (
+          {/* Total amount — стоимость услуг, видна всем (в т.ч. врачу без
+              прав на финансы), как в оригинале. */}
+          {totalStr && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               Итого: {totalStr}
             </Typography>

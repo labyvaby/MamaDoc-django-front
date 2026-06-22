@@ -125,7 +125,7 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
             <Stack>
               <Typography variant="body2">{s.name}</Typography>
               <Typography variant="caption" color="text.secondary">
-                {s.basePrice} с
+                {Number(s.basePrice)} с
                 {s.durationMinutes ? ` · ${s.durationMinutes} мин` : ""}
               </Typography>
             </Stack>
@@ -179,7 +179,7 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
             Цена:
           </Typography>
           <Typography variant="caption" fontWeight={600}>
-            {row.unitPrice || selectedService.basePrice} с
+            {Number(row.unitPrice || selectedService.basePrice)} с
           </Typography>
           {row.unitPrice && row.unitPrice !== selectedService.basePrice && (
             <Typography variant="caption" color="info.main">

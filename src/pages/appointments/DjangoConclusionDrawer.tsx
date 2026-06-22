@@ -15,30 +15,54 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   Drawer,
+  Grid,
   IconButton,
-  InputAdornment,
+  ListItemText,
+  Menu,
   MenuItem,
+  Modal,
+  Paper,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
+import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
+import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
+import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import {
   upsertConclusion,
   updateConclusion,
+  getDiagnoses,
+  uploadConclusionPhoto,
+  getConclusionTemplates,
+  createConclusionTemplate,
+  deleteConclusionTemplate,
   parseBackendError,
   type MedicalConclusion,
   type MedicalConclusionPayload,
   type ConclusionStatus,
+  type CatalogDiagnosis,
+  type ConclusionTemplate,
 } from "../../api/medical";
 
 // ── types ──────────────────────────────────────────────────────────────────────
@@ -53,6 +77,13 @@ export type DjangoConclusionDrawerProps = {
   doctorName: string;
   canEdit: boolean;
   canPrint: boolean;
+  /** Patient's complaints from the appointment (read-only context block). */
+  patientComplaints?: string | null;
+  /** Встроенный режим: рендер прямо в колонке (без Drawer-обёртки), как в
+   *  оригинале — заключение видно сразу в третьей колонке. */
+  inline?: boolean;
+  /** Кнопка «Изменить заключение» в шапке (в inline-просмотре). */
+  onStartEdit?: () => void;
   onSaved?: (saved: MedicalConclusion) => void;
 };
 
@@ -81,6 +112,111 @@ function validateVitals(
   return null;
 }
 
+// ── vital stepper (как renderQuantityInput в оригинале) ─────────────────────────
+
+const noSpinnersSx = {
+  "& input[type=number]": { MozAppearance: "textfield" },
+  "& input[type=number]::-webkit-outer-spin-button": {
+    WebkitAppearance: "none",
+    margin: 0,
+  },
+  "& input[type=number]::-webkit-inner-spin-button": {
+    WebkitAppearance: "none",
+    margin: 0,
+  },
+} as const;
+
+type VitalStepperProps = {
+  label: string;
+  suffix: string;
+  value: string;
+  onChange: (v: string) => void;
+  step?: number;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+};
+
+const VitalStepper: React.FC<VitalStepperProps> = ({
+  label,
+  suffix,
+  value,
+  onChange,
+  step = 1,
+  min = 0,
+  max,
+  disabled,
+}) => {
+  const fmt = (n: number) => (step < 1 ? n.toFixed(1) : String(n));
+  const dec = () => {
+    const cur = value === "" ? min : parseFloat(value) || 0;
+    onChange(fmt(Math.max(min, cur - step)));
+  };
+  const inc = () => {
+    const cur = value === "" ? min : parseFloat(value) || 0;
+    const next = cur + step;
+    if (max !== undefined && next > max) return;
+    onChange(fmt(next));
+  };
+
+  return (
+    <Stack spacing={0.5} sx={{ minWidth: 100, flex: 1 }}>
+      <Typography variant="caption" color="text.secondary">
+        {label}, {suffix}
+      </Typography>
+      <Box
+        sx={{
+          border: 1,
+          borderColor: "divider",
+          borderRadius: 1,
+          bgcolor: "background.paper",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          height: 40,
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        <Button
+          size="small"
+          onClick={dec}
+          disabled={disabled}
+          sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
+        >
+          −
+        </Button>
+        <TextField
+          size="small"
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder="0"
+          inputProps={{
+            style: { textAlign: "center", padding: "8px 4px" },
+            min,
+            step,
+            max,
+          }}
+          sx={{
+            flex: 1,
+            ...noSpinnersSx,
+            "& .MuiOutlinedInput-root": { "& fieldset": { border: "none" } },
+          }}
+        />
+        <Button
+          size="small"
+          onClick={inc}
+          disabled={disabled}
+          sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
+        >
+          +
+        </Button>
+      </Box>
+    </Stack>
+  );
+};
+
 // ── component ──────────────────────────────────────────────────────────────────
 
 const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
@@ -92,6 +228,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   doctorName,
   canEdit,
   canPrint,
+  patientComplaints,
+  inline = false,
+  onStartEdit,
   onSaved,
 }) => {
   const { open: notify } = useNotification();
@@ -101,7 +240,20 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [anamnesis, setAnamnesis] = React.useState("");
   const [objective, setObjective] = React.useState("");
   const [conclusionText, setConclusionText] = React.useState("");
-  const [diagnosisText, setDiagnosisText] = React.useState("");
+  const [selectedDiagnoses, setSelectedDiagnoses] = React.useState<
+    CatalogDiagnosis[]
+  >([]);
+  const [catalog, setCatalog] = React.useState<CatalogDiagnosis[]>([]);
+  const [catalogLoading, setCatalogLoading] = React.useState(false);
+  const [photoUrls, setPhotoUrls] = React.useState<string[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
+  const [previewPhoto, setPreviewPhoto] = React.useState<string | null>(null);
+  // Templates
+  const [templates, setTemplates] = React.useState<ConclusionTemplate[]>([]);
+  const [tplAnchor, setTplAnchor] = React.useState<null | HTMLElement>(null);
+  const [saveTplOpen, setSaveTplOpen] = React.useState(false);
+  const [tplName, setTplName] = React.useState("");
+  const [tplBusy, setTplBusy] = React.useState(false);
   const [weightKg, setWeightKg] = React.useState("");
   const [heightCm, setHeightCm] = React.useState("");
   const [temperature, setTemperature] = React.useState("");
@@ -121,7 +273,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       setAnamnesis("");
       setObjective("");
       setConclusionText("");
-      setDiagnosisText("");
+      setSelectedDiagnoses([]);
+      setPhotoUrls([]);
       setWeightKg("");
       setHeightCm("");
       setTemperature("");
@@ -133,25 +286,105 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       return;
     }
 
-    if (!conclusion) return;
+    if (!conclusion) {
+      setSelectedDiagnoses([]);
+      setPhotoUrls([]);
+      return;
+    }
 
     setComplaints(conclusion.complaints ?? "");
     setAnamnesis(conclusion.anamnesis ?? "");
     setObjective(conclusion.objective ?? "");
     setConclusionText(conclusion.conclusion ?? "");
-    setDiagnosisText(
-      conclusion.diagnosisData?.length
-        ? conclusion.diagnosisData
-            .map((d) => [d.diagnosisCode, d.title].filter(Boolean).join(" — "))
-            .join("\n")
-        : "",
+    // Restore selected diagnoses from saved diagnosisData (match against
+    // catalog by code when possible; keep a synthetic item otherwise).
+    setSelectedDiagnoses(
+      (conclusion.diagnosisData ?? []).map((d) => {
+        const fromCatalog = catalog.find((c) => c.code === d.diagnosisCode);
+        return (
+          fromCatalog ?? {
+            id: d.id ? Number(d.id) : -1,
+            code: d.diagnosisCode ?? "",
+            title: d.title ?? "",
+            isActive: true,
+            sortOrder: 0,
+          }
+        );
+      }),
     );
     setWeightKg(conclusion.weightKg ?? "");
     setHeightCm(conclusion.heightCm ?? "");
     setTemperature(conclusion.temperature ?? "");
     setInternalComment(conclusion.internalComment ?? "");
+    setPhotoUrls(conclusion.photoUrls ?? []);
     setStatus(conclusion.status ?? "draft");
-  }, [open, conclusion]);
+  }, [open, conclusion, catalog]);
+
+  // ── load diagnosis catalog when drawer opens ──────────────────────────────
+  React.useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    setCatalogLoading(true);
+    getDiagnoses(undefined, ctrl.signal)
+      .then((items) => setCatalog(items))
+      .catch(() => {
+        /* каталог недоступен — оставляем пустым, поле всё равно работает */
+      })
+      .finally(() => setCatalogLoading(false));
+    return () => ctrl.abort();
+  }, [open]);
+
+  // ── load conclusion templates when drawer opens ───────────────────────────
+  React.useEffect(() => {
+    if (!open || readOnly) return;
+    const ctrl = new AbortController();
+    getConclusionTemplates(ctrl.signal)
+      .then(setTemplates)
+      .catch(() => {
+        /* шаблоны недоступны — кнопка просто покажет пустой список */
+      });
+    return () => ctrl.abort();
+  }, [open, readOnly]);
+
+  // ── template handlers ─────────────────────────────────────────────────────
+  const applyTemplate = (tpl: ConclusionTemplate) => {
+    if (tpl.conclusion) setConclusionText(tpl.conclusion);
+    if (tpl.anamnesis) setAnamnesis(tpl.anamnesis);
+    if (tpl.objective) setObjective(tpl.objective);
+    setTplAnchor(null);
+    notify?.({ type: "success", message: "Шаблон применён" });
+  };
+
+  const handleSaveTemplate = async () => {
+    const name = tplName.trim();
+    if (!name) return;
+    setTplBusy(true);
+    try {
+      const created = await createConclusionTemplate({
+        name,
+        conclusion: conclusionText.trim(),
+        anamnesis: anamnesis.trim(),
+        objective: objective.trim(),
+      });
+      setTemplates((prev) => [...prev, created]);
+      setSaveTplOpen(false);
+      setTplName("");
+      notify?.({ type: "success", message: "Шаблон сохранён" });
+    } catch (err: unknown) {
+      notify?.({ type: "error", message: parseBackendError(err) });
+    } finally {
+      setTplBusy(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: number) => {
+    try {
+      await deleteConclusionTemplate(id);
+      setTemplates((prev) => prev.filter((t) => t.id !== id));
+    } catch {
+      /* ignore */
+    }
+  };
 
   // ── validation ────────────────────────────────────────────────────────────
   const vitalsError = touched ? validateVitals(weightKg, heightCm, temperature) : null;
@@ -179,20 +412,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       anamnesis: anamnesis.trim() || null,
       objective: objective.trim() || null,
       conclusion: conclusionText.trim() || null,
-      diagnosisData: diagnosisText.trim()
-        ? diagnosisText
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .map((line) => {
-              // Preserve "CODE — description" format produced on read
-              const sepIdx = line.indexOf(" — ");
-              if (sepIdx > 0) {
-                return { diagnosisCode: line.slice(0, sepIdx), title: line.slice(sepIdx + 3) };
-              }
-              return { title: line };
-            })
-        : [],
+      diagnosisData: selectedDiagnoses.map((d) => ({
+        id: d.id > 0 ? String(d.id) : undefined,
+        diagnosisCode: d.code,
+        title: d.title,
+      })),
+      photoUrls,
       weightKg: weightKg.trim() || null,
       heightCm: heightCm.trim() || null,
       temperature: temperature.trim() || null,
@@ -223,26 +448,39 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     }
   };
 
+  // ── photo upload ──────────────────────────────────────────────────────────
+  const handlePhotoUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingPhoto(true);
+    setSaveError(null);
+    try {
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const { url } = await uploadConclusionPhoto(file);
+        uploaded.push(url);
+      }
+      setPhotoUrls((prev) => [...prev, ...uploaded]);
+    } catch (err: unknown) {
+      setSaveError(parseBackendError(err));
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = "";
+    }
+  };
+
+  const removePhoto = (url: string) =>
+    setPhotoUrls((prev) => prev.filter((u) => u !== url));
+
   // ── derived display ───────────────────────────────────────────────────────
   const lastUpdated = conclusion?.updatedAt
     ? dayjs(conclusion.updatedAt).format("DD.MM.YYYY HH:mm")
     : null;
 
-  return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={saving ? undefined : onClose}
-      PaperProps={{
-        sx: {
-          width: { xs: "100vw", sm: 520, md: 560 },
-          maxWidth: "100vw",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        },
-      }}
-    >
+  const content = (
+    <>
       {/* ── header ── */}
       <Stack
         direction="row"
@@ -254,22 +492,146 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       >
         <Stack spacing={0.25}>
           <Typography variant="h6" lineHeight={1.3}>
-            {readOnly ? "Заключение (просмотр)" : conclusion ? "Редактировать заключение" : "Новое заключение"}
+            {readOnly ? "Заключение" : conclusion ? "Редактировать заключение" : "Новое заключение"}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {serviceName} — {doctorName}
-          </Typography>
-          {lastUpdated && (
-            <Typography variant="caption" color="text.disabled">
-              Последнее изменение: {lastUpdated}
-            </Typography>
+          {/* Услуга/врач и время правки — только в дровере-редакторе, не в
+              inline-просмотре (там шапка чистая, как в оригинале). */}
+          {!inline && (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                {serviceName} — {doctorName}
+              </Typography>
+              {lastUpdated && (
+                <Typography variant="caption" color="text.disabled">
+                  Последнее изменение: {lastUpdated}
+                </Typography>
+              )}
+            </>
           )}
         </Stack>
-        <IconButton onClick={saving ? undefined : onClose} size="small" sx={{ mt: 0.25 }}>
-          <CloseOutlined />
-        </IconButton>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          {!readOnly && (
+            <>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ContentCopyOutlined />}
+                onClick={(e) => setTplAnchor(e.currentTarget)}
+              >
+                Шаблоны
+              </Button>
+              <IconButton
+                size="small"
+                color="primary"
+                title="Сохранить как шаблон"
+                onClick={() => {
+                  setTplName("");
+                  setSaveTplOpen(true);
+                }}
+              >
+                <StarBorderOutlined fontSize="small" />
+              </IconButton>
+            </>
+          )}
+          <IconButton onClick={saving ? undefined : onClose} size="small">
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
       </Stack>
       <Divider />
+
+      {/* ── inline-просмотр: тулбар действий под шапкой (единая высота) ── */}
+      {inline && readOnly && (onStartEdit || (canPrint && conclusion)) && (
+        <>
+          <Stack
+            direction="row"
+            spacing={1}
+            flexWrap="wrap"
+            sx={{ px: 2, py: 1, gap: 1, flexShrink: 0 }}
+          >
+            {onStartEdit && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<EditOutlined />}
+                onClick={onStartEdit}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Изменить заключение
+              </Button>
+            )}
+            {canPrint && conclusion && (
+              <>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PrintOutlined />}
+                  onClick={() =>
+                    window.open(
+                      `/print/conclusion/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+                      "_blank",
+                      "noopener",
+                    )
+                  }
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Печать
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ArticleOutlined />}
+                  onClick={() =>
+                    window.open(
+                      `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}`,
+                      "_blank",
+                      "noopener",
+                    )
+                  }
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Справка
+                </Button>
+              </>
+            )}
+          </Stack>
+          <Divider />
+        </>
+      )}
+
+      {/* ── templates menu ── */}
+      <Menu
+        anchorEl={tplAnchor}
+        open={!!tplAnchor}
+        onClose={() => setTplAnchor(null)}
+        slotProps={{ paper: { sx: { maxWidth: 360 } } }}
+      >
+        {templates.length === 0 && (
+          <MenuItem disabled>Нет сохранённых шаблонов</MenuItem>
+        )}
+        {templates.map((tpl) => (
+          <MenuItem
+            key={tpl.id}
+            onClick={() => applyTemplate(tpl)}
+            sx={{ pr: 1 }}
+          >
+            <ListItemText
+              primary={tpl.name}
+              primaryTypographyProps={{ noWrap: true }}
+            />
+            <IconButton
+              size="small"
+              edge="end"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteTemplate(tpl.id);
+              }}
+            >
+              <DeleteOutline fontSize="small" color="error" />
+            </IconButton>
+          </MenuItem>
+        ))}
+      </Menu>
 
       {/* ── body ── */}
       <Box
@@ -297,63 +659,205 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             </Alert>
           )}
 
-          {/* ── vitals ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Витальные показатели
-            </Typography>
-            <Stack direction="row" spacing={1}>
-              <TextField
-                label="Вес"
-                size="small"
-                value={weightKg}
-                onChange={(e) => setWeightKg(e.target.value)}
-                disabled={readOnly}
-                type="number"
-                inputProps={{ min: 1, max: 999, step: 0.1 }}
-                InputProps={{
-                  endAdornment: <InputAdornment position="end">кг</InputAdornment>,
-                }}
-                sx={{ flex: 1 }}
-              />
-              <TextField
+          {/* ════════ READ-ONLY ПРОСМОТР (как в оригинале, фото 2) ════════ */}
+          {readOnly && conclusion && (
+            <Stack spacing={3}>
+              {/* Витальные — карточки с разделителями */}
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
+                <Stack direction="row" spacing={3} justifyContent="space-around">
+                  <Box textAlign="center">
+                    <Typography variant="caption" color="text.secondary">Вес</Typography>
+                    <Typography variant="h6">{weightKg ? `${weightKg} кг` : "—"}</Typography>
+                  </Box>
+                  <Divider orientation="vertical" flexItem />
+                  <Box textAlign="center">
+                    <Typography variant="caption" color="text.secondary">Рост</Typography>
+                    <Typography variant="h6">{heightCm ? `${heightCm} см` : "—"}</Typography>
+                  </Box>
+                  <Divider orientation="vertical" flexItem />
+                  <Box textAlign="center">
+                    <Typography variant="caption" color="text.secondary">Температура</Typography>
+                    <Typography
+                      variant="h6"
+                      color={parseFloat(temperature) > 37 ? "error.main" : "text.primary"}
+                    >
+                      {temperature ? `${temperature} °C` : "—"}
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Жалобы пациента (контекст) */}
+              {(patientComplaints ?? "").trim() && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Жалобы пациента
+                  </Typography>
+                  <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>
+                    {patientComplaints}
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Диагноз — чипы */}
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  Диагноз (МКБ-10)
+                </Typography>
+                {selectedDiagnoses.length > 0 ? (
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    {selectedDiagnoses.map((d, i) => (
+                      <Chip
+                        key={i}
+                        label={d.code ? `${d.code} - ${d.title}` : d.title}
+                        size="small"
+                      />
+                    ))}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.disabled">Не указан</Typography>
+                )}
+              </Box>
+
+              <Divider />
+
+              {complaints.trim() && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Жалобы (врач)
+                  </Typography>
+                  <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{complaints}</Typography>
+                </Box>
+              )}
+
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Анамнез</Typography>
+                <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{anamnesis || "—"}</Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Объективно</Typography>
+                <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{objective || "—"}</Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Заключение</Typography>
+                <Typography
+                  variant="body1"
+                  sx={{
+                    whiteSpace: "pre-wrap",
+                    fontWeight: 500,
+                    color: conclusionText ? "text.primary" : "text.disabled",
+                    fontStyle: conclusionText ? "normal" : "italic",
+                  }}
+                >
+                  {conclusionText || "Заключение не заполнено"}
+                </Typography>
+              </Box>
+
+              {internalComment.trim() && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Внутренний комментарий
+                  </Typography>
+                  <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{internalComment}</Typography>
+                </Box>
+              )}
+
+              {/* Фотографии */}
+              {photoUrls.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Фотографии
+                  </Typography>
+                  <Grid container spacing={1}>
+                    {photoUrls.map((url) => (
+                      <Grid item key={url}>
+                        <Box
+                          component="img"
+                          src={url}
+                          alt="Фото заключения"
+                          onClick={() => setPreviewPhoto(url)}
+                          sx={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: 1,
+                            objectFit: "cover",
+                            border: "1px solid",
+                            borderColor: "divider",
+                            cursor: "pointer",
+                          }}
+                        />
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+              )}
+            </Stack>
+          )}
+
+          {/* ════════ ФОРМА РЕДАКТИРОВАНИЯ (только при !readOnly) ════════ */}
+          {!readOnly && (
+          <>
+          {/* ── vitals (степперы как в оригинале) ── */}
+          <Paper variant="outlined" sx={{ p: 1.5 }}>
+            <Stack direction="row" spacing={1.5}>
+              <VitalStepper
                 label="Рост"
-                size="small"
+                suffix="см"
                 value={heightCm}
-                onChange={(e) => setHeightCm(e.target.value)}
+                onChange={setHeightCm}
+                step={1}
+                min={0}
+                max={999}
                 disabled={readOnly}
-                type="number"
-                inputProps={{ min: 1, max: 999, step: 0.5 }}
-                InputProps={{
-                  endAdornment: <InputAdornment position="end">см</InputAdornment>,
-                }}
-                sx={{ flex: 1 }}
               />
-              <TextField
-                label="Температура"
-                size="small"
-                value={temperature}
-                onChange={(e) => setTemperature(e.target.value)}
+              <VitalStepper
+                label="Вес"
+                suffix="кг"
+                value={weightKg}
+                onChange={setWeightKg}
+                step={1}
+                min={0}
+                max={999}
                 disabled={readOnly}
-                type="number"
-                inputProps={{ min: 34, max: 42, step: 0.1 }}
-                InputProps={{
-                  endAdornment: <InputAdornment position="end">°C</InputAdornment>,
-                }}
-                sx={{ flex: 1 }}
+              />
+              <VitalStepper
+                label="Температура"
+                suffix="°C"
+                value={temperature}
+                onChange={setTemperature}
+                step={0.1}
+                min={34}
+                max={42}
+                disabled={readOnly}
               />
             </Stack>
             {vitalsError && (
-              <Alert severity="error" sx={{ py: 0 }}>
+              <Alert severity="error" sx={{ py: 0, mt: 1 }}>
                 {vitalsError}
               </Alert>
             )}
-          </Stack>
+          </Paper>
 
-          {/* ── complaints ── */}
+          {/* ── patient complaints (read-only context) ── */}
+          {(patientComplaints ?? "").trim() && (
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Жалобы пациента
+              </Typography>
+              <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {patientComplaints}
+                </Typography>
+              </Paper>
+            </Stack>
+          )}
+
+          {/* ── doctor complaints ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Жалобы
+              Жалобы (врач)
             </Typography>
             <TextField
               value={complaints}
@@ -401,21 +905,52 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             />
           </Stack>
 
-          {/* ── diagnosis ── */}
+          {/* ── diagnosis (catalog multi-select) ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Диагноз
+              Каталог диагнозов (МКБ-10)
             </Typography>
-            <TextField
-              value={diagnosisText}
-              onChange={(e) => setDiagnosisText(e.target.value)}
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              options={catalog}
+              value={selectedDiagnoses}
+              loading={catalogLoading}
               disabled={readOnly}
-              multiline
-              minRows={2}
-              fullWidth
+              getOptionLabel={(o) =>
+                [o.code, o.title].filter(Boolean).join(" — ")
+              }
+              isOptionEqualToValue={(o, v) =>
+                o.id === v.id || (o.code === v.code && o.code !== "")
+              }
+              onChange={(_, value) => setSelectedDiagnoses(value)}
+              filterSelectedOptions
               size="small"
-              placeholder={readOnly ? "—" : "Код МКБ или описание"}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={
+                    readOnly ? "—" : "Выберите диагнозы из каталога…"
+                  }
+                />
+              )}
             />
+            {/* сводка выбранных диагнозов (как в оригинале) */}
+            <Paper
+              variant="outlined"
+              sx={{ p: 1.5, mt: 0.5, minHeight: 44, bgcolor: "background.default" }}
+            >
+              <Typography
+                variant="body2"
+                color={selectedDiagnoses.length ? "text.primary" : "text.disabled"}
+              >
+                {selectedDiagnoses.length
+                  ? selectedDiagnoses
+                      .map((d) => [d.code, d.title].filter(Boolean).join(" "))
+                      .join(". ")
+                  : "Диагноз не выбран"}
+              </Typography>
+            </Paper>
           </Stack>
 
           {/* ── conclusion (main) ── */}
@@ -458,6 +993,90 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             />
           </Stack>
 
+          {/* ── photos ── */}
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Фотографии
+            </Typography>
+            <Grid container spacing={1}>
+              {photoUrls.map((url) => (
+                <Grid item key={url}>
+                  <Box
+                    sx={{
+                      position: "relative",
+                      width: 72,
+                      height: 72,
+                      borderRadius: 1,
+                      overflow: "hidden",
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={url}
+                      alt="Фото заключения"
+                      onClick={() => setPreviewPhoto(url)}
+                      sx={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        cursor: "pointer",
+                      }}
+                    />
+                    {!readOnly && (
+                      <IconButton
+                        size="small"
+                        onClick={() => removePhoto(url)}
+                        sx={{
+                          position: "absolute",
+                          top: 0,
+                          right: 0,
+                          bgcolor: "rgba(255,255,255,0.8)",
+                          p: 0.25,
+                          "&:hover": { bgcolor: "rgba(255,255,255,0.95)" },
+                        }}
+                      >
+                        <DeleteOutline sx={{ fontSize: 14 }} color="error" />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Grid>
+              ))}
+              {!readOnly && (
+                <Grid item>
+                  <Button
+                    component="label"
+                    variant="outlined"
+                    disabled={uploadingPhoto}
+                    sx={{
+                      width: 72,
+                      height: 72,
+                      minWidth: 0,
+                      p: 0,
+                      borderStyle: "dashed",
+                    }}
+                  >
+                    {uploadingPhoto ? (
+                      <CircularProgress size={20} />
+                    ) : (
+                      <AddPhotoAlternateOutlined fontSize="small" />
+                    )}
+                    <input
+                      type="file"
+                      hidden
+                      multiple
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                    />
+                  </Button>
+                </Grid>
+              )}
+            </Grid>
+          </Stack>
+          </>
+          )}
+
           {/* ── status select (only when editing) ── */}
           {!readOnly && (
             <Stack spacing={0.5}>
@@ -477,8 +1096,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             </Stack>
           )}
 
-          {/* ── print ── */}
-          {canPrint && conclusion && (
+          {/* ── print (в inline-режиме кнопки уже в шапке) ── */}
+          {!inline && canPrint && conclusion && (
             <Stack direction="row" spacing={1}>
               <Button
                 size="small"
@@ -511,7 +1130,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         </Stack>
       </Box>
 
-      {/* ── footer ── */}
+      {/* ── footer ── (в inline-просмотре скрыт: закрытие — крестиком в шапке) */}
+      {!(inline && readOnly) && (
+      <>
       <Divider />
       <Box sx={{ p: 2, flexShrink: 0 }}>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -551,6 +1172,124 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           )}
         </Stack>
       </Box>
+      </>
+      )}
+
+      {/* ── save-as-template dialog ── */}
+      <Dialog
+        open={saveTplOpen}
+        onClose={() => !tplBusy && setSaveTplOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Сохранить как шаблон</DialogTitle>
+        <DialogContent>
+          <TextField
+            value={tplName}
+            onChange={(e) => setTplName(e.target.value)}
+            fullWidth
+            autoFocus
+            placeholder="Название шаблона"
+            disabled={tplBusy}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveTplOpen(false)} disabled={tplBusy}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveTemplate}
+            disabled={tplBusy || !tplName.trim()}
+            startIcon={
+              tplBusy ? <CircularProgress size={16} color="inherit" /> : undefined
+            }
+          >
+            Сохранить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── photo preview modal ── */}
+      <Modal open={!!previewPhoto} onClose={() => setPreviewPhoto(null)}>
+        <Box
+          onClick={() => setPreviewPhoto(null)}
+          sx={{
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            bgcolor: "rgba(0,0,0,0.85)",
+          }}
+        >
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              setPreviewPhoto(null);
+            }}
+            sx={{
+              position: "absolute",
+              top: 20,
+              right: 20,
+              color: "white",
+              bgcolor: "rgba(255,255,255,0.1)",
+              "&:hover": { bgcolor: "rgba(255,255,255,0.2)" },
+            }}
+          >
+            <CloseOutlined />
+          </IconButton>
+          {previewPhoto && (
+            <Box
+              component="img"
+              src={previewPhoto}
+              onClick={(e) => e.stopPropagation()}
+              sx={{
+                maxWidth: "90vw",
+                maxHeight: "85vh",
+                objectFit: "contain",
+                borderRadius: 1,
+              }}
+            />
+          )}
+        </Box>
+      </Modal>
+    </>
+  );
+
+  // Встроенный режим — рендер в колонке (без Drawer), как в оригинале.
+  if (inline) {
+    return (
+      <Box
+        sx={{
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {content}
+      </Box>
+    );
+  }
+
+  return (
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={saving ? undefined : onClose}
+      PaperProps={{
+        sx: {
+          width: { xs: "100vw", sm: 520, md: 560 },
+          maxWidth: "100vw",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        },
+      }}
+    >
+      {content}
     </Drawer>
   );
 };

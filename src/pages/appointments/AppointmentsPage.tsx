@@ -4,12 +4,14 @@ import {
   Alert,
   Box,
   Button,
+  Card,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Divider,
   Drawer,
   IconButton,
   Stack,
@@ -22,6 +24,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 
@@ -34,92 +37,92 @@ import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
 import DjangoPaymentDrawer from "./DjangoPaymentDrawer";
 import type { PaymentSummary } from "../../api/payments";
 import {
-  getAppointments,
-  getDayCounts,
+  getHomeDashboard,
   updateAppointment,
+  startAppointment,
   deleteAppointment,
   parseBackendError,
   type DjangoAppointment,
+  type HomeDashboard,
 } from "../../api/appointments";
 import { useNotification } from "@refinedev/core";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
-  DJANGO_POLL_INTERVAL_MS,
 } from "../../api/queryKeys";
 
 import AppointmentListPanel from "./components/AppointmentListPanel";
 import AppointmentDetailsPanel from "./components/AppointmentDetailsPanel";
+import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
 import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
 
 // ── data hooks ────────────────────────────────────────────────────────────────
 
-function useAppointments(params: {
-  date: Dayjs | null;
+// Единый агрегат главной: список приёмов за дату + счётчики дней для навбара
+// + lastUpdate приходят одним запросом GET /api/appointments/home/ вместо трёх
+// отдельных (список + day-counts + last-update).
+function useHomeDashboard(params: {
+  date: Dayjs;
   search: string;
   branchId?: number;
   employeeId?: number | "me";
+  /** Навбар-счётчики отдельно от списка: "me" для врача/медсестры. */
+  countsEmployeeId?: number | "me";
   nightOnly?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const queryParams = React.useMemo(
-    () => ({
-      date: params.date?.format("YYYY-MM-DD") ?? undefined,
+  const dateKey = params.date.format("YYYY-MM-DD");
+  const monthKey = params.date.format("YYYY-MM");
+  const queryParams = React.useMemo(() => {
+    const base = dayjs(`${monthKey}-01`);
+    // Навбар показывает окно ±7 дней вокруг выбранной даты, поэтому счётчики
+    // запрашиваем на 7 дней шире краёв месяца — иначе на краю месяца соседние
+    // дни остаются без счётчиков.
+    return {
+      date: dateKey,
+      dateFrom: base.startOf("month").subtract(7, "day").format("YYYY-MM-DD"),
+      dateTo: base.endOf("month").add(7, "day").format("YYYY-MM-DD"),
       search: params.search || undefined,
       branchId: params.branchId,
       employeeId: params.employeeId,
+      countsEmployeeId: params.countsEmployeeId,
       nightOnly: params.nightOnly || undefined,
-    }),
-    [params.date, params.search, params.branchId, params.employeeId, params.nightOnly],
-  );
-  const queryKey = djangoQueryKeys.appointments.list(queryParams);
+    };
+  }, [dateKey, monthKey, params.search, params.branchId, params.employeeId, params.countsEmployeeId, params.nightOnly]);
+
+  const queryKey = djangoQueryKeys.appointments.home(queryParams);
   const query = useQuery({
     queryKey,
-    queryFn: ({ signal }) => getAppointments(queryParams, signal),
+    queryFn: ({ signal }) => getHomeDashboard(queryParams, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
-    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    // Интервальный поллинг убран — обновление через useAppointmentsAutoSync
+    // (лёгкий last-update heartbeat → refetch только при изменении).
   });
 
   const setItems = React.useCallback(
     (updater: DjangoAppointment[] | ((prev: DjangoAppointment[]) => DjangoAppointment[])) => {
-      queryClient.setQueryData<DjangoAppointment[]>(queryKey, (prev = []) =>
-        typeof updater === "function" ? updater(prev) : updater,
-      );
+      queryClient.setQueryData<HomeDashboard>(queryKey, (prev) => {
+        const prevData: HomeDashboard =
+          prev ?? { appointments: [], dayCounts: {}, lastUpdate: null };
+        const nextAppointments =
+          typeof updater === "function" ? updater(prevData.appointments) : updater;
+        return { ...prevData, appointments: nextAppointments };
+      });
     },
     [queryClient, queryKey],
   );
 
   return {
-    items: query.data ?? [],
+    items: query.data?.appointments ?? [],
     setItems,
+    dayCounts: query.data?.dayCounts ?? {},
     loading: query.isLoading,
     error: query.error instanceof Error ? query.error.message : null,
     refresh: query.refetch,
   };
-}
-
-function useDayCounts(date: Dayjs | null, branchId?: number, employeeId?: number | "me") {
-  const monthKey = (date ?? dayjs()).format("YYYY-MM");
-  const params = React.useMemo(() => {
-    const base = dayjs(`${monthKey}-01`);
-    return {
-      dateFrom: base.startOf("month").format("YYYY-MM-DD"),
-      dateTo: base.endOf("month").format("YYYY-MM-DD"),
-      branchId,
-      employeeId,
-    };
-  }, [monthKey, branchId, employeeId]);
-
-  const query = useQuery({
-    queryKey: djangoQueryKeys.appointments.dayCounts(params),
-    queryFn: ({ signal }) => getDayCounts(params, signal),
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-  return query.data ?? {};
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -133,7 +136,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const isDoctorCabinet = scope === "me";
   usePageTitle(isDoctorCabinet ? "Кабинет врача" : "Регистратура");
   const { can } = useCanChecker();
-  const { activeBranch, isSuperAdmin } = usePermissions();
+  const { activeBranch, isSuperAdmin, isDoctor, isNurse } = usePermissions();
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -150,6 +153,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
+  // Заключение открывается отдельной (третьей) колонкой — как в оригинале.
+  const [conclusionOpen, setConclusionOpen] = React.useState(false);
 
   // В кабинете врача создание приёмов скрыто — это рабочий список своих приёмов.
   const canCreate = !isDoctorCabinet && can("appointments.create");
@@ -172,15 +177,28 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const branchId = activeBranch?.id ?? undefined;
 
-  const { items, setItems, loading, error, refresh } = useAppointments({
+  // Навбар-счётчики: как в оригинале — привилегированные роли (админ/регистратор)
+  // видят число за ВСЕ приёмы, а врач/медсестра — только за СВОИ. Список при этом
+  // остаётся полным (кроме кабинета врача, где и список свой).
+  const countsScopeToMe = isDoctorCabinet || isDoctor() || isNurse();
+
+  const { items, setItems, dayCounts, loading, error, refresh } = useHomeDashboard({
     date,
     search,
     branchId,
     employeeId: isDoctorCabinet ? "me" : undefined,
+    countsEmployeeId: countsScopeToMe ? "me" : undefined,
     nightOnly,
   });
 
-  const dayCounts = useDayCounts(date, branchId, isDoctorCabinet ? "me" : undefined);
+  // Лёгкая timestamp-синхронизация вместо интервального поллинга: раз в 15с
+  // проверяем last-update и перезапрашиваем тяжёлый список только при изменении.
+  // Пауза, пока открыт любой дровер/диалог — чтобы не мешать вводу.
+  useAppointmentsAutoSync({
+    branchId,
+    paused: createOpen || editTarget !== null || paymentTarget !== null || confirm !== null,
+    onChange: () => { void refresh(); },
+  });
 
   // Keep selectedAppt in sync with fresh list data
   React.useEffect(() => {
@@ -192,6 +210,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Deselect when switching dates (if nothing found)
   React.useEffect(() => {
     setSelectedAppt(null);
+    setConclusionOpen(false);
   }, [date.format("YYYY-MM-DD")]);
 
   const handlePaymentSaved = React.useCallback(
@@ -215,6 +234,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   );
 
   const handleSelect = React.useCallback((appt: DjangoAppointment) => {
+    setConclusionOpen(false); // при смене приёма закрываем колонку заключения
     setSelectedAppt((prev) => (prev?.id === appt.id ? null : appt));
   }, []);
 
@@ -230,7 +250,23 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "waiting" });
+        await updateAppointment(appt.id, { status: "arrived" });
+        void refresh();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refresh, notify],
+  );
+
+  // Врач начинает приём → статус in_progress («На приёме»). Используем
+  // отдельный узкий эндпоинт start: он не требует appointments.update
+  // (которого у врача нет), а только переводит статус. Форма заключения
+  // открывается внутри панели.
+  const handleStartAppointment = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        await startAppointment(appt.id);
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -244,7 +280,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setConfirmBusy(true);
     try {
       if (confirm.mode === "cancel") {
-        await updateAppointment(confirm.appt.id, { status: "cancelled" });
+        await updateAppointment(confirm.appt.id, { status: "canceled" });
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
@@ -279,9 +315,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       canViewFinance={canViewFinance}
       canViewConclusions={canViewConclusions}
       canDelete={canDelete}
+      isConclusionVisible={conclusionOpen}
+      onToggleConclusion={() => setConclusionOpen((v) => !v)}
       onEdit={handleEdit}
       onPay={handlePay}
       onArrived={handleArrived}
+      onStartAppointment={handleStartAppointment}
       onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}
       onDelete={(a) => setConfirm({ mode: "delete", appt: a })}
       onClose={() => setSelectedAppt(null)}
@@ -419,6 +458,32 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               )}
             </Box>
           )}
+
+          {/* Conclusion panel — третья колонка (как в оригинале), только при
+              открытом заключении и выбранном приёме на десктопе. Панель сама
+              рисует шапку (одно заключение → сразу полное; несколько → список). */}
+          {!isMobile && showDetails && conclusionOpen && selectedAppt && (
+            <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                height: "100%",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Card
+                variant="outlined"
+                sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+              >
+                <DjangoConclusionSlotsPanel
+                  appointmentId={selectedAppt.id}
+                  onClose={() => setConclusionOpen(false)}
+                />
+              </Card>
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -434,10 +499,26 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               borderTopLeftRadius: 16,
               borderTopRightRadius: 16,
               overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
             },
           }}
         >
-          {detailsPanel}
+          <Box sx={{ flex: conclusionOpen ? "0 0 50%" : 1, minHeight: 0, overflow: "hidden" }}>
+            {detailsPanel}
+          </Box>
+          {/* На мобиле заключение показывается снизу под деталями. */}
+          {conclusionOpen && selectedAppt && (
+            <>
+              <Divider />
+              <Box sx={{ flex: "1 1 50%", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <DjangoConclusionSlotsPanel
+                  appointmentId={selectedAppt.id}
+                  onClose={() => setConclusionOpen(false)}
+                />
+              </Box>
+            </>
+          )}
         </Drawer>
       )}
 

@@ -64,7 +64,7 @@ const GAP_THRESHOLD_MS = 30 * 60 * 1000;
 const DEFAULT_DURATION_MINS = 30;
 
 const isCancelledStatus = (s?: string | null) =>
-  s === "cancelled" || s === "no_show";
+  s === "canceled" || s === "cancelled" || s === "no_show";
 
 // ─── DoctorStoryItem — Instagram-style аватар врача ──────────────────────────
 
@@ -533,6 +533,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       const totalAmount = Number(a.totalAmount ?? 0);
                       const debt = Number(a.debt ?? 0);
                       const hasPaid = paidTotal > 0;
+                      // Бэк не отдаёт hasMedicalConclusion — выводим наличие
+                      // заключения из строк услуг (conclusionState/conclusionId).
+                      const hasConclusion = (a.services ?? []).some(
+                        (sl) =>
+                          sl.conclusionId != null ||
+                          sl.conclusionState === "draft" ||
+                          sl.conclusionState === "completed",
+                      );
 
                       // Определяем статус для отображения
                       const displayStatus = normalizeDjangoStatus(a.status);
@@ -542,10 +550,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                         displayStatus;
 
                       const statusCfg = getStatusConfig(displayStatus);
+                      // Прячем статус-чип, когда состояние и так понятно по
+                      // другим меткам: завершён, оплачен/частично, или есть
+                      // заключение (его передаёт иконка принтера).
                       const hideStatusChip =
                         a.status === "completed" ||
                         a.paymentStatus === "paid" ||
-                        a.paymentStatus === "partial";
+                        a.paymentStatus === "partial" ||
+                        hasConclusion;
 
                       return (
                         <Box
@@ -604,13 +616,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   />
                                 )}
 
-                                {/* Чип оплаты с иконкой наличных — как в оригинале */}
+                                {/* Чип оплаты — показываем «Оплачено»/«Частично
+                                    оплачено» (статус ОПЛАТЫ, не статус приёма). */}
                                 {showPayCol && hasPaid && (
                                   <Chip
                                     label={
                                       <Stack direction="row" alignItems="center" gap={0.5}>
                                         <PaymentsOutlined sx={{ fontSize: 16 }} />
-                                        <span>{normalizeDjangoStatus(a.status)}</span>
+                                        <span>{paymentStyleStatus}</span>
                                       </Stack>
                                     }
                                     size="small"
@@ -618,9 +631,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   />
                                 )}
 
-                                {/* Иконка заключения */}
-                                {a.hasMedicalConclusion && (
-                                  <Tooltip title="Есть заключение">
+                                {/* Иконка принтера = есть заключение (приём
+                                    фактически завершён врачом). */}
+                                {hasConclusion && (
+                                  <Tooltip title="Заключение готово">
                                     <PrintOutlinedIcon
                                       sx={{ fontSize: 20, color: "action.active", opacity: 0.8 }}
                                     />
@@ -628,8 +642,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                 )}
                               </Stack>
 
-                              {/* Итого */}
-                              {showPayCol && totalAmount > 0 && (
+                              {/* Итого — стоимость услуг, не финансовая операция,
+                                  поэтому видна всем (в т.ч. врачу без прав на
+                                  финансы), как в оригинале. */}
+                              {totalAmount > 0 && (
                                 <Typography
                                   variant="body2"
                                   color="text.secondary"

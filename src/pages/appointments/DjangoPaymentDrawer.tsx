@@ -32,6 +32,7 @@ import {
   type ApplyPaymentPayload,
 } from "../../api/payments";
 import type { DjangoAppointment } from "../../api/appointments";
+import { DiscountInput } from "../../components/ui";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -93,7 +94,7 @@ function mapSaveError(raw: string): string {
   return raw;
 }
 
-const CANCELLED_STATUSES = new Set(["cancelled", "no_show"]);
+const CANCELLED_STATUSES = new Set(["canceled", "cancelled", "no_show"]);
 
 const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
@@ -125,6 +126,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const patientId = appointment?.patient?.id ?? null;
 
   const discountTouchedRef = React.useRef(false);
+  const paymentsTouchedRef = React.useRef(false);
+  const seededPaymentsForRef = React.useRef<number | null>(null);
 
   const paymentQuery = useQuery({
     queryKey: appointmentId
@@ -168,6 +171,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setNote("");
       setSaveError(null);
       prevAppointmentIdRef.current = null;
+      paymentsTouchedRef.current = false;
+      seededPaymentsForRef.current = null;
       return;
     }
     if (appointmentId !== prevAppointmentIdRef.current) {
@@ -180,6 +185,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setNote("");
       setSaveError(null);
       prevAppointmentIdRef.current = appointmentId;
+      paymentsTouchedRef.current = false;
     }
   }, [open, appointmentId, appointment?.discountAmount]);
 
@@ -191,6 +197,25 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     summaryDiscountRef.current = summary.discountAmount;
     setDiscountStr(summary.discountAmount ?? "0");
   }, [summary]);
+
+  // Seed cash/card inputs from the appointment's existing payments, so editing
+  // an already-paid appointment shows the amounts that were entered (not 0).
+  // Skipped once the user starts typing (paymentsTouchedRef) and seeded at most
+  // once per appointment.
+  React.useEffect(() => {
+    if (!summary || appointmentId === null) return;
+    if (paymentsTouchedRef.current) return;
+    if (seededPaymentsForRef.current === appointmentId) return;
+    seededPaymentsForRef.current = appointmentId;
+    const sumByMethod = (method: string) =>
+      (summary.payments ?? [])
+        .filter((p) => p.method === method)
+        .reduce((acc, p) => acc + parseDecimal(p.amount), 0);
+    const cashSum = sumByMethod("cash");
+    const cardSum = sumByMethod("card");
+    setCash(cashSum > 0 ? cashSum : "");
+    setCard(cardSum > 0 ? cardSum : "");
+  }, [summary, appointmentId]);
 
   // Derived
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount);
@@ -204,13 +229,24 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const balanceUsed = Math.max(0, parseDecimal(balanceStr));
   const bonusUsed = Math.max(0, parseDecimal(bonusStr));
   const totalPaid = cashNum + cardNum + balanceUsed + bonusUsed;
-  const debt = Math.max(0, payable - totalPaid);
   const overpaid = totalPaid > payable + 0.001;
   const balanceExceeded = balanceUsed > availableBalance + 0.001;
   const bonusExceeded = bonusUsed > availableBonuses + 0.001;
-  const statusPreview = computeStatus(payable, totalPaid, discount, total);
 
-  const hasRefunds = (summary?.refunds?.length ?? 0) > 0 || parseDecimal(summary?.refundedTotal) > 0;
+  const refundedTotal = parseDecimal(summary?.refundedTotal);
+  const hasRefunds =
+    (summary?.refunds?.length ?? 0) > 0 || refundedTotal > 0;
+
+  // Refunds reduce what counts as settled. With a refund the form is read-only,
+  // so trust the backend's net figures; otherwise show a live preview from the
+  // inputs, net of any refund.
+  const netPaid = Math.max(0, totalPaid - refundedTotal);
+  const debt = hasRefunds
+    ? parseDecimal(summary?.debt)
+    : Math.max(0, payable - netPaid);
+  const statusPreview = hasRefunds
+    ? summary?.paymentStatus ?? computeStatus(payable, netPaid, discount, total)
+    : computeStatus(payable, netPaid, discount, total);
   const applyBlockedByRefund = hasRefunds;
   const hasBonusPayment = (summary?.payments ?? []).some((p) => p.method === "bonus");
   const applyBlockedByBonus = hasBonusPayment;
@@ -226,10 +262,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
   // Quick-fill handlers
   const handleCash100 = () => {
+    paymentsTouchedRef.current = true;
     setCash(Math.max(0, payable - balanceUsed - bonusUsed));
     setCard(0);
   };
   const handleCard100 = () => {
+    paymentsTouchedRef.current = true;
     setCard(Math.max(0, payable - balanceUsed - bonusUsed));
     setCash(0);
   };
@@ -459,34 +497,30 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               <Divider sx={{ my: 1 }} />
 
               <Stack spacing={2}>
-                {/* Price + discount side-by-side */}
-                <Stack direction="row" spacing={2} alignItems="flex-start">
-                  <Box flex={1}>
+                {/* Price + discount side-by-side; скидка переносится вниз на
+                    всю ширину, если в строке не хватает места (поле + тумблер). */}
+                <Stack direction="row" spacing={2} alignItems="flex-start" flexWrap="wrap" useFlexGap>
+                  <Box sx={{ flexShrink: 0 }}>
                     <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                       Стоимость
                     </Typography>
-                    <Typography variant="h6" fontWeight={600}>
+                    <Typography variant="h6" fontWeight={600} noWrap>
                       {total.toLocaleString()} с
                     </Typography>
                   </Box>
-                  <Box flex={1}>
+                  <Box sx={{ flex: "1 1 180px", minWidth: 180 }}>
                     <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                       Скидка
                     </Typography>
-                    <TextField
-                      type="number"
-                      size="small"
-                      fullWidth
-                      value={discountStr}
-                      onChange={(e) => {
+                    <DiscountInput
+                      total={total}
+                      amount={discount}
+                      onAmountChange={(amt) => {
                         discountTouchedRef.current = true;
-                        setDiscountStr(e.target.value);
+                        setDiscountStr(String(amt));
                       }}
                       error={discountInvalid}
                       helperText={discountInvalid ? `0 — ${fmt(total)}` : ""}
-                      InputProps={{ endAdornment: <Typography variant="caption" sx={{ ml: 0.5 }}>с</Typography> }}
-                      inputProps={{ min: 0, style: { textAlign: "center" } }}
-                      sx={noSpinnersSx}
                       disabled={isCancelled}
                     />
                   </Box>
@@ -529,6 +563,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                         type="number"
                         value={cash}
                         onChange={(e) => {
+                          paymentsTouchedRef.current = true;
                           if (e.target.value === "") {
                             setCash("");
                           } else {
@@ -580,6 +615,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                         type="number"
                         value={card}
                         onChange={(e) => {
+                          paymentsTouchedRef.current = true;
                           if (e.target.value === "") {
                             setCard("");
                           } else {
