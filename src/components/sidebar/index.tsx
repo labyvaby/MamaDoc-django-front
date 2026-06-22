@@ -354,12 +354,50 @@ const SidebarSecondary: React.FC = () => {
 
   const show = (group: NavGroup) => activeGroup === "all" || activeGroup === group;
 
-  // Есть ли хотя бы один видимый пункт в каждой группе для текущей роли
+  // ── Видимость каждого пункта меню (единый источник истины) ──────────────────
+  // Эти же флаги используются и для условий рендера пунктов ниже, и для расчёта
+  // видимости вкладки группы (groupVisible). Так вкладка скрывается, когда у
+  // сотрудника нет доступа НИ К ОДНОЙ странице раздела.
+  const can_ = {
+    // МОЯ РАБОТА
+    registratura: isSuper || (!isNurse && !isDoctor()),
+    doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
+    nurseRoom: isSuper || isAdmin() || isNurse,
+    patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
+    schedule: true,
+    skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
+    // ОРГАНИЗАЦИЯ
+    employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
+    allAppointments: true,
+    allProcedures: true,
+    services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
+    diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
+    // СКЛАДЫ
+    products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
+    sales: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.sales.view", "warehouse.view"]) : (isAdmin() || isRegistrator())),
+    storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
+    // УПРАВЛЕНИЕ
+    salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
+    reports: isSuper || isAdmin() || hasRole(["accountant"]),
+    expenses: true,
+    cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
+    load: isSuper,
+    notifications: isSuper,
+    settings: IS_DJANGO_BACKEND && (
+      isSuper
+      || can("organization.view")
+      || can("branches.view")
+      || can("rbac.roles.view")
+      || can("rbac.memberships.view")
+    ),
+  };
+
+  // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work":    true, // СКУД виден всем
-    "org":        true, // Расписание, Все приёмы, Услуги — видны всем
-    "storage":    true, // Товары — видны всем
-    "management": true, // Отчет по ЗП, Расходы — видны всем
+    "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
+    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.diagnoses,
+    "storage": can_.products || can_.sales || can_.storage,
+    "management": can_.salaryReports || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -368,7 +406,7 @@ const SidebarSecondary: React.FC = () => {
       handleGroupChange("all");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNurse, isSuper]);
+  }, [activeGroup, groupVisible["my-work"], groupVisible.org, groupVisible.storage, groupVisible.management]);
 
   if (permissionsLoading) {
     return (
@@ -459,7 +497,7 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Регистратура — в Django-mode ведёт на /appointments */}
-        {show("my-work") && (isSuper || (!isNurse && !isDoctor())) && (
+        {show("my-work") && can_.registratura && (
           <SidebarMenuItem
             to={IS_DJANGO_BACKEND ? "/appointments" : "/home"}
             icon={<HomeOutlined />}
@@ -469,17 +507,17 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Кабинет врача */}
-        {show("my-work") && (isSuper || (!isNurse && !isAdmin() && !isRegistrator())) && (
+        {show("my-work") && can_.doctorRoom && (
           <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label="Кабинет врача" collapsed={siderCollapsed} />
         )}
 
         {/* Процедурный кабинет */}
-        {show("my-work") && (isSuper || isAdmin() || isNurse) && (
+        {show("my-work") && can_.nurseRoom && (
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
         )}
 
         {/* Все пациенты */}
-        {show("my-work") && (isSuper || (IS_DJANGO_BACKEND ? can('patients.view') : !isNurse)) && (
+        {show("my-work") && can_.patients && (
           <SidebarMenuItem
             to={IS_DJANGO_BACKEND ? "/patients" : "/patient-search"}
             icon={<SearchOutlined />}
@@ -489,12 +527,12 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Расписание */}
-        {show("my-work") && (
+        {show("my-work") && can_.schedule && (
           <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
         )}
 
         {/* СКУД */}
-        {show("my-work") && (!IS_DJANGO_BACKEND || isSuper || can('attendance.view')) && (
+        {show("my-work") && can_.skud && (
           <SidebarSkudItem collapsed={siderCollapsed} />
         )}
 
@@ -503,27 +541,27 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Сотрудники */}
-        {show("org") && (isSuper || (IS_DJANGO_BACKEND ? can('staff.view') : !isNurse)) && (
+        {show("org") && can_.employees && (
           <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
         )}
 
         {/* Все приемы — в Django-mode ведёт на /all-appointments (placeholder) */}
-        {show("org") && (
+        {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
         )}
 
         {/* Все процедуры */}
-        {show("org") && (
+        {show("org") && can_.allProcedures && (
           <SidebarMenuItem to="/all-procedures" icon={<MedicalServicesOutlined />} label="Все процедуры" collapsed={siderCollapsed} />
         )}
 
         {/* Услуги */}
-        {show("org") && (isSuper || (IS_DJANGO_BACKEND ? can('catalog.view') : true)) && (
+        {show("org") && can_.services && (
           <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
-        {!IS_DJANGO_BACKEND && show("org") && (isSuper || isDoctor()) && (
+        {show("org") && can_.diagnoses && (
           <SidebarMenuItem to="/settings/diagnoses" icon={<ScienceOutlined />} label="Диагнозы" collapsed={siderCollapsed} />
         )}
 
@@ -532,17 +570,17 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Товары */}
-        {show("storage") && (isSuper || (IS_DJANGO_BACKEND ? can(['warehouse.view', 'warehouse.sales.view']) : true)) && (
+        {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         )}
 
         {/* Продажи товаров */}
-        {show("storage") && (isSuper || (IS_DJANGO_BACKEND ? can(['warehouse.sales.view', 'warehouse.view']) : (isAdmin() || isRegistrator()))) && (
+        {show("storage") && can_.sales && (
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
 
         {/* Движение товара + Склад */}
-        {show("storage") && (isSuper || (IS_DJANGO_BACKEND ? can('warehouse.view') : isAdmin())) && (
+        {show("storage") && can_.storage && (
           <>
             <SidebarMenuItem to="/storage" icon={<Inventory2Outlined />} label="Движение товара" collapsed={siderCollapsed} />
             <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Склад" collapsed={siderCollapsed} />
@@ -554,17 +592,17 @@ const SidebarSecondary: React.FC = () => {
             ══════════════════════════════════════════ */}
 
         {/* Отчет по ЗП */}
-        {show("management") && (IS_DJANGO_BACKEND ? (isSuper || can('payroll.view')) : true) && (
+        {show("management") && can_.salaryReports && (
           <SidebarMenuItem to="/salary-reports" icon={<AccountBalanceWalletOutlined />} label="Отчет по ЗП" collapsed={siderCollapsed} />
         )}
 
         {/* Отчеты */}
-        {show("management") && (isSuper || isAdmin() || hasRole(['accountant'])) && (
+        {show("management") && can_.reports && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
         )}
 
         {/* Расходы */}
-        {show("management") && (
+        {show("management") && can_.expenses && (
           <SidebarMenuItem
             to="/expenses"
             icon={<PaymentsOutlined />}
@@ -574,28 +612,22 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Касса */}
-        {show("management") && (IS_DJANGO_BACKEND ? (isSuper || can('finance.view')) : hasAccessToCashbox) && (
+        {show("management") && can_.cashbox && (
           <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
         )}
 
         {/* Нагрузка */}
-        {show("management") && isSuper && (
+        {show("management") && can_.load && (
           <SidebarMenuItem to="/admin/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
         )}
 
         {/* Уведомления */}
-        {show("management") && isSuper && (
+        {show("management") && can_.notifications && (
           <SidebarMenuItem to="/settings/notifications" icon={<NotificationsOutlined />} label="Уведомления" collapsed={siderCollapsed} />
         )}
 
         {/* Настройки (Django-mode only) */}
-        {show("management") && IS_DJANGO_BACKEND && (
-          isSuper
-          || can('organization.view')
-          || can('branches.view')
-          || can('rbac.roles.view')
-          || can('rbac.memberships.view')
-        ) && (
+        {show("management") && can_.settings && (
           <SidebarMenuItem
             to="/settings"
             icon={<TuneOutlined />}
