@@ -466,6 +466,11 @@ export function getHomeDashboard(params: {
    * per-day counts: pass "me" for clinicians, omit for privileged roles.
    */
   countsEmployeeId?: number | "me";
+  /**
+   * Filter list + day-counts by performer clinical role (e.g. "nurse" for the
+   * procedure cabinet) so the navigator shows only that role's procedures.
+   */
+  clinicalRole?: "doctor" | "nurse" | "other";
   patientId?: number;
   nightOnly?: boolean;
 }, signal?: AbortSignal): Promise<HomeDashboard> {
@@ -480,6 +485,7 @@ export function getHomeDashboard(params: {
   if (params.countsEmployeeId) {
     query.set("countsEmployeeId", String(params.countsEmployeeId));
   }
+  if (params.clinicalRole) query.set("clinicalRole", params.clinicalRole);
   if (params.patientId) query.set("patientId", String(params.patientId));
   if (params.nightOnly) query.set("nightOnly", "true");
   const qs = query.toString();

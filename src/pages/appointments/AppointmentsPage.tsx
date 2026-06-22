@@ -67,6 +67,8 @@ function useHomeDashboard(params: {
   employeeId?: number | "me";
   /** Навбар-счётчики отдельно от списка: "me" для врача/медсестры. */
   countsEmployeeId?: number | "me";
+  /** Фильтр списка и счётчиков по роли исполнителя (процедурный кабинет = "nurse"). */
+  clinicalRole?: "doctor" | "nurse" | "other";
   nightOnly?: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -85,9 +87,10 @@ function useHomeDashboard(params: {
       branchId: params.branchId,
       employeeId: params.employeeId,
       countsEmployeeId: params.countsEmployeeId,
+      clinicalRole: params.clinicalRole,
       nightOnly: params.nightOnly || undefined,
     };
-  }, [dateKey, monthKey, params.search, params.branchId, params.employeeId, params.countsEmployeeId, params.nightOnly]);
+  }, [dateKey, monthKey, params.search, params.branchId, params.employeeId, params.countsEmployeeId, params.clinicalRole, params.nightOnly]);
 
   const queryKey = djangoQueryKeys.appointments.home(queryParams);
   const query = useQuery({
@@ -238,6 +241,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     branchId,
     employeeId: scopedEmployeeId,
     countsEmployeeId: countsScopeToMe ? "me" : undefined,
+    // Привилегированный процедурный кабинет: список и счётчики — только процедуры
+    // медсестёр (сама медсестра уже сужена через countsScopeToMe="me").
+    clinicalRole: nurseSeesAll ? "nurse" : undefined,
     nightOnly,
   });
 
