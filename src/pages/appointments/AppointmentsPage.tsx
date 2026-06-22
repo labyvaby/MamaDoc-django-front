@@ -235,6 +235,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const scopedEmployeeId: number | "me" | undefined =
     isDoctorCabinet || nurseSeesOwnOnly ? "me" : undefined;
 
+  // Когда список уже сужен до самого сотрудника (кабинет врача / медсестра в своём
+  // процедурном), фильтр-полоска по врачам бессмысленна — скрываем её, оставляя
+  // только навигацию по датам. Привилегированный процедурный кабинет тоже скрывает
+  // полоску (группировка строго по медсёстрам).
+  const listScopedToSelf = scopedEmployeeId === "me";
+
   const { items, setItems, dayCounts, loading, error, refresh } = useHomeDashboard({
     date,
     search,
@@ -500,7 +506,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onAddSlot={canCreate ? () => {
                 setCreateOpen(true);
               } : undefined}
-              hideDoctorStrip={isNurseCabinet}
+              hideDoctorStrip={isNurseCabinet || listScopedToSelf}
               groupEmployeeIds={groupEmployeeIds}
             />
           </Box>
