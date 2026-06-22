@@ -55,8 +55,15 @@ export const LoadChart: React.FC<Props> = ({ data }) => {
                     width={isMobile ? 28 : 40}
                 />
                 <Tooltip
-                    contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    labelStyle={{ fontWeight: 'bold', color: '#333' }}
+                    contentStyle={{
+                        borderRadius: 8,
+                        border: `1px solid ${theme.palette.divider}`,
+                        boxShadow: theme.shadows[3],
+                        backgroundColor: theme.palette.background.paper,
+                        color: theme.palette.text.primary,
+                    }}
+                    labelStyle={{ fontWeight: 'bold', color: theme.palette.text.primary }}
+                    itemStyle={{ color: theme.palette.text.secondary }}
                     formatter={(value: number | undefined) => [value || 0, 'Приемов']}
                     labelFormatter={(label) => `Время: ${label}`}
                 />
