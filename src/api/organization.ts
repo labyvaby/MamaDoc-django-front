@@ -57,6 +57,46 @@ export function getBranches(): Promise<DjangoBranch[]> {
   return apiRequest<DjangoBranch[]>("/organization/branches/");
 }
 
+/** Fields accepted when creating a branch. */
+export interface CreateBranchPayload {
+  name: string;
+  /** Target organization. Required for multi-org superusers (otherwise the
+   *  backend infers the wrong organization from the active membership). */
+  organizationId?: number;
+  address?: string;
+  phone?: string;
+  timezone?: string;
+  isActive?: boolean;
+}
+
+/** Partial update payload for PATCH /organization/branches/<id>/. */
+export interface UpdateBranchPayload {
+  name?: string;
+  address?: string;
+  phone?: string;
+  timezone?: string;
+  isActive?: boolean;
+}
+
+/** POST /organization/branches/ — create a branch in the target organization. */
+export function createBranch(payload: CreateBranchPayload): Promise<DjangoBranch> {
+  return apiRequest<DjangoBranch>("/organization/branches/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+/** PATCH /organization/branches/<id>/ — update a branch (only sent fields). */
+export function updateBranch(
+  id: number,
+  payload: UpdateBranchPayload,
+): Promise<DjangoBranch> {
+  return apiRequest<DjangoBranch>(`/organization/branches/${id}/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
 /**
  * Soft-delete (archive) an organization regardless of related data.
  * Backend marks status=archived; nothing is physically removed. Returns 204.

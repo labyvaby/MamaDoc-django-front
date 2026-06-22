@@ -522,8 +522,8 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
         )}
 
-        {/* Диагнозы */}
-        {show("org") && (isSuper || (IS_DJANGO_BACKEND ? can('catalog.view') : isDoctor())) && (
+        {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
+        {!IS_DJANGO_BACKEND && show("org") && (isSuper || isDoctor()) && (
           <SidebarMenuItem to="/settings/diagnoses" icon={<ScienceOutlined />} label="Диагнозы" collapsed={siderCollapsed} />
         )}
 
@@ -601,7 +601,11 @@ const SidebarSecondary: React.FC = () => {
             icon={<TuneOutlined />}
             label="Настройки"
             collapsed={siderCollapsed}
-            excludePaths={["/settings/notifications", "/settings/diagnoses"]}
+            excludePaths={
+              IS_DJANGO_BACKEND
+                ? ["/settings/notifications"]
+                : ["/settings/notifications", "/settings/diagnoses"]
+            }
           />
         )}
       </List>

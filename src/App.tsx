@@ -82,6 +82,7 @@ const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
+const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
@@ -797,18 +798,20 @@ function App() {
                             )
                           }
                         />
-                        <Route
-                          path="settings/diagnoses"
-                          element={
-                            <LegacyRouteGuard title="Диагнозы в разработке">
-                              <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DiagnosesPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
-                          }
-                        />
+                        {!IS_DJANGO_BACKEND && (
+                          <Route
+                            path="settings/diagnoses"
+                            element={
+                              <LegacyRouteGuard title="Диагнозы в разработке">
+                                <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DiagnosesPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            }
+                          />
+                        )}
                         <Route
                           path="settings/notifications"
                           element={
@@ -909,6 +912,16 @@ function App() {
                                 <RequirePermission permission="finance.expense.manage">
                                   <Suspense fallback={<LinearProgress />}>
                                     <ExpenseCategoriesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/diagnoses"
+                              element={
+                                <RequirePermission permission="medical.diagnoses.manage">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DiagnosesSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

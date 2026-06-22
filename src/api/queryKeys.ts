@@ -2,6 +2,14 @@ export const DJANGO_LIST_STALE_TIME_MS = 30_000;
 export const DJANGO_REFERENCE_STALE_TIME_MS = 10 * 60_000;
 export const DJANGO_DETAIL_STALE_TIME_MS = 60_000;
 export const DJANGO_POLL_INTERVAL_MS = 30_000;
+/**
+ * Интервал лёгкого heartbeat-чека last-update (детекция изменений приёмов).
+ * Псевдо-realtime без websocket: каждые 2.5с опрашиваем дешёвый last-update
+ * (один SELECT MAX(updated_at)), а тяжёлый список рефетчим ТОЛЬКО когда
+ * таймстамп сдвинулся. Плюс мгновенная проверка при возврате на вкладку
+ * (см. useAppointmentsAutoSync). Поллинг идёт лишь на видимой вкладке.
+ */
+export const DJANGO_HEARTBEAT_INTERVAL_MS = 2_500;
 
 export const djangoQueryKeys = {
   all: ["django"] as const,
@@ -12,6 +20,8 @@ export const djangoQueryKeys = {
       ["django", "appointments", "list", params] as const,
     dayCounts: (params: Record<string, unknown>) =>
       ["django", "appointments", "day-counts", params] as const,
+    home: (params: Record<string, unknown>) =>
+      ["django", "appointments", "home", params] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
