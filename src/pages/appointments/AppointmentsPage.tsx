@@ -126,18 +126,19 @@ function useHomeDashboard(params: {
 }
 
 /**
- * Set of active nurse employee ids (clinicalRole === "nurse").
+ * Set of active employee ids with the given clinical role.
  *
- * Used by the Процедурный кабинет: when an admin / manager / receptionist opens it,
- * they see every appointment but must be filtered down to the ones a nurse performs.
- * Only fetched when `enabled` — a nurse looking at her own list doesn't need it.
+ * Used by the privileged cabinet views (admin / manager / receptionist): they
+ * load every appointment, then group/filter strictly by clinician type — the
+ * doctor cabinet by doctors, the procedure cabinet by nurses. Only fetched when
+ * `enabled` — a clinician looking at their own list doesn't need it.
  */
-function useNurseIds(enabled: boolean): Set<number> {
+function useClinicalIds(role: "doctor" | "nurse", enabled: boolean): Set<number> {
   const query = useQuery({
-    queryKey: ["staff", "employees", "nurseIds"],
+    queryKey: ["staff", "employees", "clinicalIds", role],
     queryFn: async ({ signal }) => {
       const res = await getDjangoEmployees({ status: "active", pageSize: 500 }, signal);
-      return res.results.filter((e) => e.clinicalRole === "nurse").map((e) => e.id);
+      return res.results.filter((e) => e.clinicalRole === role).map((e) => e.id);
     },
     enabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
@@ -179,12 +180,20 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     employeeId,
   } = usePermissions();
 
+  // Привилегированная роль — те, кто работает с созданием приёмов напрямую
+  // (админ / регистратура / управляющий). Они видят приёмы ВСЕХ клиницистов
+  // нужного типа: в кабинете врача — всех врачей, в процедурном — всех медсестёр.
+  const isPrivileged = isAdmin() || isRegistrator() || hasRole("manager");
+
+  // Кабинет врача: сам врач видит только свои приёмы ("me"); привилегированная
+  // роль видит приёмы всех врачей (фильтр clinicalRole=doctor на бэке).
+  const doctorSeesOwnOnly = isDoctorCabinet && isDoctor() && !isPrivileged;
+  const doctorSeesAll = isDoctorCabinet && isPrivileged;
+
   // Процедурный кабинет: сама медсестра видит только свои процедуры ("me");
-  // привилегированные роли (админ / управляющий / регистратура) видят все приёмы,
-  // которые затем клиентски фильтруются до тех, где есть исполнитель-медсестра.
-  const nurseSeesOwnOnly = isNurseCabinet && isNurse();
-  const nurseSeesAll =
-    isNurseCabinet && (isAdmin() || isRegistrator() || hasRole("manager"));
+  // привилегированная роль видит приёмы всех медсестёр (фильтр clinicalRole=nurse).
+  const nurseSeesOwnOnly = isNurseCabinet && isNurse() && !isPrivileged;
+  const nurseSeesAll = isNurseCabinet && isPrivileged;
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -225,21 +234,28 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const branchId = activeBranch?.id ?? undefined;
 
-  // Навбар-счётчики: как в оригинале — привилегированные роли (админ/регистратор)
-  // видят число за ВСЕ приёмы, а врач/медсестра — только за СВОИ. Список при этом
-  // остаётся полным (кроме кабинета врача и собственного списка медсестры).
-  const countsScopeToMe = isDoctorCabinet || isDoctor() || isNurse();
+  // Клиницист в своём кабинете (врач в кабинете врача / медсестра в процедурном)
+  // грузит серверно только свои приёмы ("me"). Привилегированная роль грузит по
+  // клинической роли (clinicalRole ниже), а в Регистратуре — весь список.
+  const seesOwnOnly = doctorSeesOwnOnly || nurseSeesOwnOnly;
+  const scopedEmployeeId: number | "me" | undefined = seesOwnOnly ? "me" : undefined;
 
-  // Врач и сама медсестра грузят только свои приёмы серверно ("me");
-  // привилегированные роли грузят все и фильтруют клиентски (см. visibleItems).
-  const scopedEmployeeId: number | "me" | undefined =
-    isDoctorCabinet || nurseSeesOwnOnly ? "me" : undefined;
+  // Навбар-счётчики: клиницист в своём кабинете считает только свои; привилегированная
+  // роль и Регистратура считают по тому же scope, что и список (clinicalRole/всё).
+  const countsScopeToMe = seesOwnOnly;
 
-  // Когда список уже сужен до самого сотрудника (кабинет врача / медсестра в своём
-  // процедурном), фильтр-полоска по врачам бессмысленна — скрываем её, оставляя
-  // только навигацию по датам. Привилегированный процедурный кабинет тоже скрывает
-  // полоску (группировка строго по медсёстрам).
-  const listScopedToSelf = scopedEmployeeId === "me";
+  // Привилегированный кабинет фильтрует список и счётчики по клинической роли:
+  // кабинет врача → все врачи, процедурный → все медсёстры.
+  const clinicalRoleScope: "doctor" | "nurse" | undefined = doctorSeesAll
+    ? "doctor"
+    : nurseSeesAll
+    ? "nurse"
+    : undefined;
+
+  // Клиницист видит только свой список — фильтр-полоска по сотрудникам бессмысленна,
+  // оставляем только навигацию по датам. Привилегированные кабинеты и Регистратура
+  // полоску показывают (выбор конкретного врача / медсестры).
+  const hideEmployeeStrip = seesOwnOnly;
 
   const { items, setItems, dayCounts, loading, error, refresh } = useHomeDashboard({
     date,
@@ -247,9 +263,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     branchId,
     employeeId: scopedEmployeeId,
     countsEmployeeId: countsScopeToMe ? "me" : undefined,
-    // Привилегированный процедурный кабинет: список и счётчики — только процедуры
-    // медсестёр (сама медсестра уже сужена через countsScopeToMe="me").
-    clinicalRole: nurseSeesAll ? "nurse" : undefined,
+    // Привилегированный кабинет: список и счётчики сужены по клинической роли
+    // (врачи / медсёстры). Клиницист уже сужен через scopedEmployeeId="me".
+    clinicalRole: clinicalRoleScope,
     nightOnly,
   });
 
@@ -262,30 +278,33 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     onChange: () => { void refresh(); },
   });
 
-  // Список медсестёр нужен только для привилегированного просмотра процедурного кабинета.
-  const nurseIds = useNurseIds(nurseSeesAll);
-  const visibleItems = React.useMemo(() => {
-    // Фильтрация только в привилегированном процедурном кабинете. Если медсестёр
-    // в системе нет — кабинет пуст (а не показывает все приёмы врачей).
-    if (!nurseSeesAll) return items;
-    if (nurseIds.size === 0) return [];
-    return items.filter((a) =>
-      a.services.some((s) => s.employee != null && nurseIds.has(s.employee.id)),
-    );
-  }, [items, nurseSeesAll, nurseIds]);
+  // Привилегированный кабинет группируется строго по клиницистам своего типа
+  // (врачи / медсёстры), чтобы из совместного приёма не появлялась группа второго
+  // участника. Грузим id нужной роли только когда это реально привилегированный кабинет.
+  const clinicianIds = useClinicalIds(
+    clinicalRoleScope ?? "doctor",
+    clinicalRoleScope != null,
+  );
 
-  // Группировка списка в процедурном кабинете — только по медсёстрам:
-  // привилегированные роли — по всем медсёстрам, сама медсестра — по себе.
-  // Это убирает группы врачей из совместных приёмов (как в оригинале).
+  // Список уже сужен сервером (employeeId="me" или clinicalRole=...). Клиентский
+  // фильтр оставлен как защитный слой для привилегированного кабинета: нет клиницистов
+  // нужной роли → кабинет пуст, а не показывает чужие приёмы.
+  const visibleItems = React.useMemo(() => {
+    if (clinicalRoleScope == null) return items;
+    if (clinicianIds.size === 0) return [];
+    return items.filter((a) =>
+      a.services.some((s) => s.employee != null && clinicianIds.has(s.employee.id)),
+    );
+  }, [items, clinicalRoleScope, clinicianIds]);
+
+  // Группировка: привилегированный кабинет — строго по клиницистам своего типа;
+  // клиницист в своём кабинете — по себе. Иначе (Регистратура) — по всем участникам.
   const ownEmployeeId = Number(employeeId);
   const groupEmployeeIds = React.useMemo<Set<number> | null>(() => {
-    if (!isNurseCabinet) return null;
-    // Привилегированный процедурный кабинет группирует строго по медсёстрам.
-    // Нет медсестёр → пустой набор (кабинет пуст), а не null (= все врачи).
-    if (nurseSeesAll) return nurseIds;
-    if (nurseSeesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
+    if (clinicalRoleScope != null) return clinicianIds;
+    if (seesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
     return null;
-  }, [isNurseCabinet, nurseSeesAll, nurseSeesOwnOnly, nurseIds, ownEmployeeId]);
+  }, [clinicalRoleScope, clinicianIds, seesOwnOnly, ownEmployeeId]);
 
   // Keep selectedAppt in sync with fresh list data
   React.useEffect(() => {
@@ -506,7 +525,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onAddSlot={canCreate ? () => {
                 setCreateOpen(true);
               } : undefined}
-              hideDoctorStrip={isNurseCabinet || listScopedToSelf}
+              hideDoctorStrip={hideEmployeeStrip}
               groupEmployeeIds={groupEmployeeIds}
             />
           </Box>
