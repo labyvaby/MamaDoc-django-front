@@ -4,6 +4,9 @@ import { apiRequest } from "./client";
 
 export type SaleStatus = "open" | "partial" | "paid";
 
+/** Источник записи: самостоятельная продажа склада или товары из приёма. */
+export type SaleSource = "sale" | "appointment";
+
 export type DjangoSaleLine = {
     id: number;
     productId: number;
@@ -35,6 +38,13 @@ export type DjangoSale = {
     lines: DjangoSaleLine[];
     createdByName: string | null;
     createdAt: string;
+    /** "sale" — обычная продажа; "appointment" — товары из приёма (read-only). */
+    source: SaleSource;
+    /** Заполнен для записей из приёма (id приёма). */
+    appointmentId: number | null;
+    /** Только для записей из приёма: оплата всего приёма с баланса/бонусов. */
+    paidBalance: number;
+    paidBonuses: number;
 };
 
 export type SaleDayTotal = {
@@ -70,16 +80,18 @@ type RawLine = Omit<DjangoSaleLine, "quantity" | "price" | "total"> & {
 
 type RawSale = Omit<
     DjangoSale,
-    "paidCash" | "paidCard" | "totalAmount" | "baseTotal" | "lines"
+    "paidCash" | "paidCard" | "totalAmount" | "baseTotal" | "paidBalance" | "paidBonuses" | "lines"
 > & {
     paidCash: string;
     paidCard: string;
     totalAmount: string;
     baseTotal: string;
+    paidBalance?: string;
+    paidBonuses?: string;
     lines: RawLine[];
 };
 
-const num = (v: string) => parseFloat(v) || 0;
+const num = (v: string | undefined) => parseFloat(v ?? "") || 0;
 
 const mapSale = (raw: RawSale): DjangoSale => ({
     ...raw,
@@ -87,6 +99,8 @@ const mapSale = (raw: RawSale): DjangoSale => ({
     paidCard: num(raw.paidCard),
     totalAmount: num(raw.totalAmount),
     baseTotal: num(raw.baseTotal),
+    paidBalance: num(raw.paidBalance),
+    paidBonuses: num(raw.paidBonuses),
     lines: raw.lines.map((l) => ({
         ...l,
         quantity: num(l.quantity),

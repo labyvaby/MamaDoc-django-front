@@ -10,6 +10,7 @@ import {
     alpha,
 } from "@mui/material";
 import { Inventory } from "@mui/icons-material";
+import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { DjangoSale } from "../../../api/sales";
 import { formatKGS } from "../../../utility/format";
@@ -67,7 +68,10 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                 ) : sales.length === 0 ? null : (
                     <Stack spacing={1} sx={{ p: 1.5 }}>
                         {sales.map((sale) => {
-                            const isSelected = selectedSale?.id === sale.id;
+                            const isSelected =
+                                selectedSale?.id === sale.id &&
+                                selectedSale?.source === sale.source;
+                            const fromAppointment = sale.source === "appointment";
                             const displayStatus =
                                 sale.discountPercent > 0 && sale.status === "paid"
                                     ? "discounted"
@@ -80,7 +84,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
 
                             return (
                                 <ButtonBase
-                                    key={sale.id}
+                                    key={`${sale.source}-${sale.id}`}
                                     focusRipple
                                     onClick={() => onSelect(sale)}
                                     sx={{
@@ -119,7 +123,11 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                             color: "primary.onSurface",
                                         }}
                                     >
-                                        <Inventory fontSize="small" />
+                                        {fromAppointment ? (
+                                            <MedicalServicesOutlinedIcon fontSize="small" />
+                                        ) : (
+                                            <Inventory fontSize="small" />
+                                        )}
                                     </Avatar>
 
                                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -138,12 +146,22 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                         <Typography variant="body2" sx={{ fontWeight: 700 }}>
                                             {formatKGS(sale.totalAmount ?? 0)}
                                         </Typography>
-                                        <Chip
-                                            label={chipLabel}
-                                            icon={statusConfig.icon}
-                                            size="small"
-                                            sx={getSaleStatusChipSx(displayStatus)}
-                                        />
+                                        {fromAppointment ? (
+                                            <Chip
+                                                label="С приёма"
+                                                icon={<MedicalServicesOutlinedIcon />}
+                                                size="small"
+                                                color="info"
+                                                variant="outlined"
+                                            />
+                                        ) : (
+                                            <Chip
+                                                label={chipLabel}
+                                                icon={statusConfig.icon}
+                                                size="small"
+                                                sx={getSaleStatusChipSx(displayStatus)}
+                                            />
+                                        )}
                                     </Stack>
                                 </ButtonBase>
                             );

@@ -28,6 +28,7 @@ import { searchPatients, DjangoPatient } from "../../../api/patients";
 import { getBranches, DjangoBranch } from "../../../api/organization";
 import { ApiError, isAbortError } from "../../../api/client";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { DiscountInput } from "../../ui";
 
 // CSS to hide spin buttons
 const noSpinnersSx = {
@@ -516,28 +517,33 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                     }}
                 >
                     <Stack spacing={2}>
-                        {/* Стоимость и Скидка */}
-                        <Stack direction="row" spacing={2} alignItems="flex-start">
-                            <Box flex={1}>
+                        {/* Стоимость и Скидка; скидка переносится вниз на всю
+                            ширину, если в строке не хватает места. */}
+                        <Stack direction="row" spacing={2} alignItems="flex-start" flexWrap="wrap" useFlexGap>
+                            <Box sx={{ flexShrink: 0 }}>
                                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                                     Стоимость
                                 </Typography>
-                                <Typography variant="h6" fontWeight={600}>
+                                <Typography variant="h6" fontWeight={600} noWrap>
                                     {baseTotal.toLocaleString()} сом
                                 </Typography>
                             </Box>
-                            <Box flex={1}>
+                            <Box sx={{ flex: "1 1 180px", minWidth: 180 }}>
                                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                    Скидка, %
+                                    Скидка
                                 </Typography>
-                                <TextField
-                                    type="number"
-                                    size="small"
-                                    fullWidth
-                                    value={discountPercent}
-                                    onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-                                    inputProps={{ min: 0, max: 100, style: { textAlign: "center" } }}
-                                    sx={{ ...noSpinnersSx }}
+                                <DiscountInput
+                                    total={baseTotal}
+                                    amount={discountAmount}
+                                    defaultType="percent"
+                                    onAmountChange={(amt) => {
+                                        // Источник истины для продаж — процент: backend хранит
+                                        // discountPercent и сам считает сумму от стоимости.
+                                        const pct = baseTotal > 0
+                                            ? Math.min(100, Math.max(0, Math.round((amt / baseTotal) * 1000) / 10))
+                                            : 0;
+                                        setDiscountPercent(pct);
+                                    }}
                                 />
                             </Box>
                         </Stack>
