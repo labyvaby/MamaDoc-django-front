@@ -171,11 +171,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const { can } = useCanChecker();
   const {
     activeBranch,
+    activeEmployee,
     isSuperAdmin,
     isAdmin,
     isRegistrator,
     hasRole,
-    employeeId,
   } = usePermissions();
 
   // Привилегированная роль — те, кто работает с созданием приёмов напрямую
@@ -299,7 +299,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   // Группировка: привилегированный кабинет — строго по клиницистам своего типа;
   // клиницист в своём кабинете — по себе. Иначе (Регистратура) — по всем участникам.
-  const ownEmployeeId = Number(employeeId);
+  // ВАЖНО: для группировки «по себе» нужен ID СОТРУДНИКА (Employee.id из
+  // appointment.employee), а не ID auth-пользователя. usePermissions().employeeId —
+  // это user.id и с appointment.services[].employee.id не совпадает.
+  const ownEmployeeId = Number(activeEmployee?.id);
   const groupEmployeeIds = React.useMemo<Set<number> | null>(() => {
     if (clinicalRoleScope != null) return clinicianIds;
     if (seesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
