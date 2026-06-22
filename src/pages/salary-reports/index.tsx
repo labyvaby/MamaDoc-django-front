@@ -555,7 +555,7 @@ const SalaryReportsPage: React.FC = () => {
                                                                 {periodSettings?.disable_night_hours ? (
                                                                     <Tooltip title="Ночные часы отключены настройками месяца">
                                                                         <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5} component="span">
-                                                                            <span style={{ color: 'text.disabled', opacity: 0.5 }}>Ночные</span>
+                                                                            <Box component="span" sx={{ color: 'text.disabled', opacity: 0.5 }}>Ночные</Box>
                                                                             <NightsStayIcon sx={{ fontSize: '0.85rem', color: 'warning.main' }} />
                                                                         </Stack>
                                                                     </Tooltip>

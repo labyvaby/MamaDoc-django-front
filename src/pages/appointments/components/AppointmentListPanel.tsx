@@ -45,6 +45,14 @@ interface AppointmentListPanelProps {
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
   onAddSlot?: (dateIso: string) => void;
+  /** Скрыть ленту аватарок-исполнителей (процедурный кабинет её не показывает). */
+  hideDoctorStrip?: boolean;
+  /**
+   * Если задано — группировать и считать исполнителей только по этим employee id.
+   * Процедурный кабинет передаёт сюда id медсестёр, чтобы совместный приём
+   * врач+медсестра группировался под медсестрой, а групп врачей не было.
+   */
+  groupEmployeeIds?: Set<number> | null;
 }
 
 type GapSlot = {
@@ -190,6 +198,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   onEdit: _onEdit,
   onPay: _onPay,
   onAddSlot,
+  hideDoctorStrip = false,
+  groupEmployeeIds = null,
 }) => {
   const theme = useTheme();
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
@@ -206,7 +216,11 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     const map = new Map<string, { id: string; name: string; photoUrl: string | null }>();
     for (const appt of items) {
       for (const sl of appt.services) {
-        if (sl.employee && !map.has(String(sl.employee.id))) {
+        if (
+          sl.employee &&
+          (!groupEmployeeIds || groupEmployeeIds.has(sl.employee.id)) &&
+          !map.has(String(sl.employee.id))
+        ) {
           map.set(String(sl.employee.id), {
             id: String(sl.employee.id),
             name: sl.employee.fullName,
@@ -216,7 +230,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [items]);
+  }, [items, groupEmployeeIds]);
 
   // ── Filter items by selected doctor ──────────────────────────────────────
   const filteredItems = React.useMemo(() => {
@@ -235,12 +249,18 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const names = Array.from(
         new Set(
           appt.services
-            .filter((sl) => sl.employee != null)
+            .filter(
+              (sl) =>
+                sl.employee != null &&
+                (!groupEmployeeIds || groupEmployeeIds.has(sl.employee.id)),
+            )
             .map((sl) => sl.employee!.fullName),
         ),
       );
 
       if (names.length === 0) {
+        // В процедурном кабинете приёмы без совпадения с медсёстрами не показываем.
+        if (groupEmployeeIds) continue;
         const key = "Без врача";
         if (!groups[key]) groups[key] = [];
         groups[key].push(appt);
@@ -253,7 +273,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     }
 
     return groups;
-  }, [filteredItems]);
+  }, [filteredItems, groupEmployeeIds]);
 
   // ── Build render list per group: sort by time + insert gap slots ──────────
   const groupedItemsWithGaps = React.useMemo(() => {
@@ -374,7 +394,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               Приемы ({titleDate})
             </Typography>
 
-            {availableDoctors.length > 0 && (
+            {!hideDoctorStrip && availableDoctors.length > 0 && (
               <Box
                 ref={scrollContainerRef}
                 onMouseDown={handleMouseDown}

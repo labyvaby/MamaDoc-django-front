@@ -20,11 +20,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import AddOutlined from "@mui/icons-material/AddOutlined";
-import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import TuneOutlined from "@mui/icons-material/TuneOutlined";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 
@@ -45,6 +41,7 @@ import {
   type DjangoAppointment,
   type HomeDashboard,
 } from "../../api/appointments";
+import { getDjangoEmployees } from "../../api/staff";
 import { useNotification } from "@refinedev/core";
 import {
   djangoQueryKeys,
@@ -125,24 +122,72 @@ function useHomeDashboard(params: {
   };
 }
 
+/**
+ * Set of active nurse employee ids (clinicalRole === "nurse").
+ *
+ * Used by the Процедурный кабинет: when an admin / manager / receptionist opens it,
+ * they see every appointment but must be filtered down to the ones a nurse performs.
+ * Only fetched when `enabled` — a nurse looking at her own list doesn't need it.
+ */
+function useNurseIds(enabled: boolean): Set<number> {
+  const query = useQuery({
+    queryKey: ["staff", "employees", "nurseIds"],
+    queryFn: async ({ signal }) => {
+      const res = await getDjangoEmployees({ status: "active", pageSize: 500 }, signal);
+      return res.results.filter((e) => e.clinicalRole === "nurse").map((e) => e.id);
+    },
+    enabled,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  return React.useMemo(() => new Set(query.data ?? []), [query.data]);
+}
+
 // ── page ──────────────────────────────────────────────────────────────────────
 
 type AppointmentsPageProps = {
-  /** "me" → кабинет врача: только свои приёмы, без создания. */
-  scope?: "me";
+  /**
+   * "me"    → кабинет врача: только свои приёмы, без создания.
+   * "nurse" → процедурный кабинет: медсестра видит только свои процедуры;
+   *           админ/управляющий/регистратура видят все приёмы, в которых
+   *           участвует медсестра.
+   */
+  scope?: "me" | "nurse";
 };
 
 const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const isDoctorCabinet = scope === "me";
-  usePageTitle(isDoctorCabinet ? "Кабинет врача" : "Регистратура");
+  const isNurseCabinet = scope === "nurse";
+  const pageTitle = isDoctorCabinet
+    ? "Кабинет врача"
+    : isNurseCabinet
+    ? "Процедурный кабинет"
+    : "Регистратура";
+  const addButtonText = isNurseCabinet ? "Добавить процедуру" : "Добавить прием";
+  usePageTitle(pageTitle);
   const { can } = useCanChecker();
-  const { activeBranch, isSuperAdmin, isDoctor, isNurse } = usePermissions();
+  const {
+    activeBranch,
+    isSuperAdmin,
+    isDoctor,
+    isNurse,
+    isAdmin,
+    isRegistrator,
+    hasRole,
+    employeeId,
+  } = usePermissions();
+
+  // Процедурный кабинет: сама медсестра видит только свои процедуры ("me");
+  // привилегированные роли (админ / управляющий / регистратура) видят все приёмы,
+  // которые затем клиентски фильтруются до тех, где есть исполнитель-медсестра.
+  const nurseSeesOwnOnly = isNurseCabinet && isNurse();
+  const nurseSeesAll =
+    isNurseCabinet && (isAdmin() || isRegistrator() || hasRole("manager"));
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
-  const [search, setSearch] = React.useState("");
+  const search = "";
   const [nightOnly, setNightOnly] = React.useState(false);
 
   // DateNavigation (shared with the original Регистратура) works in string dates
@@ -179,14 +224,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   // Навбар-счётчики: как в оригинале — привилегированные роли (админ/регистратор)
   // видят число за ВСЕ приёмы, а врач/медсестра — только за СВОИ. Список при этом
-  // остаётся полным (кроме кабинета врача, где и список свой).
+  // остаётся полным (кроме кабинета врача и собственного списка медсестры).
   const countsScopeToMe = isDoctorCabinet || isDoctor() || isNurse();
+
+  // Врач и сама медсестра грузят только свои приёмы серверно ("me");
+  // привилегированные роли грузят все и фильтруют клиентски (см. visibleItems).
+  const scopedEmployeeId: number | "me" | undefined =
+    isDoctorCabinet || nurseSeesOwnOnly ? "me" : undefined;
 
   const { items, setItems, dayCounts, loading, error, refresh } = useHomeDashboard({
     date,
     search,
     branchId,
-    employeeId: isDoctorCabinet ? "me" : undefined,
+    employeeId: scopedEmployeeId,
     countsEmployeeId: countsScopeToMe ? "me" : undefined,
     nightOnly,
   });
@@ -200,6 +250,26 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     onChange: () => { void refresh(); },
   });
 
+  // Список медсестёр нужен только для привилегированного просмотра процедурного кабинета.
+  const nurseIds = useNurseIds(nurseSeesAll);
+  const visibleItems = React.useMemo(() => {
+    if (!nurseSeesAll || nurseIds.size === 0) return items;
+    return items.filter((a) =>
+      a.services.some((s) => s.employee != null && nurseIds.has(s.employee.id)),
+    );
+  }, [items, nurseSeesAll, nurseIds]);
+
+  // Группировка списка в процедурном кабинете — только по медсёстрам:
+  // привилегированные роли — по всем медсёстрам, сама медсестра — по себе.
+  // Это убирает группы врачей из совместных приёмов (как в оригинале).
+  const ownEmployeeId = Number(employeeId);
+  const groupEmployeeIds = React.useMemo<Set<number> | null>(() => {
+    if (!isNurseCabinet) return null;
+    if (nurseSeesAll) return nurseIds.size > 0 ? nurseIds : null;
+    if (nurseSeesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
+    return null;
+  }, [isNurseCabinet, nurseSeesAll, nurseSeesOwnOnly, nurseIds, ownEmployeeId]);
+
   // Keep selectedAppt in sync with fresh list data
   React.useEffect(() => {
     if (!selectedAppt) return;
@@ -211,7 +281,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   React.useEffect(() => {
     setSelectedAppt(null);
     setConclusionOpen(false);
-  }, [date.format("YYYY-MM-DD")]);
+  }, [dateStr]);
 
   const handlePaymentSaved = React.useCallback(
     (summary: PaymentSummary) => {
@@ -341,9 +411,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         {/* ── Top controls: like the original Регистратура ──
             «Добавить прием» (large, left) + horizontal date pills. */}
         <PageHeader
-          title={isDoctorCabinet ? "Кабинет врача" : "Регистратура"}
+          title={pageTitle}
           showTitle={false}
-          addButtonText="Добавить прием"
+          addButtonText={addButtonText}
           onAdd={canCreate ? () => setCreateOpen(true) : undefined}
           dateNavigation={
             <DateNavigation date={dateStr} setDate={handleSetDate} dayCounts={dayCounts} />
@@ -405,7 +475,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             }}
           >
             <AppointmentListPanel
-              items={items}
+              items={visibleItems}
               loading={loading}
               error={null}
               date={date}
@@ -416,9 +486,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onSelect={handleSelect}
               onEdit={handleEdit}
               onPay={handlePay}
-              onAddSlot={canCreate ? (_dateIso) => {
+              onAddSlot={canCreate ? () => {
                 setCreateOpen(true);
               } : undefined}
+              hideDoctorStrip={isNurseCabinet}
+              groupEmployeeIds={groupEmployeeIds}
             />
           </Box>
 

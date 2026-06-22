@@ -384,7 +384,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
                   <Typography variant="caption" color="text.secondary">
                     {p.amount} с
                     {refundedAmt > 0 && (
-                      <> · возвращено: <span style={{ color: "var(--mui-palette-error-main, #d32f2f)", fontWeight: 600 }}>{p.refundedAmount} с</span></>
+                      <> · возвращено: <Box component="span" sx={{ color: "error.main", fontWeight: 600 }}>{p.refundedAmount} с</Box></>
                     )}
                   </Typography>
                   {canRefundThis && (
