@@ -253,7 +253,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Список медсестёр нужен только для привилегированного просмотра процедурного кабинета.
   const nurseIds = useNurseIds(nurseSeesAll);
   const visibleItems = React.useMemo(() => {
-    if (!nurseSeesAll || nurseIds.size === 0) return items;
+    // Фильтрация только в привилегированном процедурном кабинете. Если медсестёр
+    // в системе нет — кабинет пуст (а не показывает все приёмы врачей).
+    if (!nurseSeesAll) return items;
+    if (nurseIds.size === 0) return [];
     return items.filter((a) =>
       a.services.some((s) => s.employee != null && nurseIds.has(s.employee.id)),
     );
@@ -265,7 +268,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const ownEmployeeId = Number(employeeId);
   const groupEmployeeIds = React.useMemo<Set<number> | null>(() => {
     if (!isNurseCabinet) return null;
-    if (nurseSeesAll) return nurseIds.size > 0 ? nurseIds : null;
+    // Привилегированный процедурный кабинет группирует строго по медсёстрам.
+    // Нет медсестёр → пустой набор (кабинет пуст), а не null (= все врачи).
+    if (nurseSeesAll) return nurseIds;
     if (nurseSeesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
     return null;
   }, [isNurseCabinet, nurseSeesAll, nurseSeesOwnOnly, nurseIds, ownEmployeeId]);
