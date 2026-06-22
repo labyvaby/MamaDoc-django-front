@@ -9,7 +9,6 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
-  MenuItem,
   Stack,
   Switch,
   TextField,
@@ -41,17 +40,18 @@ export type EmployeeServicesDrawerProps = {
   onClose: () => void;
   employeeId: number;
   employeeName: string;
+  /** Вызывается после успешного назначения/активации/деактивации услуги,
+   *  чтобы карточка сотрудника перечитала список услуг без F5. */
+  onChanged?: (employeeId: number) => void;
 };
 
 type FormState = {
   serviceId: number | null;
-  branchId: number | null;
   isActive: boolean;
 };
 
 const EMPTY_FORM: FormState = {
   serviceId: null,
-  branchId: null,
   isActive: true,
 };
 
@@ -73,13 +73,13 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   onClose,
   employeeId,
   employeeName,
+  onChanged,
 }) => {
   const { open: notify } = useNotification();
   const canView = useCan("staff.view");
   const canEdit = useCan("staff.update");
   const { activeOrganization, activeMembership, activeBranch } = usePermissions();
 
-  const availableBranches = activeMembership?.branches ?? [];
   const activeBranchId = activeBranch?.id ?? null;
 
   // Unique tenant context key — if it changes while drawer is open, abort and close.
@@ -124,7 +124,9 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     setAssignments([]);
 
     Promise.all([
-      getEmployeeServices(employeeId, controller.signal),
+      // include inactive so a previously deactivated assignment is visible
+      // (and can be reactivated) instead of silently re-appearing in the picker.
+      getEmployeeServices(employeeId, controller.signal, { includeInactive: true }),
       getServices(activeBranchId, controller.signal),
     ])
       .then(([a, s]) => {
@@ -146,22 +148,6 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
 
     return () => controller.abort();
   }, [open, canView, employeeId, activeBranchId, contextKey]);
-
-  // ── reload services when branch changes in the add form ─────────────────────
-  React.useEffect(() => {
-    if (!showForm) return;
-    let cancelled = false;
-    const controller = new AbortController();
-    getServices(form.branchId, controller.signal)
-      .then((s) => {
-        if (!cancelled) setServices(s.filter((sv) => sv.isActive));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [form.branchId, showForm]);
 
   // ── reset on close ────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -188,18 +174,27 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     setSaving(true);
     try {
       const created = await assignEmployeeService(employeeId, {
+        // Услуга всегда назначается в активном филиале — backend в
+        // branch-specific режиме требует совпадения с ним, а в org-wide
+        // режиме (филиал не выбран) принимает null.
         serviceId: form.serviceId,
-        branchId: form.branchId ?? undefined,
+        branchId: activeBranchId ?? undefined,
         isActive: form.isActive,
         priceOverride: null,
         durationOverrideMinutes: null,
         notes: "",
       });
       if (capturedContextKey !== currentContextKeyRef.current) return;
-      setAssignments((prev) => [...prev, created]);
+      // Upsert: backend may return an existing (reactivated) assignment, so
+      // replace it in place rather than appending a duplicate row.
+      setAssignments((prev) => {
+        const exists = prev.some((a) => a.id === created.id);
+        return exists ? prev.map((a) => (a.id === created.id ? created : a)) : [...prev, created];
+      });
       notify?.({ type: "success", message: "Услуга назначена" });
       setShowForm(false);
       setForm(EMPTY_FORM);
+      onChanged?.(employeeId);
     } catch (err: unknown) {
       if (capturedContextKey !== currentContextKeyRef.current) return;
       setSaveError(err instanceof Error ? err.message : "Ошибка сохранения");
@@ -219,6 +214,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
         type: "success",
         message: isActive ? "Услуга активирована" : "Услуга деактивирована",
       });
+      onChanged?.(employeeId);
     } catch (err: unknown) {
       if (capturedContextKey !== currentContextKeyRef.current) return;
       notify?.({
@@ -357,36 +353,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                 )}
 
                 <Stack spacing={2}>
-                  {/* branch */}
-                  <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                      Филиал
-                    </Typography>
-                    <TextField
-                      select
-                      value={form.branchId ?? ""}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          branchId: e.target.value === "" ? null : Number(e.target.value),
-                          serviceId: null,
-                        }))
-                      }
-                      fullWidth
-                      size="small"
-                      disabled={!canEdit}
-                      SelectProps={{ displayEmpty: true }}
-                    >
-                      <MenuItem value="">Все доступные филиалы</MenuItem>
-                      {availableBranches.map((b) => (
-                        <MenuItem key={b.id} value={b.id}>
-                          {b.name}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  </Stack>
-
-                  {/* service — picked from the branch's existing services */}
+                  {/* service — picked from the active branch's existing services */}
                   <Stack spacing={0.5}>
                     <Typography variant="body2" color="text.secondary" fontWeight={600}>
                       Услуга *

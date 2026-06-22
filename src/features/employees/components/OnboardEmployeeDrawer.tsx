@@ -5,12 +5,15 @@ import {
   Box,
   Chip,
   Divider,
+  InputAdornment,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import { useNotification } from "@refinedev/core";
+import dayjs from "dayjs";
 
 import DrawerBase from "./DrawerBase";
 import {
@@ -29,11 +32,16 @@ import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
+import { CustomDatePicker } from "../../../components/ui";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
   validatePhoneLocal,
   validateEmail,
+  validateBirthDate,
+  validateTelegramId,
+  validateBankAccountNumber,
+  validateInn,
 } from "../employeeValidation";
 
 export type OnboardEmployeeDrawerProps = {
@@ -87,6 +95,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const { activeOrganization, activeBranch, activeMembership } = usePermissions();
   const canViewSpecs = useCan("staff.specializations.view");
   const canManageSpecs = useCan("staff.specializations.manage");
+  const canManagePrivate = useCan("staff.private.manage");
 
   // ── photo ─────────────────────────────────────────────────────────────────────
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -94,11 +103,16 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   // ── employee fields ───────────────────────────────────────────────────────────
   const [fullName, setFullName] = React.useState("");
+  const [nickname, setNickname] = React.useState("");
   const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryCode>("+996");
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
+  const [telegramId, setTelegramId] = React.useState("");
+  const [birthDate, setBirthDate] = React.useState("");
+  const [bankAccountNumber, setBankAccountNumber] = React.useState("");
+  const [inn, setInn] = React.useState("");
 
   // ── account fields ────────────────────────────────────────────────────────────
   // Логин (username) деривируется бэкендом из email/телефона, пароль не
@@ -130,7 +144,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     fullName: validateFullName(fullName),
     phone: validatePhoneLocal(phoneLocal, phoneCountry),
     email: validateEmail(email),
-  }), [fullName, phoneLocal, phoneCountry, email]);
+    birthDate: validateBirthDate(birthDate),
+    telegramId: validateTelegramId(telegramId),
+    bankAccountNumber: canManagePrivate ? validateBankAccountNumber(bankAccountNumber) : "",
+    inn: canManagePrivate ? validateInn(inn) : "",
+  }), [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, bankAccountNumber, inn, canManagePrivate]);
 
   // Логин выводится из email/телефона на бэкенде, поэтому требуем хотя бы одно.
   const hasLogin = Boolean(email.trim() || phoneLocal.trim());
@@ -138,6 +156,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     !errors.fullName &&
     !errors.phone &&
     !errors.email &&
+    !errors.birthDate &&
+    !errors.telegramId &&
+    !errors.bankAccountNumber &&
+    !errors.inn &&
     hasLogin &&
     roleId !== "" &&
     employeeBranches.length > 0 &&
@@ -190,11 +212,16 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setPhotoFile(null);
       setPhotoPreview(null);
       setFullName("");
+      setNickname("");
       setPhoneCountry("+996");
       setPhoneLocal("");
       setEmail("");
       setStatus("active");
       setClinicalRole("other");
+      setTelegramId("");
+      setBirthDate("");
+      setBankAccountNumber("");
+      setInn("");
       setRoleId("");
       setEmployeeBranches([]);
       setUserAccessBranches([]);
@@ -248,6 +275,15 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           clinicalRole === "doctor" && selectedSpecializations.length > 0
             ? selectedSpecializations.map((s) => s.id)
             : undefined,
+        nickname: nickname.trim() || undefined,
+        birthDate: birthDate || undefined,
+        telegramId: telegramId.trim() || undefined,
+        // Приватные поля отправляем только при наличии права; бэкенд тоже
+        // отбрасывает их без staff.private.manage (fail-closed).
+        ...(canManagePrivate && {
+          bankAccountNumber: bankAccountNumber.trim() || undefined,
+          inn: inn.trim() || undefined,
+        }),
       };
       const res: OnboardEmployeeResponse = await onboardEmployee(payload);
       let employeeRow: EmployesRow = mapDjangoFullToRow(res.employee);
@@ -320,6 +356,21 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           />
         </Stack>
 
+        {/* ── Псевдоним ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Псевдоним
+          </Typography>
+          <TextField
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            fullWidth
+            placeholder="Как отображается в расписании"
+            disabled={busy}
+            inputProps={{ maxLength: 100 }}
+          />
+        </Stack>
+
         {/* ── Телефон ── */}
         <Stack spacing={0.5}>
           <Typography variant="body2" color="text.secondary" fontWeight={600}>
@@ -366,6 +417,104 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             }}
           />
         </Stack>
+
+        {/* ── Дата рождения ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Дата рождения
+          </Typography>
+          <CustomDatePicker
+            value={birthDate ? dayjs(birthDate) : null}
+            onChange={(val) => {
+              setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+              touch("birthDate");
+            }}
+            slotProps={{
+              textField: {
+                fullWidth: true,
+                InputLabelProps: { shrink: true },
+                placeholder: "дд.мм.гггг",
+                disabled: busy,
+                onBlur: () => touch("birthDate"),
+                error: Boolean(showError("birthDate")),
+                helperText: showError("birthDate"),
+              },
+            }}
+          />
+        </Stack>
+
+        {/* ── Telegram ID ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Telegram ID
+          </Typography>
+          <TextField
+            value={telegramId}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
+              setTelegramId(digits);
+            }}
+            onBlur={() => touch("telegramId")}
+            fullWidth
+            placeholder="Числовой ID"
+            disabled={busy}
+            inputProps={{ inputMode: "numeric" }}
+            error={Boolean(showError("telegramId"))}
+            helperText={showError("telegramId")}
+          />
+        </Stack>
+
+        {/* ── Приватные поля (под staff.private.manage) ── */}
+        {canManagePrivate && (
+          <>
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Номер расчётного счёта
+              </Typography>
+              <TextField
+                value={bankAccountNumber}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, "").slice(0, 16);
+                  setBankAccountNumber(v);
+                }}
+                onBlur={() => touch("bankAccountNumber")}
+                fullWidth
+                placeholder="0000000000000000"
+                disabled={busy}
+                inputProps={{ inputMode: "numeric" }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <CreditCardOutlined fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+                error={Boolean(showError("bankAccountNumber"))}
+                helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
+              />
+            </Stack>
+
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                ИНН
+              </Typography>
+              <TextField
+                value={inn}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, "").slice(0, 14);
+                  setInn(v);
+                }}
+                onBlur={() => touch("inn")}
+                fullWidth
+                placeholder="00000000000000"
+                disabled={busy}
+                inputProps={{ inputMode: "numeric" }}
+                error={Boolean(showError("inn"))}
+                helperText={showError("inn") || `${inn.length}/14`}
+              />
+            </Stack>
+          </>
+        )}
 
         {/* ── Статус ── */}
         <Stack spacing={0.5}>

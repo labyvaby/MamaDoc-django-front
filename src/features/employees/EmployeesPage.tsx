@@ -291,6 +291,15 @@ const EmployeesPage: React.FC = () => {
           onClose={closeServicesDrawer}
           employeeId={servicesDrawer.employeeId}
           employeeName={servicesDrawer.employeeName}
+          onChanged={(id) => {
+            // Карточка перечитывает услуги при изменении updated_at — бампаем его,
+            // чтобы изменения из «Управления услугами» отразились сразу.
+            if (state.detailsOpen?.id === String(id)) {
+              state.setDetailsOpen((prev) =>
+                prev ? { ...prev, updated_at: new Date().toISOString() } : prev,
+              );
+            }
+          }}
         />
       )}
 

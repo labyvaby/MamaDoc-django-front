@@ -121,6 +121,11 @@ export interface OnboardEmployeePayload {
   status?: "active" | "inactive" | "fired";
   specializationIds?: number[] | null;
   notes?: string;
+  nickname?: string | null;
+  birthDate?: string | null;
+  telegramId?: string | null;
+  bankAccountNumber?: string | null;
+  inn?: string | null;
 }
 
 // ── Update payload ────────────────────────────────────────────────────────────
@@ -358,9 +363,11 @@ export function deleteEmployeePhoto(employeeId: number): Promise<void> {
 export function getEmployeeServices(
   employeeId: number,
   signal?: AbortSignal,
+  options?: { includeInactive?: boolean },
 ): Promise<EmployeeServiceAssignment[]> {
+  const query = options?.includeInactive ? "?includeInactive=true" : "";
   return apiRequest<EmployeeServiceAssignment[]>(
-    `/staff/employees/${employeeId}/services/`,
+    `/staff/employees/${employeeId}/services/${query}`,
     { signal },
   ).then((items) => (Array.isArray(items) ? items : []));
 }
