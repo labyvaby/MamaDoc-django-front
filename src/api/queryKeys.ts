@@ -50,6 +50,13 @@ export const djangoQueryKeys = {
       ["django", "cashbox", "entries", entryType, filters] as const,
   },
 
+  reports: {
+    monthly: (filters: Record<string, unknown>) =>
+      ["django", "reports", "monthly", filters] as const,
+    activeMonths: (organizationId: number | null | undefined) =>
+      ["django", "reports", "active-months", organizationId ?? null] as const,
+  },
+
   expenses: {
     all: ["django", "expenses"] as const,
     list: (filters: Record<string, unknown>) =>
