@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  IconButton,
   Paper,
   Stack,
   Table,
@@ -18,12 +19,16 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
+
+import BonusDialog from "./BonusDialog";
 
 import { PageHeader, MonthNavigation } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -73,12 +78,24 @@ const COLUMNS: {
     render: (r) => `${r.dayHours} / ${r.nightHours}`,
   },
   { key: "hourlyPay", label: "Почасовая", money: true },
+  {
+    key: "bonus",
+    label: "Надбавка",
+    render: (r) => {
+      const v = Number(r.bonus ?? 0);
+      return v > 0 ? formatKGS(r.bonus as string) : "—";
+    },
+  },
   { key: "earnings", label: "Начислено", money: true },
   { key: "advances", label: "Авансы", money: true },
   { key: "netSalary", label: "К выплате", money: true },
 ];
 
-const RoleTable: React.FC<{ title: string; rows: PayrollRow[] }> = ({ title, rows }) => {
+const RoleTable: React.FC<{
+  title: string;
+  rows: PayrollRow[];
+  onManageBonus: (row: PayrollRow) => void;
+}> = ({ title, rows, onManageBonus }) => {
   const groupNet = rows.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
   return (
     <Paper variant="outlined" sx={{ mb: 2, overflow: "hidden" }}>
@@ -101,6 +118,7 @@ const RoleTable: React.FC<{ title: string; rows: PayrollRow[] }> = ({ title, row
                 {c.label}
               </TableCell>
             ))}
+            <TableCell align="right" padding="checkbox" />
           </TableRow>
         </TableHead>
         <TableBody>
@@ -119,6 +137,13 @@ const RoleTable: React.FC<{ title: string; rows: PayrollRow[] }> = ({ title, row
                       : String(row[c.key])}
                 </TableCell>
               ))}
+              <TableCell align="right" padding="checkbox">
+                <Tooltip title="Надбавки">
+                  <IconButton size="small" onClick={() => onManageBonus(row)}>
+                    <PaidOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -171,6 +196,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
+  const [bonusRow, setBonusRow] = React.useState<PayrollRow | null>(null);
 
   const handleLock = async () => {
     setBusy(true);
@@ -293,7 +319,12 @@ const DjangoSalaryReportsPage: React.FC = () => {
 
           {ROLE_ORDER.map((role) =>
             groups[role]?.length ? (
-              <RoleTable key={role} title={ROLE_LABELS[role]} rows={groups[role]} />
+              <RoleTable
+                key={role}
+                title={ROLE_LABELS[role]}
+                rows={groups[role]}
+                onManageBonus={setBonusRow}
+              />
             ) : null,
           )}
         </Box>
@@ -328,6 +359,19 @@ const DjangoSalaryReportsPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {bonusRow && (
+        <BonusDialog
+          open
+          onClose={() => setBonusRow(null)}
+          employeeId={bonusRow.employeeId}
+          employeeName={bonusRow.fullName}
+          year={year}
+          month={month}
+          organizationId={report?.organizationId}
+          readOnly={!canManage || report?.status === "locked"}
+        />
+      )}
     </Box>
   );
 };
