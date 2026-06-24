@@ -57,6 +57,13 @@ export const djangoQueryKeys = {
       ["django", "reports", "active-months", organizationId ?? null] as const,
   },
 
+  notifications: {
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "notifications", "settings", organizationId ?? null] as const,
+    history: (filters: Record<string, unknown>) =>
+      ["django", "notifications", "history", filters] as const,
+  },
+
   expenses: {
     all: ["django", "expenses"] as const,
     list: (filters: Record<string, unknown>) =>

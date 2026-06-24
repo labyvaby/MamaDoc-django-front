@@ -89,6 +89,7 @@ const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const DiagnosesPage = lazy(() => import("./pages/admin/DiagnosesPage"));
 const NotificationSettingsPage = lazy(() => import("./pages/settings/NotificationSettingsPage").then(module => ({ default: module.NotificationSettingsPage })));
+const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
@@ -821,13 +822,21 @@ function App() {
                         <Route
                           path="settings/notifications"
                           element={
-                            <LegacyRouteGuard title="Уведомления в разработке">
-                              <ProtectedRoute allowedRoles={['superadmin']}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="notifications.manage">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <NotificationSettingsPage />
+                                  <DjangoNotificationSettingsPage />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard title="Уведомления в разработке">
+                                <ProtectedRoute allowedRoles={['superadmin']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <NotificationSettingsPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route
