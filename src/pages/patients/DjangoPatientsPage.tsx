@@ -21,7 +21,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
-  getPatients,
+  searchPatients,
 } from "../../api/patients";
 import type {
   DjangoPatient,
@@ -132,30 +132,36 @@ const DjangoPatientsPage: React.FC = () => {
   const [tabletTab, setTabletTab] = React.useState(0);
   const [desktopRightTab, setDesktopRightTab] = React.useState(0);
 
-  // ── Load list ──────────────────────────────────────────────────────────────
-  const load = React.useCallback(async (signal?: AbortSignal) => {
-    setLoadingData(true);
-    setError(null);
-    try {
-      const data = await getPatients(signal);
-      setPatients(data);
-    } catch (e) {
-      if ((e as { name?: string })?.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
-    } finally {
-      setLoadingData(false);
-    }
-  }, []);
+  // ── Load list (server-side search, capped) ───────────────────────────────────
+  // The clinic can have tens of thousands of patients, so we NEVER pull the
+  // whole table to the client. We query the server with the search term and a
+  // hard cap; an empty term shows the first page only.
+  const load = React.useCallback(
+    async (query: string, signal?: AbortSignal) => {
+      setLoadingData(true);
+      setError(null);
+      try {
+        const data = await searchPatients(query.trim(), 50, signal);
+        setPatients(data);
+      } catch (e) {
+        if ((e as { name?: string })?.name === "AbortError") return;
+        setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
+      } finally {
+        setLoadingData(false);
+      }
+    },
+    [],
+  );
 
   const activeOrgId = activeMembership?.organization?.id;
   const activeBranchId = activeBranch?.id;
   React.useEffect(() => {
     if (permLoading || !canView) return;
     const ctrl = new AbortController();
-    load(ctrl.signal);
+    load(debouncedSearch, ctrl.signal);
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permLoading, canView, activeOrgId, activeBranchId]);
+  }, [permLoading, canView, activeOrgId, activeBranchId, debouncedSearch]);
 
   // Keep selected patient in sync with fresh list data (without losing selection)
   React.useEffect(() => {
@@ -200,17 +206,10 @@ const DjangoPatientsPage: React.FC = () => {
     return () => ctrl.abort();
   }, [selected?.id, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Filtered list ────────────────────────────────────────────────────────────
-  const filtered = React.useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
-    if (!q) return patients;
-    return patients.filter(
-      (p) =>
-        p.fullName.toLowerCase().includes(q) ||
-        (p.phone && p.phone.toLowerCase().includes(q)) ||
-        (p.secondaryPhone && p.secondaryPhone.toLowerCase().includes(q)),
-    );
-  }, [patients, debouncedSearch]);
+  // ── List ──────────────────────────────────────────────────────────────────
+  // Search + capping now happen server-side in `load`, so the list is used
+  // as-is (no client-side filtering over the whole table).
+  const filtered = patients;
 
   // ── Derived "last appointment" for the card ──────────────────────────────────
   const last = history[0];
@@ -243,7 +242,7 @@ const DjangoPatientsPage: React.FC = () => {
   const handleMerged = () => {
     setMergeOpen(false);
     setSelected(null);
-    void load();
+    void load(debouncedSearch);
   };
 
   const handleUpdated = (saved: DjangoPatient) => {
