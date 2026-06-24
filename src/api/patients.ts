@@ -60,10 +60,12 @@ export function searchPatients(
   search: string,
   limit = 10,
   signal?: AbortSignal,
+  offset = 0,
 ): Promise<DjangoPatient[]> {
   const q = new URLSearchParams();
   if (search) q.set("search", search);
   q.set("limit", String(limit));
+  if (offset) q.set("offset", String(offset));
   return apiRequest<DjangoPatient[]>(`/patients/?${q.toString()}`, { signal });
 }
 

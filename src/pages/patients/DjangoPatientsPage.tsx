@@ -104,6 +104,9 @@ const DjangoPatientsPage: React.FC = () => {
   const [patients, setPatients] = React.useState<DjangoPatient[]>([]);
   const [loadingData, setLoadingData] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const loadCtrlRef = React.useRef<AbortController | null>(null);
+  const inFlightRef = React.useRef(false);
 
   const [search, setSearch] = React.useState("");
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
@@ -132,36 +135,65 @@ const DjangoPatientsPage: React.FC = () => {
   const [tabletTab, setTabletTab] = React.useState(0);
   const [desktopRightTab, setDesktopRightTab] = React.useState(0);
 
-  // ── Load list (server-side search, capped) ───────────────────────────────────
+  // ── Load list (server-side search + infinite scroll) ─────────────────────────
   // The clinic can have tens of thousands of patients, so we NEVER pull the
-  // whole table to the client. We query the server with the search term and a
-  // hard cap; an empty term shows the first page only.
-  const load = React.useCallback(
-    async (query: string, signal?: AbortSignal) => {
+  // whole table to the client. The server filters by the search term and pages
+  // by offset; the list grows as the user scrolls (PER_PAGE at a time), exactly
+  // like the legacy patient-search page.
+  const PER_PAGE = 30;
+  const fetchChunk = React.useCallback(
+    async (offset: number, query: string) => {
+      loadCtrlRef.current?.abort();
+      const ctrl = new AbortController();
+      loadCtrlRef.current = ctrl;
+      inFlightRef.current = true;
       setLoadingData(true);
       setError(null);
       try {
-        const data = await searchPatients(query.trim(), 50, signal);
-        setPatients(data);
+        const data = await searchPatients(
+          query.trim(),
+          PER_PAGE,
+          ctrl.signal,
+          offset,
+        );
+        if (ctrl.signal.aborted) return;
+        setPatients((prev) => (offset === 0 ? data : [...prev, ...data]));
+        setHasMore(data.length === PER_PAGE);
       } catch (e) {
         if ((e as { name?: string })?.name === "AbortError") return;
         setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
       } finally {
-        setLoadingData(false);
+        if (!ctrl.signal.aborted) setLoadingData(false);
+        inFlightRef.current = false;
       }
     },
     [],
   );
 
+  // Reload from the top whenever the (debounced) search term changes.
   const activeOrgId = activeMembership?.organization?.id;
   const activeBranchId = activeBranch?.id;
   React.useEffect(() => {
     if (permLoading || !canView) return;
-    const ctrl = new AbortController();
-    load(debouncedSearch, ctrl.signal);
-    return () => ctrl.abort();
+    setPatients([]);
+    setHasMore(true);
+    void fetchChunk(0, debouncedSearch);
+    return () => loadCtrlRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permLoading, canView, activeOrgId, activeBranchId, debouncedSearch]);
+
+  // Infinite scroll: append the next page.
+  const loadMore = React.useCallback(() => {
+    if (loadingData || !hasMore || inFlightRef.current) return;
+    void fetchChunk(patients.length, debouncedSearch);
+  }, [loadingData, hasMore, patients.length, debouncedSearch, fetchChunk]);
+
+  // Reload from the top (after create/merge/etc).
+  const reload = React.useCallback(() => {
+    setPatients([]);
+    setHasMore(true);
+    void fetchChunk(0, debouncedSearch);
+  }, [debouncedSearch, fetchChunk]);
 
   // Keep selected patient in sync with fresh list data (without losing selection)
   React.useEffect(() => {
@@ -242,7 +274,7 @@ const DjangoPatientsPage: React.FC = () => {
   const handleMerged = () => {
     setMergeOpen(false);
     setSelected(null);
-    void load(debouncedSearch);
+    reload();
   };
 
   const handleUpdated = (saved: DjangoPatient) => {
@@ -297,6 +329,8 @@ const DjangoPatientsPage: React.FC = () => {
       patients={filtered}
       selectedId={selected?.id ?? null}
       onSelect={handleSelect}
+      hasMore={hasMore}
+      onLoadMore={loadMore}
     />
   );
 
