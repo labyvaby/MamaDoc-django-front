@@ -1,6 +1,6 @@
 import React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { getPatients, type DjangoPatient } from "../api/patients";
+import { type DjangoPatient } from "../api/patients";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../api/staff";
 import { getServices, type Service as CatalogService } from "../api/catalog";
 import {
@@ -56,20 +56,23 @@ export function useDjangoAppointmentData(
   const dataQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.formData(ctx),
     queryFn: async ({ signal }) => {
-      const [rawPatients, rawEmployees, rawServices, rawAssignments] = await Promise.all([
-        getPatients(signal),
+      // NOTE: patients are intentionally NOT loaded here — the table can have
+      // tens of thousands of rows. The Add/Edit appointment drawers query
+      // patients server-side via searchPatients() as the user types.
+      const [rawEmployees, rawServices, rawAssignments] = await Promise.all([
         getDjangoEmployees({ branchId: branchId ?? undefined }, signal),
         getServices(branchId ?? null, signal),
         getServiceAssignments(branchId ?? undefined, signal),
       ]);
-      return { rawPatients, rawEmployees, rawServices, rawAssignments };
+      return { rawEmployees, rawServices, rawAssignments };
     },
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
 
-  const patients = dataQuery.data?.rawPatients ?? [];
+  // Kept for backward compatibility with the result type; always empty now.
+  const patients: DjangoPatient[] = [];
 
   const { employees, services, empByService, svcByEmployee } = React.useMemo(() => {
     const rawEmployees = dataQuery.data?.rawEmployees?.results ?? [];

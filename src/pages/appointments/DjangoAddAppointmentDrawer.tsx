@@ -46,6 +46,7 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import type { DjangoPatient } from "../../api/patients";
+import { searchPatients } from "../../api/patients";
 import type {
   DjangoEmployeeWithServices,
   DjangoCatalogServiceWithEmployees,
@@ -201,18 +202,42 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     return () => ctrl.abort();
   }, [open, activeBranch?.id]);
 
-  // ── patient search ────────────────────────────────────────────────────────
+  // ── patient search (server-side; never loads the whole patient table) ───────
+  // The clinic can have tens of thousands of patients, so the autocomplete
+  // queries the server with the typed term (debounced) instead of filtering a
+  // fully-loaded list in memory.
+  const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
+  const [patientsLoading, setPatientsLoading] = React.useState(false);
+  React.useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    const id = setTimeout(() => {
+      setPatientsLoading(true);
+      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+        .then((rows) => {
+          if (!ctrl.signal.aborted) setPatientOptions(rows);
+        })
+        .catch(() => {
+          /* abort/network — keep previous options */
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setPatientsLoading(false);
+        });
+    }, 300);
+    return () => {
+      clearTimeout(id);
+      ctrl.abort();
+    };
+  }, [open, patientSearch]);
+
+  // Always include the already-selected patient so it stays visible/selectable.
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {
-    if (!patientSearch.trim()) return data.patients.slice(0, 15);
-    const q = patientSearch.toLowerCase();
-    return data.patients
-      .filter(
-        (p) =>
-          p.fullName.toLowerCase().includes(q) ||
-          p.phone.includes(patientSearch.replace(/\D/g, "")),
-      )
-      .slice(0, 30);
-  }, [data.patients, patientSearch]);
+    if (!selectedPatient) return patientOptions;
+    if (patientOptions.some((p) => p.id === selectedPatient.id)) {
+      return patientOptions;
+    }
+    return [selectedPatient, ...patientOptions];
+  }, [patientOptions, selectedPatient]);
 
   // ── selected patient balance (debt warning) ────────────────────────────────
   const balanceQuery = useQuery({

@@ -40,6 +40,7 @@ import {
 } from "../../api/appointments";
 import { normalizeDjangoStatus } from "../../config/appointmentStatuses";
 import type { DjangoPatient } from "../../api/patients";
+import { searchPatients } from "../../api/patients";
 import type {
   DjangoEmployeeWithServices,
   DjangoCatalogServiceWithEmployees,
@@ -191,48 +192,59 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     }
   }, [open, appointment]);
 
-  // ── populate patient once data loads ────────────────────────────────────
+  // ── populate patient from the appointment itself (no full list needed) ──────
   React.useEffect(() => {
-    if (!open || !appointment?.patient || data.loading) return;
-    const found = data.patients.find((p) => p.id === appointment.patient!.id);
-    if (found) {
-      setSelectedPatient(found);
-    } else {
-      setSelectedPatient({
-        id: appointment.patient.id,
-        fullName: appointment.patient.fullName,
-        phone: appointment.patient.phone,
-        organizationId: 0,
-        branch: null,
-        secondaryPhone: null,
-        birthDate: null,
-        gender: "unknown",
-        address: null,
-        notes: null,
-        source: null,
-        photoUrl: null,
-        inn: "",
-        isBlacklisted: false,
-        blacklistReason: "",
-        isActive: true,
-        createdAt: "",
-        updatedAt: "",
-      });
-    }
-  }, [open, appointment, data.patients, data.loading]);
+    if (!open || !appointment?.patient) return;
+    setSelectedPatient({
+      id: appointment.patient.id,
+      fullName: appointment.patient.fullName,
+      phone: appointment.patient.phone,
+      organizationId: 0,
+      branch: null,
+      secondaryPhone: null,
+      birthDate: null,
+      gender: "unknown",
+      address: null,
+      notes: null,
+      source: null,
+      photoUrl: null,
+      inn: "",
+      isBlacklisted: false,
+      blacklistReason: "",
+      isActive: true,
+      createdAt: "",
+      updatedAt: "",
+    });
+  }, [open, appointment]);
 
-  // ── patient search ───────────────────────────────────────────────────────
+  // ── patient search (server-side; never loads the whole patient table) ───────
+  const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
+  React.useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    const id = setTimeout(() => {
+      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+        .then((rows) => {
+          if (!ctrl.signal.aborted) setPatientOptions(rows);
+        })
+        .catch(() => {
+          /* abort/network — keep previous options */
+        });
+    }, 300);
+    return () => {
+      clearTimeout(id);
+      ctrl.abort();
+    };
+  }, [open, patientSearch]);
+
+  // Keep the appointment's patient visible even if not in the search page.
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {
-    if (!patientSearch.trim()) return data.patients.slice(0, 20);
-    const q = patientSearch.toLowerCase();
-    return data.patients
-      .filter(
-        (p) =>
-          p.fullName.toLowerCase().includes(q) ||
-          p.phone.includes(patientSearch.replace(/\D/g, "")),
-      )
-      .slice(0, 30);
-  }, [data.patients, patientSearch]);
+    if (!selectedPatient) return patientOptions;
+    if (patientOptions.some((p) => p.id === selectedPatient.id)) {
+      return patientOptions;
+    }
+    return [selectedPatient, ...patientOptions];
+  }, [patientOptions, selectedPatient]);
 
   // ── validation ───────────────────────────────────────────────────────────
   const validRows = serviceRows.filter(
