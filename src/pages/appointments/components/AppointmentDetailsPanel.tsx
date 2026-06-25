@@ -45,6 +45,7 @@ import { getStatusConfig, getStatusChipSx, normalizeDjangoStatus } from "../../.
 import { PaymentInfoBlock } from "../../../components/ui";
 import { usePermissions } from "../../../hooks/usePermissions";
 import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
+import AppointmentReviewBlock from "../../reviews/AppointmentReviewBlock";
 
 interface AppointmentDetailsPanelProps {
   appointment: DjangoAppointment;
@@ -459,6 +460,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               )}
               {payQuery.isLoading && <CircularProgress size={14} />}
             </Stack>
+
+            {/* ── Review status + request (self-gated by reviews.* perms) ── */}
+            <AppointmentReviewBlock appointmentId={appt.id} />
 
             {/* ── Payment block — non-doctor/nurse ── */}
             {isNonDoctor && (canViewFinance || canManageFinance) && (

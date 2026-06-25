@@ -45,6 +45,8 @@ import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
+import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { logout as djangoLogout } from "../../api";
@@ -484,6 +486,11 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
         )}
 
+        {/* Брони (operator.kg, Django-mode only) */}
+        {show("org") && IS_DJANGO_BACKEND && (isSuper || can(['bookings.view', 'bookings.manage'])) && (
+          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} />
+        )}
+
         {/* Все процедуры */}
         {show("org") && (
           <SidebarMenuItem to="/all-procedures" icon={<MedicalServicesOutlined />} label="Все процедуры" collapsed={siderCollapsed} />
@@ -533,6 +540,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Отчеты */}
         {show("management") && (isSuper || isAdmin() || hasRole(['accountant'])) && (
           <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
+        )}
+
+        {/* Отзывы (Django-mode only) */}
+        {show("management") && IS_DJANGO_BACKEND && (isSuper || can(['reviews.view', 'reviews.manage'])) && (
+          <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 
         {/* Расходы */}
