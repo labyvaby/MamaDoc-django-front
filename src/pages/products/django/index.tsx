@@ -15,6 +15,9 @@ import {
   Collapse,
   Paper,
   Tooltip,
+  Badge,
+  TextField,
+  MenuItem,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
@@ -23,6 +26,8 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
+import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
 import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
 import { subtleBg } from "../../../theme";
@@ -41,17 +46,39 @@ import {
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
 
+/**
+ * Состояние остатка для бейджа в строке: нет / мало / есть.
+ * Красный — только при нулевом/отрицательном остатке; «мало» — при остатке
+ * ≤ минимума (lowStockThreshold, поле бэка — пока может отсутствовать).
+ */
+type StockState = {
+  label: string;
+  color: "error" | "warning" | "success";
+  icon: React.ReactElement | null;
+  out: boolean;
+};
+const getStockState = (p: DjangoProduct): StockState => {
+  const stock = p.stock || 0;
+  const unit = p.unit || "шт";
+  const min = (p as unknown as { lowStockThreshold?: number }).lowStockThreshold ?? 0;
+  if (stock <= 0) {
+    return { label: "Нет в наличии", color: "error", icon: <ErrorOutlineOutlined sx={{ fontSize: 14 }} />, out: true };
+  }
+  if (min > 0 && stock <= min) {
+    return { label: `Мало: ${stock} ${unit}`, color: "warning", icon: <WarningAmberOutlined sx={{ fontSize: 14 }} />, out: false };
+  }
+  return { label: `Остаток: ${stock} ${unit}`, color: "success", icon: null, out: false };
+};
+
 const DjangoProductsPage: React.FC = () => {
   usePageTitle("Товары");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { loading: permLoading, activeBranch } = usePermissions();
+  const { loading: permLoading } = usePermissions();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
   const canManage = useCan("warehouse.manage");
-  // Остаток привязан к складу филиала — в org-wide режиме поле недоступно.
-  const stockEditable = !!activeBranch;
 
   // Drawers
   const [formDrawerOpen, setFormDrawerOpen] = React.useState(false);
@@ -64,6 +91,8 @@ const DjangoProductsPage: React.FC = () => {
     saleStatus: "all",
     stockStatus: "all",
   });
+  // Сортировка списка
+  const [sortBy, setSortBy] = React.useState<"name" | "stock" | "price">("name");
 
   // Data state
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
@@ -164,7 +193,7 @@ const DjangoProductsPage: React.FC = () => {
   }, [products]);
 
   const filteredProducts = React.useMemo(() => {
-    return products.filter((p) => {
+    const list = products.filter((p) => {
       // 1. Text Search
       const q = searchQuery.toLowerCase();
       const matchSearch =
@@ -193,7 +222,45 @@ const DjangoProductsPage: React.FC = () => {
 
       return true;
     });
-  }, [products, searchQuery, filters]);
+
+    // Сортировка
+    const sorted = [...list];
+    if (sortBy === "name") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    } else if (sortBy === "stock") {
+      sorted.sort((a, b) => (b.stock || 0) - (a.stock || 0));
+    } else if (sortBy === "price") {
+      sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+    }
+    return sorted;
+  }, [products, searchQuery, filters, sortBy]);
+
+  // Кол-во активных фильтров (для бейджа на кнопке «Фильтры»)
+  const activeFilterCount =
+    (filters.category ? 1 : 0) +
+    (filters.saleStatus !== "all" ? 1 : 0) +
+    (filters.stockStatus !== "all" ? 1 : 0);
+
+  // Чипы применённых фильтров (label + сброс конкретного фильтра)
+  const activeFilterChips: { key: string; label: string; clear: () => void }[] = [
+    ...(filters.category
+      ? [{ key: "cat", label: filters.category, clear: () => setFilters((f) => ({ ...f, category: null })) }]
+      : []),
+    ...(filters.saleStatus !== "all"
+      ? [{
+          key: "sale",
+          label: filters.saleStatus === "active" ? "В продаже" : "Скрыт",
+          clear: () => setFilters((f) => ({ ...f, saleStatus: "all" })),
+        }]
+      : []),
+    ...(filters.stockStatus !== "all"
+      ? [{
+          key: "stock",
+          label: filters.stockStatus === "in_stock" ? "В наличии" : "Нет в наличии",
+          clear: () => setFilters((f) => ({ ...f, stockStatus: "all" })),
+        }]
+      : []),
+  ];
 
   const handleApplyFilters = (newFilters: ProductFilters) => {
     setFilters(newFilters);
@@ -245,23 +312,66 @@ const DjangoProductsPage: React.FC = () => {
                 flexDirection: "column",
               }}
             >
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                justifyContent="space-between"
+                useFlexGap
+                flexWrap="wrap"
+                sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", gap: 1 }}
+              >
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Товары ({isFilterActive ? `${filteredProducts.length} из ${products.length}` : products.length})
+                </Typography>
                 <Stack direction="row" alignItems="center" spacing={1}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                    Товары
-                  </Typography>
-                  <IconButton
+                  <TextField
+                    select
                     size="small"
-                    onClick={() => setFilterDrawerOpen(true)}
-                    sx={{
-                      color: isFilterActive ? "primary.onSurface" : "text.secondary",
-                      bgcolor: isFilterActive ? "primary.lighter" : "transparent",
-                    }}
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                    sx={{ minWidth: 150 }}
                   >
-                    <FilterListIcon fontSize="small" />
-                  </IconButton>
+                    <MenuItem value="name">По названию</MenuItem>
+                    <MenuItem value="stock">По остатку</MenuItem>
+                    <MenuItem value="price">По цене</MenuItem>
+                  </TextField>
+                  <Badge badgeContent={activeFilterCount} color="primary">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<FilterListIcon fontSize="small" />}
+                      onClick={() => setFilterDrawerOpen(true)}
+                      sx={{ textTransform: "none" }}
+                    >
+                      Фильтры
+                    </Button>
+                  </Badge>
                 </Stack>
               </Stack>
+
+              {/* Чипы применённых фильтров */}
+              {activeFilterChips.length > 0 && (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  useFlexGap
+                  flexWrap="wrap"
+                  sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: "divider", gap: 0.75 }}
+                >
+                  {activeFilterChips.map((c) => (
+                    <Chip
+                      key={c.key}
+                      label={c.label}
+                      size="small"
+                      onDelete={c.clear}
+                      sx={{ borderRadius: "7px" }}
+                    />
+                  ))}
+                  <Button size="small" onClick={handleResetFilters} sx={{ textTransform: "none" }}>
+                    Сбросить
+                  </Button>
+                </Stack>
+              )}
 
               <Box sx={{ overflowY: "auto", flex: 1 }}>
                 {loading ? (
@@ -287,7 +397,7 @@ const DjangoProductsPage: React.FC = () => {
                   <Stack spacing={1} sx={{ p: 1.5 }}>
                     {filteredProducts.map((p) => {
                       const isSelected = selectedProduct?.id === p.id;
-                      const inStock = p.stock > 0;
+                      const stockState = getStockState(p);
                       return (
                         <ButtonBase
                           key={p.id}
@@ -317,6 +427,7 @@ const DjangoProductsPage: React.FC = () => {
                             },
                           }}
                         >
+                          {/* Левая часть приглушается, если товара нет в наличии */}
                           <Avatar
                             variant="rounded"
                             src={p.imageUrl || undefined}
@@ -327,11 +438,12 @@ const DjangoProductsPage: React.FC = () => {
                               borderRadius: "14px",
                               bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                               color: "primary.onSurface",
+                              opacity: stockState.out ? 0.55 : 1,
                             }}
                           >
                             {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
                           </Avatar>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Box sx={{ flex: 1, minWidth: 0, opacity: stockState.out ? 0.55 : 1 }}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                               {p.name}
                             </Typography>
@@ -340,25 +452,24 @@ const DjangoProductsPage: React.FC = () => {
                               {p.barcode || "—"}
                             </Typography>
                           </Box>
-                          <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
+                          <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}>
                             {p.price > 0 && (
-                              <Typography variant="body2" fontWeight={700}>
-                                {p.price.toLocaleString()}
+                              <Typography variant="body2" color="text.secondary">
+                                {p.price.toLocaleString()} сом
                               </Typography>
                             )}
                             <Chip
                               size="small"
-                              label={`${p.stock} ${p.unit || "шт"}`}
+                              icon={stockState.icon ?? undefined}
+                              label={stockState.label}
                               sx={{
-                                height: 20,
+                                height: 22,
                                 fontSize: "0.7rem",
                                 fontWeight: 600,
-                                bgcolor: (theme) =>
-                                  alpha(
-                                    inStock ? theme.palette.success.main : theme.palette.error.main,
-                                    0.12,
-                                  ),
-                                color: inStock ? "success.main" : "error.main",
+                                borderRadius: "7px",
+                                bgcolor: (theme) => alpha(theme.palette[stockState.color].main, 0.12),
+                                color: `${stockState.color}.main`,
+                                "& .MuiChip-icon": { color: `${stockState.color}.main`, ml: 0.5 },
                                 "& .MuiChip-label": { px: 0.75 },
                               }}
                             />
@@ -392,7 +503,6 @@ const DjangoProductsPage: React.FC = () => {
         onClose={() => setFormDrawerOpen(false)}
         product={editingProduct}
         onSaved={fetchProducts}
-        stockEditable={stockEditable}
       />
 
       <ProductFilterDrawer
