@@ -52,6 +52,46 @@ export type SaleDayTotal = {
     totalAmount: number;
 };
 
+// ── Фильтры/агрегаты страницы продаж (контракт §9 backend-warehouse-api.md) ──
+
+/** Способ оплаты для фильтра списка. */
+export type SalePaymentFilter = "cash" | "cashless";
+/** Статус оплаты для фильтра: paid = оплачено; debt = open|partial. */
+export type SaleStatusFilter = "paid" | "debt";
+
+/** Общий набор фильтров для списка/статистики/агрегатов продаж. */
+export type SaleListFilters = {
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    search?: string | null;
+    paymentMethod?: SalePaymentFilter | null;
+    status?: SaleStatusFilter | null;
+};
+
+/** KPI-сводка за период (GET /warehouse/sales/stats/). */
+export type SaleStats = {
+    count: number;
+    revenue: number;
+    avgCheck: number;
+    cashTotal: number;
+    cashlessTotal: number;
+};
+
+/** Строка агрегата «По товарам» (GET /warehouse/sales/by-product/). */
+export type SaleProductTotal = {
+    productId: number;
+    productName: string;
+    quantity: number;
+    revenue: number;
+};
+
+/** Строка агрегата «По дням» (GET /warehouse/sales/by-day/). */
+export type SaleDayAggregate = {
+    day: string; // YYYY-MM-DD
+    count: number;
+    totalAmount: number;
+};
+
 export type SaleLineInput = {
     productId: number;
     quantity: number;
@@ -111,20 +151,21 @@ const mapSale = (raw: RawSale): DjangoSale => ({
 
 // ── API functions ────────────────────────────────────────────────────────────
 
+/** Собирает query-параметры из общих фильтров продаж. */
+function appendSaleFilters(q: URLSearchParams, f: SaleListFilters): void {
+    if (f.dateFrom) q.set("dateFrom", f.dateFrom);
+    if (f.dateTo) q.set("dateTo", f.dateTo);
+    if (f.search) q.set("search", f.search);
+    if (f.paymentMethod) q.set("paymentMethod", f.paymentMethod);
+    if (f.status) q.set("status", f.status);
+}
+
 export async function getSales(
-    filters: {
-        dateFrom?: string | null;
-        dateTo?: string | null;
-        search?: string | null;
-        limit?: number;
-        offset?: number;
-    } = {},
+    filters: SaleListFilters & { limit?: number; offset?: number } = {},
     signal?: AbortSignal,
 ): Promise<DjangoSale[]> {
     const q = new URLSearchParams();
-    if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
-    if (filters.dateTo) q.set("dateTo", filters.dateTo);
-    if (filters.search) q.set("search", filters.search);
+    appendSaleFilters(q, filters);
     if (filters.limit !== undefined) q.set("limit", String(filters.limit));
     if (filters.offset !== undefined) q.set("offset", String(filters.offset));
     const qs = q.toString();
@@ -133,6 +174,64 @@ export async function getSales(
         { signal },
     );
     return rows.map(mapSale);
+}
+
+/** KPI-сводка за период с учётом фильтров. */
+export async function getSaleStats(
+    filters: SaleListFilters = {},
+    signal?: AbortSignal,
+): Promise<SaleStats> {
+    const q = new URLSearchParams();
+    appendSaleFilters(q, filters);
+    const qs = q.toString();
+    const raw = await apiRequest<{
+        count: number;
+        revenue: string;
+        avgCheck: string;
+        cashTotal: string;
+        cashlessTotal: string;
+    }>(`/warehouse/sales/stats/${qs ? `?${qs}` : ""}`, { signal });
+    return {
+        count: raw.count ?? 0,
+        revenue: num(raw.revenue),
+        avgCheck: num(raw.avgCheck),
+        cashTotal: num(raw.cashTotal),
+        cashlessTotal: num(raw.cashlessTotal),
+    };
+}
+
+/** Агрегат продаж по товарам за период (сортировка по выручке убыв.). */
+export async function getSalesByProduct(
+    filters: SaleListFilters = {},
+    signal?: AbortSignal,
+): Promise<SaleProductTotal[]> {
+    const q = new URLSearchParams();
+    appendSaleFilters(q, filters);
+    const qs = q.toString();
+    const rows = await apiRequest<
+        { productId: number; productName: string; quantity: string; revenue: string }[]
+    >(`/warehouse/sales/by-product/${qs ? `?${qs}` : ""}`, { signal });
+    return rows.map((r) => ({
+        productId: r.productId,
+        productName: r.productName,
+        quantity: num(r.quantity),
+        revenue: num(r.revenue),
+    }));
+}
+
+/** Агрегат продаж по дням за период (новые сверху). */
+export async function getSalesByDay(
+    filters: SaleListFilters = {},
+    signal?: AbortSignal,
+): Promise<SaleDayAggregate[]> {
+    const q = new URLSearchParams();
+    appendSaleFilters(q, filters);
+    const qs = q.toString();
+    const rows = await apiRequest<{ day: string; count: number; totalAmount: string }[]>(
+        `/warehouse/sales/by-day/${qs ? `?${qs}` : ""}`,
+        { signal },
+    );
+    return rows.map((r) => ({ day: r.day, count: r.count ?? 0, totalAmount: num(r.totalAmount) }));
 }
 
 export async function getSaleDayTotals(

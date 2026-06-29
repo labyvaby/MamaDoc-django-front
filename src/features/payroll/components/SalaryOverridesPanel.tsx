@@ -4,8 +4,8 @@ import {
   TextField, Button, Alert, CircularProgress,
   FormControlLabel, Checkbox,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/AddOutlined';
+import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import dayjs from 'dayjs';
 import { supabase } from '../../../utility/supabaseClient';
 import type { SalaryOverride } from '../types';
@@ -148,7 +148,7 @@ export const SalaryOverridesPanel: React.FC<Props> = ({ employeeId }) => {
             <Box
               key={o.id}
               sx={{
-                p: 1.5, borderRadius: 1.5, border: '1px solid',
+                p: 1.5, borderRadius: "10px", border: '1px solid',
                 borderColor: 'divider', bgcolor: 'background.paper',
               }}
             >
@@ -172,7 +172,7 @@ export const SalaryOverridesPanel: React.FC<Props> = ({ employeeId }) => {
           ))}
 
           {adding && (
-            <Box sx={{ p: 1.5, borderRadius: 1.5, border: '1px dashed', borderColor: 'primary.main', bgcolor: 'action.hover' }}>
+            <Box sx={{ p: 1.5, borderRadius: "10px", border: '1px dashed', borderColor: 'primary.main', bgcolor: 'action.hover' }}>
               <Stack spacing={1.5}>
                 {error && <Alert severity="error" sx={{ fontSize: '0.78rem', py: 0.5 }}>{error}</Alert>}
 

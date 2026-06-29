@@ -90,6 +90,8 @@ export const djangoQueryKeys = {
       ["django", "payroll", "report", params] as const,
     rules: (employeeId: number) =>
       ["django", "payroll", employeeId, "rules"] as const,
+    bonuses: (params: Record<string, unknown>) =>
+      ["django", "payroll", "bonuses", params] as const,
   },
 
   attendance: {
@@ -102,6 +104,25 @@ export const djangoQueryKeys = {
 
   organization: {
     branches: ["django", "organization", "branches"] as const,
+  },
+
+  bookings: {
+    all: ["django", "bookings"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "bookings", "list", params] as const,
+    detail: (id: number) => ["django", "bookings", id] as const,
+  },
+
+  reviews: {
+    all: ["django", "reviews"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "reviews", "list", params] as const,
+    stats: (params: Record<string, unknown>) =>
+      ["django", "reviews", "stats", params] as const,
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "reviews", "settings", organizationId ?? null] as const,
+    byAppointment: (appointmentId: number) =>
+      ["django", "reviews", "appointment", appointmentId] as const,
   },
 
   staff: {

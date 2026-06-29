@@ -13,9 +13,9 @@ import {
     Drawer,
     IconButton,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+import AddIcon from "@mui/icons-material/AddOutlined";
 import RemoveIcon from "@mui/icons-material/Remove";
-import CloseIcon from "@mui/icons-material/Close";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { AppCard } from "../ui";
 import { formatDateRu } from "../../utility/format";

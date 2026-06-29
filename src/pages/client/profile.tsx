@@ -24,7 +24,7 @@ import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
-import CloseIcon from "@mui/icons-material/Close";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
 import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import { getStatusConfig, getStatusChipSx } from "../../config/appointmentStatuses";
@@ -273,7 +273,7 @@ const ClientProfilePage: React.FC = () => {
         PaperProps={{ sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "90dvh", overflow: "hidden", display: "flex", flexDirection: "column" } }}
       >
         <Box sx={{ display: "flex", justifyContent: "center", pt: 1, pb: 0.5, flexShrink: 0 }}>
-          <Box sx={{ width: 36, height: 4, borderRadius: 2, bgcolor: "grey.300" }} />
+          <Box sx={{ width: 36, height: 4, borderRadius: "14px", bgcolor: "grey.300" }} />
         </Box>
 
         <Box sx={{ px: 2, pb: 1, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>

@@ -55,7 +55,7 @@ const SectionTitle: React.FC<{ children: React.ReactNode; first?: boolean }> = (
   first,
 }) => (
   <Typography
-    variant="overline"
+    variant="caption"
     color="text.secondary"
     sx={{ display: "block", fontWeight: 700, letterSpacing: 0.6, mb: 1, mt: first ? 0 : 2.5 }}
   >
@@ -83,7 +83,7 @@ const SwatchGrid: React.FC<{
               cursor: "pointer",
               p: 0,
               height: 40,
-              borderRadius: 1.5,
+              borderRadius: "10px",
               bgcolor: it.color,
               display: "flex",
               alignItems: "center",
@@ -141,7 +141,7 @@ const PalettePreview: React.FC<{
         sx={{
           position: "relative",
           height: 66,
-          borderRadius: 2,
+          borderRadius: "14px",
           p: 1,
           bgcolor: surface.default,
           border: "2px solid",
@@ -159,7 +159,7 @@ const PalettePreview: React.FC<{
         <Box
           sx={{
             height: "100%",
-            borderRadius: 1.5,
+            borderRadius: "10px",
             bgcolor: surface.paper,
             px: 1,
             display: "flex",
@@ -326,7 +326,7 @@ const ThemeCustomizerContent: React.FC<{
             px: 1.5,
             py: 1,
             cursor: "pointer",
-            borderRadius: 1.5,
+            borderRadius: "10px",
             border: "1px solid",
             borderColor: "divider",
             bgcolor: (t) => (colorsOpen ? alpha(t.palette.primary.main, 0.06) : "transparent"),
@@ -510,7 +510,7 @@ export const ThemeCustomizerButton: React.FC<ThemeCustomizerButtonProps> = ({
             sx={{
               width: 40,
               height: 4,
-              borderRadius: 2,
+              borderRadius: "14px",
               bgcolor: "divider",
               mx: "auto",
               mt: 1,
@@ -531,7 +531,7 @@ export const ThemeCustomizerButton: React.FC<ThemeCustomizerButtonProps> = ({
             paper: {
               sx: {
                 mt: -1,
-                borderRadius: 2,
+                borderRadius: "14px",
                 overflow: "hidden",
                 boxShadow: (t) => t.shadows[8],
               },

@@ -9,13 +9,25 @@ import {
     ButtonBase,
     alpha,
 } from "@mui/material";
-import { Inventory } from "@mui/icons-material";
+import { InventoryOutlined as Inventory } from "@mui/icons-material";
 import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import dayjs from "dayjs";
 import { DjangoSale } from "../../../api/sales";
+import { subtleBg } from "../../../theme";
 import { formatKGS } from "../../../utility/format";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../../config/saleStatuses";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
+
+/** Подпись способа оплаты по суммам нал/безнал. */
+const paymentLabel = (sale: DjangoSale): string | null => {
+    const cash = sale.paidCash > 0;
+    const card = sale.paidCard > 0;
+    if (cash && card) return "Смеш.";
+    if (cash) return "Нал";
+    if (card) return "Безнал";
+    return null;
+};
 
 interface DjangoSalesListProps {
     sales: DjangoSale[];
@@ -94,7 +106,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                         width: "100%",
                                         textAlign: "left",
                                         p: 1.25,
-                                        borderRadius: 2,
+                                        borderRadius: "14px",
                                         border: 1,
                                         borderColor: isSelected ? "primary.main" : "divider",
                                         bgcolor: (theme) =>
@@ -102,13 +114,11 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 ? alpha(theme.palette.primary.main, 0.08)
                                                 : "background.paper",
                                         transition:
-                                            "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                                            "border-color .15s ease, background-color .15s ease",
                                         "&:hover": {
-                                            borderColor: "primary.main",
-                                            boxShadow: (theme) =>
-                                                `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                                            borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
+                                            bgcolor: (theme) => subtleBg(theme, true),
                                         },
-                                        "&:active": { transform: "translateY(0.5px)" },
                                     }}
                                 >
                                     <Avatar
@@ -118,7 +128,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                             flexShrink: 0,
                                             width: 48,
                                             height: 48,
-                                            borderRadius: 2,
+                                            borderRadius: "14px",
                                             bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                                             color: "primary.onSurface",
                                         }}
@@ -138,7 +148,10 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 .join(", ") || "Товар удалён"}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary" noWrap display="block">
-                                            {sale.patientName || "Анонимный"}
+                                            №{sale.id} · {sale.patientName || "Анонимный"}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary" noWrap display="block">
+                                            {dayjs(sale.createdAt).format("DD.MM HH:mm")}
                                         </Typography>
                                     </Box>
 
@@ -155,12 +168,22 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 variant="outlined"
                                             />
                                         ) : (
-                                            <Chip
-                                                label={chipLabel}
-                                                icon={statusConfig.icon}
-                                                size="small"
-                                                sx={getSaleStatusChipSx(displayStatus)}
-                                            />
+                                            <Stack direction="row" spacing={0.5} alignItems="center">
+                                                {paymentLabel(sale) && (
+                                                    <Chip
+                                                        label={paymentLabel(sale)}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{ height: 22, borderRadius: "7px" }}
+                                                    />
+                                                )}
+                                                <Chip
+                                                    label={chipLabel}
+                                                    icon={statusConfig.icon}
+                                                    size="small"
+                                                    sx={getSaleStatusChipSx(displayStatus)}
+                                                />
+                                            </Stack>
                                         )}
                                     </Stack>
                                 </ButtonBase>

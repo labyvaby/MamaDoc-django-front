@@ -13,6 +13,7 @@ import {
     Collapse
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import { subtleBg } from "../../../theme";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ExpandLessOutlined from "@mui/icons-material/ExpandLessOutlined";
@@ -140,14 +141,14 @@ export const ConclusionTemplatesDrawer: React.FC<ConclusionTemplatesDrawerProps>
                                     <Paper
                                         key={rev.id}
                                         variant="outlined"
-                                        sx={{
+                                        sx={(t) => ({
                                             overflow: "hidden",
-                                            transition: "all 0.2s",
+                                            transition: "background-color .15s ease, border-color .15s ease",
                                             "&:hover": {
-                                                boxShadow: 2,
-                                                borderColor: "primary.main"
+                                                bgcolor: subtleBg(t, true),
+                                                borderColor: alpha(t.palette.primary.main, 0.28)
                                             }
-                                        }}
+                                        })}
                                     >
                                         {/* Template Card Header */}
                                         <Box
@@ -279,7 +280,7 @@ export const ConclusionTemplatesDrawer: React.FC<ConclusionTemplatesDrawerProps>
                                                             <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                                                                 Внутренний комментарий
                                                             </Typography>
-                                                            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.warning.main, 0.15) : '#fff9c4' }}>
+                                                            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: (theme) => alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.15 : 0.12) }}>
                                                                 <Typography variant="body2">
                                                                     {rev.internal_comment}
                                                                 </Typography>

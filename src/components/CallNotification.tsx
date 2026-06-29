@@ -17,20 +17,20 @@ import {
     Divider,
 } from '@mui/material';
 import {
-    PhoneInTalk as PhoneInTalkIcon,
-    History as HistoryIcon,
-    ChevronRight as ChevronRightIcon,
-    Close as CloseIcon,
-    PersonAdd as PersonAddIcon,
-    EventAvailable as EventAvailableIcon,
-    CalendarMonth as CalendarMonthIcon,
-    MedicalServices as MedicalServicesIcon,
-    Phone as PhoneIcon,
-    AccessTime as AccessTimeIcon,
+    PhoneInTalkOutlined as PhoneInTalkIcon,
+    HistoryOutlined as HistoryIcon,
+    ChevronRightOutlined as ChevronRightIcon,
+    CloseOutlined as CloseIcon,
+    PersonAddOutlined as PersonAddIcon,
+    EventAvailableOutlined as EventAvailableIcon,
+    CalendarMonthOutlined as CalendarMonthIcon,
+    PhoneOutlined as PhoneIcon,
+    AccessTimeOutlined as AccessTimeIcon,
 } from '@mui/icons-material';
 import { HistoryRow } from '../types/models';
 import Dayjs from 'dayjs';
 import { IS_DJANGO_BACKEND } from '../config/backend';
+import { subtleBg } from '../theme';
 
 interface IncomingCall {
     id: string;
@@ -138,25 +138,23 @@ const CallNotificationItem: React.FC<{
 
     return (
         <Paper
-            elevation={12}
+            variant="outlined"
+            elevation={0}
             sx={{
                 mb: 2,
                 overflow: 'hidden',
-                borderRadius: 4,
-                border: `1.5px solid ${alpha(accentColor, 0.3)}`,
-                backdropFilter: 'blur(20px)',
-                background: alpha(theme.palette.background.paper, 0.97),
+                borderRadius: '10px',
+                border: `1px solid ${alpha(accentColor, 0.3)}`,
+                bgcolor: 'background.paper',
                 width: '100%',
                 flexShrink: 0
             }}
         >
-            {/* Animated top accent bar */}
+            {/* Top accent bar */}
             <Box
                 sx={{
                     height: 3,
-                    background: `linear-gradient(90deg, ${accentColor}, ${alpha(accentColor, 0.4)}, ${accentColor})`,
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 2s ease-in-out infinite',
+                    bgcolor: accentColor,
                 }}
             />
 
@@ -181,9 +179,9 @@ const CallNotificationItem: React.FC<{
                             justifyContent: 'center',
                         }}
                     >
-                        <PhoneInTalkIcon sx={{ fontSize: 16, color: accentColor, animation: 'pulse 1.5s infinite' }} />
+                        <PhoneInTalkIcon sx={{ fontSize: 16, color: accentColor }} />
                     </Box>
-                    <Typography variant="caption" sx={{ color: accentColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ color: accentColor, fontWeight: 700, letterSpacing: 0.8, fontSize: '0.7rem' }}>
                         {isKnown ? "Входящий звонок" : "Новый номер"}
                     </Typography>
                 </Box>
@@ -259,7 +257,7 @@ const CallNotificationItem: React.FC<{
                     <Box sx={{ bgcolor: alpha(theme.palette.background.default, 0.5) }}>
                         <Box sx={{ px: 2, pt: 1.5, pb: 0.5, display: 'flex', alignItems: 'center', gap: 0.75 }}>
                             <HistoryIcon sx={{ fontSize: 15, color: theme.palette.text.disabled }} />
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: theme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.65rem' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: theme.palette.text.secondary, letterSpacing: 0.5, fontSize: '0.65rem' }}>
                                 Последние визиты
                             </Typography>
                         </Box>
@@ -268,7 +266,7 @@ const CallNotificationItem: React.FC<{
                             {loadingHistory ? (
                                 <Box sx={{ px: 0.5, py: 0.5 }}>
                                     {[1, 2].map(i => (
-                                        <Skeleton key={i} variant="rounded" height={36} sx={{ mb: 0.5, borderRadius: 2 }} />
+                                        <Skeleton key={i} variant="rounded" height={36} sx={{ mb: 0.5, borderRadius: "14px" }} />
                                     ))}
                                 </Box>
                             ) : history.length > 0 ? (
@@ -282,7 +280,7 @@ const CallNotificationItem: React.FC<{
                                             px: 1.5,
                                             py: 1,
                                             mb: index === history.length - 1 ? 0 : 0.5,
-                                            borderRadius: 2,
+                                            borderRadius: "14px",
                                             cursor: 'pointer',
                                             display: 'flex',
                                             alignItems: 'center',
@@ -298,7 +296,7 @@ const CallNotificationItem: React.FC<{
                                             sx={{
                                                 width: 32,
                                                 height: 32,
-                                                borderRadius: 2,
+                                                borderRadius: "14px",
                                                 bgcolor: accentLight,
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -345,8 +343,8 @@ const CallNotificationItem: React.FC<{
                         startIcon={<EventAvailableIcon />}
                         sx={{
                             bgcolor: accentColor,
-                            color: '#fff',
-                            borderRadius: 2.5,
+                            color: 'common.white',
+                            borderRadius: '10px',
                             textTransform: 'none',
                             fontWeight: 600,
                             py: 1,
@@ -367,8 +365,8 @@ const CallNotificationItem: React.FC<{
                         startIcon={<PersonAddIcon />}
                         sx={{
                             bgcolor: theme.palette.info.main,
-                            color: '#fff',
-                            borderRadius: 2.5,
+                            color: 'common.white',
+                            borderRadius: '10px',
                             textTransform: 'none',
                             fontWeight: 600,
                             py: 1,

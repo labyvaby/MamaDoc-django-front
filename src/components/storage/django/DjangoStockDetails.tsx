@@ -11,7 +11,7 @@ import {
     Skeleton,
     alpha,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+import AddIcon from "@mui/icons-material/AddOutlined";
 import RemoveIcon from "@mui/icons-material/Remove";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
@@ -158,7 +158,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                     <Box
                         sx={{
                             p: 2.5,
-                            borderRadius: 1.5,
+                            borderRadius: "10px",
                             border: 1,
                             borderColor: (theme) =>
                                 alpha(
@@ -257,14 +257,13 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                                             cursor: "pointer",
                                             px: 1.75,
                                             py: 0.5,
-                                            borderRadius: 1,
+                                            borderRadius: "7px",
                                             fontSize: "0.8125rem",
                                             fontWeight: active ? 600 : 500,
                                             fontFamily: "inherit",
-                                            color: active ? "primary.onSurface" : "text.secondary",
-                                            bgcolor: active ? "background.paper" : "transparent",
-                                            boxShadow: active ? 1 : 0,
-                                            transition: "all .15s ease",
+                                            color: active ? "primary.contrastText" : "text.secondary",
+                                            bgcolor: active ? "primary.main" : "transparent",
+                                            transition: "background-color .15s ease, color .15s ease",
                                         }}
                                     >
                                         {tab.label}

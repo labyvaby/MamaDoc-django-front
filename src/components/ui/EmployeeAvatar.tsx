@@ -9,6 +9,7 @@
 import React from "react";
 import { Avatar } from "@mui/material";
 import AccountCircleOutlined from "@mui/icons-material/AccountCircleOutlined";
+import { subtleBg } from "../../theme";
 
 type Props = {
   name?: string;
@@ -22,10 +23,8 @@ const EmployeeAvatar: React.FC<Props> = ({ name, size = 32 }) => {
       sx={{
         width: size,
         height: size,
-        bgcolor: (theme) =>
-          theme.palette.mode === "dark"
-            ? "rgba(255,255,255,0.06)"
-            : "rgba(2,6,23,0.06)",
+        borderRadius: "18px",
+        bgcolor: (theme) => subtleBg(theme, true),
         color: "text.secondary",
       }}
     >

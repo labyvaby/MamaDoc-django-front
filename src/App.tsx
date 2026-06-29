@@ -61,7 +61,6 @@ const ServicesPage = lazy(() => import("./pages/services"));
 const ProductsPage = lazy(() => import("./pages/products"));
 const StoragePage = lazy(() => import("./pages/storage"));
 const WarehousesPage = lazy(() => import("./pages/warehouses"));
-const DjangoStoragePage = lazy(() => import("./pages/storage/django"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
@@ -80,6 +79,10 @@ const CashboxPage = lazy(() => import("./pages/cashbox"));
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
+const ReviewsPage = lazy(() => import("./pages/reviews"));
+const BookingsPage = lazy(() => import("./pages/bookings"));
+const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
+const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
@@ -431,6 +434,12 @@ function App() {
                         meta: { label: "Все приемы" }
                       },
                       {
+                        name: "bookings",
+                        list: "/bookings",
+                        show: "/bookings/show/:id",
+                        meta: { label: "Брони" }
+                      },
+                      {
                         name: "all-procedures",
                         list: "/all-procedures",
                         meta: { label: "Все процедуры" }
@@ -582,11 +591,9 @@ function App() {
                           path="storage"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="warehouse.view">
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoStoragePage />
-                                </Suspense>
-                              </RequirePermission>
+                              // «Движение товара» объединено с «Складом» в «Остатки».
+                              // Старый путь /storage редиректит на /warehouses.
+                              <Navigate to="/warehouses" replace />
                             ) : (
                               <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                                 <Suspense fallback={<LinearProgress />}>
@@ -932,6 +939,36 @@ function App() {
                               }
                             />
                             <Route
+                              path="reviews"
+                              element={
+                                <RequirePermission permission={["reviews.view", "reviews.manage"]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ReviewsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="bookings"
+                              element={
+                                <RequirePermission permission={["bookings.view", "bookings.manage"]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <BookingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="reviews/settings"
+                              element={
+                                <RequirePermission permission="reviews.manage">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ReviewsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
                               path="settings/diagnoses"
                               element={
                                 <RequirePermission permission="medical.diagnoses.manage">
@@ -992,6 +1029,14 @@ function App() {
                       <Route
                         path="update-password"
                         element={<UpdatePasswordPage />}
+                      />
+                      <Route
+                        path="review/:token"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <PublicRatePage />
+                          </Suspense>
+                        }
                       />
                       <Route
                         element={

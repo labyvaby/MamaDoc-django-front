@@ -228,8 +228,8 @@ const getStatusColors = (status: string, theme: Theme): { backgroundColor: strin
       };
     case "purple":
       return {
-        backgroundColor: isDark ? alpha("#4f46e5", 0.25) : alpha("#4f46e5", 0.15),
-        textColor: isDark ? "#a5b4fc" : "#3730a3",
+        backgroundColor: alpha(theme.palette.purple.main, isDark ? 0.25 : 0.15),
+        textColor: isDark ? theme.palette.purple.light : theme.palette.purple.dark,
       };
     case "default":
     default:

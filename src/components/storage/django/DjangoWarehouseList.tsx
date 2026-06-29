@@ -12,12 +12,13 @@ import {
     Button,
     alpha,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import EditIcon from "@mui/icons-material/Edit";
-import StoreIcon from "@mui/icons-material/Store";
+import AddIcon from "@mui/icons-material/AddOutlined";
+import EditIcon from "@mui/icons-material/EditOutlined";
+import StoreIcon from "@mui/icons-material/StoreOutlined";
 import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
-import LinkOffIcon from "@mui/icons-material/LinkOff";
+import LinkOffIcon from "@mui/icons-material/LinkOffOutlined";
 import { DjangoWarehouse } from "../../../api/warehouse";
+import { subtleBg } from "../../../theme";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
 
 interface DjangoWarehouseListProps {
@@ -117,13 +118,11 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                                 ? alpha(theme.palette.primary.main, 0.08)
                                                 : "background.paper",
                                         transition:
-                                            "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                                            "border-color .15s ease, background-color .15s ease",
                                         "&:hover": {
-                                            borderColor: "primary.main",
-                                            boxShadow: (theme) =>
-                                                `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                                            borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
+                                            bgcolor: (theme) => subtleBg(theme, true),
                                         },
-                                        "&:active": { transform: "translateY(0.5px)" },
                                     }}
                                 >
                                     <Avatar
@@ -137,7 +136,7 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                                 w.isPrimary
                                                     ? theme.palette.primary.main
                                                     : alpha(theme.palette.primary.main, 0.1),
-                                            color: w.isPrimary ? "common.white" : "primary.onSurface",
+                                            color: w.isPrimary ? "primary.contrastText" : "primary.onSurface",
                                         }}
                                     >
                                         <StoreIcon fontSize="small" />

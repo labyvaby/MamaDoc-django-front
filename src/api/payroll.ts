@@ -13,6 +13,12 @@ export interface PayrollRow {
   dayHours: string;
   nightHours: string;
   hourlyPay: string;
+  /**
+   * One-off bonuses (надбавки) for this employee in the report month.
+   * Already included in `earnings`/`netSalary` by the backend.
+   * May be absent on older backends — treat undefined as "0.00".
+   */
+  bonus?: string;
   earnings: string;
   advances: string;
   netSalary: string;
@@ -115,4 +121,62 @@ export function putEmployeeRule(
     method: "PUT",
     body: data,
   });
+}
+
+// ── Bonuses (надбавки) ──────────────────────────────────────────────────────
+// One-off fixed salary additions for a specific employee in a specific month
+// (e.g. +10 000 for an extra task). Added on top of the calculated earnings.
+
+export interface PayrollBonus {
+  id: number;
+  employeeId: number;
+  employeeFullName: string;
+  year: number;
+  month: number;
+  /** Decimal string, e.g. "10000.00". */
+  amount: string;
+  reason: string;
+  createdAt: string;
+  createdByName?: string | null;
+}
+
+export interface BonusWriteData {
+  employeeId: number;
+  year: number;
+  month: number;
+  amount: string | number;
+  reason: string;
+}
+
+/** GET /api/payroll/bonuses/ — bonuses for a month (optionally one employee). */
+export function getBonuses(
+  params: {
+    year: number;
+    month: number;
+    employeeId?: number;
+    organizationId?: number;
+  },
+  signal?: AbortSignal,
+): Promise<PayrollBonus[]> {
+  const q = new URLSearchParams();
+  q.set("year", String(params.year));
+  q.set("month", String(params.month));
+  if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
+  if (params.organizationId != null) {
+    q.set("organizationId", String(params.organizationId));
+  }
+  return apiRequest<PayrollBonus[]>(`/payroll/bonuses/?${q.toString()}`, { signal });
+}
+
+/** POST /api/payroll/bonuses/ — add a one-off bonus. */
+export function createBonus(data: BonusWriteData): Promise<PayrollBonus> {
+  return apiRequest<PayrollBonus>("/payroll/bonuses/", {
+    method: "POST",
+    body: data,
+  });
+}
+
+/** DELETE /api/payroll/bonuses/<id>/ — remove a bonus. */
+export function deleteBonus(id: number): Promise<void> {
+  return apiRequest<void>(`/payroll/bonuses/${id}/`, { method: "DELETE" });
 }

@@ -21,8 +21,8 @@ import {
 import { useNotification } from "@refinedev/core";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import CreditCardIcon from '@mui/icons-material/CreditCard';
-import WalletIcon from '@mui/icons-material/Wallet';
+import CreditCardIcon from '@mui/icons-material/CreditCardOutlined';
+import WalletIcon from '@mui/icons-material/WalletOutlined';
 
 import { PageHeader, MonthNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -207,12 +207,12 @@ const FinancialReportsPage: React.FC = () => {
                     {/* Summary Cards */}
                     <Grid2 container spacing={{ xs: 1, md: 2 }}>
                         <Grid2 size={{ xs: 12, sm: 3 }}>
-                            <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
+                            <Card variant="outlined" sx={{ borderRadius: "14px", bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
                                 <CardContent sx={{ p: 2 }}>
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                                         <Box>
-                                            <Typography variant="overline" color="primary">Мед. услуги</Typography>
-                                            <Typography variant="h5" fontWeight={800}>{formatKGS(totals.services)}</Typography>
+                                            <Typography variant="caption" color="primary">Мед. услуги</Typography>
+                                            <Typography variant="h5" fontWeight={700}>{formatKGS(totals.services)}</Typography>
                                         </Box>
                                         <Avatar sx={{ bgcolor: alpha(theme.palette.primary.main, 0.1), color: 'primary.onSurface' }}>
                                             <AssessmentOutlined />
@@ -222,12 +222,12 @@ const FinancialReportsPage: React.FC = () => {
                             </Card>
                         </Grid2>
                         <Grid2 size={{ xs: 12, sm: 3 }}>
-                            <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: alpha(theme.palette.secondary.main, 0.05) }}>
+                            <Card variant="outlined" sx={{ borderRadius: "14px", bgcolor: alpha(theme.palette.secondary.main, 0.05) }}>
                                 <CardContent sx={{ p: 2 }}>
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                                         <Box>
-                                            <Typography variant="overline" color="secondary.main">Товары в приемах</Typography>
-                                            <Typography variant="h5" fontWeight={800}>{formatKGS(totals.products)}</Typography>
+                                            <Typography variant="caption" color="secondary.main">Товары в приемах</Typography>
+                                            <Typography variant="h5" fontWeight={700}>{formatKGS(totals.products)}</Typography>
                                         </Box>
                                         <Avatar sx={{ bgcolor: alpha(theme.palette.secondary.main, 0.1), color: 'secondary.main' }}>
                                             <AssessmentOutlined />
@@ -237,12 +237,12 @@ const FinancialReportsPage: React.FC = () => {
                             </Card>
                         </Grid2>
                         <Grid2 size={{ xs: 6, sm: 3 }}>
-                            <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: alpha(theme.palette.success.main, 0.05) }}>
+                            <Card variant="outlined" sx={{ borderRadius: "14px", bgcolor: alpha(theme.palette.success.main, 0.05) }}>
                                 <CardContent sx={{ p: 2 }}>
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                                         <Box>
-                                            <Typography variant="overline" color="success.main">Наличные</Typography>
-                                            <Typography variant="h5" fontWeight={800} color="success.dark">{formatKGS(totals.cash)}</Typography>
+                                            <Typography variant="caption" color="success.main">Наличные</Typography>
+                                            <Typography variant="h5" fontWeight={700} color="success.dark">{formatKGS(totals.cash)}</Typography>
                                         </Box>
                                         <Avatar sx={{ bgcolor: alpha(theme.palette.success.main, 0.1), color: 'success.main' }}>
                                             <WalletIcon />
@@ -252,12 +252,12 @@ const FinancialReportsPage: React.FC = () => {
                             </Card>
                         </Grid2>
                         <Grid2 size={{ xs: 6, sm: 3 }}>
-                            <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: alpha(theme.palette.info.main, 0.05) }}>
+                            <Card variant="outlined" sx={{ borderRadius: "14px", bgcolor: alpha(theme.palette.info.main, 0.05) }}>
                                 <CardContent sx={{ p: 2 }}>
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                                         <Box>
-                                            <Typography variant="overline" color="info.main">Безнал</Typography>
-                                            <Typography variant="h5" fontWeight={800} color="info.dark">{formatKGS(totals.card)}</Typography>
+                                            <Typography variant="caption" color="info.main">Безнал</Typography>
+                                            <Typography variant="h5" fontWeight={700} color="info.dark">{formatKGS(totals.card)}</Typography>
                                         </Box>
                                         <Avatar sx={{ bgcolor: alpha(theme.palette.info.main, 0.1), color: 'info.main' }}>
                                             <CreditCardIcon />
@@ -267,12 +267,12 @@ const FinancialReportsPage: React.FC = () => {
                             </Card>
                         </Grid2>
                         <Grid2 size={{ xs: 12, sm: 3 }}>
-                            <Card variant="outlined" sx={{ borderRadius: 3, bgcolor: alpha(theme.palette.error.main, 0.05) }}>
+                            <Card variant="outlined" sx={{ borderRadius: "14px", bgcolor: alpha(theme.palette.error.main, 0.05) }}>
                                 <CardContent sx={{ p: 2 }}>
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                                         <Box>
-                                            <Typography variant="overline" color="error.main">Долги / Скидки</Typography>
-                                            <Typography variant="h6" fontWeight={800} color="error.dark">
+                                            <Typography variant="caption" color="error.main">Долги / Скидки</Typography>
+                                            <Typography variant="h6" fontWeight={700} color="error.dark">
                                                 {formatKGS(totals.debt)} / {formatKGS(totals.discount)}
                                             </Typography>
                                         </Box>
@@ -289,19 +289,19 @@ const FinancialReportsPage: React.FC = () => {
                     {loading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>
                     ) : (
-                        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <Paper variant="outlined" sx={{ borderRadius: "14px", overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <TableContainer sx={{ flex: 1 }}>
                                 <Table stickyHeader size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ fontWeight: 800 }}>Дата</TableCell>
-                                            <TableCell align="center" sx={{ fontWeight: 800 }}>Приемы</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>Мед. услуги</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>Товары</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>Скидки</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>Наличные</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>Безнал</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>Долг</TableCell>
+                                            <TableCell sx={{ fontWeight: 700 }}>Дата</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 700 }}>Приемы</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>Мед. услуги</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>Товары</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>Скидки</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>Наличные</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>Безнал</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>Долг</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
@@ -334,14 +334,14 @@ const FinancialReportsPage: React.FC = () => {
                                         ))}
                                         {/* Total Row */}
                                         <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                                            <TableCell sx={{ fontWeight: 800 }}>ИТОГО</TableCell>
-                                            <TableCell align="center" sx={{ fontWeight: 800 }}>{totals.count}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800 }}>{formatKGS(totals.services)}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800, color: 'secondary.main' }}>{formatKGS(totals.products)}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800, color: 'error.main' }}>-{formatKGS(totals.discount)}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800, color: 'success.main' }}>{formatKGS(totals.cash)}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800, color: 'info.main' }}>{formatKGS(totals.card)}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 800, color: 'warning.main' }}>{formatKGS(totals.debt)}</TableCell>
+                                            <TableCell sx={{ fontWeight: 700 }}>Итого</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 700 }}>{totals.count}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700 }}>{formatKGS(totals.services)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700, color: 'secondary.main' }}>{formatKGS(totals.products)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>-{formatKGS(totals.discount)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>{formatKGS(totals.cash)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700, color: 'info.main' }}>{formatKGS(totals.card)}</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 700, color: 'warning.main' }}>{formatKGS(totals.debt)}</TableCell>
                                         </TableRow>
                                     </TableBody>
                                 </Table>

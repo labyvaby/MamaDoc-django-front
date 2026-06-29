@@ -45,7 +45,7 @@ export const DjangoUnderConstructionPage: React.FC<Props> = ({
           textAlign: "center",
           px: { xs: 3, sm: 5 },
           py: { xs: 4, sm: 6 },
-          borderRadius: 4,
+          borderRadius: "14px",
           border: `1px solid ${theme.palette.divider}`,
           bgcolor: "background.paper",
         }}

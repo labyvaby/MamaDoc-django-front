@@ -10,7 +10,7 @@ import {
   InputAdornment,
   CircularProgress,
 } from "@mui/material";
-import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
+import PhoneIphoneIcon from "@mui/icons-material/PhoneIphoneOutlined";
 import logo from "../../assets/img/logo.png";
 import { supabase } from "../../utility/supabaseClient";
 import { PhoneCountryCodeSelect } from "../../components/ui";
@@ -91,7 +91,7 @@ const ClientLoginPage: React.FC = () => {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(135deg, #e0f7fa 0%, #e8f5e9 100%)",
+        bgcolor: "background.default",
         px: 2,
       }}
     >
@@ -100,8 +100,9 @@ const ClientLoginPage: React.FC = () => {
           width: "100%",
           maxWidth: 400,
           bgcolor: "background.paper",
-          borderRadius: 3,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+          borderRadius: "14px",
+          border: 1,
+          borderColor: "divider",
           p: { xs: 3, sm: 4 },
         }}
       >
@@ -155,7 +156,7 @@ const ClientLoginPage: React.FC = () => {
             fullWidth
             size="large"
             disabled={loading}
-            sx={{ borderRadius: 2, py: 1.5 }}
+            sx={{ py: 1.5 }}
           >
             {loading ? "Проверка..." : "Войти"}
           </Button>

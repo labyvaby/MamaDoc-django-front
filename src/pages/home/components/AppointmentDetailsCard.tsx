@@ -724,7 +724,7 @@ const AppointmentDetailsCardBase: React.FC<AppointmentDetailsCardProps> = ({
                               color={hasPayment ? "primary" : "success"}
                               size="small"
                               onClick={() => setPaymentOpen(true)}
-                              sx={{ boxShadow: 'none', textTransform: 'none', whiteSpace: 'nowrap' }}
+                              sx={{ whiteSpace: 'nowrap' }}
                             >
                               {hasPayment ? "Изменить оплату" : "Принять оплату"}
                             </Button>

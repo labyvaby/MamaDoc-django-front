@@ -17,8 +17,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import BlockIcon from "@mui/icons-material/Block";
+import AddIcon from "@mui/icons-material/AddOutlined";
+import BlockIcon from "@mui/icons-material/BlockOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { getExpenses, parseBackendError, type Expense } from "../../../../api/expenses";

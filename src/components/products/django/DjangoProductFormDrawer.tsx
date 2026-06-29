@@ -1,5 +1,6 @@
 import React from "react";
 import {
+    Autocomplete,
     Box,
     Button,
     CircularProgress,
@@ -17,7 +18,6 @@ import {
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useNotification } from "@refinedev/core";
 import {
     DjangoProduct,
@@ -34,6 +34,26 @@ const noSpinnersSx = {
     "& input[type=number]::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
 };
 
+/**
+ * Каноничный список единиц измерения для дропдауна. Поле `unit` на бэке —
+ * свободная строка, поэтому Autocomplete с freeSolo: можно выбрать из списка
+ * или ввести своё (совместимость со старыми значениями).
+ */
+const PRODUCT_UNITS = [
+    "шт",
+    "упак",
+    "мл",
+    "л",
+    "г",
+    "кг",
+    "амп",
+    "фл",
+    "таб",
+    "доза",
+    "шприц",
+    "набор",
+];
+
 type FormValues = {
     name: string;
     category: string;
@@ -44,7 +64,6 @@ type FormValues = {
     isForSale: boolean;
     isInfusion: boolean;
     price: number;
-    stock: number;
 };
 
 const defaultValues: FormValues = {
@@ -57,7 +76,6 @@ const defaultValues: FormValues = {
     isForSale: true,
     isInfusion: false,
     price: 0,
-    stock: 0,
 };
 
 type DjangoProductFormDrawerProps = {
@@ -66,11 +84,6 @@ type DjangoProductFormDrawerProps = {
     /** null → создание нового товара. */
     product: DjangoProduct | null;
     onSaved?: () => void;
-    /**
-     * Остаток можно задавать только при выбранном филиале (иначе бэкенд
-     * не знает, в склад какого филиала оформить приход/корректировку).
-     */
-    stockEditable?: boolean;
 };
 
 export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = ({
@@ -78,7 +91,6 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     onClose,
     product,
     onSaved,
-    stockEditable = true,
 }) => {
     const { open: notify } = useNotification();
     const isEdit = !!product;
@@ -102,7 +114,6 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                         isForSale: product.isForSale,
                         isInfusion: product.isInfusion,
                         price: product.price,
-                        stock: product.stock,
                     }
                     : defaultValues,
             );
@@ -145,17 +156,11 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
 
             let saved: DjangoProduct;
             if (isEdit && product) {
-                saved = await updateProduct(product.id, {
-                    ...common,
-                    // Остаток сверяется с текущим через корректировку —
-                    // только в контексте филиала.
-                    ...(stockEditable ? { stock: Number(values.stock) || 0 } : {}),
-                });
+                // Остаток здесь не задаётся — управляется через движения
+                // (приход/списание/передача).
+                saved = await updateProduct(product.id, common);
             } else {
-                saved = await createProduct({
-                    ...common,
-                    ...(stockEditable ? { initialStock: Number(values.stock) || 0 } : {}),
-                });
+                saved = await createProduct(common);
             }
 
             if (photoFile) {
@@ -306,11 +311,15 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                                     Ед. измерения
                                 </Typography>
-                                <TextField
-                                    placeholder="Единица"
+                                <Autocomplete
+                                    freeSolo
+                                    options={PRODUCT_UNITS}
                                     value={values.unit}
-                                    onChange={(e) => setValues((s) => ({ ...s, unit: e.target.value }))}
-                                    fullWidth
+                                    onChange={(_, v) => setValues((s) => ({ ...s, unit: v ?? "" }))}
+                                    onInputChange={(_, v) => setValues((s) => ({ ...s, unit: v }))}
+                                    renderInput={(params) => (
+                                        <TextField {...params} placeholder="Единица" fullWidth />
+                                    )}
                                 />
                             </Stack>
                         </Stack>
@@ -356,46 +365,24 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                             </ToggleButtonGroup>
                         </Paper>
 
-                        {/* Price & Stock */}
-                        <Stack direction="row" spacing={2}>
-                            <Stack spacing={0.5} sx={{ flex: 1 }}>
-                                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                    Стоимость
-                                </Typography>
-                                <TextField
-                                    placeholder="0"
-                                    type="number"
-                                    value={values.price || ""}
-                                    onChange={(e) =>
-                                        setValues((s) => ({ ...s, price: Number(e.target.value) || 0 }))
-                                    }
-                                    fullWidth
-                                    InputProps={{
-                                        endAdornment: <Typography variant="caption" color="text.secondary">сом</Typography>,
-                                    }}
-                                    sx={{ ...noSpinnersSx }}
-                                />
-                            </Stack>
-                            <Stack spacing={0.5} sx={{ flex: 1 }}>
-                                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                    Остаток
-                                </Typography>
-                                <TextField
-                                    placeholder="0"
-                                    type="number"
-                                    value={values.stock || ""}
-                                    onChange={(e) =>
-                                        setValues((s) => ({ ...s, stock: Number(e.target.value) || 0 }))
-                                    }
-                                    fullWidth
-                                    disabled={!stockEditable}
-                                    helperText={!stockEditable ? "Доступно при выбранном филиале" : ""}
-                                    InputProps={{
-                                        endAdornment: <Typography variant="caption" color="text.secondary">{values.unit || "шт"}</Typography>,
-                                    }}
-                                    sx={{ ...noSpinnersSx }}
-                                />
-                            </Stack>
+                        {/* Price */}
+                        <Stack spacing={0.5}>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                Стоимость
+                            </Typography>
+                            <TextField
+                                placeholder="0"
+                                type="number"
+                                value={values.price || ""}
+                                onChange={(e) =>
+                                    setValues((s) => ({ ...s, price: Number(e.target.value) || 0 }))
+                                }
+                                fullWidth
+                                InputProps={{
+                                    endAdornment: <Typography variant="caption" color="text.secondary">сом</Typography>,
+                                }}
+                                sx={{ ...noSpinnersSx }}
+                            />
                         </Stack>
 
                         {/* Description */}
@@ -412,38 +399,6 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 rows={3}
                             />
                         </Stack>
-
-                        {/* Infusion Toggle */}
-                        <Paper
-                            elevation={0}
-                            variant="outlined"
-                            sx={{
-                                p: 1,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                            }}
-                        >
-                            <Stack direction="row" spacing={1} alignItems="center">
-                                <InfoOutlinedIcon fontSize="small" color="action" />
-                                <Typography variant="body2">Капельница</Typography>
-                            </Stack>
-                            <ToggleButtonGroup
-                                exclusive
-                                size="small"
-                                value={values.isInfusion ? "yes" : "no"}
-                                onChange={(_, v) => {
-                                    if (v) setValues((s) => ({ ...s, isInfusion: v === "yes" }));
-                                }}
-                            >
-                                <ToggleButton value="yes" sx={{ textTransform: "none", px: 2, py: 0.5 }}>
-                                    Да
-                                </ToggleButton>
-                                <ToggleButton value="no" sx={{ textTransform: "none", px: 2, py: 0.5 }}>
-                                    Нет
-                                </ToggleButton>
-                            </ToggleButtonGroup>
-                        </Paper>
 
                     </Stack>
                 </Box>

@@ -23,9 +23,9 @@ import Tooltip from "@mui/material/Tooltip";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import SmsOutlined from "@mui/icons-material/SmsOutlined";
 import AlarmOutlined from "@mui/icons-material/AlarmOutlined";
-import EventRepeatOutlined from "@mui/icons-material/EventRepeat";
-import EditCalendarOutlined from "@mui/icons-material/EditCalendar";
-import EventBusyOutlined from "@mui/icons-material/EventBusy";
+import EventRepeatOutlined from "@mui/icons-material/EventRepeatOutlined";
+import EditCalendarOutlined from "@mui/icons-material/EditCalendarOutlined";
+import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 
 import { formatKGS } from "../../../utility/format";
 import { APPOINTMENT_STATUSES, getStatusConfig, getStatusChipSx } from "../../../config/appointmentStatuses";
@@ -145,21 +145,16 @@ const AddSlotButton: React.FC<AddSlotButtonProps> = ({ timeStr, onClick }) => (
       height: 44,
       border: "1px dashed",
       borderColor: "primary.main", // Always primary
-      borderRadius: 1.5,
+      borderRadius: "10px",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       color: "primary.onSurface", // Always primary
       cursor: "pointer",
-      transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+      transition: "background-color .15s ease, border-color .15s ease",
       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05), // Light primary background
       "&:hover": {
         bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-        transform: "translateY(-1px)",
-        boxShadow: (theme) => `0 4px 12px ${theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.05)'}`,
-      },
-      "&:active": {
-        transform: "scale(0.98)",
       },
     }}
   >

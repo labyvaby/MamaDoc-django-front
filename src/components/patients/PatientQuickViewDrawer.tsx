@@ -15,14 +15,14 @@ import {
   Button,
 } from "@mui/material";
 import {
-  Close as CloseIcon,
-  Person as PersonIcon,
-  Phone as PhoneIcon,
-  Cake as CakeIcon,
-  CalendarMonth as CalendarIcon,
-  MedicalServices as MedicalServicesIcon,
-  Badge as BadgeIcon,
-  Add as AddIcon,
+  CloseOutlined as CloseIcon,
+  PersonOutlined as PersonIcon,
+  PhoneOutlined as PhoneIcon,
+  CakeOutlined as CakeIcon,
+  CalendarMonthOutlined as CalendarIcon,
+  MedicalServicesOutlined as MedicalServicesIcon,
+  BadgeOutlined as BadgeIcon,
+  AddOutlined as AddIcon,
 } from "@mui/icons-material";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";

@@ -90,7 +90,7 @@ export const DeleteExpenseDialog: React.FC<DeleteExpenseDialogProps> = ({
               borderColor: 'error.main',
               '&:hover': {
                 borderColor: 'error.dark',
-                backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                backgroundColor: 'error.lighter',
               },
               '&.Mui-disabled': {
                 borderColor: 'action.disabled',

@@ -154,7 +154,7 @@ const EmployeesPage: React.FC = () => {
                 borderColor: "divider",
                 "&.Mui-selected": {
                   bgcolor: "primary.main",
-                  color: "white",
+                  color: "primary.contrastText",
                   "&:hover": { bgcolor: "primary.dark" },
                 },
               },

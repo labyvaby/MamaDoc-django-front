@@ -86,7 +86,7 @@ const DjangoSkudSettingsPage: React.FC = () => {
         <Box sx={{ maxWidth: 720, mx: "auto" }}>
           <AppCard
             variant="outlined"
-            sx={{ borderRadius: 1.5, "&:hover": { boxShadow: "none" } }}
+            sx={{ borderRadius: "14px", "&:hover": { boxShadow: "none" } }}
             disableContentPadding
           >
             {/* Шапка карточки с иконкой-героем */}

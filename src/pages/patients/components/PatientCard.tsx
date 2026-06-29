@@ -30,8 +30,8 @@ import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
-import MergeTypeIcon from "@mui/icons-material/MergeType";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
+import MergeTypeIcon from "@mui/icons-material/MergeTypeOutlined";
+import MoreVertIcon from "@mui/icons-material/MoreVertOutlined";
 
 import type { DjangoPatient } from "../../../api/patients";
 import type { PatientBalance } from "../../../api/patientBalance";

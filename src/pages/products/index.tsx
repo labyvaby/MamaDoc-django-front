@@ -22,7 +22,7 @@ import { useTheme } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
-import FilterListIcon from "@mui/icons-material/FilterList";
+import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import { supabase } from "../../utility/supabaseClient";
 
 import { PageHeader, AppBottomSheet, AppCard } from "../../components/ui";
@@ -450,7 +450,7 @@ const ProductDetailCard: React.FC<{
           justifyContent: "center",
           border: "1px dashed",
           borderColor: "divider",
-          borderRadius: 4,
+          borderRadius: "14px",
           color: "text.secondary",
           bgcolor: "background.paper",
         }}
@@ -516,7 +516,7 @@ const ProductDetailCard: React.FC<{
                       borderColor: 'error.main',
                       '&:hover': {
                         borderColor: 'error.dark',
-                        backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                        backgroundColor: 'error.lighter',
                       }
                     }}
                   >
@@ -544,7 +544,7 @@ const ProductDetailCard: React.FC<{
                 bgcolor: (theme) => alpha(theme.palette.action.hover, 0.5),
                 border: 1,
                 borderColor: "divider",
-                borderRadius: 4,
+                borderRadius: "14px",
               }}
             >
               <Typography variant="h3" color="text.secondary">
@@ -579,7 +579,7 @@ const ProductDetailCard: React.FC<{
                           : alpha(theme.palette.text.disabled, 0.1),
                       color: product.is_for_sale ? "success.dark" : "text.secondary",
                       fontWeight: 600,
-                      borderRadius: 1.5,
+                      borderRadius: "7px",
                       border: 0,
                     }}
                   />
@@ -593,7 +593,7 @@ const ProductDetailCard: React.FC<{
                           : alpha(theme.palette.error.main, 0.1),
                       color: product.stock && product.stock > 0 ? "success.dark" : "error.dark",
                       fontWeight: 600,
-                      borderRadius: 1.5,
+                      borderRadius: "7px",
                       border: 0,
                     }}
                   />
@@ -605,7 +605,7 @@ const ProductDetailCard: React.FC<{
                         bgcolor: (theme) => alpha(theme.palette.info.main, 0.1),
                         color: "info.dark",
                         fontWeight: 600,
-                        borderRadius: 1.5,
+                        borderRadius: "7px",
                         border: 0,
                       }}
                     />
@@ -666,7 +666,7 @@ const ProductDetailCard: React.FC<{
             sx={{
               p: 2,
               bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
-              borderRadius: 2,
+              borderRadius: "14px",
               border: 1,
               borderColor: "divider",
             }}

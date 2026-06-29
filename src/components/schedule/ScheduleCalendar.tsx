@@ -19,7 +19,11 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
-import { ChevronLeft, ChevronRight, Delete, Edit, Close } from "@mui/icons-material";
+import ChevronLeft from "@mui/icons-material/ChevronLeftOutlined";
+import ChevronRight from "@mui/icons-material/ChevronRightOutlined";
+import Delete from "@mui/icons-material/DeleteOutlined";
+import Edit from "@mui/icons-material/EditOutlined";
+import Close from "@mui/icons-material/CloseOutlined";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
@@ -309,18 +313,16 @@ const ShiftBlock: React.FC<ShiftBlockProps> = ({ segment, onEdit }) => {
     borderRadius: 1,
     overflow: "hidden",
     minHeight: 32, // Fix for short shifts (1 hour) looking too small
-    // Динамический цвет
+    // Динамический цвет (data-viz цвет по сотруднику — заливка)
     bgcolor: alpha(empColor, 0.75),
-    color: "#fff", // всегда белый текст для контраста
-    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+    color: "#fff", // контраст-текст поверх цветной заливки сотрудника
     border: `1px solid ${alpha(empColor, 1)}`,
-    transition: "background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out",
+    transition: "background-color 0.2s ease-in-out",
     cursor: "pointer",
     zIndex: 1,
     "&:hover": {
       zIndex: 100,
       bgcolor: empColor,
-      boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
       minHeight: "fit-content", // Allow expansion on hover if content is clipped
     },
   };
@@ -346,7 +348,7 @@ const ShiftBlock: React.FC<ShiftBlockProps> = ({ segment, onEdit }) => {
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: "100%" }}>
           <Avatar
             src={segment.employeePhoto}
-            sx={{ width: 16, height: 16, fontSize: "0.6rem", border: "1px solid rgba(255,255,255,0.5)" }}
+            sx={(t) => ({ width: 16, height: 16, fontSize: "0.6rem", border: `1px solid ${alpha(t.palette.common.white, 0.5)}` })}
           >
             {segment.employeeName?.[0] ?? "?"}
           </Avatar>
@@ -359,7 +361,6 @@ const ShiftBlock: React.FC<ShiftBlockProps> = ({ segment, onEdit }) => {
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)"
             }}
           >
             {segment.employeeName}
@@ -703,7 +704,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
   };
 
   return (
-    <Paper elevation={3} sx={{ p: 2, mt: 2 }}>
+    <Paper variant="outlined" elevation={0} sx={{ p: 2, mt: 2 }}>
       {/* Заголовок */}
       <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 1.5, overflow: 'hidden' }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>

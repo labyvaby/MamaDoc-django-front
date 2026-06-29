@@ -15,11 +15,14 @@ export const LoadChart: React.FC<Props> = ({ data }) => {
         return Math.max(...data.map(d => d.value));
     }, [data]);
 
+    const primaryColor = theme.palette.primary.main;
+    const peakColor = theme.palette.error.main;
+
     const renderDot = (props: any) => {
         const { cx, cy, value, index } = props;
         if (value === peakValue && value > 0) {
             return (
-                <circle key={`dot-${index}`} cx={cx} cy={cy} r={isMobile ? 4 : 6} fill="#ff4d4f" stroke="#fff" strokeWidth={2} />
+                <circle key={`dot-${index}`} cx={cx} cy={cy} r={isMobile ? 4 : 6} fill={peakColor} stroke={theme.palette.background.paper} strokeWidth={2} />
             );
         }
         return null;
@@ -38,8 +41,8 @@ export const LoadChart: React.FC<Props> = ({ data }) => {
             >
                 <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#1976d2" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#1976d2" stopOpacity={0.1} />
+                        <stop offset="5%" stopColor={primaryColor} stopOpacity={0.8} />
+                        <stop offset="95%" stopColor={primaryColor} stopOpacity={0.1} />
                     </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
@@ -56,9 +59,8 @@ export const LoadChart: React.FC<Props> = ({ data }) => {
                 />
                 <Tooltip
                     contentStyle={{
-                        borderRadius: 8,
+                        borderRadius: 10,
                         border: `1px solid ${theme.palette.divider}`,
-                        boxShadow: theme.shadows[3],
                         backgroundColor: theme.palette.background.paper,
                         color: theme.palette.text.primary,
                     }}
@@ -70,12 +72,12 @@ export const LoadChart: React.FC<Props> = ({ data }) => {
                 <Area
                     type="monotone"
                     dataKey="value"
-                    stroke="#1976d2"
+                    stroke={primaryColor}
                     strokeWidth={isMobile ? 2 : 3}
                     fillOpacity={1}
                     fill="url(#colorValue)"
                     dot={renderDot}
-                    activeDot={{ r: isMobile ? 5 : 8, strokeWidth: 0, fill: '#ff4d4f' }}
+                    activeDot={{ r: isMobile ? 5 : 8, strokeWidth: 0, fill: peakColor }}
                 />
             </AreaChart>
         </ResponsiveContainer>

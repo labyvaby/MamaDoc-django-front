@@ -17,8 +17,8 @@ import {
     ToggleButtonGroup,
     ToggleButton,
 } from "@mui/material";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
-import InventoryIcon from "@mui/icons-material/Inventory";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonthOutlined";
+import InventoryIcon from "@mui/icons-material/InventoryOutlined";
 import { useNotification } from "@refinedev/core";
 import type { Theme } from "@mui/material/styles";
 
@@ -541,7 +541,7 @@ const SalesPage: React.FC = () => {
                                                                     {formatKGS(product.total)}
                                                                 </Typography>
                                                             </Box>
-                                                            <Box sx={{ bgcolor: "primary.main", color: "primary.contrastText", borderRadius: 10, px: 0.8, py: 0.2, fontSize: "0.75rem", fontWeight: 600, minWidth: 20, textAlign: "center" }}>
+                                                            <Box sx={{ bgcolor: "primary.main", color: "primary.contrastText", borderRadius: "999px", px: 0.8, py: 0.2, fontSize: "0.75rem", fontWeight: 600, minWidth: 20, textAlign: "center" }}>
                                                                 {product.count}
                                                             </Box>
                                                         </ListItemButton>

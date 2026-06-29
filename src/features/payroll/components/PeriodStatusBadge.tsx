@@ -1,7 +1,7 @@
 import React from 'react';
 import { Chip, Tooltip } from '@mui/material';
-import LockIcon from '@mui/icons-material/Lock';
-import EditIcon from '@mui/icons-material/Edit';
+import LockIcon from '@mui/icons-material/LockOutlined';
+import EditIcon from '@mui/icons-material/EditOutlined';
 import type { SalaryPeriod } from '../types';
 
 interface Props {

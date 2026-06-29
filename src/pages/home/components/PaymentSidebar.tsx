@@ -384,20 +384,20 @@ export const PaymentSidebar: React.FC<PaymentSidebarProps> = ({
                         bgcolor: (theme) => alpha(theme.palette.success.main, 0.04), // soft green tint for the whole card
                         border: '1px solid',
                         borderColor: (theme) => alpha(theme.palette.success.main, 0.2),
-                        borderRadius: 2,
+                        borderRadius: "14px",
                     }}
                 >
                     <Stack spacing={2}>
                         {/* Patient Info & Balance Section */}
                         <Box>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}>
                                 Пациент
                             </Typography>
                             <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
                                 {appointment.patient_name}
                             </Typography>
 
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1, fontWeight: 600, letterSpacing: 0.5 }}>
                                 Счёт пациента
                             </Typography>
                             <Stack spacing={1}>

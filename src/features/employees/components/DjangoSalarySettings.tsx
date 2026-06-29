@@ -23,11 +23,11 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
-import Add from "@mui/icons-material/Add";
+import Add from "@mui/icons-material/AddOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
-import AccessTime from "@mui/icons-material/AccessTime";
+import AccessTime from "@mui/icons-material/AccessTimeOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
-import Close from "@mui/icons-material/Close";
+import Close from "@mui/icons-material/CloseOutlined";
 
 import type { Service } from "../../../api/catalog";
 
@@ -137,7 +137,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
           mb: 1.5,
           display: "block",
           color: "text.secondary",
-          textTransform: "uppercase",
+          
           letterSpacing: 1,
         }}
       >
@@ -147,7 +147,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
       {/* ── Фикс (час/прием) ── */}
       <Paper
         variant="outlined"
-        sx={{ p: 1.5, mb: 2, borderRadius: 2, borderColor: "divider", bgcolor: "background.paper" }}
+        sx={{ p: 1.5, mb: 2, borderRadius: "14px", borderColor: "divider", bgcolor: "background.paper" }}
       >
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -261,13 +261,13 @@ const DjangoSalarySettings: React.FC<Props> = ({
           </Button>
         </Stack>
 
-        <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1.5, overflow: "hidden", bgcolor: "background.paper" }}>
+        <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: "14px", overflow: "hidden", bgcolor: "background.paper" }}>
           <Table size="small">
             <TableHead sx={{ bgcolor: "action.hover" }}>
               <TableRow>
-                <TableCell sx={{ fontWeight: 700, p: 1, fontSize: "0.6rem", color: "text.disabled", textTransform: "uppercase" }}>Услуги</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700, p: 0.5, fontSize: "0.6rem", color: "text.disabled", textTransform: "uppercase", width: 45 }}>%</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700, p: 0.5, fontSize: "0.6rem", color: "text.disabled", textTransform: "uppercase", width: 65 }}>Фикс</TableCell>
+                <TableCell sx={{ fontWeight: 700, p: 1, fontSize: "0.6rem", color: "text.disabled", }}>Услуги</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700, p: 0.5, fontSize: "0.6rem", color: "text.disabled", width: 45 }}>%</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700, p: 0.5, fontSize: "0.6rem", color: "text.disabled", width: 65 }}>Фикс</TableCell>
                 <TableCell align="center" sx={{ width: 32, p: 0 }} />
               </TableRow>
             </TableHead>

@@ -16,7 +16,7 @@ import {
   CheckCircleOutline,
   ErrorOutline,
   InfoOutlined,
-  Cancel as CancelIcon,
+  CancelOutlined as CancelIcon,
 } from "@mui/icons-material";
 
 export interface PaymentInfo {
@@ -135,17 +135,17 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
         variant="outlined"
         sx={{
           p: 2,
-          borderRadius: 2,
+          borderRadius: "14px",
           borderColor: alpha(statusConfig.bgColor, 0.3),
           bgcolor: alpha(statusConfig.bgColor, 0.02),
         }}
       >
         <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.2, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.2, fontWeight: 600, letterSpacing: 0.5 }}>
               Итого
             </Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: statusConfig.bgColor }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: statusConfig.bgColor }}>
               {formatAmount(finalTotal)} <Typography component="span" variant="h6" sx={{ fontWeight: 700 }}>сом</Typography>
             </Typography>
           </Box>
@@ -154,7 +154,7 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
             icon={statusConfig.icon}
             color={statusConfig.color}
             size="small"
-            sx={{ fontWeight: 700, borderRadius: 1.5 }}
+            sx={{ fontWeight: 700, borderRadius: "7px" }}
           />
         </Stack>
       </Paper>
@@ -166,21 +166,20 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
       <Paper
         variant="outlined"
         sx={{
-          borderRadius: 3,
+          borderRadius: "14px",
           overflow: 'hidden',
           borderColor: 'divider',
           bgcolor: 'background.paper',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
         }}
       >
         {/* Header - Total and Status */}
         <Box sx={{ p: 2, bgcolor: alpha(theme.palette.primary.main, 0.03), borderBottom: '1px solid', borderColor: 'divider' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
             <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, display: 'block', mb: 0.5 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1, display: 'block', mb: 0.5 }}>
                 Общая сумма
               </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 800, display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
                 {formatAmount(baseTotal || finalTotal)}
                 <Typography component="span" variant="h6" color="text.secondary" sx={{ fontWeight: 700 }}>сом</Typography>
               </Typography>
@@ -189,7 +188,7 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
               label={statusConfig.label}
               icon={statusConfig.icon}
               color={statusConfig.color}
-              sx={{ fontWeight: 700, height: 28, borderRadius: 1.5 }}
+              sx={{ fontWeight: 700, height: 28, borderRadius: "7px" }}
             />
           </Stack>
         </Box>
@@ -257,17 +256,17 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
             {/* Final Balance / Debt Section */}
             <Box sx={{
               p: 1.5,
-              borderRadius: 2,
+              borderRadius: "14px",
               bgcolor: debt > 0 ? alpha(theme.palette.error.main, 0.04) : alpha(theme.palette.success.main, 0.04),
               border: '1px solid',
               borderColor: debt > 0 ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.success.main, 0.1),
             }}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Box>
-                  <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', mb: 0.2 }}>
+                  <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 700, letterSpacing: 0.5, display: 'block', mb: 0.2 }}>
                     {debt > 0 ? "Остаток к оплате" : "Итого оплачено"}
                   </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 800, color: debt > 0 ? "error.main" : "success.main" }}>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: debt > 0 ? "error.main" : "success.main" }}>
                     {formatAmount(debt > 0 ? debt : totalPaid)} сом
                   </Typography>
                 </Box>

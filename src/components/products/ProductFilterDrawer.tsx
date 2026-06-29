@@ -11,7 +11,7 @@ import {
     Button,
     Autocomplete,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
 
 export type ProductFilters = {
     category: string | null;

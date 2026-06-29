@@ -3,7 +3,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Typography, Stack, Alert, CircularProgress,
 } from '@mui/material';
-import LockIcon from '@mui/icons-material/Lock';
+import LockIcon from '@mui/icons-material/LockOutlined';
 import { AppButton } from '../../../components/ui/AppButton';
 
 interface Props {
@@ -38,7 +38,7 @@ export const LockPeriodDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>
+      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
         Закрыть период {month}?
       </DialogTitle>
 
@@ -52,7 +52,7 @@ export const LockPeriodDialog: React.FC<Props> = ({
 
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary">Итого к выплате</Typography>
-            <Typography variant="h5" fontWeight={800} color="primary.onSurface">{formatted}</Typography>
+            <Typography variant="h5" fontWeight={700} color="primary.onSurface">{formatted}</Typography>
             <Typography variant="caption" color="text.secondary">{employeeCount} сотрудников</Typography>
           </Stack>
 

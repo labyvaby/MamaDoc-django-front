@@ -525,7 +525,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  bgcolor: "rgba(0,0,0,0.85)",
+                  bgcolor: (t) => alpha(t.palette.common.black, 0.85),
                   zIndex: 1300,
                 }}
               >
@@ -538,9 +538,9 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                     position: "absolute",
                     top: 20,
                     right: 20,
-                    color: "white",
-                    bgcolor: "rgba(255,255,255,0.1)",
-                    "&:hover": { bgcolor: "rgba(255,255,255,0.2)" },
+                    color: "common.white",
+                    bgcolor: (t) => alpha(t.palette.common.white, 0.1),
+                    "&:hover": { bgcolor: (t) => alpha(t.palette.common.white, 0.2) },
                   }}
                 >
                   <CloseOutlined />
@@ -555,8 +555,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       width: "70vw",
                       height: "70vh",
                       objectFit: "contain",
-                      borderRadius: 2,
-                      boxShadow: 24,
+                      borderRadius: "10px",
                     }}
                   />
                 )}

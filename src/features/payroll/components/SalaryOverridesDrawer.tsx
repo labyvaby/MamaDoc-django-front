@@ -4,10 +4,10 @@ import {
   TextField, Button, Alert, CircularProgress,
   FormControlLabel, Checkbox, Divider,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import CloseIcon from '@mui/icons-material/Close';
-import TuneIcon from '@mui/icons-material/Tune';
+import AddIcon from '@mui/icons-material/AddOutlined';
+import DeleteIcon from '@mui/icons-material/DeleteOutline';
+import CloseIcon from '@mui/icons-material/CloseOutlined';
+import TuneIcon from '@mui/icons-material/TuneOutlined';
 import dayjs from 'dayjs';
 import { supabase } from '../../../utility/supabaseClient';
 import type { SalaryOverride } from '../types';
@@ -160,7 +160,7 @@ export const SalaryOverridesDrawer: React.FC<Props> = ({
           <Stack spacing={0.25}>
             <Stack direction="row" spacing={1} alignItems="center">
               <TuneIcon fontSize="small" color="primary" />
-              <Typography variant="subtitle1" fontWeight={800}>
+              <Typography variant="subtitle1" fontWeight={700}>
                 Переопределения ставок
               </Typography>
             </Stack>
@@ -214,7 +214,7 @@ export const SalaryOverridesDrawer: React.FC<Props> = ({
                 <Box
                   key={o.id}
                   sx={{
-                    p: 1.5, borderRadius: 2, border: '1px solid',
+                    p: 1.5, borderRadius: "14px", border: '1px solid',
                     borderColor: 'divider', bgcolor: 'background.paper',
                   }}
                 >
@@ -246,7 +246,7 @@ export const SalaryOverridesDrawer: React.FC<Props> = ({
               {/* Add form */}
               {adding && (
                 <Box sx={{
-                  p: 2, borderRadius: 2,
+                  p: 2, borderRadius: "14px",
                   border: '1px dashed', borderColor: 'primary.main',
                   bgcolor: 'action.hover',
                 }}>

@@ -11,8 +11,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import LockOpenIcon from "@mui/icons-material/LockOpen";
-import LockIcon from "@mui/icons-material/Lock";
+import LockOpenIcon from "@mui/icons-material/LockOpenOutlined";
+import LockIcon from "@mui/icons-material/LockOutlined";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
@@ -140,7 +140,7 @@ const CurrentShiftPanel: React.FC<Props> = ({
         sx={{
           border: "1px dashed",
           borderColor: "divider",
-          borderRadius: 1.5,
+          borderRadius: "10px",
           px: 2,
           py: 1.5,
           bgcolor: "background.paper",
@@ -160,7 +160,7 @@ const CurrentShiftPanel: React.FC<Props> = ({
         sx={{
           border: "1px solid",
           borderColor: "divider",
-          borderRadius: 1.5,
+          borderRadius: "10px",
           px: 2,
           py: 1.5,
         }}
@@ -183,7 +183,7 @@ const CurrentShiftPanel: React.FC<Props> = ({
         sx={{
           border: "1px solid",
           borderColor: "divider",
-          borderRadius: 1.5,
+          borderRadius: "10px",
           px: 2,
           py: 1.5,
           bgcolor: "background.paper",
@@ -220,7 +220,7 @@ const CurrentShiftPanel: React.FC<Props> = ({
       sx={{
         border: "1px solid",
         borderColor: "success.main",
-        borderRadius: 1.5,
+        borderRadius: "10px",
         px: 2,
         py: 1.5,
         bgcolor: "background.paper",

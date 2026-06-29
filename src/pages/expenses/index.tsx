@@ -618,7 +618,7 @@ const ExpensesListPage: React.FC = () => {
                       color: 'error.main',
                       '&:hover': {
                         borderColor: 'error.dark',
-                        backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                        backgroundColor: 'error.lighter',
                       },
                       '&.Mui-disabled': {
                         borderColor: 'action.disabled',
@@ -655,7 +655,7 @@ const ExpensesListPage: React.FC = () => {
             </Box>
 
             {/* Детали (Дата, Категория, Сотрудник) */}
-            <Stack spacing={1.5} sx={{ bgcolor: "background.paper", borderRadius: 2 }}>
+            <Stack spacing={1.5} sx={{ bgcolor: "background.paper", borderRadius: "14px" }}>
               <Box display="flex" justifyContent="space-between" alignItems="center">
                 <Typography variant="body2" color="text.secondary">Дата и время</Typography>
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
@@ -699,7 +699,7 @@ const ExpensesListPage: React.FC = () => {
                   display: "flex",
                   justifyContent: "center",
                   bgcolor: (theme) => theme.palette.action.hover,
-                  borderRadius: 2,
+                  borderRadius: "14px",
                   overflow: "hidden",
                 }}
               >
@@ -973,13 +973,13 @@ const ExpensesListPage: React.FC = () => {
                     )}
 
                     {selectedMonth && (
-                      <Box sx={{ p: 1.5, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: 2, border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}` }}>
+                      <Box sx={{ p: 1.5, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: "14px", border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}` }}>
                         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
                           Итого за месяц
                         </Typography>
                         <Stack direction="row" alignItems="center" spacing={1}>
                           <AccountBalanceWalletOutlined sx={{ color: 'primary.onSurface', fontSize: 20 }} />
-                          <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.onSurface' }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'primary.onSurface' }}>
                             {formatKGS(groupedByEmployee.reduce((sum, emp) => sum + emp.total, 0))}
                           </Typography>
                         </Stack>

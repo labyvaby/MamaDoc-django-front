@@ -15,10 +15,11 @@ import {
   FormControlLabel,
   Checkbox,
 } from "@mui/material";
-import { Save, RestaurantMenu, Close, Delete } from "@mui/icons-material";
+import { SaveOutlined as Save, RestaurantMenuOutlined as RestaurantMenu, CloseOutlined as Close, DeleteOutline as Delete } from "@mui/icons-material";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import dayjs, { Dayjs } from "dayjs";
+import { subtleBg } from "../../theme";
 import { roundMinutesToStep } from "../../utility/time";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -340,7 +341,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
                     sx={{
                       width: 1,
                       bgcolor: "grey.100",
-                      borderRadius: 1.5,
+                      borderRadius: "10px",
                       p: "3px",
                       border: "none",
                       "& .MuiToggleButton-root": {
@@ -353,13 +354,11 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
                         color: "text.disabled",
                         boxShadow: "none",
                         "&:hover": {
-                          bgcolor: "rgba(0,0,0,0.04)",
+                          bgcolor: (t) => subtleBg(t, true),
                         },
                         "&.Mui-selected": {
                           bgcolor: "primary.main",
                           color: "primary.contrastText",
-                          boxShadow:
-                            "inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.05)",
                           fontWeight: 600,
                           "&:hover": {
                             bgcolor: "primary.dark",

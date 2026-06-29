@@ -33,6 +33,7 @@ import { Employee } from "../../features/employees/types";
 import { DB_TABLES } from "../../utility/constants";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { UserAvatar } from "../ui";
+import { subtleBg } from "../../theme";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -243,16 +244,13 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             size="small"
             sx={{
               p: { xs: 0.5, sm: 1 },
-              bgcolor: (theme) => theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.08)'
-                : 'rgba(0, 0, 0, 0.04)',
+              bgcolor: (theme) => subtleBg(theme),
               borderRadius: '50%',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              transition: 'background-color .15s ease, color .15s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:hover': {
                 bgcolor: (theme) => theme.palette.primary.main,
                 color: (theme) => theme.palette.primary.contrastText,
                 transform: 'rotate(180deg)',
-                boxShadow: (theme) => `0 4px 12px ${theme.palette.primary.main}40`,
               },
               '&:active': {
                 transform: 'rotate(180deg) scale(0.9)',
@@ -271,14 +269,12 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
               sx={{
                 cursor: "pointer",
                 ml: 0.5,
-                borderRadius: 24,
+                borderRadius: "999px",
                 pr: { xs: 0, md: 1.5 },
                 py: 0.5,
                 transition: 'background-color 0.2s',
                 '&:hover': {
-                  bgcolor: (theme) => theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.08)'
-                    : 'rgba(0, 0, 0, 0.04)',
+                  bgcolor: (theme) => subtleBg(theme),
                 }
               }}
             >
@@ -304,7 +300,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             onClose={() => setProfileOpen(false)}
             maxWidth="xs"
             fullWidth
-            PaperProps={{ sx: { borderRadius: 1.5, overflow: "hidden" } }}
+            PaperProps={{ sx: { borderRadius: "14px", overflow: "hidden" } }}
           >
             <DialogContent sx={{ p: 0 }}>
               {/* Шапка: тонированная плашка + кнопка закрытия */}

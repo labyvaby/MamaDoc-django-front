@@ -201,10 +201,7 @@ export const ProfigramInviteDialog: React.FC<ProfigramInviteDialogProps> = ({
                                                 p: 1.5,
                                                 cursor: 'pointer',
                                                 borderColor: selectedTariffId === t.id ? 'primary.main' : 'divider',
-                                                bgcolor: selectedTariffId === t.id ? 'primary.50' : 'transparent', // assume 50 exists, fallback to transparent
-                                                ...(selectedTariffId === t.id && {
-                                                    backgroundColor: 'action.selected'
-                                                })
+                                                bgcolor: selectedTariffId === t.id ? 'primary.lighter' : 'transparent',
                                             }}
                                             onClick={() => setSelectedTariffId(t.id)}
                                         >

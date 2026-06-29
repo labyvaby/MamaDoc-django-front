@@ -416,7 +416,7 @@ const DjangoServicesPage: React.FC = () => {
                 borderColor: "error.main",
                 "&:hover": {
                   borderColor: "error.dark",
-                  backgroundColor: "rgba(211, 47, 47, 0.08)",
+                  backgroundColor: "error.lighter",
                 },
               }}
             >

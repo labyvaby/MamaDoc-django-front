@@ -183,21 +183,17 @@ const AddSlotButton: React.FC<{ timeStr: string; onClick: () => void }> = ({ tim
       height: 44,
       border: "1px dashed",
       borderColor: "primary.main",
-      borderRadius: 1.5,
+      borderRadius: "10px",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       color: "primary.onSurface",
       cursor: "pointer",
-      transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+      transition: "background-color .15s ease, border-color .15s ease",
       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05),
       "&:hover": {
         bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-        transform: "translateY(-1px)",
-        boxShadow: (theme) =>
-          `0 4px 12px ${theme.palette.mode === "dark" ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.05)"}`,
       },
-      "&:active": { transform: "scale(0.98)" },
     }}
   >
     <AddCircleOutline sx={{ fontSize: 18, mr: 1, opacity: 0.8 }} />

@@ -8,6 +8,7 @@ import {
     Box,
     IconButton,
     Grid,
+    alpha,
 } from "@mui/material";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
@@ -53,8 +54,8 @@ const PassportPhotoUploader: React.FC<PassportPhotoUploaderProps> = ({
                                     position: "absolute",
                                     top: 0,
                                     right: 0,
-                                    bgcolor: "rgba(255,255,255,0.7)",
-                                    "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
+                                    bgcolor: (t) => alpha(t.palette.common.white, 0.7),
+                                    "&:hover": { bgcolor: (t) => alpha(t.palette.common.white, 0.9) },
                                 }}
                             >
                                 <DeleteOutline fontSize="small" color="error" />

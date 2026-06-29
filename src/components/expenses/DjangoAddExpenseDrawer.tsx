@@ -289,7 +289,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               onChange={handlePhotoChange}
             />
             {photoPreview ? (
-              <Box sx={{ position: "relative", width: "100%", height: 160, borderRadius: 1.5, overflow: "hidden", border: "1px solid", borderColor: "divider" }}>
+              <Box sx={{ position: "relative", width: "100%", height: 160, borderRadius: "10px", overflow: "hidden", border: "1px solid", borderColor: "divider" }}>
                 <Box
                   component="img"
                   src={photoPreview}
@@ -423,7 +423,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               p: 2.5,
               bgcolor: alpha(theme.palette.primary.main, 0.04),
               borderColor: "divider",
-              borderRadius: 2,
+              borderRadius: "14px",
             }}
           >
             <Stack spacing={2}>

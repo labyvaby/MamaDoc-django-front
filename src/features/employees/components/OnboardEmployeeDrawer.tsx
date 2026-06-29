@@ -194,7 +194,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       // Бэкенд скоупит роли по организации (по умолчанию — активной). Передаём
       // id явно; rolesForActiveOrg — дополнительный клиентский слой на случай,
       // если контекст ещё не подхватился.
-      getRoles(activeOrganization?.id).then((r) => { if (!cancelled) setRoles(rolesForActiveOrg(r, activeOrganization?.id)); }),
+      getRoles().then((r) => { if (!cancelled) setRoles(rolesForActiveOrg(r, activeOrganization?.id)); }),
     ];
     if (canViewSpecs || canManageSpecs) {
       tasks.push(

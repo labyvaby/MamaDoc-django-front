@@ -45,6 +45,8 @@ import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/query
 import { getStatusConfig, getStatusChipSx, normalizeDjangoStatus } from "../../../config/appointmentStatuses";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { usePermissions } from "../../../hooks/usePermissions";
+import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
+import AppointmentReviewBlock from "../../reviews/AppointmentReviewBlock";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
@@ -568,6 +570,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               {payQuery.isLoading && <CircularProgress size={14} />}
             </Stack>
 
+            {/* ── Review status + request (self-gated by reviews.* perms) ── */}
+            <AppointmentReviewBlock appointmentId={appt.id} />
+
             {/* ── Payment block — non-doctor/nurse ── */}
             {isNonDoctor && (canViewFinance || canManageFinance) && (
               <>
@@ -610,7 +615,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     bgcolor: alpha(theme.palette.primary.main, 0.04),
                     display: "flex",
                     alignItems: "center",
-                    borderRadius: 1.5,
+                    borderRadius: "10px",
                     cursor: "pointer",
                     transition: "all 0.2s",
                     "&:hover": {
@@ -667,7 +672,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   sx={{
                     p: 2,
                     bgcolor: alpha(theme.palette.warning.main, 0.04),
-                    borderRadius: 1.5,
+                    borderRadius: "10px",
                   }}
                 >
                   <Typography variant="body2" color="text.secondary">
@@ -688,7 +693,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   sx={{
                     p: 2,
                     bgcolor: alpha(theme.palette.primary.main, 0.02),
-                    borderRadius: 1.5,
+                    borderRadius: "10px",
                   }}
                 >
                   <Typography variant="body2" color="text.disabled">
@@ -719,7 +724,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                           alignItems: "center",
                           bgcolor: alpha(theme.palette.primary.main, 0.04),
                           borderColor: alpha(theme.palette.primary.main, 0.1),
-                          borderRadius: 1.5,
+                          borderRadius: "10px",
                           cursor: group.employeeId ? "pointer" : "default",
                           transition: "all 0.2s",
                           "&:hover": {
@@ -768,7 +773,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                               alignItems: "center",
                               gap: 2,
                               bgcolor: "background.paper",
-                              borderRadius: 1.5,
+                              borderRadius: "10px",
                               cursor: sl.service?.id ? "pointer" : "default",
                               transition: "all 0.2s",
                               "&:hover": {

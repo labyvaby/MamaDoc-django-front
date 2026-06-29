@@ -9,7 +9,7 @@ import {
   Box,
   IconButton,
 } from "@mui/material";
-import { Close, WarningAmber, ErrorOutline, InfoOutlined, HelpOutline } from "@mui/icons-material";
+import { CloseOutlined as Close, WarningAmberOutlined as WarningAmber, ErrorOutline, InfoOutlined, HelpOutline } from "@mui/icons-material";
 
 export type ConfirmDialogVariant = "warning" | "error" | "info" | "question";
 
@@ -70,7 +70,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: 2,
+          borderRadius: "14px",
         },
       }}
     >

@@ -398,7 +398,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               bgcolor: (theme) => alpha(theme.palette.success.main, 0.04),
               border: "1px solid",
               borderColor: (theme) => alpha(theme.palette.success.main, 0.2),
-              borderRadius: 2,
+              borderRadius: "14px",
             }}
           >
             <Stack spacing={2}>
@@ -408,7 +408,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   variant="caption"
                   color="text.secondary"
                   display="block"
-                  sx={{ mb: 0.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}
+                  sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}
                 >
                   Пациент
                 </Typography>
@@ -424,7 +424,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     variant="caption"
                     color="text.secondary"
                     display="block"
-                    sx={{ mb: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}
+                    sx={{ mb: 1, fontWeight: 600, letterSpacing: 0.5 }}
                   >
                     Счёт пациента
                   </Typography>

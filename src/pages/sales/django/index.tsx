@@ -1,27 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
     Box,
     Grid2,
     useMediaQuery,
     useTheme,
-    Paper,
-    Typography,
     Stack,
-    List,
-    ListItemButton,
-    Button,
-    TextField,
-    MenuItem,
-    CircularProgress,
     ToggleButtonGroup,
     ToggleButton,
-    Chip,
-    alpha,
 } from "@mui/material";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
-import InventoryIcon from "@mui/icons-material/Inventory";
+import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
+import InventoryOutlined from "@mui/icons-material/InventoryOutlined";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import { useNotification } from "@refinedev/core";
-import type { Theme } from "@mui/material/styles";
+import { useSearchParams } from "react-router";
+import dayjs, { type Dayjs } from "dayjs";
 
 import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -32,13 +24,17 @@ import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { ApiError, isAbortError } from "../../../api/client";
 import {
     getSales,
-    getSaleDayTotals,
+    getSaleStats,
+    getSalesByProduct,
+    getSalesByDay,
     deleteSale,
     DjangoSale,
-    SaleDayTotal,
+    SaleStats,
+    SaleProductTotal,
+    SaleDayAggregate,
+    SaleListFilters,
 } from "../../../api/sales";
 import { getProducts } from "../../../api/warehouse";
-import { formatKGS } from "../../../utility/format";
 
 import { DjangoSalesList } from "../../../components/sales/django/DjangoSalesList";
 import { DjangoSaleDetails } from "../../../components/sales/django/DjangoSaleDetails";
@@ -46,13 +42,43 @@ import {
     DjangoSaleFormDrawer,
     type SaleProductOption,
 } from "../../../components/sales/django/DjangoSaleFormDrawer";
-
-const MONTH_NAMES = [
-    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
-];
+import {
+    SalesFilterBar,
+    type SalesPeriodPreset,
+    type SalesPaymentUI,
+    type SalesStatusUI,
+} from "../../../components/sales/django/SalesFilterBar";
+import { SalesKpiCards } from "../../../components/sales/django/SalesKpiCards";
+import { SalesByProductView } from "../../../components/sales/django/SalesByProductView";
+import { SalesByDayView } from "../../../components/sales/django/SalesByDayView";
 
 const PAGE_SIZE = 50;
+
+type SalesView = "list" | "product" | "day";
+
+/** Вычисляет диапазон дат YYYY-MM-DD из пресета/произвольных дат. */
+function computeRange(
+    period: SalesPeriodPreset,
+    customFrom: Dayjs | null,
+    customTo: Dayjs | null,
+): { from: string | null; to: string | null } {
+    const today = dayjs();
+    switch (period) {
+        case "today":
+            return { from: today.format("YYYY-MM-DD"), to: today.format("YYYY-MM-DD") };
+        case "week":
+            return { from: today.subtract(6, "day").format("YYYY-MM-DD"), to: today.format("YYYY-MM-DD") };
+        case "month":
+            return { from: today.startOf("month").format("YYYY-MM-DD"), to: today.format("YYYY-MM-DD") };
+        case "all":
+            return { from: null, to: null };
+        case "custom":
+            return {
+                from: customFrom ? customFrom.format("YYYY-MM-DD") : null,
+                to: customTo ? customTo.format("YYYY-MM-DD") : null,
+            };
+    }
+}
 
 const DjangoSalesPage: React.FC = () => {
     usePageTitle("Продажи");
@@ -63,84 +89,142 @@ const DjangoSalesPage: React.FC = () => {
     const canView = useCan(["warehouse.sales.view", "warehouse.view"]);
     const canManageSales = useCan("warehouse.sales.manage");
 
-    const today = new Date();
-    const todayYear = today.getFullYear().toString();
-    const todayMonth = `${todayYear}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+    // ── Состояние фильтров (инициализируется из URL) ──────────────────────────
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [period, setPeriod] = useState<SalesPeriodPreset>(
+        () => (searchParams.get("period") as SalesPeriodPreset) || "month",
+    );
+    const [customFrom, setCustomFrom] = useState<Dayjs | null>(() => {
+        const v = searchParams.get("from");
+        return v ? dayjs(v) : null;
+    });
+    const [customTo, setCustomTo] = useState<Dayjs | null>(() => {
+        const v = searchParams.get("to");
+        return v ? dayjs(v) : null;
+    });
+    const [search, setSearch] = useState(() => searchParams.get("q") || "");
+    const [paymentUI, setPaymentUI] = useState<SalesPaymentUI>(
+        () => (searchParams.get("pay") as SalesPaymentUI) || "all",
+    );
+    const [statusUI, setStatusUI] = useState<SalesStatusUI>(
+        () => (searchParams.get("status") as SalesStatusUI) || "all",
+    );
+    const [view, setView] = useState<SalesView>(
+        () => (searchParams.get("view") as SalesView) || "list",
+    );
 
-    // Фильтры
-    const [selectedYear, setSelectedYear] = useState<string | null>(todayYear);
-    const [selectedMonth, setSelectedMonth] = useState<string | null>(todayMonth);
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [filterMode, setFilterMode] = useState<"date" | "products">("date");
-    const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+    // Поиск с задержкой
+    const [debouncedSearch, setDebouncedSearch] = useState(search);
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(search), 350);
+        return () => clearTimeout(t);
+    }, [search]);
 
-    // Список продаж + пагинация
+    // Синхронизация состояния → URL (фильтр сохраняется при возврате)
+    useEffect(() => {
+        const p = new URLSearchParams();
+        if (period !== "month") p.set("period", period);
+        if (period === "custom") {
+            if (customFrom) p.set("from", customFrom.format("YYYY-MM-DD"));
+            if (customTo) p.set("to", customTo.format("YYYY-MM-DD"));
+        }
+        if (search) p.set("q", search);
+        if (paymentUI !== "all") p.set("pay", paymentUI);
+        if (statusUI !== "all") p.set("status", statusUI);
+        if (view !== "list") p.set("view", view);
+        setSearchParams(p, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [period, customFrom, customTo, search, paymentUI, statusUI, view]);
+
+    const range = useMemo(
+        () => computeRange(period, customFrom, customTo),
+        [period, customFrom, customTo],
+    );
+
+    // Произвольный период без обеих дат — не запрашиваем (показываем подсказку).
+    const rangeReady = !(period === "custom" && (!customFrom || !customTo));
+
+    const apiFilters = useMemo<SaleListFilters>(
+        () => ({
+            dateFrom: range.from,
+            dateTo: range.to,
+            search: debouncedSearch || null,
+            paymentMethod: paymentUI === "all" ? null : paymentUI,
+            status: statusUI === "all" ? null : statusUI,
+        }),
+        [range, debouncedSearch, paymentUI, statusUI],
+    );
+    const filtersKey = useMemo(() => JSON.stringify(apiFilters), [apiFilters]);
+
+    const rangeLabel = useMemo(() => {
+        if (period === "all") return "за всё время";
+        if (!range.from || !range.to) return "выберите даты";
+        return `с ${dayjs(range.from).format("DD.MM")} по ${dayjs(range.to).format("DD.MM")}`;
+    }, [period, range]);
+
+    const hasActiveFilters =
+        period !== "month" || !!search || paymentUI !== "all" || statusUI !== "all";
+
+    const handleReset = () => {
+        setPeriod("month");
+        setCustomFrom(null);
+        setCustomTo(null);
+        setSearch("");
+        setPaymentUI("all");
+        setStatusUI("all");
+    };
+
+    // ── Данные: KPI ───────────────────────────────────────────────────────────
+    const [stats, setStats] = useState<SaleStats | null>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+    const statsAbortRef = useRef<AbortController | null>(null);
+    const fetchStats = useCallback(async () => {
+        statsAbortRef.current?.abort();
+        const c = new AbortController();
+        statsAbortRef.current = c;
+        setStatsLoading(true);
+        try {
+            const s = await getSaleStats(apiFilters, c.signal);
+            setStats(s);
+        } catch (e) {
+            if (isAbortError(e)) return;
+            console.error(e);
+        } finally {
+            if (statsAbortRef.current === c) setStatsLoading(false);
+        }
+    }, [apiFilters]);
+
+    // ── Данные: список (вид «Список») + пагинация ─────────────────────────────
     const [sales, setSales] = useState<DjangoSale[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const offsetRef = useRef(0);
-
-    // Суммы по дням для левой панели
-    const [dayTotals, setDayTotals] = useState<SaleDayTotal[]>([]);
-    const [dayTotalsLoading, setDayTotalsLoading] = useState(false);
-
-    // Master-Detail
     const [selectedSale, setSelectedSale] = useState<DjangoSale | null>(null);
-
-    // Drawers
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    const [saleToEdit, setSaleToEdit] = useState<DjangoSale | null>(null);
-    const [availableProducts, setAvailableProducts] = useState<SaleProductOption[]>([]);
-
-    // Вычисляем from/to из фильтров
-    const getDateRange = useCallback((): { from: string | null; to: string | null } => {
-        if (selectedDate) return { from: selectedDate, to: selectedDate };
-        if (selectedMonth) {
-            const [y, m] = selectedMonth.split("-");
-            const lastDay = new Date(Number(y), Number(m), 0).getDate();
-            return { from: `${selectedMonth}-01`, to: `${selectedMonth}-${String(lastDay).padStart(2, "0")}` };
-        }
-        if (selectedYear) {
-            return { from: `${selectedYear}-01-01`, to: `${selectedYear}-12-31` };
-        }
-        return { from: null, to: null };
-    }, [selectedDate, selectedMonth, selectedYear]);
-
-    // Отмена предыдущего запроса: при быстрой смене фильтров/поиска старый
-    // ответ не должен перетереть свежие данные.
     const salesAbortRef = useRef<AbortController | null>(null);
+
     const fetchSales = useCallback(async (reset = true) => {
         salesAbortRef.current?.abort();
-        const controller = new AbortController();
-        salesAbortRef.current = controller;
-
+        const c = new AbortController();
+        salesAbortRef.current = c;
         if (reset) {
             setLoading(true);
             offsetRef.current = 0;
         } else {
             setLoadingMore(true);
         }
-
         try {
-            const { from, to } = getDateRange();
-            const data = await getSales({
-                dateFrom: from,
-                dateTo: to,
-                search: searchQuery || null,
-                limit: PAGE_SIZE + 1,
-                offset: offsetRef.current,
-            }, controller.signal);
+            const data = await getSales(
+                { ...apiFilters, limit: PAGE_SIZE + 1, offset: offsetRef.current },
+                c.signal,
+            );
             const page = data.slice(0, PAGE_SIZE);
-
             if (reset) {
                 setSales(page);
                 setSelectedSale(page[0] ?? null);
             } else {
                 setSales((prev) => [...prev, ...page]);
             }
-
             setHasMore(data.length > PAGE_SIZE);
             offsetRef.current += page.length;
         } catch (e) {
@@ -148,25 +232,42 @@ const DjangoSalesPage: React.FC = () => {
             console.error(e);
             notify?.({ type: "error", message: "Ошибка загрузки продаж" });
         } finally {
-            if (salesAbortRef.current === controller) {
+            if (salesAbortRef.current === c) {
                 setLoading(false);
                 setLoadingMore(false);
             }
         }
-    }, [getDateRange, searchQuery, notify]);
+    }, [apiFilters, notify]);
 
-    const fetchDayTotals = useCallback(async (year: string | null) => {
-        setDayTotalsLoading(true);
+    // ── Данные: агрегаты ──────────────────────────────────────────────────────
+    const [productRows, setProductRows] = useState<SaleProductTotal[]>([]);
+    const [productLoading, setProductLoading] = useState(false);
+    const fetchByProduct = useCallback(async () => {
+        setProductLoading(true);
         try {
-            const data = await getSaleDayTotals(year ?? null, null);
-            setDayTotals(data);
+            setProductRows(await getSalesByProduct(apiFilters));
         } catch (e) {
             console.error(e);
         } finally {
-            setDayTotalsLoading(false);
+            setProductLoading(false);
         }
-    }, []);
+    }, [apiFilters]);
 
+    const [dayRows, setDayRows] = useState<SaleDayAggregate[]>([]);
+    const [dayLoading, setDayLoading] = useState(false);
+    const fetchByDay = useCallback(async () => {
+        setDayLoading(true);
+        try {
+            setDayRows(await getSalesByDay(apiFilters));
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setDayLoading(false);
+        }
+    }, [apiFilters]);
+
+    // ── Товары для drawer «Новая продажа» ─────────────────────────────────────
+    const [availableProducts, setAvailableProducts] = useState<SaleProductOption[]>([]);
     const fetchProducts = useCallback(async () => {
         try {
             const prods = await getProducts();
@@ -181,112 +282,33 @@ const DjangoSalesPage: React.FC = () => {
         } catch (e) { console.error(e); }
     }, []);
 
-    // Начальная загрузка
     useEffect(() => {
-        if (!permLoading && canView) {
-            fetchProducts();
-        }
+        if (!permLoading && canView) fetchProducts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [permLoading, canView]);
 
-    // Перезагрузка при смене фильтров
+    // Главный эффект загрузки: KPI всегда + активный вид. Реагирует на фильтры/вид.
     useEffect(() => {
-        if (!permLoading && canView) {
-            fetchSales(true);
-        }
+        if (permLoading || !canView || !rangeReady) return;
+        fetchStats();
+        if (view === "list") fetchSales(true);
+        else if (view === "product") fetchByProduct();
+        else fetchByDay();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [permLoading, canView, selectedDate, selectedMonth, selectedYear]);
+    }, [permLoading, canView, rangeReady, filtersKey, view]);
 
-    // Поиск с задержкой
-    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const searchDidMountRef = useRef(false);
-    useEffect(() => {
-        if (!searchDidMountRef.current) {
-            searchDidMountRef.current = true;
-            return;
-        }
-        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-        searchTimerRef.current = setTimeout(() => fetchSales(true), 350);
-        return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchQuery]);
-
-    // Загрузка сумм по дням при смене года
-    useEffect(() => {
-        if (!permLoading && canView) {
-            fetchDayTotals(selectedYear);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [permLoading, canView, selectedYear]);
-
-    // Обновление при возврате фокуса — продажи коллег подтянутся без F5.
     useFocusRefetch(() => {
-        if (!permLoading && canView) {
-            fetchSales(true);
-            fetchDayTotals(selectedYear);
-        }
+        if (permLoading || !canView || !rangeReady) return;
+        fetchStats();
+        if (view === "list") fetchSales(true);
+        else if (view === "product") fetchByProduct();
+        else fetchByDay();
     });
 
-    // Доступные годы из dayTotals
-    const availableYears = React.useMemo(() => {
-        const years = new Set<string>();
-        dayTotals.forEach((d) => years.add(d.day.slice(0, 4)));
-        if (selectedYear) years.add(selectedYear);
-        return Array.from(years).sort((a, b) => b.localeCompare(a));
-    }, [dayTotals, selectedYear]);
-
-    // Только месяцы с данными из dayTotals
-    const availableMonths = React.useMemo(() => {
-        if (!selectedYear) return [];
-        const monthMap = new Map<string, number>();
-        dayTotals.forEach((d) => {
-            if (d.day.slice(0, 4) !== selectedYear) return;
-            const monthKey = d.day.slice(0, 7);
-            const monthIndex = Number(d.day.slice(5, 7)) - 1;
-            if (!monthMap.has(monthKey)) monthMap.set(monthKey, monthIndex);
-        });
-        return Array.from(monthMap.entries())
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([value, monthIndex]) => ({ value, monthIndex }));
-    }, [dayTotals, selectedYear]);
-
-    // Дни с суммами для выбранного месяца
-    const groupedByDay = React.useMemo(() => {
-        if (!selectedMonth) return [];
-        return dayTotals
-            .filter((d) => d.day.startsWith(selectedMonth))
-            .map((d) => ({ date: d.day, total: d.totalAmount }))
-            .sort((a, b) => b.date.localeCompare(a.date));
-    }, [dayTotals, selectedMonth]);
-
-    // Группировка по товарам из загруженных продаж
-    const groupedByProduct = React.useMemo(() => {
-        const map = new Map<string, { name: string; count: number; total: number }>();
-        for (const sale of sales) {
-            for (const line of (sale.lines ?? [])) {
-                const name = line.productName ?? "Неизвестный товар";
-                const existing = map.get(name);
-                if (existing) {
-                    existing.count += line.quantity;
-                    existing.total += line.total;
-                } else {
-                    map.set(name, { name, count: line.quantity, total: line.total });
-                }
-            }
-        }
-        return Array.from(map.values()).sort((a, b) => b.total - a.total);
-    }, [sales]);
-
-    // Продажи, отфильтрованные по выбранному товару
-    const filteredSales = React.useMemo(() => {
-        if (filterMode !== "products" || !selectedProduct) return sales;
-        return sales.filter((s) => s.lines?.some((l) => (l.productName ?? "Неизвестный товар") === selectedProduct));
-    }, [sales, filterMode, selectedProduct]);
-
-    // Infinite scroll — sentinel element
+    // Infinite scroll (только вид «Список»)
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
-        if (!sentinelRef.current) return;
+        if (view !== "list" || !sentinelRef.current) return;
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
@@ -297,22 +319,29 @@ const DjangoSalesPage: React.FC = () => {
         );
         observer.observe(sentinelRef.current);
         return () => observer.disconnect();
-    }, [hasMore, loadingMore, loading, fetchSales]);
+    }, [view, hasMore, loadingMore, loading, fetchSales]);
 
-    // Auto-select first on desktop
     useEffect(() => {
-        if (!isMobile && !selectedSale && sales.length > 0) {
-            setSelectedSale(sales[0]);
-        }
+        if (!isMobile && !selectedSale && sales.length > 0) setSelectedSale(sales[0]);
     }, [sales, isMobile, selectedSale]);
+
+    // ── Drawers / действия ────────────────────────────────────────────────────
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [saleToEdit, setSaleToEdit] = useState<DjangoSale | null>(null);
+
+    const refetchCurrent = () => {
+        fetchStats();
+        if (view === "list") fetchSales(true);
+        else if (view === "product") fetchByProduct();
+        else fetchByDay();
+    };
 
     const handleDeleteSale = async (sale: DjangoSale) => {
         try {
             await deleteSale(sale.id);
             notify?.({ type: "success", message: "Продажа удалена, товары возвращены на склад" });
             if (selectedSale?.id === sale.id) setSelectedSale(null);
-            fetchSales(true);
-            fetchDayTotals(selectedYear);
+            refetchCurrent();
         } catch (e) {
             console.error(e);
             const message = e instanceof ApiError ? e.message : "Не удалось удалить продажу";
@@ -330,324 +359,130 @@ const DjangoSalesPage: React.FC = () => {
         setDrawerOpen(true);
     };
 
-    const handleSaved = () => {
-        fetchSales(true);
-        fetchDayTotals(selectedYear);
-    };
-
     if (!permLoading && !canView) return <AccessDenied />;
+
+    const showDetailColumn = view === "list" && !isMobile;
 
     return (
         <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
             <PageHeader
                 title="Продажи"
                 showTitle={false}
-                showSearch
-                searchVal={searchQuery}
-                onSearchChange={setSearchQuery}
-                searchPlaceholder="Поиск продаж..."
                 onAdd={canManageSales ? handleCreateClick : undefined}
                 addButtonText="Продажа"
             />
 
-            <Box sx={(theme) => ({ px: theme.appLayout.page.paddingX, pb: theme.appLayout.page.paddingY, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: { xs: "auto", md: "hidden" } })}>
-                <Grid2 container spacing={2} sx={{ flex: 1, minHeight: 0, height: "100%" }}>
+            <Box
+                sx={(t) => ({
+                    px: t.appLayout.page.paddingX,
+                    pb: t.appLayout.page.paddingY,
+                    flex: 1,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    overflow: { xs: "auto", md: "hidden" },
+                })}
+            >
+                {/* Горизонтальная панель фильтров */}
+                <SalesFilterBar
+                    period={period}
+                    onPeriodChange={setPeriod}
+                    customFrom={customFrom}
+                    customTo={customTo}
+                    onCustomFromChange={setCustomFrom}
+                    onCustomToChange={setCustomTo}
+                    rangeLabel={rangeLabel}
+                    search={search}
+                    onSearchChange={setSearch}
+                    paymentMethod={paymentUI}
+                    onPaymentMethodChange={setPaymentUI}
+                    status={statusUI}
+                    onStatusChange={setStatusUI}
+                    hasActiveFilters={hasActiveFilters}
+                    onReset={handleReset}
+                />
 
-                    {/* Period Filter Column */}
-                    <Grid2
-                        size={{ xs: 12, md: 2 }}
-                        sx={(theme: Theme) => ({
-                            position: { md: "sticky" },
-                            top: { md: theme.spacing(2) },
-                            alignSelf: "flex-start",
-                            height: { xs: "auto", md: "100%" },
-                            display: "flex",
-                            flexDirection: "column",
-                            overflow: { xs: "visible", md: "hidden" },
-                        })}
-                    >
-                        <Paper
-                            elevation={0}
-                            variant="outlined"
-                            sx={{ height: { xs: "auto", md: "100%" }, overflow: "hidden", display: "flex", flexDirection: "column" }}
-                        >
-                            <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                                    Фильтры
-                                </Typography>
-                                <Button
-                                    size="small"
-                                    onClick={() => {
-                                        setSelectedYear(null);
-                                        setSelectedMonth(null);
-                                        setSelectedDate(null);
-                                        setSelectedProduct(null);
-                                    }}
-                                    sx={{ textTransform: "none" }}
-                                >
-                                    Все продажи
-                                </Button>
-                            </Box>
+                {/* KPI-сводка */}
+                <SalesKpiCards stats={stats} loading={statsLoading} />
 
-                            {/* Переключатель По дате / По товарам */}
-                            <Box sx={{ px: 1.5, pt: 1.5, pb: 1 }}>
-                                <ToggleButtonGroup
-                                    value={filterMode}
-                                    exclusive
-                                    onChange={(_, v) => {
-                                        if (v) {
-                                            setFilterMode(v);
-                                            setSelectedDate(null);
-                                            setSelectedProduct(null);
-                                        }
-                                    }}
-                                    size="small"
-                                    fullWidth
-                                >
-                                    <ToggleButton value="date" sx={{ textTransform: "none", gap: 0.5, fontSize: "0.75rem" }}>
-                                        <CalendarMonthIcon fontSize="inherit" />
-                                        По дате
-                                    </ToggleButton>
-                                    <ToggleButton value="products" sx={{ textTransform: "none", gap: 0.5, fontSize: "0.75rem" }}>
-                                        <InventoryIcon fontSize="inherit" />
-                                        По товарам
-                                    </ToggleButton>
-                                </ToggleButtonGroup>
-                            </Box>
+                {/* Переключатель вида отчёта */}
+                <ToggleButtonGroup
+                    value={view}
+                    exclusive
+                    size="small"
+                    onChange={(_, v) => v && setView(v)}
+                    sx={{ alignSelf: "flex-start" }}
+                >
+                    <ToggleButton value="list" sx={{ textTransform: "none", gap: 0.5, px: 1.5 }}>
+                        <FormatListBulletedOutlined fontSize="small" />
+                        Список
+                    </ToggleButton>
+                    <ToggleButton value="product" sx={{ textTransform: "none", gap: 0.5, px: 1.5 }}>
+                        <InventoryOutlined fontSize="small" />
+                        По товарам
+                    </ToggleButton>
+                    <ToggleButton value="day" sx={{ textTransform: "none", gap: 0.5, px: 1.5 }}>
+                        <CalendarMonthOutlined fontSize="small" />
+                        По дням
+                    </ToggleButton>
+                </ToggleButtonGroup>
 
-                            <Box sx={{ overflowY: "auto", flex: 1, px: 1.5, pb: 1.5 }}>
-                                <Stack spacing={1.5}>
-                                    {/* Год */}
-                                    <Stack spacing={0.5}>
-                                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                            Год
-                                        </Typography>
-                                        <TextField
-                                            select
-                                            size="small"
-                                            fullWidth
-                                            value={selectedYear ?? ""}
-                                            onChange={(e) => {
-                                                const v = e.target.value || null;
-                                                setSelectedYear(v);
-                                                setSelectedMonth(null);
-                                                setSelectedDate(null);
-                                                setSelectedProduct(null);
-                                            }}
-                                            SelectProps={{ displayEmpty: true }}
-                                        >
-                                            <MenuItem value="">
-                                                <Typography variant="body2" color="text.secondary">Все годы</Typography>
-                                            </MenuItem>
-                                            {availableYears.map((year) => (
-                                                <MenuItem key={year} value={year}>{year}</MenuItem>
-                                            ))}
-                                        </TextField>
-                                    </Stack>
-
-                                    {/* Пустой каскад: продаж ещё нет — выбирать период не из чего */}
-                                    {!dayTotalsLoading && availableYears.length === 0 && (
-                                        <Typography variant="body2" color="text.secondary" sx={{ px: 0.5, py: 1 }}>
-                                            Продаж пока нет — выбор периода появится после первой продажи.
-                                        </Typography>
-                                    )}
-
-                                    {/* Месяц */}
-                                    {selectedYear && (
-                                        <Stack spacing={0.5}>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                                Месяц
-                                            </Typography>
-                                            <TextField
-                                                select
-                                                size="small"
-                                                fullWidth
-                                                value={selectedMonth ?? ""}
-                                                onChange={(e) => {
-                                                    const v = e.target.value || null;
-                                                    setSelectedMonth(v);
-                                                    setSelectedDate(null);
-                                                    setSelectedProduct(null);
-                                                }}
-                                                SelectProps={{ displayEmpty: true }}
-                                            >
-                                                <MenuItem value="">
-                                                    <Typography variant="body2" color="text.secondary">Все месяцы</Typography>
-                                                </MenuItem>
-                                                {availableMonths.map((m) => (
-                                                    <MenuItem key={m.value} value={m.value}>
-                                                        {MONTH_NAMES[m.monthIndex]}
-                                                    </MenuItem>
-                                                ))}
-                                            </TextField>
-                                        </Stack>
-                                    )}
-
-                                    {/* Режим: По дате — список дней */}
-                                    {filterMode === "date" && selectedMonth && (
-                                        <Stack spacing={0.5}>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                                День
-                                            </Typography>
-                                            {dayTotalsLoading ? (
-                                                <Box sx={{ display: "flex", justifyContent: "center", py: 1 }}>
-                                                    <CircularProgress size={20} />
-                                                </Box>
-                                            ) : groupedByDay.length === 0 ? (
-                                                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                                                    Нет продаж за выбранный месяц
-                                                </Typography>
-                                            ) : (
-                                                <List dense sx={{ py: 0 }}>
-                                                    {groupedByDay.map((day) => (
-                                                        <ListItemButton
-                                                            key={day.date}
-                                                            selected={selectedDate === day.date}
-                                                            sx={{
-                                                                borderRadius: 1.5,
-                                                                mb: 0.5,
-                                                                border: 1,
-                                                                borderColor: selectedDate === day.date ? "primary.main" : "transparent",
-                                                                "&.Mui-selected": {
-                                                                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                                                                    "&:hover": { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12) },
-                                                                },
-                                                            }}
-                                                            onClick={() => setSelectedDate(selectedDate === day.date ? null : day.date)}
-                                                        >
-                                                            <Typography variant="body2" sx={{ flex: 1 }}>
-                                                                {new Date(day.date).toLocaleDateString("ru-RU")}
-                                                            </Typography>
-                                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                                {formatKGS(day.total)}
-                                                            </Typography>
-                                                        </ListItemButton>
-                                                    ))}
-                                                </List>
-                                            )}
-                                        </Stack>
-                                    )}
-
-                                    {/* Режим: По товарам — список товаров */}
-                                    {filterMode === "products" && (
-                                        <Stack spacing={0.5}>
-                                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                                Товары
-                                            </Typography>
-                                            {loading ? (
-                                                <Box sx={{ display: "flex", justifyContent: "center", py: 1 }}>
-                                                    <CircularProgress size={20} />
-                                                </Box>
-                                            ) : groupedByProduct.length === 0 ? (
-                                                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                                                    Нет данных за выбранный период
-                                                </Typography>
-                                            ) : (
-                                                <List dense sx={{ py: 0 }}>
-                                                    {groupedByProduct.map((product) => (
-                                                        <ListItemButton
-                                                            key={product.name}
-                                                            selected={selectedProduct === product.name}
-                                                            sx={{
-                                                                borderRadius: 1.5,
-                                                                mb: 0.5,
-                                                                pr: 1,
-                                                                border: 1,
-                                                                borderColor: selectedProduct === product.name ? "primary.main" : "transparent",
-                                                                "&.Mui-selected": {
-                                                                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                                                                    "&:hover": { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12) },
-                                                                },
-                                                            }}
-                                                            onClick={() => setSelectedProduct(selectedProduct === product.name ? null : product.name)}
-                                                        >
-                                                            <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
-                                                                <Typography variant="body2" noWrap sx={{ fontWeight: selectedProduct === product.name ? 600 : 400 }}>
-                                                                    {product.name}
-                                                                </Typography>
-                                                                <Typography variant="caption" color="text.secondary">
-                                                                    {formatKGS(product.total)}
-                                                                </Typography>
-                                                            </Box>
-                                                            <Chip
-                                                                label={product.count}
-                                                                size="small"
-                                                                color="primary"
-                                                                sx={{ height: 20, minWidth: 28, fontWeight: 600, "& .MuiChip-label": { px: 0.75 } }}
-                                                            />
-                                                        </ListItemButton>
-                                                    ))}
-                                                </List>
-                                            )}
-                                        </Stack>
-                                    )}
-                                </Stack>
-                            </Box>
-                        </Paper>
-                    </Grid2>
-
-                    {/* List Pane */}
-                    <Grid2
-                        size={{ xs: 12, md: 5 }}
-                        sx={(theme: Theme) => ({
-                            position: { md: "sticky" },
-                            top: { md: theme.spacing(2) },
-                            alignSelf: "flex-start",
-                            height: { xs: "auto", md: "100%" },
-                            display: "flex",
-                            flexDirection: "column",
-                            overflow: { xs: "visible", md: "hidden" },
-                        })}
-                    >
-                        <DjangoSalesList
-                            sales={filteredSales}
-                            selectedSale={selectedSale}
-                            onSelect={setSelectedSale}
-                            loading={loading}
-                            loadMoreRef={filterMode === "date" && hasMore ? sentinelRef : undefined}
-                            loadingMore={loadingMore}
-                        />
-                    </Grid2>
-
-                    {/* Details Pane (Desktop) */}
-                    {!isMobile && (
-                        <Grid2
-                            size={{ xs: 12, md: 5 }}
-                            sx={(theme: Theme) => ({
-                                position: { md: "sticky" },
-                                top: { md: theme.spacing(2) },
-                                alignSelf: "flex-start",
-                                height: { md: "100%" },
-                                display: "flex",
-                                flexDirection: "column",
-                                overflow: { xs: "visible", md: "hidden" },
-                            })}
-                        >
-                            <Box
+                {/* Контент по виду */}
+                <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                    {view === "list" && (
+                        <Grid2 container spacing={2} sx={{ flex: 1, minHeight: 0, height: "100%" }}>
+                            <Grid2
+                                size={{ xs: 12, md: showDetailColumn ? 6 : 12 }}
                                 sx={{
-                                    height: "100%",
-                                    overflowY: "auto",
-                                    pr: 0.5,
-                                    "&::-webkit-scrollbar": { width: 8 },
-                                    "&::-webkit-scrollbar-track": { bgcolor: "transparent" },
-                                    "&::-webkit-scrollbar-thumb": {
-                                        bgcolor: "divider",
-                                        borderRadius: 1,
-                                        "&:hover": { bgcolor: "action.disabled" },
-                                    },
+                                    height: { xs: "auto", md: "100%" },
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    overflow: { xs: "visible", md: "hidden" },
                                 }}
                             >
-                                <DjangoSaleDetails
-                                    sale={selectedSale}
-                                    onDelete={handleDeleteSale}
-                                    onEdit={handleEditSale}
-                                    canEdit={canManageSales}
-                                    canDelete={canManageSales}
+                                <DjangoSalesList
+                                    sales={sales}
+                                    selectedSale={selectedSale}
+                                    onSelect={setSelectedSale}
+                                    loading={loading}
+                                    loadMoreRef={hasMore ? sentinelRef : undefined}
+                                    loadingMore={loadingMore}
                                 />
-                            </Box>
+                            </Grid2>
+
+                            {showDetailColumn && (
+                                <Grid2
+                                    size={{ xs: 12, md: 6 }}
+                                    sx={{
+                                        height: { md: "100%" },
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        overflow: { xs: "visible", md: "hidden" },
+                                    }}
+                                >
+                                    <Box sx={{ height: "100%", overflowY: "auto", pr: 0.5 }}>
+                                        <DjangoSaleDetails
+                                            sale={selectedSale}
+                                            onDelete={handleDeleteSale}
+                                            onEdit={handleEditSale}
+                                            canEdit={canManageSales}
+                                            canDelete={canManageSales}
+                                        />
+                                    </Box>
+                                </Grid2>
+                            )}
                         </Grid2>
                     )}
-                </Grid2>
+
+                    {view === "product" && (
+                        <SalesByProductView rows={productRows} loading={productLoading} />
+                    )}
+
+                    {view === "day" && (
+                        <SalesByDayView rows={dayRows} loading={dayLoading} />
+                    )}
+                </Box>
             </Box>
 
             <DjangoSaleFormDrawer
@@ -655,14 +490,12 @@ const DjangoSalesPage: React.FC = () => {
                 onClose={() => setDrawerOpen(false)}
                 sale={saleToEdit}
                 availableProducts={availableProducts}
-                onSaved={handleSaved}
+                onSaved={refetchCurrent}
             />
 
-            {isMobile && (
-                <AppBottomSheet
-                    open={!!selectedSale}
-                    onClose={() => setSelectedSale(null)}
-                >
+            {/* Деталь на мобильном — bottom sheet (вид «Список») */}
+            {isMobile && view === "list" && (
+                <AppBottomSheet open={!!selectedSale} onClose={() => setSelectedSale(null)}>
                     <Box sx={{ p: 2 }}>
                         <DjangoSaleDetails
                             sale={selectedSale}

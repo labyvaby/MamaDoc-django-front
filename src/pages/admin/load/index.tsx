@@ -95,7 +95,7 @@ export const LoadAnalyticsPage: React.FC = () => {
                     flex: 3,
                     display: 'flex',
                     flexDirection: 'column',
-                    borderRadius: 3,
+                    borderRadius: "14px",
                     minHeight: { xs: 260, sm: 320, md: 0 },
                 }}>
                     {isLoading ? (

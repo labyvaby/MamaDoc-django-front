@@ -25,14 +25,14 @@ import {
   alpha,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
-import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -283,7 +283,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
             sx={{
               mb: 2,
               p: { xs: 1.75, sm: 2.5 },
-              borderRadius: 1.5,
+              borderRadius: "10px",
               borderColor: (t) =>
                 currentShift
                   ? alpha(t.palette.success.main, 0.35)
@@ -364,7 +364,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
           elevation={0}
           variant="outlined"
           sx={{
-            borderRadius: 1.5,
+            borderRadius: "10px",
             overflow: "hidden",
             position: "relative",
           }}
@@ -504,7 +504,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                             variant="caption"
                             fontWeight={700}
                             color="text.secondary"
-                            sx={{ display: "block", mt: 2, mb: 0.75, px: 0.5, textTransform: "uppercase", letterSpacing: 0.5 }}
+                            sx={{ display: "block", mt: 2, mb: 0.75, px: 0.5, letterSpacing: 0.5 }}
                           >
                             {shift.dayStr}
                           </Typography>

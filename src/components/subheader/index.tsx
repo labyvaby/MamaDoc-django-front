@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Stack, Typography, Paper } from "@mui/material";
+import { Box, Stack, Typography, Paper, alpha } from "@mui/material";
 
 export type SubHeaderProps = {
   title: string;
@@ -21,7 +21,7 @@ export const SubHeader: React.FC<SubHeaderProps> = ({ title, actions }) => {
         borderLeft: 0,
         borderRight: 0,
         backgroundColor: (theme) =>
-          theme.palette.mode === "dark" ? "rgba(17, 25, 40, .65)" : "rgba(255,255,255,.60)",
+          alpha(theme.palette.background.paper, theme.palette.mode === "dark" ? 0.65 : 0.6),
         backdropFilter: "saturate(180%) blur(10px)",
       }}
     >
@@ -37,12 +37,7 @@ export const SubHeader: React.FC<SubHeaderProps> = ({ title, actions }) => {
           sx={{
             fontSize: { xs: "1.1rem", sm: "1.25rem", md: "1.5rem" },
             lineHeight: 1.2,
-            background: (theme) =>
-              theme.palette.mode === "dark"
-                ? `linear-gradient(90deg, ${theme.palette.primary.light}, ${theme.palette.primary.main})`
-                : `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
+            color: "primary.onSurface",
           }}
         >
           {title}

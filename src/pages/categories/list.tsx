@@ -20,7 +20,7 @@ import {
   Button,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+import AddIcon from "@mui/icons-material/AddOutlined";
 import { PageHeader } from "../../components/ui";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -121,7 +121,7 @@ export const CategoryList: React.FC = () => {
         disableRowSelectionOnClick
         density="compact"
         sx={{
-          borderRadius: 2,
+          borderRadius: "14px",
           "& .MuiDataGrid-columnHeaders": {
             backgroundColor: "background.paper",
           },

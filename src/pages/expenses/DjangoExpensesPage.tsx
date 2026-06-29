@@ -153,7 +153,7 @@ const ExpenseDetailCard: React.FC<{
     <Paper
       elevation={0}
       variant="outlined"
-      sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 2 }}
+      sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: "14px" }}
     >
       {/* Фото */}
       {expense.photoUrl && (
@@ -331,7 +331,7 @@ const ExpenseDetailCard: React.FC<{
                 sx={{
                   p: 1.5,
                   bgcolor: alpha(theme.palette.error.main, 0.05),
-                  borderRadius: 1.5,
+                  borderRadius: "10px",
                   border: `1px solid ${alpha(theme.palette.error.main, 0.15)}`,
                 }}
               >
@@ -723,13 +723,13 @@ const DjangoExpensesPage: React.FC = () => {
 
                       {/* Итого за месяц */}
                       {selectedMonth && (
-                        <Box sx={{ p: 1.5, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: 2, border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}` }}>
+                        <Box sx={{ p: 1.5, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: "14px", border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}` }}>
                           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: "block", mb: 0.5 }}>
                             Итого за месяц
                           </Typography>
                           <Stack direction="row" alignItems="center" spacing={1}>
                             <AccountBalanceWalletOutlined sx={{ color: "primary.onSurface", fontSize: 20 }} />
-                            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: "primary.onSurface" }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "primary.onSurface" }}>
                               {formatKGS(monthTotal)}
                             </Typography>
                           </Stack>

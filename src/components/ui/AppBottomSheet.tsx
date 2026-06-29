@@ -1,6 +1,6 @@
 import React from "react";
 import { Drawer, type DrawerProps, Box, IconButton } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
 
 /**
  * Единый bottom sheet для всего приложения.

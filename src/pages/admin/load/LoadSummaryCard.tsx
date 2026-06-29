@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, Typography, Box } from '@mui/material';
-import AssessmentIcon from '@mui/icons-material/Assessment';
-import SpeedIcon from '@mui/icons-material/Speed';
+import { alpha } from '@mui/material/styles';
+import AssessmentIcon from '@mui/icons-material/AssessmentOutlined';
+import SpeedIcon from '@mui/icons-material/SpeedOutlined';
+import { subtleBg } from '../../../theme';
 
 interface Props {
     data: { time: string; value: number }[];
@@ -24,12 +26,11 @@ export const LoadSummaryCard: React.FC<Props> = ({ data, totalAppointments, days
             gap: 2,
             height: { xs: 'auto', md: '100%' },
         }}>
-            <Card elevation={2} sx={{
-                borderRadius: 3,
-                background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
-                color: 'white',
+            <Card elevation={0} variant="outlined" sx={(t) => ({
+                bgcolor: alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.16 : 0.1),
+                borderColor: alpha(t.palette.primary.main, 0.28),
                 flex: 1,
-            }}>
+            })}>
                 <CardContent sx={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -37,22 +38,22 @@ export const LoadSummaryCard: React.FC<Props> = ({ data, totalAppointments, days
                     p: { xs: 1.5, sm: 2 },
                     '&:last-child': { pb: { xs: 1.5, sm: 2 } },
                 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, color: 'primary.onSurface' }}>
                         <SpeedIcon sx={{ fontSize: { xs: 18, sm: 24 } }} />
                         <Typography variant="subtitle2" fontWeight="bold" sx={{ fontSize: { xs: '0.75rem', sm: '1rem' } }}>
                             Пиковое время
                         </Typography>
                     </Box>
-                    <Typography fontWeight="bold" sx={{ fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>
+                    <Typography fontWeight="bold" color="primary.onSurface" sx={{ fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>
                         {peak.time}
                     </Typography>
-                    <Typography sx={{ opacity: 0.8, fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
+                    <Typography color="text.secondary" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
                         {peak.value} приемов
                     </Typography>
                 </CardContent>
             </Card>
 
-            <Card elevation={2} sx={{ borderRadius: 3, flex: 1 }}>
+            <Card elevation={0} variant="outlined" sx={(t) => ({ bgcolor: subtleBg(t), flex: 1 })}>
                 <CardContent sx={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -66,7 +67,7 @@ export const LoadSummaryCard: React.FC<Props> = ({ data, totalAppointments, days
                             В среднем за день
                         </Typography>
                     </Box>
-                    <Typography fontWeight="bold" color="primary" sx={{ fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>
+                    <Typography fontWeight="bold" color="primary.onSurface" sx={{ fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>
                         {averageDaily}
                     </Typography>
                     <Typography color="text.secondary" sx={{ mt: 0.5, fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
