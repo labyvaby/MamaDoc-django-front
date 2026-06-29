@@ -231,7 +231,7 @@ export const AllAppointmentsList: React.FC = () => {
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "waiting" });
+        await updateAppointment(appt.id, { status: "arrived" });
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });

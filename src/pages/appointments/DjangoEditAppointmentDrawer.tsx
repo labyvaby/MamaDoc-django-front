@@ -40,6 +40,7 @@ import {
 } from "../../api/appointments";
 import { normalizeDjangoStatus } from "../../config/appointmentStatuses";
 import type { DjangoPatient } from "../../api/patients";
+import { searchPatients } from "../../api/patients";
 import type {
   DjangoEmployeeWithServices,
   DjangoCatalogServiceWithEmployees,
@@ -63,14 +64,6 @@ type ServiceRow = {
   quantity: number;
   unitPrice: string;
   discountAmount: string;
-};
-
-// Django не имеет товаров в MVP, но держим структуру для UI совместимости с оригиналом
-type ProductRow = {
-  productId: string;
-  quantity: number;
-  name: string;
-  price: number;
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -119,8 +112,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
     { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
   ]);
-  // Товары — В разработке (Django API не поддерживает в MVP)
-  const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [complaints, setComplaints] = React.useState("");
   const [doctorComplaints, setDoctorComplaints] = React.useState("");
   const [adminComment, setAdminComment] = React.useState("");
@@ -128,6 +119,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
+  // Чтобы ошибка была видна, даже если пользователь прокрутил вниз к «Сохранить».
+  const errorRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (saveError) {
+      errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [saveError]);
 
   // ── isDirty для CloseGuard ───────────────────────────────────────────────
   const isDirty = React.useMemo(() => {
@@ -158,7 +156,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       setServiceRows([
         { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
       ]);
-      setProductRows([]);
       setComplaints("");
       setDoctorComplaints("");
       setAdminComment("");
@@ -195,48 +192,59 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     }
   }, [open, appointment]);
 
-  // ── populate patient once data loads ────────────────────────────────────
+  // ── populate patient from the appointment itself (no full list needed) ──────
   React.useEffect(() => {
-    if (!open || !appointment?.patient || data.loading) return;
-    const found = data.patients.find((p) => p.id === appointment.patient!.id);
-    if (found) {
-      setSelectedPatient(found);
-    } else {
-      setSelectedPatient({
-        id: appointment.patient.id,
-        fullName: appointment.patient.fullName,
-        phone: appointment.patient.phone,
-        organizationId: 0,
-        branch: null,
-        secondaryPhone: null,
-        birthDate: null,
-        gender: "unknown",
-        address: null,
-        notes: null,
-        source: null,
-        photoUrl: null,
-        inn: "",
-        isBlacklisted: false,
-        blacklistReason: "",
-        isActive: true,
-        createdAt: "",
-        updatedAt: "",
-      });
-    }
-  }, [open, appointment, data.patients, data.loading]);
+    if (!open || !appointment?.patient) return;
+    setSelectedPatient({
+      id: appointment.patient.id,
+      fullName: appointment.patient.fullName,
+      phone: appointment.patient.phone,
+      organizationId: 0,
+      branch: null,
+      secondaryPhone: null,
+      birthDate: null,
+      gender: "unknown",
+      address: null,
+      notes: null,
+      source: null,
+      photoUrl: null,
+      inn: "",
+      isBlacklisted: false,
+      blacklistReason: "",
+      isActive: true,
+      createdAt: "",
+      updatedAt: "",
+    });
+  }, [open, appointment]);
 
-  // ── patient search ───────────────────────────────────────────────────────
+  // ── patient search (server-side; never loads the whole patient table) ───────
+  const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
+  React.useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    const id = setTimeout(() => {
+      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+        .then((rows) => {
+          if (!ctrl.signal.aborted) setPatientOptions(rows);
+        })
+        .catch(() => {
+          /* abort/network — keep previous options */
+        });
+    }, 300);
+    return () => {
+      clearTimeout(id);
+      ctrl.abort();
+    };
+  }, [open, patientSearch]);
+
+  // Keep the appointment's patient visible even if not in the search page.
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {
-    if (!patientSearch.trim()) return data.patients.slice(0, 20);
-    const q = patientSearch.toLowerCase();
-    return data.patients
-      .filter(
-        (p) =>
-          p.fullName.toLowerCase().includes(q) ||
-          p.phone.includes(patientSearch.replace(/\D/g, "")),
-      )
-      .slice(0, 30);
-  }, [data.patients, patientSearch]);
+    if (!selectedPatient) return patientOptions;
+    if (patientOptions.some((p) => p.id === selectedPatient.id)) {
+      return patientOptions;
+    }
+    return [selectedPatient, ...patientOptions];
+  }, [patientOptions, selectedPatient]);
 
   // ── validation ───────────────────────────────────────────────────────────
   const validRows = serviceRows.filter(
@@ -259,8 +267,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     }, 0),
     [validRows, data.services],
   );
-  const productsTotal = productRows.reduce((sum, r) => sum + r.price * r.quantity, 0);
-  const grandTotal = servicesTotal + productsTotal;
+  const grandTotal = servicesTotal;
 
   // ── submit ───────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -358,7 +365,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
             <Stack spacing={2}>
               {/* ── errors ── */}
               {(saveError || data.error) && (
-                <Alert severity="error" onClose={() => setSaveError(null)}>
+                <Alert ref={errorRef} severity="error" onClose={() => setSaveError(null)}>
                   {saveError ?? data.error}
                 </Alert>
               )}
@@ -645,7 +652,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                           : row.employeeId,
                                     })
                                   }
-                                  getOptionLabel={(s) => `${s.name} — ${s.basePrice} с`}
+                                  getOptionLabel={(s) => `${s.name} — ${Number(s.basePrice)} с`}
                                   isOptionEqualToValue={(a, b) => a.id === b.id}
                                   renderInput={(params) => (
                                     <TextField
@@ -707,127 +714,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                           + Добавить услугу
                         </Button>
 
-                        <Divider />
-
-                        {/* ── Товары ── */}
-                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                          Товары
-                        </Typography>
-
-                        {productRows.length > 0 && (
-                          <Stack direction="row" spacing={1.5}>
-                            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                              Название товара
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ width: 96 }}>
-                              Количество
-                            </Typography>
-                            <Box sx={{ width: 34 }} />
-                          </Stack>
-                        )}
-
-                        <Stack spacing={1.5}>
-                          {productRows.map((row, index) => (
-                            <Stack key={index} spacing={0.5}>
-                              <Stack direction="row" spacing={1} alignItems="center">
-                                {/* Название товара — заглушка (Django MVP не имеет товаров) */}
-                                <TextField
-                                  sx={{ flex: 1 }}
-                                  size="small"
-                                  value={row.name}
-                                  disabled
-                                  placeholder="Товар"
-                                />
-                                {/* Счётчик [− | N | +] */}
-                                <Box
-                                  sx={{
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                    borderRadius: 1,
-                                    bgcolor: "background.paper",
-                                    height: 40,
-                                    width: 96,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  <Button
-                                    size="small"
-                                    onClick={() => {
-                                      if (row.quantity <= 1) {
-                                        setProductRows((prev) => prev.filter((_, i) => i !== index));
-                                      } else {
-                                        setProductRows((prev) =>
-                                          prev.map((r, i) =>
-                                            i === index ? { ...r, quantity: r.quantity - 1 } : r,
-                                          ),
-                                        );
-                                      }
-                                    }}
-                                    sx={{ minWidth: 32, px: 0.5, minHeight: 38 }}
-                                  >
-                                    −
-                                  </Button>
-                                  <Box sx={{ flex: 1, textAlign: "center" }}>
-                                    <Typography variant="body2">{row.quantity}</Typography>
-                                  </Box>
-                                  <Button
-                                    size="small"
-                                    onClick={() =>
-                                      setProductRows((prev) =>
-                                        prev.map((r, i) =>
-                                          i === index ? { ...r, quantity: r.quantity + 1 } : r,
-                                        ),
-                                      )
-                                    }
-                                    sx={{ minWidth: 32, px: 0.5, minHeight: 38 }}
-                                  >
-                                    +
-                                  </Button>
-                                </Box>
-                                <Tooltip title="Удалить товар">
-                                  <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() =>
-                                      setProductRows((prev) => prev.filter((_, i) => i !== index))
-                                    }
-                                    sx={{
-                                      border: "1px solid",
-                                      borderColor: "error.main",
-                                      "&:hover": { backgroundColor: "error.lighter" },
-                                    }}
-                                  >
-                                    <DeleteOutlined fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Stack>
-                              {/* Итого под строкой товара */}
-                              <Stack direction="row" justifyContent="space-between" sx={{ px: 0.5 }}>
-                                <Typography variant="caption" color="text.secondary">
-                                  Итого:
-                                </Typography>
-                                <Typography variant="caption" fontWeight={600}>
-                                  {formatKGS(row.price * row.quantity)}
-                                </Typography>
-                              </Stack>
-                            </Stack>
-                          ))}
-                        </Stack>
-
-                        <Button
-                          size="small"
-                          onClick={() =>
-                            setProductRows((prev) => [
-                              ...prev,
-                              { productId: "", quantity: 1, name: "", price: 0 },
-                            ])
-                          }
-                          sx={{ alignSelf: "flex-start" }}
-                        >
-                          + Добавить товар
-                        </Button>
 
                         <Divider />
 

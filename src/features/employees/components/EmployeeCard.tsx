@@ -130,7 +130,9 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
     };
 
     loadServices();
-  }, [emp?.id]);
+    // Зависим и от updated_at: после сохранения карточки id не меняется, но
+    // updated_at — да, поэтому услуги перечитываются без перезагрузки страницы.
+  }, [emp?.id, emp?.updated_at]);
 
   // Supabase-only: роль через useOne (в Django-режиме хук вызывается, но disabled)
   const { result: roleData } = useOne<{ id: string; name: string; display_name: string }>({

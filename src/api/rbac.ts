@@ -57,6 +57,51 @@ export interface RoleUpdatePayload {
   permissionCodes?: string[] | null;
 }
 
+// ── Membership ────────────────────────────────────────────────────────────────
+
+/** Compact role embedded in a membership (server RoleShort). */
+export interface RbacRoleShort {
+  id: number;
+  name: string;
+  code: string;
+}
+
+/** Compact branch embedded in a membership (server BranchShort). */
+export interface RbacBranchShort {
+  id: number;
+  name: string;
+}
+
+/**
+ * Mirrors server/apps/rbac/api/payloads.py MembershipPayload (rename='camel').
+ * `branches` are the branches the user can see in the CRM (UserBranchAccess).
+ */
+export interface RbacMembership {
+  id: number;
+  userId: number;
+  username: string;
+  email: string;
+  organizationId: number;
+  role: RbacRoleShort | null;
+  isOwner: boolean;
+  isActive: boolean;
+  branches: RbacBranchShort[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Mirrors MembershipUpdatePayload (rename='camel').
+ * Omit a field to leave it unchanged. For `branchIds`, null clears CRM access.
+ */
+export interface MembershipUpdatePayload {
+  roleId?: number | null;
+  isOwner?: boolean;
+  isActive?: boolean;
+  /** Omit to leave unchanged; null clears all CRM branch access. */
+  branchIds?: number[] | null;
+}
+
 // ── API functions ───────────────────────────────────────────────────────────
 
 export function getPermissions(): Promise<RbacPermission[]> {
@@ -87,6 +132,22 @@ export function updateRole(
   payload: RoleUpdatePayload,
 ): Promise<RbacRole> {
   return apiRequest<RbacRole>(`/rbac/roles/${id}/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export function getMemberships(): Promise<RbacMembership[]> {
+  return apiRequest<RbacMembership[]>("/rbac/memberships/").then((items) =>
+    Array.isArray(items) ? items : [],
+  );
+}
+
+export function updateMembership(
+  id: number,
+  payload: MembershipUpdatePayload,
+): Promise<RbacMembership> {
+  return apiRequest<RbacMembership>(`/rbac/memberships/${id}/`, {
     method: "PATCH",
     body: payload,
   });

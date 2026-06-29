@@ -411,6 +411,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 {duplicates.slice(0, 3).map((d) => (
                   <Typography key={d.id} variant="body2">
                     {d.fullName}
+                    {d.phone ? ` · ${d.phone}` : ""}
                     {d.birthDate ? ` · ${dayjs(d.birthDate).format("DD.MM.YYYY")}` : ""}
                   </Typography>
                 ))}

@@ -42,6 +42,15 @@ export default defineConfig(({ mode }) => {
                 });
               },
             },
+            // Бэкенд отдаёт photoUrl как относительный путь `/media/...`.
+            // В деве фронт и бэк на разных origin — без проксирования
+            // картинки пациентов/услуг не грузятся (404 на Vite). В проде
+            // фронт и бэк на одном origin, поэтому там это не нужно.
+            "/media": {
+              target: apiProxyTarget,
+              changeOrigin: true,
+              secure: false,
+            },
           }
         : undefined,
     },

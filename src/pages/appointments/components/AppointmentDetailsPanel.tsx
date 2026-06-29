@@ -25,6 +25,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -46,6 +47,11 @@ import { PaymentInfoBlock } from "../../../components/ui";
 import { usePermissions } from "../../../hooks/usePermissions";
 import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
 import AppointmentReviewBlock from "../../reviews/AppointmentReviewBlock";
+import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
+import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
+import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
+import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
+import DoctorQuickViewDrawer from "../../../components/employees/DjangoDoctorQuickViewDrawer";
 
 interface AppointmentDetailsPanelProps {
   appointment: DjangoAppointment;
@@ -54,9 +60,15 @@ interface AppointmentDetailsPanelProps {
   canViewFinance: boolean;
   canViewConclusions: boolean;
   canDelete?: boolean;
+  /** Открыта ли третья колонка с заключением (состояние страницы). */
+  isConclusionVisible?: boolean;
+  /** Переключить третью колонку с заключением. */
+  onToggleConclusion?: () => void;
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
   onArrived?: (a: DjangoAppointment) => void;
+  /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
+  onStartAppointment?: (a: DjangoAppointment) => void;
   onCancelAppt?: (a: DjangoAppointment) => void;
   onDelete?: (a: DjangoAppointment) => void;
   onClose?: () => void;
@@ -81,9 +93,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   canViewFinance,
   canViewConclusions,
   canDelete,
+  isConclusionVisible = false,
+  onToggleConclusion,
   onEdit,
   onPay,
   onArrived,
+  onStartAppointment,
   onCancelAppt,
   onDelete,
   onClose,
@@ -91,9 +106,23 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const theme = useTheme();
   const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
 
-  const [showConclusions, setShowConclusions] = React.useState(false);
+  // Заключение теперь открывается отдельной (третьей) колонкой на уровне
+  // страницы — карточка лишь переключает её через onToggleConclusion.
+  const showConclusions = isConclusionVisible;
+  const openConclusions = React.useCallback(() => {
+    if (!isConclusionVisible) onToggleConclusion?.();
+  }, [isConclusionVisible, onToggleConclusion]);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<"cancel" | "delete" | null>(null);
+
+  // Quick-view drawers (краткая информация по клику: пациент / врач / услуга)
+  const [patientDrawerOpen, setPatientDrawerOpen] = React.useState(false);
+  const [doctorDrawerOpen, setDoctorDrawerOpen] = React.useState(false);
+  const [selectedDoctorId, setSelectedDoctorId] = React.useState<number | null>(null);
+  const [selectedDoctorName, setSelectedDoctorName] = React.useState<string | null>(null);
+  const [selectedDoctorPhotoUrl, setSelectedDoctorPhotoUrl] = React.useState<string | null>(null);
+  const [serviceDrawerOpen, setServiceDrawerOpen] = React.useState(false);
+  const [selectedServiceId, setSelectedServiceId] = React.useState<number | null>(null);
 
   const payQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.payments(appt.id),
@@ -103,7 +132,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   });
 
   const pay = payQuery.data;
-  const isCancelled = appt.status === "cancelled" || appt.status === "no_show";
+  const isCancelled =
+    appt.status === "canceled" ||
+    appt.status === "no_show";
 
   const totalAmount = pay?.totalAmount ?? appt.totalAmount;
   const paidTotal = pay?.paidTotal ?? appt.paidTotal;
@@ -137,9 +168,67 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       appt.services.some((sl) => sl.employee?.id === activeEmployeeId),
     [appt.services, activeEmployeeId],
   );
-  // "Невыполненные" — Django не имеет service.status, поэтому проверяем наличие заключения
-  // как прокси: если у этого врача нет заключения — есть "незавершённые" услуги
-  const hasIncompleteServices = isDoctorRole && isPerformer && !appt.hasMedicalConclusion;
+  // Реально ли существует заключение: бэк не отдаёт hasMedicalConclusion,
+  // но шлёт по каждой строке услуги conclusionState/conclusionId. Заключение
+  // есть, если хотя бы одна строка в состоянии draft/completed (или с id).
+  const hasConclusion = React.useMemo(
+    () =>
+      appt.services.some(
+        (sl) =>
+          sl.conclusionId != null ||
+          sl.conclusionState === "draft" ||
+          sl.conclusionState === "completed",
+      ),
+    [appt.services],
+  );
+  // "Невыполненные" — Django не имеет service.status, поэтому проверяем наличие
+  // заключения как прокси: если у этого врача нет заключения — есть "незавершённые".
+  const hasIncompleteServices = isDoctorRole && isPerformer && !hasConclusion;
+
+
+  // Активный приём — не отменён/неявка/завершён. Кнопку «Начать приём» врач
+  // может нажать на любом таком статусе (в т.ч. scheduled, если регистратор
+  // не отметил «Пациент здесь»).
+  const isAppointmentActive =
+    appt.status !== "canceled" &&
+    (appt.status as string) !== "cancelled" &&
+    appt.status !== "no_show" &&
+    appt.status !== "completed";
+
+  // Дравер заключения, открываемый сразу по «Начать приём» (как в оригинале:
+  // одна полная форма на приём врача, без промежуточной панели слотов).
+  const [startedSlot, setStartedSlot] = React.useState<ConclusionSlot | null>(null);
+  const [startBusy, setStartBusy] = React.useState(false);
+
+  // «Начать приём»: переводим приём в in_progress и сразу открываем полную
+  // форму заключения для услуги текущего врача (первый редактируемый слот).
+  const handleStartAppointment = React.useCallback(async () => {
+    if (startBusy) return;
+    setStartBusy(true);
+    try {
+      if (
+        onStartAppointment &&
+        appt.status !== "in_progress" &&
+        appt.status !== "completed"
+      ) {
+        onStartAppointment(appt);
+      }
+      const slots = await getConclusionSlots(appt.id);
+      // Слот текущего врача, который можно редактировать; иначе первый редактируемый.
+      const mine =
+        slots.find(
+          (s) => s.canEdit && s.doctor?.id === activeEmployeeId,
+        ) ?? slots.find((s) => s.canEdit);
+      if (mine) {
+        setStartedSlot(mine);
+      } else {
+        // Нет редактируемого слота — открываем колонку заключения как было.
+        openConclusions();
+      }
+    } finally {
+      setStartBusy(false);
+    }
+  }, [appt, onStartAppointment, activeEmployeeId, startBusy]);
 
   // Статус "Оплачено безналом" — только карта, без наличных
   const displayStatus = React.useMemo(() => {
@@ -161,7 +250,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const servicesByEmployee = React.useMemo(() => {
     const map = new Map<
       string,
-      { employeeName: string; employeeId: number | null; services: typeof appt.services }
+      {
+        employeeName: string;
+        employeeId: number | null;
+        employeePhotoUrl: string | null;
+        services: typeof appt.services;
+      }
     >();
     for (const sl of appt.services) {
       const key = sl.employee ? String(sl.employee.id) : "__no_doc__";
@@ -169,6 +263,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         map.set(key, {
           employeeId: sl.employee?.id ?? null,
           employeeName: sl.employee?.fullName ?? "Без врача",
+          employeePhotoUrl: sl.employee?.photoUrl ?? null,
           services: [],
         });
       }
@@ -281,27 +376,36 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </Button>
                 )}
 
-                {/* Начать приём — врач + пациент здесь/завершено/оплачено + есть незавершённые услуги */}
-                {isDoctorRole && hasIncompleteServices &&
-                  (appt.status === "waiting" || appt.status === "completed" || appt.status === "in_progress") && (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="primary"
-                      startIcon={<MedicalServicesOutlined />}
-                      onClick={() => setShowConclusions(true)}
-                    >
-                      Начать приём
-                    </Button>
-                  )}
+                {/* Начать приём — врач-исполнитель + есть незавершённые услуги,
+                    при ЛЮБОМ активном статусе (не отменён/неявка/завершён). Не
+                    зависит от «Пациент здесь»: регистратор мог не отметить, а
+                    врач всё равно должен мочь начать приём. */}
+                {isDoctorRole && hasIncompleteServices && isAppointmentActive && canViewConclusions && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    startIcon={
+                      startBusy ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <MedicalServicesOutlined />
+                      )
+                    }
+                    onClick={handleStartAppointment}
+                    disabled={startBusy}
+                  >
+                    Начать приём
+                  </Button>
+                )}
 
                 {/* Изменить заключение — врач + нет незавершённых + он исполнитель */}
-                {isDoctorRole && !hasIncompleteServices && isPerformer && (
+                {isDoctorRole && !hasIncompleteServices && isPerformer && canViewConclusions && (
                   <Button
                     size="small"
                     variant="outlined"
                     startIcon={<EditOutlined />}
-                    onClick={() => setShowConclusions(true)}
+                    onClick={openConclusions}
                   >
                     Изменить заключение
                   </Button>
@@ -319,17 +423,22 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </Button>
                 )}
 
-                {/* Заключение toggle */}
-                {canViewConclusions && (
+                {/* Заключение toggle — только если заключение реально есть.
+                    Создание заключения врачом идёт отдельным потоком выше
+                    (hasIncompleteServices); эта кнопка — лишь просмотр. */}
+                {canViewConclusions && hasConclusion && (
                   <Button
                     size="small"
                     variant={showConclusions ? "contained" : "outlined"}
                     startIcon={showConclusions ? <VisibilityOutlined /> : <DescriptionOutlined />}
-                    onClick={() => setShowConclusions((v) => !v)}
+                    onClick={() => onToggleConclusion?.()}
                   >
                     {showConclusions ? "Скрыть заключение" : "Заключение"}
                   </Button>
                 )}
+
+                {/* Печать/Справка перенесены в саму карточку заключения
+                    (третья колонка), как в оригинале. */}
               </Stack>
 
               {/* Right: cancel/delete — адм/рег only */}
@@ -500,13 +609,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 </Typography>
                 <Paper
                   variant="outlined"
+                  onClick={() => setPatientDrawerOpen(true)}
                   sx={{
                     p: 2,
                     bgcolor: alpha(theme.palette.primary.main, 0.04),
                     display: "flex",
                     alignItems: "center",
                     borderRadius: "10px",
-                    cursor: "default",
+                    cursor: "pointer",
                     transition: "all 0.2s",
                     "&:hover": {
                       bgcolor: alpha(theme.palette.primary.main, 0.06),
@@ -515,6 +625,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   }}
                 >
                   <Avatar
+                    src={appt.patient.photoUrl ?? undefined}
                     sx={{
                       width: 48,
                       height: 48,
@@ -596,6 +707,16 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       {/* Doctor header */}
                       <Paper
                         variant="outlined"
+                        onClick={
+                          group.employeeId
+                            ? () => {
+                                setSelectedDoctorId(group.employeeId);
+                                setSelectedDoctorName(group.employeeName);
+                                setSelectedDoctorPhotoUrl(group.employeePhotoUrl);
+                                setDoctorDrawerOpen(true);
+                              }
+                            : undefined
+                        }
                         sx={{
                           p: 1.5,
                           mb: 1,
@@ -604,7 +725,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                           bgcolor: alpha(theme.palette.primary.main, 0.04),
                           borderColor: alpha(theme.palette.primary.main, 0.1),
                           borderRadius: "10px",
-                          cursor: "default",
+                          cursor: group.employeeId ? "pointer" : "default",
                           transition: "all 0.2s",
                           "&:hover": {
                             bgcolor: alpha(theme.palette.primary.main, 0.08),
@@ -613,6 +734,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                         }}
                       >
                         <Avatar
+                          src={group.employeePhotoUrl ?? undefined}
                           sx={{
                             width: 32,
                             height: 32,
@@ -636,6 +758,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                           <Paper
                             key={sl.id}
                             variant="outlined"
+                            onClick={
+                              sl.service?.id
+                                ? () => {
+                                    setSelectedServiceId(sl.service!.id);
+                                    setServiceDrawerOpen(true);
+                                  }
+                                : undefined
+                            }
                             sx={{
                               p: 1.5,
                               pl: 2,
@@ -644,7 +774,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                               gap: 2,
                               bgcolor: "background.paper",
                               borderRadius: "10px",
-                              cursor: "default",
+                              cursor: sl.service?.id ? "pointer" : "default",
                               transition: "all 0.2s",
                               "&:hover": {
                                 borderColor: "primary.main",
@@ -654,6 +784,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                           >
                             <Avatar
                               variant="rounded"
+                              src={sl.service?.imageUrl ?? undefined}
                               sx={{
                                 width: 40,
                                 height: 40,
@@ -675,7 +806,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                               )}
                             </Box>
                             <Typography variant="body2" fontWeight={700} sx={{ flexShrink: 0 }}>
-                              {som(sl.price)}
+                              {som(Number(sl.price) > 0 ? sl.price : (sl.service?.basePrice ?? sl.price))}
                             </Typography>
                           </Paper>
                         ))}
@@ -685,6 +816,59 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 </Stack>
               )}
             </Box>
+
+            {/* ── Products (goods sold within the visit) ── */}
+            {(appt.productLines ?? []).filter((pl) => pl.status !== "canceled").length > 0 && (
+              <Box>
+                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+                  Товары
+                </Typography>
+                <Stack spacing={1}>
+                  {(appt.productLines ?? [])
+                    .filter((pl) => pl.status !== "canceled")
+                    .map((pl) => (
+                      <Paper
+                        key={pl.id}
+                        variant="outlined"
+                        sx={{
+                          p: 1.5,
+                          pl: 2,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2,
+                          bgcolor: "background.paper",
+                          borderRadius: 1.5,
+                        }}
+                      >
+                        <Avatar
+                          variant="rounded"
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            bgcolor: "action.selected",
+                            color: "text.secondary",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Inventory2Outlined fontSize="small" />
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {pl.product?.name ?? "—"}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            × {pl.quantity}
+                            {pl.product?.unit ? ` ${pl.product.unit}` : ""}
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" fontWeight={700} sx={{ flexShrink: 0 }}>
+                          {som(pl.lineTotal)}
+                        </Typography>
+                      </Paper>
+                    ))}
+                </Stack>
+              </Box>
+            )}
 
             {/* ── Text blocks ── */}
             {(appt.complaints || appt.doctorComplaints || appt.adminComment) && (
@@ -772,27 +956,52 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               </>
             )}
 
-            {/* ── Conclusions inline ── */}
-            {canViewConclusions && showConclusions && (
-              <>
-                <Divider />
-                <Box>
-                  <Typography
-                    variant="caption"
-                    fontWeight={600}
-                    color="text.secondary"
-                    display="block"
-                    mb={1}
-                  >
-                    Заключения
-                  </Typography>
-                  <DjangoConclusionSlotsPanel appointmentId={appt.id} />
-                </Box>
-              </>
-            )}
+            {/* Заключение теперь открывается отдельной (третьей) колонкой на
+                странице приёмов (как в оригинале), а не внутри карточки. */}
           </Stack>
         </CardContent>
       </Card>
+
+      {/* ── Quick-view drawers (краткая инфо по клику) ── */}
+      <PatientQuickViewDrawer
+        open={patientDrawerOpen}
+        onClose={() => setPatientDrawerOpen(false)}
+        patientId={appt.patient?.id ?? null}
+      />
+      <ServiceQuickViewDrawer
+        open={serviceDrawerOpen}
+        onClose={() => {
+          setServiceDrawerOpen(false);
+          setSelectedServiceId(null);
+        }}
+        serviceId={selectedServiceId}
+      />
+      <DoctorQuickViewDrawer
+        open={doctorDrawerOpen}
+        onClose={() => {
+          setDoctorDrawerOpen(false);
+          setSelectedDoctorId(null);
+        }}
+        doctorId={selectedDoctorId}
+        fallbackName={selectedDoctorName}
+        fallbackPhotoUrl={selectedDoctorPhotoUrl}
+      />
+
+      {/* ── Полная форма заключения по «Начать приём» (поток как в оригинале) ── */}
+      {startedSlot && (
+        <DjangoConclusionDrawer
+          open={!!startedSlot}
+          onClose={() => setStartedSlot(null)}
+          conclusion={startedSlot.conclusion}
+          serviceLineId={startedSlot.serviceLineId}
+          serviceName={startedSlot.service.name}
+          doctorName={startedSlot.doctor?.fullName ?? "—"}
+          canEdit={startedSlot.canEdit}
+          canPrint={startedSlot.canPrint}
+          patientComplaints={appt.complaints}
+          onSaved={() => setStartedSlot(null)}
+        />
+      )}
 
       {/* ── Confirm dialog ── */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>

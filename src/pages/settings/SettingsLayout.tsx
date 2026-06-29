@@ -16,6 +16,8 @@ import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import WorkOutlined from "@mui/icons-material/WorkOutlined";
+import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -30,7 +32,9 @@ export const SETTINGS_TAB_PERMISSIONS = {
   branches: "branches.view",
   roles: "rbac.roles.view",
   memberships: "rbac.memberships.view",
+  specializations: "staff.specializations.view",
   expenseCategories: "finance.expense.manage",
+  diagnoses: "medical.diagnoses.manage",
 } as const;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
@@ -68,10 +72,22 @@ const TABS: TabDef[] = [
     icon: <GroupsOutlined fontSize="small" />,
   },
   {
+    key: "specializations",
+    label: "Специализации",
+    to: "/settings/specializations",
+    icon: <WorkOutlined fontSize="small" />,
+  },
+  {
     key: "expenseCategories",
     label: "Категории расходов",
     to: "/settings/expense-categories",
     icon: <ReceiptLongOutlined fontSize="small" />,
+  },
+  {
+    key: "diagnoses",
+    label: "Диагнозы",
+    to: "/settings/diagnoses",
+    icon: <LocalHospitalOutlined fontSize="small" />,
   },
 ];
 

@@ -5,16 +5,15 @@ import {
   Box,
   Chip,
   Divider,
-  IconButton,
   InputAdornment,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import { useNotification } from "@refinedev/core";
+import dayjs from "dayjs";
 
 import DrawerBase from "./DrawerBase";
 import {
@@ -33,13 +32,16 @@ import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
+import { CustomDatePicker } from "../../../components/ui";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
   validatePhoneLocal,
   validateEmail,
-  validateUsername,
-  validatePassword,
+  validateBirthDate,
+  validateTelegramId,
+  validateBankAccountNumber,
+  validateInn,
 } from "../employeeValidation";
 
 export type OnboardEmployeeDrawerProps = {
@@ -48,12 +50,40 @@ export type OnboardEmployeeDrawerProps = {
   onCreated: (row: EmployesRow) => void;
 };
 
-function generateTempPassword(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const suffix = Array.from({ length: 10 }, () =>
-    alphabet[Math.floor(Math.random() * alphabet.length)],
-  ).join("");
-  return `MamaDoc-${suffix}`;
+// Разбивает ФИО («Фамилия Имя Отчество») на поля учётной записи User:
+// первое слово → lastName, остальное → firstName.
+function splitFullName(fullName: string): { firstName?: string; lastName?: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  const [last, ...rest] = parts;
+  return { lastName: last, firstName: rest.join(" ") };
+}
+
+// Бэкенд может вернуть один и тот же системный набор ролей по разу на каждую
+// организацию/филиал — в выпадающем списке это выглядит как дубли
+// («Администратор», «Бухгалтер», … повторяются). Оставляем по одной роли на
+// `code` (а при его отсутствии — на `name`), предпочитая роль активной
+// организации.
+function dedupeRoles(roles: RbacRole[], activeOrgId?: number): RbacRole[] {
+  const byKey = new Map<string, RbacRole>();
+  for (const role of roles) {
+    const key = (role.code || role.name).trim().toLowerCase();
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, role);
+      continue;
+    }
+    // Предпочитаем роль активной организации, если такая нашлась.
+    if (
+      activeOrgId != null &&
+      role.organizationId === activeOrgId &&
+      existing.organizationId !== activeOrgId
+    ) {
+      byKey.set(key, role);
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
@@ -65,6 +95,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const { activeOrganization, activeBranch, activeMembership } = usePermissions();
   const canViewSpecs = useCan("staff.specializations.view");
   const canManageSpecs = useCan("staff.specializations.manage");
+  const canManagePrivate = useCan("staff.private.manage");
 
   // ── photo ─────────────────────────────────────────────────────────────────────
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -72,18 +103,21 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   // ── employee fields ───────────────────────────────────────────────────────────
   const [fullName, setFullName] = React.useState("");
+  const [nickname, setNickname] = React.useState("");
   const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryCode>("+996");
   const [phoneLocal, setPhoneLocal] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
+  const [telegramId, setTelegramId] = React.useState("");
+  const [birthDate, setBirthDate] = React.useState("");
+  const [bankAccountNumber, setBankAccountNumber] = React.useState("");
+  const [inn, setInn] = React.useState("");
 
   // ── account fields ────────────────────────────────────────────────────────────
-  const [firstName, setFirstName] = React.useState("");
-  const [lastName, setLastName] = React.useState("");
-  const [username, setUsername] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [showPassword, setShowPassword] = React.useState(false);
+  // Логин (username) деривируется бэкендом из email/телефона, пароль не
+  // задаётся при создании — сотрудник входит по SMS-коду (OTP).
+  // firstName / lastName выводятся из ФИО автоматически (см. splitFullName).
 
   // ── role / branch ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
@@ -110,24 +144,47 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     fullName: validateFullName(fullName),
     phone: validatePhoneLocal(phoneLocal, phoneCountry),
     email: validateEmail(email),
-    username: validateUsername(username),
-    password: validatePassword(password),
-  }), [fullName, phoneLocal, phoneCountry, email, username, password]);
+    birthDate: validateBirthDate(birthDate),
+    telegramId: validateTelegramId(telegramId),
+    bankAccountNumber: canManagePrivate ? validateBankAccountNumber(bankAccountNumber) : "",
+    inn: canManagePrivate ? validateInn(inn) : "",
+  }), [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, bankAccountNumber, inn, canManagePrivate]);
 
-  const hasLogin = Boolean(username.trim() || email.trim() || phoneLocal.trim());
+  // Логин выводится из email/телефона на бэкенде, поэтому требуем хотя бы одно.
+  const hasLogin = Boolean(email.trim() || phoneLocal.trim());
   const hasRequiredFields =
     !errors.fullName &&
     !errors.phone &&
     !errors.email &&
-    !errors.username &&
-    !errors.password &&
+    !errors.birthDate &&
+    !errors.telegramId &&
+    !errors.bankAccountNumber &&
+    !errors.inn &&
     hasLogin &&
-    password.length >= 8 &&
     roleId !== "" &&
     employeeBranches.length > 0 &&
     branches.length > 0;
 
   const canSubmit = hasRequiredFields && !busy;
+
+  // Человекочитаемый список того, чего не хватает для сохранения. Используется
+  // и для подсказки над кнопкой, и в сводке при попытке сохранить пустую форму,
+  // чтобы кнопка не «умирала молча».
+  const missingReasons = React.useMemo<string[]>(() => {
+    const r: string[] = [];
+    if (errors.fullName) r.push("ФИО");
+    if (!hasLogin) r.push("телефон или email (нужен для входа)");
+    if (errors.phone) r.push("корректный телефон");
+    if (errors.email) r.push("корректный email");
+    if (errors.birthDate) r.push("корректная дата рождения");
+    if (errors.telegramId) r.push("корректный Telegram ID");
+    if (errors.bankAccountNumber) r.push("корректный банковский счёт");
+    if (errors.inn) r.push("корректный ИНН");
+    if (roleId === "") r.push("роль");
+    if (branches.length === 0) r.push("нет доступных филиалов в организации");
+    else if (employeeBranches.length === 0) r.push("хотя бы один филиал работы");
+    return r;
+  }, [errors, hasLogin, roleId, branches.length, employeeBranches.length]);
 
   const showError = (field: string) =>
     (touched[field] || submitAttempted) ? errors[field as keyof typeof errors] : "";
@@ -143,7 +200,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     let cancelled = false;
     setLoadingDeps(true);
     const tasks: Promise<unknown>[] = [
-      getRoles().then((r) => { if (!cancelled) setRoles(r); }),
+      getRoles().then((r) => { if (!cancelled) setRoles(dedupeRoles(r, activeOrganization?.id)); }),
     ];
     if (canViewSpecs || canManageSpecs) {
       tasks.push(
@@ -157,7 +214,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       })
       .finally(() => { if (!cancelled) setLoadingDeps(false); });
     return () => { cancelled = true; };
-  }, [open, notify, canViewSpecs, canManageSpecs]);
+  }, [open, notify, canViewSpecs, canManageSpecs, activeOrganization?.id]);
 
   // ── preselect current branch ──────────────────────────────────────────────────
   React.useEffect(() => {
@@ -174,16 +231,16 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setPhotoFile(null);
       setPhotoPreview(null);
       setFullName("");
+      setNickname("");
       setPhoneCountry("+996");
       setPhoneLocal("");
       setEmail("");
-      setFirstName("");
-      setLastName("");
-      setUsername("");
-      setPassword(generateTempPassword());
-      setShowPassword(false);
       setStatus("active");
       setClinicalRole("other");
+      setTelegramId("");
+      setBirthDate("");
+      setBankAccountNumber("");
+      setInn("");
       setRoleId("");
       setEmployeeBranches([]);
       setUserAccessBranches([]);
@@ -193,12 +250,6 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setBusy(false);
       setTouched({});
       setSubmitAttempted(false);
-    }
-  }, [open]);
-
-  React.useEffect(() => {
-    if (open) {
-      setPassword((current) => current || generateTempPassword());
     }
   }, [open]);
 
@@ -217,12 +268,22 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setSubmitAttempted(true);
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      // Раньше форма молча выходила (return) — кнопка гасла, пользователь не
+      // понимал почему. Теперь показываем конкретную причину.
+      setSubmitError(
+        missingReasons.length > 0
+          ? `Заполните: ${missingReasons.join(", ")}.`
+          : "Проверьте поля формы.",
+      );
+      return;
+    }
 
     setSubmitError(null);
     setBusy(true);
     try {
       const composedPhone = composePhone(phoneCountry, phoneLocal);
+      const { firstName, lastName } = splitFullName(fullName);
       const payload = {
         fullName: fullName.trim(),
         roleId: roleId as number,
@@ -230,10 +291,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         organizationId: activeOrganization?.id ?? undefined,
         email: email.trim() || undefined,
         phone: composedPhone ?? undefined,
-        username: username.trim() || undefined,
-        password,                       // no trim on passwords
-        firstName: firstName.trim() || undefined,
-        lastName: lastName.trim() || undefined,
+        firstName,
+        lastName,
         userBranchAccessIds: overrideUserAccess
           ? userAccessBranches.map((b) => b.id)
           : undefined,
@@ -244,6 +303,15 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           clinicalRole === "doctor" && selectedSpecializations.length > 0
             ? selectedSpecializations.map((s) => s.id)
             : undefined,
+        nickname: nickname.trim() || undefined,
+        birthDate: birthDate || undefined,
+        telegramId: telegramId.trim() || undefined,
+        // Приватные поля отправляем только при наличии права; бэкенд тоже
+        // отбрасывает их без staff.private.manage (fail-closed).
+        ...(canManagePrivate && {
+          bankAccountNumber: bankAccountNumber.trim() || undefined,
+          inn: inn.trim() || undefined,
+        }),
       };
       const res: OnboardEmployeeResponse = await onboardEmployee(payload);
       let employeeRow: EmployesRow = mapDjangoFullToRow(res.employee);
@@ -280,7 +348,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       busy={busy}
       onSubmit={handleSubmit}
       submitLabel="Создать"
-      submitDisabled={submitAttempted && !canSubmit}
+      // Кнопку НЕ гасим по валидации — иначе при невалидной форме клик не
+      // срабатывает и пользователь не видит причину. Блокируем только во время
+      // отправки. Невалидность отлавливает handleSubmit и показывает, чего нет.
+      submitDisabled={false}
     >
       <Stack spacing={2.5}>
         {submitError && (
@@ -313,6 +384,21 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             inputProps={{ maxLength: 255 }}
             error={Boolean(showError("fullName"))}
             helperText={showError("fullName")}
+          />
+        </Stack>
+
+        {/* ── Псевдоним ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Псевдоним
+          </Typography>
+          <TextField
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            fullWidth
+            placeholder="Как отображается в расписании"
+            disabled={busy}
+            inputProps={{ maxLength: 100 }}
           />
         </Stack>
 
@@ -362,6 +448,104 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             }}
           />
         </Stack>
+
+        {/* ── Дата рождения ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Дата рождения
+          </Typography>
+          <CustomDatePicker
+            value={birthDate ? dayjs(birthDate) : null}
+            onChange={(val) => {
+              setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+              touch("birthDate");
+            }}
+            slotProps={{
+              textField: {
+                fullWidth: true,
+                InputLabelProps: { shrink: true },
+                placeholder: "дд.мм.гггг",
+                disabled: busy,
+                onBlur: () => touch("birthDate"),
+                error: Boolean(showError("birthDate")),
+                helperText: showError("birthDate"),
+              },
+            }}
+          />
+        </Stack>
+
+        {/* ── Telegram ID ── */}
+        <Stack spacing={0.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            Telegram ID
+          </Typography>
+          <TextField
+            value={telegramId}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
+              setTelegramId(digits);
+            }}
+            onBlur={() => touch("telegramId")}
+            fullWidth
+            placeholder="Числовой ID"
+            disabled={busy}
+            inputProps={{ inputMode: "numeric" }}
+            error={Boolean(showError("telegramId"))}
+            helperText={showError("telegramId")}
+          />
+        </Stack>
+
+        {/* ── Приватные поля (под staff.private.manage) ── */}
+        {canManagePrivate && (
+          <>
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Номер расчётного счёта
+              </Typography>
+              <TextField
+                value={bankAccountNumber}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, "").slice(0, 16);
+                  setBankAccountNumber(v);
+                }}
+                onBlur={() => touch("bankAccountNumber")}
+                fullWidth
+                placeholder="0000000000000000"
+                disabled={busy}
+                inputProps={{ inputMode: "numeric" }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <CreditCardOutlined fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+                error={Boolean(showError("bankAccountNumber"))}
+                helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
+              />
+            </Stack>
+
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                ИНН
+              </Typography>
+              <TextField
+                value={inn}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, "").slice(0, 14);
+                  setInn(v);
+                }}
+                onBlur={() => touch("inn")}
+                fullWidth
+                placeholder="00000000000000"
+                disabled={busy}
+                inputProps={{ inputMode: "numeric" }}
+                error={Boolean(showError("inn"))}
+                helperText={showError("inn") || `${inn.length}/14`}
+              />
+            </Stack>
+          </>
+        )}
 
         {/* ── Статус ── */}
         <Stack spacing={0.5}>
@@ -445,94 +629,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
         <Divider />
 
-        <Alert severity="info">
-          При сохранении автоматически создаётся пользователь для входа в систему,
-          членство в организации и карточка сотрудника.
-        </Alert>
-
         {/* ── Учётная запись ── */}
         <Stack spacing={2.5}>
-          {/* ── Имя / Фамилия ── */}
-          <Stack direction="row" spacing={1.5}>
-            <Stack spacing={0.5} flex={1}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Имя
-              </Typography>
-              <TextField
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                fullWidth
-                placeholder="Иван"
-                disabled={busy}
-              />
-            </Stack>
-            <Stack spacing={0.5} flex={1}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Фамилия
-              </Typography>
-              <TextField
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                fullWidth
-                placeholder="Иванов"
-                disabled={busy}
-              />
-            </Stack>
-          </Stack>
-
-          {/* ── Логин ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Логин
-            </Typography>
-            <TextField
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onBlur={() => touch("username")}
-              fullWidth
-              placeholder="Можно оставить пустым, если указан телефон или email"
-              disabled={busy}
-              inputProps={{ maxLength: 150 }}
-              error={Boolean(showError("username"))}
-              helperText={showError("username") || "Если не указан, backend использует email или телефон"}
-            />
-          </Stack>
-
-          {/* ── Пароль ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Пароль *
-            </Typography>
-            <TextField
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onBlur={() => touch("password")}
-              fullWidth
-              placeholder="Минимум 8 символов"
-              type={showPassword ? "text" : "password"}
-              disabled={busy}
-              error={Boolean(showError("password"))}
-              helperText={showError("password") || "Передайте этот пароль сотруднику для первого входа"}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => setShowPassword((v) => !v)}
-                      edge="end"
-                    >
-                      {showPassword ? (
-                        <VisibilityOffOutlined fontSize="small" />
-                      ) : (
-                        <VisibilityOutlined fontSize="small" />
-                      )}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Stack>
-
           {/* ── Роль ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
@@ -546,6 +644,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               required
               disabled={loadingDeps || busy}
               SelectProps={{ displayEmpty: true }}
+              error={submitAttempted && roleId === ""}
+              helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
             >
               <MenuItem value="" disabled>
                 {loadingDeps ? "Загрузка…" : "Выберите роль"}

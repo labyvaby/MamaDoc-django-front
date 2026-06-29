@@ -19,6 +19,12 @@ import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
+// Иконки SMS-уведомлений — те же импорты, что в старом фронте (home/AppointmentsList).
+import SmsOutlined from "@mui/icons-material/SmsOutlined";
+import AlarmOutlined from "@mui/icons-material/AlarmOutlined";
+import EventRepeatOutlined from "@mui/icons-material/EventRepeat";
+import EditCalendarOutlined from "@mui/icons-material/EditCalendar";
+import EventBusyOutlined from "@mui/icons-material/EventBusy";
 import dayjs from "dayjs";
 
 import type { DjangoAppointment } from "../../../api/appointments";
@@ -41,6 +47,11 @@ interface AppointmentListPanelProps {
   canUpdate: boolean;
   canManageFinance: boolean;
   canViewFinance: boolean;
+  /**
+   * Иконки SMS-уведомлений по приёмам: Map<appointmentId, Map<type, sentAt>>.
+   * Источник — лёгкий батч-эндпоинт /api/appointments/notifications/.
+   */
+  notificationsMap?: Map<number, Map<string, string | null>>;
   onSelect: (a: DjangoAppointment) => void;
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
@@ -72,20 +83,33 @@ const GAP_THRESHOLD_MS = 30 * 60 * 1000;
 const DEFAULT_DURATION_MINS = 30;
 
 const isCancelledStatus = (s?: string | null) =>
-  s === "cancelled" || s === "no_show";
+  s === "canceled" || s === "cancelled" || s === "no_show";
+
+// ─── SMS-уведомления: маппинг тип → иконка/подпись/цвет (1-в-1 со старым фронтом) ─
+const NOTIF_CONFIG: Record<
+  string,
+  { label: string; Icon: React.ElementType; color: string }
+> = {
+  created_10m: { label: "Запись", Icon: SmsOutlined, color: "success.main" },
+  reminder_2h: { label: "Напомин.", Icon: AlarmOutlined, color: "info.main" },
+  rescheduled_10m: { label: "Перенос", Icon: EventRepeatOutlined, color: "warning.main" },
+  appointment_change: { label: "Изменение", Icon: EditCalendarOutlined, color: "warning.main" },
+  appointment_cancel: { label: "Отмена", Icon: EventBusyOutlined, color: "error.main" },
+};
 
 // ─── DoctorStoryItem — Instagram-style аватар врача ──────────────────────────
 
 type DoctorStoryItemProps = {
   name: string;
-  photoUrl?: string;
+  nickname?: string | null;
+  photoUrl?: string | null;
   isActive: boolean;
   onClick: () => void;
 };
 
-const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, photoUrl, isActive, onClick }) => {
+const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, nickname, photoUrl, isActive, onClick }) => {
   const theme = useTheme();
-  const displayName = name.split(" ")[0];
+  const displayName = nickname || name.split(" ")[0];
 
   return (
     <Stack
@@ -114,7 +138,7 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, photoUrl, isAct
         }}
       >
         <Avatar
-          src={photoUrl}
+          src={photoUrl ?? undefined}
           sx={{
             width: "100%",
             height: "100%",
@@ -190,6 +214,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   canUpdate: _canUpdate,
   canManageFinance,
   canViewFinance,
+  notificationsMap,
   onSelect,
   onEdit: _onEdit,
   onPay: _onPay,
@@ -209,7 +234,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
   // ── Build doctor list from appointments (id → name, photoUrl) ─────────────
   const availableDoctors = React.useMemo(() => {
-    const map = new Map<string, { id: string; name: string; photoUrl: string | null }>();
+    const map = new Map<string, { id: string; name: string; photoUrl: string | null; nickname: string | null }>();
     for (const appt of items) {
       for (const sl of appt.services) {
         if (
@@ -220,11 +245,13 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           map.set(String(sl.employee.id), {
             id: String(sl.employee.id),
             name: sl.employee.fullName,
-            photoUrl: null,
+            photoUrl: sl.employee.photoUrl,
+            nickname: sl.employee.nickname,
           });
         }
       }
     }
+    console.log("availableDoctors in panel:", Array.from(map.values()));
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [items, groupEmployeeIds]);
 
@@ -450,6 +477,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                   <DoctorStoryItem
                     key={doc.id}
                     name={doc.name}
+                    nickname={doc.nickname}
                     photoUrl={doc.photoUrl ?? undefined}
                     isActive={selectedDoctor === doc.name}
                     onClick={() =>
@@ -549,6 +577,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       const totalAmount = Number(a.totalAmount ?? 0);
                       const debt = Number(a.debt ?? 0);
                       const hasPaid = paidTotal > 0;
+                      // Бэк не отдаёт hasMedicalConclusion — выводим наличие
+                      // заключения из строк услуг (conclusionState/conclusionId).
+                      const hasConclusion = (a.services ?? []).some(
+                        (sl) =>
+                          sl.conclusionId != null ||
+                          sl.conclusionState === "draft" ||
+                          sl.conclusionState === "completed",
+                      );
 
                       // Определяем статус для отображения
                       const displayStatus = normalizeDjangoStatus(a.status);
@@ -558,10 +594,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                         displayStatus;
 
                       const statusCfg = getStatusConfig(displayStatus);
+                      // Прячем статус-чип, когда состояние и так понятно по
+                      // другим меткам: завершён, оплачен/частично, или есть
+                      // заключение (его передаёт иконка принтера).
                       const hideStatusChip =
                         a.status === "completed" ||
                         a.paymentStatus === "paid" ||
-                        a.paymentStatus === "partial";
+                        a.paymentStatus === "partial" ||
+                        hasConclusion;
 
                       return (
                         <Box
@@ -620,13 +660,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   />
                                 )}
 
-                                {/* Чип оплаты с иконкой наличных — как в оригинале */}
+                                {/* Чип оплаты — показываем «Оплачено»/«Частично
+                                    оплачено» (статус ОПЛАТЫ, не статус приёма). */}
                                 {showPayCol && hasPaid && (
                                   <Chip
                                     label={
                                       <Stack direction="row" alignItems="center" gap={0.5}>
                                         <PaymentsOutlined sx={{ fontSize: 16 }} />
-                                        <span>{normalizeDjangoStatus(a.status)}</span>
+                                        <span>{paymentStyleStatus}</span>
                                       </Stack>
                                     }
                                     size="small"
@@ -634,18 +675,36 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   />
                                 )}
 
-                                {/* Иконка заключения */}
-                                {a.hasMedicalConclusion && (
-                                  <Tooltip title="Есть заключение">
+                                {/* Иконка принтера = есть заключение (приём
+                                    фактически завершён врачом). */}
+                                {hasConclusion && (
+                                  <Tooltip title="Заключение готово">
                                     <PrintOutlinedIcon
                                       sx={{ fontSize: 20, color: "action.active", opacity: 0.8 }}
                                     />
                                   </Tooltip>
                                 )}
+
+                                {/* Иконки отправленных SMS-уведомлений — 1-в-1 со
+                                    старым фронтом (home/AppointmentsList): по одной
+                                    на тип, с типом и временем в tooltip. */}
+                                {notificationsMap?.has(a.id) &&
+                                  [...notificationsMap.get(a.id)!.entries()].map(([t, sentAt]) => {
+                                    const cfg =
+                                      NOTIF_CONFIG[t] ?? { label: t, Icon: SmsOutlined, color: "success.main" };
+                                    const time = sentAt ? dayjs(sentAt).format("DD.MM HH:mm") : "";
+                                    return (
+                                      <Tooltip key={t} title={`SMS: ${cfg.label}${time ? ` · ${time}` : ""}`}>
+                                        <cfg.Icon sx={{ fontSize: 16, color: cfg.color, opacity: 0.9 }} />
+                                      </Tooltip>
+                                    );
+                                  })}
                               </Stack>
 
-                              {/* Итого */}
-                              {showPayCol && totalAmount > 0 && (
+                              {/* Итого — стоимость услуг, не финансовая операция,
+                                  поэтому видна всем (в т.ч. врачу без прав на
+                                  финансы), как в оригинале. */}
+                              {totalAmount > 0 && (
                                 <Typography
                                   variant="body2"
                                   color="text.secondary"

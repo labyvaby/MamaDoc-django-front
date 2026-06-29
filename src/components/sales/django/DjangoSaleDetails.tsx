@@ -13,6 +13,7 @@ import {
     Chip,
 } from "@mui/material";
 import { InventoryOutlined as Inventory, EditOutlined, DeleteOutline } from "@mui/icons-material";
+import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { DjangoSale } from "../../../api/sales";
 import { formatKGS, formatDateRu } from "../../../utility/format";
@@ -58,6 +59,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
         );
     }
 
+    const fromAppointment = sale.source === "appointment";
     const hasDiscount = sale.status === "paid" && sale.discountPercent > 0;
     const displayStatus = hasDiscount ? "discounted" : sale.status;
     const discountAmount = Math.max(0, sale.baseTotal - sale.totalAmount);
@@ -76,45 +78,61 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                     minHeight: 0,
                 }}
             >
-                {/* Кнопки управления */}
-                <Box sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}>
-                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                        <Stack direction="row" spacing={1} alignItems="center">
-                            {canEdit && onEdit && (
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    startIcon={<EditOutlined />}
-                                    onClick={() => onEdit?.(sale)}
-                                >
-                                    Изменить
-                                </Button>
+                {/* Кнопки управления — недоступны для записей из приёма:
+                    товары приёма редактируются в самом приёме, не здесь. */}
+                {fromAppointment ? (
+                    <Box sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}>
+                        <Chip
+                            label="С приёма"
+                            icon={<MedicalServicesOutlinedIcon />}
+                            size="small"
+                            color="info"
+                            variant="outlined"
+                        />
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                            Товары проданы в составе приёма — редактируются в карточке приёма.
+                        </Typography>
+                    </Box>
+                ) : (
+                    <Box sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}>
+                        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                            <Stack direction="row" spacing={1} alignItems="center">
+                                {canEdit && onEdit && (
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        startIcon={<EditOutlined />}
+                                        onClick={() => onEdit?.(sale)}
+                                    >
+                                        Изменить
+                                    </Button>
+                                )}
+                            </Stack>
+
+                            {canDelete && onDelete && (
+                                <Tooltip title="Удалить">
+                                    <span>
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => setConfirmOpen(true)}
+                                            sx={{
+                                                border: "1px solid",
+                                                borderColor: "error.main",
+                                                color: "error.main",
+                                                "&:hover": {
+                                                    borderColor: "error.dark",
+                                                    backgroundColor: (theme) => alpha(theme.palette.error.main, 0.08),
+                                                },
+                                            }}
+                                        >
+                                            <DeleteOutline fontSize="small" />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
                             )}
                         </Stack>
-
-                        {canDelete && onDelete && (
-                            <Tooltip title="Удалить">
-                                <span>
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => setConfirmOpen(true)}
-                                        sx={{
-                                            border: "1px solid",
-                                            borderColor: "error.main",
-                                            color: "error.main",
-                                            "&:hover": {
-                                                borderColor: "error.dark",
-                                                backgroundColor: (theme) => alpha(theme.palette.error.main, 0.08),
-                                            },
-                                        }}
-                                    >
-                                        <DeleteOutline fontSize="small" />
-                                    </IconButton>
-                                </span>
-                            </Tooltip>
-                        )}
-                    </Stack>
-                </Box>
+                    </Box>
+                )}
 
                 <Box sx={{ p: 3 }}>
                     <Stack spacing={3}>
@@ -122,18 +140,22 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                         <Box>
                             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                                    Продажа #{sale.id}
+                                    {fromAppointment
+                                        ? `Приём #${sale.appointmentId ?? sale.id}`
+                                        : `Продажа #${sale.id}`}
                                 </Typography>
-                                <Chip
-                                    label={
-                                        hasDiscount
-                                            ? `Со скидкой ${sale.discountPercent}%`
-                                            : getSaleStatusConfig(displayStatus).label
-                                    }
-                                    icon={getSaleStatusConfig(displayStatus).icon}
-                                    size="small"
-                                    sx={getSaleStatusChipSx(displayStatus)}
-                                />
+                                {!fromAppointment && (
+                                    <Chip
+                                        label={
+                                            hasDiscount
+                                                ? `Со скидкой ${sale.discountPercent}%`
+                                                : getSaleStatusConfig(displayStatus).label
+                                        }
+                                        icon={getSaleStatusConfig(displayStatus).icon}
+                                        size="small"
+                                        sx={getSaleStatusChipSx(displayStatus)}
+                                    />
+                                )}
                             </Stack>
                         </Box>
 
@@ -250,20 +272,53 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                         <Divider />
 
                         {/* Payment Information */}
-                        <PaymentInfoBlock
-                            payment={{
-                                baseTotal: sale.baseTotal,
-                                discountPercent: sale.discountPercent || undefined,
-                                discountAmount: discountAmount || undefined,
-                                cash: sale.paidCash,
-                                card: sale.paidCard,
-                                finalTotal: sale.totalAmount,
-                                debt,
-                                status: displayStatus,
-                            }}
-                            variant="detailed"
-                            showIcons={true}
-                        />
+                        {fromAppointment ? (
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+                                    Оплата (в рамках приёма)
+                                </Typography>
+                                <Stack spacing={1}>
+                                    {[
+                                        { label: "Наличные", value: sale.paidCash },
+                                        { label: "Карта", value: sale.paidCard },
+                                        { label: "Баланс", value: sale.paidBalance },
+                                        { label: "Бонусы", value: sale.paidBonuses },
+                                    ]
+                                        .filter((row) => (row.value ?? 0) > 0)
+                                        .map((row) => (
+                                            <Stack key={row.label} direction="row" justifyContent="space-between">
+                                                <Typography variant="body2" color="text.secondary">{row.label}</Typography>
+                                                <Typography variant="body2" fontWeight={600}>{formatKGS(row.value ?? 0)}</Typography>
+                                            </Stack>
+                                        ))}
+                                    {sale.paidCash === 0 && sale.paidCard === 0 && sale.paidBalance === 0 && sale.paidBonuses === 0 && (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Оплата по приёму не внесена
+                                        </Typography>
+                                    )}
+                                    <Divider />
+                                    <Stack direction="row" justifyContent="space-between">
+                                        <Typography variant="body2" fontWeight={600}>Сумма товаров</Typography>
+                                        <Typography variant="body2" fontWeight={700}>{formatKGS(sale.totalAmount ?? 0)}</Typography>
+                                    </Stack>
+                                </Stack>
+                            </Box>
+                        ) : (
+                            <PaymentInfoBlock
+                                payment={{
+                                    baseTotal: sale.baseTotal,
+                                    discountPercent: sale.discountPercent || undefined,
+                                    discountAmount: discountAmount || undefined,
+                                    cash: sale.paidCash,
+                                    card: sale.paidCard,
+                                    finalTotal: sale.totalAmount,
+                                    debt,
+                                    status: displayStatus,
+                                }}
+                                variant="detailed"
+                                showIcons={true}
+                            />
+                        )}
 
                         {/* Комментарий */}
                         {sale.comment && (

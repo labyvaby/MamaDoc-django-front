@@ -18,7 +18,6 @@ import VisitCreateDialog from "./components/VisitCreateDialog";
 import { useVisitEditForm } from "./useVisitEditForm";
 import AddPatientDrawer from "../../components/patients/AddPatientDrawer";
 import EditPatientDrawer from "../../components/patients/EditPatientDrawer";
-import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
 import { AppointmentDetailsCard } from "../home/components/AppointmentDetailsCard";
 import { Drawer } from "@mui/material";
 import type { Patient, HistoryRow } from "../../types/models";
@@ -186,7 +185,6 @@ export const PatientSearchPage: React.FC = () => {
   // Диалог добавления пациента
   const [addOpen, setAddOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
-  const [mergeOpen, setMergeOpen] = React.useState(false);
 
   // Просмотр деталей из истории
   const [historyDetailId, setHistoryDetailId] = React.useState<string | null>(null);
@@ -248,7 +246,6 @@ export const PatientSearchPage: React.FC = () => {
           lastTemperature={vitals?.temperature}
           onEdit={canUpdatePatient ? () => setEditOpen(true) : undefined}
           onTopUp={canUpdatePatient ? () => setTopUpOpen(true) : undefined}
-          onMerge={canUpdatePatient ? () => setMergeOpen(true) : undefined}
           balance={balance}
         />
       ),
@@ -377,7 +374,6 @@ export const PatientSearchPage: React.FC = () => {
                         lastTemperature={vitals?.temperature}
                         onEdit={canUpdatePatient ? () => setEditOpen(true) : undefined}
                         onTopUp={canUpdatePatient ? () => setTopUpOpen(true) : undefined}
-                        onMerge={canUpdatePatient ? () => setMergeOpen(true) : undefined}
                         balance={balance}
                       />
                     )}
@@ -443,7 +439,6 @@ export const PatientSearchPage: React.FC = () => {
                     lastTemperature={vitals?.temperature}
                     onEdit={canUpdatePatient ? () => setEditOpen(true) : undefined}
                     onTopUp={canUpdatePatient ? () => setTopUpOpen(true) : undefined}
-                    onMerge={canUpdatePatient ? () => setMergeOpen(true) : undefined}
                     balance={balance}
                   />
                 ) : (
@@ -737,16 +732,6 @@ export const PatientSearchPage: React.FC = () => {
       )}
 
       {/* Drawer: Объединить пациентов */}
-      <MergePatientDrawer
-        open={mergeOpen}
-        onClose={() => setMergeOpen(false)}
-        initialPatient={selected ? { id: selected.id, full_name: selected.fio, phone: selected.phone } : null}
-        onMerged={() => {
-          setMergeOpen(false);
-          setSelected(null);
-          reload();
-        }}
-      />
 
       {/* Drawer: Пополнить счёт пациента */}
       <BalanceTopUpDrawer

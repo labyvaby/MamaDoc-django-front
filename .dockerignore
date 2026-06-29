@@ -1,0 +1,31 @@
+# Зависимости ставятся внутри образа (npm ci) — локальный node_modules
+# НЕ должен попадать в контекст сборки, иначе npm спотыкается о чужие
+# артефакты: ENOTEMPTY: rmdir 'node_modules/<pkg>'.
+node_modules
+**/node_modules
+
+# Результаты сборки и кэши
+dist
+build
+.vite
+.cache
+
+# Локальное окружение и логи
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Git и редакторы
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Сам докер-конфиг
+Dockerfile*
+.dockerignore

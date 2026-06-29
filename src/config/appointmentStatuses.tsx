@@ -55,14 +55,21 @@ export interface StatusConfig {
 /**
  * Базовая конфигурация статуса (без цветов, т.к. они зависят от темы)
  */
-// Django backend status → Russian display label
+// Django backend status slug → Russian display label.
+// Slug'и фронта совпадают с бэком (server/apps/appointments/models.py).
+// Старые двойные слаги (waiting/cancelled) оставлены алиасами на случай
+// устаревших данных в кэше — чтобы не утёк сырой slug в UI.
 export const DJANGO_STATUS_LABEL: Record<string, string> = {
   scheduled: "Ожидаем",
-  waiting: "Пациент здесь",
-  in_progress: "В работе",
+  confirmed: "Подтверждён",
+  arrived: "Пациент здесь",
+  in_progress: "На приёме",
   completed: "Завершено",
-  cancelled: "Отменено",
+  canceled: "Отменено",
   no_show: "Пациент не пришел",
+  // legacy aliases (на всякий случай)
+  waiting: "Пациент здесь",
+  cancelled: "Отменено",
 };
 
 // Normalize a backend (Django) status slug to the Russian label used in getStatusConfig
@@ -83,7 +90,7 @@ export const getStatusConfig = (status: any): StatusConfig => {
   const statusLower = resolved.trim().toLowerCase();
 
   // Отменено - красный
-  if (statusLower === APPOINTMENT_STATUSES.CANCELLED.toLowerCase() || statusLower === "отменен" || statusLower === "cancelled") {
+  if (statusLower === APPOINTMENT_STATUSES.CANCELLED.toLowerCase() || statusLower === "отменен" || statusLower === "cancelled" || statusLower === "canceled") {
     return {
       color: "error",
       icon: <CancelIcon fontSize="small" />,
@@ -96,7 +103,8 @@ export const getStatusConfig = (status: any): StatusConfig => {
     statusLower === APPOINTMENT_STATUSES.PATIENT_ARRIVED.toLowerCase() ||
     statusLower === "в очереди" ||
     statusLower === "прибыл" ||
-    statusLower === "waiting"
+    statusLower === "waiting" ||
+    statusLower === "arrived"
   ) {
     return {
       color: "success",

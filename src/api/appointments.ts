@@ -12,12 +12,27 @@ import { apiRequest, ApiError } from "./client";
  *   { "detail": "…" }                        — DRF string detail
  *   { "errors": { field: [msgs] } }          — field-level validation errors
  */
+// Технические префиксы полей (startsAt:, service:, branch:, products: …) и
+// внутренние ссылки (приём #2) мешают читать ошибку обычному пользователю.
+// Чистим их, оставляя человеко-понятный текст.
+const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
+
+function humanizeBackendMessage(raw: string): string {
+  return raw
+    .split(";")
+    .map((part) => part.replace(_FIELD_PREFIX, "").trim())
+    // «приём #2» → «другой приём» (внутренний id пользователю не нужен)
+    .map((part) => part.replace(/приём\s*#\d+/gi, "другой приём"))
+    .filter(Boolean)
+    .join(". ");
+}
+
 export function parseBackendError(err: unknown): string {
   if (err instanceof ApiError) {
     const p = err.payload as Record<string, unknown> | null | undefined;
     if (p && typeof p === "object") {
       // { error: "..." }
-      if (typeof p.error === "string") return p.error;
+      if (typeof p.error === "string") return humanizeBackendMessage(p.error);
 
       // { detail: [{ msg: "..." }, ...] }  — Django/Pydantic validation list
       if (Array.isArray(p.detail)) {
@@ -29,11 +44,11 @@ export function parseBackendError(err: unknown): string {
             return String(item);
           })
           .filter(Boolean);
-        if (msgs.length) return msgs.join("; ");
+        if (msgs.length) return humanizeBackendMessage(msgs.join("; "));
       }
 
       // { detail: "..." }  — DRF string detail
-      if (typeof p.detail === "string" && p.detail) return p.detail;
+      if (typeof p.detail === "string" && p.detail) return humanizeBackendMessage(p.detail);
 
       // { errors: { field: [...] } }
       if (p.errors && typeof p.errors === "object") {
@@ -51,7 +66,7 @@ export function parseBackendError(err: unknown): string {
             return field === "__all__" ? msgStr : `${field}: ${msgStr}`;
           },
         );
-        if (parts.length) return parts.join("; ");
+        if (parts.length) return humanizeBackendMessage(parts.join("; "));
       }
     }
   }
@@ -64,11 +79,14 @@ export interface AppointmentPatientShort {
   id: number;
   fullName: string;
   phone: string;
+  photoUrl: string | null;
 }
 
 export interface AppointmentEmployeeShort {
   id: number;
   fullName: string;
+  photoUrl: string | null;
+  nickname: string | null;
 }
 
 export interface AppointmentServiceShort {
@@ -76,6 +94,7 @@ export interface AppointmentServiceShort {
   name: string;
   basePrice: string;
   durationMinutes: number;
+  imageUrl: string | null;
 }
 
 export interface AppointmentServiceLine {
@@ -91,16 +110,45 @@ export interface AppointmentServiceLine {
   unitPrice: string;
   /** Discount amount applied to this line */
   discountAmount: string;
+  /** Требует ли строка заключения (снимок на момент записи). */
+  requiresConclusion?: boolean;
+  /** Состояние заключения по строке: not_required | not_created | draft | completed. */
+  conclusionState?: "not_required" | "not_created" | "draft" | "completed";
+  /** id заключения, если оно создано. */
+  conclusionId?: number | null;
+}
+
+/** Compact product reference embedded in an appointment product line. */
+export interface AppointmentProductShort {
+  id: number;
+  name: string;
+  unit: string;
+  price: string;
+}
+
+/** A product line within an appointment (read side). */
+export interface AppointmentProductLine {
+  id: number;
+  product: AppointmentProductShort;
+  quantity: number;
+  unitPrice: string;
+  discountAmount: string;
+  lineTotal: string;
+  status: "pending" | "completed" | "canceled";
+  notes: string;
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
+// Статусы 1-в-1 с бэком (server/apps/appointments/models.py → AppointmentStatus).
+// Никакого перевода — фронт оперирует теми же slug'ами, что принимает Django.
 export type DjangoAppointmentStatus =
   | "scheduled"
-  | "waiting"
+  | "confirmed"
+  | "arrived"
   | "in_progress"
   | "completed"
-  | "cancelled"
+  | "canceled"
   | "no_show";
 
 // Raw shape as the backend actually sends it (snake_case fields that differ from our type)
@@ -115,7 +163,6 @@ interface RawAppointment {
  * Backend contract differences:
  *   startsAt      → scheduledAt
  *   serviceLines  → services
- *   status "canceled" (1 l) → "cancelled" (2 l)
  */
 function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
   // field renames
@@ -125,14 +172,17 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     : Array.isArray(raw.serviceLines)
     ? raw.serviceLines
     : [];
-  // backend typo: "canceled" → our canonical "cancelled"
-  const rawStatus: string = raw.status ?? "scheduled";
-  const status = (rawStatus === "canceled" ? "cancelled" : rawStatus) as DjangoAppointmentStatus;
+  const productLines: AppointmentProductLine[] = Array.isArray(raw.productLines)
+    ? raw.productLines
+    : [];
+  // Статус используем как есть — slug'и фронта совпадают с бэком.
+  const status = (raw.status ?? "scheduled") as DjangoAppointmentStatus;
 
   return {
     ...raw,
     scheduledAt,
     services,
+    productLines,
     status,
   } as DjangoAppointment;
 }
@@ -149,6 +199,8 @@ export interface DjangoAppointment {
   doctorComplaints: string | null;
   adminComment: string | null;
   services: AppointmentServiceLine[];
+  /** Goods sold within this visit (deducted from the warehouse). */
+  productLines: AppointmentProductLine[];
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
@@ -174,9 +226,20 @@ export interface AppointmentServiceLineCreate {
   discountAmount?: string;
 }
 
+/** Frontend product line (write path). Goods sold within the visit. */
+export interface AppointmentProductLineCreate {
+  productId: number;
+  quantity?: number;
+  unitPrice?: string;
+  discountAmount?: string;
+}
+
 export interface CreateAppointmentPayload {
   patientId?: number | null;
   branchId?: number | null;
+  /** Active organization id — sent so the backend scopes to the same org as
+   *  branchId (a multi-org superuser otherwise infers the wrong organization). */
+  organizationId?: number | null;
   scheduledAt: string;
   isNight?: boolean;
   isBooking?: boolean;
@@ -184,6 +247,7 @@ export interface CreateAppointmentPayload {
   doctorComplaints?: string | null;
   adminComment?: string | null;
   services: AppointmentServiceLineCreate[];
+  products?: AppointmentProductLineCreate[];
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -211,17 +275,30 @@ interface BackendServiceLine {
   discountAmount?: string;
 }
 
+/** Backend product line shape (write path). */
+interface BackendProductLine {
+  productId: number;
+  quantity?: number;
+  unitPrice?: string;
+  discountAmount?: string;
+}
+
 /** Backend create body shape. */
 interface BackendCreateBody {
   patientId?: number | null;
   branchId?: number | null;
+  organizationId?: number | null;
   startsAt: string;
   isNight?: boolean;
   isBooking?: boolean;
   complaints?: string | null;
   doctorComplaints?: string | null;
   adminComment?: string | null;
-  serviceLines: BackendServiceLine[];
+  // Backend create payload (AppointmentCreatePayload) names this field
+  // ``services`` — NOT ``serviceLines`` (that's the read-side name). msgspec
+  // silently drops unknown keys, so a wrong name → "no service" 400.
+  services: BackendServiceLine[];
+  products?: BackendProductLine[];
 }
 
 /** Backend update body shape (all fields optional). */
@@ -235,7 +312,8 @@ interface BackendUpdateBody {
   complaints?: string | null;
   doctorComplaints?: string | null;
   adminComment?: string | null;
-  serviceLines?: BackendServiceLine[];
+  // Backend update payload also names this ``services`` (not ``serviceLines``).
+  services?: BackendServiceLine[];
 }
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
@@ -249,20 +327,36 @@ function toBackendServiceLines(services: AppointmentServiceLineCreate[]): Backen
   });
 }
 
+function toBackendProducts(products: AppointmentProductLineCreate[]): BackendProductLine[] {
+  return products.map(({ productId, quantity, unitPrice, discountAmount }) => {
+    const line: BackendProductLine = { productId };
+    if (quantity !== undefined) line.quantity = quantity;
+    if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
+    if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
+    return line;
+  });
+}
+
 function denormalizeCreatePayload(payload: CreateAppointmentPayload): BackendCreateBody {
   if (!payload.scheduledAt) throw new Error("scheduledAt обязателен");
   const startsAt = dayjs(payload.scheduledAt).toISOString();
   const body: BackendCreateBody = {
     startsAt,
-    serviceLines: toBackendServiceLines(payload.services),
+    services: toBackendServiceLines(payload.services),
   };
+  if (payload.products && payload.products.length > 0) {
+    body.products = toBackendProducts(payload.products);
+  }
   if (payload.patientId !== undefined) body.patientId = payload.patientId;
   if (payload.branchId !== undefined) body.branchId = payload.branchId;
+  if (payload.organizationId != null) body.organizationId = payload.organizationId;
   if (payload.isNight !== undefined) body.isNight = payload.isNight;
   if (payload.isBooking !== undefined) body.isBooking = payload.isBooking;
-  if (payload.complaints !== undefined) body.complaints = payload.complaints;
-  if (payload.doctorComplaints !== undefined) body.doctorComplaints = payload.doctorComplaints;
-  if (payload.adminComment !== undefined) body.adminComment = payload.adminComment;
+  // На создании эти поля у бэкенда — обязательные строки (str = ''), null не
+  // принимается. Пустое значение шлём как "", а не null.
+  if (payload.complaints !== undefined) body.complaints = payload.complaints ?? "";
+  if (payload.doctorComplaints !== undefined) body.doctorComplaints = payload.doctorComplaints ?? "";
+  if (payload.adminComment !== undefined) body.adminComment = payload.adminComment ?? "";
   return body;
 }
 
@@ -273,15 +367,15 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
   if (payload.complaints !== undefined) body.complaints = payload.complaints;
   if (payload.doctorComplaints !== undefined) body.doctorComplaints = payload.doctorComplaints;
   if (payload.adminComment !== undefined) body.adminComment = payload.adminComment;
-  // status: map "cancelled" → "canceled" for backend
+  // Статус идёт как есть — slug'и совпадают с бэком.
   if (payload.status !== undefined) {
-    body.status = payload.status === "cancelled" ? "canceled" : payload.status;
+    body.status = payload.status;
   }
   if (payload.scheduledAt) {
     body.startsAt = dayjs(payload.scheduledAt).toISOString();
   }
   if (payload.services !== undefined) {
-    body.serviceLines = toBackendServiceLines(payload.services);
+    body.services = toBackendServiceLines(payload.services);
   }
   return body;
 }
@@ -329,8 +423,7 @@ export function getAppointments(params?: {
   if (params?.date) query.set("date", params.date);
   if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params?.dateTo) query.set("dateTo", params.dateTo);
-  // backend uses single-l "canceled"; normalize before sending
-  if (params?.status) query.set("status", params.status === "cancelled" ? "canceled" : params.status);
+  if (params?.status) query.set("status", params.status);
   if (params?.search) query.set("search", params.search);
   if (params?.branchId) query.set("branchId", String(params.branchId));
   if (params?.employeeId) query.set("employeeId", String(params.employeeId));
@@ -340,6 +433,80 @@ export function getAppointments(params?: {
   return apiRequest<RawAppointment[]>(`/appointments/${qs ? `?${qs}` : ""}`, { signal }).then(
     (list) => (Array.isArray(list) ? list : []).map(normalizeAppointment),
   );
+}
+
+/** Aggregated reception-home payload (GET /api/appointments/home/). */
+export interface HomeDashboard {
+  /** The selected day's appointments (same shape as getAppointments). */
+  appointments: DjangoAppointment[];
+  /** Map of date (YYYY-MM-DD) → appointment count for the navigator window. */
+  dayCounts: Record<string, number>;
+  /** Newest updated_at among visible appointments (ISO), or null. */
+  lastUpdate: string | null;
+}
+
+/**
+ * GET /api/appointments/home/ — one round-trip for the reception home screen.
+ *
+ * Bundles the day's appointment list, the date-navigator counts and the
+ * change-detection timestamp so the screen issues a single request instead of
+ * three (list + day-counts + last-update). The backend returns dayCounts as a
+ * list [{date, count}]; we fold it into a date→count map (like getDayCounts).
+ */
+export function getHomeDashboard(params: {
+  date?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  status?: string;
+  search?: string;
+  branchId?: number;
+  employeeId?: number | "me";
+  /**
+   * Separate scope for the day-counts navigator (defaults to employeeId on the
+   * backend). Lets the list stay full while a doctor/nurse sees only their own
+   * per-day counts: pass "me" for clinicians, omit for privileged roles.
+   */
+  countsEmployeeId?: number | "me";
+  /**
+   * Filter list + day-counts by performer clinical role (e.g. "nurse" for the
+   * procedure cabinet) so the navigator shows only that role's procedures.
+   */
+  clinicalRole?: "doctor" | "nurse" | "other";
+  patientId?: number;
+  nightOnly?: boolean;
+}, signal?: AbortSignal): Promise<HomeDashboard> {
+  const query = new URLSearchParams();
+  if (params.date) query.set("date", params.date);
+  if (params.dateFrom) query.set("dateFrom", params.dateFrom);
+  if (params.dateTo) query.set("dateTo", params.dateTo);
+  if (params.status) query.set("status", params.status);
+  if (params.search) query.set("search", params.search);
+  if (params.branchId) query.set("branchId", String(params.branchId));
+  if (params.employeeId) query.set("employeeId", String(params.employeeId));
+  if (params.countsEmployeeId) {
+    query.set("countsEmployeeId", String(params.countsEmployeeId));
+  }
+  if (params.clinicalRole) query.set("clinicalRole", params.clinicalRole);
+  if (params.patientId) query.set("patientId", String(params.patientId));
+  if (params.nightOnly) query.set("nightOnly", "true");
+  const qs = query.toString();
+  return apiRequest<{
+    appointments: RawAppointment[];
+    dayCounts: Array<{ date: string; count: number }> | Record<string, number>;
+    lastUpdate: string | null;
+  }>(`/appointments/home/${qs ? `?${qs}` : ""}`, { signal }).then((res) => {
+    const dayCounts: Record<string, number> = {};
+    if (Array.isArray(res.dayCounts)) {
+      for (const row of res.dayCounts) dayCounts[row.date] = row.count;
+    } else if (res.dayCounts) {
+      Object.assign(dayCounts, res.dayCounts);
+    }
+    return {
+      appointments: (res.appointments ?? []).map(normalizeAppointment),
+      dayCounts,
+      lastUpdate: res.lastUpdate ?? null,
+    };
+  });
 }
 
 /**
@@ -407,14 +574,81 @@ export function getDayCounts(params: {
   query.set("dateTo", params.dateTo);
   if (params.branchId) query.set("branchId", String(params.branchId));
   if (params.employeeId) query.set("employeeId", String(params.employeeId));
-  return apiRequest<Record<string, number>>(
-    `/appointments/day-counts/?${query.toString()}`,
+  // Бэкенд возвращает список [{date, count}]; нормализуем в map date→count,
+  // т.к. DateNavigation обращается как dayCounts[dateStr]. На случай старого
+  // формата-объекта возвращаем его как есть.
+  return apiRequest<
+    Array<{ date: string; count: number }> | Record<string, number>
+  >(`/appointments/day-counts/?${query.toString()}`, { signal }).then((res) => {
+    if (Array.isArray(res)) {
+      const map: Record<string, number> = {};
+      for (const row of res) map[row.date] = row.count;
+      return map;
+    }
+    return res ?? {};
+  });
+}
+
+// ── SMS-notification icons ─────────────────────────────────────────────────────
+
+/** Тип уведомления — 1-в-1 с Django (NotificationType) и старым фронтом. */
+export type AppointmentNotificationType =
+  | "created_10m"
+  | "reminder_2h"
+  | "rescheduled_10m"
+  | "appointment_change"
+  | "appointment_cancel";
+
+/** Одна строка лога уведомления (GET /api/appointments/notifications/). */
+export interface AppointmentNotificationItem {
+  appointmentId: number;
+  notificationType: AppointmentNotificationType | string;
+  /** Время приёма шлюзом (ISO) или null, пока не отправлено. */
+  sentAt: string | null;
+  status: string;
+}
+
+/**
+ * GET /api/appointments/notifications/?ids=1,2,3
+ *
+ * Лёгкий батч-эндпоинт (как getDayCounts): по списку id приёмов возвращает
+ * отправленные SMS-уведомления для иконок статусов рядом с приёмом. Не утяжеляет
+ * основной список приёмов. Бэкенд скоупит по видимым приёмам (тенант-изоляция),
+ * чужие id молча отбрасываются. Пустой список id → запрос не уходит.
+ */
+export function getAppointmentNotifications(
+  ids: number[],
+  signal?: AbortSignal,
+): Promise<AppointmentNotificationItem[]> {
+  if (!ids.length) return Promise.resolve([]);
+  const query = new URLSearchParams();
+  query.set("ids", ids.join(","));
+  return apiRequest<AppointmentNotificationItem[]>(
+    `/appointments/notifications/?${query.toString()}`,
     { signal },
-  );
+  ).then((list) => (Array.isArray(list) ? list : []));
 }
 
 export function getAppointment(id: number): Promise<DjangoAppointment> {
   return apiRequest<RawAppointment>(`/appointments/${id}/`).then(normalizeAppointment);
+}
+
+/**
+ * Лёгкий heartbeat: максимальный updated_at среди видимых приёмов (ISO-строка
+ * или null). Используется для дешёвой детекции изменений — тяжёлый список
+ * перезапрашивается только когда таймстамп сдвинулся.
+ */
+export function getAppointmentsLastUpdate(
+  branchId?: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const query = new URLSearchParams();
+  if (branchId) query.set("branchId", String(branchId));
+  const qs = query.toString();
+  return apiRequest<{ lastUpdate: string | null }>(
+    `/appointments/last-update/${qs ? `?${qs}` : ""}`,
+    { signal },
+  ).then((r) => r.lastUpdate ?? null);
 }
 
 export function createAppointment(
@@ -433,6 +667,20 @@ export function updateAppointment(
   return apiRequest<RawAppointment>(`/appointments/${id}/`, {
     method: "PATCH",
     body: denormalizeUpdatePayload(payload),
+  }).then(normalizeAppointment);
+}
+
+/**
+ * Doctor starts the visit: transitions the appointment to "in_progress".
+ *
+ * Dedicated narrow endpoint so the performing doctor can start a visit
+ * without the broad ``appointments.update`` permission (which is reserved
+ * for managers/admins and would let one edit the whole appointment). The
+ * backend only flips the status and checks the caller is a performer.
+ */
+export function startAppointment(id: number): Promise<DjangoAppointment> {
+  return apiRequest<RawAppointment>(`/appointments/${id}/start/`, {
+    method: "POST",
   }).then(normalizeAppointment);
 }
 

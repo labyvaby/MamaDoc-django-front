@@ -61,6 +61,7 @@ export interface DjangoEmployeeListItem {
   fullName: string;
   phone: string;
   email: string;
+  nickname: string;
   status: "active" | "inactive" | "fired";
   clinicalRole: ClinicalRole;
   photoUrl: string | null;
@@ -121,6 +122,11 @@ export interface OnboardEmployeePayload {
   status?: "active" | "inactive" | "fired";
   specializationIds?: number[] | null;
   notes?: string;
+  nickname?: string | null;
+  birthDate?: string | null;
+  telegramId?: string | null;
+  bankAccountNumber?: string | null;
+  inn?: string | null;
 }
 
 // ── Update payload ────────────────────────────────────────────────────────────
@@ -223,6 +229,11 @@ export interface DjangoSpecialization {
 export interface SpecializationCreatePayload {
   name: string;
   organizationId?: number | null;
+}
+
+export interface SpecializationUpdatePayload {
+  name?: string;
+  isActive?: boolean;
 }
 
 // ── Document shapes ───────────────────────────────────────────────────────────
@@ -353,9 +364,11 @@ export function deleteEmployeePhoto(employeeId: number): Promise<void> {
 export function getEmployeeServices(
   employeeId: number,
   signal?: AbortSignal,
+  options?: { includeInactive?: boolean },
 ): Promise<EmployeeServiceAssignment[]> {
+  const query = options?.includeInactive ? "?includeInactive=true" : "";
   return apiRequest<EmployeeServiceAssignment[]>(
-    `/staff/employees/${employeeId}/services/`,
+    `/staff/employees/${employeeId}/services/${query}`,
     { signal },
   ).then((items) => (Array.isArray(items) ? items : []));
 }
@@ -385,8 +398,10 @@ export function updateEmployeeService(
 
 export function getSpecializations(
   signal?: AbortSignal,
+  options?: { includeInactive?: boolean },
 ): Promise<DjangoSpecialization[]> {
-  return apiRequest<DjangoSpecialization[]>("/staff/specializations/", { signal }).then(
+  const query = options?.includeInactive ? "?includeInactive=1" : "";
+  return apiRequest<DjangoSpecialization[]>(`/staff/specializations/${query}`, { signal }).then(
     (items) => (Array.isArray(items) ? items : []),
   );
 }
@@ -398,6 +413,16 @@ export function createSpecialization(
     method: "POST",
     body: payload,
   });
+}
+
+export function updateSpecialization(
+  specializationId: number,
+  payload: SpecializationUpdatePayload,
+): Promise<DjangoSpecialization> {
+  return apiRequest<DjangoSpecialization>(
+    `/staff/specializations/${specializationId}/`,
+    { method: "PATCH", body: payload },
+  );
 }
 
 export function linkSpecializationToEmployee(

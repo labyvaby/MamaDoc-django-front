@@ -37,6 +37,8 @@ type Props = {
   patients: DjangoPatient[];
   selectedId: number | null;
   onSelect: (p: DjangoPatient) => void;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
 };
 
 const PatientListPanel: React.FC<Props> = ({
@@ -45,7 +47,21 @@ const PatientListPanel: React.FC<Props> = ({
   patients,
   selectedId,
   onSelect,
+  hasMore = false,
+  onLoadMore,
 }) => {
+  // Infinite scroll: when scrolled near the bottom, request the next page.
+  const handleScroll = React.useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (!hasMore || loading || !onLoadMore) return;
+      const el = e.currentTarget;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+        onLoadMore();
+      }
+    },
+    [hasMore, loading, onLoadMore],
+  );
+
   return (
     <Box sx={{ height: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <Card variant="outlined" sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -60,6 +76,7 @@ const PatientListPanel: React.FC<Props> = ({
         />
         <Divider />
         <CardContent
+          onScroll={handleScroll}
           sx={{
             p: 0,
             overflowY: "auto",
@@ -105,6 +122,7 @@ const PatientListPanel: React.FC<Props> = ({
                     <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: 1 }}>
                       <ListItemAvatar sx={{ minWidth: "auto" }}>
                         <Avatar
+                          src={p.photoUrl ?? undefined}
                           sx={{
                             width: 28,
                             height: 28,
@@ -132,6 +150,17 @@ const PatientListPanel: React.FC<Props> = ({
                 );
               })}
             </List>
+          )}
+          {patients.length > 0 && loading && (
+            <Typography
+              sx={{ p: 1.5 }}
+              variant="caption"
+              color="text.secondary"
+              align="center"
+              display="block"
+            >
+              Загрузка…
+            </Typography>
           )}
         </CardContent>
       </Card>

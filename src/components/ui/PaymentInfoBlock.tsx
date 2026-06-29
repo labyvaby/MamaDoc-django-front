@@ -59,7 +59,7 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
     isPaid = s === 'paid' || s === 'оплачено' || s === 'discounted' || s === 'оплачено со скидкой';
     isPartiallyPaid = s === 'partial' || s === 'частично оплачено';
     isDiscounted = s === 'discounted' || s === 'оплачено со скидкой';
-    isCancelled = s === 'cancelled' || s === 'отменено' || s === 'пациент не пришел';
+    isCancelled = s === 'canceled' || s === 'cancelled' || s === 'отменено' || s === 'пациент не пришел';
     isArrived = s === 'пациент здесь' || s === 'прибыл' || s === 'в очереди';
   } else {
     // Fallback logic

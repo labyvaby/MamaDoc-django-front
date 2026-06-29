@@ -20,6 +20,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  IconButton,
   Stack,
   Tooltip,
   Typography,
@@ -28,6 +29,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
 import {
   getConclusionSlots,
@@ -65,12 +67,15 @@ const STATE_COLOR: Record<
 
 type DjangoConclusionSlotsPanelProps = {
   appointmentId: number;
+  /** Закрыть колонку заключения (крестик в шапке). */
+  onClose?: () => void;
 };
 
 // ── component ──────────────────────────────────────────────────────────────────
 
 const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   appointmentId,
+  onClose,
 }) => {
   const canView = useCan([
     "medical.conclusions.view",
@@ -91,6 +96,8 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
 
   // Drawer state
   const [drawerSlot, setDrawerSlot] = React.useState<ConclusionSlot | null>(null);
+  // Inline single-slot edit toggle (просмотр ↔ редактирование в колонке).
+  const [editingInline, setEditingInline] = React.useState(false);
 
   // Optimistically update cache then let React Query sync from server
   const handleSaved = React.useCallback(
@@ -108,9 +115,58 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
 
   if (!canView) return null;
 
+  // Одно заключение → показываем его сразу полностью прямо в колонке (как в
+  // оригинале, фото 2). Несколько → список с переходом в просмотр.
+  const onlySlot = slots.length === 1 ? slots[0] : null;
+  const showInlineSingle = onlySlot !== null && onlySlot.conclusion !== null;
+
+  if (showInlineSingle && onlySlot) {
+    return (
+      <DjangoConclusionDrawer
+        open
+        inline
+        // В режиме редактирования «Закрыть/Отмена» возвращает к просмотру;
+        // в просмотре — закрывает всю колонку.
+        onClose={() => {
+          if (editingInline) setEditingInline(false);
+          else onClose?.();
+        }}
+        conclusion={onlySlot.conclusion}
+        serviceLineId={onlySlot.serviceLineId}
+        serviceName={onlySlot.service.name}
+        doctorName={onlySlot.doctor?.fullName ?? "—"}
+        // По умолчанию просмотр; «Изменить заключение» включает редактирование.
+        canEdit={onlySlot.canEdit && editingInline}
+        canPrint={onlySlot.canPrint}
+        onStartEdit={onlySlot.canEdit ? () => setEditingInline(true) : undefined}
+        onSaved={(saved) => {
+          handleSaved(saved);
+          setEditingInline(false);
+        }}
+      />
+    );
+  }
+
   return (
-    <>
-      <Box>
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Шапка колонки — как в inline-просмотре */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        px={2}
+        py={1.5}
+        sx={{ flexShrink: 0 }}
+      >
+        <Typography variant="h6">Заключение</Typography>
+        {onClose && (
+          <IconButton size="small" onClick={onClose}>
+            <CloseOutlined fontSize="small" />
+          </IconButton>
+        )}
+      </Stack>
+      <Divider />
+      <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
         <Stack
           direction="row"
           alignItems="center"
@@ -149,7 +205,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         )}
       </Box>
 
-      {/* Conclusion drawer */}
+      {/* Conclusion drawer (для нескольких слотов — открытие по клику) */}
       {drawerSlot && (
         <DjangoConclusionDrawer
           open={!!drawerSlot}
@@ -163,7 +219,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           onSaved={handleSaved}
         />
       )}
-    </>
+    </Box>
   );
 };
 

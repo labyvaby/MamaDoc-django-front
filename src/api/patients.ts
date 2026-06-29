@@ -60,10 +60,12 @@ export function searchPatients(
   search: string,
   limit = 10,
   signal?: AbortSignal,
+  offset = 0,
 ): Promise<DjangoPatient[]> {
   const q = new URLSearchParams();
   if (search) q.set("search", search);
   q.set("limit", String(limit));
+  if (offset) q.set("offset", String(offset));
   return apiRequest<DjangoPatient[]>(`/patients/?${q.toString()}`, { signal });
 }
 
@@ -103,6 +105,22 @@ export function uploadPatientPhoto(
 export function deletePatientPhoto(patientId: number): Promise<void> {
   return apiRequest<void>(`/patients/${patientId}/photo/`, {
     method: "DELETE",
+  });
+}
+
+/**
+ * Объединяет дубликат в основного пациента.
+ * `primaryId` — карточка, которая останется; `duplicateId` — удаляется,
+ * все её приёмы/продажи/баланс переносятся на основного. Возвращает
+ * обновлённого основного пациента.
+ */
+export function mergePatients(
+  primaryId: number,
+  duplicateId: number,
+): Promise<DjangoPatient> {
+  return apiRequest<DjangoPatient>(`/patients/${primaryId}/merge/`, {
+    method: "POST",
+    body: { duplicateId },
   });
 }
 

@@ -4,12 +4,14 @@ import {
   Alert,
   Box,
   Button,
+  Card,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Divider,
   Drawer,
   IconButton,
   Stack,
@@ -18,10 +20,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import AddOutlined from "@mui/icons-material/AddOutlined";
-import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 
@@ -34,113 +33,158 @@ import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
 import DjangoPaymentDrawer from "./DjangoPaymentDrawer";
 import type { PaymentSummary } from "../../api/payments";
 import {
-  getAppointments,
-  getDayCounts,
+  getHomeDashboard,
+  getAppointmentNotifications,
   updateAppointment,
+  startAppointment,
   deleteAppointment,
   parseBackendError,
   type DjangoAppointment,
+  type HomeDashboard,
 } from "../../api/appointments";
 import { getDjangoEmployees } from "../../api/staff";
 import { useNotification } from "@refinedev/core";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
-  DJANGO_POLL_INTERVAL_MS,
 } from "../../api/queryKeys";
 
 import AppointmentListPanel from "./components/AppointmentListPanel";
 import AppointmentDetailsPanel from "./components/AppointmentDetailsPanel";
+import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
 import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
 
 // ── data hooks ────────────────────────────────────────────────────────────────
 
-function useAppointments(params: {
-  date: Dayjs | null;
+// Единый агрегат главной: список приёмов за дату + счётчики дней для навбара
+// + lastUpdate приходят одним запросом GET /api/appointments/home/ вместо трёх
+// отдельных (список + day-counts + last-update).
+function useHomeDashboard(params: {
+  date: Dayjs;
   search: string;
   branchId?: number;
   employeeId?: number | "me";
+  /** Навбар-счётчики отдельно от списка: "me" для врача/медсестры. */
+  countsEmployeeId?: number | "me";
+  /** Фильтр списка и счётчиков по роли исполнителя (процедурный кабинет = "nurse"). */
+  clinicalRole?: "doctor" | "nurse" | "other";
   nightOnly?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const queryParams = React.useMemo(
-    () => ({
-      date: params.date?.format("YYYY-MM-DD") ?? undefined,
+  const dateKey = params.date.format("YYYY-MM-DD");
+  const monthKey = params.date.format("YYYY-MM");
+  const queryParams = React.useMemo(() => {
+    const base = dayjs(`${monthKey}-01`);
+    // Навбар показывает окно ±7 дней вокруг выбранной даты, поэтому счётчики
+    // запрашиваем на 7 дней шире краёв месяца — иначе на краю месяца соседние
+    // дни остаются без счётчиков.
+    return {
+      date: dateKey,
+      dateFrom: base.startOf("month").subtract(7, "day").format("YYYY-MM-DD"),
+      dateTo: base.endOf("month").add(7, "day").format("YYYY-MM-DD"),
       search: params.search || undefined,
       branchId: params.branchId,
       employeeId: params.employeeId,
+      countsEmployeeId: params.countsEmployeeId,
+      clinicalRole: params.clinicalRole,
       nightOnly: params.nightOnly || undefined,
-    }),
-    [params.date, params.search, params.branchId, params.employeeId, params.nightOnly],
-  );
-  const queryKey = djangoQueryKeys.appointments.list(queryParams);
+    };
+  }, [dateKey, monthKey, params.search, params.branchId, params.employeeId, params.countsEmployeeId, params.clinicalRole, params.nightOnly]);
+
+  const queryKey = djangoQueryKeys.appointments.home(queryParams);
   const query = useQuery({
     queryKey,
-    queryFn: ({ signal }) => getAppointments(queryParams, signal),
+    queryFn: ({ signal }) => getHomeDashboard(queryParams, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
-    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    // Интервальный поллинг убран — обновление через useAppointmentsAutoSync
+    // (лёгкий last-update heartbeat → refetch только при изменении).
   });
 
   const setItems = React.useCallback(
     (updater: DjangoAppointment[] | ((prev: DjangoAppointment[]) => DjangoAppointment[])) => {
-      queryClient.setQueryData<DjangoAppointment[]>(queryKey, (prev = []) =>
-        typeof updater === "function" ? updater(prev) : updater,
-      );
+      queryClient.setQueryData<HomeDashboard>(queryKey, (prev) => {
+        const prevData: HomeDashboard =
+          prev ?? { appointments: [], dayCounts: {}, lastUpdate: null };
+        const nextAppointments =
+          typeof updater === "function" ? updater(prevData.appointments) : updater;
+        return { ...prevData, appointments: nextAppointments };
+      });
     },
     [queryClient, queryKey],
   );
 
   return {
-    items: query.data ?? [],
+    items: query.data?.appointments ?? [],
     setItems,
+    dayCounts: query.data?.dayCounts ?? {},
     loading: query.isLoading,
     error: query.error instanceof Error ? query.error.message : null,
     refresh: query.refetch,
   };
 }
 
-function useDayCounts(date: Dayjs | null, branchId?: number, employeeId?: number | "me") {
-  const monthKey = (date ?? dayjs()).format("YYYY-MM");
-  const params = React.useMemo(() => {
-    const base = dayjs(`${monthKey}-01`);
-    return {
-      dateFrom: base.startOf("month").format("YYYY-MM-DD"),
-      dateTo: base.endOf("month").format("YYYY-MM-DD"),
-      branchId,
-      employeeId,
-    };
-  }, [monthKey, branchId, employeeId]);
-
-  const query = useQuery({
-    queryKey: djangoQueryKeys.appointments.dayCounts(params),
-    queryFn: ({ signal }) => getDayCounts(params, signal),
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-  return query.data ?? {};
-}
-
 /**
- * Set of active nurse employee ids (clinicalRole === "nurse").
+ * Set of active employee ids with the given clinical role.
  *
- * Used by the Процедурный кабинет: when an admin / manager / receptionist opens it,
- * they see every appointment but must be filtered down to the ones a nurse performs.
- * Only fetched when `enabled` — a nurse looking at her own list doesn't need it.
+ * Used by the privileged cabinet views (admin / manager / receptionist): they
+ * load every appointment, then group/filter strictly by clinician type — the
+ * doctor cabinet by doctors, the procedure cabinet by nurses. Only fetched when
+ * `enabled` — a clinician looking at their own list doesn't need it.
  */
-function useNurseIds(enabled: boolean): Set<number> {
+function useClinicalIds(role: "doctor" | "nurse", enabled: boolean): Set<number> {
   const query = useQuery({
-    queryKey: ["staff", "employees", "nurseIds"],
+    queryKey: ["staff", "employees", "clinicalIds", role],
     queryFn: async ({ signal }) => {
       const res = await getDjangoEmployees({ status: "active", pageSize: 500 }, signal);
-      return res.results.filter((e) => e.clinicalRole === "nurse").map((e) => e.id);
+      return res.results.filter((e) => e.clinicalRole === role).map((e) => e.id);
     },
     enabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
   return React.useMemo(() => new Set(query.data ?? []), [query.data]);
+}
+
+/**
+ * SMS-уведомления для иконок статусов рядом с приёмом.
+ *
+ * Лёгкий батч-запрос по видимым id приёмов (отдельно от тяжёлого home-аггрегата,
+ * как day-counts). Сворачиваем в Map<appointmentId, Map<type, sentAt>>: бэкенд
+ * отдаёт строки по возрастанию sent_at, поэтому в Map по каждому типу остаётся
+ * самое позднее уведомление (1-в-1 со старым фронтом). Ключ запроса зависит от
+ * набора id, поэтому при смене даты/фильтра карта пересобирается.
+ */
+function useNotificationsMap(
+  appointmentIds: number[],
+): Map<number, Map<string, string | null>> {
+  // Стабилизируем ключ: сортируем id, чтобы порядок в списке не плодил рефетчи.
+  const sortedIds = React.useMemo(
+    () => [...appointmentIds].sort((a, b) => a - b),
+    [appointmentIds],
+  );
+
+  const query = useQuery({
+    queryKey: djangoQueryKeys.appointments.notifications(sortedIds),
+    queryFn: ({ signal }) => getAppointmentNotifications(sortedIds, signal),
+    enabled: sortedIds.length > 0,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+
+  return React.useMemo(() => {
+    const map = new Map<number, Map<string, string | null>>();
+    for (const n of query.data ?? []) {
+      let byType = map.get(n.appointmentId);
+      if (!byType) {
+        byType = new Map<string, string | null>();
+        map.set(n.appointmentId, byType);
+      }
+      byType.set(n.notificationType, n.sentAt);
+    }
+    return map;
+  }, [query.data]);
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -166,21 +210,37 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const addButtonText = isNurseCabinet ? "Добавить процедуру" : "Добавить прием";
   usePageTitle(pageTitle);
   const { can } = useCanChecker();
-  const { activeBranch, isSuperAdmin, isNurse, isAdmin, isRegistrator, hasRole, employeeId } =
-    usePermissions();
+  const {
+    activeBranch,
+    activeEmployee,
+    isSuperAdmin,
+    isAdmin,
+    isRegistrator,
+    hasRole,
+  } = usePermissions();
 
-  // Процедурный кабинет: сама медсестра видит только свои процедуры ("me");
-  // привилегированные роли (админ / управляющий / регистратура) видят все приёмы,
-  // которые затем клиентски фильтруются до тех, где есть исполнитель-медсестра.
-  const nurseSeesOwnOnly = isNurseCabinet && isNurse();
-  const nurseSeesAll =
-    isNurseCabinet && (isAdmin() || isRegistrator() || hasRole("manager"));
+  // Привилегированная роль — те, кто работает с созданием приёмов напрямую
+  // (админ / регистратура / управляющий). Они видят приёмы ВСЕХ клиницистов
+  // нужного типа: в кабинете врача — всех врачей, в процедурном — всех медсестёр.
+  // Непривилегированный сотрудник (рабочая роль) видит только СВОИ приёмы,
+  // независимо от его клинической роли (clinical_role ≠ RBAC-роль).
+  const isPrivileged = isAdmin() || isRegistrator() || hasRole("manager");
+
+  // Кабинет врача: непривилегированный сотрудник видит только свои приёмы ("me");
+  // привилегированная роль — приёмы всех врачей (фильтр clinicalRole=doctor на бэке).
+  const doctorSeesOwnOnly = isDoctorCabinet && !isPrivileged;
+  const doctorSeesAll = isDoctorCabinet && isPrivileged;
+
+  // Процедурный кабинет: непривилегированный сотрудник видит только свои процедуры;
+  // привилегированная роль — приёмы всех медсестёр (фильтр clinicalRole=nurse).
+  const nurseSeesOwnOnly = isNurseCabinet && !isPrivileged;
+  const nurseSeesAll = isNurseCabinet && isPrivileged;
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
-  const [search, setSearch] = React.useState("");
+  const search = "";
   const [nightOnly, setNightOnly] = React.useState(false);
 
   // DateNavigation (shared with the original Регистратура) works in string dates
@@ -191,6 +251,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
+  // Заключение открывается отдельной (третьей) колонкой — как в оригинале.
+  const [conclusionOpen, setConclusionOpen] = React.useState(false);
 
   // В кабинете врача создание приёмов скрыто — это рабочий список своих приёмов.
   const canCreate = !isDoctorCabinet && can("appointments.create");
@@ -213,40 +275,88 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   const branchId = activeBranch?.id ?? undefined;
 
-  // Врач и сама медсестра грузят только свои приёмы серверно ("me");
-  // привилегированные роли грузят все и фильтруют клиентски (см. visibleItems).
-  const scopedEmployeeId: number | "me" | undefined =
-    isDoctorCabinet || nurseSeesOwnOnly ? "me" : undefined;
+  // Клиницист в своём кабинете (врач в кабинете врача / медсестра в процедурном)
+  // грузит серверно только свои приёмы ("me"). Привилегированная роль грузит по
+  // клинической роли (clinicalRole ниже), а в Регистратуре — весь список.
+  const seesOwnOnly = doctorSeesOwnOnly || nurseSeesOwnOnly;
+  const scopedEmployeeId: number | "me" | undefined = seesOwnOnly ? "me" : undefined;
 
-  const { items, setItems, loading, error, refresh } = useAppointments({
+  // Навбар-счётчики: клиницист в своём кабинете считает только свои; привилегированная
+  // роль и Регистратура считают по тому же scope, что и список (clinicalRole/всё).
+  const countsScopeToMe = seesOwnOnly;
+
+  // Привилегированный кабинет фильтрует список и счётчики по клинической роли:
+  // кабинет врача → все врачи, процедурный → все медсёстры.
+  const clinicalRoleScope: "doctor" | "nurse" | undefined = doctorSeesAll
+    ? "doctor"
+    : nurseSeesAll
+    ? "nurse"
+    : undefined;
+
+  // Клиницист видит только свой список — фильтр-полоска по сотрудникам бессмысленна,
+  // оставляем только навигацию по датам. Привилегированные кабинеты и Регистратура
+  // полоску показывают (выбор конкретного врача / медсестры).
+  const hideEmployeeStrip = seesOwnOnly;
+
+  const { items, setItems, dayCounts, loading, error, refresh } = useHomeDashboard({
     date,
     search,
     branchId,
     employeeId: scopedEmployeeId,
+    countsEmployeeId: countsScopeToMe ? "me" : undefined,
+    // Привилегированный кабинет: список и счётчики сужены по клинической роли
+    // (врачи / медсёстры). Клиницист уже сужен через scopedEmployeeId="me".
+    clinicalRole: clinicalRoleScope,
     nightOnly,
   });
 
-  const dayCounts = useDayCounts(date, branchId, scopedEmployeeId);
+  // Лёгкая timestamp-синхронизация вместо интервального поллинга: раз в 15с
+  // проверяем last-update и перезапрашиваем тяжёлый список только при изменении.
+  // Пауза, пока открыт любой дровер/диалог — чтобы не мешать вводу.
+  useAppointmentsAutoSync({
+    branchId,
+    paused: createOpen || editTarget !== null || paymentTarget !== null || confirm !== null,
+    onChange: () => { void refresh(); },
+  });
 
-  // Список медсестёр нужен только для привилегированного просмотра процедурного кабинета.
-  const nurseIds = useNurseIds(nurseSeesAll);
+  // Привилегированный кабинет группируется строго по клиницистам своего типа
+  // (врачи / медсёстры), чтобы из совместного приёма не появлялась группа второго
+  // участника. Грузим id нужной роли только когда это реально привилегированный кабинет.
+  const clinicianIds = useClinicalIds(
+    clinicalRoleScope ?? "doctor",
+    clinicalRoleScope != null,
+  );
+
+  // Список уже сужен сервером (employeeId="me" или clinicalRole=...). Клиентский
+  // фильтр оставлен как защитный слой для привилегированного кабинета: нет клиницистов
+  // нужной роли → кабинет пуст, а не показывает чужие приёмы.
   const visibleItems = React.useMemo(() => {
-    if (!nurseSeesAll || nurseIds.size === 0) return items;
+    if (clinicalRoleScope == null) return items;
+    if (clinicianIds.size === 0) return [];
     return items.filter((a) =>
-      a.services.some((s) => s.employee != null && nurseIds.has(s.employee.id)),
+      a.services.some((s) => s.employee != null && clinicianIds.has(s.employee.id)),
     );
-  }, [items, nurseSeesAll, nurseIds]);
+  }, [items, clinicalRoleScope, clinicianIds]);
 
-  // Группировка списка в процедурном кабинете — только по медсёстрам:
-  // привилегированные роли — по всем медсёстрам, сама медсестра — по себе.
-  // Это убирает группы врачей из совместных приёмов (как в оригинале).
-  const ownEmployeeId = Number(employeeId);
+  // Группировка: привилегированный кабинет — строго по клиницистам своего типа;
+  // клиницист в своём кабинете — по себе. Иначе (Регистратура) — по всем участникам.
+  // ВАЖНО: для группировки «по себе» нужен ID СОТРУДНИКА (Employee.id из
+  // appointment.employee), а не ID auth-пользователя. usePermissions().employeeId —
+  // это user.id и с appointment.services[].employee.id не совпадает.
+  const ownEmployeeId = Number(activeEmployee?.id);
   const groupEmployeeIds = React.useMemo<Set<number> | null>(() => {
-    if (!isNurseCabinet) return null;
-    if (nurseSeesAll) return nurseIds.size > 0 ? nurseIds : null;
-    if (nurseSeesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
+    if (clinicalRoleScope != null) return clinicianIds;
+    if (seesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
     return null;
-  }, [isNurseCabinet, nurseSeesAll, nurseSeesOwnOnly, nurseIds, ownEmployeeId]);
+  }, [clinicalRoleScope, clinicianIds, seesOwnOnly, ownEmployeeId]);
+
+  // Иконки SMS-уведомлений: батч по id уже видимых приёмов (после клиентского
+  // фильтра по клинической роли — не запрашиваем уведомления для скрытых строк).
+  const visibleIds = React.useMemo(
+    () => visibleItems.map((a) => a.id),
+    [visibleItems],
+  );
+  const notificationsMap = useNotificationsMap(visibleIds);
 
   // Keep selectedAppt in sync with fresh list data
   React.useEffect(() => {
@@ -258,7 +368,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Deselect when switching dates (if nothing found)
   React.useEffect(() => {
     setSelectedAppt(null);
-  }, [date.format("YYYY-MM-DD")]);
+    setConclusionOpen(false);
+  }, [dateStr]);
 
   const handlePaymentSaved = React.useCallback(
     (summary: PaymentSummary) => {
@@ -281,6 +392,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   );
 
   const handleSelect = React.useCallback((appt: DjangoAppointment) => {
+    setConclusionOpen(false); // при смене приёма закрываем колонку заключения
     setSelectedAppt((prev) => (prev?.id === appt.id ? null : appt));
   }, []);
 
@@ -296,7 +408,23 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "waiting" });
+        await updateAppointment(appt.id, { status: "arrived" });
+        void refresh();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refresh, notify],
+  );
+
+  // Врач начинает приём → статус in_progress («На приёме»). Используем
+  // отдельный узкий эндпоинт start: он не требует appointments.update
+  // (которого у врача нет), а только переводит статус. Форма заключения
+  // открывается внутри панели.
+  const handleStartAppointment = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        await startAppointment(appt.id);
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -310,7 +438,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setConfirmBusy(true);
     try {
       if (confirm.mode === "cancel") {
-        await updateAppointment(confirm.appt.id, { status: "cancelled" });
+        await updateAppointment(confirm.appt.id, { status: "canceled" });
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
@@ -345,9 +473,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       canViewFinance={canViewFinance}
       canViewConclusions={canViewConclusions}
       canDelete={canDelete}
+      isConclusionVisible={conclusionOpen}
+      onToggleConclusion={() => setConclusionOpen((v) => !v)}
       onEdit={handleEdit}
       onPay={handlePay}
       onArrived={handleArrived}
+      onStartAppointment={handleStartAppointment}
       onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}
       onDelete={(a) => setConfirm({ mode: "delete", appt: a })}
       onClose={() => setSelectedAppt(null)}
@@ -440,13 +571,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               canUpdate={canUpdate}
               canManageFinance={canManageFinance}
               canViewFinance={canViewFinance}
+              notificationsMap={notificationsMap}
               onSelect={handleSelect}
               onEdit={handleEdit}
               onPay={handlePay}
-              onAddSlot={canCreate ? (_dateIso) => {
+              onAddSlot={canCreate ? () => {
                 setCreateOpen(true);
               } : undefined}
-              hideDoctorStrip={isNurseCabinet}
+              hideDoctorStrip={hideEmployeeStrip}
               groupEmployeeIds={groupEmployeeIds}
             />
           </Box>
@@ -487,6 +619,32 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               )}
             </Box>
           )}
+
+          {/* Conclusion panel — третья колонка (как в оригинале), только при
+              открытом заключении и выбранном приёме на десктопе. Панель сама
+              рисует шапку (одно заключение → сразу полное; несколько → список). */}
+          {!isMobile && showDetails && conclusionOpen && selectedAppt && (
+            <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                height: "100%",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Card
+                variant="outlined"
+                sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+              >
+                <DjangoConclusionSlotsPanel
+                  appointmentId={selectedAppt.id}
+                  onClose={() => setConclusionOpen(false)}
+                />
+              </Card>
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -502,10 +660,26 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               borderTopLeftRadius: 16,
               borderTopRightRadius: 16,
               overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
             },
           }}
         >
-          {detailsPanel}
+          <Box sx={{ flex: conclusionOpen ? "0 0 50%" : 1, minHeight: 0, overflow: "hidden" }}>
+            {detailsPanel}
+          </Box>
+          {/* На мобиле заключение показывается снизу под деталями. */}
+          {conclusionOpen && selectedAppt && (
+            <>
+              <Divider />
+              <Box sx={{ flex: "1 1 50%", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <DjangoConclusionSlotsPanel
+                  appointmentId={selectedAppt.id}
+                  onClose={() => setConclusionOpen(false)}
+                />
+              </Box>
+            </>
+          )}
         </Drawer>
       )}
 

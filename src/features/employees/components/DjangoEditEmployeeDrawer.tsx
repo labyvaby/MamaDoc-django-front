@@ -4,6 +4,7 @@ import {
   Autocomplete,
   Box,
   Checkbox,
+  Chip,
   CircularProgress,
   Divider,
   InputAdornment,
@@ -249,7 +250,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
     if (canViewServices || canManageServices) {
       setServicesLoading(true);
-      Promise.all([servicesPromise, getEmployeeServices(empId, ctrl.signal)])
+      // includeInactive: чтобы деактивированные назначения были видны в карточке
+      // (показываем их отдельным блоком), а не молча пропадали. На дифф
+      // сохранения это не влияет — он фильтрует по a.isActive ниже.
+      Promise.all([
+        servicesPromise,
+        getEmployeeServices(empId, ctrl.signal, { includeInactive: true }),
+      ])
         .then(([svcList, asgList]) => {
           if (ctrl.signal.aborted) return;
           const active = svcList.filter((s) => s.isActive);
@@ -410,6 +417,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         photo_url: updated.photoUrl || null,
         role_id: updated.role ? String(updated.role.id) : null,
         clinicalRole: updated.clinicalRole ?? "other",
+        // updated_at меняется при каждом сохранении — карточка использует его
+        // как сигнатуру, чтобы перечитать услуги/связанные данные без F5.
+        updated_at: updated.updatedAt,
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
         _djangoOperationalBranches: updated.operationalBranches ?? [],
@@ -427,6 +437,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   };
 
   const open = Boolean(record);
+
+  // Деактивированные назначения услуг — показываем отдельно, чтобы они не
+  // пропадали из карточки (управление статусом — в «Управление услугами»).
+  const inactiveAssignments = React.useMemo(
+    () => assignments.filter((a) => !a.isActive),
+    [assignments],
+  );
 
   return (
     <DrawerBase
@@ -658,6 +675,32 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 />
               )}
             />
+
+            {/* Деактивированные назначения — показываем, а не прячем. Только
+                для информации; управлять ими можно в «Управление услугами». */}
+            {inactiveAssignments.length > 0 && (
+              <Box sx={{ mt: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Неактивные услуги
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" gap={0.5} mt={0.5}>
+                  {inactiveAssignments.map((a) => (
+                    <Chip
+                      key={a.id}
+                      label={a.service.name}
+                      size="small"
+                      variant="outlined"
+                      color="default"
+                      sx={{
+                        opacity: 0.7,
+                        textDecoration: "line-through",
+                        textDecorationColor: "text.disabled",
+                      }}
+                    />
+                  ))}
+                </Stack>
+              </Box>
+            )}
           </Stack>
         )}
 

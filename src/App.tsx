@@ -85,17 +85,21 @@ const BookingsPage = lazy(() => import("./pages/bookings"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
+const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
+const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const DiagnosesPage = lazy(() => import("./pages/admin/DiagnosesPage"));
 const NotificationSettingsPage = lazy(() => import("./pages/settings/NotificationSettingsPage").then(module => ({ default: module.NotificationSettingsPage })));
+const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
+const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 const SalaryReportsPage = lazy(() => import("./pages/salary-reports"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
@@ -211,6 +215,13 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
 
   return <Fragment key={contextVersion}>{children}</Fragment>;
 };
+
+// Стабильные ссылки для ThemedLayout. Если передавать инлайн-стрелки
+// (Sider={() => <Sidebar />}), React при каждом ререндере ThemedLayout видит
+// новый тип компонента и размонтирует/монтирует сайдбар заново — из-за чего
+// теряется позиция скролла (выбрасывает наверх при выборе пункта снизу).
+const renderHeader = () => <Header sticky />;
+const renderSider = () => <Sidebar />;
 
 function App() {
   const theme = useTheme();
@@ -464,8 +475,8 @@ function App() {
                           <RequireAuth>
                             <MobileSidebarProvider>
                               <ThemedLayout
-                                Header={() => <Header sticky />}
-                                Sider={() => <Sidebar />}
+                                Header={renderHeader}
+                                Sider={renderSider}
                                 childrenBoxProps={{
                                   sx: {
                                     p: 1,
@@ -722,13 +733,21 @@ function App() {
                         <Route
                           path="reports"
                           element={
-                            <LegacyRouteGuard title="Отчеты в разработке">
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant']}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="reports.view">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <ReportsPage />
+                                  <DjangoReportsPage />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard title="Отчеты в разработке">
+                                <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ReportsPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route
@@ -796,28 +815,38 @@ function App() {
                             )
                           }
                         />
-                        <Route
-                          path="settings/diagnoses"
-                          element={
-                            <LegacyRouteGuard title="Диагнозы в разработке">
-                              <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DiagnosesPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
-                          }
-                        />
+                        {!IS_DJANGO_BACKEND && (
+                          <Route
+                            path="settings/diagnoses"
+                            element={
+                              <LegacyRouteGuard title="Диагнозы в разработке">
+                                <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DiagnosesPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            }
+                          />
+                        )}
                         <Route
                           path="settings/notifications"
                           element={
-                            <LegacyRouteGuard title="Уведомления в разработке">
-                              <ProtectedRoute allowedRoles={['superadmin']}>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="notifications.manage">
                                 <Suspense fallback={<LinearProgress />}>
-                                  <NotificationSettingsPage />
+                                  <DjangoNotificationSettingsPage />
                                 </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                              </RequirePermission>
+                            ) : (
+                              <LegacyRouteGuard title="Уведомления в разработке">
+                                <ProtectedRoute allowedRoles={['superadmin']}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <NotificationSettingsPage />
+                                  </Suspense>
+                                </ProtectedRoute>
+                              </LegacyRouteGuard>
+                            )
                           }
                         />
                         <Route
@@ -893,6 +922,16 @@ function App() {
                               }
                             />
                             <Route
+                              path="settings/specializations"
+                              element={
+                                <RequirePermission permission="staff.specializations.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SpecializationsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
                               path="settings/expense-categories"
                               element={
                                 <RequirePermission permission="finance.expense.manage">
@@ -928,6 +967,16 @@ function App() {
                                 <RequirePermission permission="reviews.manage">
                                   <Suspense fallback={<LinearProgress />}>
                                     <ReviewsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/diagnoses"
+                              element={
+                                <RequirePermission permission="medical.diagnoses.manage">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DiagnosesSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

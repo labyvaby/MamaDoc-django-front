@@ -11,6 +11,46 @@
       content="Внутренняя CRM-система Мама Доктор для управления клиникой."
     />
     <title>Мама Доктор CRM</title>
+    <!--
+      Раннее применение темы до загрузки React, чтобы не было белой вспышки
+      при обновлении страницы в тёмной теме. Логика и значения должны
+      совпадать с src/contexts/color-mode/index.tsx и src/theme.ts.
+    -->
+    <script>
+      (function () {
+        try {
+          var LIGHT = { slate: "#f1f5f9", gray: "#f4f4f5", neutral: "#f5f5f4" };
+          var DARK = {
+            navy: "#0f172a",
+            mirage: "#18212f",
+            mint: "#0d1f1b",
+            cinder: "#141319",
+            black: "#000000",
+          };
+          var scheme =
+            localStorage.getItem("colorScheme") ||
+            localStorage.getItem("colorMode") ||
+            "system";
+          var mode =
+            scheme === "light" || scheme === "dark"
+              ? scheme
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          var bg;
+          if (mode === "dark") {
+            bg = DARK[localStorage.getItem("darkSurface")] || DARK.navy;
+          } else {
+            bg = LIGHT[localStorage.getItem("lightSurface")] || LIGHT.slate;
+          }
+          var root = document.documentElement;
+          root.style.backgroundColor = bg;
+          root.style.colorScheme = mode;
+        } catch (e) {
+          /* localStorage недоступен — оставляем дефолтный фон */
+        }
+      })();
+    </script>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

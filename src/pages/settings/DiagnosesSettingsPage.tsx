@@ -12,6 +12,7 @@ import {
   IconButton,
   InputAdornment,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -26,21 +27,24 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { usePermissions } from "../../hooks/usePermissions";
-import { useCanChecker } from "../../hooks/useCan";
 import { SettingsLayout } from "./SettingsLayout";
-import { BranchFormDrawer, type BranchFormTarget } from "./BranchFormDrawer";
 import {
-  getBranches,
-  deleteBranch,
-  type DjangoBranch,
-} from "../../api/organization";
+  DiagnosisFormDrawer,
+  type DiagnosisFormTarget,
+} from "./DiagnosisFormDrawer";
+import {
+  getDiagnoses,
+  updateDiagnosis,
+  deleteDiagnosis,
+  type CatalogDiagnosis,
+} from "../../api/medical";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
+
+// ── error parsing ───────────────────────────────────────────────────────────
 
 function extractErrorMessage(err: unknown): string {
   if (err instanceof ApiError) return extractApiError(err.payload, err.status);
@@ -48,68 +52,75 @@ function extractErrorMessage(err: unknown): string {
   return "Неизвестная ошибка";
 }
 
-const BranchesSettingsPage: React.FC = () => {
-  usePageTitle("Филиалы");
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+const DiagnosesSettingsPage: React.FC = () => {
+  usePageTitle("Диагнозы");
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
-  const { activeOrganization } = usePermissions();
-  const { can } = useCanChecker();
-
-  const canCreate = can("branches.create");
-  const canUpdate = can("branches.update");
-  const canDelete = can("branches.delete");
 
   const [search, setSearch] = React.useState("");
-  const [formTarget, setFormTarget] = React.useState<BranchFormTarget>(null);
-  const [deleteTarget, setDeleteTarget] = React.useState<DjangoBranch | null>(null);
+  const [formTarget, setFormTarget] = React.useState<DiagnosisFormTarget>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<CatalogDiagnosis | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [snack, setSnack] = React.useState<string | null>(null);
+  // IDs currently mid-toggle, to disable their switch and avoid double clicks.
+  const [togglingIds, setTogglingIds] = React.useState<ReadonlySet<number>>(new Set());
 
-  const queryKey = ["django", "organization", "branches"] as const;
+  const queryKey = ["django", "medical", "diagnoses", "settings"] as const;
   const query = useQuery({
     queryKey,
-    queryFn: () => getBranches(),
-    // Свежесть важнее экономии: справочник филиалов меняется редко, но после
-    // правок таблица не должна держать устаревшие строки.
+    // includeInactive — в настройках показываем все, чтобы можно было включить.
+    queryFn: ({ signal }) => getDiagnoses(undefined, signal, { includeInactive: true }),
+    // Менеджер справочника должен быть свежим: после правок в одной вкладке
+    // (или фоновых seed-команд) нельзя показывать устаревшие строки с
+    // «висячими» id — иначе удаление уйдёт по уже несуществующему id.
     staleTime: 0,
     refetchOnMount: "always",
   });
-  const allFromApi = query.data ?? [];
-
-  // Суперюзеру/мультиорг-пользователю backend отдаёт филиалы ВСЕХ организаций.
-  // Показываем только филиалы активной организации, иначе они двоятся и можно
-  // отредактировать чужую клинику. Пока активная орг не определена — показываем
-  // всё (обычным юзерам backend и так отдаёт только их организацию).
-  const all = React.useMemo(() => {
-    if (activeOrganization?.id == null) return allFromApi;
-    return allFromApi.filter((b) => b.organizationId === activeOrganization.id);
-  }, [allFromApi, activeOrganization?.id]);
-
-  const activeCount = all.filter((b) => b.isActive).length;
+  const all = query.data ?? [];
+  const activeCount = all.filter((d) => d.isActive).length;
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return all;
     return all.filter(
-      (b) =>
-        b.name.toLowerCase().includes(q) ||
-        b.address.toLowerCase().includes(q) ||
-        b.phone.toLowerCase().includes(q),
+      (d) => d.code.toLowerCase().includes(q) || d.title.toLowerCase().includes(q),
     );
   }, [all, search]);
 
+  // refetch (не просто invalidate) — гарантируем перезапрос свежего списка
+  // сразу после любой мутации, чтобы таблица не держала устаревшие id.
   const refresh = () => queryClient.refetchQueries({ queryKey });
+
+  const handleToggleActive = async (d: CatalogDiagnosis) => {
+    setTogglingIds((prev) => new Set(prev).add(d.id));
+    try {
+      await updateDiagnosis(d.id, { isActive: !d.isActive });
+      await refresh();
+    } catch (err) {
+      setSnack(extractErrorMessage(err));
+    } finally {
+      setTogglingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(d.id);
+        return next;
+      });
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleteBusy(true);
     try {
-      await deleteBranch(deleteTarget.id);
-      enqueueSnackbar("Филиал отключён", { variant: "success" });
+      await deleteDiagnosis(deleteTarget.id);
+      enqueueSnackbar("Диагноз удалён из справочника", { variant: "success" });
       setDeleteTarget(null);
       await refresh();
     } catch (err) {
-      // 404 — уже удалён в другой вкладке: трактуем как успех.
+      // 404 means the row is already gone (e.g. deleted in another tab, or a
+      // stale list still shows it) — treat DELETE as idempotent: refresh and
+      // close instead of surfacing a confusing "not found" error.
       if (err instanceof ApiError && err.status === 404) {
         setDeleteTarget(null);
         await refresh();
@@ -132,9 +143,8 @@ const BranchesSettingsPage: React.FC = () => {
           gap={1.5}
         >
           <Stack direction="row" alignItems="center" gap={1}>
-            <StoreOutlined color="action" />
             <Typography variant="h6" fontWeight={600}>
-              Филиалы
+              Диагнозы (МКБ-10)
             </Typography>
             {!query.isLoading && (
               <Tooltip title={`Активных: ${activeCount} из ${all.length}`}>
@@ -146,7 +156,7 @@ const BranchesSettingsPage: React.FC = () => {
           <Stack direction="row" gap={1} alignItems="center">
             <TextField
               size="small"
-              placeholder="Поиск по названию, адресу…"
+              placeholder="Поиск по коду или названию…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               InputProps={{
@@ -158,21 +168,19 @@ const BranchesSettingsPage: React.FC = () => {
               }}
               sx={{ width: { xs: "100%", sm: 240 } }}
             />
-            {canCreate && (
-              <Button
-                variant="contained"
-                startIcon={<AddOutlined />}
-                onClick={() => setFormTarget("new")}
-              >
-                Добавить
-              </Button>
-            )}
+            <Button
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() => setFormTarget("new")}
+            >
+              Добавить
+            </Button>
           </Stack>
         </Stack>
 
         <Typography variant="body2" color="text.secondary">
-          Точки обслуживания организации. Филиал используется при записи на приём,
-          продажах и в кассе.
+          Справочник диагнозов, из которого врачи выбирают значения в заключении.
+          Список настраивается отдельно для каждой организации.
         </Typography>
 
         {query.error && (
@@ -215,16 +223,14 @@ const BranchesSettingsPage: React.FC = () => {
               gap: 1.5,
             }}
           >
-            <Typography variant="body2">Филиалов пока нет.</Typography>
-            {canCreate && (
-              <Button
-                variant="outlined"
-                startIcon={<AddOutlined />}
-                onClick={() => setFormTarget("new")}
-              >
-                Добавить первый филиал
-              </Button>
-            )}
+            <Typography variant="body2">Справочник диагнозов пуст.</Typography>
+            <Button
+              variant="outlined"
+              startIcon={<AddOutlined />}
+              onClick={() => setFormTarget("new")}
+            >
+              Добавить первый диагноз
+            </Button>
           </Box>
         ) : filtered.length === 0 ? (
           <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
@@ -235,56 +241,43 @@ const BranchesSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell sx={{ width: 110 }}>Код</TableCell>
                   <TableCell>Название</TableCell>
-                  <TableCell>Адрес</TableCell>
-                  <TableCell sx={{ width: 160 }}>Телефон</TableCell>
-                  <TableCell sx={{ width: 110 }} align="center">Статус</TableCell>
+                  <TableCell sx={{ width: 110 }} align="center">Активен</TableCell>
                   <TableCell sx={{ width: 96 }} align="right">Действия</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filtered.map((b) => (
+                {filtered.map((d) => (
                   <TableRow
-                    key={b.id}
+                    key={d.id}
                     hover
-                    onDoubleClick={canUpdate ? () => setFormTarget(b) : undefined}
-                    sx={{ opacity: b.isActive ? 1 : 0.55 }}
+                    onDoubleClick={() => setFormTarget(d)}
+                    sx={{ opacity: d.isActive ? 1 : 0.55, cursor: "default" }}
                   >
-                    <TableCell sx={{ fontWeight: 600 }}>{b.name}</TableCell>
-                    <TableCell sx={{ color: "text.secondary" }}>
-                      {b.address || "—"}
+                    <TableCell sx={{ fontFamily: "monospace", fontWeight: 600 }}>
+                      {d.code}
                     </TableCell>
-                    <TableCell sx={{ color: "text.secondary" }}>
-                      {b.phone || "—"}
-                    </TableCell>
+                    <TableCell>{d.title}</TableCell>
                     <TableCell align="center">
-                      <Chip
+                      <Switch
                         size="small"
-                        label={b.isActive ? "Работает" : "Отключён"}
-                        color={b.isActive ? "success" : "default"}
-                        variant={b.isActive ? "filled" : "outlined"}
-                        sx={{ height: 22 }}
+                        checked={d.isActive}
+                        disabled={togglingIds.has(d.id)}
+                        onChange={() => handleToggleActive(d)}
                       />
                     </TableCell>
                     <TableCell align="right">
-                      {canUpdate && (
-                        <Tooltip title="Редактировать">
-                          <IconButton size="small" onClick={() => setFormTarget(b)}>
-                            <EditOutlined fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      {canDelete && b.isActive && (
-                        <Tooltip title="Отключить">
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => setDeleteTarget(b)}
-                          >
-                            <DeleteOutlineOutlined fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                      <Tooltip title="Редактировать">
+                        <IconButton size="small" onClick={() => setFormTarget(d)}>
+                          <EditOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Удалить">
+                        <IconButton size="small" color="error" onClick={() => setDeleteTarget(d)}>
+                          <DeleteOutlineOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -295,24 +288,19 @@ const BranchesSettingsPage: React.FC = () => {
       </Stack>
 
       {/* Create / edit drawer */}
-      <BranchFormDrawer
+      <DiagnosisFormDrawer
         target={formTarget}
-        organizationId={activeOrganization?.id ?? undefined}
         onClose={() => setFormTarget(null)}
         onSaved={() => refresh()}
       />
 
-      {/* Delete (deactivate) confirm */}
-      <Dialog
-        open={deleteTarget !== null}
-        onClose={deleteBusy ? undefined : () => setDeleteTarget(null)}
-      >
-        <DialogTitle>Отключить филиал?</DialogTitle>
+      {/* Delete confirm */}
+      <Dialog open={deleteTarget !== null} onClose={deleteBusy ? undefined : () => setDeleteTarget(null)}>
+        <DialogTitle>Удалить диагноз?</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            «{deleteTarget?.name}» будет деактивирован и скрыт из выбора.
-            Связанные данные (приёмы, продажи) сохраняются, филиал можно снова
-            включить через редактирование.
+            «{deleteTarget?.code} — {deleteTarget?.title}» будет удалён из справочника.
+            Уже созданные заключения сохранят свой диагноз (история не меняется).
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -320,7 +308,7 @@ const BranchesSettingsPage: React.FC = () => {
             Отмена
           </Button>
           <Button color="error" variant="contained" onClick={handleDelete} disabled={deleteBusy}>
-            {deleteBusy ? "Отключение…" : "Отключить"}
+            {deleteBusy ? "Удаление…" : "Удалить"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -328,4 +316,4 @@ const BranchesSettingsPage: React.FC = () => {
   );
 };
 
-export default BranchesSettingsPage;
+export default DiagnosesSettingsPage;

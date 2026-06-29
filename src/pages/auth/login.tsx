@@ -17,7 +17,11 @@ import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphoneOutlined";
 import EmailIcon from "@mui/icons-material/EmailOutlined";
 import smallIcon from "../../assets/img/icon_2s.png";
-import { login as djangoLogin } from "../../api";
+import {
+  login as djangoLogin,
+  requestOtp as djangoRequestOtp,
+  verifyOtp as djangoVerifyOtp,
+} from "../../api";
 import { applyMeResponse, usePermissions } from "../../hooks/usePermissions";
 import { ApiError } from "../../api/client";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
@@ -91,7 +95,7 @@ const LoginPage: React.FC = () => {
 
           const roleName = Array.isArray(employeeData?.roles)
             ? employeeData?.roles[0]?.name
-            : (employeeData?.roles as any)?.name;
+            : (employeeData?.roles as unknown as { name?: string })?.name;
 
           if (roleName && ROLE_HOME_PAGES[roleName as RoleName]) {
             navigate(ROLE_HOME_PAGES[roleName as RoleName], { replace: true });
@@ -230,10 +234,6 @@ const LoginPage: React.FC = () => {
   // --- ЛОГИКА ТЕЛЕФОНА ---
   const sendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (IS_DJANGO_BACKEND) {
-      setErrorMsg("Вход по телефону будет подключен после переноса SMS/OTP на Django. Сейчас используйте Email.");
-      return;
-    }
 
     setLoading(true);
     setErrorMsg(null);
@@ -252,6 +252,20 @@ const LoginPage: React.FC = () => {
     if (!fullPhone) {
       setErrorMsg("Введите номер телефона");
       setLoading(false);
+      return;
+    }
+
+    if (IS_DJANGO_BACKEND) {
+      try {
+        await djangoRequestOtp(fullPhone);
+        setIsOtpSent(true);
+        setLastSentPhone(fullPhone);
+        setInfoMsg("Если номер зарегистрирован, на него отправлен код.");
+      } catch (err: unknown) {
+        setErrorMsg(getErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -302,10 +316,6 @@ const LoginPage: React.FC = () => {
 
   const verifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (IS_DJANGO_BACKEND) {
-      setErrorMsg("Вход по телефону будет подключен после переноса SMS/OTP на Django. Сейчас используйте Email.");
-      return;
-    }
 
     setLoading(true);
     setErrorMsg(null);
@@ -315,6 +325,23 @@ const LoginPage: React.FC = () => {
     if (!fullPhone) {
       setErrorMsg("Введите номер телефона");
       setLoading(false);
+      return;
+    }
+
+    if (IS_DJANGO_BACKEND) {
+      try {
+        const meData = await djangoVerifyOtp(fullPhone, otpCode.trim());
+        applyMeResponse(meData);
+        navigate(redirectTo, { replace: true });
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 401) {
+          setErrorMsg("Неверный или истёкший код. Запросите новый.");
+        } else {
+          setErrorMsg(getErrorMessage(err));
+        }
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 

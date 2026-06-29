@@ -1,13 +1,7 @@
 import React from "react";
 import {
   Box,
-  Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   Drawer,
   Stack,
   Tab,
@@ -27,7 +21,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
-  getPatients,
+  searchPatients,
 } from "../../api/patients";
 import type {
   DjangoPatient,
@@ -47,6 +41,7 @@ import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
+import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
 
 
 // ── "В разработке" placeholder for Old conclusions tab ───────────────────────
@@ -109,6 +104,9 @@ const DjangoPatientsPage: React.FC = () => {
   const [patients, setPatients] = React.useState<DjangoPatient[]>([]);
   const [loadingData, setLoadingData] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [hasMore, setHasMore] = React.useState(true);
+  const loadCtrlRef = React.useRef<AbortController | null>(null);
+  const inFlightRef = React.useRef(false);
 
   const [search, setSearch] = React.useState("");
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
@@ -130,37 +128,72 @@ const DjangoPatientsPage: React.FC = () => {
   const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
-  const [mergeInfoOpen, setMergeInfoOpen] = React.useState(false);
+  const [mergeOpen, setMergeOpen] = React.useState(false);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [mobileTab, setMobileTab] = React.useState(0);
   const [tabletTab, setTabletTab] = React.useState(0);
   const [desktopRightTab, setDesktopRightTab] = React.useState(0);
 
-  // ── Load list ──────────────────────────────────────────────────────────────
-  const load = React.useCallback(async (signal?: AbortSignal) => {
-    setLoadingData(true);
-    setError(null);
-    try {
-      const data = await getPatients(signal);
-      setPatients(data);
-    } catch (e) {
-      if ((e as { name?: string })?.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
-    } finally {
-      setLoadingData(false);
-    }
-  }, []);
+  // ── Load list (server-side search + infinite scroll) ─────────────────────────
+  // The clinic can have tens of thousands of patients, so we NEVER pull the
+  // whole table to the client. The server filters by the search term and pages
+  // by offset; the list grows as the user scrolls (PER_PAGE at a time), exactly
+  // like the legacy patient-search page.
+  const PER_PAGE = 30;
+  const fetchChunk = React.useCallback(
+    async (offset: number, query: string) => {
+      loadCtrlRef.current?.abort();
+      const ctrl = new AbortController();
+      loadCtrlRef.current = ctrl;
+      inFlightRef.current = true;
+      setLoadingData(true);
+      setError(null);
+      try {
+        const data = await searchPatients(
+          query.trim(),
+          PER_PAGE,
+          ctrl.signal,
+          offset,
+        );
+        if (ctrl.signal.aborted) return;
+        setPatients((prev) => (offset === 0 ? data : [...prev, ...data]));
+        setHasMore(data.length === PER_PAGE);
+      } catch (e) {
+        if ((e as { name?: string })?.name === "AbortError") return;
+        setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
+      } finally {
+        if (!ctrl.signal.aborted) setLoadingData(false);
+        inFlightRef.current = false;
+      }
+    },
+    [],
+  );
 
+  // Reload from the top whenever the (debounced) search term changes.
   const activeOrgId = activeMembership?.organization?.id;
   const activeBranchId = activeBranch?.id;
   React.useEffect(() => {
     if (permLoading || !canView) return;
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
+    setPatients([]);
+    setHasMore(true);
+    void fetchChunk(0, debouncedSearch);
+    return () => loadCtrlRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permLoading, canView, activeOrgId, activeBranchId]);
+  }, [permLoading, canView, activeOrgId, activeBranchId, debouncedSearch]);
+
+  // Infinite scroll: append the next page.
+  const loadMore = React.useCallback(() => {
+    if (loadingData || !hasMore || inFlightRef.current) return;
+    void fetchChunk(patients.length, debouncedSearch);
+  }, [loadingData, hasMore, patients.length, debouncedSearch, fetchChunk]);
+
+  // Reload from the top (after create/merge/etc).
+  const reload = React.useCallback(() => {
+    setPatients([]);
+    setHasMore(true);
+    void fetchChunk(0, debouncedSearch);
+  }, [debouncedSearch, fetchChunk]);
 
   // Keep selected patient in sync with fresh list data (without losing selection)
   React.useEffect(() => {
@@ -205,17 +238,10 @@ const DjangoPatientsPage: React.FC = () => {
     return () => ctrl.abort();
   }, [selected?.id, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Filtered list ────────────────────────────────────────────────────────────
-  const filtered = React.useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
-    if (!q) return patients;
-    return patients.filter(
-      (p) =>
-        p.fullName.toLowerCase().includes(q) ||
-        (p.phone && p.phone.toLowerCase().includes(q)) ||
-        (p.secondaryPhone && p.secondaryPhone.toLowerCase().includes(q)),
-    );
-  }, [patients, debouncedSearch]);
+  // ── List ──────────────────────────────────────────────────────────────────
+  // Search + capping now happen server-side in `load`, so the list is used
+  // as-is (no client-side filtering over the whole table).
+  const filtered = patients;
 
   // ── Derived "last appointment" for the card ──────────────────────────────────
   const last = history[0];
@@ -243,7 +269,13 @@ const DjangoPatientsPage: React.FC = () => {
   const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
-  const handleMerge = () => setMergeInfoOpen(true);
+  const handleMerge = () => { if (selected) setMergeOpen(true); };
+
+  const handleMerged = () => {
+    setMergeOpen(false);
+    setSelected(null);
+    reload();
+  };
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
@@ -297,6 +329,8 @@ const DjangoPatientsPage: React.FC = () => {
       patients={filtered}
       selectedId={selected?.id ?? null}
       onSelect={handleSelect}
+      hasMore={hasMore}
+      onLoadMore={loadMore}
     />
   );
 
@@ -454,21 +488,13 @@ const DjangoPatientsPage: React.FC = () => {
         )}
       </Drawer>
 
-      {/* Merge — not yet available on Django backend */}
-      <Dialog open={mergeInfoOpen} onClose={() => setMergeInfoOpen(false)}>
-        <DialogTitle>Объединение пациентов</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Объединение дублей пациентов ещё переносится на новый backend и будет
-            доступно позже.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMergeInfoOpen(false)} variant="contained">
-            Понятно
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Объединение дублей пациентов */}
+      <MergePatientDrawer
+        open={mergeOpen}
+        onClose={() => setMergeOpen(false)}
+        initialPatient={selected}
+        onMerged={handleMerged}
+      />
     </Box>
   );
 };

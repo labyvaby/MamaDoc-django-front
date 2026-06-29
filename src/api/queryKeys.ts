@@ -2,6 +2,14 @@ export const DJANGO_LIST_STALE_TIME_MS = 30_000;
 export const DJANGO_REFERENCE_STALE_TIME_MS = 10 * 60_000;
 export const DJANGO_DETAIL_STALE_TIME_MS = 60_000;
 export const DJANGO_POLL_INTERVAL_MS = 30_000;
+/**
+ * Интервал лёгкого heartbeat-чека last-update (детекция изменений приёмов).
+ * Псевдо-realtime без websocket: каждые 2.5с опрашиваем дешёвый last-update
+ * (один SELECT MAX(updated_at)), а тяжёлый список рефетчим ТОЛЬКО когда
+ * таймстамп сдвинулся. Плюс мгновенная проверка при возврате на вкладку
+ * (см. useAppointmentsAutoSync). Поллинг идёт лишь на видимой вкладке.
+ */
+export const DJANGO_HEARTBEAT_INTERVAL_MS = 2_500;
 
 export const djangoQueryKeys = {
   all: ["django"] as const,
@@ -12,6 +20,11 @@ export const djangoQueryKeys = {
       ["django", "appointments", "list", params] as const,
     dayCounts: (params: Record<string, unknown>) =>
       ["django", "appointments", "day-counts", params] as const,
+    home: (params: Record<string, unknown>) =>
+      ["django", "appointments", "home", params] as const,
+    // Иконки SMS-уведомлений: батч по видимым id приёмов (key зависит от id).
+    notifications: (ids: number[]) =>
+      ["django", "appointments", "notifications", ids] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
@@ -38,6 +51,20 @@ export const djangoQueryKeys = {
       ["django", "cashbox", "summary", filters] as const,
     entries: (entryType: string, filters: Record<string, unknown>) =>
       ["django", "cashbox", "entries", entryType, filters] as const,
+  },
+
+  reports: {
+    monthly: (filters: Record<string, unknown>) =>
+      ["django", "reports", "monthly", filters] as const,
+    activeMonths: (organizationId: number | null | undefined) =>
+      ["django", "reports", "active-months", organizationId ?? null] as const,
+  },
+
+  notifications: {
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "notifications", "settings", organizationId ?? null] as const,
+    history: (filters: Record<string, unknown>) =>
+      ["django", "notifications", "history", filters] as const,
   },
 
   expenses: {
@@ -96,6 +123,11 @@ export const djangoQueryKeys = {
       ["django", "reviews", "settings", organizationId ?? null] as const,
     byAppointment: (appointmentId: number) =>
       ["django", "reviews", "appointment", appointmentId] as const,
+  },
+
+  staff: {
+    specializations: (organizationId: number | null | undefined) =>
+      ["django", "staff", "specializations", organizationId ?? null] as const,
   },
 
   catalog: {
