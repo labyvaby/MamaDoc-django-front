@@ -7,11 +7,18 @@ import {
     Typography,
     IconButton,
     Divider,
+    Paper,
+    Stack,
+    TextField,
+    MenuItem,
+    Button,
+    Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import type { Theme } from "@mui/material/styles";
-import { useNotification } from "@refinedev/core";
 import CloseIcon from "@mui/icons-material/CloseOutlined";
+import StoreOutlined from "@mui/icons-material/StoreOutlined";
+import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import { useNotification } from "@refinedev/core";
 
 import { PageHeader } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
@@ -43,8 +50,13 @@ import {
 import { DjangoWarehouseList } from "../../../components/storage/django/DjangoWarehouseList";
 import { DjangoAddWarehouseDrawer } from "../../../components/storage/django/DjangoAddWarehouseDrawer";
 
+/**
+ * Страница «Остатки» — объединяет бывшие «Склад» и «Движение товара»:
+ * переключатель склада сверху, остатки + история движений (master-detail),
+ * управление складами в выезжающей панели, действия Приход/Списание/Перемещение.
+ */
 const DjangoWarehousesPage: React.FC = () => {
-    usePageTitle("Склад");
+    usePageTitle("Остатки");
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const { open: notify } = useNotification();
@@ -78,6 +90,8 @@ const DjangoWarehousesPage: React.FC = () => {
 
     const [warehouseDrawerOpen, setWarehouseDrawerOpen] = React.useState(false);
     const [editingWarehouse, setEditingWarehouse] = React.useState<DjangoWarehouse | null>(null);
+    // Панель управления складами (список + CRUD)
+    const [manageOpen, setManageOpen] = React.useState(false);
 
     // All Products for Selector (for adding new items)
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
@@ -87,13 +101,9 @@ const DjangoWarehousesPage: React.FC = () => {
         if (!canView) return;
         try {
             setLoadingWarehouses(true);
-            const [ws, prods] = await Promise.all([
-                getWarehouses(),
-                getProducts(),
-            ]);
+            const [ws, prods] = await Promise.all([getWarehouses(), getProducts()]);
             setWarehouses(ws);
             setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
-
             setSelectedWarehouseId((prev) => {
                 if (prev !== null && ws.some((w) => w.id === prev)) return prev;
                 const primary = ws.find((w) => w.isPrimary && !w.isLinked) || ws[0];
@@ -108,14 +118,10 @@ const DjangoWarehousesPage: React.FC = () => {
     }, [notify, canView]);
 
     React.useEffect(() => {
-        if (!permLoading && canView) {
-            loadInitialData();
-        }
+        if (!permLoading && canView) loadInitialData();
     }, [permLoading, canView, loadInitialData]);
 
-    // 2. Fetch Stock when Warehouse changes.
-    // Отмена предыдущего запроса: при быстром перещёлкивании складов
-    // старый ответ не должен перетереть данные нового склада.
+    // 2. Fetch Stock when Warehouse changes (с отменой предыдущего запроса).
     const stockAbortRef = React.useRef<AbortController | null>(null);
     const fetchStock = React.useCallback(async () => {
         stockAbortRef.current?.abort();
@@ -144,7 +150,6 @@ const DjangoWarehousesPage: React.FC = () => {
         fetchStock();
     }, [fetchStock]);
 
-    // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
     useFocusRefetch(() => {
         if (!permLoading && canView) {
             loadInitialData();
@@ -152,9 +157,9 @@ const DjangoWarehousesPage: React.FC = () => {
         }
     });
 
-    // 3. Fetch Movements when Item Selected (for Details)
+    // 3. Fetch Movements when Item Selected
     React.useEffect(() => {
-        if (selectedItem && isDetailsOpen) {
+        if (selectedItem && (isDetailsOpen || !isMobile)) {
             const controller = new AbortController();
             const loadMoves = async () => {
                 try {
@@ -175,19 +180,22 @@ const DjangoWarehousesPage: React.FC = () => {
             return () => controller.abort();
         }
         return undefined;
-    }, [selectedItem, isDetailsOpen]);
+    }, [selectedItem, isDetailsOpen, isMobile]);
+
+    // Auto-select first item on desktop
+    React.useEffect(() => {
+        if (!isMobile && stock.length > 0 && !selectedItem) setSelectedItem(stock[0]);
+    }, [isMobile, stock, selectedItem]);
 
     // Handlers
     const handleAddWarehouse = () => {
         setEditingWarehouse(null);
         setWarehouseDrawerOpen(true);
     };
-
     const handleEditWarehouse = (w: DjangoWarehouse) => {
         setEditingWarehouse(w);
         setWarehouseDrawerOpen(true);
     };
-
     const handleUnlinkWarehouse = async (w: DjangoWarehouse) => {
         try {
             await unlinkWarehouse(w.id);
@@ -206,7 +214,7 @@ const DjangoWarehousesPage: React.FC = () => {
 
     const handleStockClick = (item: DjangoStockItem) => {
         setSelectedItem(item);
-        setIsDetailsOpen(true);
+        if (isMobile) setIsDetailsOpen(true);
     };
 
     const handleAddMovementClick = (mode: "in" | "out") => {
@@ -214,20 +222,17 @@ const DjangoWarehousesPage: React.FC = () => {
         setMovementMode(mode);
         setMovementDrawerOpen(true);
     };
-
     const handleGlobalAddStock = () => {
-        setSelectedItem(null); // Adding raw new item
+        setSelectedItem(null);
         setEditingMovement(null);
         setMovementMode("in");
         setMovementDrawerOpen(true);
     };
-
     const handleEditMovement = (movement: DjangoStockMovement) => {
         setEditingMovement(movement);
         setMovementMode("in");
         setMovementDrawerOpen(true);
     };
-
     const handleCloseMovementDrawer = () => {
         setMovementDrawerOpen(false);
         setEditingMovement(null);
@@ -245,7 +250,6 @@ const DjangoWarehousesPage: React.FC = () => {
             notify?.({ type: "error", message: "Склад не выбран" });
             return;
         }
-
         const targetProductId = editingMovement?.productId ?? selectedItem?.productId ?? selectedProd?.id ?? undefined;
         const newProductName = !targetProductId && selectedProd?.id === null ? selectedProd.label : undefined;
         if (!targetProductId && !newProductName) return;
@@ -270,31 +274,21 @@ const DjangoWarehousesPage: React.FC = () => {
                     paymentMethod,
                 });
             }
-
             notify?.({ type: "success", message: editingMovement ? "Приход обновлен" : "Успешно" });
 
-            // Refresh
             const data = await fetchStock();
             const updated = data?.find((i) =>
                 targetProductId
                     ? i.productId === targetProductId
                     : i.productName.toLowerCase() === (newProductName || "").toLowerCase(),
             );
-            if (updated) {
-                setSelectedItem(updated);
-            }
+            if (updated) setSelectedItem(updated);
 
-            if (isDetailsOpen || editingMovement) {
-                const refreshProductId = updated?.productId ?? targetProductId;
-                if (refreshProductId) {
-                    const moves = await getStockMovements({
-                        productId: refreshProductId,
-                        warehouseId: wId,
-                    });
-                    setMovements(moves);
-                }
+            const refreshProductId = updated?.productId ?? targetProductId;
+            if (refreshProductId) {
+                const moves = await getStockMovements({ productId: refreshProductId, warehouseId: wId });
+                setMovements(moves);
             }
-            // Новый товар мог появиться — обновим список для автокомплита.
             if (newProductName) {
                 getProducts()
                     .then((prods) => setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name }))))
@@ -309,7 +303,7 @@ const DjangoWarehousesPage: React.FC = () => {
         }
     };
 
-    // Post-Fetch stock update selected item quantity if open
+    // Синхронизация выбранной позиции со свежим остатком
     React.useEffect(() => {
         if (selectedItem && stock.length > 0) {
             const updated = stock.find((s) => s.productId === selectedItem.productId);
@@ -323,8 +317,7 @@ const DjangoWarehousesPage: React.FC = () => {
         if (!searchQuery) return stock;
         const q = searchQuery.toLowerCase();
         return stock.filter((i) =>
-            i.productName?.toLowerCase().includes(q) ||
-            i.productBarcode?.includes(q),
+            i.productName?.toLowerCase().includes(q) || i.productBarcode?.includes(q),
         );
     }, [stock, searchQuery]);
 
@@ -332,13 +325,17 @@ const DjangoWarehousesPage: React.FC = () => {
 
     const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
     const detailsWarehouse = warehouses.find((w) => w.id === selectedItem?.warehouseId);
+    const showDetailColumn = !isMobile;
+
+    const warehouseLabel = (w: DjangoWarehouse) =>
+        `${w.name}${w.isLinked ? ` — филиал: ${w.branchName}` : ""}${w.isPrimary && !w.isLinked ? " • основной" : ""}`;
 
     return (
         <Box
-            sx={(theme) => ({
+            sx={(t) => ({
                 height: {
-                    xs: `calc(100dvh - ${theme.appLayout.header.height.mobile}px)`,
-                    md: `calc(100dvh - ${theme.appLayout.header.height.desktop}px)`,
+                    xs: `calc(100dvh - ${t.appLayout.header.height.mobile}px)`,
+                    md: `calc(100dvh - ${t.appLayout.header.height.desktop}px)`,
                 },
                 display: "flex",
                 flexDirection: "column",
@@ -347,81 +344,105 @@ const DjangoWarehousesPage: React.FC = () => {
             })}
         >
             <PageHeader
-                title="Склад"
+                title="Остатки"
                 showTitle={false}
                 showSearch
                 searchVal={searchQuery}
                 onSearchChange={setSearchQuery}
                 searchPlaceholder="Поиск товара..."
                 onAdd={canManage ? handleGlobalAddStock : undefined}
-                addButtonText="Приход товара"
+                addButtonText="Приход"
             />
 
             <Box
-                sx={(theme) => ({
-                    px: theme.appLayout.page.paddingX,
-                    pb: theme.appLayout.page.paddingY,
+                sx={(t) => ({
+                    px: t.appLayout.page.paddingX,
+                    pb: t.appLayout.page.paddingY,
                     flex: 1,
                     minHeight: 0,
-                    overflowY: { xs: "auto", md: "hidden" },
-                    overflowX: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    overflow: { xs: "auto", md: "hidden" },
                 })}
             >
-                <Grid2
-                    container
-                    spacing={2}
-                    sx={{
-                        minHeight: 0,
-                        height: { xs: "auto", md: "100%" },
-                        alignItems: "stretch",
-                    }}
-                >
-
-                    {/* Left: Warehouses */}
-                    <Grid2
-                        size={{ xs: 12, md: 2.5 }}
-                        sx={(theme: Theme) => ({
-                            position: { md: "sticky" },
-                            top: { md: theme.spacing(2) },
-                            alignSelf: "flex-start",
-                            minHeight: 0,
-                            height: {
-                                xs: "auto",
-                                md: "100%",
-                            },
-                            display: "flex",
-                            flexDirection: "column",
-                            overflow: { xs: "visible", md: "hidden" },
-                        })}
+                {/* Верхняя панель: переключатель склада + действия */}
+                <Paper variant="outlined" elevation={0} sx={{ p: 1.5 }}>
+                    <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1.5}
+                        useFlexGap
+                        flexWrap="wrap"
+                        alignItems={{ xs: "stretch", sm: "center" }}
                     >
-                        <DjangoWarehouseList
-                            warehouses={warehouses}
-                            selectedId={selectedWarehouseId}
-                            onSelect={setSelectedWarehouseId}
-                            onAdd={handleAddWarehouse}
-                            onEdit={handleEditWarehouse}
-                            onUnlink={handleUnlinkWarehouse}
-                            loading={loadingWarehouses}
-                            canManage={canManage}
-                        />
-                    </Grid2>
+                        <TextField
+                            select
+                            size="small"
+                            label="Склад"
+                            value={selectedWarehouseId ?? ""}
+                            onChange={(e) => {
+                                setSelectedWarehouseId(Number(e.target.value) || null);
+                                setSelectedItem(null);
+                            }}
+                            sx={{ width: { xs: "100%", sm: 240 } }}
+                            disabled={warehouses.length === 0}
+                        >
+                            {warehouses.length === 0 && (
+                                <MenuItem value="">Складов пока нет</MenuItem>
+                            )}
+                            {warehouses.map((w) => (
+                                <MenuItem key={w.id} value={w.id}>
+                                    {warehouseLabel(w)}
+                                </MenuItem>
+                            ))}
+                        </TextField>
 
-                    {/* Center: Stocks List */}
+                        {/* Действия: на мобиле — своя строка кнопок, тянутся по ширине */}
+                        <Stack
+                            direction="row"
+                            spacing={1}
+                            sx={{ width: { xs: "100%", sm: "auto" }, flexGrow: { sm: 1 }, justifyContent: { sm: "flex-end" } }}
+                        >
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<StoreOutlined />}
+                                onClick={() => setManageOpen(true)}
+                                sx={{ textTransform: "none", flex: { xs: 1, sm: "0 0 auto" } }}
+                            >
+                                Склады ({warehouses.length})
+                            </Button>
+
+                            {canManage && (
+                                <Tooltip title="Появится после обновления API (передача между складами)">
+                                    <span style={{ flex: 1 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            fullWidth
+                                            startIcon={<SwapHorizOutlined />}
+                                            disabled
+                                            sx={{ textTransform: "none" }}
+                                        >
+                                            Перемещение
+                                        </Button>
+                                    </span>
+                                </Tooltip>
+                            )}
+                        </Stack>
+                    </Stack>
+                </Paper>
+
+                {/* master-detail: остатки + история движений */}
+                <Grid2 container spacing={2} sx={{ flex: { md: 1 }, minHeight: 0, height: { xs: "auto", md: "100%" } }}>
                     <Grid2
-                        size={{ xs: 12, md: 4.5 }}
-                        sx={(theme: Theme) => ({
-                            position: { md: "sticky" },
-                            top: { md: theme.spacing(2) },
-                            alignSelf: "flex-start",
-                            minHeight: 0,
-                            height: {
-                                xs: "auto",
-                                md: "100%",
-                            },
+                        size={{ xs: 12, md: showDetailColumn ? 5 : 12 }}
+                        sx={{
+                            height: { xs: "auto", md: "100%" },
                             display: "flex",
                             flexDirection: "column",
                             overflow: { xs: "visible", md: "hidden" },
-                        })}
+                        }}
                     >
                         <DjangoStockList
                             stock={filteredStock}
@@ -434,23 +455,15 @@ const DjangoWarehousesPage: React.FC = () => {
                         />
                     </Grid2>
 
-                    {/* Right: Stock Details (Desktop only) */}
-                    {!isMobile && (
+                    {showDetailColumn && (
                         <Grid2
-                            size={{ xs: 12, md: 5 }}
-                            sx={(theme: Theme) => ({
-                                position: { md: "sticky" },
-                                top: { md: theme.spacing(2) },
-                                alignSelf: "flex-start",
-                                minHeight: 0,
-                                height: {
-                                    xs: "auto",
-                                    md: "100%",
-                                },
+                            size={{ xs: 12, md: 7 }}
+                            sx={{
+                                height: { md: "100%" },
                                 display: "flex",
                                 flexDirection: "column",
                                 overflow: { xs: "visible", md: "hidden" },
-                            })}
+                            }}
                         >
                             <DjangoStockDetails
                                 item={selectedItem}
@@ -467,6 +480,36 @@ const DjangoWarehousesPage: React.FC = () => {
                     )}
                 </Grid2>
             </Box>
+
+            {/* Панель управления складами (список + CRUD) */}
+            <Drawer
+                anchor="right"
+                open={manageOpen}
+                onClose={() => setManageOpen(false)}
+                PaperProps={{ sx: { width: { xs: "100%", sm: 380 }, maxWidth: "100%" } }}
+            >
+                <Box sx={{ p: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Typography variant="h6">Склады</Typography>
+                    <IconButton onClick={() => setManageOpen(false)}><CloseIcon /></IconButton>
+                </Box>
+                <Divider />
+                <Box sx={{ p: 2, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                    <DjangoWarehouseList
+                        warehouses={warehouses}
+                        selectedId={selectedWarehouseId}
+                        onSelect={(id) => {
+                            setSelectedWarehouseId(id);
+                            setSelectedItem(null);
+                            setManageOpen(false);
+                        }}
+                        onAdd={handleAddWarehouse}
+                        onEdit={handleEditWarehouse}
+                        onUnlink={handleUnlinkWarehouse}
+                        loading={loadingWarehouses}
+                        canManage={canManage}
+                    />
+                </Box>
+            </Drawer>
 
             {/* Warehouse Management Drawer */}
             <DjangoAddWarehouseDrawer

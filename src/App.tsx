@@ -61,7 +61,6 @@ const ServicesPage = lazy(() => import("./pages/services"));
 const ProductsPage = lazy(() => import("./pages/products"));
 const StoragePage = lazy(() => import("./pages/storage"));
 const WarehousesPage = lazy(() => import("./pages/warehouses"));
-const DjangoStoragePage = lazy(() => import("./pages/storage/django"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
@@ -592,11 +591,9 @@ function App() {
                           path="storage"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="warehouse.view">
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoStoragePage />
-                                </Suspense>
-                              </RequirePermission>
+                              // «Движение товара» объединено с «Складом» в «Остатки».
+                              // Старый путь /storage редиректит на /warehouses.
+                              <Navigate to="/warehouses" replace />
                             ) : (
                               <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                                 <Suspense fallback={<LinearProgress />}>

@@ -585,12 +585,9 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/sales" icon={<AnalyticsOutlined />} label="Продажи товаров" collapsed={siderCollapsed} />
         )}
 
-        {/* Движение товара + Склад */}
+        {/* Остатки (объединённые «Движение товара» + «Склад») */}
         {show("storage") && can_.storage && (
-          <>
-            <SidebarMenuItem to="/storage" icon={<Inventory2Outlined />} label="Движение товара" collapsed={siderCollapsed} />
-            <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Склад" collapsed={siderCollapsed} />
-          </>
+          <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Остатки" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
