@@ -16,6 +16,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  alpha,
 } from "@mui/material";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
@@ -227,9 +228,9 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
                           position: "absolute",
                           top: 0,
                           left: 0,
-                          bgcolor: "rgba(255,255,255,0.7)",
+                          bgcolor: (t) => alpha(t.palette.common.white, 0.7),
                           p: 0.25,
-                          "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
+                          "&:hover": { bgcolor: (t) => alpha(t.palette.common.white, 0.9) },
                         }}
                       >
                         <EditOutlined sx={{ fontSize: 12 }} />
@@ -244,9 +245,9 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
                           position: "absolute",
                           top: 0,
                           right: 0,
-                          bgcolor: "rgba(255,255,255,0.7)",
+                          bgcolor: (t) => alpha(t.palette.common.white, 0.7),
                           p: 0.25,
-                          "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
+                          "&:hover": { bgcolor: (t) => alpha(t.palette.common.white, 0.9) },
                         }}
                       >
                         {deletingId === doc.id ? (
@@ -320,7 +321,7 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            bgcolor: "rgba(0,0,0,0.85)",
+            bgcolor: (t) => alpha(t.palette.common.black, 0.85),
             zIndex: 1300,
           }}
         >
@@ -333,9 +334,9 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
               position: "absolute",
               top: 20,
               right: 20,
-              color: "white",
-              bgcolor: "rgba(255,255,255,0.1)",
-              "&:hover": { bgcolor: "rgba(255,255,255,0.2)" },
+              color: "common.white",
+              bgcolor: (t) => alpha(t.palette.common.white, 0.1),
+              "&:hover": { bgcolor: (t) => alpha(t.palette.common.white, 0.2) },
             }}
           >
             <CloseOutlined />
@@ -349,8 +350,7 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
                 width: "70vw",
                 height: "70vh",
                 objectFit: "contain",
-                borderRadius: 2,
-                boxShadow: 24,
+                borderRadius: "10px",
               }}
             />
           )}

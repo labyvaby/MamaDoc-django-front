@@ -656,7 +656,7 @@ export const HomeAddAppointmentDrawer: React.FC<
                     sx={{
                       width: 1,
                       bgcolor: "action.hover",
-                      borderRadius: 1.5,
+                      borderRadius: "10px",
                       p: "3px",
                       border: "none",
                       "& .MuiToggleButton-root": {
@@ -676,8 +676,6 @@ export const HomeAddAppointmentDrawer: React.FC<
                         "&.Mui-selected": {
                           bgcolor: "primary.main",
                           color: "primary.contrastText",
-                          boxShadow:
-                            "inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.05)",
                           fontWeight: 600,
                           "&:hover": {
                             bgcolor: "primary.dark",
@@ -996,7 +994,7 @@ export const HomeAddAppointmentDrawer: React.FC<
                                       border: '1px solid',
                                       borderColor: 'error.main',
                                       '&:hover': {
-                                        backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                                        backgroundColor: 'error.lighter',
                                       }
                                     }}
                                   >
@@ -1239,7 +1237,7 @@ export const HomeAddAppointmentDrawer: React.FC<
                                   border: '1px solid',
                                   borderColor: 'error.main',
                                   '&:hover': {
-                                    backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                                    backgroundColor: 'error.lighter',
                                   }
                                 }}
                               >

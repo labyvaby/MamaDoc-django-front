@@ -207,7 +207,6 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
           boxSizing: "border-box",
           overflow: "hidden",
           zIndex: (theme) => theme.zIndex.drawer + 5,
-          boxShadow: 8,
           transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform 300ms ease-in-out !important",
         }}
@@ -649,7 +648,7 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         to={to}
         selected={isActive}
         sx={{
-          borderRadius: 4,
+          borderRadius: "10px",
           my: 0.5,
           px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),

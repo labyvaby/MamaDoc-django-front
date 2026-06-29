@@ -455,7 +455,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             sx={{
               bgcolor: "action.hover",
               p: 2,
-              borderRadius: 2,
+              borderRadius: "14px",
               mx: -2,
               borderTop: "1px solid",
               borderBottom: "1px solid",

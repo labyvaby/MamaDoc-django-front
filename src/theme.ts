@@ -102,6 +102,15 @@ declare module "@mui/material/styles" {
     lighter?: string;
     onSurface?: string;
   }
+  // Кастомный акцент «purple/indigo» — единый токен вместо расползшихся по
+  // коду хексов (#7c6af7, #6366f1, #4f46e5 и т.п.). Используется для ночных
+  // смен, процентных надбавок и фиолетового статуса.
+  interface Palette {
+    purple: PaletteColor;
+  }
+  interface PaletteOptions {
+    purple?: SimplePaletteColorOptions;
+  }
 }
 
 const APP_BREAKPOINTS = { xs: 0, sm: 360, md: 768, lg: 1200, xl: 1536 } as const;
@@ -256,6 +265,22 @@ export function getAppTheme(
   };
   const primaryOnSurface = ensureOnSurface(primary, backgroundPaper, m === "dark");
 
+  // Производные акцентные поля для ЛЮБОГО цвета палитры: контраст-безопасный
+  // вариант как текст/иконка (onSurface) и лёгкий тон для фонов (lighter).
+  // Раньше эти поля были объявлены в типах, но присвоены только primary —
+  // из-за чего error.lighter / success.onSurface и т.п. были undefined.
+  const accent = (mainColor: string) => ({
+    onSurface: ensureOnSurface(mainColor, backgroundPaper, m === "dark"),
+    lighter: alpha(mainColor, m === "dark" ? 0.24 : 0.12),
+  });
+
+  // Единый кастомный токен purple/indigo.
+  const purpleMain = "#6366f1";
+  const purpleContrastText =
+    getContrastRatio(purpleMain, "#ffffff") >= getContrastRatio(purpleMain, "#000000")
+      ? "#fff"
+      : "rgba(0, 0, 0, 0.87)";
+
   let theme = createTheme({
     ...base,
     appLayout,
@@ -280,6 +305,19 @@ export function getAppTheme(
       secondary: {
         ...base.palette.secondary,
         main: base.palette.secondary.main,
+      },
+      // Статусным цветам добавляем lighter/onSurface (были undefined).
+      error: { ...base.palette.error, ...accent(base.palette.error.main) },
+      success: { ...base.palette.success, ...accent(base.palette.success.main) },
+      warning: { ...base.palette.warning, ...accent(base.palette.warning.main) },
+      info: { ...base.palette.info, ...accent(base.palette.info.main) },
+      // Кастомный акцент purple/indigo.
+      purple: {
+        main: purpleMain,
+        light: lighten(purpleMain, 0.25),
+        dark: darken(purpleMain, 0.2),
+        contrastText: purpleContrastText,
+        ...accent(purpleMain),
       },
       background: {
         default: backgroundDefault,
@@ -501,3 +539,14 @@ export function getAppTheme(
 
   return theme;
 }
+
+/**
+ * Лёгкая подложка под плитки/иконки/ховеры — единственное «исключение» с
+ * вычисляемым цветом, и оно централизовано здесь. Используй вместо ручных
+ * `rgba(255,255,255,0.0x)` / `rgba(0,0,0,0.0x)` в компонентах.
+ * В тёмной теме — светлее фона на пару %, в светлой — чуть темнее.
+ */
+export const subtleBg = (t: Theme, strong = false) =>
+  t.palette.mode === "dark"
+    ? alpha("#ffffff", strong ? 0.06 : 0.03)
+    : alpha("#0b0d0f", strong ? 0.04 : 0.018);

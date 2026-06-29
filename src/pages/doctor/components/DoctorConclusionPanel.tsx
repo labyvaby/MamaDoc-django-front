@@ -646,7 +646,7 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
                         </Box>
 
                         {isDoctor() && internalComment && (
-                            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.warning.main, 0.15) : '#fff9c4' }}>
+                            <Paper variant="outlined" sx={(theme) => ({ p: 1.5, bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.15 : 0.12) })}>
                                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Внутренний комментарий</Typography>
                                 <Typography variant="body2">{internalComment}</Typography>
                             </Paper>
@@ -670,11 +670,9 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
                                                     borderColor: 'divider',
                                                     cursor: loadingImages.has(index) ? 'default' : 'pointer',
                                                     bgcolor: loadingImages.has(index) ? 'action.hover' : 'transparent',
+                                                    transition: 'border-color .15s ease',
                                                     '&:hover': !loadingImages.has(index) ? {
-                                                        opacity: 0.9,
-                                                        transform: 'scale(1.02)',
-                                                        transition: 'all 0.2s',
-                                                        boxShadow: 2
+                                                        borderColor: 'primary.main'
                                                     } : {}
                                                 }}
                                                 onClick={() => !loadingImages.has(index) && setSelectedPhotoIndex(index)}
@@ -727,7 +725,7 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
                 maxWidth={false}
                 PaperProps={{
                     sx: {
-                        bgcolor: 'rgba(0, 0, 0, 0.95)',
+                        bgcolor: (t) => alpha(t.palette.common.black, 0.95),
                         boxShadow: 'none',
                         m: 2,
                         maxHeight: 'calc(100vh - 32px)',
@@ -751,10 +749,10 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
                             position: 'absolute',
                             top: 8,
                             right: 8,
-                            color: 'white',
-                            bgcolor: 'rgba(0, 0, 0, 0.5)',
+                            color: 'common.white',
+                            bgcolor: (t) => alpha(t.palette.common.black, 0.5),
                             '&:hover': {
-                                bgcolor: 'rgba(0, 0, 0, 0.7)',
+                                bgcolor: (t) => alpha(t.palette.common.black, 0.7),
                             },
                             zIndex: 1
                         }}
@@ -769,7 +767,7 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
                                 maxWidth: '100%',
                                 maxHeight: '85vh',
                                 objectFit: 'contain',
-                                borderRadius: 4
+                                borderRadius: "10px"
                             }}
                         />
                     )}

@@ -20,10 +20,10 @@ import {
   DialogContent,
   DialogActions,
 } from "@mui/material";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import WarningAmberIcon from "@mui/icons-material/WarningAmberOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import SearchIcon from "@mui/icons-material/Search";
-import MergeIcon from "@mui/icons-material/MergeType";
+import SearchIcon from "@mui/icons-material/SearchOutlined";
+import MergeIcon from "@mui/icons-material/MergeTypeOutlined";
 import { supabase } from "../../utility/supabaseClient";
 import { useNotification } from "@refinedev/core";
 

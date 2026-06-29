@@ -169,7 +169,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
             <Box sx={{ display: 'flex', gap: { xs: 1, md: 2 }, flexWrap: 'wrap' }}>
                 {Array.from({ length: totalCards }).map((_, i) => (
                     <Box key={i} sx={{ flex: '1 1 140px', minWidth: 0 }}>
-                        <Skeleton variant="rectangular" height={80} sx={{ borderRadius: 3 }} />
+                        <Skeleton variant="rectangular" height={80} sx={{ borderRadius: "10px" }} />
                     </Box>
                 ))}
             </Box>
@@ -184,9 +184,8 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                         <Card
                             variant="outlined"
                             sx={{
-                                background: `linear-gradient(135deg, ${alpha(theme.palette[card.color].main, 0.02)} 0%, ${alpha(theme.palette[card.color].main, 0.1)} 100%)`,
-                                border: `1px solid ${alpha(theme.palette[card.color].main, 0.2)}`,
-                                borderRadius: { xs: 1.5, md: 3 },
+                                bgcolor: alpha(theme.palette[card.color].main, theme.palette.mode === 'dark' ? 0.16 : 0.1),
+                                borderColor: alpha(theme.palette[card.color].main, 0.2),
                                 height: '100%'
                             }}
                         >
@@ -194,11 +193,10 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                                 <Stack spacing={0}>
                                     <Typography
                                         sx={{
-                                            color: `${card.color}.main`,
+                                            color: `${card.color}.onSurface`,
                                             fontWeight: 700,
                                             fontSize: { xs: '0.6rem', md: '0.65rem' },
                                             letterSpacing: 0.5,
-                                            textTransform: 'uppercase',
                                             lineHeight: 1.3
                                         }}
                                     >
@@ -206,10 +204,10 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                                     </Typography>
                                     <Box>
                                         <Typography
-                                            fontWeight={800}
+                                            fontWeight={700}
                                             noWrap
                                             sx={{
-                                                color: `${card.color}.dark`,
+                                                color: `${card.color}.onSurface`,
                                                 fontSize: { xs: '1rem', sm: '1.1rem', md: '1.2rem' },
                                                 lineHeight: 1.1
                                             }}
@@ -246,9 +244,8 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                     <Card
                         variant="outlined"
                         sx={{
-                            background: `linear-gradient(135deg, ${alpha(theme.palette[card.color].main, 0.02)} 0%, ${alpha(theme.palette[card.color].main, 0.1)} 100%)`,
+                            bgcolor: alpha(theme.palette[card.color].main, 0.06),
                             border: `1px solid ${alpha(theme.palette[card.color].main, 0.2)}`,
-                            borderRadius: { xs: 1.5, md: 3 },
                             height: '100%'
                         }}
                     >
@@ -260,7 +257,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                                         fontWeight: 700,
                                         fontSize: { xs: '0.6rem', md: '0.7rem' },
                                         letterSpacing: 0.5,
-                                        textTransform: 'uppercase',
+                                        
                                         lineHeight: 1.3
                                     }}
                                 >
@@ -268,7 +265,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                                 </Typography>
                                 <Box>
                                     <Typography
-                                        fontWeight={800}
+                                        fontWeight={700}
                                         noWrap
                                         sx={{
                                             color: `${card.color}.dark`,

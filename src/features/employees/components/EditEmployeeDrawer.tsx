@@ -456,7 +456,7 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
 
         {hasRole(['superadmin', 'accountant']) && (
           <>
-            <Box sx={{ bgcolor: "action.hover", p: 2, borderRadius: 2, mx: -2, borderTop: "1px solid", borderBottom: "1px solid", borderColor: "divider" }}>
+            <Box sx={{ bgcolor: "action.hover", p: 2, borderRadius: "14px", mx: -2, borderTop: "1px solid", borderBottom: "1px solid", borderColor: "divider" }}>
               <SalarySettings
                 employeeId={record?.id ? String(record.id) : undefined}
                 initialValue={salaryRules}

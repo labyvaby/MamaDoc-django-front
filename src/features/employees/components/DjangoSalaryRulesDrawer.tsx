@@ -10,6 +10,7 @@ import {
   Stack,
   TextField,
   Typography,
+  alpha,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
@@ -151,7 +152,7 @@ const DjangoSalaryRulesDrawer: React.FC<Props> = ({
     >
       <Box
         onClick={saving ? undefined : onClose}
-        sx={{ position: "absolute", inset: 0, bgcolor: "rgba(0,0,0,0.4)" }}
+        sx={(t) => ({ position: "absolute", inset: 0, bgcolor: alpha(t.palette.common.black, 0.4) })}
       />
       <Box
         sx={{
@@ -162,7 +163,8 @@ const DjangoSalaryRulesDrawer: React.FC<Props> = ({
           bgcolor: "background.paper",
           display: "flex",
           flexDirection: "column",
-          boxShadow: 6,
+          borderLeft: 1,
+          borderColor: "divider",
         }}
       >
         {/* Header */}
@@ -226,7 +228,7 @@ const DjangoSalaryRulesDrawer: React.FC<Props> = ({
                   <Stack
                     key={index}
                     spacing={1}
-                    sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}
+                    sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: "10px" }}
                   >
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Autocomplete<Service>

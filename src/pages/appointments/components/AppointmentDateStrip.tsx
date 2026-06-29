@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Chip, Stack, Typography, IconButton } from "@mui/material";
+import { Box, Chip, Stack, Typography, IconButton, alpha } from "@mui/material";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import dayjs, { type Dayjs } from "dayjs";
@@ -83,7 +83,7 @@ const AppointmentDateStrip: React.FC<AppointmentDateStripProps> = ({
               sx={{
                 flexShrink: 0,
                 cursor: "pointer",
-                borderRadius: 2,
+                borderRadius: "14px",
                 px: 1,
                 py: 0.5,
                 minWidth: 46,
@@ -136,7 +136,7 @@ const AppointmentDateStrip: React.FC<AppointmentDateStripProps> = ({
                     height: 14,
                     mt: 0.25,
                     fontSize: "0.6rem",
-                    bgcolor: isActive ? "rgba(255,255,255,0.25)" : "action.selected",
+                    bgcolor: isActive ? (theme) => alpha(theme.palette.primary.contrastText, 0.25) : "action.selected",
                     color: isActive ? "primary.contrastText" : "text.secondary",
                     "& .MuiChip-label": { px: 0.75 },
                   }}

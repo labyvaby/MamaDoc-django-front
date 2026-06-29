@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { Box, Stack, Typography, IconButton, useTheme } from "@mui/material";
+import { Box, Stack, Typography, IconButton, useTheme, alpha } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import dayjs from "dayjs";
 
@@ -125,22 +125,20 @@ export const MonthNavigation: React.FC<MonthNavigationProps> = ({
                                     flexShrink: 0,
                                     bgcolor: isActive ? 'primary.main' : 'action.hover',
                                     color: isActive ? 'primary.contrastText' : 'text.secondary',
-                                    borderRadius: `${theme.shape.borderRadius}px`,
+                                    borderRadius: '10px',
                                     py: 1,
                                     px: 1,
                                     cursor: 'pointer',
-                                    border: isActive ? '2px solid' : '1px solid',
-                                    borderColor: isActive ? 'primary.dark' : 'divider',
-                                    boxShadow: isActive ? 1 : 0,
-                                    transition: 'all 0.2s',
+                                    border: '1px solid',
+                                    borderColor: isActive ? 'primary.main' : 'divider',
+                                    transition: 'background-color .15s ease, border-color .15s ease',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     textAlign: 'center',
                                     '&:hover': {
                                         bgcolor: isActive ? 'primary.main' : 'action.selected',
-                                        transform: isActive ? 'none' : 'translateY(-1px)',
-                                        boxShadow: isActive ? 1 : 1
+                                        borderColor: isActive ? 'primary.main' : alpha(theme.palette.primary.main, 0.28),
                                     }
                                 })}
                             >

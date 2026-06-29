@@ -151,7 +151,7 @@ const ReviewsSettingsPage: React.FC = () => {
         ) : (
           <Stack spacing={3} sx={{ mt: 2 }}>
             {/* ── Основное ── */}
-            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Автоматическая рассылка
               </Typography>
@@ -233,7 +233,7 @@ const ReviewsSettingsPage: React.FC = () => {
             </Paper>
 
             {/* ── Шаблоны ── */}
-            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "14px" }}>
               <Typography variant="subtitle1" fontWeight={700} gutterBottom>
                 Шаблоны сообщений
               </Typography>

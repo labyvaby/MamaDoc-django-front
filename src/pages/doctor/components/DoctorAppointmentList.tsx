@@ -125,11 +125,11 @@ export const DoctorAppointmentList: React.FC<DoctorAppointmentListProps> = ({
                                         py: 1.25,
                                         cursor: "pointer",
                                         color: "inherit",
-                                        bgcolor: isSelected ? (theme) => theme.palette.mode === 'dark' ? 'rgba(144, 202, 249, 0.16)' : 'rgba(25, 118, 210, 0.08)' : 'transparent',
+                                        bgcolor: (theme) => isSelected ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08) : 'transparent',
                                         borderLeft: isSelected ? "4px solid" : "4px solid transparent",
                                         borderLeftColor: isSelected ? "primary.main" : "transparent",
                                         "&:hover": {
-                                            bgcolor: (theme) => isSelected ? (theme.palette.mode === 'dark' ? 'rgba(144, 202, 249, 0.24)' : 'rgba(25, 118, 210, 0.12)') : theme.palette.action.hover
+                                            bgcolor: (theme) => isSelected ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.12) : theme.palette.action.hover
                                         },
                                     }}
                                 >

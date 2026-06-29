@@ -14,8 +14,8 @@ import {
 } from "@mui/material";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
-import EmailIcon from "@mui/icons-material/Email";
+import PhoneIphoneIcon from "@mui/icons-material/PhoneIphoneOutlined";
+import EmailIcon from "@mui/icons-material/EmailOutlined";
 import smallIcon from "../../assets/img/icon_2s.png";
 import { login as djangoLogin } from "../../api";
 import { applyMeResponse, usePermissions } from "../../hooks/usePermissions";

@@ -18,9 +18,10 @@ import {
   alpha,
 } from "@mui/material";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
-import AddIcon from "@mui/icons-material/Add";
-import FilterListIcon from "@mui/icons-material/FilterList";
+import AddIcon from "@mui/icons-material/AddOutlined";
+import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import CheckIcon from "@mui/icons-material/Check";
+import { subtleBg } from "../../../theme";
 import { DjangoStockItem } from "../../../api/warehouse";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
 
@@ -242,13 +243,11 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                       isSelected
                         ? alpha(theme.palette.primary.main, 0.08)
                         : "background.paper",
-                    transition: "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                    transition: "border-color .15s ease, background-color .15s ease",
                     "&:hover": {
-                      borderColor: "primary.main",
-                      boxShadow: (theme) =>
-                        `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                      borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
+                      bgcolor: (theme) => subtleBg(theme, true),
                     },
-                    "&:active": { transform: "translateY(0.5px)" },
                   }}
                 >
                   <Avatar

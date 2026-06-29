@@ -280,7 +280,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
             sx={{
               my: 2,
               p: 2,
-              borderRadius: 2,
+              borderRadius: "14px",
               border: "1px solid",
               borderColor: "divider",
               display: "flex",
@@ -294,7 +294,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
               </Typography>
               {query.isFetching && <CircularProgress size={14} />}
             </Stack>
-            <Typography variant="h5" fontWeight={800} color="success.main">
+            <Typography variant="h5" fontWeight={700} color="success.main">
               {formatKGS(report?.totalNet ?? 0)}
             </Typography>
           </Paper>

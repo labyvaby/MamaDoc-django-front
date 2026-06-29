@@ -22,7 +22,7 @@ export const LoadFilters: React.FC<Props> = ({ selectedEmployees, onEmployeesCha
     });
 
     return (
-        <Paper sx={{ p: 2, borderRadius: 3 }} elevation={1}>
+        <Paper variant="outlined" elevation={0} sx={{ p: 2, borderRadius: "14px" }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 <Autocomplete
                     multiple

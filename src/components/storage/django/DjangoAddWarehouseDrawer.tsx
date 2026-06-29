@@ -20,7 +20,7 @@ import {
     alpha,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import StoreIcon from "@mui/icons-material/Store";
+import StoreIcon from "@mui/icons-material/StoreOutlined";
 import AddBusinessOutlined from "@mui/icons-material/AddBusinessOutlined";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
 import { useNotification } from "@refinedev/core";

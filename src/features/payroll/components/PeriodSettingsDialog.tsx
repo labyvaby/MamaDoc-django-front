@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   Drawer, Box, Stack, Typography, Switch,
-  CircularProgress, Alert, IconButton, Button, Chip, alpha,
+  CircularProgress, Alert, IconButton, Button, Chip, alpha, useTheme,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import TuneIcon from '@mui/icons-material/Tune';
-import NightsStayIcon from '@mui/icons-material/NightsStay';
-import PercentIcon from '@mui/icons-material/Percent';
+import CloseIcon from '@mui/icons-material/CloseOutlined';
+import TuneIcon from '@mui/icons-material/TuneOutlined';
+import NightsStayIcon from '@mui/icons-material/NightsStayOutlined';
+import PercentIcon from '@mui/icons-material/PercentOutlined';
 import { supabase } from '../../../utility/supabaseClient';
+import { subtleBg } from '../../../theme';
 import type { PayrollMonthSettings } from '../types';
 
 interface Props {
@@ -31,8 +32,10 @@ function settingsFromForm(
 
 interface SettingRowProps {
   icon: React.ReactNode;
+  /** Цвет акцента как ТЕКСТ/иконка на поверхности (контраст-безопасный). */
   iconColor: string;
-  iconBg: string;
+  /** Цвет акцента для заливок (main). */
+  iconFill: string;
   title: string;
   description: string;
   checked: boolean;
@@ -43,22 +46,23 @@ interface SettingRowProps {
 }
 
 const SettingRow: React.FC<SettingRowProps> = ({
-  icon, iconColor, iconBg, title, description,
+  icon, iconColor, iconFill, title, description,
   checked, onChange, disabled, activeLabel, inactiveLabel,
 }) => (
   <Box
-    sx={{
+    sx={(t) => ({
       display: 'flex',
       alignItems: 'center',
       gap: 2,
       p: 2,
-      borderRadius: 3,
-      border: '1.5px solid',
-      borderColor: checked ? iconColor : 'divider',
-      bgcolor: checked ? alpha(iconColor, 0.04) : 'background.paper',
-      transition: 'all 0.2s ease',
+      borderRadius: '10px',
+      border: 1,
+      borderColor: checked ? alpha(iconFill, 0.28) : 'divider',
+      bgcolor: checked ? alpha(iconFill, 0.06) : subtleBg(t),
+      transition: 'background-color .15s ease, border-color .15s ease',
       cursor: disabled ? 'default' : 'pointer',
-    }}
+      '&:hover': disabled ? undefined : { bgcolor: subtleBg(t, true), borderColor: alpha(iconFill, 0.28) },
+    })}
     onClick={() => !disabled && onChange(!checked)}
   >
     <Box
@@ -66,13 +70,13 @@ const SettingRow: React.FC<SettingRowProps> = ({
         flexShrink: 0,
         width: 44,
         height: 44,
-        borderRadius: 2.5,
-        bgcolor: checked ? alpha(iconColor, 0.14) : iconBg,
+        borderRadius: '10px',
+        bgcolor: checked ? alpha(iconFill, 0.14) : alpha(iconFill, 0.08),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         color: checked ? iconColor : 'text.disabled',
-        transition: 'all 0.2s ease',
+        transition: 'background-color .15s ease, color .15s ease',
       }}
     >
       {icon}
@@ -91,7 +95,8 @@ const SettingRow: React.FC<SettingRowProps> = ({
             fontSize: '0.62rem',
             fontWeight: 700,
             letterSpacing: 0.3,
-            bgcolor: checked ? alpha(iconColor, 0.14) : (t: any) => alpha(t.palette.text.disabled, 0.1),
+            borderRadius: '7px',
+            bgcolor: checked ? alpha(iconFill, 0.14) : (t: any) => alpha(t.palette.text.disabled, 0.1),
             color: checked ? iconColor : 'text.disabled',
             border: 'none',
           }}
@@ -110,8 +115,8 @@ const SettingRow: React.FC<SettingRowProps> = ({
       onClick={e => e.stopPropagation()}
       sx={{
         flexShrink: 0,
-        '& .MuiSwitch-switchBase.Mui-checked': { color: iconColor },
-        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: iconColor },
+        '& .MuiSwitch-switchBase.Mui-checked': { color: iconFill },
+        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: iconFill },
       }}
     />
   </Box>
@@ -120,6 +125,7 @@ const SettingRow: React.FC<SettingRowProps> = ({
 export const PeriodSettingsDialog: React.FC<Props> = ({
   open, onClose, month, monthLabel, initialSettings, onSaved,
 }) => {
+  const theme = useTheme();
   const [mergeNight,     setMergeNight]     = useState(false);
   const [disableDynamic, setDisableDynamic] = useState(false);
   const [saving,         setSaving]         = useState(false);
@@ -185,7 +191,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
                 sx={{
                   width: 36,
                   height: 36,
-                  borderRadius: 2,
+                  borderRadius: "14px",
                   bgcolor: t => alpha(t.palette.primary.main, 0.1),
                   display: 'flex',
                   alignItems: 'center',
@@ -196,7 +202,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
                 <TuneIcon fontSize="small" />
               </Box>
               <Box>
-                <Typography variant="subtitle1" fontWeight={800} sx={{ lineHeight: 1.2 }}>
+                <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2 }}>
                   Настройки месяца
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
@@ -234,7 +240,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
       <Box sx={{ flex: 1, overflowY: 'auto', px: 2.5, py: 3 }}>
         <Stack spacing={1.5}>
           {error && (
-            <Alert severity="error" sx={{ fontSize: '0.8rem', borderRadius: 2 }}>
+            <Alert severity="error" sx={{ fontSize: '0.8rem', borderRadius: "14px" }}>
               {error}
             </Alert>
           )}
@@ -243,15 +249,15 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             variant="caption"
             fontWeight={700}
             color="text.disabled"
-            sx={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.62rem', px: 0.5 }}
+            sx={{ letterSpacing: 0.8, fontSize: '0.62rem', px: 0.5 }}
           >
             Флаги расчёта
           </Typography>
 
           <SettingRow
             icon={<NightsStayIcon fontSize="small" />}
-            iconColor="#7c6af7"
-            iconBg={alpha('#7c6af7', 0.07)}
+            iconColor={theme.palette.purple.onSurface}
+            iconFill={theme.palette.purple.main}
             title="Объединить ночные часы с дневными"
             description="Все часы (дневные + ночные) оплачиваются по дневной ставке. Ночная надбавка не применяется."
             checked={mergeNight}
@@ -263,8 +269,8 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
 
           <SettingRow
             icon={<PercentIcon fontSize="small" />}
-            iconColor="#22a56b"
-            iconBg={alpha('#22a56b', 0.07)}
+            iconColor={theme.palette.success.onSurface}
+            iconFill={theme.palette.success.main}
             title="Процент за услуги"
             description="dynamic_rules — процент от стоимости приёмов и услуг"
             checked={!disableDynamic}
@@ -300,7 +306,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             onClick={handleSave}
             disabled={saving}
             startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}
-            sx={{ fontWeight: 700, borderRadius: 2, px: 3 }}
+            sx={{ fontWeight: 700, borderRadius: "14px", px: 3 }}
           >
             Сохранить
           </Button>

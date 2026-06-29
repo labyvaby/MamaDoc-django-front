@@ -14,7 +14,7 @@ import {
   ListItemAvatar,
   Tooltip,
 } from "@mui/material";
-import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 
 export type PatientListRowProps = {
   patient: {

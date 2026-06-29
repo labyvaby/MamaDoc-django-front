@@ -10,10 +10,10 @@ import {
   Chip,
   Avatar,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
-import MedicalServicesIcon from "@mui/icons-material/MedicalServices";
-import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
+import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
+import AttachMoneyIcon from "@mui/icons-material/AttachMoneyOutlined";
+import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import { getService } from "../../api/catalog";
 import type { Service } from "../../api/catalog";

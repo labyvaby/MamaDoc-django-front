@@ -82,7 +82,7 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
         p: 1.5,
         border: "1px solid",
         borderColor: incompatible ? "error.light" : "divider",
-        borderRadius: 1.5,
+        borderRadius: "10px",
       }}
     >
       {/* Row header — service label + delete button */}

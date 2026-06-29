@@ -505,7 +505,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     bgcolor: alpha(theme.palette.primary.main, 0.04),
                     display: "flex",
                     alignItems: "center",
-                    borderRadius: 1.5,
+                    borderRadius: "10px",
                     cursor: "default",
                     transition: "all 0.2s",
                     "&:hover": {
@@ -561,7 +561,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   sx={{
                     p: 2,
                     bgcolor: alpha(theme.palette.warning.main, 0.04),
-                    borderRadius: 1.5,
+                    borderRadius: "10px",
                   }}
                 >
                   <Typography variant="body2" color="text.secondary">
@@ -582,7 +582,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   sx={{
                     p: 2,
                     bgcolor: alpha(theme.palette.primary.main, 0.02),
-                    borderRadius: 1.5,
+                    borderRadius: "10px",
                   }}
                 >
                   <Typography variant="body2" color="text.disabled">
@@ -603,7 +603,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                           alignItems: "center",
                           bgcolor: alpha(theme.palette.primary.main, 0.04),
                           borderColor: alpha(theme.palette.primary.main, 0.1),
-                          borderRadius: 1.5,
+                          borderRadius: "10px",
                           cursor: "default",
                           transition: "all 0.2s",
                           "&:hover": {
@@ -643,7 +643,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                               alignItems: "center",
                               gap: 2,
                               bgcolor: "background.paper",
-                              borderRadius: 1.5,
+                              borderRadius: "10px",
                               cursor: "default",
                               transition: "all 0.2s",
                               "&:hover": {

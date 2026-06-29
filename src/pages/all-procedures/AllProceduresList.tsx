@@ -18,8 +18,8 @@ import {
     ToggleButton,
     Chip,
 } from "@mui/material";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
-import MedicalServicesIcon from "@mui/icons-material/MedicalServices";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonthOutlined";
+import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import { ExpandLess, ExpandMore } from "@mui/icons-material";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -536,7 +536,7 @@ export const AllProceduresList: React.FC = () => {
                                                                     primary={emp.employeeName}
                                                                     primaryTypographyProps={{ variant: "body2", sx: { fontWeight: isSelected ? 600 : 400 } }}
                                                                 />
-                                                                <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', borderRadius: 10, px: 0.8, py: 0.2, fontSize: '0.75rem', fontWeight: 600, mr: 1, minWidth: 20, textAlign: 'center' }}>
+                                                                <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', borderRadius: "999px", px: 0.8, py: 0.2, fontSize: '0.75rem', fontWeight: 600, mr: 1, minWidth: 20, textAlign: 'center' }}>
                                                                     {emp.total}
                                                                 </Box>
                                                                 {isExpanded ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}
@@ -598,7 +598,7 @@ export const AllProceduresList: React.FC = () => {
                                                                     primary={emp.empName}
                                                                     primaryTypographyProps={{ variant: "body2", sx: { fontWeight: isSelected ? 600 : 400 } }}
                                                                 />
-                                                                <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', borderRadius: 10, px: 0.8, py: 0.2, fontSize: '0.75rem', fontWeight: 600, mr: 1, minWidth: 20, textAlign: 'center' }}>
+                                                                <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', borderRadius: "999px", px: 0.8, py: 0.2, fontSize: '0.75rem', fontWeight: 600, mr: 1, minWidth: 20, textAlign: 'center' }}>
                                                                     {emp.total}
                                                                 </Box>
                                                                 {isSelected ? <ExpandLess fontSize="small" color="action" /> : <ExpandMore fontSize="small" color="action" />}

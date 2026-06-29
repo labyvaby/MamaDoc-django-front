@@ -11,7 +11,7 @@ import {
     useMediaQuery,
     useTheme
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
 import { useAppointmentDetails } from "../../hooks/useAppointmentDetails";
 import { formatDateRu, formatKGS } from "../../utility/format";
 

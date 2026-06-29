@@ -58,12 +58,12 @@ const StatCard: React.FC<{
 }> = ({ label, value, hint, color }) => (
   <Paper
     variant="outlined"
-    sx={{ p: 2, borderRadius: 2, flex: "1 1 160px", minWidth: 150 }}
+    sx={{ p: 2, borderRadius: "14px", flex: "1 1 160px", minWidth: 150 }}
   >
     <Typography variant="caption" color="text.secondary">
       {label}
     </Typography>
-    <Typography variant="h5" fontWeight={800} sx={{ color, mt: 0.5 }}>
+    <Typography variant="h5" fontWeight={700} sx={{ color, mt: 0.5 }}>
       {value}
     </Typography>
     {hint && (

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router';
 import { Box, Typography, Button, Paper, Container } from '@mui/material';
-import { Lock as LockIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+import { LockOutlined as LockIcon, ArrowBackOutlined as ArrowBackIcon } from '@mui/icons-material';
 import { usePermissions } from '../hooks/usePermissions';
 
 /**
@@ -32,11 +32,12 @@ export const AccessDenied: React.FC = () => {
         })}
       >
         <Paper
-          elevation={3}
+          variant="outlined"
+          elevation={0}
           sx={{
             p: 4,
             textAlign: 'center',
-            borderRadius: 2,
+            borderRadius: "14px",
           }}
         >
           <Box

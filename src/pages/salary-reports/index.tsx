@@ -17,7 +17,7 @@ import {
 } from "@mui/material";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
-import RefreshIcon from '@mui/icons-material/Refresh';
+import RefreshIcon from '@mui/icons-material/RefreshOutlined';
 
 import { PageHeader, MonthNavigation } from "../../components/ui";
 import { AppointmentsSummaryCards } from "../reports/components/AppointmentsSummaryCards";
@@ -35,9 +35,9 @@ import { useRecalculatePeriod } from "../../features/payroll/hooks/useRecalculat
 import { PeriodStatusBadge } from "../../features/payroll/components/PeriodStatusBadge";
 import { LockPeriodDialog } from "../../features/payroll/components/LockPeriodDialog";
 import { RecalculateDialog } from "../../features/payroll/components/RecalculateDialog";
-import LockIcon from "@mui/icons-material/Lock";
-import SettingsIcon from "@mui/icons-material/Settings";
-import NightsStayIcon from "@mui/icons-material/NightsStay";
+import LockIcon from "@mui/icons-material/LockOutlined";
+import SettingsIcon from "@mui/icons-material/SettingsOutlined";
+import NightsStayIcon from "@mui/icons-material/NightsStayOutlined";
 import { Button, Tooltip } from "@mui/material";
 import { PeriodSettingsDialog } from "../../features/payroll/components/PeriodSettingsDialog";
 import type { PayrollMonthSettings } from "../../features/payroll/types";
@@ -417,7 +417,7 @@ const SalaryReportsPage: React.FC = () => {
                         <Box sx={{ minHeight: 400 }}>
                             <Stack spacing={1}>
                                 {Array.from({ length: 5 }).map((_, i) => (
-                                    <Skeleton key={i} variant="rectangular" height={isMobile ? 120 : 60} sx={{ borderRadius: 2 }} />
+                                    <Skeleton key={i} variant="rectangular" height={isMobile ? 120 : 60} sx={{ borderRadius: "14px" }} />
                                 ))}
                             </Stack>
                         </Box>
@@ -429,7 +429,7 @@ const SalaryReportsPage: React.FC = () => {
                                 maxWidth: 380,
                                 px: 3,
                                 py: 4,
-                                borderRadius: 3,
+                                borderRadius: "14px",
                                 border: '1px solid',
                                 borderColor: 'divider',
                                 bgcolor: (t) => alpha(t.palette.primary.main, 0.03),
@@ -470,8 +470,8 @@ const SalaryReportsPage: React.FC = () => {
 
                                     rendered.push(
                                         <Box key={group.label}>
-                                            <Box sx={{ px: 1, py: 0.75, mb: 0.75, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: 1.5, border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}` }}>
-                                                <Typography variant="caption" fontWeight={800} color="primary.onSurface" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.65rem' }}>
+                                            <Box sx={{ px: 1, py: 0.75, mb: 0.75, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: "10px", border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}` }}>
+                                                <Typography variant="caption" fontWeight={700} color="primary.onSurface" sx={{ letterSpacing: 0.5, fontSize: '0.65rem' }}>
                                                     {group.label}
                                                 </Typography>
                                             </Box>
@@ -495,8 +495,8 @@ const SalaryReportsPage: React.FC = () => {
                                 if (rest.length > 0) {
                                     rendered.push(
                                         <Box key="other">
-                                            <Box sx={{ px: 1, py: 0.75, mb: 0.75, bgcolor: alpha(theme.palette.grey[500], 0.08), borderRadius: 1.5, border: `1px solid ${theme.palette.divider}` }}>
-                                                <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.65rem' }}>
+                                            <Box sx={{ px: 1, py: 0.75, mb: 0.75, bgcolor: alpha(theme.palette.grey[500], 0.08), borderRadius: "10px", border: `1px solid ${theme.palette.divider}` }}>
+                                                <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ letterSpacing: 0.5, fontSize: '0.65rem' }}>
                                                     Прочие
                                                 </Typography>
                                             </Box>
@@ -541,17 +541,17 @@ const SalaryReportsPage: React.FC = () => {
 
                                     const cols = group.cols;
                                     rendered.push(
-                                        <Paper key={group.label} variant="outlined" sx={{ borderRadius: 3, border: `1px solid ${theme.palette.divider}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+                                        <Paper key={group.label} variant="outlined" sx={{ borderRadius: "14px", border: `1px solid ${theme.palette.divider}`, overflow: 'hidden' }}>
                                             <Box sx={{ px: 2, py: 1, bgcolor: alpha(theme.palette.primary.main, 0.05), borderBottom: `1px solid ${theme.palette.divider}` }}>
-                                                <Typography variant="subtitle2" fontWeight={800} color="primary.onSurface">{group.label}</Typography>
+                                                <Typography variant="subtitle2" fontWeight={700} color="primary.onSurface">{group.label}</Typography>
                                             </Box>
                                             <Table size="small" sx={{ fontSize: '0.75rem', '& .MuiTableCell-root': { fontSize: '0.75rem', py: 0.6, px: 1 } }}>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Сотрудник</TableCell>
-                                                        {cols.hours && !periodSettings?.merge_night_into_day && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Дневные</TableCell>}
+                                                        <TableCell sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Сотрудник</TableCell>
+                                                        {cols.hours && !periodSettings?.merge_night_into_day && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Дневные</TableCell>}
                                                         {cols.hours && !periodSettings?.merge_night_into_day && (
-                                                            <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>
+                                                            <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>
                                                                 {periodSettings?.disable_night_hours ? (
                                                                     <Tooltip title="Ночные часы отключены настройками месяца">
                                                                         <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5} component="span">
@@ -563,7 +563,7 @@ const SalaryReportsPage: React.FC = () => {
                                                             </TableCell>
                                                         )}
                                                         {cols.hours && periodSettings?.merge_night_into_day && (
-                                                            <TableCell align="center" colSpan={2} sx={{ fontWeight: 800, bgcolor: 'background.paper', color: '#7c6af7' }}>
+                                                            <TableCell align="center" colSpan={2} sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'purple.onSurface' }}>
                                                                 <Tooltip title="Ночные часы объединены с дневными по настройке месяца">
                                                                     <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5} component="span">
                                                                         <span>Часы</span>
@@ -572,17 +572,17 @@ const SalaryReportsPage: React.FC = () => {
                                                                 </Tooltip>
                                                             </TableCell>
                                                         )}
-                                                        {cols.hours && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Часы</TableCell>}
-                                                        {cols.appointments && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>{cols.appointmentsLabel ?? 'Все приёмы'}</TableCell>}
-                                                        {cols.distributed && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'info.main' }}>Распределённые</TableCell>}
-                                                        {cols.createdBy && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'success.main' }}>Создал</TableCell>}
-                                                        {cols.statusWaiting && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Ожидание</TableCell>}
-                                                        {cols.statusCancelled && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Отменены</TableCell>}
-                                                        {cols.statusDiscount && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Со скидкой</TableCell>}
-                                                        {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Бонусы</TableCell>}
-                                                        {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Зарплата</TableCell>}
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'error.main' }}>Аванс</TableCell>
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'primary.onSurface' }}>К выплате</TableCell>
+                                                        {cols.hours && <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Часы</TableCell>}
+                                                        {cols.appointments && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>{cols.appointmentsLabel ?? 'Все приёмы'}</TableCell>}
+                                                        {cols.distributed && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'info.main' }}>Распределённые</TableCell>}
+                                                        {cols.createdBy && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'success.main' }}>Создал</TableCell>}
+                                                        {cols.statusWaiting && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Ожидание</TableCell>}
+                                                        {cols.statusCancelled && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Отменены</TableCell>}
+                                                        {cols.statusDiscount && <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Со скидкой</TableCell>}
+                                                        {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Бонусы</TableCell>}
+                                                        {cols.percent && <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Зарплата</TableCell>}
+                                                        <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'error.main' }}>Аванс</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'primary.onSurface' }}>К выплате</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
@@ -605,19 +605,19 @@ const SalaryReportsPage: React.FC = () => {
                                 const rest = salaryData.filter(r => !seen.has(r.id));
                                 if (rest.length > 0) {
                                     rendered.push(
-                                        <Paper key="other" variant="outlined" sx={{ borderRadius: 3, border: `1px solid ${theme.palette.divider}`, overflow: 'hidden' }}>
+                                        <Paper key="other" variant="outlined" sx={{ borderRadius: "14px", border: `1px solid ${theme.palette.divider}`, overflow: 'hidden' }}>
                                             <Box sx={{ px: 2, py: 1, bgcolor: alpha(theme.palette.grey[500], 0.08), borderBottom: `1px solid ${theme.palette.divider}` }}>
-                                                <Typography variant="subtitle2" fontWeight={800} color="text.secondary">Прочие</Typography>
+                                                <Typography variant="subtitle2" fontWeight={700} color="text.secondary">Прочие</Typography>
                                             </Box>
                                             <Table size="small" sx={{ fontSize: '0.75rem', '& .MuiTableCell-root': { fontSize: '0.75rem', py: 0.6, px: 1 } }}>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Сотрудник</TableCell>
-                                                        <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Дневные</TableCell>
-                                                        <TableCell align="center" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Ночные</TableCell>
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper' }}>Часы</TableCell>
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'error.main' }}>Аванс</TableCell>
-                                                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'background.paper', color: 'primary.onSurface' }}>К выплате</TableCell>
+                                                        <TableCell sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Сотрудник</TableCell>
+                                                        <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Дневные</TableCell>
+                                                        <TableCell align="center" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Ночные</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Часы</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'error.main' }}>Аванс</TableCell>
+                                                        <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.paper', color: 'primary.onSurface' }}>К выплате</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>

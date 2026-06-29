@@ -11,7 +11,7 @@ import {
   Paper,
   CircularProgress,
 } from "@mui/material";
-import FilterListIcon from "@mui/icons-material/FilterList";
+import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import { StockItem } from "../../services/warehouse";
 
 interface StockListProps {

@@ -466,7 +466,7 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
                         bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
                         border: '1px solid',
                         borderColor: 'divider',
-                        borderRadius: 2,
+                        borderRadius: "14px",
                     }}
                 >
                     <Stack spacing={2}>

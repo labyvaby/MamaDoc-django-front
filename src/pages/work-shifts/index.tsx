@@ -25,14 +25,14 @@ import {
 import { usePermissions } from "../../hooks/usePermissions";
 import { useSkudActions, WorkShift } from "../../hooks/useSkudActions";
 import { useEmployees } from "../../hooks/useEmployees";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
-import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import { Tooltip } from "@mui/material";
 import { supabase } from "../../utility/supabaseClient";
 import dayjs from "dayjs";
@@ -516,7 +516,7 @@ const WorkShiftsPage: React.FC = () => {
                                                             mt: 2,
                                                             mb: 0.5,
                                                             px: 0.5,
-                                                            textTransform: 'uppercase',
+                                                            
                                                             letterSpacing: 0.5,
                                                         }}
                                                     >

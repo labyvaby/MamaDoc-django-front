@@ -1,7 +1,8 @@
 
 import React from "react";
-import { Box, Card, CardContent, Typography, IconButton, Stack, Chip } from "@mui/material";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { Box, Card, CardContent, Typography, IconButton, Stack, Chip, alpha } from "@mui/material";
+import MoreVertIcon from "@mui/icons-material/MoreVertOutlined";
+import { subtleBg } from "../../theme";
 import { Sale } from "../../services/sales";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../config/saleStatuses";
 
@@ -14,7 +15,7 @@ export const SaleCard: React.FC<SaleCardProps> = ({ sale }) => {
     const displayItems = sale.lines || [];
 
     return (
-        <Card variant="outlined" sx={{ mb: 1.5, borderColor: 'divider', '&:hover': { boxShadow: 1, borderColor: 'primary.light' } }}>
+        <Card variant="outlined" sx={(t) => ({ mb: 1.5, borderColor: 'divider', transition: 'background-color .15s ease, border-color .15s ease', '&:hover': { bgcolor: subtleBg(t, true), borderColor: alpha(t.palette.primary.main, 0.28) } })}>
             <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                 <Stack direction="column" spacing={1.5}>
 

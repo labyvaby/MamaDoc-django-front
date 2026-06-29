@@ -14,11 +14,11 @@ import {
   Avatar,
 } from "@mui/material";
 import {
-  Close as CloseIcon,
-  MedicalServices as MedicalServicesIcon,
-  AttachMoney as AttachMoneyIcon,
-  Person as PersonIcon,
-  CalendarMonth as CalendarIcon,
+  CloseOutlined as CloseIcon,
+  MedicalServicesOutlined as MedicalServicesIcon,
+  AttachMoneyOutlined as AttachMoneyIcon,
+  PersonOutlined as PersonIcon,
+  CalendarMonthOutlined as CalendarIcon,
 } from "@mui/icons-material";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";

@@ -9,10 +9,11 @@ import {
     Avatar,
     Tooltip,
     Chip,
-    Stack
+    Stack,
+    alpha
 } from '@mui/material';
 import { Sale } from '../../services/sales';
-import { Inventory, MedicalServices } from '@mui/icons-material';
+import { InventoryOutlined as Inventory, MedicalServicesOutlined as MedicalServices } from '@mui/icons-material';
 import { formatKGS } from '../../utility/format';
 import { getSaleStatusConfig, getSaleStatusChipSx } from '../../config/saleStatuses';
 
@@ -122,12 +123,9 @@ export const SalesList: React.FC<SalesListProps> = ({ sales, selectedSale, onSel
                                                 sx={(theme) => ({
                                                     height: '22px',
                                                     fontSize: '0.7rem',
-                                                    bgcolor: theme.palette.mode === 'dark'
-                                                        ? 'rgba(99,102,241,0.2)'
-                                                        : 'rgba(99,102,241,0.1)',
-                                                    color: theme.palette.mode === 'dark'
-                                                        ? '#a5b4fc'
-                                                        : '#4338ca',
+                                                    borderRadius: '7px',
+                                                    bgcolor: alpha(theme.palette.purple.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
+                                                    color: 'purple.onSurface',
                                                     fontWeight: 500,
                                                 })}
                                             />

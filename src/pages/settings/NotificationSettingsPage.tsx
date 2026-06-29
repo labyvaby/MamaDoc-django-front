@@ -154,7 +154,7 @@ export const NotificationSettingsPage: React.FC = () => {
             <Box sx={{ flex: 1, overflowY: 'auto', pb: 5 }}>
                 {activeTab === 0 && (
                     <Stack spacing={3}>
-                        <Card>
+                        <Card variant="outlined">
                             <CardHeader
                                 title="Глобальные настройки"
                                 subheader="Общее управление системой уведомлений"
@@ -183,7 +183,7 @@ export const NotificationSettingsPage: React.FC = () => {
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card variant="outlined">
                             <CardHeader
                                 title="Тайминги и шаблоны"
                                 subheader="Настройте время отправки и текст SMS"
@@ -450,7 +450,7 @@ const NotificationHistoryView: React.FC = () => {
                     Ошибка при загрузке истории: {fetchError}
                 </Alert>
             )}
-            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: "10px" }}>
                 <Table>
                     <TableHead sx={{ bgcolor: 'action.hover' }}>
                         <TableRow>

@@ -11,7 +11,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import type { Theme } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
-import CloseIcon from "@mui/icons-material/Close";
+import CloseIcon from "@mui/icons-material/CloseOutlined";
 
 import { PageHeader } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";

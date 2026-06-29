@@ -19,11 +19,11 @@ import {
     Tooltip,
     Chip,
 } from "@mui/material";
-import NightsStayIcon from '@mui/icons-material/NightsStay';
-import PercentIcon from '@mui/icons-material/Percent';
+import NightsStayIcon from '@mui/icons-material/NightsStayOutlined';
+import PercentIcon from '@mui/icons-material/PercentOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import ReportProblemIcon from '@mui/icons-material/ReportProblem';
+import ReportProblemIcon from '@mui/icons-material/ReportProblemOutlined';
 import { motion, AnimatePresence } from "framer-motion";
 import dayjs from "dayjs";
 import 'dayjs/locale/ru';
@@ -178,7 +178,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
     // Mobile/tablet card layout
     if (isMobile) {
         return (
-            <Card ref={cardRef} variant="outlined" sx={{ borderRadius: 1.5, transition: 'all 0.2s', boxShadow: open ? '0 4px 12px rgba(0,0,0,0.08)' : 'none', border: open ? `1px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}` }}>
+            <Card ref={cardRef} variant="outlined" sx={{ transition: 'border-color .15s ease', border: open ? `1px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}` }}>
                 <Box sx={{ p: 1.25, cursor: 'pointer' }} onClick={handleToggle}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
                         <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -186,14 +186,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                 <Tooltip title={statusLabel[aggregateStatus]}>
                                     <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: `${aggregateStatus}.main`, flexShrink: 0 }} />
                                 </Tooltip>
-                                <Typography variant="subtitle2" fontWeight={800} sx={{ fontSize: '0.85rem', color: 'text.primary' }}>
+                                <Typography variant="subtitle2" fontWeight={700} sx={{ fontSize: '0.85rem', color: 'text.primary' }}>
                                     {row.full_name}
                                 </Typography>
                                 {isPaid && (
                                     <Box sx={{ px: 0.75, py: 0.15, borderRadius: 1, bgcolor: alpha(theme.palette.success.main, 0.12), color: 'success.dark', fontSize: '0.6rem', fontWeight: 700, whiteSpace: 'nowrap' }}>✓ Выплачено</Box>
                                 )}
                                 <Box sx={{ display: 'inline-block', px: 0.75, py: 0.1, borderRadius: 0.75, bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                                    <Typography variant="caption" fontWeight={700} color="primary.onSurface" sx={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                                    <Typography variant="caption" fontWeight={700} color="primary.onSurface" sx={{ fontSize: '0.6rem', letterSpacing: 0.3 }}>
                                         {row.role}
                                     </Typography>
                                 </Box>
@@ -201,8 +201,8 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                         </Box>
                         <Stack direction="row" alignItems="center" spacing={0.5}>
                             <Box sx={{ textAlign: 'right' }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.55rem', lineHeight: 1.2 }}>Итого ЗП</Typography>
-                                <Typography fontWeight={800} color="primary.onSurface" sx={{ fontSize: '0.95rem', lineHeight: 1.1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, fontSize: '0.55rem', lineHeight: 1.2 }}>Итого ЗП</Typography>
+                                <Typography fontWeight={700} color="primary.onSurface" sx={{ fontSize: '0.95rem', lineHeight: 1.1 }}>
                                     {formatKGS(row.total_salary)}
                                 </Typography>
                             </Box>
@@ -217,7 +217,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     icon={<NightsStayIcon sx={{ fontSize: '0.7rem !important' }} />}
                                     label="Ночные объединены"
                                     size="small"
-                                    sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, bgcolor: alpha('#7c6af7', 0.1), color: '#7c6af7', border: 'none' }}
+                                    sx={(t) => ({ height: 18, fontSize: '0.6rem', fontWeight: 700, borderRadius: '7px', bgcolor: alpha(t.palette.purple.main, 0.1), color: 'purple.onSurface', border: 'none' })}
                                 />
                             )}
                             {nightDisabled && !mergeNight && (
@@ -225,7 +225,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     icon={<NightsStayIcon sx={{ fontSize: '0.7rem !important' }} />}
                                     label="Ночные отключены"
                                     size="small"
-                                    sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, bgcolor: alpha('#7c6af7', 0.1), color: '#7c6af7', border: 'none' }}
+                                    sx={(t) => ({ height: 18, fontSize: '0.6rem', fontWeight: 700, borderRadius: '7px', bgcolor: alpha(t.palette.purple.main, 0.1), color: 'purple.onSurface', border: 'none' })}
                                 />
                             )}
                             {percentDisabled && (
@@ -233,7 +233,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     icon={<PercentIcon sx={{ fontSize: '0.7rem !important' }} />}
                                     label="% отключён"
                                     size="small"
-                                    sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, bgcolor: alpha('#22a56b', 0.1), color: '#22a56b', border: 'none' }}
+                                    sx={(t) => ({ height: 18, fontSize: '0.6rem', fontWeight: 700, borderRadius: '7px', bgcolor: alpha(t.palette.success.main, 0.1), color: 'success.onSurface', border: 'none' })}
                                 />
                             )}
                         </Stack>
@@ -289,24 +289,23 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                         key={idx}
                                         sx={{
                                             p: 2,
-                                            borderRadius: 1.5,
+                                            borderRadius: '10px',
                                             bgcolor: day.isWeekend ? alpha(theme.palette.info.main, 0.08) : theme.palette.background.paper,
                                             border: `1px solid ${theme.palette.divider}`,
-                                            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
                                         }}
                                     >
                                         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                                            <Typography variant="body2" fontWeight={800} color={day.isWeekend ? 'info.main' : 'text.primary'}>
+                                            <Typography variant="body2" fontWeight={700} color={day.isWeekend ? 'info.main' : 'text.primary'}>
                                                 {day.date}
                                             </Typography>
-                                            <Typography variant="body1" fontWeight={800} color="primary.onSurface">
+                                            <Typography variant="body1" fontWeight={700} color="primary.onSurface">
                                                 {formatKGS(day.totalSalary)}
                                             </Typography>
                                         </Stack>
 
                                         <Grid2 container spacing={2}>
                                             <Grid2 size={4}>
-                                                <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem', display: 'block', textTransform: 'uppercase', mb: 0.5 }}>Часы</Typography>
+                                                <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem', display: 'block', mb: 0.5 }}>Часы</Typography>
                                                 <Stack direction="row" alignItems="center" spacing={0.5}>
                                                     <Typography variant="body2" fontWeight={700}>{Math.round(day.dayHours * 10) / 10} / {Math.round(day.nightHours * 10) / 10}</Typography>
                                                     {day.hasWarning && (
@@ -319,22 +318,22 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                             {isRegistrator ? (
                                                 <>
                                                     <Grid2 size={4}>
-                                                        <Typography variant="caption" color="success.main" sx={{ fontSize: '0.65rem', display: 'block', textTransform: 'uppercase', mb: 0.5 }}>Создал</Typography>
+                                                        <Typography variant="caption" color="success.main" sx={{ fontSize: '0.65rem', display: 'block', mb: 0.5 }}>Создал</Typography>
                                                         <Typography variant="body2" fontWeight={700} color="success.main">{day.dayCreatedByCount ?? 0}</Typography>
                                                     </Grid2>
                                                     <Grid2 size={4}>
-                                                        <Typography variant="caption" color="info.main" sx={{ fontSize: '0.65rem', display: 'block', textTransform: 'uppercase', mb: 0.5 }}>Распред.</Typography>
+                                                        <Typography variant="caption" color="info.main" sx={{ fontSize: '0.65rem', display: 'block', mb: 0.5 }}>Распред.</Typography>
                                                         <Typography variant="body2" fontWeight={700} color="info.main">{day.distributedAppointments ?? 0}</Typography>
                                                     </Grid2>
                                                 </>
                                             ) : (
                                                 <Grid2 size={4}>
-                                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem', display: 'block', textTransform: 'uppercase', mb: 0.5 }}>Приемы</Typography>
+                                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem', display: 'block', mb: 0.5 }}>Приемы</Typography>
                                                     <Typography variant="body2" fontWeight={700}>{day.totalCount}</Typography>
                                                 </Grid2>
                                             )}
                                             <Grid2 size={4}>
-                                                <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem', display: 'block', textTransform: 'uppercase', mb: 0.5 }}>Процент</Typography>
+                                                <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem', display: 'block', mb: 0.5 }}>Процент</Typography>
                                                 <Typography variant="body2" fontWeight={700}>{formatKGS(day.percentSum)}</Typography>
                                             </Grid2>
                                             {day.expensesSum > 0 && (
@@ -354,7 +353,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                 <Box sx={{
                                     mt: 1,
                                     p: 1.5,
-                                    borderRadius: 1.5,
+                                    borderRadius: "10px",
                                     bgcolor: alpha(theme.palette.primary.main, 0.06),
                                     border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
                                 }}>
@@ -377,19 +376,19 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                     )}
                                     <Divider sx={{ my: 0.75 }} />
                                     <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                        <Typography variant="body2" fontWeight={800}>Итого к выплате</Typography>
-                                        <Typography variant="body1" fontWeight={800} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
+                                        <Typography variant="body2" fontWeight={700}>Итого к выплате</Typography>
+                                        <Typography variant="body1" fontWeight={700} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
                                     </Stack>
                                 </Box>
 
                                 <Box sx={{ pt: 1, pb: 0.5, display: 'flex', justifyContent: 'center' }}>
                                     <Typography
                                         variant="caption"
-                                        fontWeight={800}
+                                        fontWeight={700}
                                         color="primary.onSurface"
                                         sx={{
                                             cursor: 'pointer',
-                                            textTransform: 'uppercase',
+                                            
                                             letterSpacing: 1,
                                             p: 1,
                                             '&:hover': { opacity: 0.8 }
@@ -464,7 +463,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                 <Typography variant="body2" fontWeight={700}>
                                     {Math.round((row.day_hours + row.night_hours) * 10) / 10}
                                 </Typography>
-                                <NightsStayIcon sx={{ fontSize: '0.85rem', color: '#7c6af7' }} />
+                                <NightsStayIcon sx={{ fontSize: '0.85rem', color: 'purple.onSurface' }} />
                             </Stack>
                         </Tooltip>
                     </TableCell>
@@ -515,7 +514,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                     <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.expenses_sum)}</Typography>
                 </TableCell>
                 <TableCell align="right">
-                    <Typography variant="body2" fontWeight={800} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
+                    <Typography variant="body2" fontWeight={700} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
                 </TableCell>
             </TableRow>
             <TableRow>
@@ -532,7 +531,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                 style={{ overflow: 'hidden' }}
                             >
                                 <Box sx={{ py: 2, pl: 6, pr: 2, bgcolor: alpha(theme.palette.background.default, 0.5) }}>
-                                    <Typography variant="subtitle2" gutterBottom fontWeight={800} color="text.secondary">
+                                    <Typography variant="subtitle2" gutterBottom fontWeight={700} color="text.secondary">
                                         Детализация по дням
                                     </Typography>
                                     {detailLoading ? (
@@ -544,13 +543,13 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                             Нет данных за этот период
                                         </Typography>
                                     ) : (
-                                        <Table size="small" sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 2, overflow: 'hidden' }}>
+                                        <Table size="small" sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: "14px", overflow: 'hidden' }}>
                                             <TableHead>
                                                 <TableRow sx={{ bgcolor: alpha(theme.palette.info.main, 0.15) }}>
                                                     <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Дата</TableCell>
                                                     {cols.hours && !mergeNight && <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Дн. часы</TableCell>}
                                                     {cols.hours && !mergeNight && <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Ноч. часы</TableCell>}
-                                                    {cols.hours && mergeNight && <TableCell align="center" colSpan={2} sx={{ fontWeight: 700, fontSize: '0.75rem', color: '#7c6af7' }}>Часы</TableCell>}
+                                                    {cols.hours && mergeNight && <TableCell align="center" colSpan={2} sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'purple.onSurface' }}>Часы</TableCell>}
                                                     {cols.hours && <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Сумма ч.</TableCell>}
                                                     {cols.appointments && <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Все</TableCell>}
                                                     {cols.distributed && <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'info.main' }}>Распред.</TableCell>}
@@ -585,7 +584,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                                             </TableCell>
                                                         )}
                                                         {cols.hours && mergeNight && (
-                                                            <TableCell align="center" colSpan={2} sx={{ fontSize: '0.75rem', color: '#7c6af7', fontWeight: 700 }}>
+                                                            <TableCell align="center" colSpan={2} sx={{ fontSize: '0.75rem', color: 'purple.onSurface', fontWeight: 700 }}>
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                                     {Math.round((day.dayHours + day.nightHours) * 10) / 10}
                                                                     {day.hasWarning && <Tooltip title="Аномальная длительность (> 36ч)"><ReportProblemIcon sx={{ ml: 0.5, color: 'error.main', fontSize: '0.9rem' }} /></Tooltip>}
@@ -614,7 +613,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                         <Box sx={{
                                             mt: 1.5,
                                             p: 1.5,
-                                            borderRadius: 1.5,
+                                            borderRadius: "10px",
                                             bgcolor: alpha(theme.palette.primary.main, 0.06),
                                             border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
                                             maxWidth: 420,
@@ -639,8 +638,8 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({ row, selectedDate, is
                                             )}
                                             <Divider sx={{ my: 0.75 }} />
                                             <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                                <Typography variant="body2" fontWeight={800}>Итого к выплате</Typography>
-                                                <Typography variant="body1" fontWeight={800} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
+                                                <Typography variant="body2" fontWeight={700}>Итого к выплате</Typography>
+                                                <Typography variant="body1" fontWeight={700} color="primary.onSurface">{formatKGS(row.total_salary)}</Typography>
                                             </Stack>
                                         </Box>
                                     )}

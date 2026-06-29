@@ -1009,7 +1009,7 @@ const DoctorWorkDrawer: React.FC<DoctorWorkDrawerProps> = ({
 
                     <Stack spacing={0.5}>
                         <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                            Заключение <span style={{ color: "#d32f2f" }}>*</span>
+                            Заключение <Box component="span" sx={{ color: "error.main" }}>*</Box>
                         </Typography>
                         <TextField
                             value={conclusion}
@@ -1036,7 +1036,7 @@ const DoctorWorkDrawer: React.FC<DoctorWorkDrawerProps> = ({
                                 minRows={2}
                                 fullWidth
                                 placeholder="Личные заметки..."
-                                sx={{ bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.warning.main, 0.08) : '#fffbed' }}
+                                sx={{ bgcolor: (theme) => alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.08 : 0.12) }}
                             />
                         </Stack>
                     )}
@@ -1127,10 +1127,6 @@ const DoctorWorkDrawer: React.FC<DoctorWorkDrawerProps> = ({
                             fontWeight: 600,
                             fontSize: '1rem',
                             py: 1.5,
-                            boxShadow: 3,
-                            '&:hover': {
-                                boxShadow: 6
-                            }
                         }}
                     >
                         {loading ? "Сохранение..." : "Сохранить заключение"}

@@ -3,7 +3,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Typography, Stack, Alert, CircularProgress,
 } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
+import RefreshIcon from '@mui/icons-material/RefreshOutlined';
 import { AppButton } from '../../../components/ui/AppButton';
 
 interface Props {
@@ -33,7 +33,7 @@ export const RecalculateDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>
+      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
         Пересчитать {month}?
       </DialogTitle>
 

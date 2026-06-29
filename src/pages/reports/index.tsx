@@ -20,13 +20,14 @@ import {
     alpha
 } from "@mui/material";
 import { useNotification } from "@refinedev/core";
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import PaymentsIcon from '@mui/icons-material/Payments';
-import CreditCardIcon from '@mui/icons-material/CreditCard';
-import WalletIcon from '@mui/icons-material/Wallet';
+import TrendingDownIcon from '@mui/icons-material/TrendingDownOutlined';
+import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
+import CreditCardIcon from '@mui/icons-material/CreditCardOutlined';
+import WalletIcon from '@mui/icons-material/WalletOutlined';
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 
 import { PageHeader, MonthNavigation } from "../../components/ui";
+import { subtleBg } from "../../theme";
 import { AppointmentsSummaryCards } from "./components/AppointmentsSummaryCards";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -352,7 +353,7 @@ const ReportsPage: React.FC = () => {
                         isMobile ? (
                             <Stack spacing={1.5} sx={{ flex: 1 }}>
                                 {dailyData.filter(d => (d.appointments_count + d.procedures_count) > 0).map(day => (
-                                    <Card key={day.date} variant="outlined" sx={{ borderRadius: 3, '&:hover': { borderColor: 'primary.main', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' } }}>
+                                    <Card key={day.date} variant="outlined" sx={(t) => ({ transition: 'background-color .15s ease, border-color .15s ease', '&:hover': { bgcolor: subtleBg(t, true), borderColor: alpha(t.palette.primary.main, 0.28) } })}>
                                         <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                                             <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
                                                 <Avatar sx={{
@@ -363,7 +364,7 @@ const ReportsPage: React.FC = () => {
                                                     <AnalyticsOutlined />
                                                 </Avatar>
                                                 <Box sx={{ flex: 1 }}>
-                                                    <Typography variant="subtitle1" fontWeight={800}>{dayjs(day.date).format('DD MMMM')}</Typography>
+                                                    <Typography variant="subtitle1" fontWeight={700}>{dayjs(day.date).format('DD MMMM')}</Typography>
                                                     <Typography variant="caption" color="text.secondary">
                                                         {dayjs(day.date).format('dddd')} • Приемы: {day.appointments_count} | Процедуры: {day.procedures_count}
                                                     </Typography>
@@ -375,32 +376,32 @@ const ReportsPage: React.FC = () => {
                                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                         <PaymentsIcon sx={{ fontSize: 14, color: 'primary.onSurface' }} /> Услуги
                                                     </Typography>
-                                                    <Typography variant="subtitle1" fontWeight={800}>{formatKGS(Math.max(0, (day.cash_sum + day.card_sum + day.balance_sum + day.bonuses_sum + day.debt_sum) - day.products_sum))}</Typography>
+                                                    <Typography variant="subtitle1" fontWeight={700}>{formatKGS(Math.max(0, (day.cash_sum + day.card_sum + day.balance_sum + day.bonuses_sum + day.debt_sum) - day.products_sum))}</Typography>
                                                 </Grid2>
                                                 <Grid2 size={6}>
                                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                         <AnalyticsOutlined sx={{ fontSize: 14, color: 'secondary.main' }} /> Товары
                                                     </Typography>
-                                                    <Typography variant="subtitle1" color="secondary.main" fontWeight={800}>{formatKGS(day.products_sum)}</Typography>
+                                                    <Typography variant="subtitle1" color="secondary.main" fontWeight={700}>{formatKGS(day.products_sum)}</Typography>
                                                 </Grid2>
                                                 <Grid2 size={6}>
                                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                         <WalletIcon sx={{ fontSize: 14, color: 'success.main' }} /> Наличные
                                                     </Typography>
-                                                    <Typography variant="subtitle1" color="success.main" fontWeight={800}>{formatKGS(day.cash_sum)}</Typography>
+                                                    <Typography variant="subtitle1" color="success.main" fontWeight={700}>{formatKGS(day.cash_sum)}</Typography>
                                                 </Grid2>
                                                 <Grid2 size={6}>
                                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                         <CreditCardIcon sx={{ fontSize: 14, color: 'info.main' }} /> Безнал
                                                     </Typography>
-                                                    <Typography variant="subtitle1" color="info.main" fontWeight={800}>{formatKGS(day.card_sum)}</Typography>
+                                                    <Typography variant="subtitle1" color="info.main" fontWeight={700}>{formatKGS(day.card_sum)}</Typography>
                                                 </Grid2>
                                                 {(day.debt_sum > 0) && (
                                                     <Grid2 size={12}>
                                                         <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                             <TrendingDownIcon sx={{ fontSize: 14, color: 'warning.main' }} /> Долг
                                                         </Typography>
-                                                        <Typography variant="subtitle1" color="warning.main" fontWeight={800}>
+                                                        <Typography variant="subtitle1" color="warning.main" fontWeight={700}>
                                                             {formatKGS(day.debt_sum)}
                                                         </Typography>
                                                     </Grid2>
@@ -410,18 +411,18 @@ const ReportsPage: React.FC = () => {
                                     </Card>
                                 ))}
                                 {dailyData.filter(d => (d.appointments_count + d.procedures_count) > 0).length === 0 && (
-                                    <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+                                    <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: "14px" }}>
                                         <Typography color="text.secondary">Нет данных за этот период</Typography>
                                     </Paper>
                                 )}
                             </Stack>
                         ) : (
-                            <Paper variant="outlined" sx={{ borderRadius: 3, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                            <Paper variant="outlined" sx={{ borderRadius: "14px", display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                                 <TableContainer sx={{ flex: 1, overflowY: 'auto' }}>
                                     <Table stickyHeader size="small">
                                         <TableHead>
                                             <TableRow>
-                                                {['Дата', 'Приемы', 'Процедуры', 'В ожидании', 'Мед. услуги', 'Товары', 'Наличные', 'Безнал', 'Долг'].map(h => <TableCell key={h} align={h === 'Дата' ? 'left' : h === 'Приемы' || h === 'Процедуры' || h === 'В ожидании' ? 'center' : 'right'} sx={{ fontWeight: 800, ...(h === 'В ожидании' ? { color: 'error.main' } : {}) }}>{h}</TableCell>)}
+                                                {['Дата', 'Приемы', 'Процедуры', 'В ожидании', 'Мед. услуги', 'Товары', 'Наличные', 'Безнал', 'Долг'].map(h => <TableCell key={h} align={h === 'Дата' ? 'left' : h === 'Приемы' || h === 'Процедуры' || h === 'В ожидании' ? 'center' : 'right'} sx={{ fontWeight: 700, ...(h === 'В ожидании' ? { color: 'error.main' } : {}) }}>{h}</TableCell>)}
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
@@ -444,15 +445,15 @@ const ReportsPage: React.FC = () => {
                                                 </TableRow>
                                             ))}
                                             <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                                                <TableCell sx={{ fontWeight: 800 }}>ИТОГО</TableCell>
-                                                <TableCell align="center" sx={{ fontWeight: 800 }}>{financialTotals.appointmentsCount}</TableCell>
-                                                <TableCell align="center" sx={{ fontWeight: 800 }}>{financialTotals.proceduresCount}</TableCell>
-                                                <TableCell align="center" sx={{ fontWeight: 800, color: 'error.main' }}>{financialTotals.waitingCount > 0 ? financialTotals.waitingCount : '-'}</TableCell>
-                                                <TableCell align="right" sx={{ fontWeight: 800 }}>{formatKGS(financialTotals.services)}</TableCell>
-                                                <TableCell align="right" sx={{ fontWeight: 800, color: 'secondary.main' }}>{formatKGS(financialTotals.products)}</TableCell>
-                                                <TableCell align="right" sx={{ fontWeight: 800, color: 'success.main' }}>{formatKGS(financialTotals.cash)}</TableCell>
-                                                <TableCell align="right" sx={{ fontWeight: 800, color: 'info.main' }}>{formatKGS(financialTotals.card)}</TableCell>
-                                                <TableCell align="right" sx={{ fontWeight: 800, color: 'warning.main' }}>{formatKGS(financialTotals.debt)}</TableCell>
+                                                <TableCell sx={{ fontWeight: 700 }}>Итого</TableCell>
+                                                <TableCell align="center" sx={{ fontWeight: 700 }}>{financialTotals.appointmentsCount}</TableCell>
+                                                <TableCell align="center" sx={{ fontWeight: 700 }}>{financialTotals.proceduresCount}</TableCell>
+                                                <TableCell align="center" sx={{ fontWeight: 700, color: 'error.main' }}>{financialTotals.waitingCount > 0 ? financialTotals.waitingCount : '-'}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700 }}>{formatKGS(financialTotals.services)}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700, color: 'secondary.main' }}>{formatKGS(financialTotals.products)}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>{formatKGS(financialTotals.cash)}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700, color: 'info.main' }}>{formatKGS(financialTotals.card)}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 700, color: 'warning.main' }}>{formatKGS(financialTotals.debt)}</TableCell>
                                             </TableRow>
                                         </TableBody>
                                     </Table>

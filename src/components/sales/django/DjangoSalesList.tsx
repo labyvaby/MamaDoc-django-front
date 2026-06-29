@@ -9,9 +9,10 @@ import {
     ButtonBase,
     alpha,
 } from "@mui/material";
-import { Inventory } from "@mui/icons-material";
+import { InventoryOutlined as Inventory } from "@mui/icons-material";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { DjangoSale } from "../../../api/sales";
+import { subtleBg } from "../../../theme";
 import { formatKGS } from "../../../utility/format";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../../config/saleStatuses";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
@@ -90,7 +91,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                         width: "100%",
                                         textAlign: "left",
                                         p: 1.25,
-                                        borderRadius: 2,
+                                        borderRadius: "14px",
                                         border: 1,
                                         borderColor: isSelected ? "primary.main" : "divider",
                                         bgcolor: (theme) =>
@@ -98,13 +99,11 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 ? alpha(theme.palette.primary.main, 0.08)
                                                 : "background.paper",
                                         transition:
-                                            "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                                            "border-color .15s ease, background-color .15s ease",
                                         "&:hover": {
-                                            borderColor: "primary.main",
-                                            boxShadow: (theme) =>
-                                                `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                                            borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
+                                            bgcolor: (theme) => subtleBg(theme, true),
                                         },
-                                        "&:active": { transform: "translateY(0.5px)" },
                                     }}
                                 >
                                     <Avatar
@@ -114,7 +113,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                             flexShrink: 0,
                                             width: 48,
                                             height: 48,
-                                            borderRadius: 2,
+                                            borderRadius: "14px",
                                             bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                                             color: "primary.onSurface",
                                         }}

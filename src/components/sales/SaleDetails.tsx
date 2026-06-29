@@ -15,7 +15,7 @@ import {
     Chip
 } from '@mui/material';
 import { Sale } from '../../services/sales';
-import { Inventory, EditOutlined, DeleteOutline, MedicalServices } from '@mui/icons-material';
+import { InventoryOutlined as Inventory, EditOutlined, DeleteOutline, MedicalServicesOutlined as MedicalServices } from '@mui/icons-material';
 import { formatKGS, formatDateRu } from '../../utility/format';
 
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -160,15 +160,12 @@ export const SaleDetails: React.FC<SaleDetailsProps> = ({ sale, onEdit, onDelete
                                     size="small"
                                     sx={(theme) => ({
                                         height: '26px',
-                                        bgcolor: theme.palette.mode === 'dark'
-                                            ? 'rgba(99,102,241,0.2)'
-                                            : 'rgba(99,102,241,0.1)',
-                                        color: theme.palette.mode === 'dark'
-                                            ? '#a5b4fc'
-                                            : '#4338ca',
+                                        borderRadius: '7px',
+                                        bgcolor: alpha(theme.palette.purple.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
+                                        color: 'purple.onSurface',
                                         fontWeight: 500,
                                         '& .MuiChip-icon': {
-                                            color: theme.palette.mode === 'dark' ? '#a5b4fc' : '#4338ca',
+                                            color: 'purple.onSurface',
                                         },
                                     })}
                                 />

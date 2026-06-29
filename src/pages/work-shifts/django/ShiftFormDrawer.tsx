@@ -19,7 +19,8 @@ import {
   Autocomplete,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import { Save, RestaurantMenu, Close, Delete } from "@mui/icons-material";
+import { SaveOutlined as Save, RestaurantMenuOutlined as RestaurantMenu, CloseOutlined as Close, DeleteOutline as Delete } from "@mui/icons-material";
+import { subtleBg } from "../../../theme";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -329,25 +330,23 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                       size="small"
                       sx={{
                         width: 1,
-                        bgcolor: "grey.100",
-                        borderRadius: 1,
+                        bgcolor: (t) => subtleBg(t),
+                        borderRadius: "10px",
                         p: "3px",
                         border: "none",
                         "& .MuiToggleButton-root": {
                           flex: 1,
                           border: "none",
-                          borderRadius: 1,
+                          borderRadius: "7px",
                           py: 0.75,
-                          transition: "all 0.2s ease-in-out",
+                          transition: "background-color .15s ease, color .15s ease",
                           bgcolor: "transparent",
                           color: "text.disabled",
                           boxShadow: "none",
-                          "&:hover": { bgcolor: "rgba(0,0,0,0.04)" },
+                          "&:hover": { bgcolor: (t) => subtleBg(t, true) },
                           "&.Mui-selected": {
                             bgcolor: "primary.main",
                             color: "primary.contrastText",
-                            boxShadow:
-                              "inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.05)",
                             fontWeight: 600,
                             "&:hover": { bgcolor: "primary.dark" },
                           },

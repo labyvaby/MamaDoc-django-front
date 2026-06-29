@@ -1,8 +1,8 @@
 import React from "react";
 import { Box, Stack, TextField, InputAdornment, IconButton, CircularProgress, Typography } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
-import SearchIcon from "@mui/icons-material/Search";
-import ClearIcon from "@mui/icons-material/Clear";
+import SearchIcon from "@mui/icons-material/SearchOutlined";
+import ClearIcon from "@mui/icons-material/ClearOutlined";
 import { AppButton } from "./AppButton";
 
 export type PageHeaderProps = {

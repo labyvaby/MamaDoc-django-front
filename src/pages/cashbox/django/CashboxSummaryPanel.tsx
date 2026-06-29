@@ -63,7 +63,7 @@ const CashboxSummaryPanel: React.FC<Props> = ({ summary, isLoading, isFetching }
       sx={{
         border: "1px solid",
         borderColor: "divider",
-        borderRadius: 2,
+        borderRadius: "14px",
         p: 2,
         bgcolor: "background.paper",
         minWidth: 0,

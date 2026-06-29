@@ -10,9 +10,9 @@ import {
     CircularProgress,
     Avatar,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import EditIcon from "@mui/icons-material/Edit";
-import StoreIcon from "@mui/icons-material/Store";
+import AddIcon from "@mui/icons-material/AddOutlined";
+import EditIcon from "@mui/icons-material/EditOutlined";
+import StoreIcon from "@mui/icons-material/StoreOutlined";
 import { Warehouse } from "../../services/warehouse";
 
 interface WarehouseListProps {

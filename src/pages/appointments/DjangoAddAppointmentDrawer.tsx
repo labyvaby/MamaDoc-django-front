@@ -307,7 +307,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     sx={{
                       width: 1,
                       bgcolor: "action.hover",
-                      borderRadius: 1.5,
+                      borderRadius: "10px",
                       p: "3px",
                       border: "none",
                       "& .MuiToggleButton-root": {
@@ -323,7 +323,6 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                           bgcolor: "primary.main",
                           color: "primary.contrastText",
                           fontWeight: 600,
-                          boxShadow: "inset 0 1px 4px rgba(0,0,0,0.15)",
                           "&:hover": { bgcolor: "primary.dark" },
                         },
                       },

@@ -12,7 +12,7 @@ import {
     alpha,
     Chip,
 } from "@mui/material";
-import { Inventory, EditOutlined, DeleteOutline } from "@mui/icons-material";
+import { InventoryOutlined as Inventory, EditOutlined, DeleteOutline } from "@mui/icons-material";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { DjangoSale } from "../../../api/sales";
 import { formatKGS, formatDateRu } from "../../../utility/format";
@@ -46,7 +46,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                     display: "flex",
                     border: "1px dashed",
                     borderColor: "divider",
-                    borderRadius: 2,
+                    borderRadius: "14px",
                 }}
             >
                 <ListEmptyState
@@ -224,7 +224,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                             sx={{
                                                 width: 48,
                                                 height: 48,
-                                                borderRadius: 2,
+                                                borderRadius: "14px",
                                                 bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                                                 color: "primary.onSurface",
                                             }}

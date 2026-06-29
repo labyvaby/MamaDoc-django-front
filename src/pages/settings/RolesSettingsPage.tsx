@@ -13,6 +13,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  alpha,
 } from "@mui/material";
 import {
   AdminPanelSettingsOutlined,
@@ -28,6 +29,7 @@ import Checkbox from "@mui/material/Checkbox";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 
+import { subtleBg } from "../../theme";
 import SettingsLayout from "./SettingsLayout";
 import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
@@ -478,16 +480,19 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
   return (
     <Paper
       variant="outlined"
-      sx={{
+      sx={(t) => ({
         px: 2,
         py: 1.5,
         display: "grid",
         gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr auto" },
         gap: 1,
         alignItems: "center",
-        transition: "box-shadow 0.15s",
-        "&:hover": { boxShadow: 2 },
-      }}
+        transition: "background-color .15s ease, border-color .15s ease, color .15s ease",
+        "&:hover": {
+          bgcolor: subtleBg(t, true),
+          borderColor: alpha(t.palette.primary.main, 0.28),
+        },
+      })}
     >
       {/* Name + code + system badge */}
       <Box>
@@ -807,7 +812,7 @@ const RolesSettingsPage: React.FC = () => {
         {/* Custom roles list */}
         {!loading && customRoles.length > 0 && (
           <Box>
-            <Typography variant="overline" color="text.secondary" mb={1} display="block">
+            <Typography variant="caption" color="text.secondary" mb={1} display="block">
               Роли организации
             </Typography>
             <Stack spacing={1}>
@@ -839,7 +844,7 @@ const RolesSettingsPage: React.FC = () => {
         {/* System roles list */}
         {!loading && systemRoles.length > 0 && (
           <Box>
-            <Typography variant="overline" color="text.secondary" mb={1} display="block">
+            <Typography variant="caption" color="text.secondary" mb={1} display="block">
               Системные роли
             </Typography>
             <Stack spacing={1}>

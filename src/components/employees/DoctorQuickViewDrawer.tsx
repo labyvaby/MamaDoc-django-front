@@ -14,10 +14,10 @@ import {
   Avatar,
 } from "@mui/material";
 import {
-  Close as CloseIcon,
-  Person as PersonIcon,
-  MedicalServices as MedicalServicesIcon,
-  CalendarMonth as CalendarIcon,
+  CloseOutlined as CloseIcon,
+  PersonOutlined as PersonIcon,
+  MedicalServicesOutlined as MedicalServicesIcon,
+  CalendarMonthOutlined as CalendarIcon,
   WorkOutline as WorkIcon,
 } from "@mui/icons-material";
 import dayjs from "dayjs";

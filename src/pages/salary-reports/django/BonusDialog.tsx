@@ -15,7 +15,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+import AddIcon from "@mui/icons-material/AddOutlined";
 import DeleteIcon from "@mui/icons-material/DeleteOutline";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -153,7 +153,7 @@ const BonusDialog: React.FC<Props> = ({
                 key={b.id}
                 sx={{
                   p: 1.25,
-                  borderRadius: 1.5,
+                  borderRadius: "10px",
                   border: "1px solid",
                   borderColor: "divider",
                 }}

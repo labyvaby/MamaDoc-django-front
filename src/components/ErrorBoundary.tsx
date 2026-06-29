@@ -1,9 +1,9 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { Box, Typography, Button, Paper, Container } from "@mui/material";
 import {
-  SentimentDissatisfied as SadIcon,
-  Refresh as RefreshIcon,
-  Home as HomeIcon,
+  SentimentDissatisfiedOutlined as SadIcon,
+  RefreshOutlined as RefreshIcon,
+  HomeOutlined as HomeIcon,
 } from "@mui/icons-material";
 
 interface Props {
@@ -53,11 +53,12 @@ export class ErrorBoundary extends Component<Props, State> {
           }}
         >
           <Paper
-            elevation={3}
+            variant="outlined"
+            elevation={0}
             sx={{
               p: 4,
               textAlign: "center",
-              borderRadius: 2,
+              borderRadius: "14px",
             }}
           >
             <Box

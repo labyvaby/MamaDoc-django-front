@@ -11,7 +11,7 @@ import {
   alpha,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 import { useQuery } from "@tanstack/react-query";
 
 import { PageHeader } from "../../../components/ui";
@@ -91,33 +91,26 @@ const DjangoCashboxPage: React.FC = () => {
           }}
         >
           <Card
+            variant="outlined"
             elevation={0}
             sx={{
               width: "100%",
               maxWidth: 400,
-              background: `linear-gradient(145deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
-              borderRadius: 6,
-              boxShadow: `0 24px 80px ${alpha(theme.palette.success.main, 0.35)}`,
-              color: "white",
+              bgcolor: alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.16 : 0.1),
               position: "relative",
               overflow: "hidden",
             }}
           >
-            {/* Декоративные круги */}
-            <Box sx={{ position: "absolute", top: -80, right: -80, width: 220, height: 220, borderRadius: "50%", background: alpha("#fff", 0.08) }} />
-            <Box sx={{ position: "absolute", bottom: -60, left: -60, width: 180, height: 180, borderRadius: "50%", background: alpha("#fff", 0.05) }} />
-            <Box sx={{ position: "absolute", top: "50%", right: -40, width: 100, height: 100, borderRadius: "50%", background: alpha("#fff", 0.03) }} />
-
             <CardContent sx={{ p: 4, position: "relative", zIndex: 1 }}>
               <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 4 }}>
-                <Avatar sx={{ width: 60, height: 60, bgcolor: alpha("#fff", 0.2), backdropFilter: "blur(10px)" }}>
-                  <AccountBalanceWalletIcon sx={{ fontSize: 30, color: "white" }} />
+                <Avatar sx={{ width: 60, height: 60, borderRadius: "18px", bgcolor: alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.2 : 0.14), color: "success.onSurface" }}>
+                  <AccountBalanceWalletIcon sx={{ fontSize: 30 }} />
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
                     Касса
                   </Typography>
-                  <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                  <Typography variant="body2" color="text.secondary">
                     Баланс наличных
                   </Typography>
                 </Box>
@@ -129,13 +122,14 @@ const DjangoCashboxPage: React.FC = () => {
                     variant="text"
                     width="60%"
                     height={70}
-                    sx={{ bgcolor: alpha("#fff", 0.2), mx: "auto" }}
+                    sx={{ mx: "auto" }}
                   />
                 ) : (
                   <Typography
                     variant="h2"
                     fontWeight={900}
-                    sx={{ textShadow: "0 4px 20px rgba(0,0,0,0.15)", letterSpacing: -1 }}
+                    color="success.onSurface"
+                    sx={{ letterSpacing: -1 }}
                   >
                     {formatKGS(cashBalance ?? 0)}
                   </Typography>

@@ -98,7 +98,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
                     <Stack spacing={1.5}>
                         {availableCandidates.length > 0 && (
                             <>
-                                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: "uppercase" }}>
+                                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ }}>
                                     Доступные платежи
                                 </Typography>
                                 {availableCandidates.map(c => (
@@ -116,7 +116,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
                         {usedCandidates.length > 0 && (
                             <>
                                 <Divider />
-                                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: "uppercase" }}>
+                                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ }}>
                                     Уже привязаны к другому приёму
                                 </Typography>
                                 {usedCandidates.map(c => (
@@ -157,7 +157,7 @@ const CandidateRow: React.FC<{
         p: 1.5,
         border: "1px solid",
         borderColor: candidate.already_used ? "divider" : "primary.light",
-        borderRadius: 1.5,
+        borderRadius: "10px",
         bgcolor: candidate.already_used ? "action.hover" : "background.paper",
         opacity: candidate.already_used ? 0.6 : 1,
     }}>

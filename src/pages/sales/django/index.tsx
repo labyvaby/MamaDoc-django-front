@@ -18,8 +18,8 @@ import {
     Chip,
     alpha,
 } from "@mui/material";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
-import InventoryIcon from "@mui/icons-material/Inventory";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonthOutlined";
+import InventoryIcon from "@mui/icons-material/InventoryOutlined";
 import { useNotification } from "@refinedev/core";
 import type { Theme } from "@mui/material/styles";
 
@@ -504,7 +504,7 @@ const DjangoSalesPage: React.FC = () => {
                                                             key={day.date}
                                                             selected={selectedDate === day.date}
                                                             sx={{
-                                                                borderRadius: 1.5,
+                                                                borderRadius: "10px",
                                                                 mb: 0.5,
                                                                 border: 1,
                                                                 borderColor: selectedDate === day.date ? "primary.main" : "transparent",
@@ -549,7 +549,7 @@ const DjangoSalesPage: React.FC = () => {
                                                             key={product.name}
                                                             selected={selectedProduct === product.name}
                                                             sx={{
-                                                                borderRadius: 1.5,
+                                                                borderRadius: "10px",
                                                                 mb: 0.5,
                                                                 pr: 1,
                                                                 border: 1,

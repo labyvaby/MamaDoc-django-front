@@ -20,11 +20,12 @@ import { useTheme } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
-import FilterListIcon from "@mui/icons-material/FilterList";
+import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 
 import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
+import { subtleBg } from "../../../theme";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -303,18 +304,17 @@ const DjangoProductsPage: React.FC = () => {
                             width: "100%",
                             textAlign: "left",
                             p: 1.25,
-                            borderRadius: 2,
+                            borderRadius: "14px",
                             border: 1,
                             borderColor: isSelected ? "primary.main" : "divider",
                             bgcolor: (theme) =>
                               isSelected ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
                             transition:
-                              "border-color .15s ease, box-shadow .15s ease, transform .1s ease, background-color .15s ease",
+                              "border-color .15s ease, background-color .15s ease",
                             "&:hover": {
-                              borderColor: "primary.main",
-                              boxShadow: (theme) => `0 4px 16px ${alpha(theme.palette.primary.main, 0.12)}`,
+                              borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
+                              bgcolor: (theme) => subtleBg(theme, true),
                             },
-                            "&:active": { transform: "translateY(0.5px)" },
                           }}
                         >
                           <Avatar
@@ -324,7 +324,7 @@ const DjangoProductsPage: React.FC = () => {
                               flexShrink: 0,
                               width: 48,
                               height: 48,
-                              borderRadius: 2,
+                              borderRadius: "14px",
                               bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                               color: "primary.onSurface",
                             }}
@@ -452,7 +452,7 @@ const ProductDetailCard: React.FC<{
           display: "flex",
           border: "1px dashed",
           borderColor: "divider",
-          borderRadius: 4,
+          borderRadius: "14px",
           bgcolor: "background.paper",
         }}
       >
@@ -550,7 +550,7 @@ const ProductDetailCard: React.FC<{
                 bgcolor: (theme) => alpha(theme.palette.action.hover, 0.5),
                 border: 1,
                 borderColor: "divider",
-                borderRadius: 4,
+                borderRadius: "14px",
               }}
             >
               <Typography variant="h3" color="text.secondary">
@@ -585,7 +585,7 @@ const ProductDetailCard: React.FC<{
                           : alpha(theme.palette.text.disabled, 0.1),
                       color: product.isForSale ? "success.dark" : "text.secondary",
                       fontWeight: 600,
-                      borderRadius: 1.5,
+                      borderRadius: "7px",
                       border: 0,
                     }}
                   />
@@ -599,7 +599,7 @@ const ProductDetailCard: React.FC<{
                           : alpha(theme.palette.error.main, 0.1),
                       color: product.stock > 0 ? "success.dark" : "error.dark",
                       fontWeight: 600,
-                      borderRadius: 1.5,
+                      borderRadius: "7px",
                       border: 0,
                     }}
                   />
@@ -611,7 +611,7 @@ const ProductDetailCard: React.FC<{
                         bgcolor: (theme) => alpha(theme.palette.info.main, 0.1),
                         color: "info.dark",
                         fontWeight: 600,
-                        borderRadius: 1.5,
+                        borderRadius: "7px",
                         border: 0,
                       }}
                     />
@@ -672,7 +672,7 @@ const ProductDetailCard: React.FC<{
             sx={{
               p: 2,
               bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
-              borderRadius: 2,
+              borderRadius: "14px",
               border: 1,
               borderColor: "divider",
             }}

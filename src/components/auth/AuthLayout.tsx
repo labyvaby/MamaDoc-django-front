@@ -15,7 +15,7 @@
  */
 
 import React from "react";
-import { Box } from "@mui/material";
+import { Box, alpha } from "@mui/material";
 import bgAuth from "../../assets/img/backround_auth.jpg";
 
 type Props = {
@@ -30,10 +30,6 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
         display: "grid",
         placeItems: "center",
         px: { xs: 2, md: 3 },
-        // Мягкий градиент (светло-голубой -> мятный)
-        background:
-          "linear-gradient(135deg, rgba(224, 247, 250, 0.9) 0%, rgba(232, 245, 233, 0.9) 100%)",
-        // Фоллбек цвет
         bgcolor: "background.default",
         overflow: "hidden",
       })}
@@ -53,16 +49,15 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
           pointerEvents: "none",
         }}
       />
-      {/* Слой 2: мягкий белый градиент поверх для контраста формы */}
+      {/* Слой 2: мягкий оверлей поверх для контраста формы */}
       <Box
         aria-hidden
-        sx={{
+        sx={(theme) => ({
           position: "absolute",
           inset: 0,
-          background:
-            "linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.15) 100%)",
+          bgcolor: alpha(theme.palette.background.default, theme.palette.mode === "dark" ? 0.5 : 0.35),
           pointerEvents: "none",
-        }}
+        })}
       />
       {/* Контент авторизации по центру */}
       <Box

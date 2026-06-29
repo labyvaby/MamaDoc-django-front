@@ -31,8 +31,8 @@ const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
     }}
   >
     <Paper
-      elevation={3}
-      sx={{ p: { xs: 3, sm: 4 }, borderRadius: 3, width: "100%", maxWidth: 440 }}
+      variant="outlined"
+      sx={{ p: { xs: 3, sm: 4 }, borderRadius: "14px", width: "100%", maxWidth: 440 }}
     >
       {children}
     </Paper>
@@ -133,7 +133,7 @@ const PublicRatePage: React.FC = () => {
 
   const header = (
     <Box sx={{ textAlign: "center", mb: 3 }}>
-      <Typography variant="h6" fontWeight={800}>
+      <Typography variant="h6" fontWeight={700}>
         {ctx.clinicName}
       </Typography>
       {ctx.doctorName && (

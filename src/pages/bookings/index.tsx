@@ -269,7 +269,7 @@ const BookingsPage: React.FC = () => {
                 localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
                 sx={{
                   bgcolor: "background.paper",
-                  borderRadius: 2,
+                  borderRadius: "14px",
                   "& .MuiDataGrid-row": { cursor: "pointer" },
                   "& .MuiDataGrid-columnHeaders": { bgcolor: "background.paper" },
                 }}

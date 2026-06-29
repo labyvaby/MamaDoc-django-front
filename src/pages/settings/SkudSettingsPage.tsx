@@ -89,7 +89,7 @@ export const SkudSettingsPage: React.FC = () => {
                 Настройки СКУД
             </Typography>
 
-            <Card>
+            <Card variant="outlined">
                 <CardHeader title="Конфигурация интеграции" subheader="Настройте параметры подключения к системе контроля доступа" />
                 <CardContent>
                     <Box component="form" noValidate autoComplete="off">

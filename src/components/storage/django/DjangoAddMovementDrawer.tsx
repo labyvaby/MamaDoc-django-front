@@ -189,7 +189,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                     <Stack spacing={2}>
                         {/* Product Section */}
                         <Box>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}>
                                 Товар
                             </Typography>
 
@@ -242,7 +242,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                         {/* Склад (только для нового товара на странице движения) */}
                         {showWarehouseSelect && (
                             <Box>
-                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}>
                                     Склад *
                                 </Typography>
                                 <Autocomplete<MovementWarehouseOption, false, false, false>

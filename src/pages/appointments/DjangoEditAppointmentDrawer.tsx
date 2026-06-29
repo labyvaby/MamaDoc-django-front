@@ -414,7 +414,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                       sx={{
                         width: 1,
                         bgcolor: "action.hover",
-                        borderRadius: 1.5,
+                        borderRadius: "10px",
                         p: "3px",
                         border: "none",
                         "& .MuiToggleButton-root": {
@@ -430,7 +430,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                           "&.Mui-selected": {
                             bgcolor: "primary.main",
                             color: "primary.contrastText",
-                            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.05)",
                             fontWeight: 600,
                             "&:hover": { bgcolor: "primary.dark" },
                           },
@@ -537,7 +536,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                     sx={{
                       width: 36,
                       height: 20,
-                      borderRadius: 10,
+                      borderRadius: "999px",
                       bgcolor: isBooking ? "primary.main" : "text.disabled",
                       position: "relative",
                       transition: "bgcolor 0.2s",
@@ -548,7 +547,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                         width: 14,
                         height: 14,
                         borderRadius: "50%",
-                        bgcolor: "white",
+                        bgcolor: "common.white",
                         position: "absolute",
                         top: 3,
                         left: isBooking ? 19 : 3,
@@ -671,7 +670,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                         mt: 0.5,
                                         border: "1px solid",
                                         borderColor: "error.main",
-                                        "&:hover": { backgroundColor: "rgba(211,47,47,0.08)" },
+                                        "&:hover": { backgroundColor: "error.lighter" },
                                       }}
                                     >
                                       <DeleteOutlined fontSize="small" />
@@ -797,7 +796,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     sx={{
                                       border: "1px solid",
                                       borderColor: "error.main",
-                                      "&:hover": { backgroundColor: "rgba(211,47,47,0.08)" },
+                                      "&:hover": { backgroundColor: "error.lighter" },
                                     }}
                                   >
                                     <DeleteOutlined fontSize="small" />

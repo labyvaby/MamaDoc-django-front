@@ -60,7 +60,7 @@ const DeleteEmployeeDialog: React.FC<DeleteEmployeeDialogProps> = ({ record, onC
               borderColor: 'error.main',
               '&:hover': {
                 borderColor: 'error.dark',
-                backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                backgroundColor: 'error.lighter',
               },
               '&.Mui-disabled': {
                 borderColor: 'action.disabled',

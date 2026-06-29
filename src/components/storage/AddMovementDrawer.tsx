@@ -140,13 +140,13 @@ export const AddMovementDrawer: React.FC<AddMovementDrawerProps> = ({
                         bgcolor: (theme) => alpha(theme.palette[accentColor].main, 0.04),
                         border: '1px solid',
                         borderColor: (theme) => alpha(theme.palette[accentColor].main, 0.2),
-                        borderRadius: 2,
+                        borderRadius: "14px",
                     }}
                 >
                     <Stack spacing={2}>
                         {/* Product Section */}
                         <Box>
-                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}>
                                 Товар
                             </Typography>
 
