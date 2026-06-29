@@ -12,11 +12,22 @@ import {
 import { InventoryOutlined as Inventory } from "@mui/icons-material";
 import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import dayjs from "dayjs";
 import { DjangoSale } from "../../../api/sales";
 import { subtleBg } from "../../../theme";
 import { formatKGS } from "../../../utility/format";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../../config/saleStatuses";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
+
+/** Подпись способа оплаты по суммам нал/безнал. */
+const paymentLabel = (sale: DjangoSale): string | null => {
+    const cash = sale.paidCash > 0;
+    const card = sale.paidCard > 0;
+    if (cash && card) return "Смеш.";
+    if (cash) return "Нал";
+    if (card) return "Безнал";
+    return null;
+};
 
 interface DjangoSalesListProps {
     sales: DjangoSale[];
@@ -137,7 +148,10 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 .join(", ") || "Товар удалён"}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary" noWrap display="block">
-                                            {sale.patientName || "Анонимный"}
+                                            №{sale.id} · {sale.patientName || "Анонимный"}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary" noWrap display="block">
+                                            {dayjs(sale.createdAt).format("DD.MM HH:mm")}
                                         </Typography>
                                     </Box>
 
@@ -154,12 +168,22 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 variant="outlined"
                                             />
                                         ) : (
-                                            <Chip
-                                                label={chipLabel}
-                                                icon={statusConfig.icon}
-                                                size="small"
-                                                sx={getSaleStatusChipSx(displayStatus)}
-                                            />
+                                            <Stack direction="row" spacing={0.5} alignItems="center">
+                                                {paymentLabel(sale) && (
+                                                    <Chip
+                                                        label={paymentLabel(sale)}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{ height: 22, borderRadius: "7px" }}
+                                                    />
+                                                )}
+                                                <Chip
+                                                    label={chipLabel}
+                                                    icon={statusConfig.icon}
+                                                    size="small"
+                                                    sx={getSaleStatusChipSx(displayStatus)}
+                                                />
+                                            </Stack>
                                         )}
                                     </Stack>
                                 </ButtonBase>
