@@ -26,7 +26,7 @@ export function mapDjangoListItemToRow(d: DjangoEmployeeListItem): EmployesRow {
     full_name: d.fullName || "",
     phone: d.phone || null,
     email: d.email || null,
-    nickname: null,
+    nickname: d.nickname || null,
     birth_date: null,
     status: d.status || null,
     telegram_id: null,
@@ -43,6 +43,7 @@ export function mapDjangoListItemToRow(d: DjangoEmployeeListItem): EmployesRow {
     _djangoRole: d.role ?? null,
     _djangoSpecializations: d.specializations ?? [],
     _djangoOperationalBranches: d.operationalBranches ?? [],
+    _fullDetailsLoaded: false,
   };
 }
 
@@ -56,7 +57,8 @@ export function mapDjangoFullToRow(
     full_name: d.fullName || "",
     phone: d.phone || null,
     email: d.email || null,
-    nickname: d.notes || null,
+    nickname: d.nickname || null,
+    notes: d.notes || null,
     birth_date: d.birthDate || null,
     status: d.status || null,
     telegram_id: d.telegramId || null,
@@ -72,5 +74,6 @@ export function mapDjangoFullToRow(
     _djangoRole: d.role ?? null,
     _djangoSpecializations: d.specializations ?? [],
     _djangoOperationalBranches: d.operationalBranches ?? [],
+    _fullDetailsLoaded: true,
   };
 }

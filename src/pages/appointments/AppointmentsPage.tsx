@@ -97,10 +97,25 @@ function useHomeDashboard(params: {
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => getHomeDashboard(queryParams, signal),
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
-    placeholderData: keepPreviousData,
-    // Интервальный поллинг убран — обновление через useAppointmentsAutoSync
-    // (лёгкий last-update heartbeat → refetch только при изменении).
+    // Увеличиваем staleTime до 5 минут. Любое изменение в клинике спровоцирует
+    // инвалидацию кэша через useAppointmentsAutoSync, а до тех пор данные верны.
+    staleTime: 5 * 60 * 1000, 
+    placeholderData: (previousData, previousQuery) => {
+      if (!previousData || !previousQuery) return undefined;
+      const prevParams = previousQuery.queryKey[3] as typeof queryParams | undefined;
+      // Предыдущие данные показываем ТОЛЬКО если дата, филиал, врач и роль совпадают.
+      // При смене даты/филиала/врача старые данные сразу скрываются, уступая место лоадеру.
+      if (
+        prevParams &&
+        prevParams.date === queryParams.date &&
+        prevParams.branchId === queryParams.branchId &&
+        prevParams.employeeId === queryParams.employeeId &&
+        prevParams.clinicalRole === queryParams.clinicalRole
+      ) {
+        return previousData;
+      }
+      return undefined;
+    },
   });
 
   const setItems = React.useCallback(
@@ -120,7 +135,9 @@ function useHomeDashboard(params: {
     items: query.data?.appointments ?? [],
     setItems,
     dayCounts: query.data?.dayCounts ?? {},
-    loading: query.isLoading,
+    // Учитываем фоновые обновления (refetch / auto-sync / invalidate), чтобы
+    // пользователь всегда видел 2px LinearProgress во время загрузки/синхронизации.
+    loading: query.isLoading || query.isFetching,
     error: query.error instanceof Error ? query.error.message : null,
     refresh: query.refetch,
   };
@@ -210,6 +227,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const addButtonText = isNurseCabinet ? "Добавить процедуру" : "Добавить прием";
   usePageTitle(pageTitle);
   const { can } = useCanChecker();
+  const queryClient = useQueryClient();
   const {
     activeBranch,
     activeEmployee,
@@ -316,7 +334,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   useAppointmentsAutoSync({
     branchId,
     paused: createOpen || editTarget !== null || paymentTarget !== null || confirm !== null,
-    onChange: () => { void refresh(); },
+    onChange: () => {
+      // Сбрасываем кэш всех запросов по приёмам (включая неактивные даты/кабинеты),
+      // чтобы при переходе на них отображались актуальные данные.
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.appointments.all,
+      });
+    },
   });
 
   // Привилегированный кабинет группируется строго по клиницистам своего типа

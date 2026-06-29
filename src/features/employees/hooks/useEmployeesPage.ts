@@ -1,8 +1,8 @@
 import React from "react";
 import type { EmployesRow } from "../types";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
-import { getDjangoEmployees } from "../../../api/staff";
-import { mapDjangoListItemToRow } from "../viewModel";
+import { getDjangoEmployees, getDjangoEmployee } from "../../../api/staff";
+import { mapDjangoListItemToRow, mapDjangoFullToRow } from "../viewModel";
 import { usePermissions } from "../../../hooks/usePermissions";
 
 // Supabase-only helpers: loaded dynamically so supabaseClient stays out of Django bundle
@@ -170,6 +170,35 @@ export function useEmployeesPageState() {
       setCurrentPage(1);
     }
   }, [contextKey]);
+
+  // Load full employee details in Django mode when selected in list
+  React.useEffect(() => {
+    if (!IS_DJANGO_BACKEND || !detailsOpen?.id) return;
+
+    // If we already have full details loaded, skip request
+    if (detailsOpen._fullDetailsLoaded) return;
+
+    const empId = Number(detailsOpen.id);
+    if (isNaN(empId)) return;
+
+    let active = true;
+    getDjangoEmployee(empId)
+      .then((fullEmp) => {
+        if (!active) return;
+        const fullRow = mapDjangoFullToRow(fullEmp, detailsOpen);
+        setAllItems((prev) =>
+          prev.map((item) => (item.id === fullRow.id ? fullRow : item))
+        );
+        setDetailsOpen(fullRow);
+      })
+      .catch((err) => {
+        console.error("Ошибка загрузки полных деталей сотрудника:", err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [detailsOpen?.id]);
 
   // Initial fetch + re-fetch when search or context changes.
   // In Django mode: wait until activeMembership is resolved — avoids unauthenticated or

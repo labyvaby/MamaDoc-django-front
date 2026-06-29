@@ -391,7 +391,10 @@ const MembershipsSettingsPage: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [memData, rolesData] = await Promise.all([getMemberships(), getRoles()]);
+      const [memData, rolesData] = await Promise.all([
+        getMemberships(),
+        getRoles(activeOrganization?.id),
+      ]);
       setMemberships(memData);
       setRoles(rolesData);
     } catch (err) {
@@ -399,7 +402,7 @@ const MembershipsSettingsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeOrganization?.id]);
 
   React.useEffect(() => {
     loadData();

@@ -624,7 +624,7 @@ const RolesSettingsPage: React.FC = () => {
     setLoadError(null);
     try {
       const [rolesData, permsData] = await Promise.all([
-        getRoles(),
+        getRoles(activeOrganization?.id),
         getPermissions(),
       ]);
       setRoles(rolesData);
@@ -634,7 +634,7 @@ const RolesSettingsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeOrganization?.id]);
 
   React.useEffect(() => {
     loadData();

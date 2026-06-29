@@ -110,8 +110,19 @@ export function getPermissions(): Promise<RbacPermission[]> {
   );
 }
 
-export function getRoles(): Promise<RbacRole[]> {
-  return apiRequest<RbacRole[]>("/rbac/roles/").then((items) =>
+/**
+ * GET /api/rbac/roles/
+ *
+ * Роли скоупятся по организации: бэкенд по умолчанию отдаёт роли активной
+ * организации сессии, а `organizationId` явно задаёт целевую. Без скоупа
+ * суперюзер/мульти-орг пользователь видел бы чужие и задублированные роли
+ * (две «Регистратор», «Супер Админ» из разных орг) — поэтому всегда передаём
+ * id активной организации, когда он известен.
+ */
+export function getRoles(organizationId?: number | null): Promise<RbacRole[]> {
+  const qs =
+    organizationId != null ? `?organizationId=${organizationId}` : "";
+  return apiRequest<RbacRole[]>(`/rbac/roles/${qs}`).then((items) =>
     Array.isArray(items) ? items : [],
   );
 }

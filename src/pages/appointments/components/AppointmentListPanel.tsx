@@ -17,6 +17,9 @@ import { useTheme, alpha } from "@mui/material/styles";
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
 // Иконки SMS-уведомлений — те же импорты, что в старом фронте (home/AppointmentsList).
@@ -588,10 +591,17 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
                       // Определяем статус для отображения
                       const displayStatus = normalizeDjangoStatus(a.status);
+                      const isCardOnly =
+                        (a.paymentMethods ?? []).length === 1 &&
+                        a.paymentMethods?.[0] === "card";
                       const paymentStyleStatus =
-                        a.paymentStatus === "paid" ? "Оплачено" :
-                        a.paymentStatus === "partial" ? "Частично оплачено" :
-                        displayStatus;
+                        a.paymentStatus === "paid" && isCardOnly
+                          ? "Оплачено безналом"
+                          : a.paymentStatus === "paid"
+                          ? "Оплачено"
+                          : a.paymentStatus === "partial"
+                          ? "Частично"
+                          : displayStatus;
 
                       const statusCfg = getStatusConfig(displayStatus);
                       // Прячем статус-чип, когда состояние и так понятно по
@@ -666,8 +676,21 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   <Chip
                                     label={
                                       <Stack direction="row" alignItems="center" gap={0.5}>
-                                        <PaymentsOutlined sx={{ fontSize: 16 }} />
-                                        <span>{paymentStyleStatus}</span>
+                                        {a.paymentMethods && a.paymentMethods.length > 0 ? (
+                                          <>
+                                            {a.paymentMethods.includes("cash") && <PaymentsOutlined sx={{ fontSize: 16 }} />}
+                                            {a.paymentMethods.includes("card") && <CreditCardOutlined sx={{ fontSize: 16 }} />}
+                                            {a.paymentMethods.includes("balance") && <AccountBalanceWalletOutlined sx={{ fontSize: 16 }} />}
+                                            {a.paymentMethods.includes("bonus") && <CardGiftcardOutlined sx={{ fontSize: 16 }} />}
+                                          </>
+                                        ) : (
+                                          <PaymentsOutlined sx={{ fontSize: 16 }} />
+                                        )}
+                                        <span>
+                                          {paymentStyleStatus === "Оплачено безналом"
+                                            ? "Оплачено"
+                                            : paymentStyleStatus}
+                                        </span>
                                       </Stack>
                                     }
                                     size="small"
@@ -714,12 +737,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                 </Typography>
                               )}
 
-                              {/* Долг */}
-                              {showPayCol && debt > 0 && (
-                                <Typography variant="caption" color="warning.main" fontWeight={700}>
-                                  долг {formatKGS(a.debt)}
-                                </Typography>
-                              )}
+
                             </Stack>
                           </Stack>
                         </Box>

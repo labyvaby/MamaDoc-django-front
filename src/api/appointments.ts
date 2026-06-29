@@ -177,6 +177,9 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     : [];
   // Статус используем как есть — slug'и фронта совпадают с бэком.
   const status = (raw.status ?? "scheduled") as DjangoAppointmentStatus;
+  const paymentMethods: string[] = Array.isArray(raw.paymentMethods)
+    ? raw.paymentMethods
+    : [];
 
   return {
     ...raw,
@@ -184,6 +187,7 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     services,
     productLines,
     status,
+    paymentMethods,
   } as DjangoAppointment;
 }
 
@@ -210,6 +214,7 @@ export interface DjangoAppointment {
   discountAmount?: string;
   payableAmount?: string;
   debt?: string;
+  paymentMethods?: string[];
   // Medical conclusion flag — true if the appointment has at least one conclusion
   hasMedicalConclusion?: boolean;
 }
