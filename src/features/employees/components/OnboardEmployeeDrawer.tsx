@@ -4,14 +4,12 @@ import {
   Autocomplete,
   Box,
   Chip,
-  Divider,
   InputAdornment,
-  MenuItem,
   Stack,
   TextField,
-  Typography,
 } from "@mui/material";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
@@ -30,9 +28,9 @@ import type { RbacBranch } from "../../../api/auth";
 import { mapDjangoFullToRow } from "../viewModel";
 import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
-import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import { CustomDatePicker } from "../../../components/ui";
+import { SectionLabel, Field, Grid2, SegmentedControl, PhotoHero } from "./drawerKit";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
@@ -60,28 +58,21 @@ function splitFullName(fullName: string): { firstName?: string; lastName?: strin
   return { lastName: last, firstName: rest.join(" ") };
 }
 
-// Бэкенд может вернуть один и тот же системный набор ролей по разу на каждую
-// организацию/филиал — в выпадающем списке это выглядит как дубли
-// («Администратор», «Бухгалтер», … повторяются). Оставляем по одной роли на
-// `code` (а при его отсутствии — на `name`), предпочитая роль активной
-// организации.
-function dedupeRoles(roles: RbacRole[], activeOrgId?: number): RbacRole[] {
+// Бэкенд отдаёт роли ВСЕХ организаций, к которым у пользователя есть доступ
+// (суперюзеру — вообще все роли системы). Сотрудник заводится в активной
+// организации, поэтому роль обязана принадлежать ей: сначала фильтруем по
+// activeOrgId, иначе в списке всплывают чужие роли. Затем сворачиваем дубли по
+// `code` (а при его отсутствии — по `name`) как защитный слой. Пока активная
+// организация не определена, оставляем как есть (фильтровать не по чему).
+function rolesForActiveOrg(roles: RbacRole[], activeOrgId?: number): RbacRole[] {
+  const scoped =
+    activeOrgId == null
+      ? roles
+      : roles.filter((r) => r.organizationId === activeOrgId);
   const byKey = new Map<string, RbacRole>();
-  for (const role of roles) {
+  for (const role of scoped) {
     const key = (role.code || role.name).trim().toLowerCase();
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, role);
-      continue;
-    }
-    // Предпочитаем роль активной организации, если такая нашлась.
-    if (
-      activeOrgId != null &&
-      role.organizationId === activeOrgId &&
-      existing.organizationId !== activeOrgId
-    ) {
-      byKey.set(key, role);
-    }
+    if (!byKey.has(key)) byKey.set(key, role);
   }
   return Array.from(byKey.values());
 }
@@ -200,7 +191,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     let cancelled = false;
     setLoadingDeps(true);
     const tasks: Promise<unknown>[] = [
-      getRoles().then((r) => { if (!cancelled) setRoles(dedupeRoles(r, activeOrganization?.id)); }),
+      // Бэкенд скоупит роли по организации (по умолчанию — активной). Передаём
+      // id явно; rolesForActiveOrg — дополнительный клиентский слой на случай,
+      // если контекст ещё не подхватился.
+      getRoles(activeOrganization?.id).then((r) => { if (!cancelled) setRoles(rolesForActiveOrg(r, activeOrganization?.id)); }),
     ];
     if (canViewSpecs || canManageSpecs) {
       tasks.push(
@@ -360,53 +354,46 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </Alert>
         )}
 
-        {/* ── Фото ── */}
-        <ServicePhotoUploader
-          photoFile={photoFile}
+        {/* ── Фото-герой: аватар + ФИО/Псевдоним ── */}
+        <PhotoHero
           photoPreview={photoPreview}
-          onPickPhoto={handlePickPhoto}
+          name={fullName}
           inputId="onboard-employee-photo"
-        />
+          onPickPhoto={handlePickPhoto}
+          disabled={busy}
+        >
+          <Field label="ФИО" required>
+            <TextField
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              onBlur={() => touch("fullName")}
+              fullWidth
+              size="small"
+              placeholder="Иванов Иван Иванович"
+              required
+              disabled={busy}
+              inputProps={{ maxLength: 255 }}
+              error={Boolean(showError("fullName"))}
+              helperText={showError("fullName")}
+            />
+          </Field>
+          <Field label="Псевдоним">
+            <TextField
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              fullWidth
+              size="small"
+              placeholder="Как в расписании"
+              disabled={busy}
+              inputProps={{ maxLength: 100 }}
+            />
+          </Field>
+        </PhotoHero>
 
-        {/* ── ФИО ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            ФИО *
-          </Typography>
-          <TextField
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            onBlur={() => touch("fullName")}
-            fullWidth
-            placeholder="Иванов Иван Иванович"
-            required
-            disabled={busy}
-            inputProps={{ maxLength: 255 }}
-            error={Boolean(showError("fullName"))}
-            helperText={showError("fullName")}
-          />
-        </Stack>
+        {/* ── Контакты ── */}
+        <SectionLabel title="Контакты" />
 
-        {/* ── Псевдоним ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Псевдоним
-          </Typography>
-          <TextField
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            fullWidth
-            placeholder="Как отображается в расписании"
-            disabled={busy}
-            inputProps={{ maxLength: 100 }}
-          />
-        </Stack>
-
-        {/* ── Телефон ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Телефон
-          </Typography>
+        <Field label="Телефон" hint="Телефон или email — нужен для входа по SMS-коду">
           <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
             <PhoneCountryCodeSelect
               value={phoneCountry}
@@ -426,34 +413,44 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: getPhoneLocalMaxLength(phoneCountry) }}
             />
           </Box>
-        </Stack>
+        </Field>
 
-        {/* ── Email ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Email
-          </Typography>
-          <TextField
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={() => touch("email")}
-            fullWidth
-            placeholder="example@mail.com"
-            type="email"
-            disabled={busy}
-            error={Boolean(showError("email") && !isWarning("email"))}
-            helperText={showError("email")}
-            FormHelperTextProps={{
-              sx: isWarning("email") ? { color: "warning.main" } : undefined,
-            }}
-          />
-        </Stack>
+        <Grid2>
+          <Field label="Email">
+            <TextField
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => touch("email")}
+              fullWidth
+              placeholder="example@mail.com"
+              type="email"
+              disabled={busy}
+              error={Boolean(showError("email") && !isWarning("email"))}
+              helperText={showError("email")}
+              FormHelperTextProps={{
+                sx: isWarning("email") ? { color: "warning.main" } : undefined,
+              }}
+            />
+          </Field>
+          <Field label="Telegram ID">
+            <TextField
+              value={telegramId}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
+                setTelegramId(digits);
+              }}
+              onBlur={() => touch("telegramId")}
+              fullWidth
+              placeholder="Числовой ID"
+              disabled={busy}
+              inputProps={{ inputMode: "numeric" }}
+              error={Boolean(showError("telegramId"))}
+              helperText={showError("telegramId")}
+            />
+          </Field>
+        </Grid2>
 
-        {/* ── Дата рождения ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Дата рождения
-          </Typography>
+        <Field label="Дата рождения">
           <CustomDatePicker
             value={birthDate ? dayjs(birthDate) : null}
             onChange={(val) => {
@@ -472,127 +469,99 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               },
             }}
           />
-        </Stack>
+        </Field>
 
-        {/* ── Telegram ID ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Telegram ID
-          </Typography>
-          <TextField
-            value={telegramId}
-            onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
-              setTelegramId(digits);
-            }}
-            onBlur={() => touch("telegramId")}
-            fullWidth
-            placeholder="Числовой ID"
-            disabled={busy}
-            inputProps={{ inputMode: "numeric" }}
-            error={Boolean(showError("telegramId"))}
-            helperText={showError("telegramId")}
-          />
-        </Stack>
-
-        {/* ── Приватные поля (под staff.private.manage) ── */}
+        {/* ── Финансы (под staff.private.manage) ── */}
         {canManagePrivate && (
           <>
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Номер расчётного счёта
-              </Typography>
-              <TextField
-                value={bankAccountNumber}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 16);
-                  setBankAccountNumber(v);
-                }}
-                onBlur={() => touch("bankAccountNumber")}
-                fullWidth
-                placeholder="0000000000000000"
-                disabled={busy}
-                inputProps={{ inputMode: "numeric" }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <CreditCardOutlined fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-                error={Boolean(showError("bankAccountNumber"))}
-                helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
-              />
-            </Stack>
-
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                ИНН
-              </Typography>
-              <TextField
-                value={inn}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 14);
-                  setInn(v);
-                }}
-                onBlur={() => touch("inn")}
-                fullWidth
-                placeholder="00000000000000"
-                disabled={busy}
-                inputProps={{ inputMode: "numeric" }}
-                error={Boolean(showError("inn"))}
-                helperText={showError("inn") || `${inn.length}/14`}
-              />
-            </Stack>
+            <SectionLabel
+              title="Финансы"
+              trailing={
+                <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
+                  <LockOutlined sx={{ fontSize: 13 }} />
+                  <Box component="span" sx={{ fontSize: "0.68rem" }}>приватно</Box>
+                </Stack>
+              }
+            />
+            <Grid2>
+              <Field label="Расчётный счёт">
+                <TextField
+                  value={bankAccountNumber}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 16);
+                    setBankAccountNumber(v);
+                  }}
+                  onBlur={() => touch("bankAccountNumber")}
+                  fullWidth
+                  placeholder="0000000000000000"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <CreditCardOutlined fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                  error={Boolean(showError("bankAccountNumber"))}
+                  helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
+                />
+              </Field>
+              <Field label="ИНН">
+                <TextField
+                  value={inn}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 14);
+                    setInn(v);
+                  }}
+                  onBlur={() => touch("inn")}
+                  fullWidth
+                  placeholder="00000000000000"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                  error={Boolean(showError("inn"))}
+                  helperText={showError("inn") || `${inn.length}/14`}
+                />
+              </Field>
+            </Grid2>
           </>
         )}
 
-        {/* ── Статус ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Статус
-          </Typography>
-          <TextField
-            select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as "active" | "inactive" | "fired")}
-            fullWidth
-            disabled={busy}
-          >
-            <MenuItem value="active">Работает</MenuItem>
-            <MenuItem value="inactive">Не работает</MenuItem>
-            <MenuItem value="fired">Уволен</MenuItem>
-          </TextField>
-        </Stack>
+        {/* ── Роль и доступ ── */}
+        <SectionLabel title="Роль и доступ" />
 
-        {/* ── Тип сотрудника ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Тип сотрудника
-          </Typography>
-          <TextField
-            select
+        <Field label="Статус">
+          <SegmentedControl
+            value={status}
+            onChange={(v) => setStatus(v)}
+            disabled={busy}
+            options={[
+              { value: "active", label: "Работает" },
+              { value: "inactive", label: "Не работает" },
+              { value: "fired", label: "Уволен" },
+            ]}
+          />
+        </Field>
+
+        <Field label="Тип сотрудника" hint="Клинический тип — влияет на расписание и специализации">
+          <SegmentedControl
             value={clinicalRole}
-            onChange={(e) => {
-              const next = e.target.value as "doctor" | "nurse" | "other";
+            onChange={(next) => {
               setClinicalRole(next);
               if (next !== "doctor") setSelectedSpecializations([]);
             }}
-            fullWidth
             disabled={busy}
-          >
-            <MenuItem value="doctor">Врач</MenuItem>
-            <MenuItem value="nurse">Медсестра</MenuItem>
-            <MenuItem value="other">Другой сотрудник</MenuItem>
-          </TextField>
-        </Stack>
+            options={[
+              { value: "doctor", label: "Врач" },
+              { value: "nurse", label: "Медсестра" },
+              { value: "other", label: "Другой" },
+            ]}
+          />
+        </Field>
 
         {/* ── Специализации (только для врача) ── */}
         {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && (
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Специализации
-            </Typography>
+          <Field label="Специализации">
             <Autocomplete
               multiple
               options={allSpecializations}
@@ -624,97 +593,41 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 />
               )}
             />
-          </Stack>
+          </Field>
         )}
 
-        <Divider />
-
-        {/* ── Учётная запись ── */}
-        <Stack spacing={2.5}>
-          {/* ── Роль ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Роль *
-            </Typography>
-            <TextField
-              select
-              value={roleId}
-              onChange={(e) => setRoleId(Number(e.target.value))}
-              fullWidth
-              required
-              disabled={loadingDeps || busy}
-              SelectProps={{ displayEmpty: true }}
-              error={submitAttempted && roleId === ""}
-              helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
-            >
-              <MenuItem value="" disabled>
-                {loadingDeps ? "Загрузка…" : "Выберите роль"}
-              </MenuItem>
-              {roles.map((r) => (
-                <MenuItem key={r.id} value={r.id}>
-                  {r.name}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
-
-          {/* ── Филиалы работы ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Филиалы работы *
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Где сотрудник работает операционно
-            </Typography>
-            {branches.length === 0 ? (
-              <Alert severity="warning">Нет доступных филиалов</Alert>
-            ) : (
-              <Autocomplete
-                multiple
-                options={branches}
-                value={employeeBranches}
-                getOptionLabel={(b) => b.name}
-                isOptionEqualToValue={(a, b) => a.id === b.id}
-                onChange={(_, val) => setEmployeeBranches(val)}
-                disabled={loadingDeps || busy}
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip
-                      label={option.name}
-                      size="small"
-                      {...getTagProps({ index })}
-                      key={option.id}
-                    />
-                  ))
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
-                  />
-                )}
+        {/* ── Роль (поиск-комбобокс: ролей у организации может быть много) ── */}
+        <Field label="Роль" required hint="Права доступа и группировка в списке">
+          <Autocomplete
+            options={roles}
+            getOptionLabel={(r) => r.name}
+            value={roles.find((r) => r.id === roleId) ?? null}
+            onChange={(_, val) => setRoleId(val ? val.id : "")}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            disabled={loadingDeps || busy}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder={loadingDeps ? "Загрузка…" : "Найти роль…"}
+                error={submitAttempted && roleId === ""}
+                helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
               />
             )}
-          </Stack>
+          />
+        </Field>
 
-          {/* ── Доступ в CRM ── */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Доступ в CRM (филиалы)
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Оставьте пустым — будет совпадать с филиалами работы
-            </Typography>
+        {/* ── Филиалы работы ── */}
+        <Field label="Филиалы работы" required hint="Где сотрудник работает операционно">
+          {branches.length === 0 ? (
+            <Alert severity="warning">Нет доступных филиалов</Alert>
+          ) : (
             <Autocomplete
               multiple
               options={branches}
-              value={userAccessBranches}
+              value={employeeBranches}
               getOptionLabel={(b) => b.name}
               isOptionEqualToValue={(a, b) => a.id === b.id}
-              onChange={(_, val) => {
-                setUserAccessBranches(val);
-                setOverrideUserAccess(val.length > 0);
-              }}
+              onChange={(_, val) => setEmployeeBranches(val)}
               disabled={loadingDeps || busy}
               renderTags={(value, getTagProps) =>
                 value.map((option, index) => (
@@ -729,12 +642,44 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  placeholder={loadingDeps ? "Загрузка…" : "Как у филиалов работы"}
+                  placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
                 />
               )}
             />
-          </Stack>
-        </Stack>
+          )}
+        </Field>
+
+        {/* ── Доступ в CRM ── */}
+        <Field label="Доступ в CRM (филиалы)" hint="Пусто — будет совпадать с филиалами работы">
+          <Autocomplete
+            multiple
+            options={branches}
+            value={userAccessBranches}
+            getOptionLabel={(b) => b.name}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            onChange={(_, val) => {
+              setUserAccessBranches(val);
+              setOverrideUserAccess(val.length > 0);
+            }}
+            disabled={loadingDeps || busy}
+            renderTags={(value, getTagProps) =>
+              value.map((option, index) => (
+                <Chip
+                  label={option.name}
+                  size="small"
+                  {...getTagProps({ index })}
+                  key={option.id}
+                />
+              ))
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder={loadingDeps ? "Загрузка…" : "Как у филиалов работы"}
+              />
+            )}
+          />
+        </Field>
       </Stack>
     </DrawerBase>
   );

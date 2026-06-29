@@ -34,6 +34,7 @@ import type { ServiceRow as ServiceDto } from "../../../services/services";
 import { formatDateRu } from "../../../utility/format";
 import { getEmployeeServices } from "../../../api/staff";
 import { useOne } from "@refinedev/core";
+import { useQuery } from "@tanstack/react-query";
 import { DB_TABLES } from "../../../utility/constants";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { AppButton, UserAvatar, InfoTile } from "../../../components/ui";
@@ -114,54 +115,55 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onOpenServices,
   onEdit,
 }) => {
-  const [fetchedServiceIds, setFetchedServiceIds] = useState<string[]>([]);
-  // Django-режим: полные объекты услуг загружаются сразу (не нужен allServices для маппинга)
-  const [djangoServices, setDjangoServices] = useState<{ id: string; name: string }[]>([]);
-  const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // For Django mode: Cache services via react-query
+  const empIdNum = emp?.id ? Number(emp.id) : 0;
+  const djangoServicesQuery = useQuery({
+    queryKey: ["django", "staff", "employee-services", empIdNum, emp?.updated_at],
+    queryFn: async ({ signal }) => {
+      if (empIdNum > 0) {
+        const assignments = await getEmployeeServices(empIdNum, signal);
+        return assignments.map((a) => ({
+          id: String(a.service.id),
+          name: a.service.name,
+        }));
+      }
+      return [];
+    },
+    enabled: IS_DJANGO_BACKEND && empIdNum > 0,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+  });
+
+  // Legacy Supabase services loading
+  const [legacyFetchedServiceIds, setLegacyFetchedServiceIds] = useState<string[]>([]);
+  const [isLoadingLegacyServices, setIsLoadingLegacyServices] = useState(false);
+
   useEffect(() => {
+    if (IS_DJANGO_BACKEND) return;
     if (!emp?.id) {
-      setFetchedServiceIds([]);
-      setDjangoServices([]);
+      setLegacyFetchedServiceIds([]);
       return;
     }
 
     const loadServices = async () => {
-      setIsLoadingServices(true);
+      setIsLoadingLegacyServices(true);
       try {
-        if (IS_DJANGO_BACKEND) {
-          const empNumId = Number(emp.id);
-          if (!isNaN(empNumId) && empNumId > 0) {
-            const assignments = await getEmployeeServices(empNumId);
-            setDjangoServices(
-              assignments.map((a) => ({
-                id: String(a.service.id),
-                name: a.service.name,
-              })),
-            );
-            setFetchedServiceIds(assignments.map((a) => String(a.service.id)));
-          } else {
-            setDjangoServices([]);
-            setFetchedServiceIds([]);
-          }
-        } else {
-          const ids = await _loadSupabaseServiceIds(emp.id);
-          setFetchedServiceIds(ids);
-        }
+        const ids = await _loadSupabaseServiceIds(emp.id);
+        setLegacyFetchedServiceIds(ids);
       } catch (err) {
         console.error("Ошибка загрузки услуг сотрудника:", err);
-        setFetchedServiceIds([]);
-        setDjangoServices([]);
+        setLegacyFetchedServiceIds([]);
       } finally {
-        setIsLoadingServices(false);
+        setIsLoadingLegacyServices(false);
       }
     };
 
     loadServices();
-    // Зависим и от updated_at: после сохранения карточки id не меняется, но
-    // updated_at — да, поэтому услуги перечитываются без перезагрузки страницы.
   }, [emp?.id, emp?.updated_at]);
+
+  const isLoadingServices = IS_DJANGO_BACKEND ? djangoServicesQuery.isFetching : isLoadingLegacyServices;
 
   // Supabase-only: роль через useOne (в Django-режиме хук вызывается, но disabled)
   const { result: roleData } = useOne<{ id: string; name: string; display_name: string }>({
@@ -266,18 +268,18 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   const servicesForEmployee = React.useMemo(() => {
     if (IS_DJANGO_BACKEND) {
-      return djangoServices;
+      return djangoServicesQuery.data ?? [];
     }
-    if (fetchedServiceIds.length === 0 || allServices.length === 0)
+    if (legacyFetchedServiceIds.length === 0 || allServices.length === 0)
       return [] as { id: string; name: string }[];
 
-    return fetchedServiceIds.map((linkId): { id: string; name: string } => {
+    return legacyFetchedServiceIds.map((linkId): { id: string; name: string } => {
       const link = String(linkId);
       const svc = allServices.find((s) => getSafeId(s) === link);
       if (svc) return { id: link, name: getSafeName(svc) };
       return { id: link, name: `ID: ${link}` };
     });
-  }, [djangoServices, fetchedServiceIds, allServices]);
+  }, [djangoServicesQuery.data, legacyFetchedServiceIds, allServices]);
 
   const formatBank = (v: string) => v.replace(/(.{4})/g, "$1 ").trim();
 
