@@ -25,5 +25,7 @@ export { ListLoadingSkeleton, ListEmptyState } from "./listStates";
 export type { ListEmptyStateProps } from "./listStates";
 export { UserAvatar } from "./UserAvatar";
 export type { UserAvatarProps } from "./UserAvatar";
+export { InfoTile } from "./InfoTile";
+export type { InfoTileProps } from "./InfoTile";
 export { DiscountInput } from "./DiscountInput";
 export type { DiscountInputProps, DiscountType } from "./DiscountInput";
