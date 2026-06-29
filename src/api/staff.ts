@@ -61,6 +61,7 @@ export interface DjangoEmployeeListItem {
   fullName: string;
   phone: string;
   email: string;
+  nickname: string;
   status: "active" | "inactive" | "fired";
   clinicalRole: ClinicalRole;
   photoUrl: string | null;

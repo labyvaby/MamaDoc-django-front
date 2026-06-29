@@ -86,6 +86,7 @@ export interface AppointmentEmployeeShort {
   id: number;
   fullName: string;
   photoUrl: string | null;
+  nickname: string | null;
 }
 
 export interface AppointmentServiceShort {
@@ -586,6 +587,46 @@ export function getDayCounts(params: {
     }
     return res ?? {};
   });
+}
+
+// ── SMS-notification icons ─────────────────────────────────────────────────────
+
+/** Тип уведомления — 1-в-1 с Django (NotificationType) и старым фронтом. */
+export type AppointmentNotificationType =
+  | "created_10m"
+  | "reminder_2h"
+  | "rescheduled_10m"
+  | "appointment_change"
+  | "appointment_cancel";
+
+/** Одна строка лога уведомления (GET /api/appointments/notifications/). */
+export interface AppointmentNotificationItem {
+  appointmentId: number;
+  notificationType: AppointmentNotificationType | string;
+  /** Время приёма шлюзом (ISO) или null, пока не отправлено. */
+  sentAt: string | null;
+  status: string;
+}
+
+/**
+ * GET /api/appointments/notifications/?ids=1,2,3
+ *
+ * Лёгкий батч-эндпоинт (как getDayCounts): по списку id приёмов возвращает
+ * отправленные SMS-уведомления для иконок статусов рядом с приёмом. Не утяжеляет
+ * основной список приёмов. Бэкенд скоупит по видимым приёмам (тенант-изоляция),
+ * чужие id молча отбрасываются. Пустой список id → запрос не уходит.
+ */
+export function getAppointmentNotifications(
+  ids: number[],
+  signal?: AbortSignal,
+): Promise<AppointmentNotificationItem[]> {
+  if (!ids.length) return Promise.resolve([]);
+  const query = new URLSearchParams();
+  query.set("ids", ids.join(","));
+  return apiRequest<AppointmentNotificationItem[]>(
+    `/appointments/notifications/?${query.toString()}`,
+    { signal },
+  ).then((list) => (Array.isArray(list) ? list : []));
 }
 
 export function getAppointment(id: number): Promise<DjangoAppointment> {

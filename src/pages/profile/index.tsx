@@ -4,10 +4,12 @@ import {
   Stack,
   Typography,
   Chip,
-  Tab,
-  Tabs,
   alpha,
+  Tooltip,
+  useMediaQuery,
 } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
+import { motion } from "framer-motion";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
@@ -32,8 +34,39 @@ import ChangePasswordCard from "./ChangePasswordCard";
 import EditProfileDrawer, { type ProfileFormValues } from "./EditProfileDrawer";
 import ProfileDocumentsBlock from "./ProfileDocumentsBlock";
 
-/** Строка-инфо: плиточная иконка + подпись/значение. */
-const InfoRow: React.FC<{
+const MotionBox = motion(Box);
+
+/** Контейнерный вариант — каскадное появление дочерних блоков при загрузке. */
+const containerVariants = {
+  hidden: {},
+  show: {
+    transition: { staggerChildren: 0.06, delayChildren: 0.03 },
+  },
+};
+
+/** Элемент каскада — мягкий подъём + проявление. */
+const itemVariants = {
+  hidden: { opacity: 0, y: 12 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as const },
+  },
+};
+
+/** Лёгкая подложка под «плитку»/иконку — чуть отличается от фона карточки.
+ *  В тёмной теме светлее на пару процентов, в светлой — чуть темнее. */
+const subtleBg = (t: Theme, strong = false) =>
+  t.palette.mode === "dark"
+    ? alpha("#ffffff", strong ? 0.06 : 0.03)
+    : alpha("#0b0d0f", strong ? 0.04 : 0.018);
+
+/**
+ * Плитка-инфо в стиле «статкарты» дашборда: иконка в цветной плашке слева,
+ * затем приглушённая подпись и значение. Плоская, без подъёма — глубина за счёт
+ * тонкой грани и едва заметной подложки.
+ */
+const InfoTile: React.FC<{
   icon: React.ReactNode;
   label: string;
   value?: React.ReactNode;
@@ -41,43 +74,49 @@ const InfoRow: React.FC<{
   monospace?: boolean;
 }> = ({ icon, label, value, active = true, monospace = false }) => (
   <Box
-    sx={{
+    sx={(t) => ({
       display: "flex",
       alignItems: "center",
       gap: 1.5,
-      p: 1.25,
-      borderRadius: 1,
+      p: 1.75,
+      borderRadius: "10px",
       border: 1,
       borderColor: "divider",
-      bgcolor: "background.paper",
-    }}
+      bgcolor: subtleBg(t),
+      transition: "background-color .15s ease, border-color .15s ease",
+      "&:hover": {
+        bgcolor: subtleBg(t, true),
+        borderColor: alpha(t.palette.primary.main, 0.28),
+      },
+    })}
   >
     <Box
-      sx={{
+      sx={(t) => ({
         width: 40,
         height: 40,
-        borderRadius: 1,
+        borderRadius: "10px",
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         color: active ? "primary.onSurface" : "text.disabled",
-        bgcolor: (theme) =>
-          active ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
+        bgcolor: active
+          ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1)
+          : subtleBg(t, true),
         "& .MuiSvgIcon-root": { fontSize: 20 },
-      }}
+      })}
     >
       {icon}
     </Box>
     <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" display="block">
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: "0.75rem" }}>
         {label}
       </Typography>
       <Typography
         variant="body2"
         fontWeight={600}
         noWrap
-        sx={monospace ? { fontFamily: "monospace" } : undefined}
+        sx={monospace ? { fontFamily: "monospace", letterSpacing: 0.5 } : undefined}
       >
         {value || "—"}
       </Typography>
@@ -139,6 +178,48 @@ const deriveView = (src: RawEmployeeSource, user?: RawUserSource): ProfileView =
   status: src?.status || undefined,
 });
 
+/** Быстрое контактное действие в шапке (звонок / телеграм / почта).
+ *  Квадратная иконка-кнопка в духе shadcn: контурная, приглушённая, мягкий ховер. */
+const QuickContact: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  href?: string;
+}> = ({ icon, label, href }) => {
+  if (!href) return null;
+  return (
+    <Tooltip title={label} arrow>
+      <Box
+        component="a"
+        href={href}
+        target={href.startsWith("http") ? "_blank" : undefined}
+        rel="noopener noreferrer"
+        aria-label={label}
+        sx={(t) => ({
+          width: 40,
+          height: 40,
+          borderRadius: "10px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "text.secondary",
+          textDecoration: "none",
+          border: 1,
+          borderColor: "divider",
+          transition: "color .15s ease, background-color .15s ease, border-color .15s ease",
+          "& .MuiSvgIcon-root": { fontSize: 19 },
+          "&:hover": {
+            color: "text.primary",
+            bgcolor: subtleBg(t, true),
+            borderColor: alpha(t.palette.primary.main, 0.35),
+          },
+        })}
+      >
+        {icon}
+      </Box>
+    </Tooltip>
+  );
+};
+
 const ProfilePage: React.FC = () => {
   usePageTitle("Профиль");
   const { employee: empFromPerms, role } = usePermissions();
@@ -187,6 +268,7 @@ const ProfilePage: React.FC = () => {
     role?.display_name ||
     (role?.name === "doctor" ? "Врач" : role?.name) ||
     (view.status === "active" ? "Сотрудник" : "Пользователь");
+  const isActive = view.status === "active";
 
   // Tab definitions, built conditionally so indices always line up with the
   // rendered content (no hard-coded positions that break when a tab is hidden).
@@ -196,38 +278,30 @@ const ProfilePage: React.FC = () => {
       label: "Основное",
       icon: <PersonOutlined fontSize="small" />,
       content: (
-        <AppCard
-          variant="outlined"
-          title="Контактные данные"
-          headerActions={
-            hasDjangoEmp ? (
-              <AppButton
-                size="small"
-                startIcon={<EditOutlined fontSize="small" />}
-                onClick={() => setEditOpen(true)}
-              >
-                Редактировать
-              </AppButton>
-            ) : undefined
-          }
-        >
-          <Stack spacing={1}>
-            <InfoRow icon={<LocalPhoneOutlined />} label="Телефон" value={view.phone} active={Boolean(view.phone)} />
-            <InfoRow icon={<TelegramIcon />} label="Telegram ID" value={view.telegramId} active={Boolean(view.telegramId)} />
-            <InfoRow icon={<EmailOutlined />} label="Email" value={view.email} active={Boolean(view.email)} />
+        <AppCard variant="outlined" title="Контактные данные">
+          <Box
+            sx={{
+              display: "grid",
+              gap: 1.25,
+              gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+            }}
+          >
+            <InfoTile icon={<LocalPhoneOutlined />} label="Телефон" value={view.phone} active={Boolean(view.phone)} />
+            <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={view.telegramId} active={Boolean(view.telegramId)} />
+            <InfoTile icon={<EmailOutlined />} label="Email" value={view.email} active={Boolean(view.email)} />
             {view.nickname && (
-              <InfoRow icon={<AlternateEmailOutlined />} label="Псевдоним" value={view.nickname} />
+              <InfoTile icon={<AlternateEmailOutlined />} label="Псевдоним" value={view.nickname} />
             )}
             {view.birthDate && (
-              <InfoRow icon={<CakeOutlined />} label="Дата рождения" value={dayjs(view.birthDate).format("DD.MM.YYYY")} />
+              <InfoTile icon={<CakeOutlined />} label="Дата рождения" value={dayjs(view.birthDate).format("DD.MM.YYYY")} />
             )}
             {canViewPrivate && (
               <>
-                <InfoRow icon={<CreditCardOutlined />} label="Банковский счёт" value={formatBank(view.bank)} active={Boolean(view.bank)} monospace />
-                <InfoRow icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
+                <InfoTile icon={<CreditCardOutlined />} label="Банковский счёт" value={formatBank(view.bank)} active={Boolean(view.bank)} monospace />
+                <InfoTile icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
               </>
             )}
-          </Stack>
+          </Box>
         </AppCard>
       ),
     },
@@ -255,6 +329,8 @@ const ProfilePage: React.FC = () => {
     });
   }
 
+  const activeTab = Math.min(tab, tabs.length - 1);
+
   return (
     <Box
       sx={(t) => ({
@@ -273,64 +349,53 @@ const ProfilePage: React.FC = () => {
       <Box
         sx={(t) => ({
           px: t.appLayout.page.paddingX,
-          pt: 1.5,
+          pt: 0.5,
           pb: t.appLayout.page.paddingY,
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
         })}
       >
-        <Stack spacing={2} sx={{ maxWidth: 820, mx: "auto" }}>
-          {/* Карточка пользователя (шапка профиля — над табами) */}
-          <AppCard variant="outlined">
-            <Stack direction="row" spacing={3} alignItems="center">
-              <UserAvatar
-                src={view.photoUrl}
-                name={displayName}
-                size={112}
-                sx={{ flexShrink: 0 }}
-              />
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-                  {displayName}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                  {roleText}
-                </Typography>
-                {view.status && (
-                  <Chip
-                    label={view.status === "active" ? "Работает" : "Неактивен"}
-                    size="small"
-                    color={view.status === "active" ? "success" : "default"}
-                    variant="filled"
-                    sx={{ mt: 1, fontWeight: 600, fontSize: "0.75rem", height: 20 }}
-                  />
-                )}
-              </Box>
-            </Stack>
-          </AppCard>
+        <MotionBox
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          sx={{ maxWidth: 880, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}
+        >
+          {/* ───── Шапка профиля: плоская карточка, аватар-плашка + имя/контакты ───── */}
+          <MotionBox variants={itemVariants}>
+            <HeroCard
+              displayName={displayName}
+              roleText={roleText}
+              photoUrl={view.photoUrl}
+              status={view.status}
+              isActive={isActive}
+              email={view.email}
+              phone={view.phone}
+              telegramId={view.telegramId}
+              onEdit={hasDjangoEmp ? () => setEditOpen(true) : undefined}
+            />
+          </MotionBox>
 
-          {/* Табы секций (собираем динамически, чтобы индексы всегда совпадали) */}
-          <Tabs
-            value={Math.min(tab, tabs.length - 1)}
-            onChange={(_, v) => setTab(v)}
-            variant="scrollable"
-            scrollButtons="auto"
-            allowScrollButtonsMobile
-            sx={{ borderBottom: 1, borderColor: "divider" }}
+          {/* ───── Сегментированные табы (тумблер в духе дашборда) ───── */}
+          <MotionBox variants={itemVariants}>
+            <SegmentedTabs
+              tabs={tabs.map((t) => ({ key: t.key, label: t.label, icon: t.icon }))}
+              value={activeTab}
+              onChange={setTab}
+            />
+          </MotionBox>
+
+          {/* Содержимое выбранной секции — переключаем с лёгкой анимацией. */}
+          <MotionBox
+            key={tabs[activeTab]?.key}
+            variants={itemVariants}
+            initial="hidden"
+            animate="show"
           >
-            {tabs.map((t) => (
-              <Tab
-                key={t.key}
-                icon={t.icon}
-                iconPosition="start"
-                label={t.label}
-              />
-            ))}
-          </Tabs>
-
-          {tabs[Math.min(tab, tabs.length - 1)]?.content}
-        </Stack>
+            {tabs[activeTab]?.content}
+          </MotionBox>
+        </MotionBox>
       </Box>
 
       {/* Редактирование профиля */}
@@ -367,5 +432,243 @@ const ProfilePage: React.FC = () => {
     </Box>
   );
 };
+
+/** Шапка профиля: плоская карточка с тонкой гранью. Аватар-плашка (скруглённый
+ *  квадрат) с индикатором статуса, имя + контактная подстрока + чипы роли/статуса,
+ *  справа — быстрые контакты и primary-кнопка «Редактировать». Всё на токенах
+ *  темы, поэтому корректно в светлой/тёмной и под выбранный primaryColor. */
+const HeroCard: React.FC<{
+  displayName: string;
+  roleText: React.ReactNode;
+  photoUrl: string | null;
+  status?: string;
+  isActive: boolean;
+  email: string;
+  phone: string;
+  telegramId: string;
+  onEdit?: () => void;
+}> = ({ displayName, roleText, photoUrl, status, isActive, email, phone, telegramId, onEdit }) => {
+  // ВНИМАНИЕ: в теме кастомные брейкпоинты (sm: 360), поэтому раскладку
+  // «телефон ↔ десктоп» переключаем по md (768), иначе все телефоны попадают в sm.
+  const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("md"));
+  const subline = email || phone || "";
+
+  return (
+    <AppCard variant="outlined">
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={{ xs: 2, md: 2.5 }}
+        alignItems="center"
+      >
+        {/* Аватар-плашка + имя: на телефоне колонкой по центру, на md+ — в ряд слева */}
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={2}
+          alignItems="center"
+          sx={{ minWidth: 0, flex: 1, width: "100%", textAlign: { xs: "center", md: "left" } }}
+        >
+          <Box sx={{ position: "relative", flexShrink: 0 }}>
+            <UserAvatar
+              src={photoUrl}
+              name={displayName}
+              size={isMobile ? 64 : 76}
+              sx={{ borderRadius: "18px" }}
+            />
+            {status && (
+              <Tooltip title={isActive ? "Работает" : "Неактивен"} arrow>
+                <Box
+                  sx={(t) => ({
+                    position: "absolute",
+                    right: -3,
+                    bottom: -3,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    border: `3px solid ${t.palette.background.paper}`,
+                    bgcolor: isActive ? t.palette.success.main : t.palette.grey[500],
+                  })}
+                />
+              </Tooltip>
+            )}
+          </Box>
+
+          {/* Имя, контактная подстрока, чипы */}
+          <Box sx={{ minWidth: 0, width: "100%" }}>
+            <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2 }}>
+              {displayName}
+            </Typography>
+            {subline && (
+              <Typography variant="body2" color="text.secondary" noWrap sx={{ mt: 0.25 }}>
+                {subline}
+              </Typography>
+            )}
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ mt: 1, flexWrap: "wrap", rowGap: 0.75, justifyContent: { xs: "center", md: "flex-start" } }}
+            >
+              <Chip
+                label={roleText}
+                size="small"
+                sx={(t) => ({
+                  fontWeight: 500,
+                  height: 24,
+                  borderRadius: "7px",
+                  color: "primary.onSurface",
+                  bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
+                })}
+              />
+              {status && (
+                <Chip
+                  size="small"
+                  label={isActive ? "На службе" : "Неактивен"}
+                  icon={
+                    <Box
+                      component="span"
+                      sx={(t) => ({
+                        width: 7,
+                        height: 7,
+                        borderRadius: "50%",
+                        bgcolor: isActive ? t.palette.success.main : t.palette.grey[500],
+                        ml: 0.75,
+                      })}
+                    />
+                  }
+                  sx={(t) => ({
+                    fontWeight: 500,
+                    height: 24,
+                    borderRadius: "7px",
+                    "& .MuiChip-icon": { ml: 0.75, mr: -0.25 },
+                    color: isActive
+                      ? t.palette.mode === "dark" ? t.palette.success.light : t.palette.success.dark
+                      : "text.secondary",
+                    bgcolor: isActive
+                      ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                      : subtleBg(t, true),
+                  })}
+                />
+              )}
+            </Stack>
+          </Box>
+        </Stack>
+
+        {/* Быстрые контакты + основное действие: на телефоне отдельный ряд по центру */}
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{
+            flexShrink: 0,
+            justifyContent: "center",
+            flexWrap: "wrap",
+            rowGap: 1,
+          }}
+        >
+          {/* Быстрые контакты — группой */}
+          <Stack direction="row" spacing={1} alignItems="center">
+            <QuickContact
+              icon={<LocalPhoneOutlined />}
+              label="Позвонить"
+              href={phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : undefined}
+            />
+            <QuickContact
+              icon={<TelegramIcon />}
+              label="Telegram"
+              href={telegramId ? `https://t.me/${telegramId.replace(/^@/, "")}` : undefined}
+            />
+            <QuickContact
+              icon={<EmailOutlined />}
+              label="Написать на почту"
+              href={email ? `mailto:${email}` : undefined}
+            />
+          </Stack>
+          {onEdit && (
+            <AppButton
+              variant="contained"
+              startIcon={<EditOutlined fontSize="small" />}
+              onClick={onEdit}
+              sx={{ flexShrink: 0 }}
+            >
+              {isMobile ? "Изменить" : "Редактировать"}
+            </AppButton>
+          )}
+        </Stack>
+      </Stack>
+    </AppCard>
+  );
+};
+
+/** Сегментированный переключатель секций — компактный «тумблер» (как 7д/30д/90д
+ *  на дашборде): группа в тонкой грани, у активного — заливка primary с подвижным
+ *  фоном (framer-motion layoutId). */
+const SegmentedTabs: React.FC<{
+  tabs: { key: string; label: string; icon: React.ReactElement }[];
+  value: number;
+  onChange: (v: number) => void;
+}> = ({ tabs, value, onChange }) => (
+  <Box
+    role="tablist"
+    sx={{
+      display: "flex",
+      gap: 0.5,
+      p: 0.5,
+      borderRadius: "10px",
+      border: 1,
+      borderColor: "divider",
+      bgcolor: "background.paper",
+      width: "fit-content",
+      maxWidth: "100%",
+      overflowX: "auto",
+    }}
+  >
+    {tabs.map((tabItem, i) => {
+      const selected = i === value;
+      return (
+        <Box
+          key={tabItem.key}
+          role="tab"
+          aria-selected={selected}
+          onClick={() => onChange(i)}
+          sx={{
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            gap: 0.75,
+            px: { xs: 1.5, sm: 2 },
+            py: 0.85,
+            borderRadius: "7px",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            userSelect: "none",
+            color: selected ? "primary.contrastText" : "text.secondary",
+            transition: "color .2s ease",
+            "& .MuiSvgIcon-root": { fontSize: 17 },
+            "&:hover": { color: selected ? "primary.contrastText" : "text.primary" },
+            zIndex: 1,
+          }}
+        >
+          {selected && (
+            <MotionBox
+              layoutId="profile-tab-pill"
+              transition={{ type: "spring", stiffness: 480, damping: 38 }}
+              sx={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: "7px",
+                bgcolor: "primary.main",
+                zIndex: -1,
+              }}
+            />
+          )}
+          {tabItem.icon}
+          {tabItem.label}
+        </Box>
+      );
+    })}
+  </Box>
+);
 
 export default ProfilePage;

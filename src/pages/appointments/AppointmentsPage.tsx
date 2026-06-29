@@ -34,6 +34,7 @@ import DjangoPaymentDrawer from "./DjangoPaymentDrawer";
 import type { PaymentSummary } from "../../api/payments";
 import {
   getHomeDashboard,
+  getAppointmentNotifications,
   updateAppointment,
   startAppointment,
   deleteAppointment,
@@ -144,6 +145,46 @@ function useClinicalIds(role: "doctor" | "nurse", enabled: boolean): Set<number>
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
   return React.useMemo(() => new Set(query.data ?? []), [query.data]);
+}
+
+/**
+ * SMS-уведомления для иконок статусов рядом с приёмом.
+ *
+ * Лёгкий батч-запрос по видимым id приёмов (отдельно от тяжёлого home-аггрегата,
+ * как day-counts). Сворачиваем в Map<appointmentId, Map<type, sentAt>>: бэкенд
+ * отдаёт строки по возрастанию sent_at, поэтому в Map по каждому типу остаётся
+ * самое позднее уведомление (1-в-1 со старым фронтом). Ключ запроса зависит от
+ * набора id, поэтому при смене даты/фильтра карта пересобирается.
+ */
+function useNotificationsMap(
+  appointmentIds: number[],
+): Map<number, Map<string, string | null>> {
+  // Стабилизируем ключ: сортируем id, чтобы порядок в списке не плодил рефетчи.
+  const sortedIds = React.useMemo(
+    () => [...appointmentIds].sort((a, b) => a - b),
+    [appointmentIds],
+  );
+
+  const query = useQuery({
+    queryKey: djangoQueryKeys.appointments.notifications(sortedIds),
+    queryFn: ({ signal }) => getAppointmentNotifications(sortedIds, signal),
+    enabled: sortedIds.length > 0,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+
+  return React.useMemo(() => {
+    const map = new Map<number, Map<string, string | null>>();
+    for (const n of query.data ?? []) {
+      let byType = map.get(n.appointmentId);
+      if (!byType) {
+        byType = new Map<string, string | null>();
+        map.set(n.appointmentId, byType);
+      }
+      byType.set(n.notificationType, n.sentAt);
+    }
+    return map;
+  }, [query.data]);
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -308,6 +349,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     if (seesOwnOnly && Number.isFinite(ownEmployeeId)) return new Set([ownEmployeeId]);
     return null;
   }, [clinicalRoleScope, clinicianIds, seesOwnOnly, ownEmployeeId]);
+
+  // Иконки SMS-уведомлений: батч по id уже видимых приёмов (после клиентского
+  // фильтра по клинической роли — не запрашиваем уведомления для скрытых строк).
+  const visibleIds = React.useMemo(
+    () => visibleItems.map((a) => a.id),
+    [visibleItems],
+  );
+  const notificationsMap = useNotificationsMap(visibleIds);
 
   // Keep selectedAppt in sync with fresh list data
   React.useEffect(() => {
@@ -522,6 +571,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               canUpdate={canUpdate}
               canManageFinance={canManageFinance}
               canViewFinance={canViewFinance}
+              notificationsMap={notificationsMap}
               onSelect={handleSelect}
               onEdit={handleEdit}
               onPay={handlePay}

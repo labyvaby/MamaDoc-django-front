@@ -167,6 +167,25 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   const canSubmit = hasRequiredFields && !busy;
 
+  // Человекочитаемый список того, чего не хватает для сохранения. Используется
+  // и для подсказки над кнопкой, и в сводке при попытке сохранить пустую форму,
+  // чтобы кнопка не «умирала молча».
+  const missingReasons = React.useMemo<string[]>(() => {
+    const r: string[] = [];
+    if (errors.fullName) r.push("ФИО");
+    if (!hasLogin) r.push("телефон или email (нужен для входа)");
+    if (errors.phone) r.push("корректный телефон");
+    if (errors.email) r.push("корректный email");
+    if (errors.birthDate) r.push("корректная дата рождения");
+    if (errors.telegramId) r.push("корректный Telegram ID");
+    if (errors.bankAccountNumber) r.push("корректный банковский счёт");
+    if (errors.inn) r.push("корректный ИНН");
+    if (roleId === "") r.push("роль");
+    if (branches.length === 0) r.push("нет доступных филиалов в организации");
+    else if (employeeBranches.length === 0) r.push("хотя бы один филиал работы");
+    return r;
+  }, [errors, hasLogin, roleId, branches.length, employeeBranches.length]);
+
   const showError = (field: string) =>
     (touched[field] || submitAttempted) ? errors[field as keyof typeof errors] : "";
 
@@ -249,7 +268,16 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setSubmitAttempted(true);
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      // Раньше форма молча выходила (return) — кнопка гасла, пользователь не
+      // понимал почему. Теперь показываем конкретную причину.
+      setSubmitError(
+        missingReasons.length > 0
+          ? `Заполните: ${missingReasons.join(", ")}.`
+          : "Проверьте поля формы.",
+      );
+      return;
+    }
 
     setSubmitError(null);
     setBusy(true);
@@ -320,7 +348,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       busy={busy}
       onSubmit={handleSubmit}
       submitLabel="Создать"
-      submitDisabled={submitAttempted && !canSubmit}
+      // Кнопку НЕ гасим по валидации — иначе при невалидной форме клик не
+      // срабатывает и пользователь не видит причину. Блокируем только во время
+      // отправки. Невалидность отлавливает handleSubmit и показывает, чего нет.
+      submitDisabled={false}
     >
       <Stack spacing={2.5}>
         {submitError && (
@@ -613,6 +644,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               required
               disabled={loadingDeps || busy}
               SelectProps={{ displayEmpty: true }}
+              error={submitAttempted && roleId === ""}
+              helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
             >
               <MenuItem value="" disabled>
                 {loadingDeps ? "Загрузка…" : "Выберите роль"}

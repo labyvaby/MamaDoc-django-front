@@ -22,6 +22,9 @@ export const djangoQueryKeys = {
       ["django", "appointments", "day-counts", params] as const,
     home: (params: Record<string, unknown>) =>
       ["django", "appointments", "home", params] as const,
+    // Иконки SMS-уведомлений: батч по видимым id приёмов (key зависит от id).
+    notifications: (ids: number[]) =>
+      ["django", "appointments", "notifications", ids] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
