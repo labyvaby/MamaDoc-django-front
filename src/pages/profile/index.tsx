@@ -27,7 +27,8 @@ import dayjs from "dayjs";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
-import { PageHeader, AppCard, UserAvatar } from "../../components/ui";
+import { PageHeader, AppCard, UserAvatar, InfoTile } from "../../components/ui";
+import { subtleBg } from "../../theme/uiHelpers";
 import { getCurrentUser } from "../../api/auth";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import ChangePasswordCard from "./ChangePasswordCard";
@@ -53,76 +54,6 @@ const itemVariants = {
     transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as const },
   },
 };
-
-/** Лёгкая подложка под «плитку»/иконку — чуть отличается от фона карточки.
- *  В тёмной теме светлее на пару процентов, в светлой — чуть темнее. */
-const subtleBg = (t: Theme, strong = false) =>
-  t.palette.mode === "dark"
-    ? alpha("#ffffff", strong ? 0.06 : 0.03)
-    : alpha("#0b0d0f", strong ? 0.04 : 0.018);
-
-/**
- * Плитка-инфо в стиле «статкарты» дашборда: иконка в цветной плашке слева,
- * затем приглушённая подпись и значение. Плоская, без подъёма — глубина за счёт
- * тонкой грани и едва заметной подложки.
- */
-const InfoTile: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  value?: React.ReactNode;
-  active?: boolean;
-  monospace?: boolean;
-}> = ({ icon, label, value, active = true, monospace = false }) => (
-  <Box
-    sx={(t) => ({
-      display: "flex",
-      alignItems: "center",
-      gap: 1.5,
-      p: 1.75,
-      borderRadius: "10px",
-      border: 1,
-      borderColor: "divider",
-      bgcolor: subtleBg(t),
-      transition: "background-color .15s ease, border-color .15s ease",
-      "&:hover": {
-        bgcolor: subtleBg(t, true),
-        borderColor: alpha(t.palette.primary.main, 0.28),
-      },
-    })}
-  >
-    <Box
-      sx={(t) => ({
-        width: 40,
-        height: 40,
-        borderRadius: "10px",
-        flexShrink: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: active ? "primary.onSurface" : "text.disabled",
-        bgcolor: active
-          ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1)
-          : subtleBg(t, true),
-        "& .MuiSvgIcon-root": { fontSize: 20 },
-      })}
-    >
-      {icon}
-    </Box>
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: "0.75rem" }}>
-        {label}
-      </Typography>
-      <Typography
-        variant="body2"
-        fontWeight={600}
-        noWrap
-        sx={monospace ? { fontFamily: "monospace", letterSpacing: 0.5 } : undefined}
-      >
-        {value || "—"}
-      </Typography>
-    </Box>
-  </Box>
-);
 
 const formatBank = (v?: string | null) =>
   v ? v.replace(/(.{4})/g, "$1 ").trim() : undefined;

@@ -1,41 +1,44 @@
 import React, { useEffect, useState } from "react";
 import {
-  Button,
   Divider,
   Stack,
   Typography,
-  Avatar,
   Chip,
   CircularProgress,
   Card,
   CardHeader,
   CardContent,
   Box,
-  Link,
   ImageList,
   ImageListItem,
   Modal,
   IconButton,
-  alpha,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
-import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
 import TelegramIcon from "@mui/icons-material/Telegram";
 import EmailOutlined from "@mui/icons-material/EmailOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import CakeOutlined from "@mui/icons-material/CakeOutlined";
+import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import ContactPageOutlined from "@mui/icons-material/ContactPageOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import type { EmployesRow } from "../types";
 import type { ServiceRow as ServiceDto } from "../../../services/services";
 
 import { formatDateRu } from "../../../utility/format";
 import { getEmployeeServices } from "../../../api/staff";
 import { useOne } from "@refinedev/core";
+import { useQuery } from "@tanstack/react-query";
 import { DB_TABLES } from "../../../utility/constants";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
+import { AppButton, UserAvatar, InfoTile } from "../../../components/ui";
+import { subtleBg } from "../../../theme/uiHelpers";
 
 // Supabase-only helpers: loaded dynamically so supabaseClient stays out of Django bundle
 async function _loadSupabaseServiceIds(empId: string): Promise<string[]> {
@@ -52,6 +55,8 @@ export type EmployeeCardProps = {
   allServices: ServiceDto[];
   /** Django-only: открыть drawer управления услугами */
   onOpenServices?: (employeeId: number, employeeName: string) => void;
+  /** Открыть редактирование карточки */
+  onEdit?: (emp: EmployesRow) => void;
 };
 
 const calculateAge = (birthDate: string) => {
@@ -80,59 +85,85 @@ const calculateAge = (birthDate: string) => {
   return `(${yearsStr}${monthsStr})`;
 };
 
+/** Заголовок секции в карточке: иконка-акцент + приглушённая подпись + опц. действие. */
+const SectionHeader: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  action?: React.ReactNode;
+}> = ({ icon, title, action }) => (
+  <Stack
+    direction="row"
+    alignItems="center"
+    justifyContent="space-between"
+    sx={{ mb: 1.5 }}
+  >
+    <Stack direction="row" alignItems="center" gap={1}>
+      <Box sx={{ color: "primary.onSurface", display: "flex", "& .MuiSvgIcon-root": { fontSize: 18 } }}>
+        {icon}
+      </Box>
+      <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
+        {title}
+      </Typography>
+    </Stack>
+    {action}
+  </Stack>
+);
+
 const EmployeeCard: React.FC<EmployeeCardProps> = ({
   emp,
   allServices,
   onOpenServices,
+  onEdit,
 }) => {
-  const [fetchedServiceIds, setFetchedServiceIds] = useState<string[]>([]);
-  // Django-режим: полные объекты услуг загружаются сразу (не нужен allServices для маппинга)
-  const [djangoServices, setDjangoServices] = useState<{ id: string; name: string }[]>([]);
-  const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // For Django mode: Cache services via react-query
+  const empIdNum = emp?.id ? Number(emp.id) : 0;
+  const djangoServicesQuery = useQuery({
+    queryKey: ["django", "staff", "employee-services", empIdNum, emp?.updated_at],
+    queryFn: async ({ signal }) => {
+      if (empIdNum > 0) {
+        const assignments = await getEmployeeServices(empIdNum, signal);
+        return assignments.map((a) => ({
+          id: String(a.service.id),
+          name: a.service.name,
+        }));
+      }
+      return [];
+    },
+    enabled: IS_DJANGO_BACKEND && empIdNum > 0,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
+  });
+
+  // Legacy Supabase services loading
+  const [legacyFetchedServiceIds, setLegacyFetchedServiceIds] = useState<string[]>([]);
+  const [isLoadingLegacyServices, setIsLoadingLegacyServices] = useState(false);
+
   useEffect(() => {
+    if (IS_DJANGO_BACKEND) return;
     if (!emp?.id) {
-      setFetchedServiceIds([]);
-      setDjangoServices([]);
+      setLegacyFetchedServiceIds([]);
       return;
     }
 
     const loadServices = async () => {
-      setIsLoadingServices(true);
+      setIsLoadingLegacyServices(true);
       try {
-        if (IS_DJANGO_BACKEND) {
-          const empNumId = Number(emp.id);
-          if (!isNaN(empNumId) && empNumId > 0) {
-            const assignments = await getEmployeeServices(empNumId);
-            setDjangoServices(
-              assignments.map((a) => ({
-                id: String(a.service.id),
-                name: a.service.name,
-              })),
-            );
-            setFetchedServiceIds(assignments.map((a) => String(a.service.id)));
-          } else {
-            setDjangoServices([]);
-            setFetchedServiceIds([]);
-          }
-        } else {
-          const ids = await _loadSupabaseServiceIds(emp.id);
-          setFetchedServiceIds(ids);
-        }
+        const ids = await _loadSupabaseServiceIds(emp.id);
+        setLegacyFetchedServiceIds(ids);
       } catch (err) {
         console.error("Ошибка загрузки услуг сотрудника:", err);
-        setFetchedServiceIds([]);
-        setDjangoServices([]);
+        setLegacyFetchedServiceIds([]);
       } finally {
-        setIsLoadingServices(false);
+        setIsLoadingLegacyServices(false);
       }
     };
 
     loadServices();
-    // Зависим и от updated_at: после сохранения карточки id не меняется, но
-    // updated_at — да, поэтому услуги перечитываются без перезагрузки страницы.
   }, [emp?.id, emp?.updated_at]);
+
+  const isLoadingServices = IS_DJANGO_BACKEND ? djangoServicesQuery.isFetching : isLoadingLegacyServices;
 
   // Supabase-only: роль через useOne (в Django-режиме хук вызывается, но disabled)
   const { result: roleData } = useOne<{ id: string; name: string; display_name: string }>({
@@ -199,6 +230,16 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const photo = emp?.photo_url || undefined;
   const roleText =
     roleDisplayName || (emp?.status === "active" ? "Сотрудник" : "—");
+  const status = emp?.status;
+  const isActive = status === "active";
+  const isFired = status === "fired";
+  const statusText = isActive
+    ? "Работает"
+    : status === "inactive"
+    ? "Не работает"
+    : isFired
+    ? "Уволен"
+    : status || "—";
 
   type UnknownRecord = Record<string, unknown>;
   const isRecord = (v: unknown): v is UnknownRecord =>
@@ -227,18 +268,20 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   const servicesForEmployee = React.useMemo(() => {
     if (IS_DJANGO_BACKEND) {
-      return djangoServices;
+      return djangoServicesQuery.data ?? [];
     }
-    if (fetchedServiceIds.length === 0 || allServices.length === 0)
+    if (legacyFetchedServiceIds.length === 0 || allServices.length === 0)
       return [] as { id: string; name: string }[];
 
-    return fetchedServiceIds.map((linkId): { id: string; name: string } => {
+    return legacyFetchedServiceIds.map((linkId): { id: string; name: string } => {
       const link = String(linkId);
       const svc = allServices.find((s) => getSafeId(s) === link);
       if (svc) return { id: link, name: getSafeName(svc) };
       return { id: link, name: `ID: ${link}` };
     });
-  }, [djangoServices, fetchedServiceIds, allServices]);
+  }, [djangoServicesQuery.data, legacyFetchedServiceIds, allServices]);
+
+  const formatBank = (v: string) => v.replace(/(.{4})/g, "$1 ").trim();
 
   return (
     <Card
@@ -248,322 +291,228 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
       <CardHeader
         title={
           <Stack direction="row" alignItems="center" gap={1.25}>
-            <PersonOutlineOutlined color="primary" />
-            <Typography variant="h6">Карточка сотрудника</Typography>
+            <Box
+              sx={{
+                width: 3,
+                height: 16,
+                borderRadius: 3,
+                bgcolor: "primary.main",
+              }}
+            />
+            <Typography variant="subtitle1" fontWeight={600}>
+              Карточка сотрудника
+            </Typography>
           </Stack>
+        }
+        action={
+          emp && onEdit ? (
+            <AppButton
+              size="small"
+              startIcon={<EditOutlined fontSize="small" />}
+              onClick={() => onEdit(emp)}
+            >
+              Редактировать
+            </AppButton>
+          ) : undefined
         }
       />
       <Divider />
       <CardContent sx={{ flex: 1, overflowY: "auto" }}>
         {emp ? (
-          <Stack spacing={2.5}>
-            {/* Аватар и имя */}
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Avatar
-                variant="rounded"
-                src={photo}
-                alt={fio || undefined}
-                sx={{ width: 80, height: 80 }}
-              >
-                {!photo && <PersonOutlineOutlined sx={{ fontSize: 40 }} />}
-              </Avatar>
-              <Box>
-                <Typography variant="h6" sx={{ lineHeight: 1.2, mb: 0.5 }}>
+          <Stack spacing={3}>
+            {/* Hero: аватар-плашка + имя + ник + чипы */}
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Box sx={{ position: "relative", flexShrink: 0 }}>
+                <UserAvatar src={photo} name={fio} size={76} sx={{ borderRadius: "18px" }} />
+                {status && (
+                  <Box
+                    sx={(t) => ({
+                      position: "absolute",
+                      right: -2,
+                      bottom: -2,
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      border: `3px solid ${t.palette.background.paper}`,
+                      bgcolor: isActive
+                        ? t.palette.success.main
+                        : isFired
+                        ? t.palette.error.main
+                        : t.palette.grey[500],
+                    })}
+                  />
+                )}
+              </Box>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: -0.2, lineHeight: 1.2 }}>
                   {fio || emp.id}
                 </Typography>
                 {emp.nickname && (
-                  <Typography
-                    variant="subtitle2"
-                    color="primary"
-                    sx={{ mb: 0.5, fontWeight: 600 }}
-                  >
+                  <Typography variant="body2" color="primary.onSurface" fontWeight={600} sx={{ mt: 0.25 }}>
                     {emp.nickname}
                   </Typography>
                 )}
-                <Chip
-                  label={
-                    emp.status === "active"
-                      ? "Работает"
-                      : emp.status === "inactive"
-                      ? "Не работает"
-                      : emp.status === "fired"
-                      ? "Уволен"
-                      : emp.status || "—"
-                  }
-                  size="small"
-                  color={
-                    emp.status === "active"
-                      ? "success"
-                      : emp.status === "fired"
-                      ? "error"
-                      : "default"
-                  }
-                  variant={emp.status === "active" ? "filled" : "outlined"}
-                  sx={{ fontWeight: 600 }}
-                />
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, flexWrap: "wrap", rowGap: 0.75 }}>
+                  <Chip
+                    label={roleText}
+                    size="small"
+                    sx={(t) => ({
+                      fontWeight: 500,
+                      height: 24,
+                      borderRadius: "7px",
+                      color: "primary.onSurface",
+                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
+                    })}
+                  />
+                  {status && (
+                    <Chip
+                      size="small"
+                      label={statusText}
+                      icon={
+                        <Box
+                          component="span"
+                          sx={(t) => ({
+                            width: 7,
+                            height: 7,
+                            borderRadius: "50%",
+                            bgcolor: isActive
+                              ? t.palette.success.main
+                              : isFired
+                              ? t.palette.error.main
+                              : t.palette.grey[500],
+                            ml: 0.75,
+                          })}
+                        />
+                      }
+                      sx={(t) => {
+                        const tone = isActive
+                          ? t.palette.success
+                          : isFired
+                          ? t.palette.error
+                          : null;
+                        return {
+                          fontWeight: 500,
+                          height: 24,
+                          borderRadius: "7px",
+                          "& .MuiChip-icon": { ml: 0.75, mr: -0.25 },
+                          color: tone
+                            ? t.palette.mode === "dark" ? tone.light : tone.dark
+                            : "text.secondary",
+                          bgcolor: tone
+                            ? alpha(tone.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                            : subtleBg(t, true),
+                        };
+                      }}
+                    />
+                  )}
+                </Stack>
               </Box>
             </Stack>
 
-            <Divider />
-
-            {/* Основная информация */}
-            <Stack spacing={2}>
-              <Box>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: "block", mb: 0.5 }}
-                >
-                  Должность
-                </Typography>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                  {roleText}
-                </Typography>
+            {/* Контактные данные */}
+            <Box>
+              <SectionHeader icon={<ContactPageOutlined />} title="Контактные данные" />
+              <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+                <InfoTile icon={<LocalPhoneOutlined />} label="Телефон" value={phone} active={Boolean(phone)} />
+                <InfoTile
+                  icon={<CakeOutlined />}
+                  label="Дата рождения"
+                  active={Boolean(birth)}
+                  value={
+                    birth ? (
+                      <>
+                        {formatDateRu(birth)}{" "}
+                        <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+                          {calculateAge(birth)}
+                        </Box>
+                      </>
+                    ) : undefined
+                  }
+                />
+                <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={emp.telegram_id} active={Boolean(emp.telegram_id)} />
+                <InfoTile icon={<EmailOutlined />} label="Email" value={emp.email} active={Boolean(emp.email)} />
+                <InfoTile
+                  icon={<CreditCardOutlined />}
+                  label="Номер счёта"
+                  value={emp.bank_account_number ? formatBank(emp.bank_account_number) : undefined}
+                  active={Boolean(emp.bank_account_number)}
+                  monospace
+                />
+                <InfoTile icon={<BadgeOutlined />} label="ИНН" value={emp.inn} active={Boolean(emp.inn)} monospace />
+                {IS_DJANGO_BACKEND && (
+                  <InfoTile
+                    icon={<ContactPageOutlined />}
+                    label="Заметки"
+                    value={emp.notes}
+                    active={Boolean(emp.notes)}
+                  />
+                )}
               </Box>
+            </Box>
 
-              {/* Django: список специализаций */}
-              {IS_DJANGO_BACKEND && djangoSpecs.length > 0 && (
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Специализации
-                  </Typography>
-                  <Stack direction="row" flexWrap="wrap" gap={0.75}>
-                    {djangoSpecs.map((sp) => (
-                      <Chip
-                        key={sp.id}
-                        label={sp.name}
-                        size="small"
-                        icon={<WorkOutlined />}
-                        variant="outlined"
-                      />
-                    ))}
-                  </Stack>
-                </Box>
-              )}
+            {/* Специализации */}
+            {((IS_DJANGO_BACKEND && djangoSpecs.length > 0) ||
+              (!IS_DJANGO_BACKEND && isDoctor && supabaseSpecName)) && (
+              <Box>
+                <SectionHeader icon={<WorkOutlined />} title="Специализации" />
+                <Stack direction="row" flexWrap="wrap" gap={1}>
+                  {IS_DJANGO_BACKEND
+                    ? djangoSpecs.map((sp) => (
+                        <Chip
+                          key={sp.id}
+                          label={sp.name}
+                          size="small"
+                          icon={<WorkOutlined />}
+                          variant="outlined"
+                          sx={{ borderRadius: "7px", height: 30 }}
+                        />
+                      ))
+                    : supabaseSpecName && (
+                        <Chip
+                          label={supabaseSpecName}
+                          size="small"
+                          icon={<WorkOutlined />}
+                          variant="outlined"
+                          sx={{ borderRadius: "7px", height: 30 }}
+                        />
+                      )}
+                </Stack>
+              </Box>
+            )}
 
-              {/* Supabase: одна специализация для doctor */}
-              {!IS_DJANGO_BACKEND && isDoctor && supabaseSpecName && (
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Специализация
-                  </Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {supabaseSpecName}
-                  </Typography>
-                </Box>
-              )}
-
-              <Stack direction="row" spacing={3}>
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Телефон
-                  </Typography>
-                  {phone ? (
-                    <Link
-                      href={`tel:${phone}`}
+            {/* Паспортные фото */}
+            {emp.passport_photos && emp.passport_photos.length > 0 && (
+              <Box>
+                <SectionHeader icon={<ContactPageOutlined />} title="Паспортные данные (фото)" />
+                <ImageList cols={3} gap={10} sx={{ m: 0 }}>
+                  {emp.passport_photos.map((url, i) => (
+                    <ImageListItem
+                      key={i}
                       sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                        color: "text.secondary",
-                        textDecoration: "none",
-                        "&:hover": { color: "primary.onSurface" },
-                        "&:active": { color: "primary.dark" },
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: "10px",
+                        overflow: "hidden",
                       }}
                     >
-                      <PhoneInTalkOutlined
-                        fontSize="small"
-                        sx={{ color: "primary.onSurface" }}
-                      />
-                      <Typography variant="body2">{phone}</Typography>
-                    </Link>
-                  ) : (
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      gap={1}
-                      color="text.secondary"
-                    >
-                      <LocalPhoneOutlined fontSize="small" />
-                      <Typography variant="body2">—</Typography>
-                    </Stack>
-                  )}
-                </Box>
-
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Дата рождения
-                  </Typography>
-                  <Typography variant="body2">
-                    {birth
-                      ? `${formatDateRu(birth)} ${calculateAge(birth)}`
-                      : "—"}
-                  </Typography>
-                </Box>
-              </Stack>
-            </Stack>
-
-            <Divider />
-
-            {/* Дополнительные контакты */}
-            <Stack spacing={2}>
-              <Stack direction="row" spacing={2} alignItems="center">
-                <TelegramIcon
-                  color={emp.telegram_id ? "primary" : "disabled"}
-                />
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Telegram ID
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    fontWeight={emp.telegram_id ? 500 : 400}
-                    color={emp.telegram_id ? "text.primary" : "text.secondary"}
-                  >
-                    {emp.telegram_id || "(не заполнено)"}
-                  </Typography>
-                </Box>
-              </Stack>
-
-              <Stack direction="row" spacing={2} alignItems="center">
-                <EmailOutlined color={emp.email ? "primary" : "disabled"} />
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Email
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    fontWeight={emp.email ? 500 : 400}
-                    color={emp.email ? "text.primary" : "text.secondary"}
-                  >
-                    {emp.email || "(не заполнено)"}
-                  </Typography>
-                </Box>
-              </Stack>
-
-              <Stack direction="row" spacing={2} alignItems="center">
-                <CreditCardOutlined
-                  color={emp.bank_account_number ? "primary" : "disabled"}
-                />
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    Номер счёта
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    fontWeight={emp.bank_account_number ? 500 : 400}
-                    sx={{
-                      fontFamily: emp.bank_account_number
-                        ? "monospace"
-                        : "inherit",
-                      letterSpacing: emp.bank_account_number ? 1 : 0,
-                    }}
-                    color={
-                      emp.bank_account_number ? "text.primary" : "text.secondary"
-                    }
-                  >
-                    {emp.bank_account_number
-                      ? emp.bank_account_number.replace(/(.{4})/g, "$1 ").trim()
-                      : "(не заполнено)"}
-                  </Typography>
-                </Box>
-              </Stack>
-
-              <Stack direction="row" spacing={2} alignItems="center">
-                <CreditCardOutlined color={emp.inn ? "primary" : "disabled"} />
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.5 }}
-                  >
-                    ИНН
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    fontWeight={emp.inn ? 500 : 400}
-                    sx={{
-                      fontFamily: emp.inn ? "monospace" : "inherit",
-                      letterSpacing: emp.inn ? 1 : 0,
-                    }}
-                    color={emp.inn ? "text.primary" : "text.secondary"}
-                  >
-                    {emp.inn || "(не заполнено)"}
-                  </Typography>
-                </Box>
-              </Stack>
-            </Stack>
-
-            {/* Фото паспорта */}
-            {emp.passport_photos && emp.passport_photos.length > 0 && (
-              <>
-                <Divider />
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 1.5, fontWeight: 600 }}
-                  >
-                    Паспортные данные (фото)
-                  </Typography>
-                  <ImageList cols={3} gap={10} sx={{ m: 0 }}>
-                    {emp.passport_photos.map((url, i) => (
-                      <ImageListItem
-                        key={i}
+                      <Box
+                        component="img"
+                        src={url}
+                        alt={`Паспорт ${i + 1}`}
+                        onClick={() => setPreviewUrl(url)}
                         sx={{
-                          border: "1px solid",
-                          borderColor: "divider",
-                          borderRadius: 1,
-                          overflow: "hidden",
+                          width: "100%",
+                          height: 100,
+                          objectFit: "cover",
+                          display: "block",
+                          cursor: "pointer",
+                          "&:hover": { opacity: 0.8 },
                         }}
-                      >
-                        <Box
-                          component="img"
-                          src={url}
-                          alt={`Паспорт ${i + 1}`}
-                          onClick={() => setPreviewUrl(url)}
-                          sx={{
-                            width: "100%",
-                            height: 100,
-                            objectFit: "cover",
-                            display: "block",
-                            cursor: "pointer",
-                            "&:hover": { opacity: 0.8 },
-                          }}
-                        />
-                      </ImageListItem>
-                    ))}
-                  </ImageList>
-                </Box>
-              </>
+                      />
+                    </ImageListItem>
+                  ))}
+                </ImageList>
+              </Box>
             )}
 
             {/* Превью фото */}
@@ -613,60 +562,54 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               </Box>
             </Modal>
 
-            <Divider />
-
             {/* Услуги сотрудника */}
             <Box>
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                sx={{ mb: 1.5 }}
-              >
-                <Stack direction="row" alignItems="center" gap={1}>
-                  <LocalOfferOutlined color="primary" />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    Услуги сотрудника
-                  </Typography>
-                  {isLoadingServices && <CircularProgress size={16} />}
-                </Stack>
-                {onOpenServices && emp && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<SettingsOutlined fontSize="small" />}
-                    onClick={() => {
-                      const id =
-                        typeof emp.id === "number" ? emp.id : Number(emp.id);
-                      if (!isNaN(id)) onOpenServices(id, emp.full_name);
-                    }}
-                    sx={{ minWidth: 0 }}
-                  >
-                    Управление
-                  </Button>
-                )}
-              </Stack>
+              <SectionHeader
+                icon={<LocalOfferOutlined />}
+                title="Услуги сотрудника"
+                action={
+                  <Stack direction="row" alignItems="center" gap={1}>
+                    {isLoadingServices && <CircularProgress size={16} />}
+                    {onOpenServices && emp && (
+                      <AppButton
+                        size="small"
+                        variant="outlined"
+                        startIcon={<SettingsOutlined fontSize="small" />}
+                        onClick={() => {
+                          const id =
+                            typeof emp.id === "number" ? emp.id : Number(emp.id);
+                          if (!isNaN(id)) onOpenServices(id, emp.full_name);
+                        }}
+                        sx={{ minWidth: 0 }}
+                      >
+                        Управление
+                      </AppButton>
+                    )}
+                  </Stack>
+                }
+              />
 
               {servicesForEmployee.length > 0 ? (
                 <Stack spacing={1}>
                   {servicesForEmployee.map((s) => (
-                    <Box
+                    <Stack
                       key={s.id}
-                      sx={{
+                      direction="row"
+                      alignItems="center"
+                      gap={1.25}
+                      sx={(t) => ({
                         p: 1.5,
-                        border: "1px solid",
+                        border: 1,
                         borderColor: "divider",
-                        borderRadius: 1,
-                        backgroundColor: "background.paper",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
+                        borderRadius: "10px",
+                        bgcolor: subtleBg(t),
+                      })}
                     >
+                      <LocalOfferOutlined sx={{ fontSize: 18, color: "primary.onSurface" }} />
                       <Typography variant="body2" fontWeight={500}>
                         {s.name}
                       </Typography>
-                    </Box>
+                    </Stack>
                   ))}
                 </Stack>
               ) : (

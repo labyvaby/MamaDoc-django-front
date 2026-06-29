@@ -214,6 +214,7 @@ const EmployeesPage: React.FC = () => {
                 loadingMore={state.loadingMore}
                 isGrouped={isGrouped}
                 roles={roles}
+                selectedId={state.detailsOpen?.id ?? null}
               />
             </Box>
           </Grid>
@@ -236,6 +237,7 @@ const EmployeesPage: React.FC = () => {
                   <EmployeeCard
                     emp={state.detailsOpen}
                     allServices={allServices}
+                    onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
                     onOpenServices={
                       IS_DJANGO_BACKEND
                         ? (id, name) => openServicesDrawer(id, name)
@@ -274,6 +276,7 @@ const EmployeesPage: React.FC = () => {
             <EmployeeCard
               emp={state.detailsOpen}
               allServices={allServices}
+              onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
               onOpenServices={
                 IS_DJANGO_BACKEND
                   ? (id, name) => openServicesDrawer(id, name)

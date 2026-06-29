@@ -36,6 +36,7 @@ export type Employee = {
   auth_user_id?: string | null;
   specialization_id?: string | null;
   nickname?: string | null;
+  notes?: string | null;
   salary_rules?: any | null;
   passport_photos?: string[] | null;
   /** Professional type — NOT RBAC role */
@@ -50,6 +51,8 @@ export type Employee = {
   _djangoSpecializations?: DjangoSpecializationShortLocal[];
   /** Django-mode only: operational branches */
   _djangoOperationalBranches?: DjangoBranchShortLocal[];
+  /** Django-mode only: признак, что подгружены полные детали сотрудника */
+  _fullDetailsLoaded?: boolean;
 };
 
 export type Specialization = {

@@ -6,9 +6,7 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
-  Divider,
   InputAdornment,
-  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -16,6 +14,7 @@ import {
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
@@ -48,7 +47,7 @@ import { CustomDatePicker } from "../../../components/ui";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
-import ServicePhotoUploader from "../../../components/services/ServicePhotoUploader";
+import { SectionLabel, Field, Grid2, SegmentedControl, PhotoHero } from "./drawerKit";
 import {
   parsePhone,
   composePhone,
@@ -70,11 +69,6 @@ export type DjangoEditEmployeeDrawerProps = {
   onClose: () => void;
   onUpdated: (updated: EmployesRow) => void;
 };
-
-const STATUS_OPTIONS = [
-  { value: "active", label: "Работает" },
-  { value: "inactive", label: "Не работает" },
-];
 
 // Canonical string form of the salary value — lets us skip the PUT when the
 // user never touched the salary block (avoids a needless write + request).
@@ -423,6 +417,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
         _djangoOperationalBranches: updated.operationalBranches ?? [],
+        _fullDetailsLoaded: true,
       };
 
       notify?.({ type: "success", message: "Данные сотрудника обновлены" });
@@ -455,85 +450,49 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       submitLabel="Сохранить"
       submitDisabled={submitAttempted && hasErrors}
     >
-      <Stack spacing={3}>
+      <Stack spacing={2.5}>
         {serverError && <Alert severity="error">{serverError}</Alert>}
 
-        {/* ── Фото ── */}
-        <ServicePhotoUploader
-          photoFile={photoFile}
+        {/* ── Фото-герой: аватар + ФИО/Псевдоним ── */}
+        <PhotoHero
           photoPreview={photoPreview}
-          onPickPhoto={handlePickPhoto}
+          name={fullName}
           inputId="edit-employee-photo"
-        />
+          onPickPhoto={handlePickPhoto}
+          disabled={busy}
+        >
+          <Field label="ФИО" required>
+            <TextField
+              value={fullName}
+              onChange={(e) => { setFullName(e.target.value); setServerError(null); }}
+              onBlur={() => touch("fullName")}
+              required
+              fullWidth
+              size="small"
+              placeholder="Иванов Иван Иванович"
+              disabled={busy}
+              error={Boolean(showError("fullName"))}
+              helperText={showError("fullName")}
+              inputProps={{ maxLength: 255 }}
+            />
+          </Field>
+          <Field label="Псевдоним">
+            <TextField
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              fullWidth
+              size="small"
+              placeholder="Как в расписании"
+              disabled={busy}
+              inputProps={{ maxLength: 100 }}
+            />
+          </Field>
+        </PhotoHero>
 
-        {/* ── Зарплатные правила (как в оригинале) ── */}
-        {canViewPayroll && (
-          <Box
-            sx={{
-              bgcolor: "action.hover",
-              p: 2,
-              borderRadius: "14px",
-              mx: -2,
-              borderTop: "1px solid",
-              borderBottom: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            {salaryLoading ? (
-              <Stack alignItems="center" py={3}>
-                <CircularProgress size={24} />
-              </Stack>
-            ) : (
-              <DjangoSalarySettings
-                value={salary}
-                onChange={setSalary}
-                services={allServices}
-                loadingServices={salaryLoading}
-                disabled={busy || !canManagePayroll}
-              />
-            )}
-          </Box>
-        )}
+        {/* ── Контакты ── */}
+        <SectionLabel title="Контакты" />
 
-        {/* ── ФИО ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            ФИО *
-          </Typography>
-          <TextField
-            value={fullName}
-            onChange={(e) => { setFullName(e.target.value); setServerError(null); }}
-            onBlur={() => touch("fullName")}
-            required
-            fullWidth
-            placeholder="Иванов Иван Иванович"
-            disabled={busy}
-            error={Boolean(showError("fullName"))}
-            helperText={showError("fullName")}
-            inputProps={{ maxLength: 255 }}
-          />
-        </Stack>
-
-        {/* ── Псевдоним ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Псевдоним
-          </Typography>
-          <TextField
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            fullWidth
-            placeholder="Как отображается в расписании"
-            disabled={busy}
-            inputProps={{ maxLength: 100 }}
-          />
-        </Stack>
-
-        {/* ── Телефон ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Телефон
-          </Typography>
+        <Field label="Телефон">
           <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
             <PhoneCountryCodeSelect
               value={phoneCountry}
@@ -557,46 +516,45 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
               helperText={showError("phone")}
             />
           </Box>
-        </Stack>
+        </Field>
 
-        {/* ── Роль ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Тип сотрудника
-          </Typography>
-          <TextField
-            select
-            value={clinicalRole}
-            onChange={(e) => setClinicalRole(e.target.value as "doctor" | "nurse" | "other")}
-            fullWidth
-            disabled={busy}
-          >
-            <MenuItem value="doctor">Врач</MenuItem>
-            <MenuItem value="nurse">Медсестра</MenuItem>
-            <MenuItem value="other">Другой сотрудник</MenuItem>
-          </TextField>
-        </Stack>
-
-        {/* ── Специализации (только для врача) ── */}
-        {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
-          <>
-            <Divider />
-            <SpecializationBlock
-              employeeId={Number(record.id)}
-              currentSpecializations={specializations}
-              onSpecializationsChange={setSpecializations}
-              canView={canViewSpecs}
-              canManage={canManageSpecs}
+        <Grid2>
+          <Field label="Email">
+            <TextField
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setServerError(null); }}
+              onBlur={() => touch("email")}
+              fullWidth
+              placeholder="example@mail.com"
+              type="email"
               disabled={busy}
+              error={Boolean(showError("email") && !showError("email")?.startsWith("Опечатка"))}
+              helperText={showError("email")}
+              FormHelperTextProps={{
+                sx: showError("email")?.startsWith("Опечатка") ? { color: "warning.main" } : undefined,
+              }}
             />
-          </>
-        )}
+          </Field>
+          <Field label="Telegram ID">
+            <TextField
+              value={telegramId}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
+                setTelegramId(digits);
+                setServerError(null);
+              }}
+              onBlur={() => touch("telegramId")}
+              fullWidth
+              placeholder="Числовой ID"
+              disabled={busy}
+              inputProps={{ inputMode: "numeric" }}
+              error={Boolean(showError("telegramId"))}
+              helperText={showError("telegramId")}
+            />
+          </Field>
+        </Grid2>
 
-        {/* ── Дата рождения ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Дата рождения
-          </Typography>
+        <Field label="Дата рождения">
           <CustomDatePicker
             value={birthDate ? dayjs(birthDate) : null}
             onChange={(val) => {
@@ -615,71 +573,149 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
               },
             }}
           />
-        </Stack>
+        </Field>
 
-        {/* ── Статус ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Статус
-          </Typography>
-          <TextField
-            select
+        {/* ── Финансы (под staff.private.manage) ── */}
+        {canManagePrivate && (
+          <>
+            <SectionLabel
+              title="Финансы"
+              trailing={
+                <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
+                  <LockOutlined sx={{ fontSize: 13 }} />
+                  <Box component="span" sx={{ fontSize: "0.68rem" }}>приватно</Box>
+                </Stack>
+              }
+            />
+            <Grid2>
+              <Field label="Расчётный счёт">
+                <TextField
+                  value={bankAccountNumber}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 16);
+                    setBankAccountNumber(v);
+                    setServerError(null);
+                  }}
+                  onBlur={() => touch("bankAccountNumber")}
+                  fullWidth
+                  placeholder="0000000000000000"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <CreditCardOutlined fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                  error={Boolean(showError("bankAccountNumber"))}
+                  helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
+                />
+              </Field>
+              <Field label="ИНН">
+                <TextField
+                  value={inn}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 14);
+                    setInn(v);
+                    setServerError(null);
+                  }}
+                  onBlur={() => touch("inn")}
+                  fullWidth
+                  placeholder="00000000000000"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                  error={Boolean(showError("inn"))}
+                  helperText={showError("inn") || `${inn.length}/14`}
+                />
+              </Field>
+            </Grid2>
+          </>
+        )}
+
+        {/* ── Роль и статус ── */}
+        <SectionLabel title="Роль и статус" />
+
+        <Field label="Статус">
+          <SegmentedControl
             value={status}
-            onChange={(e) => setStatus(e.target.value as "active" | "inactive")}
-            fullWidth
+            onChange={(v) => setStatus(v)}
             disabled={busy}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </TextField>
-        </Stack>
+            options={[
+              { value: "active", label: "Работает" },
+              { value: "inactive", label: "Не работает" },
+            ]}
+          />
+        </Field>
+
+        <Field label="Тип сотрудника" hint="Клинический тип — влияет на расписание и специализации">
+          <SegmentedControl
+            value={clinicalRole}
+            onChange={(v) => setClinicalRole(v)}
+            disabled={busy}
+            options={[
+              { value: "doctor", label: "Врач" },
+              { value: "nurse", label: "Медсестра" },
+              { value: "other", label: "Другой" },
+            ]}
+          />
+        </Field>
+
+        {/* ── Специализации (только для врача) ── */}
+        {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
+          <SpecializationBlock
+            employeeId={Number(record.id)}
+            currentSpecializations={specializations}
+            onSpecializationsChange={setSpecializations}
+            canView={canViewSpecs}
+            canManage={canManageSpecs}
+            disabled={busy}
+          />
+        )}
 
         {/* ── Услуги ── */}
         {(canViewServices || canManageServices) && (
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Услуги
-            </Typography>
-            <Autocomplete
-              multiple
-              limitTags={3}
-              loading={servicesLoading}
-              options={allServices}
-              value={selectedServices}
-              disableCloseOnSelect
-              disabled={!canManageServices || busy}
-              getOptionLabel={(s) =>
-                s.basePrice ? `${s.name} (${Number(s.basePrice)} с)` : s.name
-              }
-              isOptionEqualToValue={(a, b) => a.id === b.id}
-              onChange={(_, newVal) => setSelectedServices(newVal)}
-              renderOption={(props, option, { selected }) => (
-                <li {...props}>
-                  <Checkbox
-                    icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                    checkedIcon={<CheckBoxIcon fontSize="small" />}
-                    style={{ marginRight: 8 }}
-                    checked={selected}
+          <>
+            <SectionLabel title="Услуги" />
+            <Field label="Услуги сотрудника">
+              <Autocomplete
+                multiple
+                limitTags={3}
+                loading={servicesLoading}
+                options={allServices}
+                value={selectedServices}
+                disableCloseOnSelect
+                disabled={!canManageServices || busy}
+                getOptionLabel={(s) =>
+                  s.basePrice ? `${s.name} (${Number(s.basePrice)} с)` : s.name
+                }
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                onChange={(_, newVal) => setSelectedServices(newVal)}
+                renderOption={(props, option, { selected }) => (
+                  <li {...props}>
+                    <Checkbox
+                      icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                      checkedIcon={<CheckBoxIcon fontSize="small" />}
+                      style={{ marginRight: 8 }}
+                      checked={selected}
+                    />
+                    {option.name}
+                    {option.basePrice ? ` (${Number(option.basePrice)} с)` : ""}
+                  </li>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder={canManageServices ? "Выберите услуги" : ""}
                   />
-                  {option.name}
-                  {option.basePrice ? ` (${Number(option.basePrice)} с)` : ""}
-                </li>
-              )}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder={canManageServices ? "Выберите услуги" : ""}
-                />
-              )}
-            />
+                )}
+              />
+            </Field>
 
             {/* Деактивированные назначения — показываем, а не прячем. Только
                 для информации; управлять ими можно в «Управление услугами». */}
             {inactiveAssignments.length > 0 && (
-              <Box sx={{ mt: 0.5 }}>
+              <Box>
                 <Typography variant="caption" color="text.secondary">
                   Неактивные услуги
                 </Typography>
@@ -701,112 +737,43 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 </Stack>
               </Box>
             )}
-          </Stack>
+          </>
         )}
 
-        {/* ── Telegram ID ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Telegram ID
-          </Typography>
-          <TextField
-            value={telegramId}
-            onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
-              setTelegramId(digits);
-              setServerError(null);
-            }}
-            onBlur={() => touch("telegramId")}
-            fullWidth
-            placeholder="Числовой ID"
-            disabled={busy}
-            inputProps={{ inputMode: "numeric" }}
-            error={Boolean(showError("telegramId"))}
-            helperText={showError("telegramId")}
-          />
-        </Stack>
-
-        {/* ── Email ── */}
-        <Stack spacing={0.5}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Email
-          </Typography>
-          <TextField
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setServerError(null); }}
-            onBlur={() => touch("email")}
-            fullWidth
-            placeholder="example@mail.com"
-            type="email"
-            disabled={busy}
-            error={Boolean(showError("email") && !showError("email")?.startsWith("Опечатка"))}
-            helperText={showError("email")}
-            FormHelperTextProps={{
-              sx: showError("email")?.startsWith("Опечатка")
-                ? { color: "warning.main" }
-                : undefined,
-            }}
-          />
-        </Stack>
-
-        {/* ── Приватные поля ── */}
-        {canManagePrivate && (
+        {/* ── Зарплата ── */}
+        {canViewPayroll && (
           <>
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Номер расчётного счёта
-              </Typography>
-              <TextField
-                value={bankAccountNumber}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 16);
-                  setBankAccountNumber(v);
-                  setServerError(null);
-                }}
-                onBlur={() => touch("bankAccountNumber")}
-                fullWidth
-                placeholder="0000000000000000"
-                disabled={busy}
-                inputProps={{ inputMode: "numeric" }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <CreditCardOutlined fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-                error={Boolean(showError("bankAccountNumber"))}
-                helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
-              />
-            </Stack>
-
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                ИНН
-              </Typography>
-              <TextField
-                value={inn}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 14);
-                  setInn(v);
-                  setServerError(null);
-                }}
-                onBlur={() => touch("inn")}
-                fullWidth
-                placeholder="00000000000000"
-                disabled={busy}
-                inputProps={{ inputMode: "numeric" }}
-                error={Boolean(showError("inn"))}
-                helperText={showError("inn") || `${inn.length}/14`}
-              />
-            </Stack>
+            <SectionLabel title="Зарплата" />
+            <Box
+              sx={{
+                bgcolor: "action.hover",
+                p: 2,
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              {salaryLoading ? (
+                <Stack alignItems="center" py={3}>
+                  <CircularProgress size={24} />
+                </Stack>
+              ) : (
+                <DjangoSalarySettings
+                  value={salary}
+                  onChange={setSalary}
+                  services={allServices}
+                  loadingServices={salaryLoading}
+                  disabled={busy || !canManagePayroll}
+                />
+              )}
+            </Box>
           </>
         )}
 
         {/* ── Документы / паспортные фото ── */}
         {(canViewDocs || canManageDocs) && record && (
           <>
-            <Divider />
+            <SectionLabel title="Документы" />
             <DocumentsBlock
               employeeId={Number(record.id)}
               canView={canViewDocs}

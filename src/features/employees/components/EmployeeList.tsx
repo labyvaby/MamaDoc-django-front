@@ -1,24 +1,13 @@
 import React from "react";
-import {
-  Card,
-  CardContent,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListItemAvatar, // ✅ Добавлен компонент для обертки аватара
-  Avatar,         // ✅ Добавлен компонент аватара
-  Stack,
-  Typography,
-  IconButton,
-  Box,
-} from "@mui/material";
+import { Stack, Typography, IconButton, Box, Chip } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
-import ListSubheader from "@mui/material/ListSubheader";
 import type { EmployesRow } from "../types";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
+import { UserAvatar } from "../../../components/ui";
+import { subtleBg } from "../../../theme/uiHelpers";
 
 export type EmployeeListProps = {
   items: EmployesRow[];
@@ -32,7 +21,26 @@ export type EmployeeListProps = {
   loadingMore?: boolean;
   isGrouped?: boolean;
   roles?: any[];
+  /** id выбранного сотрудника — для подсветки строки. */
+  selectedId?: string | null;
 };
+
+/** Заголовок группы: приглушённая подпись + счётчик + тонкая линия. */
+const GroupHeader: React.FC<{ title: string; count: number; first?: boolean }> = ({
+  title,
+  count,
+  first,
+}) => (
+  <Stack direction="row" alignItems="center" gap={1} sx={{ px: 0.5, pt: first ? 0.5 : 1.5, pb: 0.25 }}>
+    <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+      {title}
+    </Typography>
+    <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.75rem" }}>
+      · {count}
+    </Typography>
+    <Box sx={{ flex: 1, height: "1px", bgcolor: "divider" }} />
+  </Stack>
+);
 
 const EmployeeList: React.FC<EmployeeListProps> = ({
   items,
@@ -45,102 +53,192 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   loadingMore,
   isGrouped,
   roles = [],
+  selectedId,
 }) => {
-  const renderItem = (e: EmployesRow) => {
-    // Логика отображения роли (вместо тире)
-    const statusText =
-      e.status === "active"
-        ? "работает"
-        : e.status === "inactive"
-          ? "не работает"
-          : e.status;
+  /** Пилюля статуса (работает / не работает / уволен). */
+  const StatusPill: React.FC<{ status?: string | null }> = ({ status }) => {
+    if (!status) return null;
+    const isActive = status === "active";
+    const isFired = status === "fired";
+    const label = isActive ? "Работает" : isFired ? "Уволен" : "Не работает";
+    return (
+      <Chip
+        size="small"
+        label={label}
+        icon={
+          <Box
+            component="span"
+            sx={(t) => ({
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              ml: 0.75,
+              bgcolor: isActive
+                ? t.palette.success.main
+                : isFired
+                ? t.palette.error.main
+                : t.palette.grey[500],
+            })}
+          />
+        }
+        sx={(t) => {
+          const tone = isActive ? t.palette.success : isFired ? t.palette.error : null;
+          return {
+            flexShrink: 0,
+            height: 22,
+            borderRadius: "7px",
+            fontSize: "0.72rem",
+            fontWeight: 500,
+            "& .MuiChip-icon": { ml: 0.75, mr: -0.25 },
+            "& .MuiChip-label": { px: 0.85 },
+            color: tone ? (t.palette.mode === "dark" ? tone.light : tone.dark) : "text.secondary",
+            bgcolor: tone ? alpha(tone.main, t.palette.mode === "dark" ? 0.2 : 0.14) : subtleBg(t, true),
+          };
+        }}
+      />
+    );
+  };
 
-    // В Django-режиме берём роль из _djangoRole, иначе из массива roles (Supabase)
+  const renderItem = (e: EmployesRow) => {
+    const statusText =
+      e.status === "active" ? "работает" : e.status === "inactive" ? "не работает" : e.status;
+
     let roleText: string;
     if (IS_DJANGO_BACKEND) {
       roleText = e._djangoRole?.name || statusText || "Сотрудник";
     } else {
       const roleObj = roles.find((r) => r.id === e.role_id);
-      roleText = roleObj?.display_name || roleObj?.name || (e.role_id === "doctor" ? "Доктор" : e.role_id === "admin" ? "Управляющий" : statusText || "Сотрудник");
+      roleText =
+        roleObj?.display_name ||
+        roleObj?.name ||
+        (e.role_id === "doctor" ? "Доктор" : e.role_id === "admin" ? "Управляющий" : statusText || "Сотрудник");
     }
 
     const photoUrl = e.photo_url || null;
-    const hasPassports = e.passport_photos && e.passport_photos.length > 0;
+    const hasPassports = Boolean(e.passport_photos && e.passport_photos.length > 0);
+    const selected = selectedId != null && String(e.id) === String(selectedId);
+    const isActive = e.status === "active";
+    const isFired = e.status === "fired";
+    const subline = e.phone ? `${roleText} · ${e.phone}` : roleText;
 
     return (
-      <ListItem
+      <Box
         key={e.id}
-        disableGutters
-        divider
-        sx={{ alignItems: "center" }}
-        secondaryAction={
-          (onEdit || onDelete) && (
-            <Stack direction="row" spacing={1}>
-              {onEdit && (
-                <IconButton aria-label="Редактировать" onClick={() => onEdit(e)}>
-                  <EditOutlined />
-                </IconButton>
-              )}
-              {onDelete && (
-                <IconButton aria-label="Удалить" onClick={() => onDelete(e)}>
-                  <DeleteOutline />
-                </IconButton>
-              )}
-            </Stack>
-          )
-        }
+        onClick={() => onSelect(e)}
+        sx={(t) => ({
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          p: 1.5,
+          borderRadius: "12px",
+          cursor: "pointer",
+          border: 1,
+          borderColor: selected ? alpha(t.palette.primary.main, 0.45) : "divider",
+          bgcolor: selected
+            ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+            : "background.paper",
+          transition: "background-color .15s ease, border-color .15s ease",
+          "&:hover": {
+            borderColor: selected ? undefined : alpha(t.palette.primary.main, 0.28),
+            bgcolor: selected ? undefined : subtleBg(t),
+          },
+          "&:hover .row-actions": { opacity: 1 },
+        })}
       >
-        <ListItemButton onClick={() => onSelect(e)} sx={{ pr: 9 }}>
-          <Avatar
-            variant="rounded"
-            src={photoUrl || undefined}
-            alt={e.full_name}
-            sx={{
-              width: 48,
-              height: 48,
-              mr: 2,
-              bgcolor: photoUrl ? "transparent" : "primary.main",
-            }}
-          >
-            {e.full_name ? e.full_name[0].toUpperCase() : "?"}
-          </Avatar>
+        <Box sx={{ position: "relative", flexShrink: 0 }}>
+          <UserAvatar src={photoUrl} name={e.full_name} size={42} sx={{ borderRadius: "11px" }} />
+          {e.status && (
+            <Box
+              sx={(t) => ({
+                position: "absolute",
+                right: -3,
+                bottom: -3,
+                width: 13,
+                height: 13,
+                borderRadius: "50%",
+                border: `2.5px solid ${selected ? "transparent" : t.palette.background.paper}`,
+                boxShadow: `0 0 0 2.5px ${t.palette.background.paper}`,
+                bgcolor: isActive
+                  ? t.palette.success.main
+                  : isFired
+                  ? t.palette.error.main
+                  : t.palette.grey[500],
+              })}
+            />
+          )}
+        </Box>
 
-          <ListItemText
-            sx={{ minWidth: 0, pr: 1 }}
-            primaryTypographyProps={{
-              sx: { whiteSpace: "normal", wordBreak: "break-word", fontWeight: 500 },
-            }}
-            secondaryTypographyProps={{ component: "div" }}
-            primary={
-              <Stack direction="row" alignItems="center" gap={0.5}>
-                {e.full_name || "Без имени"}
-                {hasPassports && (
-                  <DescriptionOutlined 
-                    sx={{ fontSize: 16, color: 'primary.onSurface', mb: -0.2 }} 
-                    titleAccess="Паспорт загружен"
-                  />
-                )}
-              </Stack>
-            }
-            secondary={
-              <Stack direction="column" spacing={0.5} sx={{ minWidth: 0 }}>
-                <Typography variant="body2" component="span" color="text.secondary">
-                  {roleText}
-                </Typography>
-                {e.phone && (
-                  <Typography
-                    variant="body2"
-                    component="span"
-                    sx={{ wordBreak: "break-word" }}
-                  >
-                    {e.phone}
-                  </Typography>
-                )}
-              </Stack>
-            }
-          />
-        </ListItemButton>
-      </ListItem>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
+            <Typography variant="body2" fontWeight={500} noWrap>
+              {e.full_name || "Без имени"}
+            </Typography>
+            {hasPassports && (
+              <DescriptionOutlined
+                sx={{ fontSize: 15, color: "primary.onSurface", flexShrink: 0 }}
+                titleAccess="Паспорт загружен"
+              />
+            )}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+            {subline}
+          </Typography>
+        </Box>
+
+        <StatusPill status={e.status} />
+
+        {(onEdit || onDelete) && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            className="row-actions"
+            sx={{ opacity: { xs: 1, md: selected ? 1 : 0 }, transition: "opacity .15s ease", flexShrink: 0 }}
+          >
+            {onEdit && (
+              <IconButton
+                size="small"
+                aria-label="Редактировать"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onEdit(e);
+                }}
+                sx={{
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                  color: "text.secondary",
+                  "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                }}
+              >
+                <EditOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            )}
+            {onDelete && (
+              <IconButton
+                size="small"
+                aria-label="Уволить"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onDelete(e);
+                }}
+                sx={(t) => ({
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: "8px",
+                  color: "text.secondary",
+                  "&:hover": {
+                    color: t.palette.error.main,
+                    borderColor: alpha(t.palette.error.main, 0.4),
+                    bgcolor: alpha(t.palette.error.main, 0.1),
+                  },
+                })}
+              >
+                <DeleteOutline sx={{ fontSize: 16 }} />
+              </IconButton>
+            )}
+          </Stack>
+        )}
+      </Box>
     );
   };
 
@@ -148,7 +246,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     if (!isGrouped) return items.map(renderItem);
 
     if (IS_DJANGO_BACKEND) {
-      // В Django-режиме группируем по _djangoRole.id / name
       const grouped: Record<string, { name: string; items: EmployesRow[] }> = {};
       items.forEach((item) => {
         const role = item._djangoRole;
@@ -161,18 +258,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
       const elements: React.ReactNode[] = [];
       Object.entries(grouped).forEach(([gId, group], idx) => {
         elements.push(
-          <ListSubheader
-            key={`header-django-${gId}`}
-            sx={{
-              bgcolor: "background.default",
-              fontWeight: 600,
-              py: 0.5,
-              borderRadius: 1,
-              mt: idx > 0 ? 1 : 0,
-            }}
-          >
-            {group.name} ({group.items.length})
-          </ListSubheader>,
+          <GroupHeader key={`header-django-${gId}`} title={group.name} count={group.items.length} first={idx === 0} />,
         );
         group.items.forEach((item) => elements.push(renderItem(item)));
       });
@@ -181,8 +267,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
     // Supabase: группировка по role_id из массива roles
     const grouped: Record<string, EmployesRow[]> = {};
-
-    // Сначала распределяем по ролям
     items.forEach((item) => {
       const gId = item.role_id || "other";
       if (!grouped[gId]) grouped[gId] = [];
@@ -190,81 +274,51 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     });
 
     const elements: React.ReactNode[] = [];
-
-    // Проходим по всем известным ролям, чтобы сохранить порядок или просто вывести их
-    // Сначала выведем те роли, которые есть в roles
     roles.forEach((role) => {
       if (grouped[role.id] && grouped[role.id].length > 0) {
         elements.push(
-          <ListSubheader
+          <GroupHeader
             key={`header-${role.id}`}
-            sx={{
-              bgcolor: 'background.default',
-              fontWeight: 600,
-              py: 0.5,
-              borderRadius: 1,
-              mt: elements.length > 0 ? 1 : 0
-            }}
-          >
-            {role.display_name || role.name}
-          </ListSubheader>
+            title={role.display_name || role.name}
+            count={grouped[role.id].length}
+            first={elements.length === 0}
+          />,
         );
-        grouped[role.id].forEach((item) => {
-          elements.push(renderItem(item));
-        });
+        grouped[role.id].forEach((item) => elements.push(renderItem(item)));
         delete grouped[role.id];
       }
     });
 
-    // Остальные (без роли или неизвестные)
     const others = Object.values(grouped).flat();
     if (others.length > 0) {
       elements.push(
-        <ListSubheader
-          key="header-other"
-          sx={{
-            bgcolor: 'background.default',
-            fontWeight: 600,
-            py: 0.5,
-            borderRadius: 1,
-            mt: 1
-          }}
-        >
-          Прочие
-        </ListSubheader>
+        <GroupHeader key="header-other" title="Прочие" count={others.length} first={elements.length === 0} />,
       );
-      others.forEach((item) => {
-        elements.push(renderItem(item));
-      });
+      others.forEach((item) => elements.push(renderItem(item)));
     }
 
     return elements;
   };
 
   return (
-    <Card variant="outlined" sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <CardContent
-        sx={{ p: 0, overflowY: { xs: "visible", md: "auto" }, flex: 1, minHeight: 0 }}
-        // Приводим тип ref к ожидаемому React.Ref<HTMLDivElement>, чтобы удовлетворить типы MUI
-        ref={listRef as React.RefObject<HTMLDivElement>}
-        onScroll={onScroll}
-      >
-        {items.length === 0 ? (
-          <Typography sx={{ p: 2 }} color="text.secondary">
-            {loading ? "Загрузка…" : "Нет записей"}
-          </Typography>
-        ) : (
-          <List sx={{ py: 0 }}>
-            {getGroupedItems()}
-          </List>
-        )}
-        <Box sx={{ px: 2, py: 1.25 }}>
-          {loadingMore && (
-            <Typography variant="caption" color="text.secondary">Загрузка…</Typography>
-          )}
-        </Box>
-      </CardContent>
-    </Card>
+    <Box
+      sx={{ height: { md: "100%" }, minHeight: 0, overflowY: { xs: "visible", md: "auto" }, pr: { md: 0.5 } }}
+      ref={listRef as React.RefObject<HTMLDivElement>}
+      onScroll={onScroll}
+    >
+      {items.length === 0 ? (
+        <Typography sx={{ p: 2 }} color="text.secondary">
+          {loading ? "Загрузка…" : "Нет записей"}
+        </Typography>
+      ) : (
+        <Stack spacing={1}>{getGroupedItems()}</Stack>
+      )}
+      {loadingMore && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", px: 0.5, py: 1.25 }}>
+          Загрузка…
+        </Typography>
+      )}
+    </Box>
   );
 };
 
