@@ -15,7 +15,8 @@ import {
   TableRow,
   Tooltip,
   Typography,
-  Chip
+  Chip,
+  LinearProgress
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
@@ -30,8 +31,18 @@ import isBetween from "dayjs/plugin/isBetween";
 import isoWeek from "dayjs/plugin/isoWeek";
 import "dayjs/locale/ru";
 import ShiftForm from "./ShiftForm";
-import { supabase } from "../../utility/supabaseClient";
+import {
+  getShifts,
+  createShift,
+  updateShift,
+  deleteShift,
+  type WorkShiftRow,
+  type ShiftWriteData,
+} from "../../api/attendance";
+import { getDjangoEmployees } from "../../api/staff";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
+import { subtleBg } from "../../theme";
+import type { ScheduleEmployee, ScheduleShift } from "./types";
 
 dayjs.extend(isBetween);
 dayjs.extend(isoWeek);
@@ -41,32 +52,18 @@ dayjs.locale("ru");
 // Типы данных
 // ==========================
 
-export type Employee = {
-  id: string;
-  full_name: string;
-  photo?: string;
-  role?: string;
-  employee_specializations?: { specialization: { name: string } }[];
-};
-
-export type Shift = {
-  id: string;
-  employes_id: string; // ID сотрудника
-  startDate: string;   // YYYY-MM-DD
-  endDate: string;     // YYYY-MM-DD
-  start_time?: string; // HH:mm
-  end_time?: string;   // HH:mm
-  employee?: Employee | null;
-};
+// Публичные имена сохранены для обратной совместимости; источник — ./types.
+export type Employee = ScheduleEmployee;
+export type Shift = ScheduleShift;
 
 // Сегмент смены внутри конкретного дня
 export interface DaySegment {
-  shiftId: string;
+  shiftId: number;
   startMin: number; // 0..1439
   endMin: number;   // 0..1439
   employeeName: string;
   employeePhoto?: string;
-  employeeId?: string; // для цвета
+  employeeId?: number; // для цвета
   label: string;
   shift: Shift;
 }
@@ -84,18 +81,23 @@ export interface PositionedSegment extends DaySegment {
 // Утилиты
 // ==========================
 
-// Генерация цвета по строке (ID или имя)
-const stringToColor = (string: string) => {
+// Генерация цвета по строке (ID или имя) — гибридный подход через HSL.
+// Хэш строки определяет только тон (hue 0..359), а насыщенность и светлота
+// фиксированы. За счёт этого: цвет уникален для каждого сотрудника (повторы
+// крайне редки), при этом все цвета одинаково сочные и достаточно тёмные,
+// чтобы белый текст поверх заливки всегда читался.
+const stringToColor = (string: string): string => {
   let hash = 0;
   for (let i = 0; i < string.length; i++) {
     hash = string.charCodeAt(i) + ((hash << 5) - hash);
+    hash |= 0; // удерживаем в пределах 32-бит
   }
-  let color = '#';
-  for (let i = 0; i < 3; i++) {
-    const value = (hash >> (i * 8)) & 0xFF;
-    color += ('00' + value.toString(16)).substr(-2);
-  }
-  return color;
+  const hue = Math.abs(hash) % 360;
+  // Жёлто-зелёные тона (≈50–200°) воспринимаются ярче при той же светлоте,
+  // поэтому для них светлоту снижаем — так белый текст поверх заливки сохраняет
+  // достаточный контраст на любом оттенке.
+  const lightness = hue >= 50 && hue <= 200 ? 34 : 44;
+  return `hsl(${hue}, 62%, ${lightness}%)`;
 };
 
 // Утилиты времени
@@ -292,7 +294,9 @@ interface ShiftBlockProps {
 
 const ShiftBlock: React.FC<ShiftBlockProps> = ({ segment, onEdit }) => {
   // Вычисляем цвет на основе ID сотрудника для стабильности
-  const empColor = stringToColor(segment.employeeId || segment.employeeName || "default");
+  const empColor = stringToColor(
+    segment.employeeId != null ? String(segment.employeeId) : segment.employeeName || "default",
+  );
 
   const startTime = minutesToTime(segment.startMin);
   const endTime = minutesToTime(segment.endMin);
@@ -340,9 +344,19 @@ const ShiftBlock: React.FC<ShiftBlockProps> = ({ segment, onEdit }) => {
     <Tooltip title={tooltipTitle} arrow placement="top">
       <Box
         sx={sxProps}
+        role="button"
+        tabIndex={0}
+        aria-label={`Смена: ${segment.employeeName}, ${startTime} – ${endTime}`}
         onClick={(e) => {
           e.stopPropagation();
           onEdit(segment.shift);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            onEdit(segment.shift);
+          }
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: "100%" }}>
@@ -411,7 +425,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
 
   // Filter state
   const [selectedSpec, setSelectedSpec] = useState<string | null>(null);
-  const [selectedRole, setSelectedRole] = useState<'all' | 'doctor' | 'nurse' | 'admin' | 'accountant' | 'other'>('all');
+  const [selectedRole, setSelectedRole] = useState<'all' | 'doctor' | 'nurse' | 'other'>('all');
 
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs | null>(null);
@@ -426,135 +440,166 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
   const weeks = useMemo(() => generateWeeksGrid(currentMonth), [currentMonth]);
   const daysOfWeek = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
-  // --- Загрузка данных ---
-  const fetchData = async () => {
-    // 1. Сотрудники
-    const { data: empData } = await supabase
-      .from("Employees")
-      .select(`
-        id, 
-        full_name, 
-        photo_url,
-        roles ( name ),
-        EmployeeSpecializations (
-          Specializations ( name )
-        )
-      `);
+  // --- Загрузка данных (Django attendance API) ---
+  const [loading, setLoading] = useState(true);
 
-    const loadedEmps: Employee[] = (empData || []).map((e: any) => ({
-      id: e.id,
-      full_name: e.full_name,
-      photo: e.photo_url,
-      role: e.roles?.name,
-      // Map the capitalized DB response to our internal lower-case type
-      employee_specializations: e.EmployeeSpecializations?.map((es: any) => ({
-        specialization: es.Specializations
-      }))
-    }));
-    setEmployees(loadedEmps);
+  // Видимый диапазон календаря: сетка из 6 недель от понедельника.
+  const gridStart = useMemo(
+    () => currentMonth.startOf("month").startOf("isoWeek"),
+    [currentMonth],
+  );
 
-    // 2. Смены (за текущий месяц +/- неделя для надежности)
-    // Упрощение: грузим все, или фильтруем по дате. Для MVP грузим все.
-    const { data: shiftData } = await supabase
-      .from("shifts")
-      .select("*");
-
-    // Маппим смены и джойним сотрудника
-    const mappedShifts: Shift[] = (shiftData || []).map((s) => {
-      // Ищем сотрудника
-      const emp = loadedEmps.find(e => e.id === s.employes_id) || null;
-      return {
-        id: String(s.id),
-        employes_id: s.employes_id,
-        startDate: s.shift_date, // в БД shifts обычно 1 день
-        endDate: s.shift_date,   //
-        start_time: s.start_time?.slice(0, 5), // '09:00:00' -> '09:00'
-        end_time: s.end_time?.slice(0, 5),
-        employee: emp
-      };
-    });
-
-    setShifts(mappedShifts);
-  };
-
+  // Сотрудники меняются редко — грузим один раз при монтировании.
   useEffect(() => {
-    fetchData();
-  }, [currentMonth, isNurse, employeeId]); // можно оптимизировать, чтобы рефетчить только при смене месяца если фильтруем
-
-  // REALTIME: Подписка на изменения смен
-  useEffect(() => {
-    const channel = supabase
-      .channel("shifts-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "shifts" },
-        () => {
-          console.log("Realtime: Shifts changed, reloading...");
-          fetchData();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-
-  // --- Фильтрация ---
-  // Получаем список специализаций, которые есть в текущих сменах
-  const availableSpecs = useMemo(() => {
-    const specs = new Set<string>();
-    shifts.forEach(shift => {
-      // Check if shift is in current view (optional, but good for relevance)
-      // For simplicity, showing specs from all loaded shifts or better, current month
-      const startRange = currentMonth.startOf('month').subtract(6, 'day');
-      const endRange = currentMonth.endOf('month').add(6, 'day');
-
-      if (dayjs(shift.startDate).isBetween(startRange, endRange, 'day', '[]')) {
-        if (shift.employee?.employee_specializations) {
-          shift.employee.employee_specializations.forEach((es: any) => {
-            if (es.specialization?.name) {
-              specs.add(es.specialization.name);
-            }
+    let cancelled = false;
+    (async () => {
+      try {
+        const empPage = await getDjangoEmployees({ pageSize: 200 });
+        if (cancelled) return;
+        const loadedEmps: Employee[] = (empPage.results || []).map((e) => ({
+          id: e.id,
+          full_name: e.fullName,
+          photo: e.photoUrl ?? undefined,
+          clinicalRole: e.clinicalRole,
+          specialization:
+            (e.specializations || []).map((s) => s.name).join(", ") || undefined,
+          specializations: e.specializations || [],
+        }));
+        setEmployees(loadedEmps);
+      } catch (e) {
+        if (!cancelled) {
+          notify?.({
+            type: "error",
+            message: "Не удалось загрузить сотрудников",
+            description: e instanceof Error ? e.message : undefined,
           });
         }
       }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [notify]);
+
+  // Смены — по видимому диапазону месяца. Бэкенд сам ограничивает выдачу:
+  // обычный сотрудник видит только свои, управляющий — все.
+  const fetchShifts = React.useCallback(async () => {
+    const dateFrom = gridStart.format("YYYY-MM-DD");
+    const dateTo = gridStart.add(6 * 7, "day").format("YYYY-MM-DD");
+    setLoading(true);
+    try {
+      const rows = await getShifts({ dateFrom, dateTo });
+      const mapped: Shift[] = rows.map((r: WorkShiftRow) => {
+        const clockIn = dayjs(r.clockIn);
+        const clockOut = r.clockOut ? dayjs(r.clockOut) : clockIn;
+        return {
+          id: r.id,
+          employes_id: r.employeeId,
+          startDate: clockIn.format("YYYY-MM-DD"),
+          endDate: clockOut.format("YYYY-MM-DD"),
+          start_time: clockIn.format("HH:mm"),
+          end_time: r.clockOut ? clockOut.format("HH:mm") : undefined,
+          is_night_shift: r.isNightShift,
+          lunch_start: r.lunchStart ?? undefined,
+        };
+      });
+      setShifts(mapped);
+    } catch (e) {
+      notify?.({
+        type: "error",
+        message: "Не удалось загрузить смены",
+        description: e instanceof Error ? e.message : undefined,
+      });
+      setShifts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [gridStart, notify]);
+
+  useEffect(() => {
+    void fetchShifts();
+  }, [fetchShifts]);
+
+  // Индекс сотрудников по id — для подстановки сотрудника в смену.
+  const employeesById = useMemo(() => {
+    const m = new Map<number, Employee>();
+    employees.forEach((e) => m.set(e.id, e));
+    return m;
+  }, [employees]);
+
+  // Смены с подставленным сотрудником (устойчиво к порядку загрузки
+  // сотрудников и смен — связка пересчитывается, когда приходит любая часть).
+  const resolvedShifts = useMemo(
+    () =>
+      shifts.map((s) => ({
+        ...s,
+        employee: employeesById.get(s.employes_id) ?? null,
+      })),
+    [shifts, employeesById],
+  );
+
+  // --- Фильтрация ---
+  // Специализации, встречающиеся в сменах видимой сетки (тот же диапазон, что и грид).
+  const availableSpecs = useMemo(() => {
+    const specs = new Set<string>();
+    const gridEnd = gridStart.add(6 * 7 - 1, "day");
+    resolvedShifts.forEach((shift) => {
+      if (dayjs(shift.startDate).isBetween(gridStart, gridEnd, "day", "[]")) {
+        shift.employee?.specializations?.forEach((s) => {
+          if (s?.name) specs.add(s.name);
+        });
+      }
     });
     return Array.from(specs).sort();
-  }, [shifts, currentMonth]);
+  }, [resolvedShifts, gridStart]);
 
   // Фильтруем смены
   const filteredShifts = useMemo(() => {
-    let result = shifts;
+    let result = resolvedShifts;
 
     // 1. Врачи и медсёстры видят только свои смены
     if (!canSeeAll && employeeId) {
-      result = result.filter(s => s.employes_id === employeeId);
+      result = result.filter(s => String(s.employes_id) === employeeId);
     }
 
     // 2. Фильтр по выбранной роли (Admin/Registrator Only)
     if (canSeeAll && selectedRole !== 'all') {
-      result = result.filter(s => {
-        const r = s.employee?.role;
-        if (selectedRole === 'doctor') return r === 'doctor';
-        if (selectedRole === 'nurse') return r === 'nurse';
-        if (selectedRole === 'accountant') return r === 'accountant';
-        if (selectedRole === 'admin') return r === 'admin' || r === 'superadmin';
-        if (selectedRole === 'other') return !['doctor', 'nurse', 'admin', 'superadmin', 'accountant'].includes(r || '');
-        return true;
-      });
+      result = result.filter(s => s.employee?.clinicalRole === selectedRole);
     }
 
     // 3. Фильтр по специализации
     if (selectedSpec) {
       result = result.filter(shift => {
-        return shift.employee?.employee_specializations?.some((es: any) => es.specialization?.name === selectedSpec);
+        return shift.employee?.specializations?.some((s) => s.name === selectedSpec);
       });
     }
 
     return result;
-  }, [shifts, selectedSpec, isAdmin, isRegistrator, canManage, canSeeAll, employeeId, selectedRole]);
+  }, [resolvedShifts, selectedSpec, canSeeAll, employeeId, selectedRole]);
+
+  // Раскладка сегментов по дням — считается один раз на смену сетки/фильтров,
+  // а не на каждый ре-рендер (наведение, открытие drawer и т.п.).
+  const segmentsByDay = useMemo(() => {
+    const map = new Map<string, PositionedSegment[]>();
+    weeks.forEach((week) => {
+      week.forEach((day) => {
+        const daySegments = filteredShifts.flatMap((shift) =>
+          getSegmentsForDay(shift, day),
+        );
+        map.set(day.format("YYYY-MM-DD"), layoutDaySegments(daySegments));
+      });
+    });
+    return map;
+  }, [weeks, filteredShifts]);
+
+  // Смены выбранного дня для drawer: те же фильтры + попадание в диапазон смены
+  // (а не только дата начала — иначе средние дни многодневной смены «пустые»).
+  const selectedDayShifts = useMemo(() => {
+    if (!selectedDate) return [];
+    return filteredShifts.filter((s) =>
+      selectedDate.isBetween(s.startDate, s.endDate, "day", "[]"),
+    );
+  }, [filteredShifts, selectedDate]);
 
 
   // Экспортируем метод для открытия формы добавления смены
@@ -583,9 +628,15 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
   };
 
   const handleEditClick = (shift: Shift) => {
-    if (!canManage) return; // Disallow editing for non-managers
-    // The previous logic was `if (isNurse) return`. User asked to fix accessing.
-    // Assuming only Admins can edit shifts generally.
+    // Не-менеджеру редактирование недоступно, но клик по блоку не должен быть
+    // «немым» — открываем просмотр смен этого дня.
+    if (!canManage) {
+      setSelectedDate(dayjs(shift.startDate));
+      setEditingShift(null);
+      setDrawerMode("view");
+      setIsDrawerOpen(true);
+      return;
+    }
 
     setEditingShift(shift);
     setDrawerMode("form");
@@ -597,7 +648,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
     setDrawerMode("form");
   };
 
-  const handleDelete = async (shiftId: string) => {
+  const handleDelete = async (shiftId: number) => {
     const confirmed = await confirm({
       title: "Удалить смену?",
       message: "Вы уверены, что хотите удалить эту смену? Это действие нельзя отменить.",
@@ -608,8 +659,8 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
 
     if (!confirmed) return;
 
-    const { error } = await supabase.from("shifts").delete().eq("id", shiftId);
-    if (!error) {
+    try {
+      await deleteShift(shiftId);
       setShifts(prev => prev.filter(s => s.id !== shiftId));
       notify?.({
         type: "success",
@@ -619,72 +670,42 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
         setDrawerMode("view");
         setEditingShift(null);
       }
-    } else {
+    } catch (e) {
       notify?.({
         type: "error",
         message: "Ошибка при удалении смены",
-        description: error.message,
+        description: e instanceof Error ? e.message : "Неизвестная ошибка",
       });
     }
   };
 
+  // Преобразование данных формы в payload Django attendance API.
+  const toShiftWriteData = (f: Omit<Shift, "id" | "employee">): ShiftWriteData => ({
+    employeeId: f.employes_id,
+    clockIn: dayjs(`${f.startDate}T${f.start_time ?? "00:00"}`).toISOString(),
+    clockOut: dayjs(`${f.endDate}T${f.end_time ?? "00:00"}`).toISOString(),
+    isNightShift: f.is_night_shift ?? false,
+    hasLunch: !!f.lunch_start,
+    lunchStart: f.lunch_start ?? null,
+  });
+
   const handleFormSuccess = async (formData: Omit<Shift, "id" | "employee"> | Omit<Shift, "id" | "employee">[]) => {
-    // Логика сохранения в Supabase
     try {
       if (Array.isArray(formData)) {
-        // Пакетное создание (при выборе дней недели)
-        const newShifts = formData.map(f => ({
-          employes_id: f.employes_id,
-          shift_date: f.startDate,
-          start_time: f.start_time,
-          end_time: f.end_time,
-          // Добавляем новые поля, если они есть в базе
-          // lunch_start: f.lunch_start, // раскомментировать если поля есть в базе
-          // lunch_end: f.lunch_end,
-          // is_night_shift: f.is_night_shift
-        }));
-
-        const { error } = await supabase.from("shifts").insert(newShifts);
-        if (error) throw error;
-
+        // Пакетное создание (при выборе дней недели) — один POST на смену.
+        for (const f of formData) {
+          await createShift(toShiftWriteData(f));
+        }
       } else if (editingShift) {
-        // Редактирование одной записи
-        const { error } = await supabase
-          .from("shifts")
-          .update({
-            employes_id: formData.employes_id,
-            shift_date: formData.startDate,
-            start_time: formData.start_time,
-            end_time: formData.end_time,
-          })
-          .eq("id", editingShift.id);
-        if (error) throw error;
-
+        // Редактирование одной записи.
+        await updateShift(editingShift.id, toShiftWriteData(formData));
       } else {
-        // Создание одного диапазона (старая логика, если пришла одна запись)
-        const start = dayjs(formData.startDate);
-        const end = dayjs(formData.endDate);
-        const diff = end.diff(start, 'day');
-
-        const newShifts = [];
-        for (let i = 0; i <= diff; i++) {
-          const d = start.add(i, 'day');
-          newShifts.push({
-            employes_id: formData.employes_id,
-            shift_date: d.format('YYYY-MM-DD'),
-            start_time: formData.start_time,
-            end_time: formData.end_time,
-          });
-        }
-
-        if (newShifts.length > 0) {
-          const { error } = await supabase.from("shifts").insert(newShifts);
-          if (error) throw error;
-        }
+        // Создание одной смены (один диапазон дат).
+        await createShift(toShiftWriteData(formData));
       }
 
       // Обновляем UI
-      fetchData();
+      await fetchShifts();
       setDrawerMode("view");
       setEditingShift(null);
 
@@ -708,13 +729,13 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
       {/* Заголовок */}
       <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 1.5, overflow: 'hidden' }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
-          <IconButton size="small" onClick={() => setCurrentMonth(currentMonth.subtract(1, "month"))}>
+          <IconButton size="small" aria-label="Предыдущий месяц" onClick={() => setCurrentMonth(currentMonth.subtract(1, "month"))}>
             <ChevronLeft />
           </IconButton>
           <Typography variant="h6" component="h2" sx={{ fontSize: "1.2rem", fontWeight: 600, minWidth: 160, textAlign: 'center' }}>
             {monthTitle}
           </Typography>
-          <IconButton size="small" onClick={() => setCurrentMonth(currentMonth.add(1, "month"))}>
+          <IconButton size="small" aria-label="Следующий месяц" onClick={() => setCurrentMonth(currentMonth.add(1, "month"))}>
             <ChevronRight />
           </IconButton>
         </Stack>
@@ -763,11 +784,11 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
                 sx={{ flexShrink: 0 }}
               />
               <Chip
-                label="Бухгалтер"
+                label="Другие"
                 size="small"
-                variant={selectedRole === 'accountant' ? "filled" : "outlined"}
-                color={selectedRole === 'accountant' ? "primary" : "default"}
-                onClick={() => setSelectedRole(selectedRole === 'accountant' ? 'all' : 'accountant')}
+                variant={selectedRole === 'other' ? "filled" : "outlined"}
+                color={selectedRole === 'other' ? "primary" : "default"}
+                onClick={() => setSelectedRole(selectedRole === 'other' ? 'all' : 'other')}
                 clickable
                 sx={{ flexShrink: 0 }}
               />
@@ -795,13 +816,15 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
         </Box>
       </Stack>
 
+      {loading && <LinearProgress sx={{ mb: 1 }} />}
+
       <TableContainer sx={{ overflowX: "auto" }}>
         {/* Увеличили minWidth для более широких колонок */}
         <Table sx={{ tableLayout: "fixed", minWidth: 1600 }}>
           <TableHead>
             <TableRow>
               {daysOfWeek.map((d) => (
-                <TableCell key={d} align="center" sx={{ fontWeight: "bold", fontSize: "0.85rem", py: 1, bgcolor: "background.neutral" }}>
+                <TableCell key={d} align="center" sx={{ fontWeight: "bold", fontSize: "0.85rem", py: 1, bgcolor: (t) => subtleBg(t) }}>
                   {d}
                 </TableCell>
               ))}
@@ -811,8 +834,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
             {weeks.map((week, i) => (
               <TableRow key={String(i)}>
                 {week.map((day) => {
-                  const daySegments = filteredShifts.flatMap((shift) => getSegmentsForDay(shift, day));
-                  const positioned = layoutDaySegments(daySegments);
+                  const positioned = segmentsByDay.get(day.format("YYYY-MM-DD")) ?? [];
                   const isToday = day.isSame(today, "day");
                   const isCurrentMonth = day.isSame(currentMonth, "month");
 
@@ -835,6 +857,15 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
                     <TableCell
                       key={day.format("YYYY-MM-DD")}
                       onClick={() => handleDayClick(day)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${day.format("D MMMM YYYY")} — смен: ${positioned.length}`}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleDayClick(day);
+                        }
+                      }}
                       sx={{
                         position: "relative",
                         height: cellHeight,
@@ -903,8 +934,6 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
         }}
       >
         <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflowX: "hidden" }}>
-          {/* ... тут можно оставить ту же логику боковой панели, но для brevity я рендерю форму или список ... */}
-          {/* В полной версии я должен вернуть весь Drawer контент. Восстановлю упрощенно. */}
           {drawerMode === "view" ? (
             <Stack sx={{ p: 3, height: "100%", overflowY: 'auto' }} justifyContent="space-between">
               <Box>
@@ -912,10 +941,9 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
                   <Typography variant="h6">
                     Смены: {selectedDate?.format("D MMMM")}
                   </Typography>
-                  <IconButton onClick={handleCloseDrawer}><Close /></IconButton>
+                  <IconButton onClick={handleCloseDrawer} aria-label="Закрыть"><Close /></IconButton>
                 </Stack>
-                {(selectedDate ? shifts.filter((s) => dayjs(selectedDate).isSame(s.startDate, "day")) : [])
-                  .map((shift) => (
+                {selectedDayShifts.map((shift) => (
                     <Paper key={shift.id} variant="outlined" sx={{ p: 2, mb: 1, display: "flex", gap: 2, alignItems: "center" }}>
                       <Avatar src={shift.employee?.photo} />
                       <Box sx={{ flex: 1 }}>
@@ -926,10 +954,10 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
                       </Box>
                       {canManage && (
                         <>
-                          {(isAdmin || isRegistrator || (isDoctor && shift.employes_id === employeeId)) && (
+                          {(isAdmin || isRegistrator || (isDoctor && String(shift.employes_id) === employeeId)) && (
                             <IconButton size="small" onClick={() => handleEditClick(shift)}><Edit /></IconButton>
                           )}
-                          {(isAdmin || isRegistrator || (isDoctor && shift.employes_id === employeeId)) && (
+                          {(isAdmin || isRegistrator || (isDoctor && String(shift.employes_id) === employeeId)) && (
                             <IconButton size="small" color="error" onClick={() => handleDelete(shift.id)}><Delete /></IconButton>
                           )}
                         </>
@@ -937,7 +965,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
                     </Paper>
                   ))
                 }
-                {(!selectedDate || shifts.filter((s) => dayjs(selectedDate).isSame(s.startDate, "day")).length === 0) &&
+                {selectedDayShifts.length === 0 &&
                   <Typography color="text.secondary" align="center" sx={{ mt: 4 }}>Нет смен на этот день</Typography>
                 }
               </Box>
@@ -954,7 +982,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
               allEmployees={employees} // Передаем реальных сотрудников!
               onSuccess={handleFormSuccess}
               onCancel={() => setDrawerMode("view")}
-              onDelete={(isAdmin || isRegistrator || (isDoctor && editingShift?.employes_id === employeeId)) ? handleDelete : undefined}
+              onDelete={(isAdmin || isRegistrator || (isDoctor && String(editingShift?.employes_id) === employeeId)) ? handleDelete : undefined}
               isDoctor={isDoctor}
               currentEmployeeId={employeeId}
             />

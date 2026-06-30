@@ -28,26 +28,8 @@ import { useNotification } from "@refinedev/core";
 import Autocomplete, { createFilterOptions } from "@mui/material/Autocomplete";
 import { AppCard } from "../ui";
 
-// Типы
-type Employee = {
-  id: string;
-  full_name: string;
-  specialization?: string;
-};
-
-type Shift = {
-  id: string;
-  employes_id: string;
-  startDate: string;
-  endDate: string;
-  start_time?: string;
-  end_time?: string;
-  is_night_shift?: boolean;
-  lunch_start?: string;
-  lunch_end?: string;
-  weekdays?: string[];
-  employee?: Employee | null;
-};
+// Общие типы графика (см. ./types)
+import type { ScheduleEmployee as Employee, ScheduleShift as Shift } from "./types";
 
 // Пропсы
 type Props = {
@@ -56,7 +38,7 @@ type Props = {
   allEmployees: Employee[];
   onSuccess: (data: Omit<Shift, 'id' | 'employee'> | Omit<Shift, 'id' | 'employee'>[]) => void;
   onCancel: () => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: number) => void;
   isDoctor?: boolean;
   currentEmployeeId?: string | null;
 };
@@ -121,7 +103,9 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
       setEndTime(roundMinutesToStep(shiftToEdit.end_time?.slice(0, 5) || '18:00', 15));
       setIsNightShift(!!shiftToEdit.is_night_shift);
       setManuallySetNightShift(true);
-      const hasLunchTime = !!(shiftToEdit.lunch_start && shiftToEdit.lunch_end);
+      // Конец обеда всегда вычисляется как +1 час, поэтому наличие обеда
+      // определяем только по времени начала (lunch_end через API не приходит).
+      const hasLunchTime = !!shiftToEdit.lunch_start;
       setHasLunch(hasLunchTime);
       if (hasLunchTime) {
         setLunchStart(shiftToEdit.lunch_start?.slice(0, 5) || '13:00');
@@ -129,7 +113,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
       setSelectedWeekdays(shiftToEdit.weekdays || []);
     } else if (initialDate) {
       if (isDoctor && currentEmployeeId) {
-        const emp = allEmployees.find(e => e.id === currentEmployeeId);
+        const emp = allEmployees.find(e => String(e.id) === currentEmployeeId);
         setEmployee(emp || null);
       } else {
         setEmployee(null);
@@ -146,7 +130,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
       setSelectedWeekdays([]);
       setTouched(false);
     }
-  }, [shiftToEdit, initialDate, allEmployees]);
+  }, [shiftToEdit, initialDate, allEmployees, isDoctor, currentEmployeeId]);
 
   useEffect(() => {
     if (!manuallySetNightShift && startTime) {
@@ -163,7 +147,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
     } else {
       setEndDate(startDate);
     }
-  }, [endDateOvernight]);
+  }, [endDateOvernight, startDate]);
 
   const handleSubmit = () => {
     setTouched(true);
@@ -340,7 +324,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
                     size="small"
                     sx={{
                       width: 1,
-                      bgcolor: "grey.100",
+                      bgcolor: (t) => subtleBg(t),
                       borderRadius: "10px",
                       p: "3px",
                       border: "none",

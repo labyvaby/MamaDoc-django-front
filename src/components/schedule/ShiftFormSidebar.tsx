@@ -59,7 +59,12 @@ const ShiftFormSidebar: React.FC<Props> = ({
         {/* При вызове из главного меню, дата по умолчанию - сегодня */}
         <ShiftForm
           initialDate={dayjs()}
-          allEmployees={employees}
+          // Legacy Supabase-обёртка: ShiftForm переписан под Django (id: number),
+          // а здесь приходят Supabase-сотрудники с UUID-строкой в id. Каст нужен
+          // только для типов — в Supabase-рантайме id остаётся строкой, что и
+          // ожидает Supabase-обработчик onSuccess. В Django-режиме эта страница
+          // не монтируется (см. work-shifts/index.tsx → DjangoUnderConstructionPage).
+          allEmployees={employees as unknown as React.ComponentProps<typeof ShiftForm>["allEmployees"]}
           onSuccess={handleSuccess}
           onCancel={onClose}
           shiftToEdit={shiftToEdit}
