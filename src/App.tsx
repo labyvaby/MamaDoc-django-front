@@ -624,13 +624,11 @@ function App() {
                         <Route
                           path="schedule"
                           element={
-                            <LegacyRouteGuard title="Расписание в разработке">
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <SchedulePage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <ProtectedRoute deniedRoles={[]}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <SchedulePage />
+                              </Suspense>
+                            </ProtectedRoute>
                           }
                         />
                         <Route
