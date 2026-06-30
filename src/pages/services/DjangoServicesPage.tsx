@@ -4,7 +4,6 @@ import {
   Card,
   CardContent,
   Button,
-  Paper,
   Stack,
   Typography,
   CircularProgress,
@@ -333,7 +332,7 @@ const DjangoServicesPage: React.FC = () => {
               </Typography>
               {s.branches.length > 0 && (
                 <>
-                  <Box component="span" sx={{ color: "divider" }}>
+                  <Box component="span" sx={{ color: "text.disabled" }}>
                     ·
                   </Box>
                   <PlaceOutlinedIcon sx={{ fontSize: 15 }} />
@@ -454,80 +453,78 @@ const DjangoServicesPage: React.FC = () => {
             </AppButton>
           )}
 
-          <Paper variant="outlined" elevation={0} sx={{ p: 1.5, flex: 1, minWidth: 280 }}>
-            <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center">
-              <TextField
-              size="small"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск по названию"
-              sx={{ flex: 1, minWidth: 220 }}
-              InputProps={{
+          <TextField
+            size="small"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Поиск по названию"
+            sx={{ flex: 1, minWidth: 220 }}
+            slotProps={{
+              input: {
                 startAdornment: (
                   <InputAdornment position="start">
                     <SearchOutlinedIcon fontSize="small" />
                   </InputAdornment>
                 ),
-              }}
-            />
+              },
+            }}
+          />
 
-            <TextField
-              select
+          <TextField
+            select
+            size="small"
+            label="Статус"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            sx={{ flexShrink: 0, minWidth: 150 }}
+          >
+            <MenuItem value="all">Все</MenuItem>
+            <MenuItem value="active">Активные</MenuItem>
+            <MenuItem value="inactive">Неактивные</MenuItem>
+          </TextField>
+
+          <TextField
+            select
+            size="small"
+            label="Филиал"
+            value={branchFilter}
+            onChange={(e) =>
+              setBranchFilter(e.target.value === "all" ? "all" : Number(e.target.value))
+            }
+            sx={{ flexShrink: 0, minWidth: 180 }}
+          >
+            <MenuItem value="all">Все филиалы</MenuItem>
+            {branchOptions.map((b) => (
+              <MenuItem key={b.id} value={b.id}>
+                {b.name}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            size="small"
+            label="Сортировка"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            sx={{ flexShrink: 0, minWidth: 180 }}
+          >
+            <MenuItem value="name">По названию</MenuItem>
+            <MenuItem value="priceAsc">Цена ↑</MenuItem>
+            <MenuItem value="priceDesc">Цена ↓</MenuItem>
+            <MenuItem value="duration">По длительности</MenuItem>
+          </TextField>
+
+          {hasActiveFilters && (
+            <Button
               size="small"
-              label="Статус"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              sx={{ flexShrink: 0, minWidth: 150 }}
+              onClick={handleResetFilters}
+              startIcon={<CloseOutlinedIcon fontSize="small" />}
+              sx={{ textTransform: "none", flexShrink: 0 }}
             >
-              <MenuItem value="all">Все</MenuItem>
-              <MenuItem value="active">Активные</MenuItem>
-              <MenuItem value="inactive">Неактивные</MenuItem>
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label="Филиал"
-              value={branchFilter}
-              onChange={(e) =>
-                setBranchFilter(e.target.value === "all" ? "all" : Number(e.target.value))
-              }
-              sx={{ flexShrink: 0, minWidth: 180 }}
-            >
-              <MenuItem value="all">Все филиалы</MenuItem>
-              {branchOptions.map((b) => (
-                <MenuItem key={b.id} value={b.id}>
-                  {b.name}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label="Сортировка"
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              sx={{ flexShrink: 0, minWidth: 180 }}
-            >
-              <MenuItem value="name">По названию</MenuItem>
-              <MenuItem value="priceAsc">Цена ↑</MenuItem>
-              <MenuItem value="priceDesc">Цена ↓</MenuItem>
-              <MenuItem value="duration">По длительности</MenuItem>
-            </TextField>
-
-            {hasActiveFilters && (
-              <Button
-                size="small"
-                onClick={handleResetFilters}
-                startIcon={<CloseOutlinedIcon fontSize="small" />}
-                sx={{ textTransform: "none", flexShrink: 0 }}
-              >
-                Сбросить
-              </Button>
-            )}
-            </Stack>
-          </Paper>
+              Сбросить
+            </Button>
+          )}
         </Stack>
 
         <Card variant="outlined" sx={{ flex: 1, width: 1, display: "flex", flexDirection: "column" }}>
@@ -551,9 +548,7 @@ const DjangoServicesPage: React.FC = () => {
               <>
                 {visibleServices.length === 0 ? (
                   <Typography variant="body2" sx={{ p: 2 }}>
-                    {searchQuery.trim() || statusFilter !== "all" || branchFilter !== "all"
-                      ? "Ничего не найдено"
-                      : "Нет услуг"}
+                    {hasActiveFilters ? "Ничего не найдено" : "Нет услуг"}
                   </Typography>
                 ) : (
                   <Stack divider={<Divider flexItem />}>
