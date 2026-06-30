@@ -4,32 +4,56 @@ import {
   Card,
   CardContent,
   Button,
-  Chip,
-  Divider,
+  Paper,
   Stack,
   Typography,
   CircularProgress,
   IconButton,
+  InputAdornment,
   Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  TextField,
+  MenuItem,
+  Avatar,
+  Divider,
 } from "@mui/material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
+import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
+import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
+import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 
-import { PageHeader } from "../../components/ui";
+import { AppButton } from "../../components/ui";
+import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../hooks/usePermissions";
 import { getServices, deleteService } from "../../api/catalog";
-import type { Service } from "../../api/catalog";
+import type { Service, BranchRef } from "../../api/catalog";
+import { formatKGS } from "../../utility/format";
 import DjangoAddServiceDrawer from "../../components/services/DjangoAddServiceDrawer";
 import DjangoEditServiceDrawer from "../../components/services/DjangoEditServiceDrawer";
 import DjangoServiceQuickViewDrawer from "../../components/services/DjangoServiceQuickViewDrawer";
 
+type StatusFilter = "all" | "active" | "inactive";
+type SortKey = "name" | "priceAsc" | "priceDesc" | "duration";
+
 const BATCH_SIZE = 20;
+
+/** Форматирует длительность из минут в вид «45 мин» / «1 ч 15 мин». */
+function formatDuration(min: number): string {
+  if (!min || min <= 0) return "—";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m} мин`;
+  if (m === 0) return `${h} ч`;
+  return `${h} ч ${m} мин`;
+}
 
 const DjangoServicesPage: React.FC = () => {
   usePageTitle("Услуги");
@@ -62,8 +86,11 @@ const DjangoServicesPage: React.FC = () => {
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmRow, setConfirmRow] = React.useState<Service | null>(null);
 
-  // Поиск
+  // Поиск, фильтры, сортировка
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
+  const [branchFilter, setBranchFilter] = React.useState<number | "all">("all");
+  const [sortKey, setSortKey] = React.useState<SortKey>("name");
 
   const orgId = activeOrganization?.id ?? null;
   const membershipId = activeMembership?.id ?? null;
@@ -129,6 +156,9 @@ const DjangoServicesPage: React.FC = () => {
     setConfirmRow(null);
     setVisibleCount(BATCH_SIZE);
     setSearchQuery("");
+    setStatusFilter("all");
+    setBranchFilter("all");
+    setSortKey("name");
 
     void loadAll(contextKey);
 
@@ -137,24 +167,79 @@ const DjangoServicesPage: React.FC = () => {
     };
   }, [contextKey, loadAll]);
 
-  // Фильтрация + инфинит
+  // Список филиалов для дропдауна — уникальные филиалы из загруженных услуг
+  const branchOptions = React.useMemo<BranchRef[]>(() => {
+    const map = new Map<number, string>();
+    for (const s of allServices) {
+      for (const b of s.branches) {
+        if (!map.has(b.id)) map.set(b.id, b.name);
+      }
+    }
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name, "ru"),
+    );
+  }, [allServices]);
+
+  // Если выбранный филиал исчез после перезагрузки данных — сбросить
+  React.useEffect(() => {
+    if (branchFilter !== "all" && !branchOptions.some((b) => b.id === branchFilter)) {
+      setBranchFilter("all");
+    }
+  }, [branchOptions, branchFilter]);
+
+  // Фильтрация: поиск + статус + филиал
   const filtered = React.useMemo(() => {
-    if (!searchQuery.trim()) return allServices;
-    const lower = searchQuery.toLowerCase();
-    return allServices.filter((s) => s.name.toLowerCase().includes(lower));
-  }, [allServices, searchQuery]);
+    const lower = searchQuery.trim().toLowerCase();
+    return allServices.filter((s) => {
+      if (lower && !s.name.toLowerCase().includes(lower)) return false;
+      if (statusFilter === "active" && !s.isActive) return false;
+      if (statusFilter === "inactive" && s.isActive) return false;
+      if (branchFilter !== "all" && !s.branches.some((b) => b.id === branchFilter)) return false;
+      return true;
+    });
+  }, [allServices, searchQuery, statusFilter, branchFilter]);
+
+  // Сортировка
+  const sorted = React.useMemo(() => {
+    const arr = [...filtered];
+    switch (sortKey) {
+      case "priceAsc":
+        arr.sort((a, b) => Number(a.basePrice) - Number(b.basePrice));
+        break;
+      case "priceDesc":
+        arr.sort((a, b) => Number(b.basePrice) - Number(a.basePrice));
+        break;
+      case "duration":
+        arr.sort((a, b) => a.durationMinutes - b.durationMinutes);
+        break;
+      case "name":
+      default:
+        arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        break;
+    }
+    return arr;
+  }, [filtered, sortKey]);
 
   const visibleServices = React.useMemo(
-    () => filtered.slice(0, visibleCount),
-    [filtered, visibleCount],
+    () => sorted.slice(0, visibleCount),
+    [sorted, visibleCount],
   );
 
-  // Reset visible count when search changes
+  const hasActiveFilters =
+    searchQuery.trim() !== "" || statusFilter !== "all" || branchFilter !== "all";
+
+  const handleResetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setBranchFilter("all");
+  };
+
+  // Reset visible count when filters/sort/search change
   React.useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [searchQuery]);
+  }, [searchQuery, statusFilter, branchFilter, sortKey]);
 
-  // IntersectionObserver
+  // IntersectionObserver — подгрузка при скролле
   React.useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -162,7 +247,7 @@ const DjangoServicesPage: React.FC = () => {
       (entries) => {
         if (entries[0].isIntersecting) {
           setVisibleCount((prev) =>
-            prev >= filtered.length ? prev : Math.min(prev + BATCH_SIZE, filtered.length),
+            prev >= sorted.length ? prev : Math.min(prev + BATCH_SIZE, sorted.length),
           );
         }
       },
@@ -170,7 +255,7 @@ const DjangoServicesPage: React.FC = () => {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [sentinelRef, filtered.length]);
+  }, [sentinelRef, sorted.length]);
 
   const handleEdit = (row: Service) => {
     setEditingRec(row);
@@ -191,9 +276,11 @@ const DjangoServicesPage: React.FC = () => {
     }
   };
 
+  // Двухстрочная строка списка (вариант 1): миниатюра · название+мета · цена/статус/действия
   const ServiceListItem: React.FC<{ s: Service }> = ({ s }) => {
     const canEditThis = canUpdate && !s.hasHiddenBranches;
     const canDeleteThis = canDelete && !s.hasHiddenBranches;
+    const branchNames = s.branches.map((b) => b.name).join(", ");
 
     return (
       <Box
@@ -203,72 +290,112 @@ const DjangoServicesPage: React.FC = () => {
         }}
         sx={{
           px: 2,
-          py: 2,
+          py: 1.5,
           cursor: "pointer",
           "&:hover": { bgcolor: "action.hover" },
         }}
       >
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          alignItems={{ xs: "flex-start", sm: "center" }}
-          justifyContent="space-between"
-          gap={1.5}
-        >
-          {/* Фото + название + филиалы */}
-          <Stack direction="row" alignItems="center" gap={1.5} sx={{ minWidth: 0, flex: 1 }}>
-            <Box
-              sx={{
-                width: 80,
-                height: 80,
-                overflow: "hidden",
-                borderRadius: 1,
-                flexShrink: 0,
-                bgcolor: s.imageUrl ? "transparent" : "action.hover",
-                opacity: s.isActive ? 1 : 0.6,
-              }}
+        <Stack direction="row" alignItems="center" gap={1.75}>
+          {/* Миниатюра */}
+          <Avatar
+            variant="rounded"
+            src={s.imageUrl ?? undefined}
+            sx={{
+              width: 48,
+              height: 48,
+              flexShrink: 0,
+              bgcolor: "action.hover",
+              opacity: s.isActive ? 1 : 0.5,
+            }}
+          >
+            <MedicalServicesIcon fontSize="small" sx={{ color: "text.disabled" }} />
+          </Avatar>
+
+          {/* Название + метаданные */}
+          <Stack sx={{ minWidth: 0, flex: 1 }} gap={0.25}>
+            <Typography
+              variant="subtitle1"
+              noWrap
+              sx={{ fontWeight: 500, opacity: s.isActive ? 1 : 0.6 }}
             >
-              {s.imageUrl && (
-                <Box
-                  component="img"
-                  src={s.imageUrl}
-                  alt=""
-                  sx={{ width: 1, height: 1, objectFit: "cover", display: "block" }}
-                />
-              )}
-            </Box>
-            <Stack sx={{ minWidth: 0, flex: 1 }} gap={0.5}>
-              <Typography variant="subtitle1" noWrap sx={{ opacity: s.isActive ? 1 : 0.6 }}>
-                {s.name || "Без названия"}
+              {s.name || "Без названия"}
+            </Typography>
+
+            <Stack
+              direction="row"
+              alignItems="center"
+              gap={0.75}
+              sx={{ color: "text.secondary", minWidth: 0 }}
+            >
+              <AccessTimeOutlinedIcon sx={{ fontSize: 15 }} />
+              <Typography variant="caption" sx={{ whiteSpace: "nowrap" }}>
+                {formatDuration(s.durationMinutes)}
               </Typography>
-              {!s.isActive && (
-                <Typography variant="caption" color="error">
-                  Неактивна
-                </Typography>
-              )}
               {s.branches.length > 0 && (
-                <Stack direction="row" flexWrap="wrap" gap={0.5}>
-                  {s.branches.map((b) => (
-                    <Chip key={b.id} label={b.name} size="small" variant="outlined" />
-                  ))}
-                  {s.hasHiddenBranches && (
-                    <Chip label="…" size="small" variant="outlined" color="default" />
-                  )}
-                </Stack>
+                <>
+                  <Box component="span" sx={{ color: "divider" }}>
+                    ·
+                  </Box>
+                  <PlaceOutlinedIcon sx={{ fontSize: 15 }} />
+                  <Tooltip title={`${branchNames}${s.hasHiddenBranches ? ", …" : ""}`}>
+                    <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
+                      {branchNames}
+                      {s.hasHiddenBranches ? ", …" : ""}
+                    </Typography>
+                  </Tooltip>
+                </>
               )}
             </Stack>
+
+            {s.description && (
+              <Tooltip title={s.description}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    mt: 0.25,
+                  }}
+                >
+                  {s.description}
+                </Typography>
+              </Tooltip>
+            )}
           </Stack>
 
-          {/* Цена + иконки */}
+          {/* Цена + статус + действия */}
           <Stack
             direction="row"
             alignItems="center"
-            gap={1.25}
-            sx={{ minWidth: 0 }}
+            gap={1}
+            sx={{ flexShrink: 0 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <Typography variant="subtitle2" color="text.primary" sx={{ whiteSpace: "nowrap" }}>
-              {Number(s.basePrice)} сом
-            </Typography>
+            <Stack alignItems="flex-end" gap={0.25}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 500, whiteSpace: "nowrap" }}>
+                {formatKGS(Number(s.basePrice))}
+              </Typography>
+              <Stack direction="row" alignItems="center" gap={0.5}>
+                <Box
+                  sx={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    bgcolor: s.isActive ? "success.main" : "text.disabled",
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  color={s.isActive ? "success.main" : "text.secondary"}
+                >
+                  {s.isActive ? "активна" : "неактивна"}
+                </Typography>
+              </Stack>
+            </Stack>
+
             {canEditThis && (
               <Tooltip title="Редактировать">
                 <IconButton size="small" onClick={() => handleEdit(s)}>
@@ -298,26 +425,111 @@ const DjangoServicesPage: React.FC = () => {
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <PageHeader
-        title="Услуги"
-        showTitle={false}
-        addButtonText={canCreate ? "Добавить услугу" : undefined}
-        onAdd={canCreate ? () => setAddOpen(true) : undefined}
-        showSearch
-        searchVal={searchQuery}
-        onSearchChange={setSearchQuery}
-      />
-
       <Box
         sx={(theme) => ({
           px: theme.appLayout.page.paddingX,
+          pt: theme.appLayout.page.paddingY,
           pb: 2,
           flex: 1,
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
+          gap: 1.5,
         })}
       >
+        {/* Кнопка добавления + поиск + фильтры на одном уровне */}
+        <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center">
+          {canCreate && (
+            <AppButton
+              variant="contained"
+              startIcon={<AddOutlinedIcon />}
+              onClick={() => setAddOpen(true)}
+              sx={(theme) => ({
+                whiteSpace: "nowrap",
+                minHeight: theme.appLayout.controls.buttonHeight,
+                flexShrink: 0,
+              })}
+            >
+              Добавить услугу
+            </AppButton>
+          )}
+
+          <Paper variant="outlined" elevation={0} sx={{ p: 1.5, flex: 1, minWidth: 280 }}>
+            <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap" alignItems="center">
+              <TextField
+              size="small"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Поиск по названию"
+              sx={{ flex: 1, minWidth: 220 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchOutlinedIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              select
+              size="small"
+              label="Статус"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              sx={{ flexShrink: 0, minWidth: 150 }}
+            >
+              <MenuItem value="all">Все</MenuItem>
+              <MenuItem value="active">Активные</MenuItem>
+              <MenuItem value="inactive">Неактивные</MenuItem>
+            </TextField>
+
+            <TextField
+              select
+              size="small"
+              label="Филиал"
+              value={branchFilter}
+              onChange={(e) =>
+                setBranchFilter(e.target.value === "all" ? "all" : Number(e.target.value))
+              }
+              sx={{ flexShrink: 0, minWidth: 180 }}
+            >
+              <MenuItem value="all">Все филиалы</MenuItem>
+              {branchOptions.map((b) => (
+                <MenuItem key={b.id} value={b.id}>
+                  {b.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              size="small"
+              label="Сортировка"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              sx={{ flexShrink: 0, minWidth: 180 }}
+            >
+              <MenuItem value="name">По названию</MenuItem>
+              <MenuItem value="priceAsc">Цена ↑</MenuItem>
+              <MenuItem value="priceDesc">Цена ↓</MenuItem>
+              <MenuItem value="duration">По длительности</MenuItem>
+            </TextField>
+
+            {hasActiveFilters && (
+              <Button
+                size="small"
+                onClick={handleResetFilters}
+                startIcon={<CloseOutlinedIcon fontSize="small" />}
+                sx={{ textTransform: "none", flexShrink: 0 }}
+              >
+                Сбросить
+              </Button>
+            )}
+            </Stack>
+          </Paper>
+        </Stack>
+
         <Card variant="outlined" sx={{ flex: 1, width: 1, display: "flex", flexDirection: "column" }}>
           <CardContent
             ref={scrollContainerRef}
@@ -339,7 +551,9 @@ const DjangoServicesPage: React.FC = () => {
               <>
                 {visibleServices.length === 0 ? (
                   <Typography variant="body2" sx={{ p: 2 }}>
-                    {searchQuery.trim() ? "Ничего не найдено" : "Нет услуг"}
+                    {searchQuery.trim() || statusFilter !== "all" || branchFilter !== "all"
+                      ? "Ничего не найдено"
+                      : "Нет услуг"}
                   </Typography>
                 ) : (
                   <Stack divider={<Divider flexItem />}>
@@ -350,7 +564,7 @@ const DjangoServicesPage: React.FC = () => {
                 )}
                 <Stack alignItems="center" sx={{ px: 2, py: 1.5 }}>
                   <Typography variant="caption" color="text.secondary">
-                    {visibleCount < filtered.length
+                    {visibleCount < sorted.length
                       ? "Прокрутите вниз, чтобы загрузить ещё…"
                       : "Больше услуг нет"}
                   </Typography>
