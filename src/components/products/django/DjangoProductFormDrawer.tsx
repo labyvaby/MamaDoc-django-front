@@ -27,6 +27,7 @@ import {
 } from "../../../api/warehouse";
 import { ApiError } from "../../../api/client";
 import { AppCard } from "../../ui";
+import { DjangoProductGallery } from "./DjangoProductGallery";
 
 const noSpinnersSx = {
     "& input[type=number]": { MozAppearance: "textfield" },
@@ -220,7 +221,10 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                     }}
                 >
                     <Stack spacing={3}>
-                        {/* Photo Uploader */}
+                        {/* Галерея (для существующего товара) или одиночный аплоадер (при создании) */}
+                        {isEdit && product ? (
+                            <DjangoProductGallery productId={product.id} onChanged={onSaved} />
+                        ) : (
                         <Stack spacing={0.5}>
                             <AppCard variant="outlined" sx={{ borderStyle: "dashed" }} disableContentPadding>
                                 <CardContent
@@ -238,7 +242,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 >
                                     <Avatar
                                         variant="rounded"
-                                        src={previewUrl || product?.imageUrl || undefined}
+                                        src={previewUrl || undefined}
                                         sx={{ width: 48, height: 48 }}
                                     >
                                         <PhotoCameraOutlined />
@@ -264,6 +268,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 </CardContent>
                             </AppCard>
                         </Stack>
+                        )}
 
                         {/* Name Input */}
                         <Stack spacing={0.5}>

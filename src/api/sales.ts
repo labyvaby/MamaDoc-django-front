@@ -77,7 +77,7 @@ export type SaleStats = {
     cashlessTotal: number;
 };
 
-/** Строка агрегата «По товарам» (GET /warehouse/sales/by-product/). */
+/** Строка агрегата «По товарам» (GET /warehouse/sales/product-totals/). */
 export type SaleProductTotal = {
     productId: number;
     productName: string;
@@ -85,7 +85,7 @@ export type SaleProductTotal = {
     revenue: number;
 };
 
-/** Строка агрегата «По дням» (GET /warehouse/sales/by-day/). */
+/** Строка агрегата «По дням» (GET /warehouse/sales/day-aggregates/). */
 export type SaleDayAggregate = {
     day: string; // YYYY-MM-DD
     count: number;
@@ -210,7 +210,7 @@ export async function getSalesByProduct(
     const qs = q.toString();
     const rows = await apiRequest<
         { productId: number; productName: string; quantity: string; revenue: string }[]
-    >(`/warehouse/sales/by-product/${qs ? `?${qs}` : ""}`, { signal });
+    >(`/warehouse/sales/product-totals/${qs ? `?${qs}` : ""}`, { signal });
     return rows.map((r) => ({
         productId: r.productId,
         productName: r.productName,
@@ -228,7 +228,7 @@ export async function getSalesByDay(
     appendSaleFilters(q, filters);
     const qs = q.toString();
     const rows = await apiRequest<{ day: string; count: number; totalAmount: string }[]>(
-        `/warehouse/sales/by-day/${qs ? `?${qs}` : ""}`,
+        `/warehouse/sales/day-aggregates/${qs ? `?${qs}` : ""}`,
         { signal },
     );
     return rows.map((r) => ({ day: r.day, count: r.count ?? 0, totalAmount: num(r.totalAmount) }));

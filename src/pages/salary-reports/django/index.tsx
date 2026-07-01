@@ -30,6 +30,7 @@ import dayjs from "dayjs";
 
 import BonusDialog from "./BonusDialog";
 
+import { DjangoAddExpenseDrawer } from "../../../components/expenses/DjangoAddExpenseDrawer";
 import { PageHeader, MonthNavigation } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useCan } from "../../../hooks/useCan";
@@ -91,11 +92,26 @@ const COLUMNS: {
   { key: "netSalary", label: "К выплате", money: true },
 ];
 
+/**
+ * Payout state of a salary row:
+ *  - "payable": there is a positive remainder to pay out (net > 0)
+ *  - "paid":    something was earned and advances already cover it (net ≤ 0)
+ *  - "none":    nothing earned this month — no action, no badge
+ */
+function payoutState(row: PayrollRow): "payable" | "paid" | "none" {
+  const net = Math.round(Number(row.netSalary || 0));
+  if (net > 0) return "payable";
+  return Number(row.earnings || 0) > 0 ? "paid" : "none";
+}
+
 const RoleTable: React.FC<{
   title: string;
   rows: PayrollRow[];
   onManageBonus: (row: PayrollRow) => void;
-}> = ({ title, rows, onManageBonus }) => {
+  /** Show the "Выплатить" action / "Выплачено" badge (nurses & non-doctors). */
+  canPayout: boolean;
+  onPayout: (row: PayrollRow) => void;
+}> = ({ title, rows, onManageBonus, canPayout, onPayout }) => {
   const groupNet = rows.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
   return (
     <Paper variant="outlined" sx={{ mb: 2, overflow: "hidden" }}>
@@ -138,11 +154,42 @@ const RoleTable: React.FC<{
                 </TableCell>
               ))}
               <TableCell align="right" padding="checkbox">
-                <Tooltip title="Надбавки">
-                  <IconButton size="small" onClick={() => onManageBonus(row)}>
-                    <PaidOutlinedIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                  {canPayout &&
+                    (() => {
+                      const state = payoutState(row);
+                      if (state === "payable") {
+                        return (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="success"
+                            onClick={() => onPayout(row)}
+                            sx={{ whiteSpace: "nowrap" }}
+                          >
+                            Выплатить
+                          </Button>
+                        );
+                      }
+                      if (state === "paid") {
+                        return (
+                          <Chip
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            label="✓ Выплачено"
+                            sx={{ fontWeight: 700 }}
+                          />
+                        );
+                      }
+                      return null;
+                    })()}
+                  <Tooltip title="Надбавки">
+                    <IconButton size="small" onClick={() => onManageBonus(row)}>
+                      <PaidOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
               </TableCell>
             </TableRow>
           ))}
@@ -159,6 +206,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const {
     isSuperAdmin,
     activeOrganization,
+    activeBranch,
     memberships,
     loading: permLoading,
   } = usePermissions();
@@ -197,6 +245,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const [recalcOpen, setRecalcOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
   const [bonusRow, setBonusRow] = React.useState<PayrollRow | null>(null);
+  const [payoutRow, setPayoutRow] = React.useState<PayrollRow | null>(null);
 
   const handleLock = async () => {
     setBusy(true);
@@ -324,6 +373,8 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 title={ROLE_LABELS[role]}
                 rows={groups[role]}
                 onManageBonus={setBonusRow}
+                canPayout={canManage && role !== "doctor"}
+                onPayout={setPayoutRow}
               />
             ) : null,
           )}
@@ -370,6 +421,26 @@ const DjangoSalaryReportsPage: React.FC = () => {
           month={month}
           organizationId={report?.organizationId}
           readOnly={!canManage || report?.status === "locked"}
+        />
+      )}
+
+      {payoutRow && (
+        <DjangoAddExpenseDrawer
+          open
+          onClose={() => setPayoutRow(null)}
+          organizationId={report?.organizationId}
+          branchId={activeBranch?.id ?? undefined}
+          prefill={{
+            employee: { id: payoutRow.employeeId, fullName: payoutRow.fullName },
+            categoryKind: "advance",
+            cashAmount: payoutRow.netSalary,
+            name: `Зарплата — ${payoutRow.fullName}`,
+          }}
+          onCreated={() => {
+            setPayoutRow(null);
+            void query.refetch();
+            notify?.({ type: "success", message: "Выплата проведена" });
+          }}
         />
       )}
     </Box>

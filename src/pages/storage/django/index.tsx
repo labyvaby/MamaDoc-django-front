@@ -19,6 +19,7 @@ import {
     getStockMovements,
     createStockMovement,
     updateStockMovement,
+    createTransfer,
     getProducts,
     DjangoStockItem,
     DjangoStockMovement,
@@ -32,6 +33,7 @@ import {
     DjangoAddMovementDrawer,
     type MovementProductOption,
 } from "../../../components/storage/django/DjangoAddMovementDrawer";
+import { DjangoTransferDrawer } from "../../../components/storage/django/DjangoTransferDrawer";
 
 const DjangoStoragePage: React.FC = () => {
     usePageTitle("Движение товара");
@@ -58,6 +60,7 @@ const DjangoStoragePage: React.FC = () => {
     const [drawerOpen, setDrawerOpen] = React.useState(false);
     const [drawerMode, setDrawerMode] = React.useState<"in" | "out">("in");
     const [editingMovement, setEditingMovement] = React.useState<DjangoStockMovement | null>(null);
+    const [transferOpen, setTransferOpen] = React.useState(false);
 
     // All Products for Selector
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
@@ -261,6 +264,43 @@ const DjangoStoragePage: React.FC = () => {
         }
     };
 
+    const handleConfirmTransfer = async (
+        toWarehouseId: number,
+        qty: number,
+        comment?: string,
+    ) => {
+        if (!selectedItem) return;
+        try {
+            await createTransfer({
+                productId: selectedItem.productId,
+                fromWarehouseId: selectedItem.warehouseId,
+                toWarehouseId,
+                quantity: qty,
+                comment,
+            });
+            notify?.({ type: "success", message: "Товар перемещён" });
+
+            // Остатки обоих складов изменились — обновляем список и движения.
+            const data = await fetchInventory();
+            const updated = data?.find(
+                (i) => i.warehouseId === selectedItem.warehouseId && i.productId === selectedItem.productId,
+            );
+            setSelectedItem(updated ?? null);
+            if (updated) {
+                const updatedMovements = await getStockMovements({
+                    productId: updated.productId,
+                    warehouseId: updated.warehouseId,
+                });
+                setMovements(updatedMovements);
+            }
+        } catch (e) {
+            console.error(e);
+            const message = e instanceof ApiError ? e.message : "Не удалось выполнить перемещение";
+            notify?.({ type: "error", message });
+            throw e;
+        }
+    };
+
     // Filtered list
     const filteredStock = React.useMemo(() => {
         if (!searchQuery) return stock;
@@ -337,6 +377,7 @@ const DjangoStoragePage: React.FC = () => {
                                 loadingMovements={loadingMovements}
                                 onAddStock={() => handleOpenDrawer("in")}
                                 onRemoveStock={() => handleOpenDrawer("out")}
+                                onTransfer={canManage ? () => setTransferOpen(true) : undefined}
                                 onEditMovement={handleEditMovement}
                                 canManage={canManage}
                             />
@@ -358,6 +399,15 @@ const DjangoStoragePage: React.FC = () => {
                 defaultWarehouseId={defaultWarehouseId}
             />
 
+            {/* Перемещение между складами */}
+            <DjangoTransferDrawer
+                open={transferOpen}
+                onClose={() => setTransferOpen(false)}
+                item={selectedItem}
+                warehouses={warehouseOptions}
+                onConfirm={handleConfirmTransfer}
+            />
+
             {/* Mobile Sheet */}
             {isMobile && (
                 <AppBottomSheet
@@ -372,6 +422,7 @@ const DjangoStoragePage: React.FC = () => {
                                 loadingMovements={loadingMovements}
                                 onAddStock={() => handleOpenDrawer("in")}
                                 onRemoveStock={() => handleOpenDrawer("out")}
+                                onTransfer={canManage ? () => setTransferOpen(true) : undefined}
                                 onEditMovement={handleEditMovement}
                                 canManage={canManage}
                             />

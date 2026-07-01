@@ -76,6 +76,41 @@ export type DjangoProduct = {
     updatedAt: string;
 };
 
+/** Перемещение товара между складами (GET источник — лента движений). */
+export type DjangoTransfer = {
+    id: number;
+    productId: number;
+    productName: string;
+    fromWarehouseId: number;
+    fromWarehouseName: string;
+    toWarehouseId: number;
+    toWarehouseName: string;
+    /** Точное перемещённое количество. */
+    quantity: number;
+    comment: string;
+    createdByName: string | null;
+    createdAt: string;
+};
+
+/** Изображение из галереи товара (до 5 на товар). */
+export type DjangoProductImage = {
+    id: number;
+    /** Абсолютная ссылка на изображение. */
+    url: string;
+    /** Является ли основным фото товара. */
+    isPrimary: boolean;
+    /** Порядок сортировки. */
+    order: number;
+};
+
+/** Запись истории изменения цены продажи товара. */
+export type DjangoPriceHistoryEntry = {
+    /** Новая цена продажи, сом. */
+    price: number;
+    changedByName: string | null;
+    changedAt: string;
+};
+
 // ── Raw payloads (decimal-safe strings from the backend) ─────────────────────
 
 type RawStockItem = Omit<DjangoStockItem, "quantity"> & { quantity: string };
@@ -166,14 +201,25 @@ const mapProduct = (raw: RawProduct): DjangoProduct => ({
 
 export async function getProducts(
     signal?: AbortSignal,
-    opts: { includeInactive?: boolean } = {},
+    opts: { includeInactive?: boolean; category?: string } = {},
 ): Promise<DjangoProduct[]> {
-    const qs = opts.includeInactive ? "?includeInactive=true" : "";
+    const q = new URLSearchParams();
+    if (opts.includeInactive) q.set("includeInactive", "true");
+    if (opts.category) q.set("category", opts.category);
+    const qs = q.toString();
     const rows = await apiRequest<RawProduct[]>(
-        `/warehouse/products/${qs}`,
+        `/warehouse/products/${qs ? `?${qs}` : ""}`,
         { signal },
     );
     return rows.map(mapProduct);
+}
+
+/**
+ * Уникальные непустые категории товаров, отсортированные по алфавиту.
+ * Права: warehouse.view или warehouse.sales.view.
+ */
+export function getProductCategories(signal?: AbortSignal): Promise<string[]> {
+    return apiRequest<string[]>("/warehouse/products/categories/", { signal });
 }
 
 export type ProductWriteData = {
@@ -242,6 +288,85 @@ export function deleteProductImage(id: number): Promise<void> {
     });
 }
 
+// ── Product gallery (до 5 изображений) ───────────────────────────────────────
+
+/** Галерея изображений товара (порядок — по полю order). */
+export function getProductGallery(
+    productId: number,
+    signal?: AbortSignal,
+): Promise<DjangoProductImage[]> {
+    return apiRequest<DjangoProductImage[]>(
+        `/warehouse/products/${productId}/gallery/`,
+        { signal },
+    );
+}
+
+/** Загрузка нового изображения в галерею (максимум 5 на товар). */
+export function uploadGalleryImage(
+    productId: number,
+    file: File,
+): Promise<DjangoProductImage> {
+    const formData = new FormData();
+    formData.append("image", file);
+    return apiRequest<DjangoProductImage>(
+        `/warehouse/products/${productId}/gallery/`,
+        { method: "POST", formData },
+    );
+}
+
+/**
+ * Обновление параметров изображения (сортировка, основное).
+ * При isPrimary=true у остальных изображений товара флаг сбросится.
+ */
+export function updateGalleryImage(
+    productId: number,
+    imageId: number,
+    data: { isPrimary?: boolean; order?: number },
+): Promise<DjangoProductImage> {
+    return apiRequest<DjangoProductImage>(
+        `/warehouse/products/${productId}/gallery/${imageId}/`,
+        { method: "PATCH", body: data },
+    );
+}
+
+/**
+ * Удаление изображения из галереи. Если удалено основное, бэкенд
+ * автоматически выберет следующее по порядку в качестве основного.
+ */
+export function deleteGalleryImage(
+    productId: number,
+    imageId: number,
+): Promise<void> {
+    return apiRequest<void>(
+        `/warehouse/products/${productId}/gallery/${imageId}/`,
+        { method: "DELETE" },
+    );
+}
+
+// ── Price history ─────────────────────────────────────────────────────────────
+
+type RawPriceHistoryEntry = Omit<DjangoPriceHistoryEntry, "price"> & {
+    price: string;
+};
+
+/**
+ * История изменения цены продажи товара (самые новые сверху).
+ * Права: warehouse.view или warehouse.sales.view.
+ */
+export async function getProductPriceHistory(
+    productId: number,
+    signal?: AbortSignal,
+): Promise<DjangoPriceHistoryEntry[]> {
+    const rows = await apiRequest<RawPriceHistoryEntry[]>(
+        `/warehouse/products/${productId}/price-history/`,
+        { signal },
+    );
+    return rows.map((r) => ({
+        ...r,
+        price: parseFloat(r.price) || 0,
+    }));
+}
+
 // ── Stock (Inventory) ───────────────────────────────────────────────────────
 
 export async function getStock(
@@ -306,4 +431,27 @@ export async function updateStockMovement(
         body: data,
     });
     return mapMovement(raw);
+}
+
+// ── Transfers (перемещение между складами) ───────────────────────────────────
+
+type RawTransfer = Omit<DjangoTransfer, "quantity"> & { quantity: string };
+
+/**
+ * Создание перемещения товара между складами. Права: warehouse.manage.
+ * Порождает пару движений transfer_out/transfer_in в ленте движений.
+ */
+export async function createTransfer(data: {
+    productId: number;
+    fromWarehouseId: number;
+    toWarehouseId: number;
+    /** Точное количество (положительное). */
+    quantity: number;
+    comment?: string;
+}): Promise<DjangoTransfer> {
+    const raw = await apiRequest<RawTransfer>("/warehouse/transfers/", {
+        method: "POST",
+        body: data,
+    });
+    return { ...raw, quantity: parseFloat(raw.quantity) || 0 };
 }
