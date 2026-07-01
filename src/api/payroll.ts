@@ -6,7 +6,15 @@ export interface PayrollRow {
   employeeId: number;
   fullName: string;
   clinicalRole: string;
+  roleName: string;
   appointmentsCount: number;
+  distributedAppointments: string;
+  createdByCount: number;
+  totalCount: number;
+  waitingCount: number;
+  cancelledCount: number;
+  discountedCount: number;
+  paidCount: number;
   servicePercentPay: string;
   serviceFixedPay: string;
   appointmentPay: string;
@@ -24,6 +32,23 @@ export interface PayrollRow {
   netSalary: string;
 }
 
+export interface EmployeeDailyDetailRow {
+  workDate: string;
+  dayHours: string;
+  nightHours: string;
+  dayHoursSum: string;
+  nightHoursSum: string;
+  hoursSum: string;
+  appointmentsCount: number;
+  distributedAppointments: string;
+  createdByCount: number;
+  percentSum: string;
+  expensesSum: string;
+  totalSalary: string;
+  isWeekend: boolean;
+  hasWarning: boolean;
+}
+
 export interface PayrollReport {
   year: number;
   month: number;
@@ -33,6 +58,7 @@ export interface PayrollReport {
   lockedAt: string | null;
   totalNet: string;
   rows: PayrollRow[];
+  settings: any;
 }
 
 export interface ServiceRate {
@@ -99,6 +125,27 @@ export function recalculatePeriod(
     method: "POST",
     body: { year, month, reason },
   });
+}
+
+/** POST /api/payroll/periods/settings/ — save period settings. */
+export function updatePeriodSettings(
+  year: number,
+  month: number,
+  settings: any,
+  organizationId?: number,
+): Promise<PayrollReport> {
+  const q = new URLSearchParams();
+  if (organizationId != null) {
+    q.set("organizationId", String(organizationId));
+  }
+  const qs = q.toString();
+  return apiRequest<PayrollReport>(
+    `/payroll/periods/settings/${qs ? `?${qs}` : ""}`,
+    {
+      method: "POST",
+      body: { year, month, settings },
+    },
+  );
 }
 
 /** GET /api/payroll/employees/<id>/rules/ — the employee's salary rule. */
@@ -179,4 +226,23 @@ export function createBonus(data: BonusWriteData): Promise<PayrollBonus> {
 /** DELETE /api/payroll/bonuses/<id>/ — remove a bonus. */
 export function deleteBonus(id: number): Promise<void> {
   return apiRequest<void>(`/payroll/bonuses/${id}/`, { method: "DELETE" });
+}
+
+/** GET /api/payroll/employees/<id>/details/ — employee's per-day breakdown. */
+export function getEmployeeDailyDetails(
+  employeeId: number,
+  params: { year?: number; month?: number; organizationId?: number } = {},
+  signal?: AbortSignal,
+): Promise<EmployeeDailyDetailRow[]> {
+  const q = new URLSearchParams();
+  if (params.year != null) q.set("year", String(params.year));
+  if (params.month != null) q.set("month", String(params.month));
+  if (params.organizationId != null) {
+    q.set("organizationId", String(params.organizationId));
+  }
+  const qs = q.toString();
+  return apiRequest<EmployeeDailyDetailRow[]>(
+    `/payroll/employees/${employeeId}/details/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
 }

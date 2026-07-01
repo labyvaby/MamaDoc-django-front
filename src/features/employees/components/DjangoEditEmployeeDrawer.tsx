@@ -7,6 +7,7 @@ import {
   Chip,
   CircularProgress,
   InputAdornment,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -23,6 +24,8 @@ import {
   updateEmployee,
   getDjangoEmployee,
   uploadEmployeePhoto,
+  uploadEmployeeElqr,
+  deleteEmployeeElqr,
   getEmployeeServices,
   assignEmployeeService,
   updateEmployeeService,
@@ -47,7 +50,8 @@ import { CustomDatePicker } from "../../../components/ui";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
-import { SectionLabel, Field, Grid2, SegmentedControl, PhotoHero } from "./drawerKit";
+import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader } from "./drawerKit";
+import { KG_BANKS, findBankByName } from "../banks";
 import {
   parsePhone,
   composePhone,
@@ -69,6 +73,10 @@ export type DjangoEditEmployeeDrawerProps = {
   onClose: () => void;
   onUpdated: (updated: EmployesRow) => void;
 };
+
+const isImageFile = (f: File | null) => Boolean(f && f.type.startsWith("image/"));
+const isImageUrl = (u: string | null) =>
+  Boolean(u && !/\.pdf($|\?)/i.test(u));
 
 // Canonical string form of the salary value — lets us skip the PUT when the
 // user never touched the salary block (avoids a needless write + request).
@@ -123,6 +131,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [birthDate, setBirthDate] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [bank, setBank] = React.useState("");
+  const [bik, setBik] = React.useState("");
+  const [elqrFile, setElqrFile] = React.useState<File | null>(null);
+  const [elqrPreview, setElqrPreview] = React.useState<string | null>(null);
+  const [elqrExisting, setElqrExisting] = React.useState<string | null>(null);
   const [specializations, setSpecializations] = React.useState<DjangoSpecializationShort[]>([]);
 
   // ── Services ──────────────────────────────────────────────────────────────
@@ -134,7 +147,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // ── Salary ────────────────────────────────────────────────────────────────
   const [salaryLoading, setSalaryLoading] = React.useState(false);
   const [salary, setSalary] = React.useState<SalarySettingsValue>(EMPTY_SALARY);
-  // Snapshot of the salary as loaded — used to skip the PUT when untouched.
   const initialSalaryRef = React.useRef<string>(serializeSalary(EMPTY_SALARY));
 
   // ── Form state ────────────────────────────────────────────────────────────
@@ -164,7 +176,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const touch = (field: string) =>
     setTouched((prev) => ({ ...prev, [field]: true }));
 
-  // ── Photo pick ────────────────────────────────────────────────────────────
+  // ── Photo / elQR pick ───────────────────────────────────────────────────────
   const handlePickPhoto = React.useCallback((f: File | null) => {
     setPhotoFile(f);
     if (f) {
@@ -176,13 +188,31 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     }
   }, []);
 
+  const handlePickElqr = React.useCallback((f: File | null) => {
+    setElqrFile(f);
+    if (f && f.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setElqrPreview(reader.result as string);
+      reader.readAsDataURL(f);
+    } else if (f) {
+      setElqrPreview(null); // pdf — показываем как файл
+    } else {
+      setElqrPreview(null); // удаление
+    }
+  }, []);
+
+  const handleBankChange = (name: string) => {
+    setBank(name);
+    const found = findBankByName(name);
+    if (found) setBik(found.bik);
+  };
+
   // ── Populate on open ──────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!record) return;
 
     const empId = Number(record.id);
 
-    // Reset
     setPhotoFile(null);
     setPhotoPreview(record.photo_url || null);
     setFullName(record.full_name || "");
@@ -201,6 +231,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setBirthDate(record.birth_date || "");
     setBankAccountNumber(record.bank_account_number || "");
     setInn(record.inn || "");
+    setBank(record.bank || "");
+    setBik(record.bik || "");
+    setElqrFile(null);
+    setElqrExisting(record.elqr_url || null);
+    setElqrPreview(record.elqr_url || null);
     setSpecializations(record._djangoSpecializations ?? []);
     setServerError(null);
     setTouched({});
@@ -214,7 +249,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
     const ctrl = new AbortController();
 
-    // Full employee detail
     getDjangoEmployee(empId, ctrl.signal)
       .then((full) => {
         if (ctrl.signal.aborted) return;
@@ -224,6 +258,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setBirthDate(full.birthDate || "");
         setBankAccountNumber(full.bankAccountNumber || "");
         setInn(full.inn || "");
+        setBank(full.bank || "");
+        setBik(full.bik || "");
+        setElqrExisting(full.elqrUrl || null);
+        setElqrPreview(full.elqrUrl || null);
         setClinicalRole(full.clinicalRole ?? "other");
         setSpecializations(full.specializations ?? []);
         const parsedFull = parsePhone(full.phone || "");
@@ -235,8 +273,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           console.warn("Could not fetch full employee:", e);
       });
 
-    // Services list — fetched ONCE, shared by the «Услуги» picker and the
-    // salary rates dropdown (no duplicate /catalog/services request).
     const needServices = canViewServices || canManageServices || canViewPayroll;
     const servicesPromise: Promise<Service[]> = needServices
       ? getServices(null, ctrl.signal)
@@ -244,9 +280,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
     if (canViewServices || canManageServices) {
       setServicesLoading(true);
-      // includeInactive: чтобы деактивированные назначения были видны в карточке
-      // (показываем их отдельным блоком), а не молча пропадали. На дифф
-      // сохранения это не влияет — он фильтрует по a.isActive ниже.
       Promise.all([
         servicesPromise,
         getEmployeeServices(empId, ctrl.signal, { includeInactive: true }),
@@ -269,7 +302,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           if (!ctrl.signal.aborted) setServicesLoading(false);
         });
     } else if (canViewPayroll) {
-      // Payroll-only: still need the services list for the rates dropdown.
       servicesPromise
         .then((svcList) => {
           if (!ctrl.signal.aborted)
@@ -278,7 +310,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         .catch(() => {});
     }
 
-    // Salary rule — reuses the shared services list above (no extra fetch).
     if (canViewPayroll) {
       setSalaryLoading(true);
       getEmployeeRule(empId, ctrl.signal)
@@ -298,9 +329,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     }
 
     return () => ctrl.abort();
-  // Key on the employee id (a stable primitive) — NOT the record object — so
-  // the loads run once per opened employee and aren't re-triggered/aborted by
-  // unrelated re-renders that hand us a new object with the same id.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
 
@@ -329,6 +357,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         ...(canManagePrivate && {
           bankAccountNumber: bankAccountNumber.trim() || null,
           inn: inn.trim() || null,
+          bank: bank.trim() || null,
+          bik: bik.trim() || null,
         }),
       });
 
@@ -341,6 +371,23 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         }
       }
 
+      // 2b. elQR — загрузка нового / удаление снятого
+      if (canManagePrivate) {
+        if (elqrFile) {
+          try {
+            await uploadEmployeeElqr(empId, elqrFile);
+          } catch {
+            notify?.({ type: "error", message: "Данные сохранены, но elQR не удалось загрузить" });
+          }
+        } else if (elqrExisting && !elqrPreview) {
+          try {
+            await deleteEmployeeElqr(empId);
+          } catch {
+            /* не критично */
+          }
+        }
+      }
+
       // 3. Services — diff: deactivate removed, activate/add new
       if (canManageServices) {
         const selectedIds = new Set(selectedServices.map((s) => s.id));
@@ -348,7 +395,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           assignments.filter((a) => a.isActive).map((a) => a.service.id),
         );
 
-        // Deactivate assignments that are no longer selected
         for (const a of assignments) {
           if (a.isActive && !selectedIds.has(a.service.id)) {
             try {
@@ -359,7 +405,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           }
         }
 
-        // Re-activate or add new
         for (const svc of selectedServices) {
           if (!assignedActiveIds.has(svc.id)) {
             const existing = assignments.find((a) => a.service.id === svc.id);
@@ -408,11 +453,12 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         birth_date: updated.birthDate || null,
         bank_account_number: updated.bankAccountNumber || null,
         inn: updated.inn || null,
+        bank: updated.bank || null,
+        bik: updated.bik || null,
+        elqr_url: updated.elqrUrl || null,
         photo_url: updated.photoUrl || null,
         role_id: updated.role ? String(updated.role.id) : null,
         clinicalRole: updated.clinicalRole ?? "other",
-        // updated_at меняется при каждом сохранении — карточка использует его
-        // как сигнатуру, чтобы перечитать услуги/связанные данные без F5.
         updated_at: updated.updatedAt,
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
@@ -433,12 +479,12 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
   const open = Boolean(record);
 
-  // Деактивированные назначения услуг — показываем отдельно, чтобы они не
-  // пропадали из карточки (управление статусом — в «Управление услугами»).
   const inactiveAssignments = React.useMemo(
     () => assignments.filter((a) => !a.isActive),
     [assignments],
   );
+
+  const elqrIsImage = elqrFile ? isImageFile(elqrFile) : isImageUrl(elqrPreview);
 
   return (
     <DrawerBase
@@ -453,13 +499,55 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       <Stack spacing={2.5}>
         {serverError && <Alert severity="error">{serverError}</Alert>}
 
-        {/* ── Фото-герой: аватар + ФИО/Псевдоним ── */}
+        {/* ── Личная информация ── */}
+        <SectionLabel title="Личная информация" />
         <PhotoHero
           photoPreview={photoPreview}
           name={fullName}
           inputId="edit-employee-photo"
           onPickPhoto={handlePickPhoto}
           disabled={busy}
+          footer={
+            <Grid2>
+              <Field label="Дата рождения">
+                <CustomDatePicker
+                  value={birthDate ? dayjs(birthDate) : null}
+                  onChange={(val) => {
+                    setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+                    touch("birthDate");
+                  }}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      size: "small",
+                      InputLabelProps: { shrink: true },
+                      placeholder: "дд.мм.гггг",
+                      disabled: busy,
+                      onBlur: () => touch("birthDate"),
+                      error: Boolean(showError("birthDate")),
+                      helperText: showError("birthDate"),
+                    },
+                  }}
+                />
+              </Field>
+              {canManagePrivate && (
+                <Field label="ИНН">
+                  <TextField
+                    value={inn}
+                    onChange={(e) => { setInn(e.target.value.replace(/\D/g, "").slice(0, 14)); setServerError(null); }}
+                    onBlur={() => touch("inn")}
+                    fullWidth
+                    size="small"
+                    placeholder="00000000000000"
+                    disabled={busy}
+                    inputProps={{ inputMode: "numeric" }}
+                    error={Boolean(showError("inn"))}
+                    helperText={showError("inn")}
+                  />
+                </Field>
+              )}
+            </Grid2>
+          }
         >
           <Field label="ФИО" required>
             <TextField
@@ -503,8 +591,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
               value={phoneLocal}
               onChange={(e) => {
                 const maxLen = getPhoneLocalMaxLength(phoneCountry);
-                const digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
-                setPhoneLocal(digits);
+                setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
                 setServerError(null);
               }}
               onBlur={() => touch("phone")}
@@ -518,68 +605,42 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           </Box>
         </Field>
 
-        <Grid2>
-          <Field label="Email">
-            <TextField
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setServerError(null); }}
-              onBlur={() => touch("email")}
-              fullWidth
-              placeholder="example@mail.com"
-              type="email"
-              disabled={busy}
-              error={Boolean(showError("email") && !showError("email")?.startsWith("Опечатка"))}
-              helperText={showError("email")}
-              FormHelperTextProps={{
-                sx: showError("email")?.startsWith("Опечатка") ? { color: "warning.main" } : undefined,
-              }}
-            />
-          </Field>
-          <Field label="Telegram ID">
-            <TextField
-              value={telegramId}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
-                setTelegramId(digits);
-                setServerError(null);
-              }}
-              onBlur={() => touch("telegramId")}
-              fullWidth
-              placeholder="Числовой ID"
-              disabled={busy}
-              inputProps={{ inputMode: "numeric" }}
-              error={Boolean(showError("telegramId"))}
-              helperText={showError("telegramId")}
-            />
-          </Field>
-        </Grid2>
-
-        <Field label="Дата рождения">
-          <CustomDatePicker
-            value={birthDate ? dayjs(birthDate) : null}
-            onChange={(val) => {
-              setBirthDate(val ? val.format("YYYY-MM-DD") : "");
-              touch("birthDate");
-            }}
-            slotProps={{
-              textField: {
-                fullWidth: true,
-                InputLabelProps: { shrink: true },
-                placeholder: "дд.мм.гггг",
-                disabled: busy,
-                onBlur: () => touch("birthDate"),
-                error: Boolean(showError("birthDate")),
-                helperText: showError("birthDate"),
-              },
+        <Field label="Email">
+          <TextField
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); setServerError(null); }}
+            onBlur={() => touch("email")}
+            fullWidth
+            placeholder="example@mail.com"
+            type="email"
+            disabled={busy}
+            error={Boolean(showError("email") && !showError("email")?.startsWith("Опечатка"))}
+            helperText={showError("email")}
+            FormHelperTextProps={{
+              sx: showError("email")?.startsWith("Опечатка") ? { color: "warning.main" } : undefined,
             }}
           />
         </Field>
 
-        {/* ── Финансы (под staff.private.manage) ── */}
+        <Field label="Telegram ID">
+          <TextField
+            value={telegramId}
+            onChange={(e) => { setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20)); setServerError(null); }}
+            onBlur={() => touch("telegramId")}
+            fullWidth
+            placeholder="Числовой ID"
+            disabled={busy}
+            inputProps={{ inputMode: "numeric" }}
+            error={Boolean(showError("telegramId"))}
+            helperText={showError("telegramId")}
+          />
+        </Field>
+
+        {/* ── Реквизиты (под staff.private.manage) ── */}
         {canManagePrivate && (
           <>
             <SectionLabel
-              title="Финансы"
+              title="Реквизиты"
               trailing={
                 <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
                   <LockOutlined sx={{ fontSize: 13 }} />
@@ -587,15 +648,38 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 </Stack>
               }
             />
+            <Field label="Банк">
+              <TextField
+                select
+                value={bank}
+                onChange={(e) => handleBankChange(e.target.value)}
+                fullWidth
+                disabled={busy}
+                SelectProps={{ displayEmpty: true }}
+              >
+                <MenuItem value="">
+                  <Box component="span" sx={{ color: "text.disabled" }}>Не выбран</Box>
+                </MenuItem>
+                {KG_BANKS.map((b) => (
+                  <MenuItem key={b.name} value={b.name}>{b.name}</MenuItem>
+                ))}
+              </TextField>
+            </Field>
             <Grid2>
+              <Field label="БИК">
+                <TextField
+                  value={bik}
+                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                  fullWidth
+                  placeholder="000000"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                />
+              </Field>
               <Field label="Расчётный счёт">
                 <TextField
                   value={bankAccountNumber}
-                  onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, "").slice(0, 16);
-                    setBankAccountNumber(v);
-                    setServerError(null);
-                  }}
+                  onChange={(e) => { setBankAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 16)); setServerError(null); }}
                   onBlur={() => touch("bankAccountNumber")}
                   fullWidth
                   placeholder="0000000000000000"
@@ -612,54 +696,51 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
                 />
               </Field>
-              <Field label="ИНН">
-                <TextField
-                  value={inn}
-                  onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, "").slice(0, 14);
-                    setInn(v);
-                    setServerError(null);
-                  }}
-                  onBlur={() => touch("inn")}
-                  fullWidth
-                  placeholder="00000000000000"
-                  disabled={busy}
-                  inputProps={{ inputMode: "numeric" }}
-                  error={Boolean(showError("inn"))}
-                  helperText={showError("inn") || `${inn.length}/14`}
-                />
-              </Field>
             </Grid2>
+            <Field label="elQR (реквизиты QR)">
+              <ElqrUploader
+                previewUrl={elqrPreview}
+                isImage={elqrIsImage}
+                fileName={elqrFile?.name ?? (elqrPreview ? "elQR" : null)}
+                inputId="edit-employee-elqr"
+                onPick={handlePickElqr}
+                onRemove={() => handlePickElqr(null)}
+                disabled={busy}
+              />
+            </Field>
           </>
         )}
 
         {/* ── Роль и статус ── */}
         <SectionLabel title="Роль и статус" />
 
-        <Field label="Статус">
-          <SegmentedControl
-            value={status}
-            onChange={(v) => setStatus(v)}
-            disabled={busy}
-            options={[
-              { value: "active", label: "Работает" },
-              { value: "inactive", label: "Не работает" },
-            ]}
-          />
-        </Field>
-
-        <Field label="Тип сотрудника" hint="Клинический тип — влияет на расписание и специализации">
-          <SegmentedControl
-            value={clinicalRole}
-            onChange={(v) => setClinicalRole(v)}
-            disabled={busy}
-            options={[
-              { value: "doctor", label: "Врач" },
-              { value: "nurse", label: "Медсестра" },
-              { value: "other", label: "Другой" },
-            ]}
-          />
-        </Field>
+        <Grid2>
+          <Field label="Статус">
+            <TextField
+              select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as "active" | "inactive")}
+              fullWidth
+              disabled={busy}
+            >
+              <MenuItem value="active">Работает</MenuItem>
+              <MenuItem value="inactive">Не работает</MenuItem>
+            </TextField>
+          </Field>
+          <Field label="Тип сотрудника">
+            <TextField
+              select
+              value={clinicalRole}
+              onChange={(e) => setClinicalRole(e.target.value as "doctor" | "nurse" | "other")}
+              fullWidth
+              disabled={busy}
+            >
+              <MenuItem value="doctor">Врач</MenuItem>
+              <MenuItem value="nurse">Медсестра</MenuItem>
+              <MenuItem value="other">Другой</MenuItem>
+            </TextField>
+          </Field>
+        </Grid2>
 
         {/* ── Специализации (только для врача) ── */}
         {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
@@ -704,16 +785,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   </li>
                 )}
                 renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    placeholder={canManageServices ? "Выберите услуги" : ""}
-                  />
+                  <TextField {...params} placeholder={canManageServices ? "Выберите услуги" : ""} />
                 )}
               />
             </Field>
 
-            {/* Деактивированные назначения — показываем, а не прячем. Только
-                для информации; управлять ими можно в «Управление услугами». */}
             {inactiveAssignments.length > 0 && (
               <Box>
                 <Typography variant="caption" color="text.secondary">

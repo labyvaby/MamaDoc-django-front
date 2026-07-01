@@ -5,6 +5,7 @@ import {
   Box,
   Chip,
   InputAdornment,
+  MenuItem,
   Stack,
   TextField,
 } from "@mui/material";
@@ -17,6 +18,7 @@ import DrawerBase from "./DrawerBase";
 import {
   onboardEmployee,
   uploadEmployeePhoto,
+  uploadEmployeeElqr,
   getDjangoEmployee,
   getSpecializations,
   type OnboardEmployeeResponse,
@@ -30,7 +32,8 @@ import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import { CustomDatePicker } from "../../../components/ui";
-import { SectionLabel, Field, Grid2, SegmentedControl, PhotoHero } from "./drawerKit";
+import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader } from "./drawerKit";
+import { KG_BANKS, findBankByName } from "../banks";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
@@ -77,6 +80,8 @@ function rolesForActiveOrg(roles: RbacRole[], activeOrgId?: number): RbacRole[] 
   return Array.from(byKey.values());
 }
 
+const isImageFile = (f: File | null) => Boolean(f && f.type.startsWith("image/"));
+
 const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   open,
   onClose,
@@ -104,11 +109,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [birthDate, setBirthDate] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
-
-  // ── account fields ────────────────────────────────────────────────────────────
-  // Логин (username) деривируется бэкендом из email/телефона, пароль не
-  // задаётся при создании — сотрудник входит по SMS-коду (OTP).
-  // firstName / lastName выводятся из ФИО автоматически (см. splitFullName).
+  const [bank, setBank] = React.useState("");
+  const [bik, setBik] = React.useState("");
+  const [elqrFile, setElqrFile] = React.useState<File | null>(null);
+  const [elqrPreview, setElqrPreview] = React.useState<string | null>(null);
 
   // ── role / branch ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
@@ -158,9 +162,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   const canSubmit = hasRequiredFields && !busy;
 
-  // Человекочитаемый список того, чего не хватает для сохранения. Используется
-  // и для подсказки над кнопкой, и в сводке при попытке сохранить пустую форму,
-  // чтобы кнопка не «умирала молча».
+  // Человекочитаемый список того, чего не хватает для сохранения.
   const missingReasons = React.useMemo<string[]>(() => {
     const r: string[] = [];
     if (errors.fullName) r.push("ФИО");
@@ -191,10 +193,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     let cancelled = false;
     setLoadingDeps(true);
     const tasks: Promise<unknown>[] = [
-      // Бэкенд скоупит роли по организации (по умолчанию — активной). Передаём
-      // id явно; rolesForActiveOrg — дополнительный клиентский слой на случай,
-      // если контекст ещё не подхватился.
-      getRoles().then((r) => { if (!cancelled) setRoles(rolesForActiveOrg(r, activeOrganization?.id)); }),
+      getRoles(activeOrganization?.id).then((r) => { if (!cancelled) setRoles(rolesForActiveOrg(r, activeOrganization?.id)); }),
     ];
     if (canViewSpecs || canManageSpecs) {
       tasks.push(
@@ -235,6 +234,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setBirthDate("");
       setBankAccountNumber("");
       setInn("");
+      setBank("");
+      setBik("");
+      setElqrFile(null);
+      setElqrPreview(null);
       setRoleId("");
       setEmployeeBranches([]);
       setUserAccessBranches([]);
@@ -247,7 +250,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     }
   }, [open]);
 
-  // ── photo ─────────────────────────────────────────────────────────────────────
+  // ── photo / elqr pickers ────────────────────────────────────────────────────────
   const handlePickPhoto = React.useCallback((f: File | null) => {
     setPhotoFile(f);
     if (f) {
@@ -259,12 +262,28 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     }
   }, []);
 
+  const handlePickElqr = React.useCallback((f: File | null) => {
+    setElqrFile(f);
+    if (f && f.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setElqrPreview(reader.result as string);
+      reader.readAsDataURL(f);
+    } else {
+      setElqrPreview(null);
+    }
+  }, []);
+
+  // ── bank select → autofill БИК ──────────────────────────────────────────────────
+  const handleBankChange = (name: string) => {
+    setBank(name);
+    const found = findBankByName(name);
+    if (found) setBik(found.bik);
+  };
+
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setSubmitAttempted(true);
     if (!canSubmit) {
-      // Раньше форма молча выходила (return) — кнопка гасла, пользователь не
-      // понимал почему. Теперь показываем конкретную причину.
       setSubmitError(
         missingReasons.length > 0
           ? `Заполните: ${missingReasons.join(", ")}.`
@@ -305,18 +324,34 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         ...(canManagePrivate && {
           bankAccountNumber: bankAccountNumber.trim() || undefined,
           inn: inn.trim() || undefined,
+          bank: bank.trim() || undefined,
+          bik: bik.trim() || undefined,
         }),
       };
       const res: OnboardEmployeeResponse = await onboardEmployee(payload);
       let employeeRow: EmployesRow = mapDjangoFullToRow(res.employee);
 
+      const needRefetch = Boolean(photoFile || (elqrFile && canManagePrivate));
       if (photoFile) {
         try {
           await uploadEmployeePhoto(res.employee.id, photoFile);
+        } catch {
+          notify?.({ type: "error", message: "Сотрудник создан, но фото не удалось загрузить" });
+        }
+      }
+      if (elqrFile && canManagePrivate) {
+        try {
+          await uploadEmployeeElqr(res.employee.id, elqrFile);
+        } catch {
+          notify?.({ type: "error", message: "Сотрудник создан, но elQR не удалось загрузить" });
+        }
+      }
+      if (needRefetch) {
+        try {
           const fresh = await getDjangoEmployee(res.employee.id);
           employeeRow = mapDjangoFullToRow(fresh);
         } catch {
-          notify?.({ type: "error", message: "Сотрудник создан, но фото не удалось загрузить" });
+          /* оставляем базовую строку */
         }
       }
 
@@ -342,9 +377,6 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       busy={busy}
       onSubmit={handleSubmit}
       submitLabel="Создать"
-      // Кнопку НЕ гасим по валидации — иначе при невалидной форме клик не
-      // срабатывает и пользователь не видит причину. Блокируем только во время
-      // отправки. Невалидность отлавливает handleSubmit и показывает, чего нет.
       submitDisabled={false}
     >
       <Stack spacing={2.5}>
@@ -354,13 +386,55 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </Alert>
         )}
 
-        {/* ── Фото-герой: аватар + ФИО/Псевдоним ── */}
+        {/* ── Личная информация: фото + ФИО/Псевдоним + Дата рождения/ИНН ── */}
+        <SectionLabel title="Личная информация" />
         <PhotoHero
           photoPreview={photoPreview}
           name={fullName}
           inputId="onboard-employee-photo"
           onPickPhoto={handlePickPhoto}
           disabled={busy}
+          footer={
+            <Grid2>
+              <Field label="Дата рождения">
+                <CustomDatePicker
+                  value={birthDate ? dayjs(birthDate) : null}
+                  onChange={(val) => {
+                    setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+                    touch("birthDate");
+                  }}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      size: "small",
+                      InputLabelProps: { shrink: true },
+                      placeholder: "дд.мм.гггг",
+                      disabled: busy,
+                      onBlur: () => touch("birthDate"),
+                      error: Boolean(showError("birthDate")),
+                      helperText: showError("birthDate"),
+                    },
+                  }}
+                />
+              </Field>
+              {canManagePrivate && (
+                <Field label="ИНН">
+                  <TextField
+                    value={inn}
+                    onChange={(e) => setInn(e.target.value.replace(/\D/g, "").slice(0, 14))}
+                    onBlur={() => touch("inn")}
+                    fullWidth
+                    size="small"
+                    placeholder="00000000000000"
+                    disabled={busy}
+                    inputProps={{ inputMode: "numeric" }}
+                    error={Boolean(showError("inn"))}
+                    helperText={showError("inn")}
+                  />
+                </Field>
+              )}
+            </Grid2>
+          }
         >
           <Field label="ФИО" required>
             <TextField
@@ -404,8 +478,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               value={phoneLocal}
               onChange={(e) => {
                 const maxLen = getPhoneLocalMaxLength(phoneCountry);
-                const digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
-                setPhoneLocal(digits);
+                setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
               }}
               fullWidth
               placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
@@ -415,67 +488,42 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </Box>
         </Field>
 
-        <Grid2>
-          <Field label="Email">
-            <TextField
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={() => touch("email")}
-              fullWidth
-              placeholder="example@mail.com"
-              type="email"
-              disabled={busy}
-              error={Boolean(showError("email") && !isWarning("email"))}
-              helperText={showError("email")}
-              FormHelperTextProps={{
-                sx: isWarning("email") ? { color: "warning.main" } : undefined,
-              }}
-            />
-          </Field>
-          <Field label="Telegram ID">
-            <TextField
-              value={telegramId}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, "").slice(0, 20);
-                setTelegramId(digits);
-              }}
-              onBlur={() => touch("telegramId")}
-              fullWidth
-              placeholder="Числовой ID"
-              disabled={busy}
-              inputProps={{ inputMode: "numeric" }}
-              error={Boolean(showError("telegramId"))}
-              helperText={showError("telegramId")}
-            />
-          </Field>
-        </Grid2>
-
-        <Field label="Дата рождения">
-          <CustomDatePicker
-            value={birthDate ? dayjs(birthDate) : null}
-            onChange={(val) => {
-              setBirthDate(val ? val.format("YYYY-MM-DD") : "");
-              touch("birthDate");
-            }}
-            slotProps={{
-              textField: {
-                fullWidth: true,
-                InputLabelProps: { shrink: true },
-                placeholder: "дд.мм.гггг",
-                disabled: busy,
-                onBlur: () => touch("birthDate"),
-                error: Boolean(showError("birthDate")),
-                helperText: showError("birthDate"),
-              },
+        <Field label="Email">
+          <TextField
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => touch("email")}
+            fullWidth
+            placeholder="example@mail.com"
+            type="email"
+            disabled={busy}
+            error={Boolean(showError("email") && !isWarning("email"))}
+            helperText={showError("email")}
+            FormHelperTextProps={{
+              sx: isWarning("email") ? { color: "warning.main" } : undefined,
             }}
           />
         </Field>
 
-        {/* ── Финансы (под staff.private.manage) ── */}
+        <Field label="Telegram ID">
+          <TextField
+            value={telegramId}
+            onChange={(e) => setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20))}
+            onBlur={() => touch("telegramId")}
+            fullWidth
+            placeholder="Числовой ID"
+            disabled={busy}
+            inputProps={{ inputMode: "numeric" }}
+            error={Boolean(showError("telegramId"))}
+            helperText={showError("telegramId")}
+          />
+        </Field>
+
+        {/* ── Реквизиты (под staff.private.manage) ── */}
         {canManagePrivate && (
           <>
             <SectionLabel
-              title="Финансы"
+              title="Реквизиты"
               trailing={
                 <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
                   <LockOutlined sx={{ fontSize: 13 }} />
@@ -483,14 +531,38 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 </Stack>
               }
             />
+            <Field label="Банк">
+              <TextField
+                select
+                value={bank}
+                onChange={(e) => handleBankChange(e.target.value)}
+                fullWidth
+                disabled={busy}
+                SelectProps={{ displayEmpty: true }}
+              >
+                <MenuItem value="">
+                  <Box component="span" sx={{ color: "text.disabled" }}>Не выбран</Box>
+                </MenuItem>
+                {KG_BANKS.map((b) => (
+                  <MenuItem key={b.name} value={b.name}>{b.name}</MenuItem>
+                ))}
+              </TextField>
+            </Field>
             <Grid2>
+              <Field label="БИК">
+                <TextField
+                  value={bik}
+                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                  fullWidth
+                  placeholder="000000"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                />
+              </Field>
               <Field label="Расчётный счёт">
                 <TextField
                   value={bankAccountNumber}
-                  onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, "").slice(0, 16);
-                    setBankAccountNumber(v);
-                  }}
+                  onChange={(e) => setBankAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 16))}
                   onBlur={() => touch("bankAccountNumber")}
                   fullWidth
                   placeholder="0000000000000000"
@@ -507,57 +579,56 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
                 />
               </Field>
-              <Field label="ИНН">
-                <TextField
-                  value={inn}
-                  onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, "").slice(0, 14);
-                    setInn(v);
-                  }}
-                  onBlur={() => touch("inn")}
-                  fullWidth
-                  placeholder="00000000000000"
-                  disabled={busy}
-                  inputProps={{ inputMode: "numeric" }}
-                  error={Boolean(showError("inn"))}
-                  helperText={showError("inn") || `${inn.length}/14`}
-                />
-              </Field>
             </Grid2>
+            <Field label="elQR (реквизиты QR)">
+              <ElqrUploader
+                previewUrl={elqrPreview}
+                isImage={isImageFile(elqrFile)}
+                fileName={elqrFile?.name ?? null}
+                inputId="onboard-employee-elqr"
+                onPick={handlePickElqr}
+                onRemove={() => handlePickElqr(null)}
+                disabled={busy}
+              />
+            </Field>
           </>
         )}
 
         {/* ── Роль и доступ ── */}
         <SectionLabel title="Роль и доступ" />
 
-        <Field label="Статус">
-          <SegmentedControl
-            value={status}
-            onChange={(v) => setStatus(v)}
-            disabled={busy}
-            options={[
-              { value: "active", label: "Работает" },
-              { value: "inactive", label: "Не работает" },
-              { value: "fired", label: "Уволен" },
-            ]}
-          />
-        </Field>
-
-        <Field label="Тип сотрудника" hint="Клинический тип — влияет на расписание и специализации">
-          <SegmentedControl
-            value={clinicalRole}
-            onChange={(next) => {
-              setClinicalRole(next);
-              if (next !== "doctor") setSelectedSpecializations([]);
-            }}
-            disabled={busy}
-            options={[
-              { value: "doctor", label: "Врач" },
-              { value: "nurse", label: "Медсестра" },
-              { value: "other", label: "Другой" },
-            ]}
-          />
-        </Field>
+        <Grid2>
+          <Field label="Статус">
+            <TextField
+              select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as "active" | "inactive" | "fired")}
+              fullWidth
+              disabled={busy}
+            >
+              <MenuItem value="active">Работает</MenuItem>
+              <MenuItem value="inactive">Не работает</MenuItem>
+              <MenuItem value="fired">Уволен</MenuItem>
+            </TextField>
+          </Field>
+          <Field label="Тип сотрудника">
+            <TextField
+              select
+              value={clinicalRole}
+              onChange={(e) => {
+                const next = e.target.value as "doctor" | "nurse" | "other";
+                setClinicalRole(next);
+                if (next !== "doctor") setSelectedSpecializations([]);
+              }}
+              fullWidth
+              disabled={busy}
+            >
+              <MenuItem value="doctor">Врач</MenuItem>
+              <MenuItem value="nurse">Медсестра</MenuItem>
+              <MenuItem value="other">Другой</MenuItem>
+            </TextField>
+          </Field>
+        </Grid2>
 
         {/* ── Специализации (только для врача) ── */}
         {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && (
@@ -572,23 +643,14 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               isOptionEqualToValue={(a, b) => a.id === b.id}
               renderTags={(val, getTagProps) =>
                 val.map((opt, idx) => (
-                  <Chip
-                    {...getTagProps({ index: idx })}
-                    key={opt.id}
-                    label={opt.name}
-                    size="small"
-                  />
+                  <Chip {...getTagProps({ index: idx })} key={opt.id} label={opt.name} size="small" />
                 ))
               }
               renderInput={(params) => (
                 <TextField
                   {...params}
                   placeholder={
-                    loadingDeps
-                      ? "Загрузка…"
-                      : !canManageSpecs
-                      ? "Нет прав на изменение"
-                      : "Выберите специализации"
+                    loadingDeps ? "Загрузка…" : !canManageSpecs ? "Нет прав на изменение" : "Выберите специализации"
                   }
                 />
               )}
@@ -631,19 +693,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               disabled={loadingDeps || busy}
               renderTags={(value, getTagProps) =>
                 value.map((option, index) => (
-                  <Chip
-                    label={option.name}
-                    size="small"
-                    {...getTagProps({ index })}
-                    key={option.id}
-                  />
+                  <Chip label={option.name} size="small" {...getTagProps({ index })} key={option.id} />
                 ))
               }
               renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
-                />
+                <TextField {...params} placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"} />
               )}
             />
           )}
@@ -664,19 +718,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             disabled={loadingDeps || busy}
             renderTags={(value, getTagProps) =>
               value.map((option, index) => (
-                <Chip
-                  label={option.name}
-                  size="small"
-                  {...getTagProps({ index })}
-                  key={option.id}
-                />
+                <Chip label={option.name} size="small" {...getTagProps({ index })} key={option.id} />
               ))
             }
             renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder={loadingDeps ? "Загрузка…" : "Как у филиалов работы"}
-              />
+              <TextField {...params} placeholder={loadingDeps ? "Загрузка…" : "Как у филиалов работы"} />
             )}
           />
         </Field>

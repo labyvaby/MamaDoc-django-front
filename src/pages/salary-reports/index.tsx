@@ -76,7 +76,7 @@ const SalaryReportsPage: React.FC = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
     const { open: notify } = useNotification();
-    const { isSuperAdmin, hasRole, isRegistrator, employeeId, loading: permissionsLoading } = usePermissions();
+    const { isSuperAdmin, hasRole, isRegistrator, employeeId, loading: permissionsLoading, activeOrganization } = usePermissions();
     const queryClient = useQueryClient();
 
     const canSeeAll = useMemo(() => isSuperAdmin() || hasRole(['accountant', 'admin']), [isSuperAdmin, hasRole]);
@@ -371,6 +371,7 @@ const SalaryReportsPage: React.FC = () => {
                 month={selectedMonth}
                 monthLabel={dayjs(selectedDate).format('MMMM YYYY')}
                 initialSettings={periodSettings}
+                organizationId={isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined}
                 onSaved={(newSettings) => {
                     setPeriodSettings(newSettings);
                     cache.current.delete(dayjs(selectedDate).format('YYYY-MM'));

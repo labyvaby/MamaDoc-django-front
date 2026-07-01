@@ -23,6 +23,7 @@ export interface PayrollMonthSettings {
   disable_night_hours?: boolean;
   merge_night_into_day?: boolean;
   disable_dynamic_rules?: boolean;
+  distribution_model?: 'monthly_hours' | 'daily_hours';
   month_bonus_multiplier?: number;
   role_rate_overrides?: {
     [roleName: string]: {

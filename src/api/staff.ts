@@ -42,6 +42,12 @@ export interface DjangoEmployee {
   bankAccountNumber: string;
   /** Empty string when caller lacks staff.private.view */
   inn: string;
+  /** Банк расчётного счёта. Пусто без staff.private.view */
+  bank: string;
+  /** БИК. Пусто без staff.private.view */
+  bik: string;
+  /** URL файла elQR. null без staff.private.view */
+  elqrUrl: string | null;
   status: "active" | "inactive" | "fired";
   clinicalRole: ClinicalRole;
   photoUrl: string | null;
@@ -127,6 +133,8 @@ export interface OnboardEmployeePayload {
   telegramId?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  bank?: string | null;
+  bik?: string | null;
 }
 
 // ── Update payload ────────────────────────────────────────────────────────────
@@ -143,6 +151,8 @@ export interface UpdateEmployeePayload {
   telegramId?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  bank?: string | null;
+  bik?: string | null;
   clinicalRole?: ClinicalRole;
 }
 
@@ -355,6 +365,26 @@ export function uploadEmployeePhoto(
 
 export function deleteEmployeePhoto(employeeId: number): Promise<void> {
   return apiRequest<void>(`/staff/employees/${employeeId}/photo/`, {
+    method: "DELETE",
+  });
+}
+
+// ── API functions — elQR ──────────────────────────────────────────────────────
+
+export function uploadEmployeeElqr(
+  employeeId: number,
+  file: File,
+): Promise<DjangoEmployee> {
+  const formData = new FormData();
+  formData.append("elqr", file);
+  return apiRequest<DjangoEmployee>(
+    `/staff/employees/${employeeId}/elqr/`,
+    { method: "PUT", formData },
+  ).then(normalizeEmployee);
+}
+
+export function deleteEmployeeElqr(employeeId: number): Promise<void> {
+  return apiRequest<void>(`/staff/employees/${employeeId}/elqr/`, {
     method: "DELETE",
   });
 }

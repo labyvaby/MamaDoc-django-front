@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import {
   Alert,
   Box,
@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  IconButton,
   Paper,
   Stack,
   Table,
@@ -19,23 +18,36 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
+  useMediaQuery,
+  alpha,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
+import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import BonusDialog from "./BonusDialog";
+import SalaryReportRow, {
+  COLUMNS_DOCTOR,
+  COLUMNS_NURSE,
+  COLUMNS_REGISTRATOR,
+  COLUMNS_ADMIN,
+  type ColumnConfig,
+} from "./components/SalaryReportRow";
 
 import { DjangoAddExpenseDrawer } from "../../../components/expenses/DjangoAddExpenseDrawer";
 import { PageHeader, MonthNavigation } from "../../../components/ui";
+import { AppointmentsSummaryCards } from "../../reports/components/AppointmentsSummaryCards";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
+import SettingsIcon from "@mui/icons-material/SettingsOutlined";
+import { PeriodSettingsDialog } from "../../../features/payroll/components/PeriodSettingsDialog";
 import {
   getPayrollReport,
   lockPeriod,
@@ -202,22 +214,31 @@ const RoleTable: React.FC<{
 const DjangoSalaryReportsPage: React.FC = () => {
   usePageTitle("Отчёт по зарплате");
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
+  
   const canView = useCan("payroll.view");
+  const canManage = useCan("payroll.manage");
+  const { open: notify } = useNotification();
+  
   const {
     isSuperAdmin,
     activeOrganization,
     activeBranch,
     memberships,
+    employeeId,
+    isRegistrator: isRegistratorRole,
     loading: permLoading,
   } = usePermissions();
+  
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
 
-  const [date, setDate] = React.useState(() => dayjs().format("YYYY-MM-DD"));
+  const [date, setDate] = useState(() => dayjs().format("YYYY-MM-DD"));
   const parsed = dayjs(date);
   const year = parsed.year();
   const month = parsed.month() + 1;
+  const selectedMonth = parsed.startOf("month").format("YYYY-MM-DD");
 
   const query = useQuery({
     queryKey: djangoQueryKeys.payroll.report({
@@ -234,16 +255,14 @@ const DjangoSalaryReportsPage: React.FC = () => {
         },
         signal,
       ),
-    enabled: !permLoading && canView && !needsOrg,
+    enabled: !permLoading && (canView || employeeId != null) && !needsOrg,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
-
-  const canManage = useCan("payroll.manage");
-  const { open: notify } = useNotification();
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
+  const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
   const [bonusRow, setBonusRow] = React.useState<PayrollRow | null>(null);
   const [payoutRow, setPayoutRow] = React.useState<PayrollRow | null>(null);
 
@@ -275,11 +294,17 @@ const DjangoSalaryReportsPage: React.FC = () => {
     }
   };
 
-  if (!permLoading && !canView) return <AccessDenied />;
+  // Authorization Guard: Either has view permission or has active employee ID to see own data
+  if (!permLoading && !canView && employeeId == null) {
+    return <AccessDenied />;
+  }
 
   const report = query.data;
-  const groups = groupByRole(report?.rows ?? []);
   const hasRows = (report?.rows.length ?? 0) > 0;
+
+  // Totals calculations
+  const totalAdvances = report?.rows.reduce((sum, r) => sum + parseFloat(r.advances || "0"), 0) ?? 0;
+  const totalNet = report?.totalNet ?? "0.00";
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -297,6 +322,18 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 color={report.status === "locked" ? "success" : "default"}
                 variant={report.status === "locked" ? "filled" : "outlined"}
               />
+            )}
+            {canManage && report?.status === "draft" && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                startIcon={<SettingsIcon />}
+                disabled={busy}
+                onClick={() => setSettingsDialogOpen(true)}
+              >
+                Настройки месяца
+              </Button>
             )}
             {canManage && report?.status === "draft" && (
               <Button size="small" variant="outlined" disabled={busy} onClick={handleLock}>
@@ -322,31 +359,40 @@ const DjangoSalaryReportsPage: React.FC = () => {
           <Alert severity="info">Выберите организацию, чтобы увидеть отчёт.</Alert>
         </Box>
       ) : (
-        <Box sx={{ flex: 1, overflow: "auto", px: theme.appLayout.page.paddingX, pb: 2 }}>
-          {/* Summary */}
-          <Paper
-            elevation={0}
-            sx={{
-              my: 2,
-              p: 2,
-              borderRadius: "14px",
-              border: "1px solid",
-              borderColor: "divider",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="subtitle1" fontWeight={700}>
-                Итого к выплате
-              </Typography>
-              {query.isFetching && <CircularProgress size={14} />}
-            </Stack>
-            <Typography variant="h5" fontWeight={700} color="success.main">
-              {formatKGS(report?.totalNet ?? 0)}
-            </Typography>
-          </Paper>
+        <Box
+          sx={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflowY: "auto",
+            px: theme.appLayout.page.paddingX,
+            pb: 2,
+          }}
+        >
+          {/* Summary Cards Row */}
+          {!isRegistratorRole() && (
+            <Box sx={{ my: 2 }}>
+              <AppointmentsSummaryCards
+                dateFrom={dayjs(date).startOf("month").toISOString()}
+                dateTo={dayjs(date).endOf("month").toISOString()}
+                employeeId={canView ? undefined : (employeeId || undefined)}
+                extraCards={[
+                  {
+                    title: "Аванс",
+                    primaryValue: formatKGS(totalAdvances),
+                    secondaryText: "Выплачено авансом",
+                    color: "primary",
+                  },
+                  {
+                    title: "К выплате",
+                    primaryValue: formatKGS(totalNet),
+                    secondaryText: "Итого за месяц",
+                    color: "info",
+                  },
+                ]}
+              />
+            </Box>
+          )}
 
           {query.isLoading && (
             <Stack alignItems="center" sx={{ py: 6 }}>
@@ -366,17 +412,262 @@ const DjangoSalaryReportsPage: React.FC = () => {
             </Typography>
           )}
 
-          {ROLE_ORDER.map((role) =>
-            groups[role]?.length ? (
-              <RoleTable
-                key={role}
-                title={ROLE_LABELS[role]}
-                rows={groups[role]}
-                onManageBonus={setBonusRow}
-                canPayout={canManage && role !== "doctor"}
-                onPayout={setPayoutRow}
-              />
-            ) : null,
+
+          {/* Grouped Lists/Tables */}
+          {!query.isLoading && hasRows && (
+            isMobile ? (
+              /* Mobile card list grouping */
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {(() => {
+                  const roleGroups = [
+                    { label: "Врачи", roleNames: ["doctor"] },
+                    { label: "Медсёстры / Процедуры", roleNames: ["nurse", "procedure"] },
+                    { label: "Регистраторы", roleNames: ["registrator", "receptionist"] },
+                    { label: "Администраторы", roleNames: ["admin", "accountant", "superadmin"] },
+                    { label: "Техперсонал / Санитарки", roleNames: ["cleaner", "сleaner"] },
+                  ];
+
+                  const rendered: React.ReactNode[] = [];
+                  const seen = new Set<number>();
+
+                  roleGroups.forEach((group) => {
+                    const rows = (report?.rows ?? []).filter((r) =>
+                      group.roleNames.includes(r.roleName)
+                    );
+                    rows.forEach((r) => seen.add(r.employeeId));
+                    if (rows.length === 0) return;
+
+                    rendered.push(
+                      <Box key={group.label}>
+                        <Box
+                          sx={{
+                            px: 1,
+                            py: 0.75,
+                            mb: 0.75,
+                            bgcolor: alpha(theme.palette.primary.main, 0.05),
+                            borderRadius: 1.5,
+                            border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}`,
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            fontWeight={800}
+                            color="primary.main"
+                            sx={{ textTransform: "uppercase", letterSpacing: 0.5, fontSize: "0.65rem" }}
+                          >
+                            {group.label}
+                          </Typography>
+                        </Box>
+                        <Stack spacing={0.75}>
+                          {rows.map((row) => (
+                            <SalaryReportRow
+                              key={row.employeeId}
+                              row={row}
+                              year={year}
+                              month={month}
+                              organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                              isMobile
+                            />
+                          ))}
+                        </Stack>
+                      </Box>
+                    );
+                  });
+
+                  // Rest
+                  const rest = (report?.rows ?? []).filter((r) => !seen.has(r.employeeId));
+                  if (rest.length > 0) {
+                    rendered.push(
+                      <Box key="other">
+                        <Box
+                          sx={{
+                            px: 1,
+                            py: 0.75,
+                            mb: 0.75,
+                            bgcolor: alpha(theme.palette.grey[500], 0.08),
+                            borderRadius: 1.5,
+                            border: `1px solid ${theme.palette.divider}`,
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            fontWeight={800}
+                            color="text.secondary"
+                            sx={{ textTransform: "uppercase", letterSpacing: 0.5, fontSize: "0.65rem" }}
+                          >
+                            Прочие
+                          </Typography>
+                        </Box>
+                        <Stack spacing={0.75}>
+                          {rest.map((row) => (
+                            <SalaryReportRow
+                              key={row.employeeId}
+                              row={row}
+                              year={year}
+                              month={month}
+                              organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                              isMobile
+                            />
+                          ))}
+                        </Stack>
+                      </Box>
+                    );
+                  }
+
+                  return rendered;
+                })()}
+              </Box>
+            ) : (
+              /* Desktop table grouping */
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {(() => {
+                  const roleGroups: { label: string; roleNames: string[]; cols: ColumnConfig }[] = [
+                    { label: "Врачи", roleNames: ["doctor"], cols: COLUMNS_DOCTOR },
+                    { label: "Медсёстры / Процедуры", roleNames: ["nurse", "procedure"], cols: COLUMNS_NURSE },
+                    { label: "Регистраторы", roleNames: ["registrator", "receptionist"], cols: COLUMNS_REGISTRATOR },
+                    { label: "Администраторы", roleNames: ["admin", "accountant", "superadmin"], cols: COLUMNS_ADMIN },
+                    { label: "Техперсонал / Санитарки", roleNames: ["cleaner", "сleaner"], cols: COLUMNS_ADMIN },
+                  ];
+
+                  const rendered: React.ReactNode[] = [];
+                  const seen = new Set<number>();
+
+                  roleGroups.forEach((group) => {
+                    const rows = (report?.rows ?? []).filter((r) =>
+                      group.roleNames.includes(r.roleName)
+                    );
+                    rows.forEach((r) => seen.add(r.employeeId));
+                    if (rows.length === 0) return;
+
+                    const cols = group.cols;
+                    rendered.push(
+                      <Paper
+                        key={group.label}
+                        variant="outlined"
+                        sx={{
+                          borderRadius: 3,
+                          border: `1px solid ${theme.palette.divider}`,
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            px: 2,
+                            py: 1,
+                            bgcolor: alpha(theme.palette.primary.main, 0.05),
+                            borderBottom: `1px solid ${theme.palette.divider}`,
+                          }}
+                        >
+                          <Typography variant="subtitle2" fontWeight={800} color="primary.main">
+                            {group.label}
+                          </Typography>
+                        </Box>
+                        <Table size="small" sx={{ fontSize: "0.75rem", "& .MuiTableCell-root": { fontSize: "0.75rem", py: 0.6, px: 1 } }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Сотрудник</TableCell>
+                              {cols.hours && !report?.settings?.merge_night_into_day && (
+                                <>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Дневные</TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Ночные</TableCell>
+                                </>
+                              )}
+                              {cols.hours && (
+                                <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Часы</TableCell>
+                              )}
+                              {cols.appointments && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{cols.appointmentsLabel ?? "Все приёмы"}</TableCell>}
+                              {cols.distributed && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "info.main" }}>Распределённые</TableCell>}
+                              {cols.createdBy && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "success.main" }}>Создал</TableCell>}
+                              {cols.statusWaiting && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Ожидание</TableCell>}
+                              {cols.statusCancelled && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Отменены</TableCell>}
+                              {cols.statusDiscount && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Со скидкой</TableCell>}
+                              {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Бонусы</TableCell>}
+                              {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Зарплата</TableCell>}
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {rows.map((row) => (
+                              <SalaryReportRow
+                                key={row.employeeId}
+                                row={row}
+                                year={year}
+                                month={month}
+                                organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                                columns={cols}
+                                periodSettings={report?.settings}
+                              />
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </Paper>
+                    );
+                  });
+
+                  // Rest
+                  const rest = (report?.rows ?? []).filter((r) => !seen.has(r.employeeId));
+                  if (rest.length > 0) {
+                    rendered.push(
+                      <Paper
+                        key="other"
+                        variant="outlined"
+                        sx={{
+                          borderRadius: 3,
+                          border: `1px solid ${theme.palette.divider}`,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            px: 2,
+                            py: 1,
+                            bgcolor: alpha(theme.palette.grey[500], 0.08),
+                            borderBottom: `1px solid ${theme.palette.divider}`,
+                          }}
+                        >
+                          <Typography variant="subtitle2" fontWeight={800} color="text.secondary">
+                            Прочие
+                          </Typography>
+                        </Box>
+                        <Table size="small" sx={{ fontSize: "0.75rem", "& .MuiTableCell-root": { fontSize: "0.75rem", py: 0.6, px: 1 } }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Сотрудник</TableCell>
+                              {!report?.settings?.merge_night_into_day && (
+                                <>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Дневные</TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Ночные</TableCell>
+                                </>
+                              )}
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Часы</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {rest.map((row) => (
+                              <SalaryReportRow
+                                key={row.employeeId}
+                                row={row}
+                                year={year}
+                                month={month}
+                                organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                                columns={COLUMNS_ADMIN}
+                                periodSettings={report?.settings}
+                              />
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </Paper>
+                    );
+                  }
+
+                  return rendered;
+                })()}
+              </Box>
+            )
           )}
         </Box>
       )}
@@ -443,6 +734,18 @@ const DjangoSalaryReportsPage: React.FC = () => {
           }}
         />
       )}
+
+      <PeriodSettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+        month={selectedMonth}
+        monthLabel={dayjs(date).format('MMMM YYYY')}
+        initialSettings={report?.settings ?? {}}
+        organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+        onSaved={() => {
+          query.refetch();
+        }}
+      />
     </Box>
   );
 };

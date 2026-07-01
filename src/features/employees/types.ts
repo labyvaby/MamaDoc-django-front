@@ -31,6 +31,9 @@ export type Employee = {
   telegram_id?: string | null;
   bank_account_number?: string | null;
   inn?: string | null;
+  bank?: string | null;
+  bik?: string | null;
+  elqr_url?: string | null;
   email?: string | null;
   status?: string | null;
   auth_user_id?: string | null;

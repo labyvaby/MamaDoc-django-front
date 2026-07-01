@@ -7,9 +7,12 @@ import CloseIcon from '@mui/icons-material/CloseOutlined';
 import TuneIcon from '@mui/icons-material/TuneOutlined';
 import NightsStayIcon from '@mui/icons-material/NightsStayOutlined';
 import PercentIcon from '@mui/icons-material/PercentOutlined';
+import PeopleAltIcon from '@mui/icons-material/PeopleAltOutlined';
 import { supabase } from '../../../utility/supabaseClient';
 import { subtleBg } from '../../../theme';
 import type { PayrollMonthSettings } from '../types';
+import { IS_DJANGO_BACKEND } from '../../../config/backend';
+import { updatePeriodSettings } from '../../../api/payroll';
 
 interface Props {
   open: boolean;
@@ -18,15 +21,19 @@ interface Props {
   monthLabel: string;
   initialSettings: PayrollMonthSettings;
   onSaved: (settings: PayrollMonthSettings) => void;
+  organizationId?: number;
 }
 
 function settingsFromForm(
   mergeNight: boolean,
   disableDynamic: boolean,
+  monthlyDistribution: boolean,
 ): PayrollMonthSettings {
   const s: PayrollMonthSettings = {};
-  if (mergeNight)     s.merge_night_into_day = true;
-  if (disableDynamic) s.disable_dynamic_rules = true;
+  if (mergeNight)           s.merge_night_into_day = true;
+  if (disableDynamic)       s.disable_dynamic_rules = true;
+  if (monthlyDistribution)  s.distribution_model = 'monthly_hours';
+  else                      s.distribution_model = 'daily_hours';
   return s;
 }
 
@@ -123,25 +130,44 @@ const SettingRow: React.FC<SettingRowProps> = ({
 );
 
 export const PeriodSettingsDialog: React.FC<Props> = ({
-  open, onClose, month, monthLabel, initialSettings, onSaved,
+  open, onClose, month, monthLabel, initialSettings, onSaved, organizationId,
 }) => {
   const theme = useTheme();
   const [mergeNight,     setMergeNight]     = useState(false);
   const [disableDynamic, setDisableDynamic] = useState(false);
+  const [monthlyDistribution, setMonthlyDistribution] = useState(true);
   const [saving,         setSaving]         = useState(false);
   const [error,          setError]          = useState<string | null>(null);
-
+ 
   useEffect(() => {
     if (!open) return;
     setMergeNight(!!initialSettings.merge_night_into_day);
     setDisableDynamic(!!initialSettings.disable_dynamic_rules);
+    setMonthlyDistribution(initialSettings.distribution_model !== 'daily_hours');
     setError(null);
   }, [open, initialSettings]);
-
+ 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
-    const settings = settingsFromForm(mergeNight, disableDynamic);
+    const settings = settingsFromForm(mergeNight, disableDynamic, monthlyDistribution);
+ 
+    if (IS_DJANGO_BACKEND) {
+      try {
+        const parts = month.split('-');
+        const yr = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        await updatePeriodSettings(yr, m, settings, organizationId);
+        onSaved(settings);
+        setSaving(false);
+        onClose();
+      } catch (err: any) {
+        setError(err.message || 'Ошибка сохранения настроек');
+        setSaving(false);
+      }
+      return;
+    }
+ 
     const { error: rpcError } = await supabase.rpc('update_period_settings', {
       p_month:    month,
       p_settings: settings,
@@ -155,8 +181,8 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
     setSaving(false);
     onClose();
   };
-
-  const activeCount = [mergeNight, disableDynamic].filter(Boolean).length;
+ 
+  const activeCount = [mergeNight, disableDynamic, monthlyDistribution].filter(Boolean).length;
 
   return (
     <Drawer
@@ -278,6 +304,28 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             disabled={saving}
             activeLabel="Учитывается"
             inactiveLabel="Отключён"
+          />
+
+          <Typography
+            variant="caption"
+            fontWeight={700}
+            color="text.disabled"
+            sx={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.62rem', px: 0.5, pt: 1 }}
+          >
+            Регистратура
+          </Typography>
+
+          <SettingRow
+            icon={<PeopleAltIcon fontSize="small" />}
+            iconColor="#e07b39"
+            iconFill="#e07b39"
+            title="Распределение по месячным часам"
+            description="Приёмы делятся пропорционально общим часам за месяц. Если выключено — делятся по часам каждого конкретного дня (старая логика)."
+            checked={monthlyDistribution}
+            onChange={v => setMonthlyDistribution(v)}
+            disabled={saving}
+            activeLabel="Новая логика"
+            inactiveLabel="Старая логика"
           />
         </Stack>
       </Box>
