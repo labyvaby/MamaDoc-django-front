@@ -31,6 +31,7 @@ interface DjangoStockDetailsProps {
     loadingMovements: boolean;
     onAddStock: () => void;
     onRemoveStock: () => void;
+    onTransfer?: () => void;
     warehouseName?: string;
     warehouseAddress?: string;
     onEditMovement?: (movement: DjangoStockMovement) => void;
@@ -61,6 +62,7 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
     loadingMovements,
     onAddStock,
     onRemoveStock,
+    onTransfer,
     warehouseName,
     warehouseAddress,
     onEditMovement,
@@ -147,6 +149,18 @@ export const DjangoStockDetails: React.FC<DjangoStockDetailsProps> = ({
                         >
                             Списание
                         </Button>
+                        {onTransfer && (
+                            <Button
+                                variant="outlined"
+                                color="primary"
+                                size="small"
+                                startIcon={<SwapHorizOutlinedIcon />}
+                                onClick={onTransfer}
+                                disabled={item.quantity <= 0}
+                            >
+                                Переместить
+                            </Button>
+                        )}
                     </Stack>
                 ) : undefined
             }
