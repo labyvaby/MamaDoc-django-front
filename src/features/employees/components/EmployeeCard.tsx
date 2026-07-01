@@ -28,6 +28,10 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import InstagramIcon from "@mui/icons-material/Instagram";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
+import QrCode2Outlined from "@mui/icons-material/QrCode2Outlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 import type { EmployesRow } from "../types";
 import type { ServiceRow as ServiceDto } from "../../../services/services";
 
@@ -409,46 +413,128 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               </Box>
             </Stack>
 
-            {/* Контактные данные */}
+            {/* Контакты — видны всем сотрудникам */}
             <Box>
-              <SectionHeader icon={<ContactPageOutlined />} title="Контактные данные" />
+              <SectionHeader icon={<ContactPageOutlined />} title="Контакты" />
               <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
                 <InfoTile icon={<LocalPhoneOutlined />} label="Телефон" value={phone} active={Boolean(phone)} />
-                <InfoTile
-                  icon={<CakeOutlined />}
-                  label="Дата рождения"
-                  active={Boolean(birth)}
-                  value={
-                    birth ? (
-                      <>
-                        {formatDateRu(birth)}{" "}
-                        <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
-                          {calculateAge(birth)}
-                        </Box>
-                      </>
-                    ) : undefined
-                  }
-                />
-                <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={emp.telegram_id} active={Boolean(emp.telegram_id)} />
                 <InfoTile icon={<EmailOutlined />} label="Email" value={emp.email} active={Boolean(emp.email)} />
+                <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={emp.telegram_id} active={Boolean(emp.telegram_id)} />
                 <InfoTile
-                  icon={<CreditCardOutlined />}
-                  label="Номер счёта"
-                  value={emp.bank_account_number ? formatBank(emp.bank_account_number) : undefined}
-                  active={Boolean(emp.bank_account_number)}
-                  monospace
+                  icon={<InstagramIcon />}
+                  label="Instagram"
+                  value={emp.instagram ? `@${emp.instagram}` : undefined}
+                  active={Boolean(emp.instagram)}
                 />
-                <InfoTile icon={<BadgeOutlined />} label="ИНН" value={emp.inn} active={Boolean(emp.inn)} monospace />
-                {IS_DJANGO_BACKEND && (
-                  <InfoTile
-                    icon={<ContactPageOutlined />}
-                    label="Заметки"
-                    value={emp.notes}
-                    active={Boolean(emp.notes)}
-                  />
-                )}
               </Box>
             </Box>
+
+            {/* Личное — дата рождения приходит только с правом (или своя карточка) */}
+            {(birth || emp.notes) && (
+              <Box>
+                <SectionHeader icon={<CakeOutlined />} title="Личное" />
+                <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+                  {birth && (
+                    <InfoTile
+                      icon={<CakeOutlined />}
+                      label="Дата рождения"
+                      value={
+                        <>
+                          {formatDateRu(birth)}{" "}
+                          <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+                            {calculateAge(birth)}
+                          </Box>
+                        </>
+                      }
+                    />
+                  )}
+                  {emp.notes && (
+                    <InfoTile icon={<ContactPageOutlined />} label="Заметки" value={emp.notes} />
+                  )}
+                </Box>
+              </Box>
+            )}
+
+            {/* Реквизиты — приходят только с правом staff.private.view (или своя карточка) */}
+            {(emp.bank || emp.bik || emp.bank_account_number || emp.inn || emp.elqr_url) && (
+              <Box>
+                <SectionHeader
+                  icon={<AccountBalanceOutlined />}
+                  title="Реквизиты"
+                  action={
+                    <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
+                      <LockOutlined sx={{ fontSize: 14 }} />
+                      <Typography variant="caption">приватно</Typography>
+                    </Stack>
+                  }
+                />
+                <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+                  {emp.bank && (
+                    <InfoTile icon={<AccountBalanceOutlined />} label="Банк" value={emp.bank} />
+                  )}
+                  {emp.bik && (
+                    <InfoTile icon={<AccountBalanceOutlined />} label="БИК" value={emp.bik} monospace />
+                  )}
+                  <InfoTile
+                    icon={<CreditCardOutlined />}
+                    label="Номер счёта"
+                    value={emp.bank_account_number ? formatBank(emp.bank_account_number) : undefined}
+                    active={Boolean(emp.bank_account_number)}
+                    monospace
+                  />
+                  <InfoTile icon={<BadgeOutlined />} label="ИНН" value={emp.inn} active={Boolean(emp.inn)} monospace />
+                </Box>
+                {emp.elqr_url && (
+                  <Box
+                    component="a"
+                    href={emp.elqr_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={(t) => ({
+                      mt: 1.25,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      p: 1.5,
+                      borderRadius: "10px",
+                      border: 1,
+                      borderColor: "divider",
+                      bgcolor: subtleBg(t),
+                      textDecoration: "none",
+                      color: "inherit",
+                      transition: "background-color .15s ease, border-color .15s ease",
+                      "&:hover": { bgcolor: subtleBg(t, true), borderColor: alpha(t.palette.primary.main, 0.28) },
+                    })}
+                  >
+                    <Box
+                      sx={(t) => ({
+                        width: 44,
+                        height: 44,
+                        borderRadius: "10px",
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                        color: "primary.onSurface",
+                        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+                        "& .MuiSvgIcon-root": { fontSize: 22 },
+                      })}
+                    >
+                      {/\.pdf($|\?)/i.test(emp.elqr_url) ? (
+                        <QrCode2Outlined />
+                      ) : (
+                        <Box component="img" src={emp.elqr_url} alt="elQR" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      )}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={600}>elQR (реквизиты)</Typography>
+                      <Typography variant="caption" color="primary.onSurface">Открыть</Typography>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            )}
 
             {/* Специализации */}
             {((IS_DJANGO_BACKEND && djangoSpecs.length > 0) ||

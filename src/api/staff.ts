@@ -38,6 +38,7 @@ export interface DjangoEmployee {
   notes: string;
   birthDate: string | null;
   telegramId: string;
+  instagram: string;
   /** Empty string when caller lacks staff.private.view */
   bankAccountNumber: string;
   /** Empty string when caller lacks staff.private.view */
@@ -131,6 +132,7 @@ export interface OnboardEmployeePayload {
   nickname?: string | null;
   birthDate?: string | null;
   telegramId?: string | null;
+  instagram?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
   bank?: string | null;
@@ -149,6 +151,7 @@ export interface UpdateEmployeePayload {
   notes?: string | null;
   birthDate?: string | null;
   telegramId?: string | null;
+  instagram?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
   bank?: string | null;
@@ -243,6 +246,30 @@ export interface SpecializationCreatePayload {
 
 export interface SpecializationUpdatePayload {
   name?: string;
+  isActive?: boolean;
+}
+
+// ── Bank directory shapes ─────────────────────────────────────────────────────
+
+export interface DjangoBank {
+  id: number;
+  organizationId: number;
+  name: string;
+  bik: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BankCreatePayload {
+  name: string;
+  bik: string;
+  organizationId?: number | null;
+}
+
+export interface BankUpdatePayload {
+  name?: string;
+  bik?: string;
   isActive?: boolean;
 }
 
@@ -453,6 +480,32 @@ export function updateSpecialization(
     `/staff/specializations/${specializationId}/`,
     { method: "PATCH", body: payload },
   );
+}
+
+// ── API functions — Banks ─────────────────────────────────────────────────────
+
+export function getBanks(
+  signal?: AbortSignal,
+  options?: { includeInactive?: boolean },
+): Promise<DjangoBank[]> {
+  const query = options?.includeInactive ? "?includeInactive=1" : "";
+  return apiRequest<DjangoBank[]>(`/staff/banks/${query}`, { signal }).then(
+    (items) => (Array.isArray(items) ? items : []),
+  );
+}
+
+export function createBank(payload: BankCreatePayload): Promise<DjangoBank> {
+  return apiRequest<DjangoBank>("/staff/banks/", { method: "POST", body: payload });
+}
+
+export function updateBank(
+  bankId: number,
+  payload: BankUpdatePayload,
+): Promise<DjangoBank> {
+  return apiRequest<DjangoBank>(`/staff/banks/${bankId}/`, {
+    method: "PATCH",
+    body: payload,
+  });
 }
 
 export function linkSpecializationToEmployee(

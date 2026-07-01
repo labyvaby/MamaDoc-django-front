@@ -128,6 +128,8 @@ export const djangoQueryKeys = {
   staff: {
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,
+    banks: (organizationId: number | null | undefined) =>
+      ["django", "staff", "banks", organizationId ?? null] as const,
   },
 
   catalog: {

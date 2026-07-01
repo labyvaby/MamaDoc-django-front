@@ -99,6 +99,7 @@ const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSetting
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
+const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 const SalaryReportsPage = lazy(() => import("./pages/salary-reports"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
@@ -922,6 +923,16 @@ function App() {
                                 <RequirePermission permission="staff.specializations.view">
                                   <Suspense fallback={<LinearProgress />}>
                                     <SpecializationsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/banks"
+                              element={
+                                <RequirePermission permission="staff.private.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <BanksSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

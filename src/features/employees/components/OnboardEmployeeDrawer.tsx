@@ -21,8 +21,10 @@ import {
   uploadEmployeeElqr,
   getDjangoEmployee,
   getSpecializations,
+  getBanks,
   type OnboardEmployeeResponse,
   type DjangoSpecialization,
+  type DjangoBank,
 } from "../../../api/staff";
 import { getRoles, type RbacRole } from "../../../api/rbac";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -33,7 +35,6 @@ import { useCan } from "../../../hooks/useCan";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import { CustomDatePicker } from "../../../components/ui";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader } from "./drawerKit";
-import { KG_BANKS, findBankByName } from "../banks";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
@@ -41,8 +42,10 @@ import {
   validateEmail,
   validateBirthDate,
   validateTelegramId,
+  validateInstagram,
   validateBankAccountNumber,
   validateInn,
+  validateBik,
 } from "../employeeValidation";
 
 export type OnboardEmployeeDrawerProps = {
@@ -106,6 +109,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   const [telegramId, setTelegramId] = React.useState("");
+  const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
@@ -116,6 +120,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   // ── role / branch ─────────────────────────────────────────────────────────────
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
+  const [banks, setBanks] = React.useState<DjangoBank[]>([]);
   const [allSpecializations, setAllSpecializations] = React.useState<DjangoSpecialization[]>([]);
   const [loadingDeps, setLoadingDeps] = React.useState(false);
   const branches: RbacBranch[] = React.useMemo(
@@ -141,9 +146,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     email: validateEmail(email),
     birthDate: validateBirthDate(birthDate),
     telegramId: validateTelegramId(telegramId),
+    instagram: validateInstagram(instagram),
     bankAccountNumber: canManagePrivate ? validateBankAccountNumber(bankAccountNumber) : "",
     inn: canManagePrivate ? validateInn(inn) : "",
-  }), [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, bankAccountNumber, inn, canManagePrivate]);
+    bik: canManagePrivate ? validateBik(bik) : "",
+  }), [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, instagram, bankAccountNumber, inn, bik, canManagePrivate]);
 
   // Логин выводится из email/телефона на бэкенде, поэтому требуем хотя бы одно.
   const hasLogin = Boolean(email.trim() || phoneLocal.trim());
@@ -153,8 +160,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     !errors.email &&
     !errors.birthDate &&
     !errors.telegramId &&
+    !errors.instagram &&
     !errors.bankAccountNumber &&
     !errors.inn &&
+    !errors.bik &&
     hasLogin &&
     roleId !== "" &&
     employeeBranches.length > 0 &&
@@ -171,8 +180,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     if (errors.email) r.push("корректный email");
     if (errors.birthDate) r.push("корректная дата рождения");
     if (errors.telegramId) r.push("корректный Telegram ID");
+    if (errors.instagram) r.push("корректный Instagram");
     if (errors.bankAccountNumber) r.push("корректный банковский счёт");
     if (errors.inn) r.push("корректный ИНН");
+    if (errors.bik) r.push("корректный БИК");
     if (roleId === "") r.push("роль");
     if (branches.length === 0) r.push("нет доступных филиалов в организации");
     else if (employeeBranches.length === 0) r.push("хотя бы один филиал работы");
@@ -200,6 +211,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         getSpecializations().then((s) => { if (!cancelled) setAllSpecializations(s); }),
       );
     }
+    if (canManagePrivate) {
+      tasks.push(
+        getBanks().then((b) => { if (!cancelled) setBanks(b); }).catch(() => {}),
+      );
+    }
     Promise.all(tasks)
       .catch((err) => {
         if (!cancelled)
@@ -207,7 +223,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       })
       .finally(() => { if (!cancelled) setLoadingDeps(false); });
     return () => { cancelled = true; };
-  }, [open, notify, canViewSpecs, canManageSpecs, activeOrganization?.id]);
+  }, [open, notify, canViewSpecs, canManageSpecs, canManagePrivate, activeOrganization?.id]);
 
   // ── preselect current branch ──────────────────────────────────────────────────
   React.useEffect(() => {
@@ -231,6 +247,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setStatus("active");
       setClinicalRole("other");
       setTelegramId("");
+      setInstagram("");
       setBirthDate("");
       setBankAccountNumber("");
       setInn("");
@@ -273,10 +290,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     }
   }, []);
 
-  // ── bank select → autofill БИК ──────────────────────────────────────────────────
+  // ── bank select → autofill БИК из справочника ────────────────────────────────────
   const handleBankChange = (name: string) => {
     setBank(name);
-    const found = findBankByName(name);
+    const found = banks.find((b) => b.name === name);
     if (found) setBik(found.bik);
   };
 
@@ -319,6 +336,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         nickname: nickname.trim() || undefined,
         birthDate: birthDate || undefined,
         telegramId: telegramId.trim() || undefined,
+        instagram: instagram.trim().replace(/^@/, "") || undefined,
         // Приватные поля отправляем только при наличии права; бэкенд тоже
         // отбрасывает их без staff.private.manage (fail-closed).
         ...(canManagePrivate && {
@@ -519,6 +537,20 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           />
         </Field>
 
+        <Field label="Instagram">
+          <TextField
+            value={instagram}
+            onChange={(e) => setInstagram(e.target.value)}
+            onBlur={() => touch("instagram")}
+            fullWidth
+            placeholder="username"
+            disabled={busy}
+            InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
+            error={Boolean(showError("instagram"))}
+            helperText={showError("instagram")}
+          />
+        </Field>
+
         {/* ── Реквизиты (под staff.private.manage) ── */}
         {canManagePrivate && (
           <>
@@ -539,24 +571,35 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 fullWidth
                 disabled={busy}
                 SelectProps={{ displayEmpty: true }}
+                helperText={
+                  banks.length === 0
+                    ? "Справочник пуст — добавьте банки в Настройки → Банки"
+                    : undefined
+                }
               >
                 <MenuItem value="">
                   <Box component="span" sx={{ color: "text.disabled" }}>Не выбран</Box>
                 </MenuItem>
-                {KG_BANKS.map((b) => (
-                  <MenuItem key={b.name} value={b.name}>{b.name}</MenuItem>
+                {bank && !banks.some((b) => b.name === bank) && (
+                  <MenuItem value={bank}>{bank}</MenuItem>
+                )}
+                {banks.map((b) => (
+                  <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
                 ))}
               </TextField>
             </Field>
-            <Grid2>
+            <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 2fr" } }}>
               <Field label="БИК">
                 <TextField
                   value={bik}
-                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onBlur={() => touch("bik")}
                   fullWidth
                   placeholder="000000"
                   disabled={busy}
                   inputProps={{ inputMode: "numeric" }}
+                  error={Boolean(showError("bik"))}
+                  helperText={showError("bik")}
                 />
               </Field>
               <Field label="Расчётный счёт">
@@ -579,7 +622,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
                 />
               </Field>
-            </Grid2>
+            </Box>
             <Field label="elQR (реквизиты QR)">
               <ElqrUploader
                 previewUrl={elqrPreview}

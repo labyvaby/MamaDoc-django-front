@@ -120,6 +120,27 @@ export function validateInn(value: string): string {
   return "";
 }
 
+// ── Instagram ─────────────────────────────────────────────────────────────────
+
+export function validateInstagram(value: string): string {
+  const v = value.trim().replace(/^@/, "");
+  if (!v) return ""; // optional
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(v)) {
+    return "Только латиница, цифры, точка и _ (до 30 символов, без @)";
+  }
+  return "";
+}
+
+// ── БИК ───────────────────────────────────────────────────────────────────────
+
+export function validateBik(value: string): string {
+  const v = value.trim();
+  if (!v) return ""; // optional
+  if (!/^\d+$/.test(v)) return "БИК: только цифры";
+  if (v.length !== 6) return "БИК должен содержать ровно 6 цифр";
+  return "";
+}
+
 // ── Логин ─────────────────────────────────────────────────────────────────────
 
 export function validateUsername(value: string): string {

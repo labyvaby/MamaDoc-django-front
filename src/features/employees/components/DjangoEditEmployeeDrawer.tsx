@@ -27,10 +27,12 @@ import {
   uploadEmployeeElqr,
   deleteEmployeeElqr,
   getEmployeeServices,
+  getBanks,
   assignEmployeeService,
   updateEmployeeService,
   type DjangoSpecializationShort,
   type EmployeeServiceAssignment,
+  type DjangoBank,
 } from "../../../api/staff";
 import { getServices, type Service } from "../../../api/catalog";
 import {
@@ -51,7 +53,6 @@ import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeS
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader } from "./drawerKit";
-import { KG_BANKS, findBankByName } from "../banks";
 import {
   parsePhone,
   composePhone,
@@ -64,8 +65,10 @@ import {
   validateEmail,
   validateBirthDate,
   validateTelegramId,
+  validateInstagram,
   validateBankAccountNumber,
   validateInn,
+  validateBik,
 } from "../employeeValidation";
 
 export type DjangoEditEmployeeDrawerProps = {
@@ -128,11 +131,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [status, setStatus] = React.useState<"active" | "inactive">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
   const [telegramId, setTelegramId] = React.useState("");
+  const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [bank, setBank] = React.useState("");
   const [bik, setBik] = React.useState("");
+  const [banks, setBanks] = React.useState<DjangoBank[]>([]);
   const [elqrFile, setElqrFile] = React.useState<File | null>(null);
   const [elqrPreview, setElqrPreview] = React.useState<string | null>(null);
   const [elqrExisting, setElqrExisting] = React.useState<string | null>(null);
@@ -162,10 +167,12 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       email: validateEmail(email),
       birthDate: validateBirthDate(birthDate),
       telegramId: validateTelegramId(telegramId),
+      instagram: validateInstagram(instagram),
       bankAccountNumber: canManagePrivate ? validateBankAccountNumber(bankAccountNumber) : "",
       inn: canManagePrivate ? validateInn(inn) : "",
+      bik: canManagePrivate ? validateBik(bik) : "",
     }),
-    [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, bankAccountNumber, inn, canManagePrivate],
+    [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, instagram, bankAccountNumber, inn, bik, canManagePrivate],
   );
 
   const hasErrors = Object.values(errors).some(Boolean);
@@ -203,7 +210,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
   const handleBankChange = (name: string) => {
     setBank(name);
-    const found = findBankByName(name);
+    const found = banks.find((b) => b.name === name);
     if (found) setBik(found.bik);
   };
 
@@ -228,6 +235,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         : "other",
     );
     setTelegramId(record.telegram_id || "");
+    setInstagram(record.instagram || "");
     setBirthDate(record.birth_date || "");
     setBankAccountNumber(record.bank_account_number || "");
     setInn(record.inn || "");
@@ -255,6 +263,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setPhotoPreview(full.photoUrl || null);
         setNickname(full.nickname || "");
         setTelegramId(full.telegramId || "");
+        setInstagram(full.instagram || "");
         setBirthDate(full.birthDate || "");
         setBankAccountNumber(full.bankAccountNumber || "");
         setInn(full.inn || "");
@@ -272,6 +281,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         if ((e as Error)?.name !== "AbortError")
           console.warn("Could not fetch full employee:", e);
       });
+
+    // Справочник банков (для выбора банка → подстановки БИК)
+    if (canManagePrivate) {
+      getBanks(ctrl.signal)
+        .then((b) => { if (!ctrl.signal.aborted) setBanks(b); })
+        .catch(() => {});
+    }
 
     const needServices = canViewServices || canManageServices || canViewPayroll;
     const servicesPromise: Promise<Service[]> = needServices
@@ -353,6 +369,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         status,
         clinicalRole,
         telegramId: telegramId.trim() || null,
+        instagram: instagram.trim().replace(/^@/, "") || null,
         birthDate: birthDate || null,
         ...(canManagePrivate && {
           bankAccountNumber: bankAccountNumber.trim() || null,
@@ -450,6 +467,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         email: updated.email || null,
         status: updated.status,
         telegram_id: updated.telegramId || null,
+        instagram: updated.instagram || null,
         birth_date: updated.birthDate || null,
         bank_account_number: updated.bankAccountNumber || null,
         inn: updated.inn || null,
@@ -636,6 +654,20 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           />
         </Field>
 
+        <Field label="Instagram">
+          <TextField
+            value={instagram}
+            onChange={(e) => { setInstagram(e.target.value); setServerError(null); }}
+            onBlur={() => touch("instagram")}
+            fullWidth
+            placeholder="username"
+            disabled={busy}
+            InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
+            error={Boolean(showError("instagram"))}
+            helperText={showError("instagram")}
+          />
+        </Field>
+
         {/* ── Реквизиты (под staff.private.manage) ── */}
         {canManagePrivate && (
           <>
@@ -656,24 +688,35 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 fullWidth
                 disabled={busy}
                 SelectProps={{ displayEmpty: true }}
+                helperText={
+                  banks.length === 0
+                    ? "Справочник пуст — добавьте банки в Настройки → Банки"
+                    : undefined
+                }
               >
                 <MenuItem value="">
                   <Box component="span" sx={{ color: "text.disabled" }}>Не выбран</Box>
                 </MenuItem>
-                {KG_BANKS.map((b) => (
-                  <MenuItem key={b.name} value={b.name}>{b.name}</MenuItem>
+                {bank && !banks.some((b) => b.name === bank) && (
+                  <MenuItem value={bank}>{bank}</MenuItem>
+                )}
+                {banks.map((b) => (
+                  <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
                 ))}
               </TextField>
             </Field>
-            <Grid2>
+            <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 2fr" } }}>
               <Field label="БИК">
                 <TextField
                   value={bik}
-                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onBlur={() => touch("bik")}
                   fullWidth
                   placeholder="000000"
                   disabled={busy}
                   inputProps={{ inputMode: "numeric" }}
+                  error={Boolean(showError("bik"))}
+                  helperText={showError("bik")}
                 />
               </Field>
               <Field label="Расчётный счёт">
@@ -696,7 +739,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
                 />
               </Field>
-            </Grid2>
+            </Box>
             <Field label="elQR (реквизиты QR)">
               <ElqrUploader
                 previewUrl={elqrPreview}

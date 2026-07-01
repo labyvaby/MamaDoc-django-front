@@ -29,6 +29,7 @@ export type Employee = {
   birth_date?: string | null;
   photo_url?: string | null;
   telegram_id?: string | null;
+  instagram?: string | null;
   bank_account_number?: string | null;
   inn?: string | null;
   bank?: string | null;

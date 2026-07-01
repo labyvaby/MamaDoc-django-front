@@ -18,6 +18,7 @@ import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -33,6 +34,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   roles: "rbac.roles.view",
   memberships: "rbac.memberships.view",
   specializations: "staff.specializations.view",
+  banks: "staff.private.view",
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
 } as const;
@@ -76,6 +78,12 @@ const TABS: TabDef[] = [
     label: "Специализации",
     to: "/settings/specializations",
     icon: <WorkOutlined fontSize="small" />,
+  },
+  {
+    key: "banks",
+    label: "Банки",
+    to: "/settings/banks",
+    icon: <AccountBalanceOutlined fontSize="small" />,
   },
   {
     key: "expenseCategories",
