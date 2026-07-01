@@ -28,6 +28,8 @@ import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
+import dayjs from "dayjs";
 
 import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
 import { subtleBg } from "../../../theme";
@@ -41,8 +43,10 @@ import { ApiError, isAbortError } from "../../../api/client";
 import {
   getProducts,
   getProductCategories,
+  getProductPriceHistory,
   deleteProduct,
   DjangoProduct,
+  DjangoPriceHistoryEntry,
 } from "../../../api/warehouse";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
@@ -567,10 +571,36 @@ const ProductDetailCard: React.FC<{
 }> = ({ product, onEdit, onDelete, readOnly }) => {
   const [expanded, setExpanded] = React.useState(false);
 
+  // История цен — ленивая подгрузка при выборе товара.
+  const [priceHistory, setPriceHistory] = React.useState<DjangoPriceHistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+
   // Reset expanded state when product changes
   React.useEffect(() => {
     setExpanded(false);
+    setHistoryOpen(false);
+    setPriceHistory([]);
   }, [product?.id]);
+
+  // Подгружаем историю цен при первом раскрытии секции.
+  React.useEffect(() => {
+    if (!historyOpen || !product) return;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        setHistoryLoading(true);
+        const rows = await getProductPriceHistory(product.id, controller.signal);
+        setPriceHistory(rows);
+      } catch (e) {
+        if (isAbortError(e)) return;
+        console.error("Failed to load price history:", e);
+      } finally {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [historyOpen, product]);
 
   if (!product) {
     return (
@@ -837,6 +867,66 @@ const ProductDetailCard: React.FC<{
             </Typography>
           </Box>
         )}
+
+        {/* История изменения цены */}
+        <Box sx={{ mt: 2 }}>
+          <Button
+            size="small"
+            startIcon={<HistoryOutlined fontSize="small" />}
+            onClick={() => setHistoryOpen((v) => !v)}
+            sx={{ textTransform: "none", px: 0, "&:hover": { bgcolor: "transparent", textDecoration: "underline" } }}
+            disableRipple
+          >
+            {historyOpen ? "Скрыть историю цен" : "История изменения цены"}
+          </Button>
+          <Collapse in={historyOpen}>
+            <Paper
+              elevation={0}
+              sx={{
+                mt: 1,
+                p: 1.5,
+                bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
+                borderRadius: "14px",
+                border: 1,
+                borderColor: "divider",
+              }}
+            >
+              {historyLoading ? (
+                <Typography variant="body2" color="text.secondary">
+                  Загрузка…
+                </Typography>
+              ) : priceHistory.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  История цен пуста.
+                </Typography>
+              ) : (
+                <Stack divider={<Divider sx={{ borderStyle: "dashed" }} />} spacing={1}>
+                  {priceHistory.map((h, i) => (
+                    <Stack
+                      key={`${h.changedAt}-${i}`}
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600}>
+                          {h.price.toLocaleString()} сом
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap display="block">
+                          {h.changedByName || "—"}
+                        </Typography>
+                      </Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                        {dayjs(h.changedAt).format("DD.MM.YYYY HH:mm")}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Paper>
+          </Collapse>
+        </Box>
       </Box>
     </AppCard>
   );
