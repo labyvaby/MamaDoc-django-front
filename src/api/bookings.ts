@@ -21,8 +21,10 @@ export interface BookingListItem {
   confirmationCode: string;
   patientName: string;
   patientPhone: string;
+  /** Имя специалиста из operator.kg (professionalName). */
   doctorName: string;
-  doctorId: number;
+  /** null, пока не сделан маппинг operator professional_id ↔ CRM employee. */
+  doctorId: number | null;
   /** YYYY-MM-DD */
   date: string;
   /** HH:mm */
@@ -35,11 +37,13 @@ export interface BookingListItem {
   appointmentId: number | null;
 }
 
-/** Снимок услуги из брони operator.kg (passthrough — форма уточнится по Swagger). */
+/**
+ * Снимок услуги из брони operator.kg. operator отдаёт только имена —
+ * price всегда null (цен по услугам источник не даёт, §0/§2.2).
+ */
 export interface BookingServiceSnapshot {
   name: string;
-  price: string;
-  [key: string]: unknown;
+  price: string | null;
 }
 
 /** Карточка брони (§2.2) — поля списка + услуги + время синка. */
