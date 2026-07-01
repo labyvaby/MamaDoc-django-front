@@ -33,6 +33,7 @@ import {
     getStockMovements,
     createStockMovement,
     updateStockMovement,
+    createTransfer,
     getProducts,
     unlinkWarehouse,
     DjangoWarehouse,
@@ -46,7 +47,9 @@ import { DjangoStockDetails } from "../../../components/storage/django/DjangoSto
 import {
     DjangoAddMovementDrawer,
     type MovementProductOption,
+    type MovementWarehouseOption,
 } from "../../../components/storage/django/DjangoAddMovementDrawer";
+import { DjangoTransferDrawer } from "../../../components/storage/django/DjangoTransferDrawer";
 import { DjangoWarehouseList } from "../../../components/storage/django/DjangoWarehouseList";
 import { DjangoAddWarehouseDrawer } from "../../../components/storage/django/DjangoAddWarehouseDrawer";
 
@@ -92,6 +95,8 @@ const DjangoWarehousesPage: React.FC = () => {
     const [editingWarehouse, setEditingWarehouse] = React.useState<DjangoWarehouse | null>(null);
     // Панель управления складами (список + CRUD)
     const [manageOpen, setManageOpen] = React.useState(false);
+    // Перемещение между складами
+    const [transferOpen, setTransferOpen] = React.useState(false);
 
     // All Products for Selector (for adding new items)
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
@@ -303,6 +308,50 @@ const DjangoWarehousesPage: React.FC = () => {
         }
     };
 
+    const handleConfirmTransfer = async (
+        toWarehouseId: number,
+        qty: number,
+        comment?: string,
+    ) => {
+        if (!selectedItem) return;
+        try {
+            await createTransfer({
+                productId: selectedItem.productId,
+                fromWarehouseId: selectedItem.warehouseId,
+                toWarehouseId,
+                quantity: qty,
+                comment,
+            });
+            notify?.({ type: "success", message: "Товар перемещён" });
+
+            // Остаток текущего склада уменьшился — обновляем список и движения.
+            const data = await fetchStock();
+            const updated = data?.find((i) => i.productId === selectedItem.productId);
+            setSelectedItem(updated ?? null);
+            if (updated) {
+                const moves = await getStockMovements({
+                    productId: updated.productId,
+                    warehouseId: updated.warehouseId,
+                });
+                setMovements(moves);
+            }
+        } catch (e) {
+            console.error(e);
+            const message = e instanceof ApiError ? e.message : "Не удалось выполнить перемещение";
+            notify?.({ type: "error", message });
+            throw e;
+        }
+    };
+
+    // Опции складов для дровера перемещения.
+    const warehouseOptions = React.useMemo<MovementWarehouseOption[]>(
+        () => warehouses.map((w) => ({
+            id: w.id,
+            label: w.isLinked ? `${w.name} — филиал: ${w.branchName}` : w.name,
+        })),
+        [warehouses],
+    );
+
     // Синхронизация выбранной позиции со свежим остатком
     React.useEffect(() => {
         if (selectedItem && stock.length > 0) {
@@ -414,14 +463,23 @@ const DjangoWarehousesPage: React.FC = () => {
                             </Button>
 
                             {canManage && (
-                                <Tooltip title="Появится после обновления API (передача между складами)">
+                                <Tooltip
+                                    title={
+                                        !selectedItem
+                                            ? "Выберите позицию в списке"
+                                            : selectedItem.quantity <= 0
+                                                ? "Нет остатка для перемещения"
+                                                : "Переместить на другой склад"
+                                    }
+                                >
                                     <span style={{ flex: 1 }}>
                                         <Button
                                             variant="outlined"
                                             size="small"
                                             fullWidth
                                             startIcon={<SwapHorizOutlined />}
-                                            disabled
+                                            disabled={!selectedItem || selectedItem.quantity <= 0 || warehouses.length < 2}
+                                            onClick={() => setTransferOpen(true)}
                                             sx={{ textTransform: "none" }}
                                         >
                                             Перемещение
@@ -471,6 +529,7 @@ const DjangoWarehousesPage: React.FC = () => {
                                 loadingMovements={loadingMovements}
                                 onAddStock={() => handleAddMovementClick("in")}
                                 onRemoveStock={() => handleAddMovementClick("out")}
+                                onTransfer={canManage && warehouses.length >= 2 ? () => setTransferOpen(true) : undefined}
                                 warehouseName={detailsWarehouse?.name}
                                 warehouseAddress={detailsWarehouse?.address}
                                 onEditMovement={handleEditMovement}
@@ -531,6 +590,15 @@ const DjangoWarehousesPage: React.FC = () => {
                 editingMovement={editingMovement}
             />
 
+            {/* Перемещение между складами */}
+            <DjangoTransferDrawer
+                open={transferOpen}
+                onClose={() => setTransferOpen(false)}
+                item={selectedItem}
+                warehouses={warehouseOptions}
+                onConfirm={handleConfirmTransfer}
+            />
+
             {/* Stock Details Drawer (Mobile only) */}
             {isMobile && (
                 <Drawer
@@ -552,6 +620,7 @@ const DjangoWarehousesPage: React.FC = () => {
                                 loadingMovements={loadingMovements}
                                 onAddStock={() => handleAddMovementClick("in")}
                                 onRemoveStock={() => handleAddMovementClick("out")}
+                                onTransfer={canManage && warehouses.length >= 2 ? () => setTransferOpen(true) : undefined}
                                 warehouseName={detailsWarehouse?.name}
                                 warehouseAddress={detailsWarehouse?.address}
                                 onEditMovement={handleEditMovement}
