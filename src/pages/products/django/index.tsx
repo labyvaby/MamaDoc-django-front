@@ -40,6 +40,7 @@ import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { ApiError, isAbortError } from "../../../api/client";
 import {
   getProducts,
+  getProductCategories,
   deleteProduct,
   DjangoProduct,
 } from "../../../api/warehouse";
@@ -98,6 +99,9 @@ const DjangoProductsPage: React.FC = () => {
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState("");
+  // Категории из отдельного эндпоинта (полный список, а не только по загруженным
+  // товарам) — для дропдауна фильтра.
+  const [serverCategories, setServerCategories] = React.useState<string[]>([]);
 
   // Selection state (Desktop & Mobile)
   const [selectedProduct, setSelectedProduct] = React.useState<DjangoProduct | null>(null);
@@ -124,16 +128,28 @@ const DjangoProductsPage: React.FC = () => {
     }
   }, [notify]);
 
+  const fetchCategories = React.useCallback(async () => {
+    try {
+      setServerCategories(await getProductCategories());
+    } catch (e) {
+      if (isAbortError(e)) return;
+      // Не критично: фильтр откатится на категории из загруженных товаров.
+      console.error("Failed to load categories:", e);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (!permLoading && canView) {
       fetchProducts();
+      fetchCategories();
     }
-  }, [permLoading, canView, fetchProducts]);
+  }, [permLoading, canView, fetchProducts, fetchCategories]);
 
   // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
   useFocusRefetch(() => {
     if (!permLoading && canView) {
       fetchProducts();
+      fetchCategories();
     }
   });
 
@@ -186,11 +202,13 @@ const DjangoProductsPage: React.FC = () => {
     setFormDrawerOpen(true);
   };
 
-  // Filtering Logic
+  // Filtering Logic. Категории для фильтра: серверный список (полный), а при
+  // его недоступности — производные от загруженных товаров.
   const availableCategories = React.useMemo(() => {
+    if (serverCategories.length > 0) return serverCategories;
     const cats = new Set(products.map((p) => p.category).filter(Boolean));
     return Array.from(cats) as string[];
-  }, [products]);
+  }, [serverCategories, products]);
 
   const filteredProducts = React.useMemo(() => {
     const list = products.filter((p) => {
