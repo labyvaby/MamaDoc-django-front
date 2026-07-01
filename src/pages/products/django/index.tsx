@@ -44,9 +44,11 @@ import {
   getProducts,
   getProductCategories,
   getProductPriceHistory,
+  getProductGallery,
   deleteProduct,
   DjangoProduct,
   DjangoPriceHistoryEntry,
+  DjangoProductImage,
 } from "../../../api/warehouse";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
@@ -576,12 +578,37 @@ const ProductDetailCard: React.FC<{
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [historyLoading, setHistoryLoading] = React.useState(false);
 
+  // Галерея товара + выбранное для показа изображение.
+  const [gallery, setGallery] = React.useState<DjangoProductImage[]>([]);
+  const [activeImageUrl, setActiveImageUrl] = React.useState<string | null>(null);
+
   // Reset expanded state when product changes
   React.useEffect(() => {
     setExpanded(false);
     setHistoryOpen(false);
     setPriceHistory([]);
+    setActiveImageUrl(null);
   }, [product?.id]);
+
+  // Галерея — подгружаем при выборе товара.
+  React.useEffect(() => {
+    if (!product) {
+      setGallery([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const rows = await getProductGallery(product.id, controller.signal);
+        setGallery([...rows].sort((a, b) => a.order - b.order));
+      } catch (e) {
+        if (isAbortError(e)) return;
+        console.error("Failed to load gallery:", e);
+        setGallery([]);
+      }
+    })();
+    return () => controller.abort();
+  }, [product]);
 
   // Подгружаем историю цен при первом раскрытии секции.
   React.useEffect(() => {
@@ -696,11 +723,11 @@ const ProductDetailCard: React.FC<{
     >
       <Box sx={{ flex: 1, overflowY: "auto", p: 3 }}>
         <Grid2 container spacing={3}>
-          {/* Left Column: Image */}
+          {/* Left Column: Image + галерея */}
           <Grid2 size={{ xs: 12, md: 5 }}>
             <Avatar
               variant="rounded"
-              src={product.imageUrl || undefined}
+              src={activeImageUrl || product.imageUrl || undefined}
               sx={{
                 width: "100%",
                 height: "auto",
@@ -715,6 +742,41 @@ const ProductDetailCard: React.FC<{
                 {product.name.charAt(0)}
               </Typography>
             </Avatar>
+
+            {gallery.length > 1 && (
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                flexWrap="wrap"
+                sx={{ mt: 1.5 }}
+              >
+                {gallery.map((img) => {
+                  const isActive = (activeImageUrl || product.imageUrl) === img.url;
+                  return (
+                    <ButtonBase
+                      key={img.id}
+                      onClick={() => setActiveImageUrl(img.url)}
+                      sx={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: "10px",
+                        overflow: "hidden",
+                        border: 2,
+                        borderColor: isActive ? "primary.main" : "divider",
+                      }}
+                    >
+                      <Box
+                        component="img"
+                        src={img.url}
+                        alt=""
+                        sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    </ButtonBase>
+                  );
+                })}
+              </Stack>
+            )}
           </Grid2>
 
           {/* Right Column: Info */}
