@@ -50,8 +50,8 @@ const BookingsPage: React.FC = () => {
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
-  const organizationId = isSuper ? activeOrganization?.id ?? undefined : undefined;
-  const orgKey = isSuper ? activeOrganization?.id ?? null : null;
+  const organizationId = activeOrganization?.id ?? undefined;
+  const orgKey = activeOrganization?.id ?? null;
 
   // ── Filters ──
   const [dateFrom, setDateFrom] = React.useState(() => dayjs().startOf("month"));
