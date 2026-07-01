@@ -63,6 +63,17 @@ export type DjangoAddExpenseDrawerProps = {
   organizationId?: number;
   branchId?: number;
   onCreated: (exp: Expense) => void;
+  /**
+   * Optional initial values applied when the drawer opens (e.g. paying out a
+   * salary from the payroll report). The user can still edit everything before
+   * saving. `categoryKind` selects the first active category of that kind.
+   */
+  prefill?: {
+    employee?: { id: number; fullName: string };
+    categoryKind?: ExpenseCategoryKind;
+    cashAmount?: string;
+    name?: string;
+  };
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -73,6 +84,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   organizationId,
   branchId,
   onCreated,
+  prefill,
 }) => {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
@@ -124,23 +136,42 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   });
 
   // ── Reset on open ─────────────────────────────────────────────────────────────
+  const prefillCategoryAppliedRef = React.useRef(false);
   React.useEffect(() => {
     if (open) {
       setExpenseDate(dayjs());
       setCategoryId("");
-      setName("");
-      setCashAmount("");
+      setName(prefill?.name ?? "");
+      setCashAmount(prefill?.cashAmount ?? "");
       setCardAmount("");
       setDescription("");
       setPhotoFile(null);
       setPhotoPreview(null);
       setEmployeeInput("");
-      setEmployeeValue(null);
-      setEmployeeOptions([]);
+      const emp = prefill?.employee
+        ? ({ id: prefill.employee.id, fullName: prefill.employee.fullName } as DjangoEmployeeListItem)
+        : null;
+      setEmployeeValue(emp);
+      setEmployeeOptions(emp ? [emp] : []);
       setError(null);
       setBusy(false);
+      prefillCategoryAppliedRef.current = false;
     }
+    // Read `prefill` from closure at open time — don't reset the form mid-edit
+    // if the parent re-creates the prefill object on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Prefill the category once the categories list has loaded (async).
+  React.useEffect(() => {
+    if (!open || prefillCategoryAppliedRef.current) return;
+    if (!prefill?.categoryKind || categoriesQuery.isLoading) return;
+    const match = activeCategories.find((c) => c.kind === prefill.categoryKind);
+    if (match) {
+      setCategoryId(match.id);
+      prefillCategoryAppliedRef.current = true;
+    }
+  }, [open, prefill?.categoryKind, categoriesQuery.isLoading, activeCategories]);
 
   // ── Employee search with debounce ─────────────────────────────────────────────
   React.useEffect(() => {
@@ -385,7 +416,11 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                 Сотрудник *
               </Typography>
               <Autocomplete
-                options={employeeOptions}
+                options={
+                  employeeValue && !employeeOptions.some((o) => o.id === employeeValue.id)
+                    ? [employeeValue, ...employeeOptions]
+                    : employeeOptions
+                }
                 loading={empLoading}
                 value={employeeValue}
                 inputValue={employeeInput}
