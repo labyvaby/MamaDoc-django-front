@@ -472,19 +472,21 @@ const DjangoWarehousesPage: React.FC = () => {
                                                 : "Переместить на другой склад"
                                     }
                                 >
-                                    <span style={{ flex: 1 }}>
+                                    <Box
+                                        component="span"
+                                        sx={{ flex: { xs: 1, sm: "0 0 auto" }, display: "inline-flex" }}
+                                    >
                                         <Button
                                             variant="outlined"
                                             size="small"
-                                            fullWidth
                                             startIcon={<SwapHorizOutlined />}
                                             disabled={!selectedItem || selectedItem.quantity <= 0 || warehouses.length < 2}
                                             onClick={() => setTransferOpen(true)}
-                                            sx={{ textTransform: "none" }}
+                                            sx={{ textTransform: "none", width: { xs: "100%", sm: "auto" } }}
                                         >
                                             Перемещение
                                         </Button>
-                                    </span>
+                                    </Box>
                                 </Tooltip>
                             )}
                         </Stack>
