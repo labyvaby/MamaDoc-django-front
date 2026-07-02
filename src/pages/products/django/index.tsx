@@ -26,12 +26,14 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
-import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import dayjs from "dayjs";
 
-import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
+import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile } from "../../../components/ui";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import { subtleBg } from "../../../theme";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
@@ -63,18 +65,20 @@ type StockState = {
   color: "error" | "warning" | "success";
   icon: React.ReactElement | null;
   out: boolean;
+  /** Приглушённый нейтральный бейдж (строка и так затемнена). */
+  muted: boolean;
 };
 const getStockState = (p: DjangoProduct): StockState => {
   const stock = p.stock || 0;
   const unit = p.unit || "шт";
   const min = (p as unknown as { lowStockThreshold?: number }).lowStockThreshold ?? 0;
   if (stock <= 0) {
-    return { label: "Нет в наличии", color: "error", icon: <ErrorOutlineOutlined sx={{ fontSize: 14 }} />, out: true };
+    return { label: "Нет в наличии", color: "error", icon: null, out: true, muted: true };
   }
   if (min > 0 && stock <= min) {
-    return { label: `Мало: ${stock} ${unit}`, color: "warning", icon: <WarningAmberOutlined sx={{ fontSize: 14 }} />, out: false };
+    return { label: `Мало: ${stock} ${unit}`, color: "warning", icon: <WarningAmberOutlined sx={{ fontSize: 14 }} />, out: false, muted: false };
   }
-  return { label: `Остаток: ${stock} ${unit}`, color: "success", icon: null, out: false };
+  return { label: `${stock} ${unit}`, color: "success", icon: null, out: false, muted: false };
 };
 
 const DjangoProductsPage: React.FC = () => {
@@ -259,6 +263,15 @@ const DjangoProductsPage: React.FC = () => {
     return sorted;
   }, [products, searchQuery, filters, sortBy]);
 
+  // Сводка по наличию — для чипов-фильтров над списком.
+  const stockCounts = React.useMemo(() => {
+    let out = 0;
+    for (const p of products) {
+      if ((p.stock || 0) <= 0) out += 1;
+    }
+    return { total: products.length, out, inStock: products.length - out };
+  }, [products]);
+
   // Кол-во активных фильтров (для бейджа на кнопке «Фильтры»)
   const activeFilterCount =
     (filters.category ? 1 : 0) +
@@ -373,6 +386,120 @@ const DjangoProductsPage: React.FC = () => {
                 </Stack>
               </Stack>
 
+              {/* Сводка по наличию — кликабельные чипы-фильтры */}
+              <Stack
+                direction="row"
+                gap={0.75}
+                flexWrap="wrap"
+                sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: "divider" }}
+              >
+                {([
+                  { value: "all" as const, label: "Все", count: stockCounts.total, tone: null },
+                  { value: "in_stock" as const, label: "В наличии", count: stockCounts.inStock, tone: "success" as const },
+                  { value: "out_of_stock" as const, label: "Нет в наличии", count: stockCounts.out, tone: "error" as const },
+                ]).map((o) => {
+                  const active = filters.stockStatus === o.value;
+                  const accent = o.tone ? theme.palette[o.tone].main : theme.palette.primary.main;
+                  const accentText = o.tone
+                    ? theme.palette.mode === "dark"
+                      ? theme.palette[o.tone].light
+                      : theme.palette[o.tone].dark
+                    : "primary.onSurface";
+                  return (
+                    <Chip
+                      key={o.value}
+                      size="small"
+                      clickable
+                      onClick={() => setFilters((f) => ({ ...f, stockStatus: o.value }))}
+                      label={`${o.label} · ${o.count}`}
+                      sx={(t) => ({
+                        height: 26,
+                        borderRadius: "8px",
+                        fontWeight: 500,
+                        border: 1,
+                        borderColor: active ? alpha(accent, 0.4) : "divider",
+                        color: active ? accentText : "text.secondary",
+                        bgcolor: active
+                          ? alpha(accent, t.palette.mode === "dark" ? 0.16 : 0.08)
+                          : "transparent",
+                        "&:hover": {
+                          bgcolor: active
+                            ? alpha(accent, t.palette.mode === "dark" ? 0.22 : 0.12)
+                            : subtleBg(t, true),
+                        },
+                      })}
+                    />
+                  );
+                })}
+              </Stack>
+
+              {/* Категории — горизонтальная лента чипов */}
+              {availableCategories.length > 0 && (
+                <Box
+                  sx={{
+                    px: 1.5,
+                    py: 1,
+                    borderBottom: 1,
+                    borderColor: "divider",
+                    display: "flex",
+                    gap: 0.75,
+                    overflowX: "auto",
+                    scrollbarWidth: "none",
+                    "&::-webkit-scrollbar": { display: "none" },
+                  }}
+                >
+                  <Chip
+                    size="small"
+                    clickable
+                    label="Все категории"
+                    onClick={() => setFilters((f) => ({ ...f, category: null }))}
+                    sx={(t) => ({
+                      height: 26,
+                      borderRadius: "8px",
+                      fontWeight: 500,
+                      flexShrink: 0,
+                      border: 1,
+                      borderColor: !filters.category ? alpha(t.palette.primary.main, 0.4) : "divider",
+                      color: !filters.category ? "primary.onSurface" : "text.secondary",
+                      bgcolor: !filters.category
+                        ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                        : "transparent",
+                    })}
+                  />
+                  {availableCategories.map((cat) => {
+                    const active = filters.category === cat;
+                    return (
+                      <Chip
+                        key={cat}
+                        size="small"
+                        clickable
+                        label={cat}
+                        onClick={() =>
+                          setFilters((f) => ({ ...f, category: f.category === cat ? null : cat }))
+                        }
+                        sx={(t) => ({
+                          height: 26,
+                          borderRadius: "8px",
+                          fontWeight: 500,
+                          flexShrink: 0,
+                          border: 1,
+                          borderColor: active ? alpha(t.palette.primary.main, 0.4) : "divider",
+                          color: active ? "primary.onSurface" : "text.secondary",
+                          bgcolor: active
+                            ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                            : "transparent",
+                          "&:hover": {
+                            bgcolor: active
+                              ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.22 : 0.12)
+                              : subtleBg(t, true),
+                          },
+                        })}
+                      />
+                    );
+                  })}
+                </Box>
+              )}
+
               {/* Чипы применённых фильтров */}
               {activeFilterChips.length > 0 && (
                 <Stack
@@ -486,16 +613,27 @@ const DjangoProductsPage: React.FC = () => {
                               size="small"
                               icon={stockState.icon ?? undefined}
                               label={stockState.label}
-                              sx={{
+                              sx={(theme) => ({
                                 height: 22,
                                 fontSize: "0.7rem",
                                 fontWeight: 600,
                                 borderRadius: "7px",
-                                bgcolor: (theme) => alpha(theme.palette[stockState.color].main, 0.12),
-                                color: `${stockState.color}.main`,
-                                "& .MuiChip-icon": { color: `${stockState.color}.main`, ml: 0.5 },
+                                // «Нет в наличии» — нейтральный приглушённый бейдж:
+                                // строка и так затемнена, красный на каждой строке шумит.
+                                bgcolor: stockState.muted
+                                  ? subtleBg(theme, true)
+                                  : alpha(theme.palette[stockState.color].main, 0.12),
+                                color: stockState.muted
+                                  ? "text.secondary"
+                                  : `${stockState.color}.main`,
+                                "& .MuiChip-icon": {
+                                  color: stockState.muted
+                                    ? "text.secondary"
+                                    : `${stockState.color}.main`,
+                                  ml: 0.5,
+                                },
                                 "& .MuiChip-label": { px: 0.75 },
-                              }}
+                              })}
                             />
                           </Stack>
                         </ButtonBase>
@@ -669,18 +807,30 @@ const ProductDetailCard: React.FC<{
             px: 3,
             pt: 2,
             pb: 1.5,
+            borderBottom: 1,
+            borderColor: "divider",
           }}
         >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: { xs: 1, sm: 2 },
-              flexWrap: "wrap",
-              pr: { xs: 0, sm: 0 },
-            }}
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            gap={1}
+            flexWrap="wrap"
           >
+            <Stack direction="row" alignItems="center" gap={1.25}>
+              <Box
+                sx={{
+                  width: 3,
+                  height: 16,
+                  borderRadius: 3,
+                  bgcolor: "primary.main",
+                }}
+              />
+              <Typography variant="subtitle1" fontWeight={600}>
+                Карточка товара
+              </Typography>
+            </Stack>
             {!readOnly && (
               <Stack
                 direction="row"
@@ -702,21 +852,13 @@ const ProductDetailCard: React.FC<{
                     color="error"
                     size="small"
                     onClick={onDelete}
-                    sx={(theme) => ({
-                      border: "1px solid",
-                      borderColor: "error.main",
-                      "&:hover": {
-                        borderColor: "error.dark",
-                        backgroundColor: alpha(theme.palette.error.main, 0.08),
-                      },
-                    })}
                   >
                     <DeleteOutlineOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </Stack>
             )}
-          </Box>
+          </Stack>
         </Box>
       }
       disableContentPadding
@@ -841,41 +983,41 @@ const ProductDetailCard: React.FC<{
 
               <Divider sx={{ borderStyle: "dashed" }} />
 
-              {/* Attributes Grid */}
-              <Grid2 container spacing={2}>
-                <Grid2 size={6}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Стоимость
-                  </Typography>
-                  <Typography variant="body1" fontWeight={600}>
-                    {product.price > 0 ? `${product.price.toLocaleString()} сом` : "—"}
-                  </Typography>
-                </Grid2>
-                <Grid2 size={6}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Остаток
-                  </Typography>
-                  <Typography variant="body1" fontWeight={600}>
-                    {product.stock ?? 0} {product.unit}
-                  </Typography>
-                </Grid2>
-                <Grid2 size={6}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Ед. измерения
-                  </Typography>
-                  <Typography variant="body2">
-                    {product.unit || "—"}
-                  </Typography>
-                </Grid2>
-                <Grid2 size={6}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Категория
-                  </Typography>
-                  <Typography variant="body2">
-                    {product.category || "—"}
-                  </Typography>
-                </Grid2>
-              </Grid2>
+              {/* Attributes — плитки в стиле карточек проекта */}
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1.25,
+                  gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                }}
+              >
+                <InfoTile
+                  icon={<PaymentsOutlined />}
+                  label="Стоимость"
+                  value={
+                    product.price > 0 ? `${product.price.toLocaleString()} сом` : undefined
+                  }
+                  active={product.price > 0}
+                />
+                <InfoTile
+                  icon={<Inventory2OutlinedIcon />}
+                  label="Остаток"
+                  value={`${product.stock ?? 0} ${product.unit || ""}`.trim()}
+                  active={(product.stock ?? 0) > 0}
+                />
+                <InfoTile
+                  icon={<StraightenOutlined />}
+                  label="Ед. измерения"
+                  value={product.unit}
+                  active={Boolean(product.unit)}
+                />
+                <InfoTile
+                  icon={<CategoryOutlined />}
+                  label="Категория"
+                  value={product.category}
+                  active={Boolean(product.category)}
+                />
+              </Box>
             </Stack>
           </Grid2>
         </Grid2>

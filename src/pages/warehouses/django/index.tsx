@@ -18,6 +18,9 @@ import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/CloseOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import RemoveShoppingCartOutlined from "@mui/icons-material/RemoveShoppingCartOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { PageHeader } from "../../../components/ui";
@@ -100,6 +103,8 @@ const DjangoWarehousesPage: React.FC = () => {
 
     // All Products for Selector (for adding new items)
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
+    // Цены товаров (продажные) — для оценки стоимости остатка на складе.
+    const [productPrices, setProductPrices] = React.useState<Map<number, number>>(new Map());
 
     // 1. Fetch Warehouses & Products
     const loadInitialData = React.useCallback(async () => {
@@ -109,6 +114,7 @@ const DjangoWarehousesPage: React.FC = () => {
             const [ws, prods] = await Promise.all([getWarehouses(), getProducts()]);
             setWarehouses(ws);
             setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
+            setProductPrices(new Map(prods.map((p) => [p.id, p.price || 0])));
             setSelectedWarehouseId((prev) => {
                 if (prev !== null && ws.some((w) => w.id === prev)) return prev;
                 const primary = ws.find((w) => w.isPrimary && !w.isLinked) || ws[0];
@@ -361,6 +367,21 @@ const DjangoWarehousesPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [stock]);
 
+    // Сводка по выбранному складу: позиций, нет в наличии, стоимость остатка
+    // (по продажным ценам товаров).
+    const stockSummary = React.useMemo(() => {
+        let out = 0;
+        let value = 0;
+        for (const item of stock) {
+            if (item.quantity <= 0) {
+                out += 1;
+                continue;
+            }
+            value += item.quantity * (productPrices.get(item.productId) ?? 0);
+        }
+        return { total: stock.length, out, value };
+    }, [stock, productPrices]);
+
     // Filter
     const filteredStock = React.useMemo(() => {
         if (!searchQuery) return stock;
@@ -491,6 +512,56 @@ const DjangoWarehousesPage: React.FC = () => {
                             )}
                         </Stack>
                     </Stack>
+
+                    {/* Сводка по складу */}
+                    {stockSummary.total > 0 && (
+                        <Stack
+                            direction="row"
+                            alignItems="center"
+                            gap={{ xs: 1.5, sm: 3 }}
+                            flexWrap="wrap"
+                            sx={{ mt: 1.5, pt: 1.25, borderTop: 1, borderColor: "divider" }}
+                        >
+                            <Stack direction="row" gap={0.75} alignItems="center">
+                                <Inventory2Outlined sx={{ fontSize: 17, color: "primary.onSurface" }} />
+                                <Typography variant="body2" color="text.secondary">
+                                    Позиций:
+                                </Typography>
+                                <Typography variant="subtitle2" fontWeight={700}>
+                                    {stockSummary.total}
+                                </Typography>
+                            </Stack>
+                            <Stack direction="row" gap={0.75} alignItems="center">
+                                <RemoveShoppingCartOutlined
+                                    sx={{
+                                        fontSize: 17,
+                                        color: stockSummary.out > 0 ? "warning.main" : "text.disabled",
+                                    }}
+                                />
+                                <Typography variant="body2" color="text.secondary">
+                                    Нет в наличии:
+                                </Typography>
+                                <Typography
+                                    variant="subtitle2"
+                                    fontWeight={700}
+                                    color={stockSummary.out > 0 ? "warning.main" : "text.primary"}
+                                >
+                                    {stockSummary.out}
+                                </Typography>
+                            </Stack>
+                            <Tooltip title="Оценка по текущим продажным ценам товаров">
+                                <Stack direction="row" gap={0.75} alignItems="center">
+                                    <PaymentsOutlined sx={{ fontSize: 17, color: "primary.onSurface" }} />
+                                    <Typography variant="body2" color="text.secondary">
+                                        Стоимость остатка:
+                                    </Typography>
+                                    <Typography variant="subtitle2" fontWeight={700}>
+                                        {Math.round(stockSummary.value).toLocaleString()} сом
+                                    </Typography>
+                                </Stack>
+                            </Tooltip>
+                        </Stack>
+                    )}
                 </Paper>
 
                 {/* master-detail: остатки + история движений */}

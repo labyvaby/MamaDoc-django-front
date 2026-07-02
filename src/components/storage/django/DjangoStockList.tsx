@@ -80,10 +80,19 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
     setCategoryFilter(null);
   };
 
-  const statusOptions: { value: StockStatusFilter; label: string }[] = [
-    { value: "all", label: "Все" },
-    { value: "in", label: "В наличии" },
-    { value: "out", label: "Нет в наличии" },
+  // Счётчики для чипов наличия (с учётом фильтра категории).
+  const statusCounts = React.useMemo(() => {
+    const base = categoryFilter
+      ? stock.filter((s) => s.productCategory === categoryFilter)
+      : stock;
+    const out = base.filter((s) => s.quantity <= 0).length;
+    return { all: base.length, in: base.length - out, out };
+  }, [stock, categoryFilter]);
+
+  const statusOptions: { value: StockStatusFilter; label: string; count: number }[] = [
+    { value: "all", label: "Все", count: statusCounts.all },
+    { value: "in", label: "В наличии", count: statusCounts.in },
+    { value: "out", label: "Нет в наличии", count: statusCounts.out },
   ];
 
   return (
@@ -128,6 +137,43 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
             <FilterListIcon fontSize="small" />
           </IconButton>
         </Tooltip>
+      </Stack>
+
+      {/* Видимые чипы-фильтры наличия */}
+      <Stack
+        direction="row"
+        gap={0.75}
+        flexWrap="wrap"
+        sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: "divider" }}
+      >
+        {statusOptions.map((o) => {
+          const active = statusFilter === o.value;
+          return (
+            <Chip
+              key={o.value}
+              size="small"
+              clickable
+              label={`${o.label} · ${o.count}`}
+              onClick={() => setStatusFilter(o.value)}
+              sx={(t) => ({
+                height: 26,
+                borderRadius: "8px",
+                fontWeight: 500,
+                border: 1,
+                borderColor: active ? alpha(t.palette.primary.main, 0.4) : "divider",
+                color: active ? "primary.onSurface" : "text.secondary",
+                bgcolor: active
+                  ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                  : "transparent",
+                "&:hover": {
+                  bgcolor: active
+                    ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.22 : 0.12)
+                    : subtleBg(t, true),
+                },
+              })}
+            />
+          );
+        })}
       </Stack>
 
       <Menu
@@ -260,12 +306,13 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                       borderRadius: 1,
                       bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                       color: "primary.onSurface",
+                      opacity: inStock ? 1 : 0.55,
                     }}
                   >
                     {item.productName?.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
                   </Avatar>
 
-                  <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                  <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden", opacity: inStock ? 1 : 0.55 }}>
                     <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                       {item.productName}
                     </Typography>
@@ -293,12 +340,13 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                       px: 1,
                       py: 0.5,
                       borderRadius: 1,
+                      // Нулевой остаток — нейтральный приглушённый бейдж:
+                      // красный на каждой строке создаёт шум.
                       bgcolor: (theme) =>
-                        alpha(
-                          inStock ? theme.palette.success.main : theme.palette.error.main,
-                          0.12
-                        ),
-                      color: inStock ? "success.main" : "error.main",
+                        inStock
+                          ? alpha(theme.palette.success.main, 0.12)
+                          : subtleBg(theme, true),
+                      color: inStock ? "success.main" : "text.secondary",
                     }}
                   >
                     <Typography variant="subtitle2" sx={{ fontWeight: 700, lineHeight: 1.1 }}>
