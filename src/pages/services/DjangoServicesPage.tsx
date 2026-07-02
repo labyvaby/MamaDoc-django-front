@@ -18,7 +18,10 @@ import {
   MenuItem,
   Avatar,
   Divider,
+  Grid,
 } from "@mui/material";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
@@ -38,6 +41,7 @@ import { formatKGS } from "../../utility/format";
 import DjangoAddServiceDrawer from "../../components/services/DjangoAddServiceDrawer";
 import DjangoEditServiceDrawer from "../../components/services/DjangoEditServiceDrawer";
 import DjangoServiceQuickViewDrawer from "../../components/services/DjangoServiceQuickViewDrawer";
+import ServiceDetailsPanel from "../../components/services/ServiceDetailsPanel";
 
 type StatusFilter = "all" | "active" | "inactive";
 type SortKey = "name" | "priceAsc" | "priceDesc" | "duration";
@@ -63,6 +67,12 @@ const DjangoServicesPage: React.FC = () => {
   const canCreate = hasPermission("catalog.create");
   const canUpdate = hasPermission("catalog.update");
   const canDelete = hasPermission("catalog.delete");
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
+  // Бампается после редактирования — панель деталей перечитывает услугу
+  const [detailsRefreshToken, setDetailsRefreshToken] = React.useState(0);
 
   // Данные
   const [loading, setLoading] = React.useState(false);
@@ -265,6 +275,10 @@ const DjangoServicesPage: React.FC = () => {
     if (!confirmRow) return;
     try {
       await deleteService(confirmRow.id);
+      if (selectedServiceId === confirmRow.id) {
+        setSelectedServiceId(null);
+        setDetailsOpen(false);
+      }
       void loadAll(contextKey);
       notify?.({ type: "success", message: "Услуга удалена" });
     } catch (e) {
@@ -285,12 +299,13 @@ const DjangoServicesPage: React.FC = () => {
       <Box
         onClick={() => {
           setSelectedServiceId(s.id);
-          setDetailsOpen(true);
+          if (isMobile) setDetailsOpen(true);
         }}
         sx={{
           px: 2,
-          py: 1.5,
+          py: 1.25,
           cursor: "pointer",
+          bgcolor: !isMobile && selectedServiceId === s.id ? "action.selected" : undefined,
           "&:hover": { bgcolor: "action.hover" },
         }}
       >
@@ -527,7 +542,24 @@ const DjangoServicesPage: React.FC = () => {
           )}
         </Stack>
 
-        <Card variant="outlined" sx={{ flex: 1, width: 1, display: "flex", flexDirection: "column" }}>
+        <Grid
+          container
+          spacing={2}
+          sx={{ flex: 1, minHeight: 0, height: 0, overflow: "hidden" }}
+        >
+          {/* Левая колонна — список услуг */}
+          <Grid
+            item
+            xs={12}
+            md={6}
+            sx={{
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+        <Card variant="outlined" sx={{ flex: 1, width: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <CardContent
             ref={scrollContainerRef}
             sx={{ p: 0, flex: 1, minHeight: 0, overflowY: "auto" }}
@@ -569,6 +601,37 @@ const DjangoServicesPage: React.FC = () => {
             )}
           </CardContent>
         </Card>
+          </Grid>
+
+          {/* Правая колонна — детали услуги (скрыта на мобильных) */}
+          {!isMobile && (
+            <Grid
+              item
+              xs={12}
+              md={6}
+              sx={{
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              <ServiceDetailsPanel
+                serviceId={selectedServiceId}
+                refreshToken={detailsRefreshToken}
+                onEdit={canUpdate ? handleEdit : undefined}
+                onDelete={
+                  canDelete
+                    ? (s) => {
+                        setConfirmRow(s);
+                        setConfirmOpen(true);
+                      }
+                    : undefined
+                }
+              />
+            </Grid>
+          )}
+        </Grid>
       </Box>
 
       {/* Добавление */}
@@ -593,20 +656,23 @@ const DjangoServicesPage: React.FC = () => {
           onUpdated={() => {
             setEditOpen(false);
             setEditingRec(null);
+            setDetailsRefreshToken((t) => t + 1);
             void loadAll(contextKey);
           }}
         />
       )}
 
-      {/* Просмотр */}
-      <DjangoServiceQuickViewDrawer
-        open={detailsOpen}
-        onClose={() => {
-          setDetailsOpen(false);
-          setSelectedServiceId(null);
-        }}
-        serviceId={selectedServiceId}
-      />
+      {/* Просмотр (только мобильные — на десктопе детали в правой панели) */}
+      {isMobile && (
+        <DjangoServiceQuickViewDrawer
+          open={detailsOpen}
+          onClose={() => {
+            setDetailsOpen(false);
+            setSelectedServiceId(null);
+          }}
+          serviceId={selectedServiceId}
+        />
+      )}
 
       {/* Подтверждение удаления */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} fullWidth maxWidth="xs">
