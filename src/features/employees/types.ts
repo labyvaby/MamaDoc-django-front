@@ -32,6 +32,7 @@ export type Employee = {
   instagram?: string | null;
   bank_account_number?: string | null;
   inn?: string | null;
+  address?: string | null;
   bank?: string | null;
   bik?: string | null;
   elqr_url?: string | null;

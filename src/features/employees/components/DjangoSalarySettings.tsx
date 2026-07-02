@@ -3,6 +3,7 @@ import {
   alpha,
   Box,
   Button,
+  ButtonBase,
   Checkbox,
   Chip,
   CircularProgress,
@@ -10,29 +11,28 @@ import {
   IconButton,
   ListItemText,
   MenuItem,
-  Paper,
   Select,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
   Typography,
-  useTheme,
 } from "@mui/material";
 import Add from "@mui/icons-material/AddOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
-import AccessTime from "@mui/icons-material/AccessTimeOutlined";
-import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import Close from "@mui/icons-material/CloseOutlined";
+import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
+import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
+import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
+import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
+import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
+import BedtimeOutlined from "@mui/icons-material/BedtimeOutlined";
+import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 
 import type { Service } from "../../../api/catalog";
+import { subtleBg } from "../../../theme/uiHelpers";
 
 // ── value shape ─────────────────────────────────────────────────────────────
-// Mirrors the original SalarySettings JSON, adapted to Django service IDs.
+// Mirrors the Django EmployeeRule contract (see api/payroll.ts).
 
 export type SalaryRuleRow = {
   id: string;
@@ -42,11 +42,16 @@ export type SalaryRuleRow = {
 };
 
 export type SalarySettingsValue = {
+  /** Фикс-ставки (день/ночь/приём) включены. */
   enabled: boolean;
   nightRate: string;
   dayRate: string;
   appointmentRate: string;
   rules: SalaryRuleRow[];
+  /** «Товары в приёмах» включены. */
+  productEnabled: boolean;
+  productPercent: string;
+  productBonus: string;
 };
 
 export const EMPTY_SALARY: SalarySettingsValue = {
@@ -55,6 +60,9 @@ export const EMPTY_SALARY: SalarySettingsValue = {
   dayRate: "",
   appointmentRate: "",
   rules: [],
+  productEnabled: false,
+  productPercent: "",
+  productBonus: "",
 };
 
 type Props = {
@@ -65,32 +73,154 @@ type Props = {
   disabled?: boolean;
 };
 
-const FIXED_FIELDS: { label: string; key: "nightRate" | "dayRate" | "appointmentRate" }[] = [
-  { label: "Ночь", key: "nightRate" },
-  { label: "День", key: "dayRate" },
-  { label: "Прием", key: "appointmentRate" },
-];
-
 let _ruleSeq = 0;
 const newRuleId = () => `rule_${(_ruleSeq += 1)}`;
 
-const numberInputSx = {
-  "& .MuiInputBase-root": {
-    borderRadius: 1,
-    bgcolor: "action.hover",
-    fontSize: "0.75rem",
-    height: 32,
-  },
-  "& .MuiInputBase-input": {
-    p: 0,
-    textAlign: "center",
-    "&::-webkit-outer-spin-button, &::-webkit-inner-spin-button": {
-      display: "none",
-      margin: 0,
-    },
-    "&[type=number]": { MozAppearance: "textfield" },
-  },
-} as const;
+const num = (s: string) => parseFloat(s) || 0;
+
+// ── маленькие строительные блоки ─────────────────────────────────────────────
+
+/** Числовое поле с кастомными степперами ▲/▼ (нативные спиннеры скрыты). */
+const NumberField: React.FC<{
+  value: string;
+  onChange: (v: string) => void;
+  unit?: string;
+  step?: number;
+  disabled?: boolean;
+  placeholder?: string;
+}> = ({ value, onChange, unit, step = 1, disabled, placeholder = "0" }) => {
+  const bump = (dir: 1 | -1) => {
+    const next = Math.max(0, (parseFloat(value) || 0) + dir * step);
+    // Убираем хвосты плавающей точки (0.1+0.2), но не трогаем целые.
+    onChange(String(Number(next.toFixed(2))));
+  };
+  return (
+    <Stack
+      direction="row"
+      sx={(t) => ({
+        alignItems: "stretch",
+        height: 40,
+        border: 1,
+        borderColor: "divider",
+        borderRadius: "9px",
+        bgcolor: "background.paper",
+        overflow: "hidden",
+        opacity: disabled ? 0.5 : 1,
+        "&:focus-within": {
+          borderColor: "primary.main",
+          boxShadow: `0 0 0 3px ${alpha(t.palette.primary.main, 0.14)}`,
+        },
+      })}
+    >
+      <Stack direction="row" alignItems="center" gap={0.5} sx={{ flex: 1, minWidth: 0, pl: 1.25, pr: 0.5 }}>
+        <Box
+          component="input"
+          type="number"
+          value={value}
+          placeholder={placeholder}
+          disabled={disabled}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+          sx={{
+            all: "unset",
+            width: "100%",
+            minWidth: 0,
+            font: "inherit",
+            fontSize: "0.9rem",
+            fontWeight: 600,
+            fontVariantNumeric: "tabular-nums",
+            color: "text.primary",
+            "&::placeholder": { color: "text.disabled", fontWeight: 400 },
+            "&::-webkit-outer-spin-button, &::-webkit-inner-spin-button": {
+              WebkitAppearance: "none",
+              margin: 0,
+            },
+            MozAppearance: "textfield",
+          }}
+        />
+        {unit && (
+          <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
+            {unit}
+          </Typography>
+        )}
+      </Stack>
+      <Stack sx={{ width: 24, flexShrink: 0, borderLeft: 1, borderColor: "divider" }}>
+        <ButtonBase
+          tabIndex={-1}
+          disabled={disabled}
+          onClick={() => bump(1)}
+          sx={(t) => ({
+            flex: 1,
+            color: "text.disabled",
+            borderBottom: 1,
+            borderColor: "divider",
+            "&:hover": { color: "primary.onSurface", bgcolor: alpha(t.palette.primary.main, 0.1) },
+          })}
+        >
+          <KeyboardArrowUp sx={{ fontSize: 13 }} />
+        </ButtonBase>
+        <ButtonBase
+          tabIndex={-1}
+          disabled={disabled}
+          onClick={() => bump(-1)}
+          sx={(t) => ({
+            flex: 1,
+            color: "text.disabled",
+            "&:hover": { color: "primary.onSurface", bgcolor: alpha(t.palette.primary.main, 0.1) },
+          })}
+        >
+          <KeyboardArrowDown sx={{ fontSize: 13 }} />
+        </ButtonBase>
+      </Stack>
+    </Stack>
+  );
+};
+
+/** Заголовок секции: иконка-плашка + название/подпись + опц. тумблер. */
+const SalarySection: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  toggle?: { checked: boolean; onChange: () => void; disabled?: boolean };
+}> = ({ icon, title, subtitle, toggle }) => (
+  <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 1.5 }}>
+    <Box
+      sx={(t) => ({
+        width: 34,
+        height: 34,
+        borderRadius: "9px",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "primary.onSurface",
+        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+        "& .MuiSvgIcon-root": { fontSize: 18 },
+      })}
+    >
+      {icon}
+    </Box>
+    <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Typography variant="body2" fontWeight={600}>{title}</Typography>
+      <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
+    </Box>
+    {toggle && (
+      <Switch
+        size="small"
+        color="primary"
+        checked={toggle.checked}
+        onChange={toggle.onChange}
+        disabled={toggle.disabled}
+      />
+    )}
+  </Stack>
+);
+
+/** Акцентный фрагмент «формулы». */
+const Hl: React.FC<React.PropsWithChildren> = ({ children }) => (
+  <Box component="span" sx={{ color: "primary.onSurface", fontWeight: 600 }}>
+    {children}
+  </Box>
+);
 
 const DjangoSalarySettings: React.FC<Props> = ({
   value,
@@ -99,17 +229,10 @@ const DjangoSalarySettings: React.FC<Props> = ({
   loadingServices = false,
   disabled = false,
 }) => {
-  const theme = useTheme();
-
-  const toggleFixed = () =>
-    onChange({ ...value, enabled: !value.enabled });
-
-  const setFixed = (key: "nightRate" | "dayRate" | "appointmentRate", raw: string) =>
-    onChange({ ...value, [key]: raw });
+  const patch = (p: Partial<SalarySettingsValue>) => onChange({ ...value, ...p });
 
   const addRule = () =>
-    onChange({
-      ...value,
+    patch({
       rules: [
         ...value.rules,
         { id: newRuleId(), serviceIds: [], percent: "", fixedAmount: "" },
@@ -117,264 +240,354 @@ const DjangoSalarySettings: React.FC<Props> = ({
     });
 
   const removeRule = (id: string) =>
-    onChange({ ...value, rules: value.rules.filter((r) => r.id !== id) });
+    patch({ rules: value.rules.filter((r) => r.id !== id) });
 
-  const patchRule = (id: string, patch: Partial<SalaryRuleRow>) =>
-    onChange({
-      ...value,
-      rules: value.rules.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-    });
+  const patchRule = (id: string, p: Partial<SalaryRuleRow>) =>
+    patch({ rules: value.rules.map((r) => (r.id === id ? { ...r, ...p } : r)) });
 
   const serviceName = (id: number) =>
     services.find((s) => s.id === id)?.name ?? `#${id}`;
 
+  const ruleFormula = (rule: SalaryRuleRow): React.ReactNode => {
+    if (rule.serviceIds.length === 0) {
+      return "Выберите услуги, к которым применяется правило";
+    }
+    const p = num(rule.percent);
+    const f = num(rule.fixedAmount);
+    if (!p && !f) return "Укажите процент и/или фикс — правило пока ничего не начисляет";
+    return (
+      <>
+        Сотрудник получает{" "}
+        {p > 0 && <><Hl>{p}%</Hl> от суммы</>}
+        {p > 0 && f > 0 && " + "}
+        {f > 0 && <><Hl>{f} с</Hl> фикс</>}
+        {" за: "}
+        <Hl>{rule.serviceIds.map(serviceName).join(", ")}</Hl>
+      </>
+    );
+  };
+
+  const productFormula = (): React.ReactNode => {
+    const p = num(value.productPercent);
+    const b = num(value.productBonus);
+    if (!p && !b) return "Укажите процент и/или бонус за товары";
+    return (
+      <>
+        Сотрудник получает{" "}
+        {p > 0 && <><Hl>{p}%</Hl> от суммы товаров</>}
+        {p > 0 && b > 0 && " + "}
+        {b > 0 && <><Hl>{b} с</Hl> за каждый товар</>}
+        , проданных в его приёмах
+      </>
+    );
+  };
+
+  const cardSx = (t: any) => ({
+    p: 1.5,
+    border: 1,
+    borderColor: "divider",
+    borderRadius: "12px",
+    bgcolor: subtleBg(t),
+  });
+
   return (
-    <Box sx={{ width: "100%", mt: 1 }}>
-      <Typography
-        variant="caption"
-        sx={{
-          fontWeight: 700,
-          mb: 1.5,
-          display: "block",
-          color: "text.secondary",
-          
-          letterSpacing: 1,
-        }}
-      >
-        Зарплатные правила
-      </Typography>
-
-      {/* ── Фикс (час/прием) ── */}
-      <Paper
-        variant="outlined"
-        sx={{ p: 1.5, mb: 2, borderRadius: "14px", borderColor: "divider", bgcolor: "background.paper" }}
-      >
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Box
-              sx={{
-                p: 0.75,
-                borderRadius: 1,
-                height: 32,
-                width: 32,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                bgcolor: value.enabled ? alpha(theme.palette.primary.main, 0.1) : "action.hover",
-                color: value.enabled ? "primary.onSurface" : "text.disabled",
-              }}
-            >
-              <AccessTime sx={{ fontSize: 18 }} />
-            </Box>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Фикс (час/прием)
-            </Typography>
-          </Stack>
-          <Switch
-            size="small"
-            checked={value.enabled}
-            onChange={toggleFixed}
-            color="primary"
-            disabled={disabled}
-          />
-        </Stack>
-
+    <Stack spacing={2.5} sx={{ width: "100%", mt: 0.5 }}>
+      {/* ── 1. Почасовая и приёмы ── */}
+      <Box>
+        <SalarySection
+          icon={<AccessTimeOutlined />}
+          title="Почасовая и приёмы"
+          subtitle="Фикс-ставки за час работы и за приём"
+          toggle={{
+            checked: value.enabled,
+            onChange: () => patch({ enabled: !value.enabled }),
+            disabled,
+          }}
+        />
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 1,
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr" },
+            gap: 1.25,
             opacity: value.enabled ? 1 : 0.4,
             pointerEvents: value.enabled && !disabled ? "auto" : "none",
-            transition: "opacity 0.2s ease",
+            transition: "opacity .2s ease",
           }}
         >
-          {FIXED_FIELDS.map((item) => (
-            <Stack key={item.key} spacing={0.5}>
-              <Typography
-                variant="caption"
-                sx={{ fontSize: "0.6rem", color: "text.secondary", textAlign: "center", fontWeight: 500 }}
-              >
-                {item.label}
-              </Typography>
-              <TextField
-                fullWidth
-                size="small"
-                type="number"
-                value={value[item.key] || ""}
-                onChange={(e) => setFixed(item.key, e.target.value)}
-                InputProps={{
-                  endAdornment: (
-                    <Typography variant="caption" sx={{ ml: 0.25, color: "text.disabled", fontSize: "0.65rem" }}>
-                      с
-                    </Typography>
-                  ),
-                }}
-                sx={{
-                  "& .MuiInputBase-root": { fontSize: "0.75rem", p: "2px 6px", bgcolor: "action.hover", height: 32 },
-                  "& .MuiInputBase-input": {
-                    p: 0,
-                    textAlign: "center",
-                    "&::-webkit-outer-spin-button, &::-webkit-inner-spin-button": { display: "none", margin: 0 },
-                    "&[type=number]": { MozAppearance: "textfield" },
-                  },
-                }}
+          {(
+            [
+              { key: "dayRate", label: "День", unit: "с/час", icon: <WbSunnyOutlined /> },
+              { key: "nightRate", label: "Ночь", unit: "с/час", icon: <BedtimeOutlined /> },
+              { key: "appointmentRate", label: "Приём", unit: "с/приём", icon: <MedicalServicesOutlined /> },
+            ] as const
+          ).map((f) => (
+            <Box key={f.key} sx={cardSx}>
+              <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1, color: "text.secondary" }}>
+                <Box sx={{ display: "flex", "& .MuiSvgIcon-root": { fontSize: 15 } }}>{f.icon}</Box>
+                <Typography variant="caption" fontWeight={500}>{f.label}</Typography>
+              </Stack>
+              <NumberField
+                value={value[f.key] || ""}
+                onChange={(v) => patch({ [f.key]: v } as Partial<SalarySettingsValue>)}
+                unit={f.unit}
+                step={50}
+                disabled={disabled || !value.enabled}
               />
-            </Stack>
+            </Box>
           ))}
         </Box>
-      </Paper>
+      </Box>
 
-      {/* ── Динамические (услуги) ── */}
+      {/* ── 2. Ставки по услугам ── */}
       <Box>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-          <Stack direction="row" spacing={1} alignItems="center">
+        <SalarySection
+          icon={<LocalOfferOutlined />}
+          title="Ставки по услугам"
+          subtitle="% и фикс за конкретные услуги"
+        />
+
+        <Stack spacing={1.5}>
+          {value.rules.length === 0 && (
             <Box
               sx={{
-                p: 0.75,
-                borderRadius: 1,
-                height: 32,
-                width: 32,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                bgcolor: alpha(theme.palette.secondary.main, 0.1),
-                color: "secondary.main",
+                p: 2.5,
+                textAlign: "center",
+                color: "text.disabled",
+                fontSize: "0.8rem",
+                border: "1px dashed",
+                borderColor: "divider",
+                borderRadius: "12px",
               }}
             >
-              <PaidOutlined sx={{ fontSize: 18 }} />
+              Правил по услугам пока нет
             </Box>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Динамические (услуги)
-            </Typography>
-          </Stack>
+          )}
+
+          {value.rules.map((rule, idx) => (
+            <Box key={rule.id} sx={cardSx}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+                <Typography variant="caption" fontWeight={600} color="text.disabled">
+                  Правило {idx + 1}
+                </Typography>
+                <IconButton
+                  size="small"
+                  disabled={disabled}
+                  onClick={() => removeRule(rule.id)}
+                  sx={(t) => ({
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: "8px",
+                    color: "text.disabled",
+                    "&:hover": {
+                      color: t.palette.error.main,
+                      borderColor: alpha(t.palette.error.main, 0.4),
+                      bgcolor: alpha(t.palette.error.main, 0.1),
+                    },
+                  })}
+                >
+                  <DeleteOutline sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Stack>
+
+              {/* выбор услуг */}
+              <FormControl fullWidth size="small" sx={{ mb: 1.25 }}>
+                <Select<number[]>
+                  multiple
+                  displayEmpty
+                  value={rule.serviceIds}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    patchRule(rule.id, {
+                      serviceIds: (e.target.value as number[]).map(Number),
+                    })
+                  }
+                  renderValue={(selected) =>
+                    selected.length === 0 ? (
+                      <Typography variant="body2" color="text.disabled">
+                        Выберите услуги…
+                      </Typography>
+                    ) : (
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {selected.map((id) => (
+                          <Chip
+                            key={id}
+                            label={serviceName(id)}
+                            size="small"
+                            onDelete={() =>
+                              patchRule(rule.id, {
+                                serviceIds: rule.serviceIds.filter((x) => x !== id),
+                              })
+                            }
+                            deleteIcon={
+                              <Close
+                                sx={{ fontSize: "12px !important" }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                              />
+                            }
+                            sx={(t) => ({
+                              height: 22,
+                              fontSize: "0.7rem",
+                              fontWeight: 500,
+                              borderRadius: "7px",
+                              color: "primary.onSurface",
+                              bgcolor: alpha(
+                                t.palette.primary.main,
+                                t.palette.mode === "dark" ? 0.18 : 0.1,
+                              ),
+                            })}
+                          />
+                        ))}
+                      </Box>
+                    )
+                  }
+                  sx={{
+                    borderRadius: "10px",
+                    bgcolor: "background.paper",
+                    "& .MuiSelect-select": {
+                      py: 1,
+                      px: 1.25,
+                      whiteSpace: "normal",
+                      minHeight: "0 !important",
+                    },
+                  }}
+                >
+                  {loadingServices ? (
+                    <MenuItem disabled sx={{ justifyContent: "center", py: 1 }}>
+                      <CircularProgress size={18} />
+                    </MenuItem>
+                  ) : (
+                    services.map((service) => (
+                      <MenuItem key={service.id} value={service.id} sx={{ py: 0.5, minHeight: 0 }}>
+                        <Checkbox
+                          checked={rule.serviceIds.indexOf(service.id) > -1}
+                          size="small"
+                          sx={{ p: 0.5 }}
+                        />
+                        <ListItemText
+                          primary={service.name}
+                          primaryTypographyProps={{ variant: "body2" }}
+                        />
+                        {service.basePrice && Number(service.basePrice) > 0 && (
+                          <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+                            {Number(service.basePrice).toLocaleString("ru-RU")} с
+                          </Typography>
+                        )}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
+
+              {/* % + фикс */}
+              <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    Процент
+                  </Typography>
+                  <NumberField
+                    value={rule.percent || ""}
+                    onChange={(v) => patchRule(rule.id, { percent: v })}
+                    unit="%"
+                    step={1}
+                    disabled={disabled}
+                  />
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    Фиксировано
+                  </Typography>
+                  <NumberField
+                    value={rule.fixedAmount || ""}
+                    onChange={(v) => patchRule(rule.id, { fixedAmount: v })}
+                    unit="с"
+                    step={50}
+                    disabled={disabled}
+                  />
+                </Box>
+              </Box>
+
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.5 }}>
+                {ruleFormula(rule)}
+              </Typography>
+            </Box>
+          ))}
+
           <Button
             variant="text"
             size="small"
-            color="primary"
             startIcon={<Add sx={{ fontSize: 16 }} />}
             onClick={addRule}
             disabled={disabled}
-            sx={{ fontSize: "0.7rem", fontWeight: 700, minWidth: 0, p: "2px 8px" }}
+            sx={(t) => ({
+              border: "1.5px dashed",
+              borderColor: "divider",
+              borderRadius: "12px",
+              color: "primary.onSurface",
+              py: 1.1,
+              fontWeight: 500,
+              "&:hover": {
+                borderColor: alpha(t.palette.primary.main, 0.5),
+                bgcolor: alpha(t.palette.primary.main, 0.06),
+              },
+            })}
           >
-            Добавить
+            Добавить правило
           </Button>
         </Stack>
+      </Box>
 
-        <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: "14px", overflow: "hidden", bgcolor: "background.paper" }}>
-          <Table size="small">
-            <TableHead sx={{ bgcolor: "action.hover" }}>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 700, p: 1, fontSize: "0.6rem", color: "text.disabled", }}>Услуги</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700, p: 0.5, fontSize: "0.6rem", color: "text.disabled", width: 45 }}>%</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700, p: 0.5, fontSize: "0.6rem", color: "text.disabled", width: 65 }}>Фикс</TableCell>
-                <TableCell align="center" sx={{ width: 32, p: 0 }} />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {value.rules.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 2, color: "text.disabled", fontSize: "0.7rem" }}>
-                    Правила не заданы
-                  </TableCell>
-                </TableRow>
-              ) : (
-                value.rules.map((rule) => (
-                  <TableRow key={rule.id} sx={{ "& td": { borderBottom: "1px solid", borderColor: "divider" } }}>
-                    <TableCell sx={{ p: 0.75 }}>
-                      <FormControl fullWidth size="small">
-                        <Select<number[]>
-                          multiple
-                          value={rule.serviceIds}
-                          disabled={disabled}
-                          onChange={(e) =>
-                            patchRule(rule.id, {
-                              serviceIds: (e.target.value as number[]).map(Number),
-                            })
-                          }
-                          renderValue={(selected) => (
-                            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.25 }}>
-                              {selected.map((id) => (
-                                <Chip
-                                  key={id}
-                                  label={serviceName(id)}
-                                  size="small"
-                                  onDelete={() =>
-                                    patchRule(rule.id, {
-                                      serviceIds: rule.serviceIds.filter((x) => x !== id),
-                                    })
-                                  }
-                                  deleteIcon={<Close sx={{ fontSize: "10px !important" }} onMouseDown={(e) => e.stopPropagation()} />}
-                                  sx={{
-                                    height: 18,
-                                    fontSize: "0.65rem",
-                                    borderRadius: 0.75,
-                                    bgcolor: alpha(theme.palette.primary.main, 0.08),
-                                    color: "primary.onSurface",
-                                    fontWeight: 600,
-                                    "& .MuiChip-label": { px: 0.5 },
-                                    "& .MuiChip-deleteIcon": { m: 0 },
-                                  }}
-                                />
-                              ))}
-                            </Box>
-                          )}
-                          sx={{
-                            borderRadius: 1,
-                            bgcolor: "action.hover",
-                            height: "auto",
-                            minHeight: 32,
-                            "& .MuiSelect-select": { py: 0.5, px: 1, fontSize: "0.75rem", whiteSpace: "normal" },
-                          }}
-                        >
-                          {loadingServices ? (
-                            <MenuItem disabled sx={{ p: 1, justifyContent: "center" }}>
-                              <CircularProgress size={20} />
-                            </MenuItem>
-                          ) : (
-                            services.map((service) => (
-                              <MenuItem key={service.id} value={service.id} sx={{ fontSize: "0.75rem", p: 0.5, minHeight: 0 }}>
-                                <Checkbox checked={rule.serviceIds.indexOf(service.id) > -1} size="small" sx={{ p: 0.5 }} />
-                                <ListItemText primary={service.name} primaryTypographyProps={{ variant: "caption" }} />
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                    <TableCell align="center" sx={{ p: 0.5 }}>
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={rule.percent || ""}
-                        disabled={disabled}
-                        onChange={(e) => patchRule(rule.id, { percent: e.target.value })}
-                        sx={numberInputSx}
-                      />
-                    </TableCell>
-                    <TableCell align="center" sx={{ p: 0.5 }}>
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={rule.fixedAmount || ""}
-                        disabled={disabled}
-                        onChange={(e) => patchRule(rule.id, { fixedAmount: e.target.value })}
-                        sx={numberInputSx}
-                      />
-                    </TableCell>
-                    <TableCell align="center" sx={{ p: 0 }}>
-                      <IconButton onClick={() => removeRule(rule.id)} size="small" color="error" disabled={disabled} sx={{ opacity: 0.5 }}>
-                        <DeleteOutline sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+      {/* ── 3. Товары в приёмах ── */}
+      <Box>
+        <SalarySection
+          icon={<ShoppingBagOutlined />}
+          title="Товары в приёмах"
+          subtitle="% или бонус с проданных на приёме товаров"
+          toggle={{
+            checked: value.productEnabled,
+            onChange: () => patch({ productEnabled: !value.productEnabled }),
+            disabled,
+          }}
+        />
+        <Box
+          sx={(t) => ({
+            ...cardSx(t),
+            opacity: value.productEnabled ? 1 : 0.4,
+            pointerEvents: value.productEnabled && !disabled ? "auto" : "none",
+            transition: "opacity .2s ease",
+          })}
+        >
+          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25 }}>
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                Процент с продажи
+              </Typography>
+              <NumberField
+                value={value.productPercent || ""}
+                onChange={(v) => patch({ productPercent: v })}
+                unit="%"
+                step={1}
+                disabled={disabled || !value.productEnabled}
+              />
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                Бонус за товар
+              </Typography>
+              <NumberField
+                value={value.productBonus || ""}
+                onChange={(v) => patch({ productBonus: v })}
+                unit="с"
+                step={50}
+                disabled={disabled || !value.productEnabled}
+              />
+            </Box>
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.5 }}>
+            {productFormula()}
+          </Typography>
         </Box>
       </Box>
-    </Box>
+    </Stack>
   );
 };
 
@@ -384,11 +597,15 @@ export function ruleToSalaryValue(rule: {
   appointmentRate: string;
   dayHourlyRate: string;
   nightHourlyRate: string;
+  productPercent?: string;
+  productFixedAmount?: string;
   serviceRates: { serviceId: number; percent: string; fixedAmount: string }[];
 }): SalarySettingsValue {
-  const num = (s: string) => parseFloat(s) || 0;
   const enabled =
     num(rule.appointmentRate) > 0 || num(rule.dayHourlyRate) > 0 || num(rule.nightHourlyRate) > 0;
+  const productPercent = rule.productPercent ?? "";
+  const productBonus = rule.productFixedAmount ?? "";
+  const productEnabled = num(productPercent) > 0 || num(productBonus) > 0;
 
   // Group flat per-service rates back into rows by identical (percent, fixed).
   const groups = new Map<string, SalaryRuleRow>();
@@ -413,6 +630,9 @@ export function ruleToSalaryValue(rule: {
     dayRate: rule.dayHourlyRate ?? "",
     appointmentRate: rule.appointmentRate ?? "",
     rules: [...groups.values()],
+    productEnabled,
+    productPercent,
+    productBonus,
   };
 }
 
@@ -420,6 +640,8 @@ export function salaryValueToPayload(value: SalarySettingsValue): {
   appointmentRate: string;
   dayHourlyRate: string;
   nightHourlyRate: string;
+  productPercent: string;
+  productFixedAmount: string;
   isActive: boolean;
   serviceRates: { serviceId: number; percent: string; fixedAmount: string }[];
 } {
@@ -435,6 +657,8 @@ export function salaryValueToPayload(value: SalarySettingsValue): {
     appointmentRate: value.enabled ? rate(value.appointmentRate) : "0",
     dayHourlyRate: value.enabled ? rate(value.dayRate) : "0",
     nightHourlyRate: value.enabled ? rate(value.nightRate) : "0",
+    productPercent: value.productEnabled ? rate(value.productPercent) : "0",
+    productFixedAmount: value.productEnabled ? rate(value.productBonus) : "0",
     isActive: true,
     serviceRates,
   };

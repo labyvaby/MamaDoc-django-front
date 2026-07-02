@@ -43,6 +43,8 @@ export interface DjangoEmployee {
   bankAccountNumber: string;
   /** Empty string when caller lacks staff.private.view */
   inn: string;
+  /** Адрес проживания. Пусто без staff.private.view */
+  address: string;
   /** Банк расчётного счёта. Пусто без staff.private.view */
   bank: string;
   /** БИК. Пусто без staff.private.view */
@@ -135,6 +137,7 @@ export interface OnboardEmployeePayload {
   instagram?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  address?: string | null;
   bank?: string | null;
   bik?: string | null;
 }
@@ -154,6 +157,7 @@ export interface UpdateEmployeePayload {
   instagram?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  address?: string | null;
   bank?: string | null;
   bik?: string | null;
   clinicalRole?: ClinicalRole;

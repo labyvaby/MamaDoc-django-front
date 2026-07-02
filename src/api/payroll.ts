@@ -27,6 +27,12 @@ export interface PayrollRow {
    * May be absent on older backends — treat undefined as "0.00".
    */
   bonus?: string;
+  /**
+   * Заработок с товаров, проданных в приёмах сотрудника (% от суммы +
+   * фикс-бонус за единицу). Включён в `earnings`/`netSalary`.
+   * May be absent on older backends — treat undefined as "0.00".
+   */
+  productPay?: string;
   earnings: string;
   advances: string;
   netSalary: string;
@@ -74,6 +80,10 @@ export interface EmployeeRule {
   appointmentRate: string;
   dayHourlyRate: string;
   nightHourlyRate: string;
+  /** Процент с товаров, проданных в приёмах сотрудника. */
+  productPercent: string;
+  /** Фикс-бонус за каждую единицу товара в приёме. */
+  productFixedAmount: string;
   isActive: boolean;
   serviceRates: ServiceRate[];
 }
@@ -82,6 +92,8 @@ export interface RuleWriteData {
   appointmentRate?: string | number;
   dayHourlyRate?: string | number;
   nightHourlyRate?: string | number;
+  productPercent?: string | number;
+  productFixedAmount?: string | number;
   isActive?: boolean;
   serviceRates?: {
     serviceId: number;

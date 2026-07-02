@@ -82,6 +82,7 @@ export interface ExpensesFilters {
   organizationId?: number;
   branchId?: number;
   categoryId?: number;
+  employeeId?: number;
   method?: ExpenseMethod;
   dateFrom?: string;
   dateTo?: string;
@@ -101,6 +102,7 @@ function buildExpenseParams(filters: ExpensesFilters): URLSearchParams {
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.categoryId != null) q.set("categoryId", String(filters.categoryId));
+  if (filters.employeeId != null) q.set("employeeId", String(filters.employeeId));
   if (filters.method) q.set("method", filters.method);  // still supported for cashbox filter
   if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) q.set("dateTo", filters.dateTo);

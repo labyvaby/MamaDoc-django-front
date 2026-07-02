@@ -65,6 +65,7 @@ export function mapDjangoFullToRow(
     instagram: d.instagram || null,
     bank_account_number: d.bankAccountNumber || null,
     inn: d.inn || null,
+    address: d.address || null,
     bank: d.bank || null,
     bik: d.bik || null,
     elqr_url: d.elqrUrl || null,

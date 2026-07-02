@@ -113,6 +113,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [birthDate, setBirthDate] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [address, setAddress] = React.useState("");
+  const [notes, setNotes] = React.useState("");
   const [bank, setBank] = React.useState("");
   const [bik, setBik] = React.useState("");
   const [elqrFile, setElqrFile] = React.useState<File | null>(null);
@@ -251,6 +253,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setBirthDate("");
       setBankAccountNumber("");
       setInn("");
+      setAddress("");
+      setNotes("");
       setBank("");
       setBik("");
       setElqrFile(null);
@@ -334,6 +338,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             ? selectedSpecializations.map((s) => s.id)
             : undefined,
         nickname: nickname.trim() || undefined,
+        notes: notes.trim() || undefined,
         birthDate: birthDate || undefined,
         telegramId: telegramId.trim() || undefined,
         instagram: instagram.trim().replace(/^@/, "") || undefined,
@@ -342,6 +347,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         ...(canManagePrivate && {
           bankAccountNumber: bankAccountNumber.trim() || undefined,
           inn: inn.trim() || undefined,
+          address: address.trim() || undefined,
           bank: bank.trim() || undefined,
           bik: bik.trim() || undefined,
         }),
@@ -413,45 +419,75 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           onPickPhoto={handlePickPhoto}
           disabled={busy}
           footer={
-            <Grid2>
-              <Field label="Дата рождения">
-                <CustomDatePicker
-                  value={birthDate ? dayjs(birthDate) : null}
-                  onChange={(val) => {
-                    setBirthDate(val ? val.format("YYYY-MM-DD") : "");
-                    touch("birthDate");
-                  }}
-                  slotProps={{
-                    textField: {
-                      fullWidth: true,
-                      size: "small",
-                      InputLabelProps: { shrink: true },
-                      placeholder: "дд.мм.гггг",
-                      disabled: busy,
-                      onBlur: () => touch("birthDate"),
-                      error: Boolean(showError("birthDate")),
-                      helperText: showError("birthDate"),
-                    },
-                  }}
+            <Stack spacing={1.75}>
+              <Grid2>
+                <Field label="Дата рождения">
+                  <CustomDatePicker
+                    value={birthDate ? dayjs(birthDate) : null}
+                    onChange={(val) => {
+                      setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+                      touch("birthDate");
+                    }}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        size: "small",
+                        InputLabelProps: { shrink: true },
+                        placeholder: "дд.мм.гггг",
+                        disabled: busy,
+                        onBlur: () => touch("birthDate"),
+                        error: Boolean(showError("birthDate")),
+                        helperText: showError("birthDate"),
+                      },
+                    }}
+                  />
+                </Field>
+                {canManagePrivate && (
+                  <Field label="ИНН">
+                    <TextField
+                      value={inn}
+                      onChange={(e) => setInn(e.target.value.replace(/\D/g, "").slice(0, 14))}
+                      onBlur={() => touch("inn")}
+                      fullWidth
+                      size="small"
+                      placeholder="00000000000000"
+                      disabled={busy}
+                      inputProps={{ inputMode: "numeric" }}
+                      error={Boolean(showError("inn"))}
+                      helperText={showError("inn")}
+                    />
+                  </Field>
+                )}
+              </Grid2>
+              <Field label="Описание">
+                <TextField
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={2}
+                  placeholder="Короткое описание сотрудника"
+                  disabled={busy}
+                  inputProps={{ maxLength: 500 }}
                 />
               </Field>
               {canManagePrivate && (
-                <Field label="ИНН">
+                <Field label="Адрес проживания">
                   <TextField
-                    value={inn}
-                    onChange={(e) => setInn(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                    onBlur={() => touch("inn")}
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
                     fullWidth
                     size="small"
-                    placeholder="00000000000000"
+                    multiline
+                    minRows={2}
+                    placeholder="Город, улица, дом, кв."
                     disabled={busy}
-                    inputProps={{ inputMode: "numeric" }}
-                    error={Boolean(showError("inn"))}
-                    helperText={showError("inn")}
+                    inputProps={{ maxLength: 255 }}
                   />
                 </Field>
               )}
-            </Grid2>
+            </Stack>
           }
         >
           <Field label="ФИО" required>

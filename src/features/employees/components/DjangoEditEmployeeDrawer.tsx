@@ -97,6 +97,9 @@ function serializeSalary(v: SalarySettingsValue): string {
     night: num(v.nightRate),
     day: num(v.dayRate),
     appointment: num(v.appointmentRate),
+    productEnabled: v.productEnabled,
+    productPercent: num(v.productPercent),
+    productBonus: num(v.productBonus),
     rules,
   });
 }
@@ -135,6 +138,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [birthDate, setBirthDate] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [address, setAddress] = React.useState("");
+  const [notes, setNotes] = React.useState("");
   const [bank, setBank] = React.useState("");
   const [bik, setBik] = React.useState("");
   const [banks, setBanks] = React.useState<DjangoBank[]>([]);
@@ -239,6 +244,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setBirthDate(record.birth_date || "");
     setBankAccountNumber(record.bank_account_number || "");
     setInn(record.inn || "");
+    setAddress(record.address || "");
+    setNotes(record.notes || "");
     setBank(record.bank || "");
     setBik(record.bik || "");
     setElqrFile(null);
@@ -267,6 +274,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setBirthDate(full.birthDate || "");
         setBankAccountNumber(full.bankAccountNumber || "");
         setInn(full.inn || "");
+        setAddress(full.address || "");
+        setNotes(full.notes || "");
         setBank(full.bank || "");
         setBik(full.bik || "");
         setElqrExisting(full.elqrUrl || null);
@@ -370,10 +379,12 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         clinicalRole,
         telegramId: telegramId.trim() || null,
         instagram: instagram.trim().replace(/^@/, "") || null,
+        notes: notes.trim() || null,
         birthDate: birthDate || null,
         ...(canManagePrivate && {
           bankAccountNumber: bankAccountNumber.trim() || null,
           inn: inn.trim() || null,
+          address: address.trim() || null,
           bank: bank.trim() || null,
           bik: bik.trim() || null,
         }),
@@ -471,6 +482,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         birth_date: updated.birthDate || null,
         bank_account_number: updated.bankAccountNumber || null,
         inn: updated.inn || null,
+        address: updated.address || null,
+        notes: updated.notes || null,
         bank: updated.bank || null,
         bik: updated.bik || null,
         elqr_url: updated.elqrUrl || null,
@@ -526,45 +539,75 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           onPickPhoto={handlePickPhoto}
           disabled={busy}
           footer={
-            <Grid2>
-              <Field label="Дата рождения">
-                <CustomDatePicker
-                  value={birthDate ? dayjs(birthDate) : null}
-                  onChange={(val) => {
-                    setBirthDate(val ? val.format("YYYY-MM-DD") : "");
-                    touch("birthDate");
-                  }}
-                  slotProps={{
-                    textField: {
-                      fullWidth: true,
-                      size: "small",
-                      InputLabelProps: { shrink: true },
-                      placeholder: "дд.мм.гггг",
-                      disabled: busy,
-                      onBlur: () => touch("birthDate"),
-                      error: Boolean(showError("birthDate")),
-                      helperText: showError("birthDate"),
-                    },
-                  }}
+            <Stack spacing={1.75}>
+              <Grid2>
+                <Field label="Дата рождения">
+                  <CustomDatePicker
+                    value={birthDate ? dayjs(birthDate) : null}
+                    onChange={(val) => {
+                      setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+                      touch("birthDate");
+                    }}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        size: "small",
+                        InputLabelProps: { shrink: true },
+                        placeholder: "дд.мм.гггг",
+                        disabled: busy,
+                        onBlur: () => touch("birthDate"),
+                        error: Boolean(showError("birthDate")),
+                        helperText: showError("birthDate"),
+                      },
+                    }}
+                  />
+                </Field>
+                {canManagePrivate && (
+                  <Field label="ИНН">
+                    <TextField
+                      value={inn}
+                      onChange={(e) => { setInn(e.target.value.replace(/\D/g, "").slice(0, 14)); setServerError(null); }}
+                      onBlur={() => touch("inn")}
+                      fullWidth
+                      size="small"
+                      placeholder="00000000000000"
+                      disabled={busy}
+                      inputProps={{ inputMode: "numeric" }}
+                      error={Boolean(showError("inn"))}
+                      helperText={showError("inn")}
+                    />
+                  </Field>
+                )}
+              </Grid2>
+              <Field label="Описание">
+                <TextField
+                  value={notes}
+                  onChange={(e) => { setNotes(e.target.value); setServerError(null); }}
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={2}
+                  placeholder="Короткое описание сотрудника"
+                  disabled={busy}
+                  inputProps={{ maxLength: 500 }}
                 />
               </Field>
               {canManagePrivate && (
-                <Field label="ИНН">
+                <Field label="Адрес проживания">
                   <TextField
-                    value={inn}
-                    onChange={(e) => { setInn(e.target.value.replace(/\D/g, "").slice(0, 14)); setServerError(null); }}
-                    onBlur={() => touch("inn")}
+                    value={address}
+                    onChange={(e) => { setAddress(e.target.value); setServerError(null); }}
                     fullWidth
                     size="small"
-                    placeholder="00000000000000"
+                    multiline
+                    minRows={2}
+                    placeholder="Город, улица, дом, кв."
                     disabled={busy}
-                    inputProps={{ inputMode: "numeric" }}
-                    error={Boolean(showError("inn"))}
-                    helperText={showError("inn")}
+                    inputProps={{ maxLength: 255 }}
                   />
                 </Field>
               )}
-            </Grid2>
+            </Stack>
           }
         >
           <Field label="ФИО" required>
