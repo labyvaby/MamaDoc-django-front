@@ -3,7 +3,7 @@ export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type PaymentMethod = "cash" | "card" | "balance" | "bonus";
+export type PaymentMethod = "cash" | "card" | "balance" | "bonus" | "insurance";
 
 export type PaymentStatus =
   | "unpaid"
@@ -19,6 +19,12 @@ export interface AppointmentPayment {
   /** Total amount already refunded for this payment */
   refundedAmount?: string;
   createdAt: string;
+  /** Insurance company id (only for method === "insurance") */
+  insurerId?: number | null;
+  /** Insurance company name (only for method === "insurance") */
+  insurerName?: string | null;
+  /** Patient policy number (only for method === "insurance") */
+  policyNumber?: string;
 }
 
 export interface AppointmentRefund {
@@ -53,9 +59,18 @@ export interface PaymentSummary {
   refunds?: AppointmentRefund[];
 }
 
+export interface PaymentLineInput {
+  method: PaymentMethod;
+  amount: string;
+  /** Required when method === "insurance": active insurer of the org */
+  insurerId?: number;
+  /** Optional patient policy number (insurance only) */
+  policyNumber?: string;
+}
+
 export interface ApplyPaymentPayload {
   discountAmount: string;
-  payments: { method: PaymentMethod; amount: string }[];
+  payments: PaymentLineInput[];
   /** Amount to deduct from patient balance (omit or "0.00" if not using balance) */
   balanceAmount?: string;
   /** Amount to deduct from patient bonuses (omit or "0.00" if not using bonuses) */

@@ -57,6 +57,10 @@ const CashboxSummaryPanel: React.FC<Props> = ({ summary, isLoading, isFetching }
   const hasBalance =
     summary &&
     (parseFloat(summary.balancePayments) > 0 || parseFloat(summary.balanceRefunds) > 0);
+  const hasInsurance =
+    summary &&
+    (parseFloat(summary.insuranceIncome ?? "0") > 0 ||
+      parseFloat(summary.insuranceRefunds ?? "0") > 0);
 
   return (
     <Box
@@ -215,6 +219,20 @@ const CashboxSummaryPanel: React.FC<Props> = ({ summary, isLoading, isFetching }
             </Typography>
             <SummaryRow label="Оплата с баланса" value={fmt(summary?.balancePayments)} color="info.main" loading={isLoading} />
             <SummaryRow label="Возврат на баланс" value={fmt(summary?.balanceRefunds)} color="text.secondary" loading={isLoading} />
+          </>
+        )}
+
+        {/* Insurance coverage — задолженность страховых, не наличный доход */}
+        {(isLoading || hasInsurance) && (
+          <>
+            <Divider sx={{ my: 0.5 }} />
+            <Typography variant="caption" color="text.disabled" fontWeight={600} textTransform="uppercase">
+              Страховые
+            </Typography>
+            <SummaryRow label="Покрыто страховкой" value={fmt(summary?.insuranceIncome)} color="info.main" loading={isLoading} />
+            {(isLoading || parseFloat(summary?.insuranceRefunds ?? "0") > 0) && (
+              <SummaryRow label="Возвраты по страховке" value={fmt(summary?.insuranceRefunds)} color="text.secondary" loading={isLoading} />
+            )}
           </>
         )}
       </Stack>

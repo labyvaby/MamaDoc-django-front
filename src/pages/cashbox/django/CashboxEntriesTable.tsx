@@ -24,12 +24,14 @@ const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
   card: "Карта",
   balance: "Баланс",
+  insurance: "Страховка",
 };
 
 const METHOD_COLORS: Record<string, "default" | "success" | "info"> = {
   cash: "success",
   card: "default",
   balance: "info",
+  insurance: "info",
 };
 
 function fmtDatetime(iso: string): string {
@@ -207,6 +209,12 @@ const CashboxEntriesTable: React.FC<Props> = ({
                     {entry.method === "balance" && (
                       <Typography variant="caption" color="text.disabled" display="block">
                         внутр.
+                      </Typography>
+                    )}
+                    {entry.method === "insurance" && (entry.insurerName || entry.policyNumber) && (
+                      <Typography variant="caption" color="text.disabled" display="block" noWrap sx={{ maxWidth: 140 }}>
+                        {entry.insurerName ?? ""}
+                        {entry.policyNumber ? ` · ${entry.policyNumber}` : ""}
                       </Typography>
                     )}
                   </TableCell>

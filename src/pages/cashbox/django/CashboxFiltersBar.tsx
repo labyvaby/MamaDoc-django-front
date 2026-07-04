@@ -72,6 +72,7 @@ const METHOD_OPTIONS: { value: CashboxMethod | ""; label: string }[] = [
   { value: "cash", label: "Наличные" },
   { value: "card", label: "Карта" },
   { value: "balance", label: "Баланс" },
+  { value: "insurance", label: "Страховка" },
 ];
 
 const CashboxFiltersBar: React.FC<Props> = ({ value, branches, onChange }) => {

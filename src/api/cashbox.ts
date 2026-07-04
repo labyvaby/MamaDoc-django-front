@@ -3,7 +3,7 @@ export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type CashboxMethod = "cash" | "card" | "balance" | "mixed";
+export type CashboxMethod = "cash" | "card" | "balance" | "mixed" | "insurance";
 export type CashboxEntryType = "payment" | "refund" | "expense" | "sale" | "supply";
 
 export interface CashboxFilters {
@@ -33,6 +33,9 @@ export interface CashboxSummary {
   netIncome: string;
   balancePayments: string;
   balanceRefunds: string;
+  /** Покрытие страховыми — информационно, НЕ входит в gross/net income */
+  insuranceIncome: string;
+  insuranceRefunds: string;
   paymentCount: number;
   refundCount: number;
   // Expense fields (new)
@@ -75,6 +78,9 @@ export interface CashboxEntry {
   expenseDate: string | null;
   description: string | null;
   isVoided: boolean | null;
+  // Insurance-payment fields (present when method === "insurance")
+  insurerName?: string | null;
+  policyNumber?: string | null;
 }
 
 export interface CashboxEntriesResponse {

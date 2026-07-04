@@ -13,6 +13,7 @@ import {
   AccountBalanceWalletOutlined,
   CreditCardOutlined,
   CardGiftcardOutlined,
+  HealthAndSafetyOutlined,
   CheckCircleOutline,
   ErrorOutline,
   InfoOutlined,
@@ -27,6 +28,12 @@ export interface PaymentInfo {
   card: number;
   balance?: number;
   bonuses?: number;
+  /** Покрыто страховой компанией */
+  insurance?: number;
+  /** Название страховой компании (для строки «Страховка») */
+  insurerName?: string | null;
+  /** Номер полиса пациента */
+  policyNumber?: string | null;
   finalTotal: number;
   debt?: number;
   status?: string;
@@ -45,8 +52,12 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
   actionButton,
 }) => {
   const theme = useTheme();
-  const { discountPercent, discountAmount, baseTotal, cash, card, balance = 0, bonuses = 0, finalTotal, debt = 0, status } = payment;
-  const totalPaid = cash + card + balance + bonuses;
+  const {
+    discountPercent, discountAmount, baseTotal, cash, card,
+    balance = 0, bonuses = 0, insurance = 0, insurerName, policyNumber,
+    finalTotal, debt = 0, status,
+  } = payment;
+  const totalPaid = cash + card + balance + bonuses + insurance;
 
   let isPaid: boolean = false;
   let isPartiallyPaid: boolean = false;
@@ -246,6 +257,28 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
                     <Typography variant="body2" color="text.secondary" fontWeight={500}>Бонусами</Typography>
                   </Stack>
                   <Typography variant="body2" fontWeight={700}>{formatAmount(bonuses)} сом</Typography>
+                </Stack>
+              )}
+
+              {/* Insurance (страховка) */}
+              {insurance > 0 && (
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Box sx={{ p: 0.5, borderRadius: 1, bgcolor: alpha(theme.palette.info.main, 0.1), display: 'flex' }}>
+                      <HealthAndSafetyOutlined sx={{ fontSize: 18, color: 'info.main' }} />
+                    </Box>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                        Страховка{insurerName ? ` · ${insurerName}` : ""}
+                      </Typography>
+                      {policyNumber && (
+                        <Typography variant="caption" color="text.disabled" display="block">
+                          Полис {policyNumber}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Stack>
+                  <Typography variant="body2" fontWeight={700}>{formatAmount(insurance)} сом</Typography>
                 </Stack>
               )}
 
