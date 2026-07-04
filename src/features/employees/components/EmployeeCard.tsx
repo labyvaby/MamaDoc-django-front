@@ -35,6 +35,7 @@ import LockOutlined from "@mui/icons-material/LockOutlined";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import LinkOutlined from "@mui/icons-material/LinkOutlined";
@@ -82,30 +83,48 @@ export type EmployeeCardProps = {
   onEdit?: (emp: EmployesRow) => void;
 };
 
-const calculateAge = (birthDate: string) => {
-  if (!birthDate) return "";
-  const birth = new Date(birthDate);
+const declension = (number: number, titles: [string, string, string]) => {
+  const cases = [2, 0, 1, 1, 1, 2];
+  return titles[
+    number % 100 > 4 && number % 100 < 20 ? 2 : cases[number % 10 < 5 ? number % 10 : 5]
+  ];
+};
+
+/** Полных месяцев между датой и сегодня (отрицательно для будущих дат). */
+const monthsSince = (dateStr: string) => {
+  const from = new Date(dateStr);
   const now = new Date();
   let monthDiff =
-    (now.getFullYear() - birth.getFullYear()) * 12 +
-    (now.getMonth() - birth.getMonth());
-  if (now.getDate() < birth.getDate()) monthDiff--;
+    (now.getFullYear() - from.getFullYear()) * 12 +
+    (now.getMonth() - from.getMonth());
+  if (now.getDate() < from.getDate()) monthDiff--;
+  return monthDiff;
+};
 
+const calculateAge = (birthDate: string) => {
+  if (!birthDate) return "";
+  const monthDiff = monthsSince(birthDate);
   const y = Math.floor(monthDiff / 12);
   const m = monthDiff % 12;
-
-  const declension = (number: number, titles: [string, string, string]) => {
-    const cases = [2, 0, 1, 1, 1, 2];
-    return titles[
-      number % 100 > 4 && number % 100 < 20 ? 2 : cases[number % 10 < 5 ? number % 10 : 5]
-    ];
-  };
 
   const yearsStr = `${y} ${declension(y, ["год", "года", "лет"])}`;
   const monthsStr =
     m > 0 ? ` и ${m} ${declension(m, ["месяц", "месяца", "месяцев"])}` : "";
 
   return `(${yearsStr}${monthsStr})`;
+};
+
+/** Стаж от даты приёма: «2 года и 3 месяца», «5 месяцев», «меньше месяца». */
+const formatTenure = (hiredDate: string) => {
+  const monthDiff = monthsSince(hiredDate);
+  if (monthDiff < 0) return "";
+  if (monthDiff === 0) return "меньше месяца";
+  const y = Math.floor(monthDiff / 12);
+  const m = monthDiff % 12;
+  const parts: string[] = [];
+  if (y > 0) parts.push(`${y} ${declension(y, ["год", "года", "лет"])}`);
+  if (m > 0) parts.push(`${m} ${declension(m, ["месяц", "месяца", "месяцев"])}`);
+  return parts.join(" и ");
 };
 
 /** Заголовок секции в карточке: иконка-акцент + приглушённая подпись + опц. действие. */
@@ -402,6 +421,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const fio = emp?.full_name || emp?.id || "";
   const phone = emp?.phone || "";
   const birth = emp?.birth_date || "";
+  const hired = emp?.hired_at || "";
   const photo = emp?.photo_url || undefined;
   const roleText =
     roleDisplayName || (emp?.status === "active" ? "Сотрудник" : "—");
@@ -601,7 +621,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             </Box>
 
             {/* Личное — дата рождения и адрес приходят только с правом (или своя карточка) */}
-            {(birth || emp.address || emp.notes) && (
+            {(birth || hired || emp.address || emp.notes) && (
               <Box>
                 <SectionHeader icon={<CakeOutlined />} title="Личное" />
                 <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
@@ -615,6 +635,22 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                           <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
                             {calculateAge(birth)}
                           </Box>
+                        </>
+                      }
+                    />
+                  )}
+                  {hired && (
+                    <InfoTile
+                      icon={<EventAvailableOutlined />}
+                      label="Дата приёма на работу"
+                      value={
+                        <>
+                          {formatDateRu(hired)}{" "}
+                          {formatTenure(hired) && (
+                            <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+                              (стаж {formatTenure(hired)})
+                            </Box>
+                          )}
                         </>
                       }
                     />
@@ -956,7 +992,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               />
 
               {servicesForEmployee.length > 0 ? (
-                <Box sx={{ display: "grid", gap: 1, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.875 }}>
                   {servicesForEmployee.map((s) => {
                     const meta = serviceMeta.get(String(s.id));
                     return (
@@ -964,20 +1000,23 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                         key={s.id}
                         direction="row"
                         alignItems="center"
-                        gap={1.25}
+                        gap={0.875}
                         sx={(t) => ({
-                          p: 1.25,
+                          height: 32,
+                          maxWidth: "100%",
+                          pl: 0.5,
+                          pr: 1.375,
                           border: 1,
                           borderColor: "divider",
-                          borderRadius: "11px",
+                          borderRadius: 999,
                           bgcolor: subtleBg(t),
                         })}
                       >
                         <Box
                           sx={(t) => ({
-                            width: 40,
-                            height: 40,
-                            borderRadius: "9px",
+                            width: 24,
+                            height: 24,
+                            borderRadius: "50%",
                             flexShrink: 0,
                             overflow: "hidden",
                             display: "flex",
@@ -990,19 +1029,32 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                           {meta?.imageUrl ? (
                             <Box component="img" src={meta.imageUrl} alt={s.name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
-                            <LocalOfferOutlined sx={{ fontSize: 18 }} />
+                            <LocalOfferOutlined sx={{ fontSize: 13 }} />
                           )}
                         </Box>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" fontWeight={500} sx={{ lineHeight: 1.25 }}>
-                            {s.name}
+                        <Typography
+                          variant="body2"
+                          fontWeight={500}
+                          noWrap
+                          sx={{ fontSize: "0.8rem", minWidth: 0 }}
+                        >
+                          {s.name}
+                        </Typography>
+                        {meta && meta.price > 0 && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{
+                              fontVariantNumeric: "tabular-nums",
+                              whiteSpace: "nowrap",
+                              pl: 0.875,
+                              borderLeft: 1,
+                              borderColor: "divider",
+                            }}
+                          >
+                            {meta.price.toLocaleString("ru-RU")} с
                           </Typography>
-                          {meta && meta.price > 0 && (
-                            <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                              {meta.price.toLocaleString("ru-RU")} с
-                            </Typography>
-                          )}
-                        </Box>
+                        )}
                       </Stack>
                     );
                   })}

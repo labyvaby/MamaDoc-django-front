@@ -74,6 +74,13 @@ export interface ServiceRate {
   fixedAmount: string;
 }
 
+export interface ProductRate {
+  productId: number;
+  productName: string;
+  percent: string;
+  fixedAmount: string;
+}
+
 export interface EmployeeRule {
   employeeId: number;
   employeeFullName: string;
@@ -86,6 +93,8 @@ export interface EmployeeRule {
   productFixedAmount: string;
   isActive: boolean;
   serviceRates: ServiceRate[];
+  /** Индивидуальные ставки по конкретным товарам (перекрывают общие поля). */
+  productRates: ProductRate[];
 }
 
 export interface RuleWriteData {
@@ -97,6 +106,11 @@ export interface RuleWriteData {
   isActive?: boolean;
   serviceRates?: {
     serviceId: number;
+    percent: string | number;
+    fixedAmount: string | number;
+  }[];
+  productRates?: {
+    productId: number;
     percent: string | number;
     fixedAmount: string | number;
   }[];

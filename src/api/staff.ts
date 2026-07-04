@@ -37,6 +37,8 @@ export interface DjangoEmployee {
   nickname: string;
   notes: string;
   birthDate: string | null;
+  /** Дата приёма на работу (ISO) */
+  hiredAt: string | null;
   telegramId: string;
   instagram: string;
   /** Empty string when caller lacks staff.private.view */
@@ -133,6 +135,7 @@ export interface OnboardEmployeePayload {
   notes?: string;
   nickname?: string | null;
   birthDate?: string | null;
+  hiredAt?: string | null;
   telegramId?: string | null;
   instagram?: string | null;
   bankAccountNumber?: string | null;
@@ -153,6 +156,7 @@ export interface UpdateEmployeePayload {
   nickname?: string | null;
   notes?: string | null;
   birthDate?: string | null;
+  hiredAt?: string | null;
   telegramId?: string | null;
   instagram?: string | null;
   bankAccountNumber?: string | null;

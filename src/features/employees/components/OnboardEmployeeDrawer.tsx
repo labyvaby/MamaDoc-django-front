@@ -34,7 +34,7 @@ import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import { CustomDatePicker } from "../../../components/ui";
-import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader } from "./drawerKit";
+import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
 import {
   validateFullName,
@@ -111,6 +111,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [telegramId, setTelegramId] = React.useState("");
   const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
+  const [hiredAt, setHiredAt] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [address, setAddress] = React.useState("");
@@ -251,6 +252,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       setTelegramId("");
       setInstagram("");
       setBirthDate("");
+      setHiredAt("");
       setBankAccountNumber("");
       setInn("");
       setAddress("");
@@ -340,6 +342,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         nickname: nickname.trim() || undefined,
         notes: notes.trim() || undefined,
         birthDate: birthDate || undefined,
+        hiredAt: hiredAt || undefined,
         telegramId: telegramId.trim() || undefined,
         instagram: instagram.trim().replace(/^@/, "") || undefined,
         // Приватные поля отправляем только при наличии права; бэкенд тоже
@@ -459,6 +462,23 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   </Field>
                 )}
               </Grid2>
+              <Grid2>
+                <Field label="Дата приёма на работу">
+                  <CustomDatePicker
+                    value={hiredAt ? dayjs(hiredAt) : null}
+                    onChange={(val) => setHiredAt(val ? val.format("YYYY-MM-DD") : "")}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        size: "small",
+                        InputLabelProps: { shrink: true },
+                        placeholder: "дд.мм.гггг",
+                        disabled: busy,
+                      },
+                    }}
+                  />
+                </Field>
+              </Grid2>
               <Field label="Описание">
                 <TextField
                   value={notes}
@@ -506,15 +526,25 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             />
           </Field>
           <Field label="Псевдоним">
-            <TextField
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              fullWidth
-              size="small"
-              placeholder="Как в расписании"
-              disabled={busy}
-              inputProps={{ maxLength: 100 }}
-            />
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                fullWidth
+                size="small"
+                placeholder="Как в расписании"
+                disabled={busy}
+                inputProps={{ maxLength: 100 }}
+              />
+              <Box sx={{ flexShrink: 0 }}>
+                <StatusBadge
+                  value={status}
+                  onChange={setStatus}
+                  options={["active", "inactive", "fired"]}
+                  disabled={busy}
+                />
+              </Box>
+            </Stack>
           </Field>
         </PhotoHero>
 
@@ -559,33 +589,34 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           />
         </Field>
 
-        <Field label="Telegram ID">
-          <TextField
-            value={telegramId}
-            onChange={(e) => setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20))}
-            onBlur={() => touch("telegramId")}
-            fullWidth
-            placeholder="Числовой ID"
-            disabled={busy}
-            inputProps={{ inputMode: "numeric" }}
-            error={Boolean(showError("telegramId"))}
-            helperText={showError("telegramId")}
-          />
-        </Field>
-
-        <Field label="Instagram">
-          <TextField
-            value={instagram}
-            onChange={(e) => setInstagram(e.target.value)}
-            onBlur={() => touch("instagram")}
-            fullWidth
-            placeholder="username"
-            disabled={busy}
-            InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
-            error={Boolean(showError("instagram"))}
-            helperText={showError("instagram")}
-          />
-        </Field>
+        <Grid2>
+          <Field label="Telegram ID">
+            <TextField
+              value={telegramId}
+              onChange={(e) => setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20))}
+              onBlur={() => touch("telegramId")}
+              fullWidth
+              placeholder="Числовой ID"
+              disabled={busy}
+              inputProps={{ inputMode: "numeric" }}
+              error={Boolean(showError("telegramId"))}
+              helperText={showError("telegramId")}
+            />
+          </Field>
+          <Field label="Instagram">
+            <TextField
+              value={instagram}
+              onChange={(e) => setInstagram(e.target.value)}
+              onBlur={() => touch("instagram")}
+              fullWidth
+              placeholder="username"
+              disabled={busy}
+              InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
+              error={Boolean(showError("instagram"))}
+              helperText={showError("instagram")}
+            />
+          </Field>
+        </Grid2>
 
         {/* ── Реквизиты (под staff.private.manage) ── */}
         {canManagePrivate && (
@@ -676,38 +707,23 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
         {/* ── Роль и доступ ── */}
         <SectionLabel title="Роль и доступ" />
 
-        <Grid2>
-          <Field label="Статус">
-            <TextField
-              select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as "active" | "inactive" | "fired")}
-              fullWidth
-              disabled={busy}
-            >
-              <MenuItem value="active">Работает</MenuItem>
-              <MenuItem value="inactive">Не работает</MenuItem>
-              <MenuItem value="fired">Уволен</MenuItem>
-            </TextField>
-          </Field>
-          <Field label="Тип сотрудника">
-            <TextField
-              select
-              value={clinicalRole}
-              onChange={(e) => {
-                const next = e.target.value as "doctor" | "nurse" | "other";
-                setClinicalRole(next);
-                if (next !== "doctor") setSelectedSpecializations([]);
-              }}
-              fullWidth
-              disabled={busy}
-            >
-              <MenuItem value="doctor">Врач</MenuItem>
-              <MenuItem value="nurse">Медсестра</MenuItem>
-              <MenuItem value="other">Другой</MenuItem>
-            </TextField>
-          </Field>
-        </Grid2>
+        <Field label="Тип сотрудника" hint="Клинический тип — влияет на расписание и специализации">
+          <TextField
+            select
+            value={clinicalRole}
+            onChange={(e) => {
+              const next = e.target.value as "doctor" | "nurse" | "other";
+              setClinicalRole(next);
+              if (next !== "doctor") setSelectedSpecializations([]);
+            }}
+            fullWidth
+            disabled={busy}
+          >
+            <MenuItem value="doctor">Врач</MenuItem>
+            <MenuItem value="nurse">Медсестра</MenuItem>
+            <MenuItem value="other">Другой</MenuItem>
+          </TextField>
+        </Field>
 
         {/* ── Специализации (только для врача) ── */}
         {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && (

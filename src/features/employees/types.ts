@@ -27,6 +27,8 @@ export type Employee = {
   role_id?: string | null;
   employee_type_id?: string | null;
   birth_date?: string | null;
+  /** Дата приёма на работу (ISO) */
+  hired_at?: string | null;
   photo_url?: string | null;
   telegram_id?: string | null;
   instagram?: string | null;

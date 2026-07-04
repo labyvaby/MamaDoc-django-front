@@ -29,6 +29,7 @@ import BedtimeOutlined from "@mui/icons-material/BedtimeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 
 import type { Service } from "../../../api/catalog";
+import type { DjangoProduct } from "../../../api/warehouse";
 import { subtleBg } from "../../../theme/uiHelpers";
 
 // ── value shape ─────────────────────────────────────────────────────────────
@@ -37,6 +38,18 @@ import { subtleBg } from "../../../theme/uiHelpers";
 export type SalaryRuleRow = {
   id: string;
   serviceIds: number[];
+  percent: string;
+  fixedAmount: string;
+};
+
+/** Сентинел «Все товары» в `productIds` — маппится на общие поля правила
+ *  (product_percent / product_fixed_amount), а не на ставки по товарам. */
+export const ALL_PRODUCTS = -1;
+
+export type SalaryProductRuleRow = {
+  id: string;
+  /** ID товаров; может содержать сентинел ALL_PRODUCTS («Все товары»). */
+  productIds: number[];
   percent: string;
   fixedAmount: string;
 };
@@ -50,8 +63,9 @@ export type SalarySettingsValue = {
   rules: SalaryRuleRow[];
   /** «Товары в приёмах» включены. */
   productEnabled: boolean;
-  productPercent: string;
-  productBonus: string;
+  /** Правила по товарам; правило с ALL_PRODUCTS действует на все товары
+   *  (кроме тех, у кого есть отдельное правило). */
+  productRules: SalaryProductRuleRow[];
 };
 
 export const EMPTY_SALARY: SalarySettingsValue = {
@@ -61,8 +75,7 @@ export const EMPTY_SALARY: SalarySettingsValue = {
   appointmentRate: "",
   rules: [],
   productEnabled: false,
-  productPercent: "",
-  productBonus: "",
+  productRules: [],
 };
 
 type Props = {
@@ -70,6 +83,8 @@ type Props = {
   onChange: (v: SalarySettingsValue) => void;
   services: Service[];
   loadingServices?: boolean;
+  products?: DjangoProduct[];
+  loadingProducts?: boolean;
   disabled?: boolean;
 };
 
@@ -227,6 +242,8 @@ const DjangoSalarySettings: React.FC<Props> = ({
   onChange,
   services,
   loadingServices = false,
+  products = [],
+  loadingProducts = false,
   disabled = false,
 }) => {
   const patch = (p: Partial<SalarySettingsValue>) => onChange({ ...value, ...p });
@@ -245,8 +262,43 @@ const DjangoSalarySettings: React.FC<Props> = ({
   const patchRule = (id: string, p: Partial<SalaryRuleRow>) =>
     patch({ rules: value.rules.map((r) => (r.id === id ? { ...r, ...p } : r)) });
 
+  const addProductRule = () =>
+    patch({
+      productRules: [
+        ...value.productRules,
+        { id: newRuleId(), productIds: [], percent: "", fixedAmount: "" },
+      ],
+    });
+
+  /** Тумблер секции товаров: при включении сразу даём первое правило. */
+  const toggleProducts = () => {
+    const next = !value.productEnabled;
+    patch({
+      productEnabled: next,
+      productRules:
+        next && value.productRules.length === 0
+          ? [{ id: newRuleId(), productIds: [], percent: "", fixedAmount: "" }]
+          : value.productRules,
+    });
+  };
+
+  const removeProductRule = (id: string) =>
+    patch({ productRules: value.productRules.filter((r) => r.id !== id) });
+
+  const patchProductRule = (id: string, p: Partial<SalaryProductRuleRow>) =>
+    patch({
+      productRules: value.productRules.map((r) =>
+        r.id === id ? { ...r, ...p } : r,
+      ),
+    });
+
   const serviceName = (id: number) =>
     services.find((s) => s.id === id)?.name ?? `#${id}`;
+
+  const productName = (id: number) =>
+    id === ALL_PRODUCTS
+      ? "Все товары"
+      : products.find((p) => p.id === id)?.name ?? `#${id}`;
 
   const ruleFormula = (rule: SalaryRuleRow): React.ReactNode => {
     if (rule.serviceIds.length === 0) {
@@ -267,17 +319,32 @@ const DjangoSalarySettings: React.FC<Props> = ({
     );
   };
 
-  const productFormula = (): React.ReactNode => {
-    const p = num(value.productPercent);
-    const b = num(value.productBonus);
-    if (!p && !b) return "Укажите процент и/или бонус за товары";
+  const productRuleFormula = (rule: SalaryProductRuleRow): React.ReactNode => {
+    if (rule.productIds.length === 0) {
+      return "Выберите товары, к которым применяется правило";
+    }
+    const isAll = rule.productIds.includes(ALL_PRODUCTS);
+    const hasOtherRules = value.productRules.some(
+      (r) => r.id !== rule.id && r.productIds.length > 0,
+    );
+    const p = num(rule.percent);
+    const f = num(rule.fixedAmount);
+    if (!p && !f) return "Укажите процент и/или бонус — правило пока ничего не начисляет";
     return (
       <>
         Сотрудник получает{" "}
-        {p > 0 && <><Hl>{p}%</Hl> от суммы товаров</>}
-        {p > 0 && b > 0 && " + "}
-        {b > 0 && <><Hl>{b} с</Hl> за каждый товар</>}
-        , проданных в его приёмах
+        {p > 0 && <><Hl>{p}%</Hl> от суммы</>}
+        {p > 0 && f > 0 && " + "}
+        {f > 0 && <><Hl>{f} с</Hl> за единицу</>}
+        {" за "}
+        {isAll ? (
+          <>
+            <Hl>все товары</Hl>, проданные в его приёмах
+            {hasOtherRules && " (кроме товаров с отдельным правилом)"}
+          </>
+        ) : (
+          <>: <Hl>{rule.productIds.map(productName).join(", ")}</Hl></>
+        )}
       </>
     );
   };
@@ -544,48 +611,250 @@ const DjangoSalarySettings: React.FC<Props> = ({
           subtitle="% или бонус с проданных на приёме товаров"
           toggle={{
             checked: value.productEnabled,
-            onChange: () => patch({ productEnabled: !value.productEnabled }),
+            onChange: toggleProducts,
             disabled,
           }}
         />
-        <Box
-          sx={(t) => ({
-            ...cardSx(t),
+
+        {/* Правила по товарам: «Все товары» — общие поля, конкретные — свои ставки */}
+        <Stack
+          spacing={1.5}
+          sx={{
             opacity: value.productEnabled ? 1 : 0.4,
             pointerEvents: value.productEnabled && !disabled ? "auto" : "none",
             transition: "opacity .2s ease",
-          })}
+          }}
         >
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25 }}>
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                Процент с продажи
-              </Typography>
-              <NumberField
-                value={value.productPercent || ""}
-                onChange={(v) => patch({ productPercent: v })}
-                unit="%"
-                step={1}
-                disabled={disabled || !value.productEnabled}
-              />
+          {value.productRules.length === 0 && (
+            <Box
+              sx={{
+                p: 2.5,
+                textAlign: "center",
+                color: "text.disabled",
+                fontSize: "0.8rem",
+                border: "1px dashed",
+                borderColor: "divider",
+                borderRadius: "12px",
+              }}
+            >
+              Правил по товарам пока нет
             </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                Бонус за товар
+          )}
+
+          {value.productRules.map((rule, idx) => (
+            <Box key={rule.id} sx={cardSx}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+                <Typography variant="caption" fontWeight={600} color="text.disabled">
+                  Правило по товарам {idx + 1}
+                </Typography>
+                <IconButton
+                  size="small"
+                  disabled={disabled}
+                  onClick={() => removeProductRule(rule.id)}
+                  sx={(t) => ({
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: "8px",
+                    color: "text.disabled",
+                    "&:hover": {
+                      color: t.palette.error.main,
+                      borderColor: alpha(t.palette.error.main, 0.4),
+                      bgcolor: alpha(t.palette.error.main, 0.1),
+                    },
+                  })}
+                >
+                  <DeleteOutline sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Stack>
+
+              {/* выбор товаров: «Все товары» взаимоисключим с конкретными */}
+              <FormControl fullWidth size="small" sx={{ mb: 1.25 }}>
+                <Select<number[]>
+                  multiple
+                  displayEmpty
+                  value={rule.productIds}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    const next = (e.target.value as number[]).map(Number);
+                    const hadAll = rule.productIds.includes(ALL_PRODUCTS);
+                    const hasAll = next.includes(ALL_PRODUCTS);
+                    patchProductRule(rule.id, {
+                      productIds:
+                        hasAll && !hadAll
+                          ? [ALL_PRODUCTS] // только что выбрали «Все товары» — сбрасываем конкретные
+                          : next.filter((x) => x !== ALL_PRODUCTS || next.length === 1),
+                    });
+                  }}
+                  renderValue={(selected) =>
+                    selected.length === 0 ? (
+                      <Typography variant="body2" color="text.disabled">
+                        Выберите товары…
+                      </Typography>
+                    ) : (
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {selected.map((id) => (
+                          <Chip
+                            key={id}
+                            label={productName(id)}
+                            size="small"
+                            onDelete={() =>
+                              patchProductRule(rule.id, {
+                                productIds: rule.productIds.filter((x) => x !== id),
+                              })
+                            }
+                            deleteIcon={
+                              <Close
+                                sx={{ fontSize: "12px !important" }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                              />
+                            }
+                            sx={(t) => ({
+                              height: 22,
+                              fontSize: "0.7rem",
+                              fontWeight: 500,
+                              borderRadius: "7px",
+                              color: "primary.onSurface",
+                              bgcolor: alpha(
+                                t.palette.primary.main,
+                                t.palette.mode === "dark" ? 0.18 : 0.1,
+                              ),
+                            })}
+                          />
+                        ))}
+                      </Box>
+                    )
+                  }
+                  sx={{
+                    borderRadius: "10px",
+                    bgcolor: "background.paper",
+                    "& .MuiSelect-select": {
+                      py: 1,
+                      px: 1.25,
+                      whiteSpace: "normal",
+                      minHeight: "0 !important",
+                    },
+                  }}
+                >
+                  {(() => {
+                    const allTakenElsewhere = value.productRules.some(
+                      (r) => r.id !== rule.id && r.productIds.includes(ALL_PRODUCTS),
+                    );
+                    return [
+                      <MenuItem
+                        key={ALL_PRODUCTS}
+                        value={ALL_PRODUCTS}
+                        disabled={allTakenElsewhere}
+                        sx={{ py: 0.5, minHeight: 0, borderBottom: 1, borderColor: "divider", mb: 0.5 }}
+                      >
+                        <Checkbox
+                          checked={rule.productIds.includes(ALL_PRODUCTS)}
+                          size="small"
+                          sx={{ p: 0.5 }}
+                        />
+                        <ListItemText
+                          primary="Все товары"
+                          secondary={
+                            allTakenElsewhere
+                              ? "Уже используется в другом правиле"
+                              : "Кроме товаров с отдельным правилом"
+                          }
+                          primaryTypographyProps={{ variant: "body2", fontWeight: 600 }}
+                          secondaryTypographyProps={{ variant: "caption" }}
+                        />
+                      </MenuItem>,
+                      ...(loadingProducts
+                        ? [
+                            <MenuItem key="loading" disabled sx={{ justifyContent: "center", py: 1 }}>
+                              <CircularProgress size={18} />
+                            </MenuItem>,
+                          ]
+                        : products.length === 0
+                        ? [
+                            <MenuItem key="empty" disabled sx={{ py: 1 }}>
+                              <Typography variant="body2" color="text.disabled">
+                                Товары недоступны
+                              </Typography>
+                            </MenuItem>,
+                          ]
+                        : products.map((product) => (
+                            <MenuItem key={product.id} value={product.id} sx={{ py: 0.5, minHeight: 0 }}>
+                              <Checkbox
+                                checked={rule.productIds.indexOf(product.id) > -1}
+                                size="small"
+                                sx={{ p: 0.5 }}
+                              />
+                              <ListItemText
+                                primary={product.name}
+                                primaryTypographyProps={{ variant: "body2" }}
+                              />
+                              {product.price > 0 && (
+                                <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+                                  {product.price.toLocaleString("ru-RU")} с
+                                </Typography>
+                              )}
+                            </MenuItem>
+                          ))),
+                    ];
+                  })()}
+                </Select>
+              </FormControl>
+
+              {/* % + бонус */}
+              <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    Процент
+                  </Typography>
+                  <NumberField
+                    value={rule.percent || ""}
+                    onChange={(v) => patchProductRule(rule.id, { percent: v })}
+                    unit="%"
+                    step={1}
+                    disabled={disabled}
+                  />
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    Бонус за единицу
+                  </Typography>
+                  <NumberField
+                    value={rule.fixedAmount || ""}
+                    onChange={(v) => patchProductRule(rule.id, { fixedAmount: v })}
+                    unit="с"
+                    step={50}
+                    disabled={disabled}
+                  />
+                </Box>
+              </Box>
+
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.5 }}>
+                {productRuleFormula(rule)}
               </Typography>
-              <NumberField
-                value={value.productBonus || ""}
-                onChange={(v) => patch({ productBonus: v })}
-                unit="с"
-                step={50}
-                disabled={disabled || !value.productEnabled}
-              />
             </Box>
-          </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.5 }}>
-            {productFormula()}
-          </Typography>
-        </Box>
+          ))}
+
+          <Button
+            variant="text"
+            size="small"
+            startIcon={<Add sx={{ fontSize: 16 }} />}
+            onClick={addProductRule}
+            disabled={disabled}
+            sx={(t) => ({
+              border: "1.5px dashed",
+              borderColor: "divider",
+              borderRadius: "12px",
+              color: "primary.onSurface",
+              py: 1.1,
+              fontWeight: 500,
+              "&:hover": {
+                borderColor: alpha(t.palette.primary.main, 0.5),
+                bgcolor: alpha(t.palette.primary.main, 0.06),
+              },
+            })}
+          >
+            Добавить правило по товарам
+          </Button>
+        </Stack>
       </Box>
     </Stack>
   );
@@ -600,12 +869,13 @@ export function ruleToSalaryValue(rule: {
   productPercent?: string;
   productFixedAmount?: string;
   serviceRates: { serviceId: number; percent: string; fixedAmount: string }[];
+  productRates?: { productId: number; percent: string; fixedAmount: string }[];
 }): SalarySettingsValue {
   const enabled =
     num(rule.appointmentRate) > 0 || num(rule.dayHourlyRate) > 0 || num(rule.nightHourlyRate) > 0;
   const productPercent = rule.productPercent ?? "";
   const productBonus = rule.productFixedAmount ?? "";
-  const productEnabled = num(productPercent) > 0 || num(productBonus) > 0;
+  const hasGeneralProduct = num(productPercent) > 0 || num(productBonus) > 0;
 
   // Group flat per-service rates back into rows by identical (percent, fixed).
   const groups = new Map<string, SalaryRuleRow>();
@@ -624,15 +894,44 @@ export function ruleToSalaryValue(rule: {
     }
   }
 
+  // Same grouping for per-product rates.
+  const productGroups = new Map<string, SalaryProductRuleRow>();
+  for (const r of rule.productRates ?? []) {
+    const key = `${r.percent}|${r.fixedAmount}`;
+    const existing = productGroups.get(key);
+    if (existing) {
+      existing.productIds.push(r.productId);
+    } else {
+      productGroups.set(key, {
+        id: newRuleId(),
+        productIds: [r.productId],
+        percent: r.percent,
+        fixedAmount: r.fixedAmount,
+      });
+    }
+  }
+
+  // Общие поля правила → строка «Все товары» (первой в списке).
+  const productRules: SalaryProductRuleRow[] = [
+    ...(hasGeneralProduct
+      ? [{
+          id: newRuleId(),
+          productIds: [ALL_PRODUCTS],
+          percent: productPercent,
+          fixedAmount: productBonus,
+        }]
+      : []),
+    ...productGroups.values(),
+  ];
+
   return {
     enabled,
     nightRate: rule.nightHourlyRate ?? "",
     dayRate: rule.dayHourlyRate ?? "",
     appointmentRate: rule.appointmentRate ?? "",
     rules: [...groups.values()],
-    productEnabled,
-    productPercent,
-    productBonus,
+    productEnabled: productRules.length > 0,
+    productRules,
   };
 }
 
@@ -644,6 +943,7 @@ export function salaryValueToPayload(value: SalarySettingsValue): {
   productFixedAmount: string;
   isActive: boolean;
   serviceRates: { serviceId: number; percent: string; fixedAmount: string }[];
+  productRates: { productId: number; percent: string; fixedAmount: string }[];
 } {
   const rate = (s: string) => (s.trim() ? s.trim() : "0");
   const serviceRates = value.rules.flatMap((r) =>
@@ -653,14 +953,27 @@ export function salaryValueToPayload(value: SalarySettingsValue): {
       fixedAmount: rate(r.fixedAmount),
     })),
   );
+  // Правило «Все товары» → общие поля; остальные → ставки по товарам.
+  const effectiveRules = value.productEnabled ? value.productRules : [];
+  const allRule = effectiveRules.find((r) => r.productIds.includes(ALL_PRODUCTS));
+  const productRates = effectiveRules.flatMap((r) =>
+    r.productIds
+      .filter((id) => id !== ALL_PRODUCTS)
+      .map((productId) => ({
+        productId,
+        percent: rate(r.percent),
+        fixedAmount: rate(r.fixedAmount),
+      })),
+  );
   return {
     appointmentRate: value.enabled ? rate(value.appointmentRate) : "0",
     dayHourlyRate: value.enabled ? rate(value.dayRate) : "0",
     nightHourlyRate: value.enabled ? rate(value.nightRate) : "0",
-    productPercent: value.productEnabled ? rate(value.productPercent) : "0",
-    productFixedAmount: value.productEnabled ? rate(value.productBonus) : "0",
+    productPercent: allRule ? rate(allRule.percent) : "0",
+    productFixedAmount: allRule ? rate(allRule.fixedAmount) : "0",
     isActive: true,
     serviceRates,
+    productRates,
   };
 }
 

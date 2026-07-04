@@ -35,6 +35,7 @@ import {
   type DjangoBank,
 } from "../../../api/staff";
 import { getServices, type Service } from "../../../api/catalog";
+import { getProducts, type DjangoProduct } from "../../../api/warehouse";
 import {
   getEmployeeRule,
   putEmployeeRule,
@@ -52,7 +53,7 @@ import { CustomDatePicker } from "../../../components/ui";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
-import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader } from "./drawerKit";
+import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
 import {
   parsePhone,
   composePhone,
@@ -92,15 +93,21 @@ function serializeSalary(v: SalarySettingsValue): string {
       fixed: num(r.fixedAmount),
     }))
     .sort((a, b) => a.services.join(",").localeCompare(b.services.join(",")));
+  const productRules = v.productRules
+    .map((r) => ({
+      products: [...r.productIds].sort((a, b) => a - b),
+      percent: num(r.percent),
+      fixed: num(r.fixedAmount),
+    }))
+    .sort((a, b) => a.products.join(",").localeCompare(b.products.join(",")));
   return JSON.stringify({
     enabled: v.enabled,
     night: num(v.nightRate),
     day: num(v.dayRate),
     appointment: num(v.appointmentRate),
     productEnabled: v.productEnabled,
-    productPercent: num(v.productPercent),
-    productBonus: num(v.productBonus),
     rules,
+    productRules,
   });
 }
 
@@ -136,6 +143,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [telegramId, setTelegramId] = React.useState("");
   const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
+  const [hiredAt, setHiredAt] = React.useState("");
   const [bankAccountNumber, setBankAccountNumber] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [address, setAddress] = React.useState("");
@@ -151,6 +159,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // ── Services ──────────────────────────────────────────────────────────────
   const [allServices, setAllServices] = React.useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = React.useState(false);
+  // Товары склада — для правил ЗП «Товары в приёмах» (недоступны без права —
+  // тогда селект покажет «Товары недоступны», это не ошибка).
+  const [allProducts, setAllProducts] = React.useState<DjangoProduct[]>([]);
+  const [productsLoading, setProductsLoading] = React.useState(false);
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
   const [selectedServices, setSelectedServices] = React.useState<Service[]>([]);
 
@@ -272,6 +284,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setTelegramId(full.telegramId || "");
         setInstagram(full.instagram || "");
         setBirthDate(full.birthDate || "");
+        setHiredAt(full.hiredAt || "");
         setBankAccountNumber(full.bankAccountNumber || "");
         setInn(full.inn || "");
         setAddress(full.address || "");
@@ -336,6 +349,18 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     }
 
     if (canViewPayroll) {
+      // Товары для правил «Товары в приёмах» (при отсутствии права — пусто).
+      setProductsLoading(true);
+      getProducts(ctrl.signal)
+        .then((list) => {
+          if (!ctrl.signal.aborted)
+            setAllProducts(list.filter((p) => p.isActive !== false));
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!ctrl.signal.aborted) setProductsLoading(false);
+        });
+
       setSalaryLoading(true);
       getEmployeeRule(empId, ctrl.signal)
         .then((rule: EmployeeRule) => {
@@ -381,6 +406,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         instagram: instagram.trim().replace(/^@/, "") || null,
         notes: notes.trim() || null,
         birthDate: birthDate || null,
+        hiredAt: hiredAt || null,
         ...(canManagePrivate && {
           bankAccountNumber: bankAccountNumber.trim() || null,
           inn: inn.trim() || null,
@@ -579,6 +605,23 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   </Field>
                 )}
               </Grid2>
+              <Grid2>
+                <Field label="Дата приёма на работу">
+                  <CustomDatePicker
+                    value={hiredAt ? dayjs(hiredAt) : null}
+                    onChange={(val) => setHiredAt(val ? val.format("YYYY-MM-DD") : "")}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        size: "small",
+                        InputLabelProps: { shrink: true },
+                        placeholder: "дд.мм.гггг",
+                        disabled: busy,
+                      },
+                    }}
+                  />
+                </Field>
+              </Grid2>
               <Field label="Описание">
                 <TextField
                   value={notes}
@@ -626,15 +669,25 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             />
           </Field>
           <Field label="Псевдоним">
-            <TextField
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              fullWidth
-              size="small"
-              placeholder="Как в расписании"
-              disabled={busy}
-              inputProps={{ maxLength: 100 }}
-            />
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                fullWidth
+                size="small"
+                placeholder="Как в расписании"
+                disabled={busy}
+                inputProps={{ maxLength: 100 }}
+              />
+              <Box sx={{ flexShrink: 0 }}>
+                <StatusBadge
+                  value={status}
+                  onChange={setStatus}
+                  options={["active", "inactive"]}
+                  disabled={busy}
+                />
+              </Box>
+            </Stack>
           </Field>
         </PhotoHero>
 
@@ -683,33 +736,34 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           />
         </Field>
 
-        <Field label="Telegram ID">
-          <TextField
-            value={telegramId}
-            onChange={(e) => { setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20)); setServerError(null); }}
-            onBlur={() => touch("telegramId")}
-            fullWidth
-            placeholder="Числовой ID"
-            disabled={busy}
-            inputProps={{ inputMode: "numeric" }}
-            error={Boolean(showError("telegramId"))}
-            helperText={showError("telegramId")}
-          />
-        </Field>
-
-        <Field label="Instagram">
-          <TextField
-            value={instagram}
-            onChange={(e) => { setInstagram(e.target.value); setServerError(null); }}
-            onBlur={() => touch("instagram")}
-            fullWidth
-            placeholder="username"
-            disabled={busy}
-            InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
-            error={Boolean(showError("instagram"))}
-            helperText={showError("instagram")}
-          />
-        </Field>
+        <Grid2>
+          <Field label="Telegram ID">
+            <TextField
+              value={telegramId}
+              onChange={(e) => { setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20)); setServerError(null); }}
+              onBlur={() => touch("telegramId")}
+              fullWidth
+              placeholder="Числовой ID"
+              disabled={busy}
+              inputProps={{ inputMode: "numeric" }}
+              error={Boolean(showError("telegramId"))}
+              helperText={showError("telegramId")}
+            />
+          </Field>
+          <Field label="Instagram">
+            <TextField
+              value={instagram}
+              onChange={(e) => { setInstagram(e.target.value); setServerError(null); }}
+              onBlur={() => touch("instagram")}
+              fullWidth
+              placeholder="username"
+              disabled={busy}
+              InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
+              error={Boolean(showError("instagram"))}
+              helperText={showError("instagram")}
+            />
+          </Field>
+        </Grid2>
 
         {/* ── Реквизиты (под staff.private.manage) ── */}
         {canManagePrivate && (
@@ -797,36 +851,22 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           </>
         )}
 
-        {/* ── Роль и статус ── */}
-        <SectionLabel title="Роль и статус" />
+        {/* ── Тип сотрудника ── */}
+        <SectionLabel title="Тип сотрудника" />
 
-        <Grid2>
-          <Field label="Статус">
-            <TextField
-              select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as "active" | "inactive")}
-              fullWidth
-              disabled={busy}
-            >
-              <MenuItem value="active">Работает</MenuItem>
-              <MenuItem value="inactive">Не работает</MenuItem>
-            </TextField>
-          </Field>
-          <Field label="Тип сотрудника">
-            <TextField
-              select
-              value={clinicalRole}
-              onChange={(e) => setClinicalRole(e.target.value as "doctor" | "nurse" | "other")}
-              fullWidth
-              disabled={busy}
-            >
-              <MenuItem value="doctor">Врач</MenuItem>
-              <MenuItem value="nurse">Медсестра</MenuItem>
-              <MenuItem value="other">Другой</MenuItem>
-            </TextField>
-          </Field>
-        </Grid2>
+        <Field label="Тип" hint="Клинический тип — влияет на расписание и специализации">
+          <TextField
+            select
+            value={clinicalRole}
+            onChange={(e) => setClinicalRole(e.target.value as "doctor" | "nurse" | "other")}
+            fullWidth
+            disabled={busy}
+          >
+            <MenuItem value="doctor">Врач</MenuItem>
+            <MenuItem value="nurse">Медсестра</MenuItem>
+            <MenuItem value="other">Другой</MenuItem>
+          </TextField>
+        </Field>
 
         {/* ── Специализации (только для врача) ── */}
         {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
@@ -925,6 +965,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   onChange={setSalary}
                   services={allServices}
                   loadingServices={salaryLoading}
+                  products={allProducts}
+                  loadingProducts={productsLoading}
                   disabled={busy || !canManagePayroll}
                 />
               )}
