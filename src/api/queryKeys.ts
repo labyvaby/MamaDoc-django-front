@@ -132,6 +132,11 @@ export const djangoQueryKeys = {
       ["django", "staff", "banks", organizationId ?? null] as const,
   },
 
+  insurers: {
+    list: (organizationId: number | null | undefined) =>
+      ["django", "insurers", organizationId ?? null] as const,
+  },
+
   catalog: {
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "catalog", "services", context] as const,

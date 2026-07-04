@@ -100,6 +100,7 @@ const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
+const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 const SalaryReportsPage = lazy(() => import("./pages/salary-reports"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
@@ -933,6 +934,16 @@ function App() {
                                 <RequirePermission permission="staff.private.view">
                                   <Suspense fallback={<LinearProgress />}>
                                     <BanksSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/insurers"
+                              element={
+                                <RequirePermission permission="finance.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <InsurersSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }
