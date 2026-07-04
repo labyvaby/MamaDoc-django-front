@@ -141,7 +141,19 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
 
     getEmployeeDailyDetails(row.employeeId, { year, month, organizationId })
       .then((data) => {
-        setDailyData(data);
+        // Пустые дни (без часов, приёмов, начислений и выплат) не показываем.
+        setDailyData(
+          data.filter(
+            (d) =>
+              parseFloat(d.dayHours || "0") > 0 ||
+              parseFloat(d.nightHours || "0") > 0 ||
+              d.appointmentsCount > 0 ||
+              d.createdByCount > 0 ||
+              parseFloat(d.percentSum || "0") > 0 ||
+              parseFloat(d.expensesSum || "0") > 0 ||
+              parseFloat(d.totalSalary || "0") > 0,
+          ),
+        );
       })
       .catch((err) => {
         console.warn("Failed to load daily details:", err);

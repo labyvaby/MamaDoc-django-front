@@ -42,6 +42,17 @@ const TX_LABELS: Record<BalanceTransactionType, string> = {
   correction: "Коррекция",
 };
 
+/** true, если ошибка запроса — 403/404 (нет доступа / нет кошелька). */
+function isAccessDeniedStatus(err: unknown): boolean {
+  return Boolean(
+    err &&
+      typeof err === "object" &&
+      "status" in err &&
+      ((err as { status: number }).status === 403 ||
+        (err as { status: number }).status === 404),
+  );
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 type PatientBalancePanelProps = {
@@ -71,14 +82,15 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
     },
   });
 
-  // Transactions — only load when expanded (first page, 10 items)
+  // Transactions — загружаем сразу вместе с балансом (первая страница, 10 шт):
+  // если история пуста, кнопка «История» вовсе не показывается.
   const [txExpanded, setTxExpanded] = React.useState(false);
   const txQuery = useQuery({
     queryKey: djangoQueryKeys.patients.transactionsPage(patientId, { page: 1, pageSize: 10 }),
     queryFn: ({ signal }) =>
       getPatientBalanceTransactions(patientId, { page: 1, pageSize: 10 }, signal),
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
-    enabled: txExpanded,
+    enabled: !isAccessDeniedStatus(balanceQuery.error),
     retry: false,
   });
 
@@ -134,18 +146,14 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
   };
 
   // ── 403 / 404: silently hide the panel ────────────────────────────────────
-  const err = balanceQuery.error;
-  const isAccessDenied =
-    err &&
-    typeof err === "object" &&
-    "status" in err &&
-    ((err as { status: number }).status === 403 ||
-      (err as { status: number }).status === 404);
+  const isAccessDenied = isAccessDeniedStatus(balanceQuery.error);
 
   if (isAccessDenied) return null;
 
   const balance = balanceQuery.data;
   const transactions = txQuery.data?.results ?? [];
+  // История уже загружена (грузим сразу): пустая → кнопку не показываем.
+  const hasHistory = (txQuery.data?.count ?? 0) > 0;
   const balanceNum = balance ? parseFloat(balance.balance) : 0;
   const isDebt = balanceNum < 0;
 
@@ -291,8 +299,8 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
         </Box>
       )}
 
-      {/* Transactions toggle */}
-      {balance && (
+      {/* Transactions toggle — виден только когда есть хоть одна операция */}
+      {balance && hasHistory && (
         <Box mt={1.5}>
           <Tooltip title={txExpanded ? "Скрыть историю" : "История операций"}>
             <Button
@@ -308,20 +316,10 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
 
           <Collapse in={txExpanded} unmountOnExit>
             <Box mt={1}>
-              {txQuery.isLoading && (
-                <Stack alignItems="center" py={1}>
-                  <CircularProgress size={18} />
-                </Stack>
-              )}
               {txQuery.error && (
                 <Alert severity="warning" sx={{ py: 0.5 }}>
                   {parseBackendError(txQuery.error)}
                 </Alert>
-              )}
-              {!txQuery.isLoading && transactions.length === 0 && (
-                <Typography variant="caption" color="text.disabled">
-                  Нет операций
-                </Typography>
               )}
               {transactions.map((tx) => (
                 <Stack
