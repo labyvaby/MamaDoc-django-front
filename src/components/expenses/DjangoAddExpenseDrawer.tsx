@@ -19,8 +19,10 @@ import { alpha, useTheme } from "@mui/material/styles";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import dayjs, { type Dayjs } from "dayjs";
+import "dayjs/locale/ru";
 import { useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
@@ -408,6 +410,35 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               ))}
             </TextField>
           </Stack>
+
+          {/* Подсказка зачёта месяца: аванс идёт в зарплату месяца расхода,
+              ЗП — в предыдущий месяц (зарплату за июнь платят в июле).
+              Формула зашита на бэке (Expense.affects_month). */}
+          {selectedCategory &&
+            (selectedCategory.kind === "advance" || selectedCategory.kind === "salary") &&
+            expenseDate?.isValid() && (
+              <Alert
+                severity="info"
+                icon={<EventAvailableOutlined fontSize="small" />}
+                sx={{ py: 0.5 }}
+              >
+                {selectedCategory.kind === "advance" ? (
+                  <>
+                    Аванс зачтётся в зарплату за{" "}
+                    <b>{expenseDate.locale("ru").format("MMMM YYYY")}</b>{" "}
+                    (месяц даты расхода).
+                  </>
+                ) : (
+                  <>
+                    Зарплата зачтётся за{" "}
+                    <b>
+                      {expenseDate.subtract(1, "month").locale("ru").format("MMMM YYYY")}
+                    </b>{" "}
+                    (месяц, предшествующий дате расхода).
+                  </>
+                )}
+              </Alert>
+            )}
 
           {/* Сотрудник — только для advance/salary */}
           {needsEmployee && (

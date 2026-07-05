@@ -25,12 +25,14 @@ import {
   Tooltip,
 } from "@mui/material";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import BonusDialog from "./BonusDialog";
+import BonusDrawer from "./BonusDrawer";
 import SalaryReportRow, {
   COLUMNS_DOCTOR,
   COLUMNS_NURSE,
@@ -218,6 +220,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
   
   const canView = useCan("payroll.view");
   const canManage = useCan("payroll.manage");
+  const canCreateExpense = useCan("finance.expense.manage");
+  // Компактная шапка: на узких экранах кнопки «Расход»/«Надбавка» — только иконки.
+  const compactHeader = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   
   const {
@@ -265,6 +270,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
   const [bonusRow, setBonusRow] = React.useState<PayrollRow | null>(null);
   const [payoutRow, setPayoutRow] = React.useState<PayrollRow | null>(null);
+  // Страничные дравера: «Расход» (без префилла) и «Единоразовая надбавка».
+  const [expenseDrawerOpen, setExpenseDrawerOpen] = React.useState(false);
+  const [bonusDrawerOpen, setBonusDrawerOpen] = React.useState(false);
 
   const handleLock = async () => {
     setBusy(true);
@@ -314,7 +322,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
         showSearch={false}
         dateNavigation={<MonthNavigation date={date} setDate={setDate} />}
         actions={
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             {report && (
               <Chip
                 size="small"
@@ -323,17 +331,48 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 variant={report.status === "locked" ? "filled" : "outlined"}
               />
             )}
+            {canCreateExpense && (
+              <Tooltip title="Создать расход (аванс / ЗП / прочее)">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  onClick={() => setExpenseDrawerOpen(true)}
+                  startIcon={compactHeader ? undefined : <ReceiptLongOutlinedIcon />}
+                  sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
+                >
+                  {compactHeader ? <ReceiptLongOutlinedIcon fontSize="small" /> : "Расход"}
+                </Button>
+              </Tooltip>
+            )}
             {canManage && report?.status === "draft" && (
-              <Button
-                size="small"
-                variant="outlined"
-                color="secondary"
-                startIcon={<SettingsIcon />}
-                disabled={busy}
-                onClick={() => setSettingsDialogOpen(true)}
-              >
-                Настройки месяца
-              </Button>
+              <Tooltip title="Единоразовая надбавка сотруднику">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="success"
+                  onClick={() => setBonusDrawerOpen(true)}
+                  startIcon={compactHeader ? undefined : <PaidOutlinedIcon />}
+                  sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
+                >
+                  {compactHeader ? <PaidOutlinedIcon fontSize="small" /> : "Надбавка"}
+                </Button>
+              </Tooltip>
+            )}
+            {canManage && report?.status === "draft" && (
+              <Tooltip title="Настройки месяца">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  startIcon={compactHeader ? undefined : <SettingsIcon />}
+                  disabled={busy}
+                  onClick={() => setSettingsDialogOpen(true)}
+                  sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
+                >
+                  {compactHeader ? <SettingsIcon fontSize="small" /> : "Настройки месяца"}
+                </Button>
+              </Tooltip>
             )}
             {canManage && report?.status === "draft" && (
               <Button size="small" variant="outlined" disabled={busy} onClick={handleLock}>
@@ -734,6 +773,31 @@ const DjangoSalaryReportsPage: React.FC = () => {
           }}
         />
       )}
+
+      {/* Страничный «Расход» из шапки — без префилла, тот же компонент */}
+      {expenseDrawerOpen && (
+        <DjangoAddExpenseDrawer
+          open
+          onClose={() => setExpenseDrawerOpen(false)}
+          organizationId={report?.organizationId}
+          branchId={activeBranch?.id ?? undefined}
+          onCreated={() => {
+            setExpenseDrawerOpen(false);
+            void query.refetch();
+            notify?.({ type: "success", message: "Расход создан" });
+          }}
+        />
+      )}
+
+      {/* Страничная «Единоразовая надбавка» с выбором сотрудника */}
+      <BonusDrawer
+        open={bonusDrawerOpen}
+        onClose={() => setBonusDrawerOpen(false)}
+        year={year}
+        month={month}
+        organizationId={report?.organizationId}
+      />
+
 
       <PeriodSettingsDialog
         open={settingsDialogOpen}
