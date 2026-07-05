@@ -849,13 +849,11 @@ function App() {
                         <Route
                           path="admin/load"
                           element={
-                            <LegacyRouteGuard title="Нагрузка в разработке">
-                              <ProtectedRoute allowedRoles={['superadmin']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <LoadAnalyticsPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <RequirePermission permission="reports.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <LoadAnalyticsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         {IS_DJANGO_BACKEND && (

@@ -382,7 +382,7 @@ const SidebarSecondary: React.FC = () => {
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     expenses: true,
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
-    load: isSuper,
+    load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
     notifications: isSuper,
     settings: IS_DJANGO_BACKEND && (
       isSuper
