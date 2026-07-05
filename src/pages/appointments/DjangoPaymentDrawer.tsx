@@ -336,6 +336,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.payments(result.appointmentId) });
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "list"] });
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "day-counts"] });
+      // Домашний агрегат (список приёмов на /appointments) — иначе бейджи
+      // способов оплаты обновятся только после heartbeat/перезагрузки.
+      void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "home"] });
       if (patientId && (balanceUsed > 0 || bonusUsed > 0)) {
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.balance(patientId) });
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.transactions(patientId) });
@@ -389,7 +392,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       open={open}
       onClose={applyMutation.isPending ? undefined : onClose}
       PaperProps={{
-        sx: { width: { xs: "100%", sm: 420 }, display: "flex", flexDirection: "column" },
+        // sm в теме проекта = 360px, поэтому на телефонах страхуемся maxWidth.
+        sx: { width: { xs: "100%", sm: 420 }, maxWidth: "100%", display: "flex", flexDirection: "column" },
       }}
     >
       {/* Header */}
