@@ -56,7 +56,12 @@ import {
   recalculatePeriod,
   type PayrollRow,
 } from "../../../api/payroll";
-import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
+import { getActiveMonths } from "../../../api/reports";
+import {
+  djangoQueryKeys,
+  DJANGO_LIST_STALE_TIME_MS,
+  DJANGO_REFERENCE_STALE_TIME_MS,
+} from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
 
 // Clinical roles (staff.ClinicalRole): doctor / nurse / other.
@@ -264,6 +269,20 @@ const DjangoSalaryReportsPage: React.FC = () => {
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
+
+  // Месяцы, в которых есть приёмы, — пустые месяцы в навигации не показываем.
+  const orgIdForMonths = isSuper ? activeOrganization?.id ?? undefined : undefined;
+  const activeMonthsQuery = useQuery({
+    queryKey: djangoQueryKeys.reports.activeMonths(orgIdForMonths ?? null),
+    queryFn: ({ signal }) => getActiveMonths({ organizationId: orgIdForMonths }, signal),
+    enabled: !permLoading && (canView || employeeId != null) && !needsOrg,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const activeMonths = useMemo(
+    () => (activeMonthsQuery.data ? new Set(activeMonthsQuery.data.months) : null),
+    [activeMonthsQuery.data],
+  );
+
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
@@ -320,7 +339,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
         title="Отчёт по зарплате"
         showTitle={false}
         showSearch={false}
-        dateNavigation={<MonthNavigation date={date} setDate={setDate} />}
+        dateNavigation={<MonthNavigation date={date} setDate={setDate} activeMonths={activeMonths} />}
         actions={
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             {report && (
