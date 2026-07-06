@@ -265,7 +265,7 @@ function RoleFormDrawer({
         <Stack spacing={2.5}>
           {isSystemRole && (
             <Alert severity="warning" icon={<LockOutlined fontSize="small" />}>
-              Системная роль — редактирование ограничено.
+              Системная роль — сохранить изменения может только суперпользователь.
             </Alert>
           )}
 
@@ -579,7 +579,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
           <Tooltip
             title={
               role.isSystem
-                ? "Системную роль нельзя редактировать"
+                ? "Редактировать системную роль (доступно суперпользователю)"
                 : "Редактировать"
             }
             placement="top"
@@ -588,7 +588,6 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
               <IconButton
                 size="small"
                 onClick={onEdit}
-                disabled={role.isSystem}
                 aria-label="Редактировать роль"
               >
                 <EditOutlined fontSize="small" />
@@ -604,7 +603,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
 // ── RolesSettingsPage ───────────────────────────────────────────────────────
 
 const RolesSettingsPage: React.FC = () => {
-  const { activeOrganization } = usePermissions();
+  const { activeOrganization, isSuperAdmin } = usePermissions();
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -863,13 +862,15 @@ const RolesSettingsPage: React.FC = () => {
               Системные роли
             </Typography>
             <Stack spacing={1}>
+              {/* Бэкенд разрешает менять системные роли только Django-суперпользователю
+                  (rbac/api/views.py: System roles can only be edited by a superuser). */}
               {systemRoles.map((role) => (
                 <RoleRow
                   key={role.id}
                   role={role}
                   allPermissions={permissions}
                   onEdit={() => handleOpenEdit(role)}
-                  canEdit={false}
+                  canEdit={isSuperAdmin()}
                 />
               ))}
             </Stack>
