@@ -165,6 +165,8 @@ export interface UpdateEmployeePayload {
   bank?: string | null;
   bik?: string | null;
   clinicalRole?: ClinicalRole;
+  /** Полный набор операционных филиалов (замена целиком); не слать, если не менялся. */
+  employeeBranchIds?: number[];
 }
 
 // ── Onboard response ─────────────────────────────────────────────────────────

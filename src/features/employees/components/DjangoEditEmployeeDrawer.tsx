@@ -31,9 +31,11 @@ import {
   assignEmployeeService,
   updateEmployeeService,
   type DjangoSpecializationShort,
+  type DjangoEmployeeBranch,
   type EmployeeServiceAssignment,
   type DjangoBank,
 } from "../../../api/staff";
+import { getBranches } from "../../../api/organization";
 import { getServices, type Service } from "../../../api/catalog";
 import { getProducts, type DjangoProduct } from "../../../api/warehouse";
 import {
@@ -49,6 +51,7 @@ import DjangoSalarySettings, {
 } from "./DjangoSalarySettings";
 import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
+import { usePermissions } from "../../../hooks/usePermissions";
 import { CustomDatePicker } from "../../../components/ui";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
@@ -155,6 +158,19 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [elqrPreview, setElqrPreview] = React.useState<string | null>(null);
   const [elqrExisting, setElqrExisting] = React.useState<string | null>(null);
   const [specializations, setSpecializations] = React.useState<DjangoSpecializationShort[]>([]);
+
+  // ── Операционные филиалы (карточка видна в каждом из набора) ──────────────
+  const { activeBranch } = usePermissions();
+  // Набор меняется только из режима «все филиалы» — бэкенд в филиальном
+  // контексте отклонит запрос.
+  const branchScoped = activeBranch != null;
+  const [allBranches, setAllBranches] = React.useState<DjangoEmployeeBranch[]>([]);
+  const [operationalBranches, setOperationalBranches] = React.useState<DjangoEmployeeBranch[]>([]);
+  // Исходный набор id — чтобы не слать поле, если его не трогали.
+  const initialBranchIdsRef = React.useRef<string>("[]");
+
+  const serializeBranchIds = (list: DjangoEmployeeBranch[]) =>
+    JSON.stringify(list.map((b) => b.id).sort((a, b) => a - b));
 
   // ── Services ──────────────────────────────────────────────────────────────
   const [allServices, setAllServices] = React.useState<Service[]>([]);
@@ -264,6 +280,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setElqrExisting(record.elqr_url || null);
     setElqrPreview(record.elqr_url || null);
     setSpecializations(record._djangoSpecializations ?? []);
+    setOperationalBranches(record._djangoOperationalBranches ?? []);
+    initialBranchIdsRef.current = serializeBranchIds(record._djangoOperationalBranches ?? []);
     setServerError(null);
     setTouched({});
     setSubmitAttempted(false);
@@ -295,6 +313,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setElqrPreview(full.elqrUrl || null);
         setClinicalRole(full.clinicalRole ?? "other");
         setSpecializations(full.specializations ?? []);
+        setOperationalBranches(full.operationalBranches ?? []);
+        initialBranchIdsRef.current = serializeBranchIds(full.operationalBranches ?? []);
         const parsedFull = parsePhone(full.phone || "");
         setPhoneCountry(parsedFull.countryCode);
         setPhoneLocal(parsedFull.local);
@@ -310,6 +330,15 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         .then((b) => { if (!ctrl.signal.aborted) setBanks(b); })
         .catch(() => {});
     }
+
+    // Справочник филиалов организации — для набора операционных доступов.
+    getBranches()
+      .then((list) => {
+        if (!ctrl.signal.aborted) {
+          setAllBranches(list.map((b) => ({ id: b.id, name: b.name })));
+        }
+      })
+      .catch(() => {});
 
     const needServices = canViewServices || canManageServices || canViewPayroll;
     const servicesPromise: Promise<Service[]> = needServices
@@ -413,6 +442,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           address: address.trim() || null,
           bank: bank.trim() || null,
           bik: bik.trim() || null,
+        }),
+        // Набор операционных филиалов шлём только при изменении: в режиме
+        // конкретного филиала бэкенд отклоняет это поле целиком.
+        ...(serializeBranchIds(operationalBranches) !== initialBranchIdsRef.current && {
+          employeeBranchIds: operationalBranches.map((b) => b.id),
         }),
       });
 
@@ -866,6 +900,54 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             <MenuItem value="nurse">Медсестра</MenuItem>
             <MenuItem value="other">Другой</MenuItem>
           </TextField>
+        </Field>
+
+        {/* ── Операционные филиалы ── */}
+        <Field
+          label="Филиалы (операционно)"
+          hint={
+            branchScoped
+              ? "Меняется только в режиме «все филиалы»"
+              : "Где сотрудник принимает — карточка видна в каждом из этих филиалов"
+          }
+        >
+          <Autocomplete
+            multiple
+            options={allBranches}
+            value={operationalBranches}
+            disableCloseOnSelect
+            disabled={busy || branchScoped}
+            getOptionLabel={(b) => b.name}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            onChange={(_, v) => setOperationalBranches(v)}
+            renderOption={(props, option, { selected }) => (
+              <li {...props} key={option.id}>
+                <Checkbox
+                  icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                  checkedIcon={<CheckBoxIcon fontSize="small" />}
+                  style={{ marginRight: 8 }}
+                  checked={selected}
+                />
+                {option.name}
+              </li>
+            )}
+            renderTags={(value, getTagProps) =>
+              value.map((option, index) => (
+                <Chip
+                  {...getTagProps({ index })}
+                  key={option.id}
+                  label={option.name}
+                  size="small"
+                />
+              ))
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder={operationalBranches.length === 0 ? "Только основной филиал" : undefined}
+              />
+            )}
+          />
         </Field>
 
         {/* ── Специализации (только для врача) ── */}
