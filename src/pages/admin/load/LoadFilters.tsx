@@ -1,70 +1,24 @@
 import React from "react";
-import {
-  Autocomplete,
-  Box,
-  Button,
-  ButtonGroup,
-  CircularProgress,
-  Stack,
-  TextField,
-} from "@mui/material";
-import { useMediaQuery } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { Autocomplete, Box, CircularProgress, Stack, TextField } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
-import dayjs, { type Dayjs } from "dayjs";
 
-import { CustomDatePicker } from "../../../components/ui";
+import { DateRangeField, type DateRange } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
 import { DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
 
-export type LoadPreset = "today" | "7d" | "30d" | "month" | "custom";
-
 export interface LoadFiltersProps {
-  preset: LoadPreset;
-  dateFrom: Dayjs;
-  dateTo: Dayjs;
+  range: DateRange;
   employees: DjangoEmployeeListItem[];
-  onPreset: (preset: LoadPreset) => void;
-  onDateFrom: (d: Dayjs | null) => void;
-  onDateTo: (d: Dayjs | null) => void;
+  onRangeChange: (range: DateRange) => void;
   onEmployeesChange: (employees: DjangoEmployeeListItem[]) => void;
 }
 
-const PRESETS: { key: LoadPreset; label: string }[] = [
-  { key: "today", label: "Сегодня" },
-  { key: "7d", label: "7 дней" },
-  { key: "30d", label: "30 дней" },
-  { key: "month", label: "Месяц" },
-];
-
-/** Resolve a preset into an inclusive [from, to] range (today for custom). */
-export function presetRange(preset: LoadPreset): [Dayjs, Dayjs] {
-  const today = dayjs();
-  switch (preset) {
-    case "7d":
-      return [today.subtract(6, "day").startOf("day"), today.endOf("day")];
-    case "30d":
-      return [today.subtract(29, "day").startOf("day"), today.endOf("day")];
-    case "month":
-      return [today.startOf("month"), today.endOf("month")];
-    default:
-      return [today.startOf("day"), today.endOf("day")];
-  }
-}
-
 const LoadFilters: React.FC<LoadFiltersProps> = ({
-  preset,
-  dateFrom,
-  dateTo,
+  range,
   employees,
-  onPreset,
-  onDateFrom,
-  onDateTo,
+  onRangeChange,
   onEmployeesChange,
 }) => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-
   const [empInput, setEmpInput] = React.useState("");
   const empQuery = useQuery({
     queryKey: ["django", "load", "employees", empInput],
@@ -91,33 +45,11 @@ const LoadFilters: React.FC<LoadFiltersProps> = ({
         useFlexGap
         flexWrap="wrap"
       >
-        {/* Пресеты периода */}
-        <ButtonGroup size="small" variant="outlined" fullWidth={isMobile}>
-          {PRESETS.map((p) => (
-            <Button
-              key={p.key}
-              onClick={() => onPreset(p.key)}
-              variant={preset === p.key ? "contained" : "outlined"}
-              sx={{ textTransform: "none", whiteSpace: "nowrap", flex: isMobile ? 1 : "unset" }}
-            >
-              {p.label}
-            </Button>
-          ))}
-        </ButtonGroup>
-
-        {/* Свой диапазон дат */}
-        <Stack direction="row" spacing={1} sx={{ width: { xs: "100%", md: "auto" }, flex: { md: "0 0 auto" } }}>
-          <CustomDatePicker
-            value={dateFrom}
-            onChange={onDateFrom}
-            slotProps={{ textField: { size: "small", label: "С", sx: { flex: 1, minWidth: 0 } } }}
-          />
-          <CustomDatePicker
-            value={dateTo}
-            onChange={onDateTo}
-            slotProps={{ textField: { size: "small", label: "По", sx: { flex: 1, minWidth: 0 } } }}
-          />
-        </Stack>
+        <DateRangeField
+          value={range}
+          onChange={(r) => onRangeChange(r)}
+          minWidth={230}
+        />
 
         {/* Мультиселект сотрудников (пусто = все) */}
         <Autocomplete

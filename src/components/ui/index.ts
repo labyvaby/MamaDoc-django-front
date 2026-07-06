@@ -4,6 +4,8 @@ export { default as CustomDateTimePicker } from "./CustomDateTimePicker";
 export type { CustomDateTimePickerProps } from "./CustomDateTimePicker";
 export { default as CustomDatePicker } from "./CustomDatePicker";
 export type { CustomDatePickerProps } from "./CustomDatePicker";
+export { DateRangeField, DEFAULT_RANGE_PRESETS } from "./DateRangeField";
+export type { DateRangeFieldProps, DateRange, DateRangePreset } from "./DateRangeField";
 export { PageHeader } from "./PageHeader";
 export type { PageHeaderProps } from "./PageHeader";
 export { AppButton } from "./AppButton";

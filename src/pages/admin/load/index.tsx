@@ -10,7 +10,6 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import dayjs, { type Dayjs } from "dayjs";
 
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -18,8 +17,9 @@ import { getLoadAnalytics } from "../../../api/load";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import { parseBackendError } from "../../../api/appointments";
+import { DEFAULT_RANGE_PRESETS, type DateRange } from "../../../components/ui";
 
-import LoadFilters, { presetRange, type LoadPreset } from "./LoadFilters";
+import LoadFilters from "./LoadFilters";
 import LoadKpiCards from "./LoadKpiCards";
 import { LoadChart, type LoadChartMode } from "./LoadChart";
 import { LoadHeatmap } from "./LoadHeatmap";
@@ -63,10 +63,10 @@ export const LoadAnalyticsPage: React.FC = () => {
   const theme = useTheme();
   const { isSuperAdmin, activeOrganization, activeBranch } = usePermissions();
 
-  const [preset, setPreset] = React.useState<LoadPreset>("today");
-  const initial = presetRange("today");
-  const [dateFrom, setDateFrom] = React.useState<Dayjs>(initial[0]);
-  const [dateTo, setDateTo] = React.useState<Dayjs>(initial[1]);
+  const [range, setRange] = React.useState<DateRange>(() => {
+    const [f, t] = DEFAULT_RANGE_PRESETS[0].range(); // Сегодня
+    return { from: f, to: t };
+  });
   const [employees, setEmployees] = React.useState<DjangoEmployeeListItem[]>([]);
   const [chartMode, setChartMode] = React.useState<LoadChartMode>("hourly");
 
@@ -76,8 +76,9 @@ export const LoadAnalyticsPage: React.FC = () => {
   const branchId = activeBranch?.id ?? undefined;
   const organizationId = isSuper ? activeOrganization?.id ?? undefined : undefined;
   const employeeIds = employees.map((e) => e.id);
-  const from = dateFrom.format("YYYY-MM-DD");
-  const to = dateTo.format("YYYY-MM-DD");
+  const from = range.from.format("YYYY-MM-DD");
+  const to = range.to.format("YYYY-MM-DD");
+  const singleDay = range.from.isSame(range.to, "day");
 
   const query = useQuery({
     queryKey: djangoQueryKeys.reports.load({ from, to, branchId, employeeIds, organizationId }),
@@ -86,31 +87,19 @@ export const LoadAnalyticsPage: React.FC = () => {
         { dateFrom: from, dateTo: to, branchId, employeeIds, organizationId },
         signal,
       ),
-    enabled: !needsOrg && dateFrom.isValid() && dateTo.isValid() && !dateFrom.isAfter(dateTo),
+    enabled: !needsOrg && range.from.isValid() && range.to.isValid() && !range.from.isAfter(range.to),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
 
   const data = query.data;
-  const daysCount = Math.max(1, dateTo.diff(dateFrom, "day") + 1);
+  const daysCount = Math.max(1, range.to.diff(range.from, "day") + 1);
 
   // ── Handlers ──
-  const handlePreset = (p: LoadPreset) => {
-    setPreset(p);
-    const [f, t] = presetRange(p);
-    setDateFrom(f);
-    setDateTo(t);
-    if (p === "today") setChartMode("hourly");
-  };
-  const handleDateFrom = (d: Dayjs | null) => {
-    if (!d) return;
-    setPreset("custom");
-    setDateFrom(d.startOf("day"));
-  };
-  const handleDateTo = (d: Dayjs | null) => {
-    if (!d) return;
-    setPreset("custom");
-    setDateTo(d.endOf("day"));
+  const handleRangeChange = (r: DateRange) => {
+    setRange(r);
+    // Один день → почасовой график осмысленнее подневного.
+    if (r.from.isSame(r.to, "day")) setChartMode("hourly");
   };
   const toggleEmployee = (emp: { id: number; fullName: string }) => {
     setEmployees((prev) =>
@@ -120,7 +109,7 @@ export const LoadAnalyticsPage: React.FC = () => {
     );
   };
 
-  const rangeInvalid = dateFrom.isAfter(dateTo);
+  const rangeInvalid = range.from.isAfter(range.to);
 
   return (
     <Box
@@ -139,13 +128,9 @@ export const LoadAnalyticsPage: React.FC = () => {
       ) : (
         <>
           <LoadFilters
-            preset={preset}
-            dateFrom={dateFrom}
-            dateTo={dateTo}
+            range={range}
             employees={employees}
-            onPreset={handlePreset}
-            onDateFrom={handleDateFrom}
-            onDateTo={handleDateTo}
+            onRangeChange={handleRangeChange}
             onEmployeesChange={setEmployees}
           />
 
@@ -180,7 +165,7 @@ export const LoadAnalyticsPage: React.FC = () => {
                     <ToggleButton value="hourly" sx={{ textTransform: "none", px: 1.5 }}>
                       Часы
                     </ToggleButton>
-                    <ToggleButton value="daily" sx={{ textTransform: "none", px: 1.5 }}>
+                    <ToggleButton value="daily" disabled={singleDay} sx={{ textTransform: "none", px: 1.5 }}>
                       Дни
                     </ToggleButton>
                   </ToggleButtonGroup>

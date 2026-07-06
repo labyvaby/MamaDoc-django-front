@@ -13,8 +13,8 @@ import {
 } from "@mui/material";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import type { Dayjs } from "dayjs";
-import { CustomDatePicker } from "../../ui";
+import dayjs, { type Dayjs } from "dayjs";
+import { DateRangeField } from "../../ui";
 
 /** Пресеты периода для панели фильтров продаж. */
 export type SalesPeriodPreset = "today" | "week" | "month" | "all" | "custom";
@@ -95,19 +95,18 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
                     </ToggleButtonGroup>
 
                     {period === "custom" ? (
-                        <Stack direction="row" spacing={1} alignItems="center">
-                            <CustomDatePicker
-                                value={customFrom}
-                                onChange={(d) => onCustomFromChange(d as Dayjs | null)}
-                                slotProps={{ textField: { size: "small", sx: { width: 150 } } }}
-                            />
-                            <Typography variant="body2" color="text.secondary">—</Typography>
-                            <CustomDatePicker
-                                value={customTo}
-                                onChange={(d) => onCustomToChange(d as Dayjs | null)}
-                                slotProps={{ textField: { size: "small", sx: { width: 150 } } }}
-                            />
-                        </Stack>
+                        <DateRangeField
+                            value={{
+                                from: customFrom ?? dayjs().startOf("month"),
+                                to: customTo ?? dayjs().endOf("month"),
+                            }}
+                            onChange={(r) => {
+                                onCustomFromChange(r.from);
+                                onCustomToChange(r.to);
+                            }}
+                            presets={[]}
+                            minWidth={220}
+                        />
                     ) : (
                         <Typography variant="body2" color="text.secondary">
                             {rangeLabel}
