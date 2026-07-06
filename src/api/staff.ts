@@ -265,7 +265,7 @@ export interface DjangoBank {
   id: number;
   organizationId: number;
   name: string;
-  bik: string;
+  bik: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -273,13 +273,13 @@ export interface DjangoBank {
 
 export interface BankCreatePayload {
   name: string;
-  bik: string;
+  bik?: string | null;
   organizationId?: number | null;
 }
 
 export interface BankUpdatePayload {
   name?: string;
-  bik?: string;
+  bik?: string | null;
   isActive?: boolean;
 }
 

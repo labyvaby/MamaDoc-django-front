@@ -61,38 +61,31 @@ const BankDialog: React.FC<EditDialogProps> = ({
 }) => {
   const isEdit = bank !== null;
   const [name, setName] = React.useState("");
-  const [bik, setBik] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
       setName(bank?.name ?? "");
-      setBik(bank?.bik ?? "");
       setError(null);
       setBusy(false);
     }
   }, [open, bank]);
 
   const nameValid = name.trim().length >= 2;
-  const bikValid = /^\d{6}$/.test(bik.trim());
 
   const handleSubmit = async () => {
     if (!nameValid) {
       setError("Название должно содержать минимум 2 символа");
       return;
     }
-    if (!bikValid) {
-      setError("БИК должен содержать ровно 6 цифр");
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
       if (isEdit) {
-        await updateBank(bank.id, { name: name.trim(), bik: bik.trim() });
+        await updateBank(bank.id, { name: name.trim() });
       } else {
-        await createBank({ name: name.trim(), bik: bik.trim(), organizationId });
+        await createBank({ name: name.trim(), organizationId });
       }
       onSaved();
       onClose();
@@ -121,20 +114,6 @@ const BankDialog: React.FC<EditDialogProps> = ({
             disabled={busy}
             inputProps={{ maxLength: 128 }}
           />
-          <TextField
-            label="БИК *"
-            size="small"
-            fullWidth
-            value={bik}
-            onChange={(e) => {
-              setError(null);
-              setBik(e.target.value.replace(/\D/g, "").slice(0, 6));
-            }}
-            disabled={busy}
-            placeholder="000000"
-            inputProps={{ inputMode: "numeric" }}
-            helperText="Ровно 6 цифр"
-          />
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>
@@ -145,7 +124,7 @@ const BankDialog: React.FC<EditDialogProps> = ({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || !nameValid || !bikValid}
+          disabled={busy || !nameValid}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить"}
@@ -225,7 +204,7 @@ const BanksSettingsPage: React.FC = () => {
               Банки
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Справочник банков (название + БИК). Используется при выборе банка в карточке сотрудника.
+              Справочник банков. Используется при выборе банка в карточке сотрудника.
             </Typography>
           </Box>
           {canManage && (
@@ -277,7 +256,6 @@ const BanksSettingsPage: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>БИК</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Статус</TableCell>
                   {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">Действия</TableCell>}
                 </TableRow>
@@ -286,7 +264,6 @@ const BanksSettingsPage: React.FC = () => {
                 {banks.map((bank) => (
                   <TableRow key={bank.id} hover>
                     <TableCell>{bank.name}</TableCell>
-                    <TableCell sx={{ fontFamily: "monospace" }}>{bank.bik}</TableCell>
                     <TableCell>
                       <Chip
                         label={bank.isActive ? "Активен" : "Неактивен"}

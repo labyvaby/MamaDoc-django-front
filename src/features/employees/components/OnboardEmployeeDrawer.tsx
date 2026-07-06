@@ -300,7 +300,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const handleBankChange = (name: string) => {
     setBank(name);
     const found = banks.find((b) => b.name === name);
-    if (found) setBik(found.bik);
+    if (found) setBik(found.bik ?? "");
   };
 
   // ── submit ────────────────────────────────────────────────────────────────────
