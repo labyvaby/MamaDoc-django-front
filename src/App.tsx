@@ -67,6 +67,7 @@ const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const SalesPage = lazy(() => import("./pages/sales"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
+const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
 const WorkShiftsPage = lazy(() => import("./pages/work-shifts"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
@@ -626,11 +627,19 @@ function App() {
                         <Route
                           path="schedule"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <SchedulePage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="schedule.view">
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoSchedulePage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SchedulePage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            )
                           }
                         />
                         <Route

@@ -365,7 +365,7 @@ const SidebarSecondary: React.FC = () => {
     doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
     nurseRoom: isSuper || isAdmin() || isNurse,
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
-    schedule: true,
+    schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),

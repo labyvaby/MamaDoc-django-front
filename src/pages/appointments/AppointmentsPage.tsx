@@ -15,12 +15,16 @@ import {
   Drawer,
   IconButton,
   Stack,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
+import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 
@@ -30,6 +34,7 @@ import { useCanChecker, useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import DjangoAddAppointmentDrawer from "./DjangoAddAppointmentDrawer";
 import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
+import FreeSlotsView from "./FreeSlotsView";
 import DjangoPaymentDrawer from "./DjangoPaymentDrawer";
 import type { PaymentSummary } from "../../api/payments";
 import {
@@ -230,6 +235,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const queryClient = useQueryClient();
   const {
     activeBranch,
+    activeOrganization,
     activeEmployee,
     isSuperAdmin,
     isAdmin,
@@ -266,6 +272,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const handleSetDate = React.useCallback((s: string) => setDate(dayjs(s)), []);
 
   const [createOpen, setCreateOpen] = React.useState(false);
+  // Вид регистратуры: список приёмов или свободные окна врачей.
+  const [viewMode, setViewMode] = React.useState<"list" | "slots">("list");
+  // Предзаполнение создания приёма из клика по свободному окну.
+  const [slotPrefill, setSlotPrefill] = React.useState<
+    { employeeId: number; dateTime: string; serviceId: number } | null
+  >(null);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
@@ -533,13 +545,32 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           loading={loading}
           actions={
             <Stack direction="row" spacing={1} alignItems="center">
-              <Chip
-                label="Только ночные"
-                size="small"
-                color={nightOnly ? "primary" : "default"}
-                variant={nightOnly ? "filled" : "outlined"}
-                onClick={() => setNightOnly((v) => !v)}
-              />
+              {canCreate && (
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={viewMode}
+                  onChange={(_, v) => v && setViewMode(v)}
+                >
+                  <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
+                    <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                    Список
+                  </ToggleButton>
+                  <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
+                    <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                    Окна
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              )}
+              {viewMode === "list" && (
+                <Chip
+                  label="Только ночные"
+                  size="small"
+                  color={nightOnly ? "primary" : "default"}
+                  variant={nightOnly ? "filled" : "outlined"}
+                  onClick={() => setNightOnly((v) => !v)}
+                />
+              )}
               <Tooltip title="Обновить">
                 <span>
                   <IconButton size="small" onClick={() => { void refresh(); }}>
@@ -562,7 +593,30 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           </Alert>
         )}
 
+        {/* ── Вид «Свободные окна» ── */}
+        {viewMode === "slots" && (
+          <Box
+            sx={(t) => ({
+              flex: 1,
+              minHeight: 0,
+              overflow: "hidden",
+              px: t.appLayout.page.paddingX,
+              pb: 1,
+            })}
+          >
+            <FreeSlotsView
+              branchId={branchId}
+              organizationId={isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined}
+              onBook={(employeeId, dateTime, serviceId) => {
+                setSlotPrefill({ employeeId, dateTime, serviceId });
+                setCreateOpen(true);
+              }}
+            />
+          </Box>
+        )}
+
         {/* ── Two columns: list (left) + details/placeholder (right) ── */}
+        {viewMode === "list" && (
         <Box
           sx={(t) => ({
             flex: 1,
@@ -670,6 +724,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             </Box>
           )}
         </Box>
+        )}
       </Box>
 
       {/* Mobile details drawer */}
@@ -710,11 +765,23 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       {/* ── Drawers ── */}
       <DjangoAddAppointmentDrawer
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={handleCreated}
+        onClose={() => {
+          setCreateOpen(false);
+          setSlotPrefill(null);
+        }}
+        onCreated={() => {
+          setSlotPrefill(null);
+          handleCreated();
+        }}
         initialDate={
-          date ? date.format("YYYY-MM-DD") + "T" + dayjs().format("HH:mm") : undefined
+          slotPrefill
+            ? slotPrefill.dateTime
+            : date
+              ? date.format("YYYY-MM-DD") + "T" + dayjs().format("HH:mm")
+              : undefined
         }
+        initialEmployeeId={slotPrefill?.employeeId ?? null}
+        initialServiceId={slotPrefill?.serviceId ?? null}
       />
 
       <DjangoEditAppointmentDrawer

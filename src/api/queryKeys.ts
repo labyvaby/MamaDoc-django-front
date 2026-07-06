@@ -139,6 +139,15 @@ export const djangoQueryKeys = {
       ["django", "insurers", organizationId ?? null] as const,
   },
 
+  scheduling: {
+    rules: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "rules", params] as const,
+    exceptions: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "exceptions", params] as const,
+    availability: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "availability", params] as const,
+  },
+
   catalog: {
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "catalog", "services", context] as const,

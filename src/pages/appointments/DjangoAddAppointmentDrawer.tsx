@@ -99,6 +99,7 @@ export type DjangoAddAppointmentDrawerProps = {
   onCreated?: () => void;
   initialDate?: string | null;
   initialEmployeeId?: number | null;
+  initialServiceId?: number | null;
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -109,6 +110,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   onCreated,
   initialDate,
   initialEmployeeId,
+  initialServiceId,
 }) => {
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
@@ -169,18 +171,29 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     // Округляем initialDate под шаг тайм-пикера (15 мин): вызывающая сторона
     // может передать «сырое» текущее время (например 19:58), которое пикер
     // не разрешает выбрать. nowRounded() уже округлён.
-    const base = initialDate ? roundDateTimeLocalToStep(initialDate, 15) : nowRounded();
+    // Исключение — предзаполнение из свободного окна: время слота (например
+    // 09:20 при 20-минутной услуге) должно сохраниться точно, иначе приём
+    // съедет на соседний слот.
+    const isSlotPrefill = Boolean(initialEmployeeId || initialServiceId);
+    const base = initialDate
+      ? isSlotPrefill
+        ? initialDate
+        : roundDateTimeLocalToStep(initialDate, 15)
+      : nowRounded();
     setScheduledAt(base);
     setWorkMode(inferWorkMode(base));
-  }, [open, initialDate]);
-
-  React.useEffect(() => {
-    if (open && initialEmployeeId) {
-      setServiceRows((prev) =>
-        prev.map((r, i) => (i === 0 ? { ...r, employeeId: initialEmployeeId } : r)),
-      );
+    // Предзаполнение из клика по свободному окну (врач + услуга в первой строке).
+    if (isSlotPrefill) {
+      setIsBooking(true); // раскрыть секцию услуг сразу (без обязательного пациента)
+      setServiceRows([
+        {
+          serviceId: initialServiceId ?? null,
+          employeeId: initialEmployeeId ?? null,
+          quantity: 1,
+        },
+      ]);
     }
-  }, [open, initialEmployeeId]);
+  }, [open, initialDate, initialEmployeeId, initialServiceId]);
 
   // ── load sellable products (with context stock) ────────────────────────────
   React.useEffect(() => {
