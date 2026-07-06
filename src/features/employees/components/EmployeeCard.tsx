@@ -257,7 +257,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   const { activeEmployee, activeOrganization } = usePermissions();
   const canViewAttendance = useCan("attendance.view");
-  const canViewExpenses = useCan("finance.view");
+  const canViewExpenses = useCan(["finance.view", "finance.expense.view"]);
   const canViewPayroll = useCan("payroll.view");
 
   // For Django mode: Cache services via react-query

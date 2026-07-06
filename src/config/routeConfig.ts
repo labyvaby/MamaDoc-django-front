@@ -27,10 +27,10 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.PATIENTS_LIST],
   },
 
-  // Расходы - для администраторов, бухгалтеров и регистраторов
+  // Расходы - для администраторов, бухгалтеров и регистраторов, а также врачей и медсестер
   {
     path: '/expenses',
-    allowedRoles: ['superadmin', 'admin', 'accountant', 'registrator', 'receptionist', 'manager'],
+    allowedRoles: ['superadmin', 'admin', 'accountant', 'registrator', 'receptionist', 'manager', 'doctor', 'nurse'],
     requiredPermissions: [PERMISSIONS.EXPENSES_LIST],
   },
 

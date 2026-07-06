@@ -537,7 +537,7 @@ function App() {
                           path="expenses"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="finance.view">
+                              <RequirePermission permission={["finance.view", "finance.expense.view"]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoExpensesPage />
                                 </Suspense>
