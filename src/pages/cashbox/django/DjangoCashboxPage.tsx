@@ -36,6 +36,7 @@ const RANGE_PRESETS: DateRangePreset[] = [
     ],
   },
   { key: "7d", label: "Последние 7 дней", range: () => [dayjs().subtract(6, "day").startOf("day"), dayjs().endOf("day")] },
+  { key: "30d", label: "Последние 30 дней", range: () => [dayjs().subtract(29, "day").startOf("day"), dayjs().endOf("day")] },
   { key: "month", label: "Этот месяц", range: () => [dayjs().startOf("month"), dayjs().endOf("month")] },
   {
     key: "prevMonth",
@@ -97,9 +98,11 @@ const DjangoCashboxPage: React.FC = () => {
   const orgRequired = isSuper || isMultiOrg;
   const needsOrg = orgRequired && !activeOrganization;
 
+  // По умолчанию — последние 30 дней: показывает недавнее движение сразу,
+  // не упираясь в пустой текущий месяц.
   const [range, setRange] = React.useState<DateRange>(() => ({
-    from: dayjs().startOf("month"),
-    to: dayjs().endOf("month"),
+    from: dayjs().subtract(29, "day").startOf("day"),
+    to: dayjs().endOf("day"),
   }));
 
   const dateFrom = range.from.format("YYYY-MM-DD");
