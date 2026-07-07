@@ -32,6 +32,17 @@ import InstagramIcon from "@mui/icons-material/Instagram";
 import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import QrCode2Outlined from "@mui/icons-material/QrCode2Outlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
+import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import NotesOutlined from "@mui/icons-material/NotesOutlined";
+import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import LinkOutlined from "@mui/icons-material/LinkOutlined";
+import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
+import dayjs from "dayjs";
+import "dayjs/locale/ru";
 import type { EmployesRow } from "../types";
 import type { ServiceRow as ServiceDto } from "../../../services/services";
 
@@ -43,6 +54,15 @@ import { DB_TABLES } from "../../../utility/constants";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { AppButton, UserAvatar, InfoTile } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { useCan } from "../../../hooks/useCan";
+import { getServices } from "../../../api/catalog";
+import EmployeeRelatedModal, { type RelatedModalType } from "./EmployeeRelatedModal";
+import {
+  useEmployeeShiftsMonth,
+  useEmployeeExpensesMonth,
+  usePayrollReportMonth,
+} from "../hooks/useEmployeeRelated";
 
 // Supabase-only helpers: loaded dynamically so supabaseClient stays out of Django bundle
 async function _loadSupabaseServiceIds(empId: string): Promise<string[]> {
@@ -63,30 +83,48 @@ export type EmployeeCardProps = {
   onEdit?: (emp: EmployesRow) => void;
 };
 
-const calculateAge = (birthDate: string) => {
-  if (!birthDate) return "";
-  const birth = new Date(birthDate);
+const declension = (number: number, titles: [string, string, string]) => {
+  const cases = [2, 0, 1, 1, 1, 2];
+  return titles[
+    number % 100 > 4 && number % 100 < 20 ? 2 : cases[number % 10 < 5 ? number % 10 : 5]
+  ];
+};
+
+/** Полных месяцев между датой и сегодня (отрицательно для будущих дат). */
+const monthsSince = (dateStr: string) => {
+  const from = new Date(dateStr);
   const now = new Date();
   let monthDiff =
-    (now.getFullYear() - birth.getFullYear()) * 12 +
-    (now.getMonth() - birth.getMonth());
-  if (now.getDate() < birth.getDate()) monthDiff--;
+    (now.getFullYear() - from.getFullYear()) * 12 +
+    (now.getMonth() - from.getMonth());
+  if (now.getDate() < from.getDate()) monthDiff--;
+  return monthDiff;
+};
 
+const calculateAge = (birthDate: string) => {
+  if (!birthDate) return "";
+  const monthDiff = monthsSince(birthDate);
   const y = Math.floor(monthDiff / 12);
   const m = monthDiff % 12;
-
-  const declension = (number: number, titles: [string, string, string]) => {
-    const cases = [2, 0, 1, 1, 1, 2];
-    return titles[
-      number % 100 > 4 && number % 100 < 20 ? 2 : cases[number % 10 < 5 ? number % 10 : 5]
-    ];
-  };
 
   const yearsStr = `${y} ${declension(y, ["год", "года", "лет"])}`;
   const monthsStr =
     m > 0 ? ` и ${m} ${declension(m, ["месяц", "месяца", "месяцев"])}` : "";
 
   return `(${yearsStr}${monthsStr})`;
+};
+
+/** Стаж от даты приёма: «2 года и 3 месяца», «5 месяцев», «меньше месяца». */
+const formatTenure = (hiredDate: string) => {
+  const monthDiff = monthsSince(hiredDate);
+  if (monthDiff < 0) return "";
+  if (monthDiff === 0) return "меньше месяца";
+  const y = Math.floor(monthDiff / 12);
+  const m = monthDiff % 12;
+  const parts: string[] = [];
+  if (y > 0) parts.push(`${y} ${declension(y, ["год", "года", "лет"])}`);
+  if (m > 0) parts.push(`${m} ${declension(m, ["месяц", "месяца", "месяцев"])}`);
+  return parts.join(" и ");
 };
 
 /** Заголовок секции в карточке: иконка-акцент + приглушённая подпись + опц. действие. */
@@ -113,6 +151,93 @@ const SectionHeader: React.FC<{
   </Stack>
 );
 
+/** Плитка «связанных данных» (СКУД/Расходы/ЗП) — живой показатель + модалка. */
+const RelatedTile: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  stat?: React.ReactNode;
+  onClick: () => void;
+}> = ({ icon, title, subtitle, stat, onClick }) => (
+  <Box
+    component="button"
+    type="button"
+    onClick={onClick}
+    sx={(t) => ({
+      textAlign: "left",
+      cursor: "pointer",
+      fontFamily: "inherit",
+      color: "inherit",
+      display: "flex",
+      flexDirection: "column",
+      gap: 1,
+      p: 1.5,
+      borderRadius: "12px",
+      border: 1,
+      borderColor: "divider",
+      bgcolor: subtleBg(t),
+      transition: "background-color .15s ease, border-color .15s ease, transform .15s ease",
+      "&:hover": {
+        bgcolor: subtleBg(t, true),
+        borderColor: alpha(t.palette.primary.main, 0.3),
+        transform: "translateY(-2px)",
+      },
+    })}
+  >
+    <Box
+      sx={(t) => ({
+        width: 40,
+        height: 40,
+        borderRadius: "11px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "primary.onSurface",
+        bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+        "& .MuiSvgIcon-root": { fontSize: 21 },
+      })}
+    >
+      {icon}
+    </Box>
+    <Box>
+      <Typography variant="body2" fontWeight={600}>{title}</Typography>
+      <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
+    </Box>
+    {stat !== undefined && (
+      <Typography
+        variant="h6"
+        fontWeight={700}
+        sx={{ lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}
+      >
+        {stat}
+      </Typography>
+    )}
+    <Stack direction="row" alignItems="center" gap={0.25} sx={{ color: "primary.onSurface" }}>
+      <Typography variant="caption" fontWeight={500}>Открыть</Typography>
+      <ChevronRightOutlined sx={{ fontSize: 15 }} />
+    </Stack>
+  </Box>
+);
+
+/** Значение показателя на плитке: число + приглушённая единица. */
+const TileStat: React.FC<{ loading: boolean; error: boolean; value: string; unit: string }> = ({
+  loading,
+  error,
+  value,
+  unit,
+}) => {
+  if (loading) return <CircularProgress size={16} />;
+  if (error) return <>—</>;
+  return (
+    <>
+      {value}{" "}
+      <Box component="span" sx={{ fontSize: 12, fontWeight: 400, color: "text.secondary" }}>
+        {unit}
+      </Box>
+    </>
+  );
+};
+
 const EmployeeCard: React.FC<EmployeeCardProps> = ({
   emp,
   allServices,
@@ -120,9 +245,74 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onEdit,
 }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [related, setRelated] = useState<RelatedModalType>(null);
+  // Выбранный месяц для «связанных данных» — якорь "YYYY-MM-DD" (1-е число месяца).
+  const [relatedMonth, setRelatedMonth] = useState<string>(() =>
+    dayjs().startOf("month").format("YYYY-MM-DD"),
+  );
+  const isCurrentMonth =
+    dayjs(relatedMonth).format("YYYY-MM") === dayjs().format("YYYY-MM");
+  const shiftRelatedMonth = (delta: number) =>
+    setRelatedMonth((m) => dayjs(m).add(delta, "month").startOf("month").format("YYYY-MM-DD"));
+
+  const { activeEmployee, activeOrganization } = usePermissions();
+  const canViewAttendance = useCan("attendance.view");
+  const canViewExpenses = useCan(["finance.view", "finance.expense.view"]);
+  const canViewPayroll = useCan("payroll.view");
 
   // For Django mode: Cache services via react-query
   const empIdNum = emp?.id ? Number(emp.id) : 0;
+
+  // Своя карточка: сотрудник всегда видит свои связанные данные (own-bypass).
+  const isOwnCard = activeEmployee?.id != null && empIdNum === activeEmployee.id;
+
+  // ── Живые показатели «связанных данных» за текущий месяц ────────────────────
+  // Общие хуки с модалками (одинаковые queryKey → один запрос на кеш).
+  const relatedBase = IS_DJANGO_BACKEND && empIdNum > 0;
+  const shiftsQ = useEmployeeShiftsMonth(
+    empIdNum,
+    relatedBase && (canViewAttendance || isOwnCard),
+    relatedMonth,
+  );
+  const expensesQ = useEmployeeExpensesMonth(
+    empIdNum,
+    activeOrganization?.id ?? undefined,
+    relatedBase && (canViewExpenses || isOwnCard),
+    relatedMonth,
+  );
+  const payrollQ = usePayrollReportMonth(
+    activeOrganization?.id ?? undefined,
+    relatedBase && (canViewPayroll || isOwnCard),
+    relatedMonth,
+  );
+
+  const toNum = (v: string | number | null | undefined) => Number(v || 0);
+  const monthHours = (shiftsQ.data ?? []).reduce(
+    (s, r) => s + toNum(r.dayHours) + toNum(r.nightHours),
+    0,
+  );
+  const monthExpenses = (expensesQ.data?.results ?? []).reduce(
+    (s, r) => s + toNum(r.amount),
+    0,
+  );
+  const payrollRow = payrollQ.data?.rows.find((r) => r.employeeId === empIdNum);
+  const monthNetSalary = toNum(payrollRow?.netSalary);
+
+  // Каталог услуг — для картинок/цен в списке услуг сотрудника (Django).
+  const catalogQuery = useQuery({
+    queryKey: ["django", "catalog", "services", "card-images"],
+    queryFn: ({ signal }) => getServices(null, signal),
+    enabled: IS_DJANGO_BACKEND,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const serviceMeta = React.useMemo(() => {
+    const m = new Map<string, { imageUrl: string | null; price: number }>();
+    (catalogQuery.data ?? []).forEach((s) =>
+      m.set(String(s.id), { imageUrl: s.imageUrl ?? null, price: Number(s.basePrice || 0) }),
+    );
+    return m;
+  }, [catalogQuery.data]);
   const djangoServicesQuery = useQuery({
     queryKey: ["django", "staff", "employee-services", empIdNum, emp?.updated_at],
     queryFn: async ({ signal }) => {
@@ -231,6 +421,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const fio = emp?.full_name || emp?.id || "";
   const phone = emp?.phone || "";
   const birth = emp?.birth_date || "";
+  const hired = emp?.hired_at || "";
   const photo = emp?.photo_url || undefined;
   const roleText =
     roleDisplayName || (emp?.status === "active" ? "Сотрудник" : "—");
@@ -429,8 +620,8 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               </Box>
             </Box>
 
-            {/* Личное — дата рождения приходит только с правом (или своя карточка) */}
-            {(birth || emp.notes) && (
+            {/* Личное — дата рождения и адрес приходят только с правом (или своя карточка) */}
+            {(birth || hired || emp.address || emp.notes) && (
               <Box>
                 <SectionHeader icon={<CakeOutlined />} title="Личное" />
                 <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
@@ -448,8 +639,29 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       }
                     />
                   )}
+                  {hired && (
+                    <InfoTile
+                      icon={<EventAvailableOutlined />}
+                      label="Дата приёма на работу"
+                      value={
+                        <>
+                          {formatDateRu(hired)}{" "}
+                          {formatTenure(hired) && (
+                            <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
+                              (стаж {formatTenure(hired)})
+                            </Box>
+                          )}
+                        </>
+                      }
+                    />
+                  )}
+                  {emp.address && (
+                    <InfoTile icon={<HomeOutlined />} label="Адрес проживания" value={emp.address} />
+                  )}
                   {emp.notes && (
-                    <InfoTile icon={<ContactPageOutlined />} label="Заметки" value={emp.notes} />
+                    <Box sx={{ gridColumn: { md: "1 / -1" } }}>
+                      <InfoTile icon={<NotesOutlined />} label="Описание" value={emp.notes} />
+                    </Box>
                   )}
                 </Box>
               </Box>
@@ -648,6 +860,110 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               </Box>
             </Modal>
 
+            {/* Связанные данные — своё видит всегда, чужое по правам */}
+            {IS_DJANGO_BACKEND && empIdNum > 0 &&
+              (canViewAttendance || canViewExpenses || canViewPayroll || isOwnCard) && (
+              <Box>
+                <SectionHeader
+                  icon={<LinkOutlined />}
+                  title="Связанные данные"
+                  action={
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      gap={0.25}
+                      sx={(t) => ({
+                        borderRadius: "9px",
+                        border: 1,
+                        borderColor: "divider",
+                        bgcolor: subtleBg(t),
+                        px: 0.25,
+                      })}
+                    >
+                      <IconButton
+                        size="small"
+                        onClick={() => shiftRelatedMonth(-1)}
+                        aria-label="Предыдущий месяц"
+                        sx={{ p: 0.5 }}
+                      >
+                        <ChevronLeftOutlined sx={{ fontSize: 18 }} />
+                      </IconButton>
+                      <Typography
+                        variant="caption"
+                        fontWeight={600}
+                        sx={{ minWidth: 92, textAlign: "center", textTransform: "capitalize" }}
+                      >
+                        {dayjs(relatedMonth).format("MMMM YYYY")}
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => shiftRelatedMonth(1)}
+                        disabled={isCurrentMonth}
+                        aria-label="Следующий месяц"
+                        sx={{ p: 0.5 }}
+                      >
+                        <ChevronRightOutlined sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Stack>
+                  }
+                />
+                <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}>
+                  {(canViewAttendance || isOwnCard) && (
+                    <RelatedTile
+                      icon={<AccessTimeOutlined />}
+                      title="СКУД"
+                      subtitle={shiftsQ.isFetching ? "Смен: —" : `Смен: ${shiftsQ.data?.length ?? "—"}`}
+                      stat={
+                        <TileStat
+                          loading={shiftsQ.isFetching}
+                          error={Boolean(shiftsQ.error)}
+                          value={monthHours.toFixed(1)}
+                          unit="ч/мес"
+                        />
+                      }
+                      onClick={() => setRelated("skud")}
+                    />
+                  )}
+                  {(canViewExpenses || isOwnCard) && (
+                    <RelatedTile
+                      icon={<ReceiptLongOutlined />}
+                      title="Расходы"
+                      subtitle={
+                        expensesQ.isFetching
+                          ? "Записей: —"
+                          : `Записей: ${expensesQ.data?.results?.length ?? "—"}`
+                      }
+                      stat={
+                        <TileStat
+                          loading={expensesQ.isFetching}
+                          error={Boolean(expensesQ.error)}
+                          value={monthExpenses.toLocaleString("ru-RU")}
+                          unit="с"
+                        />
+                      }
+                      onClick={() => setRelated("exp")}
+                    />
+                  )}
+                  {(canViewPayroll || isOwnCard) && (
+                    <RelatedTile
+                      icon={<PaymentsOutlined />}
+                      title="Зарплата"
+                      subtitle="К выплате за месяц"
+                      stat={
+                        <TileStat
+                          loading={payrollQ.isFetching}
+                          error={Boolean(payrollQ.error)}
+                          value={monthNetSalary.toLocaleString("ru-RU")}
+                          unit="с"
+                        />
+                      }
+                      onClick={() => setRelated("sal")}
+                    />
+                  )}
+                </Box>
+              </Box>
+            )}
+
             {/* Услуги сотрудника */}
             <Box>
               <SectionHeader
@@ -676,34 +992,91 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               />
 
               {servicesForEmployee.length > 0 ? (
-                <Stack spacing={1}>
-                  {servicesForEmployee.map((s) => (
-                    <Stack
-                      key={s.id}
-                      direction="row"
-                      alignItems="center"
-                      gap={1.25}
-                      sx={(t) => ({
-                        p: 1.5,
-                        border: 1,
-                        borderColor: "divider",
-                        borderRadius: "10px",
-                        bgcolor: subtleBg(t),
-                      })}
-                    >
-                      <LocalOfferOutlined sx={{ fontSize: 18, color: "primary.onSurface" }} />
-                      <Typography variant="body2" fontWeight={500}>
-                        {s.name}
-                      </Typography>
-                    </Stack>
-                  ))}
-                </Stack>
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.875 }}>
+                  {servicesForEmployee.map((s) => {
+                    const meta = serviceMeta.get(String(s.id));
+                    return (
+                      <Stack
+                        key={s.id}
+                        direction="row"
+                        alignItems="center"
+                        gap={0.875}
+                        sx={(t) => ({
+                          height: 32,
+                          maxWidth: "100%",
+                          pl: 0.5,
+                          pr: 1.375,
+                          border: 1,
+                          borderColor: "divider",
+                          borderRadius: 999,
+                          bgcolor: subtleBg(t),
+                        })}
+                      >
+                        <Box
+                          sx={(t) => ({
+                            width: 24,
+                            height: 24,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            overflow: "hidden",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "primary.onSurface",
+                            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+                          })}
+                        >
+                          {meta?.imageUrl ? (
+                            <Box component="img" src={meta.imageUrl} alt={s.name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <LocalOfferOutlined sx={{ fontSize: 13 }} />
+                          )}
+                        </Box>
+                        <Typography
+                          variant="body2"
+                          fontWeight={500}
+                          noWrap
+                          sx={{ fontSize: "0.8rem", minWidth: 0 }}
+                        >
+                          {s.name}
+                        </Typography>
+                        {meta && meta.price > 0 && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{
+                              fontVariantNumeric: "tabular-nums",
+                              whiteSpace: "nowrap",
+                              pl: 0.875,
+                              borderLeft: 1,
+                              borderColor: "divider",
+                            }}
+                          >
+                            {meta.price.toLocaleString("ru-RU")} с
+                          </Typography>
+                        )}
+                      </Stack>
+                    );
+                  })}
+                </Box>
               ) : (
                 <Typography variant="body2" color="text.secondary">
                   {isLoadingServices ? "Загрузка..." : "Нет привязанных услуг"}
                 </Typography>
               )}
             </Box>
+
+            {emp && empIdNum > 0 && (
+              <EmployeeRelatedModal
+                open={related !== null}
+                type={related}
+                employeeId={empIdNum}
+                employeeName={emp.full_name || String(emp.id)}
+                organizationId={activeOrganization?.id ?? undefined}
+                monthAnchor={relatedMonth}
+                onClose={() => setRelated(null)}
+              />
+            )}
           </Stack>
         ) : (
           <Box

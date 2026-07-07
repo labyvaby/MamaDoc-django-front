@@ -19,6 +19,7 @@ import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 
@@ -38,6 +39,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   memberships: "rbac.memberships.view",
   specializations: "staff.specializations.view",
   banks: "staff.private.view",
+  insurers: "finance.view",
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
   tasks: "tasks.manage",
@@ -88,6 +90,12 @@ const TABS: TabDef[] = [
     label: "Банки",
     to: "/settings/banks",
     icon: <AccountBalanceOutlined fontSize="small" />,
+  },
+  {
+    key: "insurers",
+    label: "Страховые",
+    to: "/settings/insurers",
+    icon: <HealthAndSafetyOutlined fontSize="small" />,
   },
   {
     key: "expenseCategories",

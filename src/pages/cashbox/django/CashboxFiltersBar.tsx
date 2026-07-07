@@ -1,16 +1,13 @@
 import React from "react";
 import {
-  Box,
-  Button,
-  ButtonGroup,
   FormControl,
   InputLabel,
   MenuItem,
   Select,
   Stack,
-  TextField,
 } from "@mui/material";
 import dayjs from "dayjs";
+import { DateRangeField } from "../../../components/ui";
 import type { CashboxFilters, CashboxMethod } from "../../../api/cashbox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -34,11 +31,6 @@ type Props = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function todayRange(): { dateFrom: string; dateTo: string } {
-  const d = dayjs().format("YYYY-MM-DD");
-  return { dateFrom: d, dateTo: d };
-}
 
 function monthRange(): { dateFrom: string; dateTo: string } {
   return {
@@ -72,30 +64,10 @@ const METHOD_OPTIONS: { value: CashboxMethod | ""; label: string }[] = [
   { value: "cash", label: "Наличные" },
   { value: "card", label: "Карта" },
   { value: "balance", label: "Баланс" },
+  { value: "insurance", label: "Страховка" },
 ];
 
 const CashboxFiltersBar: React.FC<Props> = ({ value, branches, onChange }) => {
-  const handlePreset = (preset: PeriodPreset) => {
-    if (preset === "today") {
-      onChange({ ...value, preset, ...todayRange() });
-    } else if (preset === "month") {
-      onChange({ ...value, preset, ...monthRange() });
-    } else {
-      onChange({ ...value, preset });
-    }
-  };
-
-  const handleDateFrom = (e: React.ChangeEvent<HTMLInputElement>) =>
-    onChange({ ...value, preset: "custom", dateFrom: e.target.value });
-
-  const handleDateTo = (e: React.ChangeEvent<HTMLInputElement>) =>
-    onChange({ ...value, preset: "custom", dateTo: e.target.value });
-
-  const rangeInvalid =
-    value.dateFrom && value.dateTo
-      ? dayjs(value.dateFrom).isAfter(dayjs(value.dateTo))
-      : false;
-
   return (
     <Stack
       direction={{ xs: "column", sm: "row" }}
@@ -104,51 +76,22 @@ const CashboxFiltersBar: React.FC<Props> = ({ value, branches, onChange }) => {
       flexWrap="wrap"
       useFlexGap
     >
-      {/* Period presets */}
-      <ButtonGroup size="small" variant="outlined">
-        <Button
-          variant={value.preset === "today" ? "contained" : "outlined"}
-          onClick={() => handlePreset("today")}
-        >
-          Сегодня
-        </Button>
-        <Button
-          variant={value.preset === "month" ? "contained" : "outlined"}
-          onClick={() => handlePreset("month")}
-        >
-          Месяц
-        </Button>
-        <Button
-          variant={value.preset === "custom" ? "contained" : "outlined"}
-          onClick={() => handlePreset("custom")}
-        >
-          Диапазон
-        </Button>
-      </ButtonGroup>
-
-      {/* Date inputs */}
-      <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-        <TextField
-          type="date"
-          size="small"
-          label="С"
-          value={value.dateFrom}
-          onChange={handleDateFrom}
-          error={!!rangeInvalid}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 150 }}
-        />
-        <TextField
-          type="date"
-          size="small"
-          label="По"
-          value={value.dateTo}
-          onChange={handleDateTo}
-          error={!!rangeInvalid}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 150 }}
-        />
-      </Box>
+      {/* Период: единое поле-диапазон с пресетами */}
+      <DateRangeField
+        value={{
+          from: value.dateFrom ? dayjs(value.dateFrom) : dayjs().startOf("month"),
+          to: value.dateTo ? dayjs(value.dateTo) : dayjs().endOf("month"),
+        }}
+        onChange={(r) =>
+          onChange({
+            ...value,
+            preset: "custom",
+            dateFrom: r.from.format("YYYY-MM-DD"),
+            dateTo: r.to.format("YYYY-MM-DD"),
+          })
+        }
+        minWidth={220}
+      />
 
       {/* Branch */}
       {branches.length > 0 && (

@@ -4,16 +4,10 @@ import {
   Box,
   Typography,
   Grid,
-  ToggleButton,
-  ToggleButtonGroup,
-  Tooltip,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import { usePageTitle } from "../../hooks/usePageTitle";
-
-import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
-import ViewModuleOutlined from "@mui/icons-material/ViewModuleOutlined";
 
 import EmployeeList from "./components/EmployeeList";
 import EmployeeCard from "./components/EmployeeCard";
@@ -44,7 +38,6 @@ const DeleteEmployeeDialog = React.lazy(
 const EmployeesPage: React.FC = () => {
   usePageTitle("Сотрудники");
   const state = useEmployeesPageState();
-  const [isGrouped, setIsGrouped] = React.useState(true);
   const [onboardOpen, setOnboardOpen] = React.useState(false);
   const [servicesDrawer, setServicesDrawer] = React.useState<{
     open: boolean;
@@ -140,38 +133,6 @@ const EmployeesPage: React.FC = () => {
         showSearch
         searchVal={state.q}
         onSearchChange={(v) => state.setQ(v)}
-        actions={
-          <ToggleButtonGroup
-            size="small"
-            value={isGrouped}
-            exclusive
-            onChange={(_, val) => val !== null && setIsGrouped(val)}
-            sx={{
-              height: 40,
-              bgcolor: "background.paper",
-              "& .MuiToggleButton-root": {
-                px: 2,
-                borderColor: "divider",
-                "&.Mui-selected": {
-                  bgcolor: "primary.main",
-                  color: "primary.contrastText",
-                  "&:hover": { bgcolor: "primary.dark" },
-                },
-              },
-            }}
-          >
-            <Tooltip title="Группировать по ролям">
-              <ToggleButton value={true}>
-                <GroupsOutlined fontSize="small" />
-              </ToggleButton>
-            </Tooltip>
-            <Tooltip title="Список">
-              <ToggleButton value={false}>
-                <ViewModuleOutlined fontSize="small" />
-              </ToggleButton>
-            </Tooltip>
-          </ToggleButtonGroup>
-        }
       />
 
       <Box
@@ -212,7 +173,7 @@ const EmployeesPage: React.FC = () => {
                 loading={state.loading}
                 hasMore={state.hasMore}
                 loadingMore={state.loadingMore}
-                isGrouped={isGrouped}
+                isGrouped
                 roles={roles}
                 selectedId={state.detailsOpen?.id ?? null}
               />

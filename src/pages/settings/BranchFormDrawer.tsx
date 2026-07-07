@@ -16,7 +16,10 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import MapOutlined from "@mui/icons-material/MapOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import { useSnackbar } from "notistack";
 
@@ -36,6 +39,36 @@ function extractErrorMessage(err: unknown): string {
 }
 
 const NAME_MAX = 255;
+const PHONE_MAX = 50;
+
+// Ссылки на страницу филиала в картографических сервисах. Порядок полей в
+// форме и подписи должны совпадать с колонкой «Карты» в таблице филиалов.
+const MAP_LINKS = [
+  { key: "twoGisUrl", label: "2ГИС", placeholder: "https://2gis.kg/..." },
+  { key: "yandexMapsUrl", label: "Яндекс Карты", placeholder: "https://yandex.ru/maps/..." },
+  { key: "googleMapsUrl", label: "Google Maps", placeholder: "https://maps.google.com/..." },
+] as const;
+
+type MapLinkKey = (typeof MAP_LINKS)[number]["key"];
+type MapLinks = Record<MapLinkKey, string>;
+
+const EMPTY_MAP_LINKS: MapLinks = {
+  twoGisUrl: "",
+  yandexMapsUrl: "",
+  googleMapsUrl: "",
+};
+
+/** Бэкенд валидирует URLField; здесь только быстрая проверка для UX. */
+function isValidMapUrl(value: string): boolean {
+  const v = value.trim();
+  if (!v) return true;
+  return /^https?:\/\/\S+\.\S+/.test(v);
+}
+
+/** Убирает пустые строки и лишние пробелы, сохраняя порядок. */
+function normalizePhones(phones: string[]): string[] {
+  return phones.map((p) => p.trim()).filter(Boolean);
+}
 
 // Часовые пояса, актуальные для региона. Значение по умолчанию совпадает с
 // серверным (Asia/Bishkek).
@@ -92,7 +125,9 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 
   const [name, setName] = React.useState("");
   const [address, setAddress] = React.useState("");
-  const [phone, setPhone] = React.useState("");
+  // Всегда держим минимум одно поле телефона, чтобы форма не была пустой.
+  const [phones, setPhones] = React.useState<string[]>([""]);
+  const [mapLinks, setMapLinks] = React.useState<MapLinks>(EMPTY_MAP_LINKS);
   const [timezone, setTimezone] = React.useState<string>(DEFAULT_TZ);
   const [isActive, setIsActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
@@ -109,13 +144,19 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     if (editing) {
       setName(editing.name);
       setAddress(editing.address);
-      setPhone(editing.phone);
+      setPhones(editing.phones.length > 0 ? editing.phones : [""]);
+      setMapLinks({
+        twoGisUrl: editing.twoGisUrl,
+        yandexMapsUrl: editing.yandexMapsUrl,
+        googleMapsUrl: editing.googleMapsUrl,
+      });
       setTimezone(editing.timezone || DEFAULT_TZ);
       setIsActive(editing.isActive);
     } else {
       setName("");
       setAddress("");
-      setPhone("");
+      setPhones([""]);
+      setMapLinks(EMPTY_MAP_LINKS);
       setTimezone(DEFAULT_TZ);
       setIsActive(true);
     }
@@ -124,14 +165,24 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   }, [open, editing]);
 
   const trimmedName = name.trim();
+  const cleanPhones = normalizePhones(phones);
+  const invalidMapLinks = MAP_LINKS.filter(
+    ({ key }) => !isValidMapUrl(mapLinks[key]),
+  ).map(({ key }) => key);
 
   const isDirty = isEdit
     ? trimmedName !== editing!.name ||
       address.trim() !== editing!.address ||
-      phone.trim() !== editing!.phone ||
+      cleanPhones.join("\n") !== editing!.phones.join("\n") ||
+      MAP_LINKS.some(({ key }) => mapLinks[key].trim() !== editing![key]) ||
       timezone !== editing!.timezone ||
       isActive !== editing!.isActive
-    : Boolean(trimmedName || address.trim() || phone.trim());
+    : Boolean(
+        trimmedName ||
+          address.trim() ||
+          cleanPhones.length > 0 ||
+          MAP_LINKS.some(({ key }) => mapLinks[key].trim()),
+      );
 
   const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
     isDirty,
@@ -140,20 +191,41 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   });
 
   const nameError = touched && !trimmedName ? "Укажите название филиала" : "";
-  const canSubmit = !busy && Boolean(trimmedName);
+  const canSubmit = !busy && Boolean(trimmedName) && invalidMapLinks.length === 0;
+
+  const setPhoneAt = (index: number, value: string) => {
+    setPhones((prev) => prev.map((p, i) => (i === index ? value : p)));
+  };
+
+  const removePhoneAt = (index: number) => {
+    setPhones((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.length > 0 ? next : [""];
+    });
+  };
+
+  const setMapLink = (key: MapLinkKey, value: string) => {
+    setMapLinks((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleSubmit = async () => {
     setTouched(true);
-    if (!trimmedName) return;
+    if (!trimmedName || invalidMapLinks.length > 0) return;
     setError(null);
     setBusy(true);
     try {
+      const contacts = {
+        phones: cleanPhones,
+        twoGisUrl: mapLinks.twoGisUrl.trim(),
+        yandexMapsUrl: mapLinks.yandexMapsUrl.trim(),
+        googleMapsUrl: mapLinks.googleMapsUrl.trim(),
+      };
       let saved: DjangoBranch;
       if (editing) {
         saved = await updateBranch(editing.id, {
           name: trimmedName,
           address: address.trim(),
-          phone: phone.trim(),
+          ...contacts,
           timezone,
           isActive,
         });
@@ -162,7 +234,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
           name: trimmedName,
           organizationId,
           address: address.trim(),
-          phone: phone.trim(),
+          ...contacts,
           timezone,
           isActive,
         });
@@ -283,18 +355,72 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
             />
           </Stack>
 
-          {/* Телефон */}
+          {/* Телефоны */}
           <Stack spacing={0.5}>
-            <FieldLabel>Телефон</FieldLabel>
-            <TextField
-              size="small"
-              fullWidth
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              disabled={busy}
-              placeholder="+996 700 000 000"
-              inputProps={{ inputMode: "tel" }}
-            />
+            <FieldLabel>Телефоны</FieldLabel>
+            <Stack spacing={1}>
+              {phones.map((p, index) => (
+                <Stack key={index} direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    size="small"
+                    fullWidth
+                    value={p}
+                    onChange={(e) => setPhoneAt(index, e.target.value)}
+                    disabled={busy}
+                    placeholder="+996 700 000 000"
+                    inputProps={{ inputMode: "tel", maxLength: PHONE_MAX }}
+                  />
+                  {(phones.length > 1 || p.trim()) && (
+                    <IconButton
+                      size="small"
+                      onClick={() => removePhoneAt(index)}
+                      disabled={busy}
+                      aria-label="Удалить телефон"
+                    >
+                      <DeleteOutlineOutlined fontSize="small" />
+                    </IconButton>
+                  )}
+                </Stack>
+              ))}
+              <Button
+                size="small"
+                startIcon={<AddOutlined />}
+                onClick={() => setPhones((prev) => [...prev, ""])}
+                disabled={busy}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                Добавить номер
+              </Button>
+            </Stack>
+          </Stack>
+
+          {/* Ссылки на карты */}
+          <Stack spacing={0.5}>
+            <Stack direction="row" alignItems="center" gap={0.75}>
+              <MapOutlined fontSize="small" sx={{ color: "text.secondary" }} />
+              <FieldLabel>Ссылки на карты</FieldLabel>
+            </Stack>
+            <Stack spacing={1.25}>
+              {MAP_LINKS.map(({ key, label, placeholder }) => (
+                <TextField
+                  key={key}
+                  size="small"
+                  fullWidth
+                  label={label}
+                  value={mapLinks[key]}
+                  onChange={(e) => setMapLink(key, e.target.value)}
+                  disabled={busy}
+                  placeholder={placeholder}
+                  error={touched && invalidMapLinks.includes(key)}
+                  helperText={
+                    touched && invalidMapLinks.includes(key)
+                      ? "Ссылка должна начинаться с http:// или https://"
+                      : undefined
+                  }
+                  inputProps={{ inputMode: "url" }}
+                />
+              ))}
+            </Stack>
           </Stack>
 
           {/* Часовой пояс */}

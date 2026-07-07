@@ -32,11 +32,11 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
 import { SettingsLayout } from "./SettingsLayout";
 import {
-  getBanks,
-  createBank,
-  updateBank,
-  type DjangoBank,
-} from "../../api/staff";
+  getInsurers,
+  createInsurer,
+  updateInsurer,
+  type DjangoInsurer,
+} from "../../api/insurers";
 import { parseBackendError } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
@@ -46,31 +46,35 @@ import { ApiError } from "../../api/client";
 type EditDialogProps = {
   open: boolean;
   onClose: () => void;
-  /** Редактируемый банк; null → режим создания. */
-  bank: DjangoBank | null;
+  /** Редактируемая страховая; null → режим создания. */
+  insurer: DjangoInsurer | null;
   organizationId?: number;
   onSaved: () => void;
 };
 
-const BankDialog: React.FC<EditDialogProps> = ({
+const InsurerDialog: React.FC<EditDialogProps> = ({
   open,
   onClose,
-  bank,
+  insurer,
   organizationId,
   onSaved,
 }) => {
-  const isEdit = bank !== null;
+  const isEdit = insurer !== null;
   const [name, setName] = React.useState("");
+  const [contractNumber, setContractNumber] = React.useState("");
+  const [phone, setPhone] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
-      setName(bank?.name ?? "");
+      setName(insurer?.name ?? "");
+      setContractNumber(insurer?.contractNumber ?? "");
+      setPhone(insurer?.phone ?? "");
       setError(null);
       setBusy(false);
     }
-  }, [open, bank]);
+  }, [open, insurer]);
 
   const nameValid = name.trim().length >= 2;
 
@@ -83,9 +87,18 @@ const BankDialog: React.FC<EditDialogProps> = ({
     setError(null);
     try {
       if (isEdit) {
-        await updateBank(bank.id, { name: name.trim() });
+        await updateInsurer(insurer.id, {
+          name: name.trim(),
+          contractNumber: contractNumber.trim(),
+          phone: phone.trim(),
+        });
       } else {
-        await createBank({ name: name.trim(), organizationId });
+        await createInsurer({
+          name: name.trim(),
+          contractNumber: contractNumber.trim() || undefined,
+          phone: phone.trim() || undefined,
+          organizationId,
+        });
       }
       onSaved();
       onClose();
@@ -98,11 +111,13 @@ const BankDialog: React.FC<EditDialogProps> = ({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{isEdit ? "Редактировать банк" : "Добавить банк"}</DialogTitle>
+      <DialogTitle>
+        {isEdit ? "Редактировать страховую" : "Добавить страховую компанию"}
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название банка *"
+            label="Название компании *"
             size="small"
             fullWidth
             autoFocus
@@ -113,6 +128,31 @@ const BankDialog: React.FC<EditDialogProps> = ({
             }}
             disabled={busy}
             inputProps={{ maxLength: 128 }}
+          />
+          <TextField
+            label="Номер договора"
+            size="small"
+            fullWidth
+            value={contractNumber}
+            onChange={(e) => {
+              setError(null);
+              setContractNumber(e.target.value);
+            }}
+            disabled={busy}
+            inputProps={{ maxLength: 64 }}
+            helperText="Договор клиники со страховой (необязательно)"
+          />
+          <TextField
+            label="Телефон"
+            size="small"
+            fullWidth
+            value={phone}
+            onChange={(e) => {
+              setError(null);
+              setPhone(e.target.value);
+            }}
+            disabled={busy}
+            inputProps={{ maxLength: 32 }}
           />
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
@@ -136,14 +176,14 @@ const BankDialog: React.FC<EditDialogProps> = ({
 
 // ── Главный компонент ────────────────────────────────────────────────────────
 
-const BanksSettingsPage: React.FC = () => {
-  usePageTitle("Банки");
+const InsurersSettingsPage: React.FC = () => {
+  usePageTitle("Страховые компании");
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
-  const canManage = useCan("staff.private.manage");
+  const canManage = useCan("finance.manage");
   const queryClient = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
-  const [editing, setEditing] = React.useState<DjangoBank | null>(null);
+  const [editing, setEditing] = React.useState<DjangoInsurer | null>(null);
   const [togglingId, setTogglingId] = React.useState<number | null>(null);
   const [toggleError, setToggleError] = React.useState<string | null>(null);
 
@@ -153,9 +193,9 @@ const BanksSettingsPage: React.FC = () => {
   const needsOrg = orgRequired && !activeOrganization;
   const orgId = orgRequired ? (activeOrganization?.id ?? undefined) : undefined;
 
-  const banksQuery = useQuery({
-    queryKey: djangoQueryKeys.staff.banks(orgId ?? null),
-    queryFn: ({ signal }) => getBanks(signal, { includeInactive: true }),
+  const insurersQuery = useQuery({
+    queryKey: djangoQueryKeys.insurers.list(orgId ?? null),
+    queryFn: ({ signal }) => getInsurers(signal, { includeInactive: true }),
     enabled: !permLoading && !needsOrg,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     retry: (count, err) => {
@@ -164,11 +204,11 @@ const BanksSettingsPage: React.FC = () => {
     },
   });
 
-  const banks = banksQuery.data ?? [];
+  const insurers = insurersQuery.data ?? [];
 
   const invalidate = () => {
     void queryClient.invalidateQueries({
-      queryKey: djangoQueryKeys.staff.banks(orgId ?? null),
+      queryKey: ["django", "insurers"],
     });
   };
 
@@ -177,16 +217,16 @@ const BanksSettingsPage: React.FC = () => {
     setDialogOpen(true);
   };
 
-  const openEdit = (bank: DjangoBank) => {
-    setEditing(bank);
+  const openEdit = (insurer: DjangoInsurer) => {
+    setEditing(insurer);
     setDialogOpen(true);
   };
 
-  const handleToggleActive = async (bank: DjangoBank) => {
-    setTogglingId(bank.id);
+  const handleToggleActive = async (insurer: DjangoInsurer) => {
+    setTogglingId(insurer.id);
     setToggleError(null);
     try {
-      await updateBank(bank.id, { isActive: !bank.isActive });
+      await updateInsurer(insurer.id, { isActive: !insurer.isActive });
       invalidate();
     } catch (e) {
       setToggleError(parseBackendError(e));
@@ -201,10 +241,10 @@ const BanksSettingsPage: React.FC = () => {
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Банки
+              Страховые компании
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Справочник банков. Используется при выборе банка в карточке сотрудника.
+              Справочник страховых. Используется при оплате приёма способом «страховка».
             </Typography>
           </Box>
           {canManage && (
@@ -215,14 +255,14 @@ const BanksSettingsPage: React.FC = () => {
               onClick={openCreate}
               disabled={needsOrg || permLoading}
             >
-              Добавить банк
+              Добавить страховую
             </Button>
           )}
         </Stack>
 
         {needsOrg && (
           <Alert severity="info">
-            Выберите организацию в контексте, чтобы управлять справочником банков.
+            Выберите организацию в контексте, чтобы управлять справочником страховых.
           </Alert>
         )}
 
@@ -232,43 +272,49 @@ const BanksSettingsPage: React.FC = () => {
           </Alert>
         )}
 
-        {banksQuery.error && !needsOrg && (
-          <Alert severity="error">{parseBackendError(banksQuery.error)}</Alert>
+        {insurersQuery.error && !needsOrg && (
+          <Alert severity="error">{parseBackendError(insurersQuery.error)}</Alert>
         )}
 
-        {banksQuery.isLoading && !needsOrg && (
+        {insurersQuery.isLoading && !needsOrg && (
           <Stack alignItems="center" py={4}>
             <CircularProgress size={24} />
           </Stack>
         )}
 
-        {!banksQuery.isLoading && !needsOrg && banks.length === 0 && !banksQuery.error && (
+        {!insurersQuery.isLoading && !needsOrg && insurers.length === 0 && !insurersQuery.error && (
           <Box sx={{ py: 6, textAlign: "center" }}>
             <Typography variant="body2" color="text.disabled">
-              Банков пока нет
+              Страховых компаний пока нет
             </Typography>
           </Box>
         )}
 
-        {banks.length > 0 && (
+        {insurers.length > 0 && (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Договор</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Телефон</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Статус</TableCell>
                   {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">Действия</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {banks.map((bank) => (
-                  <TableRow key={bank.id} hover>
-                    <TableCell>{bank.name}</TableCell>
+                {insurers.map((insurer) => (
+                  <TableRow key={insurer.id} hover>
+                    <TableCell>{insurer.name}</TableCell>
+                    <TableCell sx={{ fontFamily: "monospace" }}>
+                      {insurer.contractNumber || "—"}
+                    </TableCell>
+                    <TableCell>{insurer.phone || "—"}</TableCell>
                     <TableCell>
                       <Chip
-                        label={bank.isActive ? "Активен" : "Неактивен"}
+                        label={insurer.isActive ? "Активна" : "Скрыта"}
                         size="small"
-                        color={bank.isActive ? "success" : "default"}
+                        color={insurer.isActive ? "success" : "default"}
                         variant="outlined"
                       />
                     </TableCell>
@@ -278,23 +324,23 @@ const BanksSettingsPage: React.FC = () => {
                           <span>
                             <IconButton
                               size="small"
-                              onClick={() => openEdit(bank)}
-                              disabled={togglingId === bank.id}
+                              onClick={() => openEdit(insurer)}
+                              disabled={togglingId === insurer.id}
                             >
                               <EditOutlined fontSize="small" />
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={bank.isActive ? "Деактивировать" : "Активировать"}>
+                        <Tooltip title={insurer.isActive ? "Скрыть из выбора" : "Активировать"}>
                           <span>
                             <IconButton
                               size="small"
-                              onClick={() => handleToggleActive(bank)}
-                              disabled={togglingId === bank.id}
+                              onClick={() => handleToggleActive(insurer)}
+                              disabled={togglingId === insurer.id}
                             >
-                              {togglingId === bank.id ? (
+                              {togglingId === insurer.id ? (
                                 <CircularProgress size={16} />
-                              ) : bank.isActive ? (
+                              ) : insurer.isActive ? (
                                 <VisibilityOffOutlined fontSize="small" />
                               ) : (
                                 <VisibilityOutlined fontSize="small" />
@@ -312,10 +358,10 @@ const BanksSettingsPage: React.FC = () => {
         )}
       </Stack>
 
-      <BankDialog
+      <InsurerDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
-        bank={editing}
+        insurer={editing}
         organizationId={orgId}
         onSaved={invalidate}
       />
@@ -323,4 +369,4 @@ const BanksSettingsPage: React.FC = () => {
   );
 };
 
-export default BanksSettingsPage;
+export default InsurersSettingsPage;

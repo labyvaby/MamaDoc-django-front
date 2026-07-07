@@ -153,6 +153,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const cardPaid = pay?.payments?.reduce((s, p) => p.method === "card" ? s + Number(p.amount) : s, 0) ?? 0;
   const balancePaid = pay?.payments?.reduce((s, p) => p.method === "balance" ? s + Number(p.amount) : s, 0) ?? 0;
   const bonusesPaid = pay?.payments?.reduce((s, p) => p.method === "bonus" ? s + Number(p.amount) : s, 0) ?? 0;
+  const insurancePaid = pay?.payments?.reduce((s, p) => p.method === "insurance" ? s + Number(p.amount) : s, 0) ?? 0;
+  // Метаданные страховки из первой insurance-строки журнала.
+  const insurancePayment = pay?.payments?.find((p) => p.method === "insurance");
 
   // Врач — исполнитель? Есть невыполненные услуги для него?
   const isDoctorRole = isDoctor();
@@ -279,6 +282,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       card: cardPaid,
       balance: withBalanceBonuses ? balancePaid : 0,
       bonuses: withBalanceBonuses ? bonusesPaid : 0,
+      insurance: insurancePaid,
+      insurerName: insurancePayment?.insurerName ?? null,
+      policyNumber: insurancePayment?.policyNumber || null,
       discountAmount: Number(discountAmount || 0),
       discountPercent: hasDiscount && totalAmount
         ? Math.round((Number(discountAmount) / Number(totalAmount)) * 100)

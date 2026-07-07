@@ -25,6 +25,7 @@ import {
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -46,6 +47,15 @@ function extractErrorMessage(err: unknown): string {
   if (err instanceof ApiError) return extractApiError(err.payload, err.status);
   if (err instanceof Error) return err.message;
   return "Неизвестная ошибка";
+}
+
+/** Пары «подпись — ссылка» картографических сервисов филиала (без пустых). */
+function mapLinksOf(b: DjangoBranch): { label: string; url: string }[] {
+  return [
+    { label: "2ГИС", url: b.twoGisUrl },
+    { label: "Яндекс", url: b.yandexMapsUrl },
+    { label: "Google", url: b.googleMapsUrl },
+  ].filter((l) => Boolean(l.url));
 }
 
 const BranchesSettingsPage: React.FC = () => {
@@ -94,7 +104,7 @@ const BranchesSettingsPage: React.FC = () => {
       (b) =>
         b.name.toLowerCase().includes(q) ||
         b.address.toLowerCase().includes(q) ||
-        b.phone.toLowerCase().includes(q),
+        b.phones.some((p) => p.toLowerCase().includes(q)),
     );
   }, [all, search]);
 
@@ -237,7 +247,8 @@ const BranchesSettingsPage: React.FC = () => {
                 <TableRow>
                   <TableCell>Название</TableCell>
                   <TableCell>Адрес</TableCell>
-                  <TableCell sx={{ width: 160 }}>Телефон</TableCell>
+                  <TableCell sx={{ width: 170 }}>Телефоны</TableCell>
+                  <TableCell sx={{ width: 200 }}>Карты</TableCell>
                   <TableCell sx={{ width: 110 }} align="center">Статус</TableCell>
                   <TableCell sx={{ width: 96 }} align="right">Действия</TableCell>
                 </TableRow>
@@ -255,7 +266,47 @@ const BranchesSettingsPage: React.FC = () => {
                       {b.address || "—"}
                     </TableCell>
                     <TableCell sx={{ color: "text.secondary" }}>
-                      {b.phone || "—"}
+                      {b.phones.length === 0
+                        ? "—"
+                        : b.phones.map((p, i) => (
+                            <Typography
+                              key={`${p}-${i}`}
+                              variant="body2"
+                              sx={{ whiteSpace: "nowrap" }}
+                            >
+                              {p}
+                            </Typography>
+                          ))}
+                    </TableCell>
+                    <TableCell>
+                      {mapLinksOf(b).length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          —
+                        </Typography>
+                      ) : (
+                        <Stack direction="row" gap={0.5} flexWrap="wrap">
+                          {mapLinksOf(b).map(({ label, url }) => (
+                            <Chip
+                              key={label}
+                              size="small"
+                              icon={<PlaceOutlined />}
+                              label={label}
+                              component="a"
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              clickable
+                              variant="outlined"
+                              sx={{ height: 22 }}
+                              // Даблклик по строке открывает редактирование —
+                              // клик по ссылке не должен его провоцировать.
+                              onDoubleClick={(e: React.MouseEvent) =>
+                                e.stopPropagation()
+                              }
+                            />
+                          ))}
+                        </Stack>
+                      )}
                     </TableCell>
                     <TableCell align="center">
                       <Chip

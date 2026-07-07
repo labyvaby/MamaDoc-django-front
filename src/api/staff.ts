@@ -37,12 +37,16 @@ export interface DjangoEmployee {
   nickname: string;
   notes: string;
   birthDate: string | null;
+  /** Дата приёма на работу (ISO) */
+  hiredAt: string | null;
   telegramId: string;
   instagram: string;
   /** Empty string when caller lacks staff.private.view */
   bankAccountNumber: string;
   /** Empty string when caller lacks staff.private.view */
   inn: string;
+  /** Адрес проживания. Пусто без staff.private.view */
+  address: string;
   /** Банк расчётного счёта. Пусто без staff.private.view */
   bank: string;
   /** БИК. Пусто без staff.private.view */
@@ -131,10 +135,12 @@ export interface OnboardEmployeePayload {
   notes?: string;
   nickname?: string | null;
   birthDate?: string | null;
+  hiredAt?: string | null;
   telegramId?: string | null;
   instagram?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  address?: string | null;
   bank?: string | null;
   bik?: string | null;
 }
@@ -150,13 +156,17 @@ export interface UpdateEmployeePayload {
   nickname?: string | null;
   notes?: string | null;
   birthDate?: string | null;
+  hiredAt?: string | null;
   telegramId?: string | null;
   instagram?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  address?: string | null;
   bank?: string | null;
   bik?: string | null;
   clinicalRole?: ClinicalRole;
+  /** Полный набор операционных филиалов (замена целиком); не слать, если не менялся. */
+  employeeBranchIds?: number[];
 }
 
 // ── Onboard response ─────────────────────────────────────────────────────────
@@ -255,7 +265,7 @@ export interface DjangoBank {
   id: number;
   organizationId: number;
   name: string;
-  bik: string;
+  bik: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -263,13 +273,13 @@ export interface DjangoBank {
 
 export interface BankCreatePayload {
   name: string;
-  bik: string;
+  bik?: string | null;
   organizationId?: number | null;
 }
 
 export interface BankUpdatePayload {
   name?: string;
-  bik?: string;
+  bik?: string | null;
   isActive?: boolean;
 }
 

@@ -67,6 +67,7 @@ const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const SalesPage = lazy(() => import("./pages/sales"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
+const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
 const WorkShiftsPage = lazy(() => import("./pages/work-shifts"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
@@ -102,6 +103,7 @@ const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
+const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 const SalaryReportsPage = lazy(() => import("./pages/salary-reports"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
@@ -542,7 +544,7 @@ function App() {
                           path="expenses"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="finance.view">
+                              <RequirePermission permission={["finance.view", "finance.expense.view"]}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoExpensesPage />
                                 </Suspense>
@@ -632,11 +634,19 @@ function App() {
                         <Route
                           path="schedule"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <SchedulePage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission="schedule.view">
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoSchedulePage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <SchedulePage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            )
                           }
                         />
                         <Route
@@ -855,13 +865,11 @@ function App() {
                         <Route
                           path="admin/load"
                           element={
-                            <LegacyRouteGuard title="Нагрузка в разработке">
-                              <ProtectedRoute allowedRoles={['superadmin']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <LoadAnalyticsPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <RequirePermission permission="reports.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <LoadAnalyticsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         {IS_DJANGO_BACKEND && (
@@ -940,6 +948,16 @@ function App() {
                                 <RequirePermission permission="staff.private.view">
                                   <Suspense fallback={<LinearProgress />}>
                                     <BanksSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/insurers"
+                              element={
+                                <RequirePermission permission="finance.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <InsurersSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

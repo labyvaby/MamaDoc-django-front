@@ -27,11 +27,14 @@ export type Employee = {
   role_id?: string | null;
   employee_type_id?: string | null;
   birth_date?: string | null;
+  /** Дата приёма на работу (ISO) */
+  hired_at?: string | null;
   photo_url?: string | null;
   telegram_id?: string | null;
   instagram?: string | null;
   bank_account_number?: string | null;
   inn?: string | null;
+  address?: string | null;
   bank?: string | null;
   bik?: string | null;
   elqr_url?: string | null;

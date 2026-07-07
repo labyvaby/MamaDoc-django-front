@@ -27,7 +27,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 import dayjs from "dayjs";
 
-import { CustomDatePicker, PageHeader } from "../../components/ui";
+import { DateRangeField, PageHeader } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -245,19 +245,13 @@ const ReviewsPage: React.FC = () => {
             alignItems="center"
             sx={{ mb: 2 }}
           >
-            <CustomDatePicker
-              label="С"
-              value={from}
-              onChange={(v) => v && setFrom(v)}
-              format="DD.MM.YYYY"
-              slotProps={{ textField: { size: "small", sx: { width: 180 } } }}
-            />
-            <CustomDatePicker
-              label="По"
-              value={to}
-              onChange={(v) => v && setTo(v)}
-              format="DD.MM.YYYY"
-              slotProps={{ textField: { size: "small", sx: { width: 180 } } }}
+            <DateRangeField
+              value={{ from, to }}
+              onChange={(r) => {
+                setFrom(r.from);
+                setTo(r.to);
+              }}
+              minWidth={220}
             />
             <TextField
               select

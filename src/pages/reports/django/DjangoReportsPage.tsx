@@ -24,6 +24,7 @@ import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import PaymentsIcon from "@mui/icons-material/Payments";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import WalletIcon from "@mui/icons-material/Wallet";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -97,7 +98,24 @@ const DjangoReportsPage: React.FC = () => {
   const report = reportQuery.data;
   const summary = report?.summary;
   const totals = report?.totals;
-  const daily = report?.daily ?? [];
+  // Пустые дни (без приёмов/процедур/ожиданий и без денег) в таблице не
+  // показываем — бэк отдаёт весь месяц zero-filled.
+  const daily = useMemo(() => {
+    const all = report?.daily ?? [];
+    return all.filter(
+      (d) =>
+        d.appointmentsCount + d.proceduresCount + d.waitingCount > 0 ||
+        num(d.servicesSum) > 0 ||
+        num(d.productsSum) > 0 ||
+        num(d.cashSum) > 0 ||
+        num(d.cardSum) > 0 ||
+        num(d.balanceSum) > 0 ||
+        num(d.bonusesSum) > 0 ||
+        num(d.insuranceSum) > 0 ||
+        num(d.discountSum) > 0 ||
+        num(d.debtSum) > 0,
+    );
+  }, [report?.daily]);
 
   const cards: SummaryCard[] = useMemo(() => {
     if (!summary || !totals) return [];
@@ -159,7 +177,9 @@ const DjangoReportsPage: React.FC = () => {
       {
         title: "Нал + Безнал",
         primaryValue: formatKGS(num(totals.cash) + num(totals.card)),
-        secondaryText: `Нал: ${formatKGS(totals.cash)} · Безнал: ${formatKGS(totals.card)}`,
+        secondaryText:
+          `Нал: ${formatKGS(totals.cash)} · Безнал: ${formatKGS(totals.card)}` +
+          (num(totals.insurance) > 0 ? ` · Страховка: ${formatKGS(totals.insurance)}` : ""),
         color: "success",
       },
       {
@@ -234,7 +254,6 @@ const DjangoReportsPage: React.FC = () => {
             ) : isMobile ? (
               <Stack spacing={1.5} sx={{ flex: 1 }}>
                 {daily
-                  .filter((d) => d.appointmentsCount + d.proceduresCount > 0)
                   .map((day) => (
                     <Card
                       key={day.date}
@@ -316,6 +335,20 @@ const DjangoReportsPage: React.FC = () => {
                               {formatKGS(day.cardSum)}
                             </Typography>
                           </Grid2>
+                          {num(day.insuranceSum) > 0 && (
+                            <Grid2 size={6}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+                              >
+                                <HealthAndSafetyOutlined sx={{ fontSize: 14, color: "info.main" }} /> Страховка
+                              </Typography>
+                              <Typography variant="subtitle1" color="info.main" fontWeight={800}>
+                                {formatKGS(day.insuranceSum)}
+                              </Typography>
+                            </Grid2>
+                          )}
                           {num(day.debtSum) > 0 && (
                             <Grid2 size={12}>
                               <Typography
@@ -334,7 +367,7 @@ const DjangoReportsPage: React.FC = () => {
                       </CardContent>
                     </Card>
                   ))}
-                {daily.filter((d) => d.appointmentsCount + d.proceduresCount > 0).length === 0 && (
+                {daily.length === 0 && (
                   <Paper variant="outlined" sx={{ p: 4, textAlign: "center", borderRadius: 3 }}>
                     <Typography color="text.secondary">Нет данных за этот период</Typography>
                   </Paper>
@@ -349,7 +382,7 @@ const DjangoReportsPage: React.FC = () => {
                   <Table stickyHeader size="small">
                     <TableHead>
                       <TableRow>
-                        {["Дата", "Приемы", "Процедуры", "В ожидании", "Мед. услуги", "Товары", "Наличные", "Безнал", "Долг"].map(
+                        {["Дата", "Приемы", "Процедуры", "В ожидании", "Мед. услуги", "Товары", "Наличные", "Безнал", "Страховка", "Долг"].map(
                           (h) => (
                             <TableCell
                               key={h}
@@ -400,6 +433,9 @@ const DjangoReportsPage: React.FC = () => {
                           <TableCell align="right" sx={{ color: "info.main", fontWeight: 600 }}>
                             {formatKGS(day.cardSum)}
                           </TableCell>
+                          <TableCell align="right" sx={{ color: "info.dark" }}>
+                            {num(day.insuranceSum) > 0 ? formatKGS(day.insuranceSum) : "-"}
+                          </TableCell>
                           <TableCell align="right" sx={{ color: "warning.main" }}>
                             {num(day.debtSum) > 0 ? formatKGS(day.debtSum) : "-"}
                           </TableCell>
@@ -428,6 +464,9 @@ const DjangoReportsPage: React.FC = () => {
                           </TableCell>
                           <TableCell align="right" sx={{ fontWeight: 800, color: "info.main" }}>
                             {formatKGS(totals.card)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 800, color: "info.dark" }}>
+                            {num(totals.insurance) > 0 ? formatKGS(totals.insurance) : "-"}
                           </TableCell>
                           <TableCell align="right" sx={{ fontWeight: 800, color: "warning.main" }}>
                             {formatKGS(totals.debt)}

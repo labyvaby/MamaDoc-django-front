@@ -22,6 +22,8 @@ export interface ReportTotals {
   card: string;
   balance: string;
   bonuses: string;
+  /** Покрыто страховыми компаниями */
+  insurance: string;
   discount: string;
   debt: string;
   appointmentsCount: number;
@@ -40,6 +42,8 @@ export interface DailyRow {
   cardSum: string;
   balanceSum: string;
   bonusesSum: string;
+  /** Покрыто страховыми компаниями */
+  insuranceSum: string;
   discountSum: string;
   debtSum: string;
   appointmentsCount: number;

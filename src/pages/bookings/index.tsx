@@ -27,7 +27,7 @@ import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
 
-import { CustomDatePicker, PageHeader, UserAvatar } from "../../components/ui";
+import { DateRangeField, PageHeader, UserAvatar, type DateRangePreset } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -187,6 +187,13 @@ const DATE_PRESETS: DatePreset[] = [
     to: () => dayjs().endOf("month"),
   },
 ];
+
+// Пресеты для единого поля-диапазона (та же семантика, что и чипы выше).
+const BOOKING_RANGE_PRESETS: DateRangePreset[] = DATE_PRESETS.map((p) => ({
+  key: p.key,
+  label: p.label,
+  range: () => [p.from(), p.to()],
+}));
 
 const BookingsPage: React.FC = () => {
   usePageTitle("Брони");
@@ -491,57 +498,15 @@ const BookingsPage: React.FC = () => {
         >
           {/* ── Фильтры: даты + пресеты + врач + сброс ── */}
           <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center" sx={{ mt: 2, mb: 1.5 }}>
-            <CustomDatePicker
-              label="С"
-              value={dateFrom}
-              onChange={(v) => v && setDateFrom(v)}
-              format="DD.MM.YYYY"
-              slotProps={{ textField: { size: "small", sx: { width: 160 } } }}
+            <DateRangeField
+              value={{ from: dateFrom, to: dateTo }}
+              onChange={(r) => {
+                setDateFrom(r.from);
+                setDateTo(r.to);
+              }}
+              presets={BOOKING_RANGE_PRESETS}
+              minWidth={220}
             />
-            <CustomDatePicker
-              label="По"
-              value={dateTo}
-              onChange={(v) => v && setDateTo(v)}
-              format="DD.MM.YYYY"
-              slotProps={{ textField: { size: "small", sx: { width: 160 } } }}
-            />
-
-            {/* Пресеты периода */}
-            <Stack direction="row" gap={0.5}>
-              {DATE_PRESETS.map((p) => {
-                const active = activePresetKey === p.key;
-                return (
-                  <Chip
-                    key={p.key}
-                    label={p.label}
-                    size="small"
-                    clickable
-                    onClick={() => {
-                      setDateFrom(p.from());
-                      setDateTo(p.to());
-                    }}
-                    sx={(t) => ({
-                      height: 28,
-                      borderRadius: "8px",
-                      fontWeight: 500,
-                      border: 1,
-                      borderColor: active
-                        ? alpha(t.palette.primary.main, 0.4)
-                        : "divider",
-                      color: active ? "primary.onSurface" : "text.secondary",
-                      bgcolor: active
-                        ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1)
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: active
-                          ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.24 : 0.14)
-                          : subtleBg(t, true),
-                      },
-                    })}
-                  />
-                );
-              })}
-            </Stack>
 
             <TextField
               select

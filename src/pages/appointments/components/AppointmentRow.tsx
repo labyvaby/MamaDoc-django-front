@@ -13,6 +13,7 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
@@ -245,6 +246,36 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
                 sx={payChipSx}
               />
             )}
+
+            {/* Бейдж «Страховка» — визит (со)оплачен страховой компанией. */}
+            {!isCancelled &&
+              showPayCol &&
+              (appt.paymentMethods ?? []).includes("insurance") && (
+                <Tooltip title="Оплата страховкой">
+                  <Chip
+                    label={
+                      <Stack direction="row" alignItems="center" gap={0.5}>
+                        <HealthAndSafetyOutlined sx={{ fontSize: 13 }} />
+                        <span>Страховка</span>
+                      </Stack>
+                    }
+                    size="small"
+                    sx={{
+                      height: 24,
+                      borderRadius: "7px",
+                      fontWeight: 500,
+                      bgcolor: alpha(
+                        theme.palette.info.main,
+                        theme.palette.mode === "dark" ? 0.2 : 0.14,
+                      ),
+                      color:
+                        theme.palette.mode === "dark"
+                          ? theme.palette.info.light
+                          : theme.palette.info.dark,
+                    }}
+                  />
+                </Tooltip>
+              )}
 
             {/* Conclusion icon like original */}
             {appt.hasMedicalConclusion && (

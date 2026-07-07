@@ -369,7 +369,7 @@ const SidebarSecondary: React.FC = () => {
     doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
     nurseRoom: isSuper || isAdmin() || isNurse,
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
-    schedule: true,
+    schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
@@ -389,7 +389,7 @@ const SidebarSecondary: React.FC = () => {
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     expenses: true,
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
-    load: isSuper,
+    load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
     notifications: isSuper,
     settings: IS_DJANGO_BACKEND && (
       isSuper

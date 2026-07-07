@@ -58,6 +58,8 @@ export const djangoQueryKeys = {
       ["django", "reports", "monthly", filters] as const,
     activeMonths: (organizationId: number | null | undefined) =>
       ["django", "reports", "active-months", organizationId ?? null] as const,
+    load: (filters: Record<string, unknown>) =>
+      ["django", "reports", "load", filters] as const,
   },
 
   notifications: {
@@ -143,6 +145,20 @@ export const djangoQueryKeys = {
       ["django", "staff", "specializations", organizationId ?? null] as const,
     banks: (organizationId: number | null | undefined) =>
       ["django", "staff", "banks", organizationId ?? null] as const,
+  },
+
+  insurers: {
+    list: (organizationId: number | null | undefined) =>
+      ["django", "insurers", organizationId ?? null] as const,
+  },
+
+  scheduling: {
+    rules: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "rules", params] as const,
+    exceptions: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "exceptions", params] as const,
+    availability: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "availability", params] as const,
   },
 
   catalog: {

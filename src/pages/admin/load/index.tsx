@@ -1,115 +1,206 @@
-import React, { useState, useMemo } from 'react';
-import { Box, Typography, Paper, CircularProgress } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '../../../utility/supabaseClient';
-import dayjs, { Dayjs } from 'dayjs';
+import React from "react";
+import {
+  Alert,
+  Box,
+  CircularProgress,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
-import { LoadFilters } from './LoadFilters';
-import { LoadChart } from './LoadChart';
-import { LoadSummaryCard } from './LoadSummaryCard';
+import { usePageTitle } from "../../../hooks/usePageTitle";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { getLoadAnalytics } from "../../../api/load";
+import type { DjangoEmployeeListItem } from "../../../api/staff";
+import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
+import { parseBackendError } from "../../../api/appointments";
+import { DEFAULT_RANGE_PRESETS, type DateRange } from "../../../components/ui";
+
+import LoadFilters from "./LoadFilters";
+import LoadKpiCards from "./LoadKpiCards";
+import { LoadChart, type LoadChartMode } from "./LoadChart";
+import { LoadHeatmap } from "./LoadHeatmap";
+import { LoadByEmployee } from "./LoadByEmployee";
+
+// Тонкая карточка-обёртка в стиле гайда (плоская, на хайрлайне).
+const Card: React.FC<{ title?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; sx?: object }> = ({
+  title,
+  action,
+  children,
+  sx,
+}) => (
+  <Box
+    sx={{
+      border: "1px solid",
+      borderColor: "divider",
+      borderRadius: "14px",
+      bgcolor: "background.paper",
+      p: { xs: 1.5, sm: 2 },
+      ...sx,
+    }}
+  >
+    {(title || action) && (
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+        {typeof title === "string" ? (
+          <Typography variant="subtitle2" fontWeight={600}>
+            {title}
+          </Typography>
+        ) : (
+          title
+        )}
+        {action}
+      </Stack>
+    )}
+    {children}
+  </Box>
+);
 
 export const LoadAnalyticsPage: React.FC = () => {
-    const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
-    const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null]>([dayjs().startOf('day'), dayjs().endOf('day')]);
+  usePageTitle("Нагрузка");
+  const theme = useTheme();
+  const { isSuperAdmin, activeOrganization, activeBranch } = usePermissions();
 
-    // Fetch appointments for the selected date range
-    const { data: appointments, isLoading } = useQuery({
-        queryKey: ['appointmentsLoad', dateRange[0]?.toISOString(), dateRange[1]?.toISOString()],
-        queryFn: async () => {
-            let query = supabase
-                .from('HistoryAppointments')
-                .select('id, appointment_at, performer_ids, status')
-                .neq('status', 'Отменено');
+  const [range, setRange] = React.useState<DateRange>(() => {
+    const [f, t] = DEFAULT_RANGE_PRESETS[0].range(); // Сегодня
+    return { from: f, to: t };
+  });
+  const [employees, setEmployees] = React.useState<DjangoEmployeeListItem[]>([]);
+  const [chartMode, setChartMode] = React.useState<LoadChartMode>("hourly");
 
-            if (dateRange[0]) {
-                query = query.gte('appointment_at', dateRange[0].startOf('day').toISOString());
-            }
-            if (dateRange[1]) {
-                query = query.lte('appointment_at', dateRange[1].endOf('day').toISOString());
-            }
+  const isSuper = isSuperAdmin();
+  const needsOrg = isSuper && !activeOrganization;
 
-            const { data, error } = await query;
-            if (error) throw error;
-            return data || [];
-        },
-        enabled: !!dateRange[0] && !!dateRange[1],
-    });
+  const branchId = activeBranch?.id ?? undefined;
+  const organizationId = isSuper ? activeOrganization?.id ?? undefined : undefined;
+  const employeeIds = employees.map((e) => e.id);
+  const from = range.from.format("YYYY-MM-DD");
+  const to = range.to.format("YYYY-MM-DD");
+  const singleDay = range.from.isSame(range.to, "day");
 
-    // Filter by employee locally to avoid refetching on UI changes.
-    const filteredData = useMemo(() => {
-        if (!appointments) return [];
-        if (selectedEmployees.length === 0) return appointments;
+  const query = useQuery({
+    queryKey: djangoQueryKeys.reports.load({ from, to, branchId, employeeIds, organizationId }),
+    queryFn: ({ signal }) =>
+      getLoadAnalytics(
+        { dateFrom: from, dateTo: to, branchId, employeeIds, organizationId },
+        signal,
+      ),
+    enabled: !needsOrg && range.from.isValid() && range.to.isValid() && !range.from.isAfter(range.to),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
 
-        return appointments.filter(app =>
-            Array.isArray(app.performer_ids) &&
-            app.performer_ids.some((id: string) => selectedEmployees.includes(id))
-        );
-    }, [appointments, selectedEmployees]);
+  const data = query.data;
+  const daysCount = Math.max(1, range.to.diff(range.from, "day") + 1);
 
-    // Aggregate into hourly bins
-    const chartData = useMemo(() => {
-        const bins: Record<string, number> = {};
-
-        // Initialize all 24 hours of the day (00:00 to 23:00)
-        for (let i = 0; i < 24; i++) {
-            const hourStr = i.toString().padStart(2, '0') + ':00';
-            bins[hourStr] = 0;
-        }
-
-        filteredData.forEach(app => {
-            if (app.appointment_at) {
-                const hour = dayjs(app.appointment_at).hour();
-                const hourStr = hour.toString().padStart(2, '0') + ':00';
-                // Only count within 8-22 or add dynamically
-                if (bins[hourStr] !== undefined) {
-                    bins[hourStr] += 1;
-                }
-            }
-        });
-
-        return Object.entries(bins)
-            .map(([time, value]) => ({ time, value }))
-            .sort((a, b) => a.time.localeCompare(b.time));
-    }, [filteredData]);
-
-    const daysCount = useMemo(() => {
-        if (!dateRange[0] || !dateRange[1]) return 1;
-        let diff = dateRange[1].diff(dateRange[0], 'day') + 1;
-        return diff > 0 ? diff : 1;
-    }, [dateRange]);
-
-    return (
-        <Box sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>Нагрузка (Аналитика)</Typography>
-
-            <LoadFilters
-                selectedEmployees={selectedEmployees}
-                onEmployeesChange={setSelectedEmployees}
-                dateRange={dateRange}
-                onDateRangeChange={setDateRange}
-            />
-
-            <Box sx={{ display: 'flex', gap: 2, flex: 1, minHeight: 0, flexDirection: { xs: 'column', md: 'row' } }}>
-                <Paper sx={{
-                    p: { xs: 1.5, sm: 2 },
-                    flex: 3,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    borderRadius: "14px",
-                    minHeight: { xs: 260, sm: 320, md: 0 },
-                }}>
-                    {isLoading ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 200 }}>
-                            <CircularProgress />
-                        </Box>
-                    ) : (
-                        <LoadChart data={chartData} />
-                    )}
-                </Paper>
-                <Box sx={{ flex: 1, minWidth: { md: 280 } }}>
-                    <LoadSummaryCard data={chartData} totalAppointments={filteredData.length} daysCount={daysCount} />
-                </Box>
-            </Box>
-        </Box>
+  // ── Handlers ──
+  const handleRangeChange = (r: DateRange) => {
+    setRange(r);
+    // Один день → почасовой график осмысленнее подневного.
+    if (r.from.isSame(r.to, "day")) setChartMode("hourly");
+  };
+  const toggleEmployee = (emp: { id: number; fullName: string }) => {
+    setEmployees((prev) =>
+      prev.some((e) => e.id === emp.id)
+        ? prev.filter((e) => e.id !== emp.id)
+        : [...prev, emp as DjangoEmployeeListItem],
     );
+  };
+
+  const rangeInvalid = range.from.isAfter(range.to);
+
+  return (
+    <Box
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        overflowY: "auto",
+        px: theme.appLayout.page.paddingX,
+        py: 2,
+      }}
+    >
+      {needsOrg ? (
+        <Alert severity="info">Выберите организацию, чтобы увидеть нагрузку.</Alert>
+      ) : (
+        <>
+          <LoadFilters
+            range={range}
+            employees={employees}
+            onRangeChange={handleRangeChange}
+            onEmployeesChange={setEmployees}
+          />
+
+          {rangeInvalid && (
+            <Alert severity="warning">Дата начала не может быть позже даты окончания.</Alert>
+          )}
+          {query.isError && !rangeInvalid && (
+            <Alert severity="error">{parseBackendError(query.error)}</Alert>
+          )}
+
+          {query.isLoading || !data ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <>
+              <LoadKpiCards kpi={data.kpi} daysCount={daysCount} />
+
+              <Card
+                title={
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    {chartMode === "hourly" ? "Приёмы по часам" : "Приёмы по дням"}
+                  </Typography>
+                }
+                action={
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={chartMode}
+                    onChange={(_, v) => v && setChartMode(v)}
+                  >
+                    <ToggleButton value="hourly" sx={{ textTransform: "none", px: 1.5 }}>
+                      Часы
+                    </ToggleButton>
+                    <ToggleButton value="daily" disabled={singleDay} sx={{ textTransform: "none", px: 1.5 }}>
+                      Дни
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                }
+                sx={{
+                  height: { xs: 300, md: 340 },
+                  minHeight: { xs: 300, md: 340 },
+                  flexShrink: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <LoadChart mode={chartMode} hourly={data.hourly} daily={data.daily} />
+                </Box>
+              </Card>
+
+              <Stack direction={{ xs: "column", lg: "row" }} spacing={2} useFlexGap>
+                <Card title="Плотность: день недели × час" sx={{ flex: 2, minWidth: 0 }}>
+                  <LoadHeatmap cells={data.heatmap} />
+                </Card>
+                <Card title="Нагрузка по врачам" sx={{ flex: 1, minWidth: { lg: 300 } }}>
+                  <LoadByEmployee
+                    rows={data.byEmployee}
+                    selectedIds={employeeIds}
+                    onToggle={toggleEmployee}
+                  />
+                </Card>
+              </Stack>
+            </>
+          )}
+        </>
+      )}
+    </Box>
+  );
 };
+
+export default LoadAnalyticsPage;

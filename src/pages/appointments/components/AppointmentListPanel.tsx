@@ -20,6 +20,7 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
 // Иконки SMS-уведомлений — те же импорты, что в старом фронте (home/AppointmentsList).
@@ -682,6 +683,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                             {a.paymentMethods.includes("card") && <CreditCardOutlined sx={{ fontSize: 16 }} />}
                                             {a.paymentMethods.includes("balance") && <AccountBalanceWalletOutlined sx={{ fontSize: 16 }} />}
                                             {a.paymentMethods.includes("bonus") && <CardGiftcardOutlined sx={{ fontSize: 16 }} />}
+                                            {a.paymentMethods.includes("insurance") && <HealthAndSafetyOutlined sx={{ fontSize: 16 }} />}
                                           </>
                                         ) : (
                                           <PaymentsOutlined sx={{ fontSize: 16 }} />
@@ -697,6 +699,37 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     sx={getStatusChipSx(paymentStyleStatus)}
                                   />
                                 )}
+
+                                {/* Бейдж «Страховка» — визит (со)оплачен страховой
+                                    компанией; синий тинт, отличим от зелёного
+                                    чипа оплаты в обеих темах. */}
+                                {showPayCol &&
+                                  (a.paymentMethods ?? []).includes("insurance") && (
+                                    <Tooltip title="Оплата страховкой">
+                                      <Chip
+                                        label={
+                                          <Stack direction="row" alignItems="center" gap={0.5}>
+                                            <HealthAndSafetyOutlined sx={{ fontSize: 14 }} />
+                                            <span>Страховка</span>
+                                          </Stack>
+                                        }
+                                        size="small"
+                                        sx={(t) => ({
+                                          height: 24,
+                                          borderRadius: "7px",
+                                          fontWeight: 500,
+                                          bgcolor: alpha(
+                                            t.palette.info.main,
+                                            t.palette.mode === "dark" ? 0.2 : 0.14,
+                                          ),
+                                          color:
+                                            t.palette.mode === "dark"
+                                              ? t.palette.info.light
+                                              : t.palette.info.dark,
+                                        })}
+                                      />
+                                    </Tooltip>
+                                  )}
 
                                 {/* Иконка принтера = есть заключение (приём
                                     фактически завершён врачом). */}

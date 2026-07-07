@@ -107,10 +107,11 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
 
   // ── Collapsed (desktop, narrow) view ───────────────────────────────────
   if (collapsed) {
+    // Название филиала главнее названия организации.
     const tooltipTitle = activeOrganization
-      ? `${activeOrganization.name}${
-          activeBranch ? ` / ${activeBranch.name}` : ""
-        }`
+      ? activeBranch
+        ? `${activeBranch.name} — ${activeOrganization.name}`
+        : activeOrganization.name
       : "Контекст не выбран";
 
     return (
@@ -148,8 +149,14 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   }
 
   // ── Expanded chip view ─────────────────────────────────────────────────
+  // Название филиала главнее названия организации: филиал — крупной жирной
+  // строкой, организация — вторичной подписью под ним. Без филиала показываем
+  // организацию как главную строку.
   const orgLabel = activeOrganization?.name ?? "Без организации";
   const branchLabel = activeBranch?.name ?? null;
+  const primaryLabel = branchLabel ?? orgLabel;
+  const captionLabel = branchLabel ? "Филиал" : "Организация";
+  const LeadIcon = branchLabel ? StoreOutlined : BusinessOutlined;
 
   const chipBody = (
     <Box
@@ -173,7 +180,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
       }}
       onClick={handleOpen}
     >
-      <BusinessOutlined fontSize="small" sx={{ color: "text.secondary" }} />
+      <LeadIcon fontSize="small" sx={{ color: "text.secondary" }} />
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography
           variant="caption"
@@ -184,7 +191,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
             fontSize: "0.65rem",
           }}
         >
-          Организация
+          {captionLabel}
         </Typography>
         <Typography
           variant="body2"
@@ -196,7 +203,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
             textOverflow: "ellipsis",
           }}
         >
-          {orgLabel}
+          {primaryLabel}
         </Typography>
         {branchLabel && (
           <Box
@@ -208,7 +215,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
               color: "text.secondary",
             }}
           >
-            <StoreOutlined sx={{ fontSize: 12 }} />
+            <BusinessOutlined sx={{ fontSize: 12 }} />
             <Typography
               variant="caption"
               sx={{
@@ -218,7 +225,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
                 textOverflow: "ellipsis",
               }}
             >
-              {branchLabel}
+              {orgLabel}
             </Typography>
           </Box>
         )}
@@ -302,22 +309,26 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
               {m.organization.name}
             </ListSubheader>
 
-            {branches.length === 0 ? (
-              <MenuItem
-                onClick={() => onSelect(m, null)}
-                selected={
-                  m.id === activeMembershipId && activeBranchId === null
-                }
-              >
-                <ListItemText
-                  primary="Без филиала"
-                  primaryTypographyProps={{ variant: "body2" }}
-                />
-                {m.id === activeMembershipId && activeBranchId === null && (
-                  <CheckOutlined fontSize="small" color="primary" />
-                )}
-              </MenuItem>
-            ) : (
+            {/* Режим всей организации: без привязки к филиалу. Нужен, чтобы
+                вернуться из филиального контекста (например, для выдачи
+                операционных филиалов в карточке сотрудника). */}
+            <MenuItem
+              onClick={() => onSelect(m, null)}
+              selected={m.id === activeMembershipId && activeBranchId === null}
+            >
+              <BusinessOutlined
+                fontSize="small"
+                sx={{ mr: 1, color: "text.secondary" }}
+              />
+              <ListItemText
+                primary={branches.length > 0 ? "Все филиалы" : "Без филиала"}
+                primaryTypographyProps={{ variant: "body2" }}
+              />
+              {m.id === activeMembershipId && activeBranchId === null && (
+                <CheckOutlined fontSize="small" color="primary" />
+              )}
+            </MenuItem>
+            {branches.length > 0 &&
               branches.map((b) => {
                 const isActive =
                   m.id === activeMembershipId && b.id === activeBranchId;
@@ -340,8 +351,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                     )}
                   </MenuItem>
                 );
-              })
-            )}
+              })}
           </Box>
         );
       })}

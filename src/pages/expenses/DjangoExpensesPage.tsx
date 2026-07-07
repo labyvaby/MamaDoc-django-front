@@ -418,7 +418,7 @@ const DjangoExpensesPage: React.FC = () => {
   usePageTitle("Расходы");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const canView = useCan("finance.view");
+  const canView = useCan(["finance.view", "finance.expense.view"]);
   const canManage = useCan("finance.expense.manage");
 
   const {

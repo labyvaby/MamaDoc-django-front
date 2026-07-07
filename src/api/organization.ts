@@ -30,7 +30,12 @@ export interface DjangoBranch {
   organizationId: number;
   name: string;
   address: string;
-  phone: string;
+  /** Contact phone numbers (a branch can have several). */
+  phones: string[];
+  /** Links to the branch page on map services ("" when not set). */
+  twoGisUrl: string;
+  yandexMapsUrl: string;
+  googleMapsUrl: string;
   timezone: string;
   isActive: boolean;
   createdAt: string;
@@ -38,6 +43,31 @@ export interface DjangoBranch {
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
+
+/** Форма филиала «с провода»: старый бэкенд отдаёт один `phone` строкой и не
+ *  знает про ссылки карт. Нормализуем, чтобы интерфейс не падал, пока бэкенд
+ *  с миграцией phones/карт не задеплоен. */
+type DjangoBranchWire = Omit<
+  DjangoBranch,
+  "phones" | "twoGisUrl" | "yandexMapsUrl" | "googleMapsUrl"
+> &
+  Partial<
+    Pick<DjangoBranch, "phones" | "twoGisUrl" | "yandexMapsUrl" | "googleMapsUrl">
+  > & {
+    /** Устаревшее поле старого бэкенда. */
+    phone?: string;
+  };
+
+function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
+  const { phone, ...rest } = raw;
+  return {
+    ...rest,
+    phones: raw.phones ?? (phone ? [phone] : []),
+    twoGisUrl: raw.twoGisUrl ?? "",
+    yandexMapsUrl: raw.yandexMapsUrl ?? "",
+    googleMapsUrl: raw.googleMapsUrl ?? "",
+  };
+}
 
 export function getOrganization(id: number): Promise<DjangoOrganization> {
   return apiRequest<DjangoOrganization>(`/organization/${id}/`);
@@ -54,7 +84,9 @@ export function updateOrganization(
 }
 
 export function getBranches(): Promise<DjangoBranch[]> {
-  return apiRequest<DjangoBranch[]>("/organization/branches/");
+  return apiRequest<DjangoBranchWire[]>("/organization/branches/").then(
+    (branches) => branches.map(normalizeBranch),
+  );
 }
 
 /** Fields accepted when creating a branch. */
@@ -64,7 +96,10 @@ export interface CreateBranchPayload {
    *  backend infers the wrong organization from the active membership). */
   organizationId?: number;
   address?: string;
-  phone?: string;
+  phones?: string[];
+  twoGisUrl?: string;
+  yandexMapsUrl?: string;
+  googleMapsUrl?: string;
   timezone?: string;
   isActive?: boolean;
 }
@@ -73,17 +108,20 @@ export interface CreateBranchPayload {
 export interface UpdateBranchPayload {
   name?: string;
   address?: string;
-  phone?: string;
+  phones?: string[];
+  twoGisUrl?: string;
+  yandexMapsUrl?: string;
+  googleMapsUrl?: string;
   timezone?: string;
   isActive?: boolean;
 }
 
 /** POST /organization/branches/ — create a branch in the target organization. */
 export function createBranch(payload: CreateBranchPayload): Promise<DjangoBranch> {
-  return apiRequest<DjangoBranch>("/organization/branches/", {
+  return apiRequest<DjangoBranchWire>("/organization/branches/", {
     method: "POST",
     body: payload,
-  });
+  }).then(normalizeBranch);
 }
 
 /** PATCH /organization/branches/<id>/ — update a branch (only sent fields). */
@@ -91,10 +129,10 @@ export function updateBranch(
   id: number,
   payload: UpdateBranchPayload,
 ): Promise<DjangoBranch> {
-  return apiRequest<DjangoBranch>(`/organization/branches/${id}/`, {
+  return apiRequest<DjangoBranchWire>(`/organization/branches/${id}/`, {
     method: "PATCH",
     body: payload,
-  });
+  }).then(normalizeBranch);
 }
 
 /**

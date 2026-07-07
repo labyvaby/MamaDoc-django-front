@@ -13,6 +13,9 @@ import {
 } from '@mui/material';
 import { supabase } from '../../../utility/supabaseClient';
 import { formatKGS } from '../../../utility/format';
+import { IS_DJANGO_BACKEND } from '../../../config/backend';
+import { getMonthlyReport } from '../../../api/reports';
+import { usePermissions } from '../../../hooks/usePermissions';
 
 interface ExtraCard {
     title: string;
@@ -37,11 +40,20 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     extraCards = [],
 }) => {
     const theme = useTheme();
+    const { activeOrganization } = usePermissions();
 
     const { data: rpcData, isFetching } = useQuery({
-        queryKey: ['appointments-summary', dateFrom, dateTo, employeeId],
+        queryKey: ['appointments-summary', dateFrom, dateTo, employeeId, activeOrganization?.id],
         queryFn: async () => {
             if (providedAppointments) return null;
+            if (IS_DJANGO_BACKEND) {
+                const monthStr = dateFrom.substring(0, 7); // e.g. "2026-07"
+                return getMonthlyReport({
+                    month: monthStr,
+                    employeeId: employeeId ? parseInt(employeeId, 10) : undefined,
+                    organizationId: activeOrganization?.id ?? undefined,
+                });
+            }
             const { data, error } = await supabase.rpc('get_appointments_summary', {
                 p_date_from:   dateFrom,
                 p_date_to:     dateTo,
@@ -81,6 +93,22 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
 
     const metrics = providedAppointments
         ? legacyMetrics!
+        : IS_DJANGO_BACKEND
+        ? {
+            total:           Number((rpcData as any)?.summary?.apptTotalCount ?? 0) + Number((rpcData as any)?.summary?.procTotalCount ?? 0),
+            paidCount:       Number((rpcData as any)?.summary?.paidCount ?? 0),
+            paidSum:         0,
+            waiting:         Number((rpcData as any)?.summary?.waitingCount ?? 0),
+            cancelled:       Number((rpcData as any)?.summary?.cancelledCount ?? 0),
+            discountedCount: Number((rpcData as any)?.summary?.discountedCount ?? 0),
+            discountSum:     Number((rpcData as any)?.summary?.discountSum ?? 0),
+            apptTotal:       Number((rpcData as any)?.summary?.apptTotalCount ?? 0),
+            apptPaid:        Number((rpcData as any)?.summary?.apptPaidCount ?? 0),
+            apptWaiting:     0,
+            apptCancelled:   Number((rpcData as any)?.summary?.apptCancelledCount ?? 0),
+            procTotal:       Number((rpcData as any)?.summary?.procTotalCount ?? 0),
+            procPaid:        Number((rpcData as any)?.summary?.procPaidCount ?? 0),
+          }
         : {
             total:           Number(rpcData?.total_count   ?? 0),
             paidCount:       Number(rpcData?.paid_count    ?? 0),
@@ -98,7 +126,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
           };
 
     // If RPC returned split data — show two separate cards instead of one combined
-    const hasSplit = !providedAppointments && rpcData?.appt_total_count != null;
+    const hasSplit = !providedAppointments && (IS_DJANGO_BACKEND ? ((rpcData as any)?.summary != null) : rpcData?.appt_total_count != null);
 
     const baseCards = hasSplit ? [
         {

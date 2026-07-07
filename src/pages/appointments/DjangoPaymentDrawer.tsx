@@ -16,10 +16,12 @@ import {
   Typography,
   alpha,
 } from "@mui/material";
+import MenuItem from "@mui/material/MenuItem";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import { useNotification } from "@refinedev/core";
 
@@ -30,7 +32,9 @@ import {
   type PaymentSummary,
   type PaymentStatus,
   type ApplyPaymentPayload,
+  type PaymentLineInput,
 } from "../../api/payments";
+import { getInsurers } from "../../api/insurers";
 import type { DjangoAppointment } from "../../api/appointments";
 import { DiscountInput } from "../../components/ui";
 import {
@@ -91,6 +95,8 @@ function mapSaveError(raw: string): string {
     return "Этот приём уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.";
   if (raw.includes("недостаточно бонусов") || raw.includes("insufficient bonus"))
     return "Недостаточно бонусов на счёте пациента.";
+  if (raw.includes("Страховая компания не найдена"))
+    return "Страховая компания не найдена или неактивна. Обновите список и выберите заново.";
   return raw;
 }
 
@@ -101,6 +107,7 @@ const METHOD_LABELS: Record<string, string> = {
   card: "Карта",
   balance: "Баланс пациента",
   bonus: "Бонусы",
+  insurance: "Страховка",
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -153,10 +160,22 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const [discountStr, setDiscountStr] = React.useState("0");
   const [cash, setCash] = React.useState<number | "">("");
   const [card, setCard] = React.useState<number | "">("");
+  const [insurance, setInsurance] = React.useState<number | "">("");
+  const [insurerId, setInsurerId] = React.useState<number | "">("");
+  const [policyNumber, setPolicyNumber] = React.useState("");
   const [balanceStr, setBalanceStr] = React.useState("0");
   const [bonusStr, setBonusStr] = React.useState("0");
   const [note, setNote] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
+
+  // Справочник страховых (для строки «Страховка»); только активные.
+  const insurersQuery = useQuery({
+    queryKey: djangoQueryKeys.insurers.list(appointment?.organizationId ?? null),
+    queryFn: ({ signal }) => getInsurers(signal),
+    enabled: open,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const insurers = insurersQuery.data ?? [];
 
   // Reset
   const prevAppointmentIdRef = React.useRef<number | null>(null);
@@ -166,6 +185,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setDiscountStr("0");
       setCash("");
       setCard("");
+      setInsurance("");
+      setInsurerId("");
+      setPolicyNumber("");
       setBalanceStr("0");
       setBonusStr("0");
       setNote("");
@@ -180,6 +202,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setDiscountStr(appointment?.discountAmount ?? "0");
       setCash("");
       setCard("");
+      setInsurance("");
+      setInsurerId("");
+      setPolicyNumber("");
       setBalanceStr("0");
       setBonusStr("0");
       setNote("");
@@ -213,8 +238,18 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         .reduce((acc, p) => acc + parseDecimal(p.amount), 0);
     const cashSum = sumByMethod("cash");
     const cardSum = sumByMethod("card");
+    const insuranceSum = sumByMethod("insurance");
     setCash(cashSum > 0 ? cashSum : "");
     setCard(cardSum > 0 ? cardSum : "");
+    setInsurance(insuranceSum > 0 ? insuranceSum : "");
+    // Seed insurer + policy from the first insurance journal row.
+    const insurancePayment = (summary.payments ?? []).find(
+      (p) => p.method === "insurance",
+    );
+    if (insurancePayment) {
+      setInsurerId(insurancePayment.insurerId ?? "");
+      setPolicyNumber(insurancePayment.policyNumber ?? "");
+    }
   }, [summary, appointmentId]);
 
   // Derived
@@ -226,12 +261,15 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     : parseDecimal(summary.payableAmount);
   const cashNum = Number(cash || 0);
   const cardNum = Number(card || 0);
+  const insuranceNum = Number(insurance || 0);
   const balanceUsed = Math.max(0, parseDecimal(balanceStr));
   const bonusUsed = Math.max(0, parseDecimal(bonusStr));
-  const totalPaid = cashNum + cardNum + balanceUsed + bonusUsed;
+  const totalPaid = cashNum + cardNum + insuranceNum + balanceUsed + bonusUsed;
   const overpaid = totalPaid > payable + 0.001;
   const balanceExceeded = balanceUsed > availableBalance + 0.001;
   const bonusExceeded = bonusUsed > availableBonuses + 0.001;
+  // Страховка: сумма без выбранной компании не проходит.
+  const insurerMissing = insuranceNum > 0 && !insurerId;
 
   const refundedTotal = parseDecimal(summary?.refundedTotal);
   const hasRefunds =
@@ -254,7 +292,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const submitDisabled =
     discountInvalid || overpaid || balanceExceeded || bonusExceeded ||
-    applyBlockedByRefund || applyBlockedByBonus;
+    insurerMissing || applyBlockedByRefund || applyBlockedByBonus;
 
   const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
   const patientName = appointment?.patient?.fullName ?? "Бронирование";
@@ -263,20 +301,27 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // Quick-fill handlers
   const handleCash100 = () => {
     paymentsTouchedRef.current = true;
-    setCash(Math.max(0, payable - balanceUsed - bonusUsed));
+    setCash(Math.max(0, payable - insuranceNum - balanceUsed - bonusUsed));
     setCard(0);
   };
   const handleCard100 = () => {
     paymentsTouchedRef.current = true;
-    setCard(Math.max(0, payable - balanceUsed - bonusUsed));
+    setCard(Math.max(0, payable - insuranceNum - balanceUsed - bonusUsed));
     setCash(0);
+  };
+  const handleInsuranceRest = () => {
+    // «Покрыть остаток» — страховая гасит всё, что не покрыто другими способами.
+    paymentsTouchedRef.current = true;
+    setInsurance(Math.max(0, payable - cashNum - cardNum - balanceUsed - bonusUsed));
   };
   const handleBalanceQuickFill = () => {
     const fill = Math.min(debt, availableBalance);
     if (fill > 0) setBalanceStr(fmt(fill));
   };
   const handleBonusQuickFill = () => {
-    const debtAfterOthers = Math.max(0, payable - cashNum - cardNum - balanceUsed);
+    const debtAfterOthers = Math.max(
+      0, payable - cashNum - cardNum - insuranceNum - balanceUsed,
+    );
     const fill = Math.min(debtAfterOthers, availableBonuses);
     if (fill > 0) setBonusStr(fmt(fill));
   };
@@ -291,6 +336,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.payments(result.appointmentId) });
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "list"] });
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "day-counts"] });
+      // Домашний агрегат (список приёмов на /appointments) — иначе бейджи
+      // способов оплаты обновятся только после heartbeat/перезагрузки.
+      void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "home"] });
       if (patientId && (balanceUsed > 0 || bonusUsed > 0)) {
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.balance(patientId) });
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.transactions(patientId) });
@@ -310,9 +358,17 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const handleSave = () => {
     if (!appointment) return;
     setSaveError(null);
-    const payments: { method: "cash" | "card"; amount: string }[] = [];
+    const payments: PaymentLineInput[] = [];
     if (cashNum > 0) payments.push({ method: "cash", amount: fmt(cashNum) });
     if (cardNum > 0) payments.push({ method: "card", amount: fmt(cardNum) });
+    if (insuranceNum > 0 && insurerId) {
+      payments.push({
+        method: "insurance",
+        amount: fmt(insuranceNum),
+        insurerId: Number(insurerId),
+        policyNumber: policyNumber.trim() || undefined,
+      });
+    }
     applyMutation.mutate({
       discountAmount: fmt(discount),
       payments,
@@ -336,7 +392,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       open={open}
       onClose={applyMutation.isPending ? undefined : onClose}
       PaperProps={{
-        sx: { width: { xs: "100%", sm: 420 }, display: "flex", flexDirection: "column" },
+        // sm в теме проекта = 360px, поэтому на телефонах страхуемся maxWidth.
+        sx: { width: { xs: "100%", sm: 420 }, maxWidth: "100%", display: "flex", flexDirection: "column" },
       }}
     >
       {/* Header */}
@@ -568,7 +625,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                             setCash("");
                           } else {
                             const val = Number(e.target.value);
-                            const maxAllowed = Math.max(0, payable - cardNum - balanceUsed - bonusUsed);
+                            const maxAllowed = Math.max(0, payable - cardNum - insuranceNum - balanceUsed - bonusUsed);
                             setCash(Math.min(val, maxAllowed));
                           }
                         }}
@@ -620,7 +677,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                             setCard("");
                           } else {
                             const val = Number(e.target.value);
-                            const maxAllowed = Math.max(0, payable - cashNum - balanceUsed - bonusUsed);
+                            const maxAllowed = Math.max(0, payable - cashNum - insuranceNum - balanceUsed - bonusUsed);
                             setCard(Math.min(val, maxAllowed));
                           }
                         }}
@@ -633,8 +690,114 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   </Stack>
                 </Stack>
 
-                {/* Balance/bonus used display */}
-                {(balanceUsed > 0 || bonusUsed > 0) && (
+                {/* Insurance (страховка): сумма + компания + полис */}
+                <Stack spacing={0.5}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Страховка
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={handleInsuranceRest}
+                      sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
+                      disabled={isCancelled}
+                    >
+                      Покрыть остаток
+                    </Button>
+                  </Stack>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={0}
+                    sx={{
+                      border: "1px solid",
+                      borderColor: insurerMissing ? "error.main" : "divider",
+                      borderRadius: 1,
+                      bgcolor: "background.paper",
+                    }}
+                  >
+                    <Box px={1}>
+                      <HealthAndSafetyOutlined
+                        color={insuranceNum > 0 ? "primary" : "action"}
+                        fontSize="small"
+                      />
+                    </Box>
+                    <TextField
+                      variant="standard"
+                      fullWidth
+                      type="number"
+                      value={insurance}
+                      onChange={(e) => {
+                        paymentsTouchedRef.current = true;
+                        if (e.target.value === "") {
+                          setInsurance("");
+                        } else {
+                          const val = Number(e.target.value);
+                          const maxAllowed = Math.max(0, payable - cashNum - cardNum - balanceUsed - bonusUsed);
+                          setInsurance(Math.min(val, maxAllowed));
+                        }
+                      }}
+                      InputProps={{ disableUnderline: true }}
+                      sx={{ py: 0.5, ...noSpinnersSx }}
+                      placeholder="0"
+                      disabled={isCancelled}
+                    />
+                  </Stack>
+
+                  {insuranceNum > 0 && (
+                    <Stack spacing={1.5} sx={{ pt: 1.5 }}>
+                      {/* Каждое поле на своей строке, лейбл — заголовком над
+                          инпутом (floating-label запрещён по гайду). */}
+                      <Stack spacing={0.5}>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Страховая компания
+                        </Typography>
+                        <TextField
+                          select
+                          size="small"
+                          fullWidth
+                          value={insurerId}
+                          onChange={(e) => {
+                            setInsurerId(e.target.value === "" ? "" : Number(e.target.value));
+                          }}
+                          error={insurerMissing}
+                          helperText={insurerMissing ? "Выберите компанию" : ""}
+                          disabled={isCancelled}
+                        >
+                          {insurers.length === 0 && (
+                            <MenuItem value="" disabled>
+                              {insurersQuery.isLoading
+                                ? "Загрузка…"
+                                : "Справочник пуст — добавьте в настройках"}
+                            </MenuItem>
+                          )}
+                          {insurers.map((i) => (
+                            <MenuItem key={i.id} value={i.id}>
+                              {i.name}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Stack>
+                      <Stack spacing={0.5}>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Номер полиса
+                        </Typography>
+                        <TextField
+                          size="small"
+                          fullWidth
+                          value={policyNumber}
+                          onChange={(e) => setPolicyNumber(e.target.value)}
+                          placeholder="Необязательно"
+                          disabled={isCancelled}
+                        />
+                      </Stack>
+                    </Stack>
+                  )}
+                </Stack>
+
+                {/* Balance/bonus/insurance used display */}
+                {(balanceUsed > 0 || bonusUsed > 0 || insuranceNum > 0) && (
                   <Paper
                     elevation={0}
                     sx={{
@@ -659,6 +822,19 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                           <Typography variant="caption" color="warning.main">Бонусами</Typography>
                           <Typography variant="caption" color="warning.main" fontWeight={600}>
                             − {bonusUsed.toLocaleString()} с
+                          </Typography>
+                        </Stack>
+                      )}
+                      {insuranceNum > 0 && (
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography variant="caption" color="primary.main">
+                            Страховая
+                            {insurerId
+                              ? ` · ${insurers.find((i) => i.id === insurerId)?.name ?? ""}`
+                              : ""}
+                          </Typography>
+                          <Typography variant="caption" color="primary.main" fontWeight={600}>
+                            − {insuranceNum.toLocaleString()} с
                           </Typography>
                         </Stack>
                       )}
@@ -743,6 +919,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
                   <Typography variant="caption" color="text.secondary">
                     {METHOD_LABELS[p.method] ?? p.method}
+                    {p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""}
+                    {p.method === "insurance" && p.policyNumber ? ` (${p.policyNumber})` : ""}
                   </Typography>
                   <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
                 </Stack>
