@@ -91,7 +91,8 @@ export interface CashboxEntriesResponse {
 }
 
 export interface CashboxEntriesFilters extends CashboxFilters {
-  entryType: CashboxEntryType;
+  /** Один тип, список типов (объединённая лента) или "all" — все пять. */
+  entryType: CashboxEntryType | CashboxEntryType[] | "all";
   page?: number;
   pageSize?: number;
 }
@@ -128,7 +129,10 @@ export function getCashboxEntries(
   signal?: AbortSignal,
 ): Promise<CashboxEntriesResponse> {
   const q = buildParams(filters);
-  q.set("entryType", filters.entryType);
+  q.set(
+    "entryType",
+    Array.isArray(filters.entryType) ? filters.entryType.join(",") : filters.entryType,
+  );
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   return apiRequest<CashboxEntriesResponse>(`/cashbox/entries/?${q.toString()}`, { signal });
