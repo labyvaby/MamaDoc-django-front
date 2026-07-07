@@ -814,7 +814,11 @@ const BookingsPage: React.FC = () => {
                 pageSizeOptions={[PAGE_SIZE]}
                 disableColumnMenu
                 disableRowSelectionOnClick
-                density="comfortable"
+                /* Не density="comfortable": тема зажимает .MuiDataGrid-columnHeaders
+                   до headerRowHeight (52px), а comfortable раздувает ячейки шапки до
+                   72px — они закрашивали верх первой строки. Высоты задаём явно. */
+                rowHeight={64}
+                columnHeaderHeight={theme.appLayout.table.headerRowHeight}
                 onRowClick={(p) => setSelectedId(p.row.id)}
                 getRowClassName={(p) => (p.row.date === todayStr ? "row-today" : "")}
                 slots={{ noRowsOverlay: NoRowsOverlay }}
@@ -824,6 +828,9 @@ const BookingsPage: React.FC = () => {
                   borderRadius: "14px",
                   "& .MuiDataGrid-row": { cursor: "pointer" },
                   "& .MuiDataGrid-columnHeaders": { bgcolor: "background.paper" },
+                  // Центрируем контент ячеек флексом: голая Typography из renderCell
+                  // иначе прилипает к верху строки (v7 центрирует line-height'ом).
+                  "& .MuiDataGrid-cell": { display: "flex", alignItems: "center" },
                   "& .row-today": {
                     bgcolor: alpha(
                       t.palette.primary.main,
