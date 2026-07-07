@@ -41,6 +41,7 @@ import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
 
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { usePermissions } from "../../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../../hooks/useDjangoSkud";
 import { getDjangoEmployees } from "../../../api/staff";
 import {
@@ -73,6 +74,9 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const theme = useTheme();
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
+  // Как в оригинале: без карточки сотрудника отметка невозможна — показываем
+  // предупреждение вместо кнопок, а не ошибку 400 после клика.
+  const { activeEmployee } = usePermissions();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = React.useState<number | null>(null);
   const [startDate, setStartDate] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
@@ -276,7 +280,18 @@ const DjangoWorkShiftsPage: React.FC = () => {
         <Box sx={{ mb: 2 }}>{filters}</Box>
 
         {/* Карточка отметки смены (для тех, кто может отмечаться) */}
-        {canClock && (
+        {canClock && !activeEmployee && (
+          <Paper
+            elevation={0}
+            variant="outlined"
+            sx={{ mb: 2, p: { xs: 1.75, sm: 2.5 }, borderRadius: "10px" }}
+          >
+            <Typography variant="body2" sx={{ color: "warning.main" }}>
+              Аккаунт не связан с карточкой сотрудника — отметка прихода и ухода недоступна.
+            </Typography>
+          </Paper>
+        )}
+        {canClock && activeEmployee && (
           <Paper
             elevation={0}
             variant="outlined"
