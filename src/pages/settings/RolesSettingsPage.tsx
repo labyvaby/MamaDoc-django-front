@@ -44,7 +44,8 @@ import {
   type RoleUpdatePayload,
 } from "../../api/rbac";
 import { ApiError } from "../../api/client";
-import { usePermissions } from "../../hooks/usePermissions";
+import { usePermissions, retryAuth } from "../../hooks/usePermissions";
+import { getModuleCodeForPermission } from "../../utils/moduleMapping";
 
 // ── Category label mapping ──────────────────────────────────────────────────
 
@@ -188,6 +189,18 @@ function RoleFormDrawer({
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
   const grouped = React.useMemo(() => groupPermissions(permissions), [permissions]);
 
+  // Право работает только при включённом модуле организации: canAccess
+  // проверяет и право, и модуль. Помечаем права выключенных модулей,
+  // чтобы «выдал, а оно не действует» не выглядело поломкой.
+  const { enabledModules } = usePermissions();
+  const isModuleOff = React.useCallback(
+    (permissionCode: string) => {
+      const moduleCode = getModuleCodeForPermission(permissionCode);
+      return moduleCode !== null && !(enabledModules ?? []).includes(moduleCode);
+    },
+    [enabledModules],
+  );
+
   // Selected permission objects (for Autocomplete value)
   const selectedPerms = React.useMemo(
     () => permissions.filter((p) => selectedCodes.includes(p.code)),
@@ -327,7 +340,10 @@ function RoleFormDrawer({
               Права доступа
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
-              Выберите разрешения, которые будут назначены этой роли.
+              Выберите разрешения, которые будут назначены этой роли. Права из
+              отключённых модулей организации помечены и не действуют, пока
+              модуль не включён. Пользователи с этой ролью увидят изменения
+              после возврата на вкладку или перезагрузки страницы.
             </Typography>
             <Autocomplete
               multiple
@@ -352,7 +368,7 @@ function RoleFormDrawer({
                       checked={selected}
                       size="small"
                     />
-                    <Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="body2" lineHeight={1.3}>
                         {option.name || option.code}
                       </Typography>
@@ -360,6 +376,15 @@ function RoleFormDrawer({
                         {option.code}
                       </Typography>
                     </Box>
+                    {isModuleOff(option.code) && (
+                      <Chip
+                        label="модуль отключён"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ ml: 1, flexShrink: 0, height: 20, fontSize: "0.65rem" }}
+                      />
+                    )}
                   </li>
                 );
               }}
@@ -661,6 +686,10 @@ const RolesSettingsPage: React.FC = () => {
       }
       return [...prev, saved];
     });
+    // Если отредактировали собственную роль — обновить права текущей сессии
+    // сразу, не дожидаясь фокус-рефетча. Остальные пользователи подтянут
+    // изменения при возврате на вкладку или перезагрузке.
+    retryAuth();
     showSnack(
       "success",
       drawerMode === "create" ? "Роль создана" : "Роль обновлена",
