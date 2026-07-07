@@ -22,6 +22,7 @@ import { motion, useMotionValue, useTransform } from "framer-motion";
 
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
@@ -37,7 +38,17 @@ import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
-import { AppButton, PageHeader, UserAvatar } from "../../components/ui";
+import {
+  AppButton,
+  DateRangeField,
+  DEFAULT_RANGE_PRESETS,
+  PageHeader,
+  UserAvatar,
+  type DateRange,
+  type DateRangePreset,
+} from "../../components/ui";
+import dayjs from "dayjs";
+import "dayjs/locale/ru";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -76,6 +87,21 @@ const TABS: { id: TasksTab; label: string; icon: React.ElementType }[] = [
   { id: "board", label: "Доска", icon: DashboardOutlined },
   { id: "mine", label: "Мои задачи", icon: PersonOutlined },
   { id: "my-requests", label: "Мои заявки", icon: SendOutlined },
+];
+
+/** Неделя с понедельника независимо от глобальной локали dayjs. */
+const startOfRuWeek = () => dayjs().locale("ru").startOf("week");
+
+/** Пресеты фильтра по сроку — «вперёд-смотрящие», в отличие от дефолтных. */
+const DUE_RANGE_PRESETS: DateRangePreset[] = [
+  { key: "today", label: "Сегодня", range: () => [dayjs().startOf("day"), dayjs().endOf("day")] },
+  { key: "week", label: "Эта неделя", range: () => [startOfRuWeek(), startOfRuWeek().endOf("week")] },
+  {
+    key: "next7",
+    label: "Следующие 7 дней",
+    range: () => [dayjs().startOf("day"), dayjs().add(6, "day").endOf("day")],
+  },
+  { key: "month", label: "Этот месяц", range: () => [dayjs().startOf("month"), dayjs().endOf("month")] },
 ];
 
 /** Быстрое действие для задачи в списке (без открытия карточки). */
@@ -293,6 +319,9 @@ const TasksPage: React.FC = () => {
   const [status, setStatus] = React.useState<TaskStatus | "">("");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
   const [priority, setPriority] = React.useState<TaskPriority | "">("");
+  /** Опциональные период-фильтры: null — выключен (задачи без срока не скрываются). */
+  const [dueRange, setDueRange] = React.useState<DateRange | null>(null);
+  const [createdRange, setCreatedRange] = React.useState<DateRange | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(0);
@@ -314,7 +343,7 @@ const TasksPage: React.FC = () => {
 
   React.useEffect(() => {
     setPage(0);
-  }, [tab, status, categoryId, priority, search]);
+  }, [tab, status, categoryId, priority, search, dueRange, createdRange]);
 
   const filters: TasksFilters = {
     status: status === "" ? undefined : status,
@@ -323,6 +352,11 @@ const TasksPage: React.FC = () => {
     assignee: tab === "mine" ? "me" : undefined,
     author: tab === "my-requests" ? "me" : undefined,
     search: search || undefined,
+    dueFrom: dueRange ? dueRange.from.format("YYYY-MM-DD") : undefined,
+    dueTo: dueRange ? dueRange.to.format("YYYY-MM-DD") : undefined,
+    // Дата подачи имеет смысл только для «Моих заявок».
+    createdFrom: tab === "my-requests" && createdRange ? createdRange.from.format("YYYY-MM-DD") : undefined,
+    createdTo: tab === "my-requests" && createdRange ? createdRange.to.format("YYYY-MM-DD") : undefined,
     ordering: "smart",
   };
 
@@ -410,13 +444,16 @@ const TasksPage: React.FC = () => {
     [canManage, meEmployeeId],
   );
 
-  const hasActiveFilters = status !== "" || categoryId !== "" || priority !== "" || search !== "";
+  const hasActiveFilters =
+    status !== "" || categoryId !== "" || priority !== "" || search !== "" || dueRange != null || createdRange != null;
 
   const handleResetFilters = () => {
     setStatus("");
     setCategoryId("");
     setPriority("");
     setSearchInput("");
+    setDueRange(null);
+    setCreatedRange(null);
   };
 
   const columns = React.useMemo<GridColDef<Task>[]>(
@@ -714,6 +751,87 @@ const TasksPage: React.FC = () => {
               </MenuItem>
             ))}
           </TextField>
+
+          {/* Срок: опционально, чтобы не скрывать задачи без due_date */}
+          {dueRange ? (
+            <Stack direction="row" alignItems="center" gap={0.25}>
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                Срок:
+              </Typography>
+              <DateRangeField
+                value={dueRange}
+                onChange={(r) => setDueRange(r)}
+                presets={DUE_RANGE_PRESETS}
+                minWidth={200}
+              />
+              <IconButton size="small" aria-label="Убрать фильтр по сроку" onClick={() => setDueRange(null)}>
+                <CloseOutlined sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Stack>
+          ) : (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<CalendarMonthOutlined sx={{ fontSize: 17 }} />}
+              onClick={() => setDueRange({ from: startOfRuWeek(), to: startOfRuWeek().endOf("week") })}
+              sx={(t) => ({
+                textTransform: "none",
+                borderRadius: "10px",
+                color: "text.secondary",
+                borderColor: "divider",
+                flexShrink: 0,
+                "&:hover": {
+                  color: "text.primary",
+                  bgcolor: subtleBg(t, true),
+                  borderColor: alpha(t.palette.primary.main, 0.35),
+                },
+              })}
+            >
+              Срок
+            </Button>
+          )}
+
+          {/* Дата подачи — только в «Моих заявках» */}
+          {tab === "my-requests" &&
+            (createdRange ? (
+              <Stack direction="row" alignItems="center" gap={0.25}>
+                <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                  Подана:
+                </Typography>
+                <DateRangeField
+                  value={createdRange}
+                  onChange={(r) => setCreatedRange(r)}
+                  presets={DEFAULT_RANGE_PRESETS}
+                  minWidth={200}
+                />
+                <IconButton size="small" aria-label="Убрать фильтр по дате подачи" onClick={() => setCreatedRange(null)}>
+                  <CloseOutlined sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Stack>
+            ) : (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<CalendarMonthOutlined sx={{ fontSize: 17 }} />}
+                onClick={() =>
+                  setCreatedRange({ from: dayjs().subtract(29, "day").startOf("day"), to: dayjs().endOf("day") })
+                }
+                sx={(t) => ({
+                  textTransform: "none",
+                  borderRadius: "10px",
+                  color: "text.secondary",
+                  borderColor: "divider",
+                  flexShrink: 0,
+                  "&:hover": {
+                    color: "text.primary",
+                    bgcolor: subtleBg(t, true),
+                    borderColor: alpha(t.palette.primary.main, 0.35),
+                  },
+                })}
+              >
+                Дата подачи
+              </Button>
+            ))}
 
           {hasActiveFilters && (
             <Button

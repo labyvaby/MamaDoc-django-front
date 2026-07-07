@@ -112,7 +112,12 @@ export interface TasksFilters {
   /** "me" — заявки, созданные текущим сотрудником. */
   author?: "me";
   search?: string;
-  dueBefore?: string;
+  /** Диапазон по сроку (YYYY-MM-DD, включительно). Контракт v2. */
+  dueFrom?: string;
+  dueTo?: string;
+  /** Диапазон по дате подачи (YYYY-MM-DD, включительно). Контракт v2, P2. */
+  createdFrom?: string;
+  createdTo?: string;
   /** "smart" — просроченные → приоритет → срок → дата создания (дефолт списков). */
   ordering?: "smart" | "created";
   page?: number;
@@ -316,7 +321,10 @@ function buildTaskParams(filters: TasksFilters): URLSearchParams {
   if (filters.assignee) q.set("assignee", filters.assignee);
   if (filters.author) q.set("author", filters.author);
   if (filters.search) q.set("search", filters.search);
-  if (filters.dueBefore) q.set("dueBefore", filters.dueBefore);
+  if (filters.dueFrom) q.set("dueFrom", filters.dueFrom);
+  if (filters.dueTo) q.set("dueTo", filters.dueTo);
+  if (filters.createdFrom) q.set("createdFrom", filters.createdFrom);
+  if (filters.createdTo) q.set("createdTo", filters.createdTo);
   if (filters.ordering) q.set("ordering", filters.ordering);
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
@@ -338,6 +346,11 @@ export function getTasks(
       const s = filters.search.toLowerCase();
       list = list.filter((t) => t.title.toLowerCase().includes(s));
     }
+    // Диапазоны включительны; задачи без due_date под due-фильтр не попадают.
+    if (filters.dueFrom) list = list.filter((t) => t.dueDate != null && t.dueDate >= filters.dueFrom!);
+    if (filters.dueTo) list = list.filter((t) => t.dueDate != null && t.dueDate <= filters.dueTo!);
+    if (filters.createdFrom) list = list.filter((t) => t.createdAt.slice(0, 10) >= filters.createdFrom!);
+    if (filters.createdTo) list = list.filter((t) => t.createdAt.slice(0, 10) <= filters.createdTo!);
     if (filters.ordering === "created") {
       list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     } else {
