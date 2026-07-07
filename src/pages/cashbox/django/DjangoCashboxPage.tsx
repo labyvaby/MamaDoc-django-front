@@ -179,7 +179,7 @@ const DjangoCashboxPage: React.FC = () => {
             overflowY: "auto",
           }}
         >
-          <Box sx={{ maxWidth: 1080, mx: "auto" }}>
+          <Box sx={{ width: "100%", pt: 1 }}>
             {/* Заголовок + период */}
             <Stack
               direction="row"
