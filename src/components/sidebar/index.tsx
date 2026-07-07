@@ -257,6 +257,37 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   );
 };
 
+// Бренд в шапке сайдбара: логотип активной организации (если загружен в
+// «Настройки → Организация»), иначе — статичный логотип приложения. Название
+// организации рядом не дублируем — оно уже показано в ActiveContextSwitcher.
+const SidebarBrand: React.FC<{ height: number }> = ({ height }) => {
+  const { activeOrganization } = usePermissions();
+  const logoUrl = activeOrganization?.logoUrl ?? null;
+  const [broken, setBroken] = useState(false);
+
+  useEffect(() => {
+    setBroken(false);
+  }, [logoUrl]);
+
+  const useOrgLogo = !!logoUrl && !broken;
+
+  return (
+    <Box
+      component="img"
+      src={useOrgLogo ? logoUrl : appLogo}
+      alt={useOrgLogo ? activeOrganization?.name ?? "Организация" : "Мама Доктор"}
+      onError={useOrgLogo ? () => setBroken(true) : undefined}
+      sx={{
+        height,
+        width: "auto",
+        maxWidth: height * 6,
+        objectFit: "contain",
+        borderRadius: useOrgLogo ? 1 : 0,
+      }}
+    />
+  );
+};
+
 // Mobile header with logo (< 768px - мобильные и планшеты)
 const MobileSidebarHeader: React.FC = () => {
   const { mobileOpen } = useMobileSidebar();
@@ -275,15 +306,7 @@ const MobileSidebarHeader: React.FC = () => {
         transition: "all 400ms cubic-bezier(0.4, 0, 0.2, 1)",
       }}
     >
-      <Box
-        component="img"
-        src={appLogo}
-        alt="Мама Доктор"
-        sx={{
-          height: 36,
-          width: "auto",
-        }}
-      />
+      <SidebarBrand height={36} />
     </Box>
   );
 };
@@ -316,15 +339,7 @@ const DesktopSidebarHeader: React.FC = () => {
           overflow: "hidden",
         }}
       >
-        <Box
-          component="img"
-          src={appLogo}
-          alt="Мама Доктор"
-          sx={{
-            height: 28,
-            width: "auto",
-          }}
-        />
+        <SidebarBrand height={28} />
       </Box>
 
       {/* Кнопка бургера - всегда видна */}

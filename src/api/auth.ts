@@ -20,6 +20,10 @@ export type RbacOrganization = {
   name: string;
   slug: string;
   status: string;
+  /** URL логотипа организации. Опционально: бэкенд добавит поле в селектор
+   *  /auth/me/ по тикету MamaDoc/backend_ticket_organization_logo.md;
+   *  до этого поле отсутствует и UI показывает иконку-заглушку. */
+  logoUrl?: string | null;
 };
 
 export type RbacBranch = {

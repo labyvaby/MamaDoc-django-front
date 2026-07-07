@@ -11,6 +11,10 @@ export interface DjangoOrganization {
   slug: string;
   status: string;
   patientScope: PatientScope;
+  /** Абсолютный URL логотипа организации; null — логотип не загружен.
+   *  Контракт: MamaDoc/backend_ticket_organization_logo.md (бэкенд ещё не отдаёт
+   *  поле — до деплоя нормализуем в null, UI показывает заглушку). */
+  logoUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,18 +73,50 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
   };
 }
 
+/** Старый бэкенд не отдаёт logoUrl — приводим отсутствующее поле к null. */
+type DjangoOrganizationWire = Omit<DjangoOrganization, "logoUrl"> &
+  Partial<Pick<DjangoOrganization, "logoUrl">>;
+
+function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization {
+  return { ...raw, logoUrl: raw.logoUrl ?? null };
+}
+
 export function getOrganization(id: number): Promise<DjangoOrganization> {
-  return apiRequest<DjangoOrganization>(`/organization/${id}/`);
+  return apiRequest<DjangoOrganizationWire>(`/organization/${id}/`).then(
+    normalizeOrganization,
+  );
 }
 
 export function updateOrganization(
   id: number,
   payload: UpdateOrganizationPayload,
 ): Promise<DjangoOrganization> {
-  return apiRequest<DjangoOrganization>(`/organization/${id}/`, {
+  return apiRequest<DjangoOrganizationWire>(`/organization/${id}/`, {
     method: "PATCH",
     body: payload,
-  });
+  }).then(normalizeOrganization);
+}
+
+/**
+ * PUT /organization/<id>/logo/ — загрузка/замена логотипа (multipart, поле
+ * `logo`). Возвращает обновлённую организацию с новым logoUrl.
+ * Контракт предложен бэкенду: MamaDoc/backend_ticket_organization_logo.md.
+ */
+export function uploadOrganizationLogo(
+  id: number,
+  file: File,
+): Promise<DjangoOrganization> {
+  const formData = new FormData();
+  formData.append("logo", file);
+  return apiRequest<DjangoOrganizationWire>(`/organization/${id}/logo/`, {
+    method: "PUT",
+    formData,
+  }).then(normalizeOrganization);
+}
+
+/** DELETE /organization/<id>/logo/ — удаление логотипа. Возвращает 204. */
+export function deleteOrganizationLogo(id: number): Promise<void> {
+  return apiRequest<void>(`/organization/${id}/logo/`, { method: "DELETE" });
 }
 
 export function getBranches(): Promise<DjangoBranch[]> {

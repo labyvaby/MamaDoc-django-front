@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Avatar,
   Box,
   Chip,
   FormControl,
@@ -10,18 +11,23 @@ import {
   RadioGroup,
   Skeleton,
   Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
+import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 
 import SettingsLayout from "./SettingsLayout";
 import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
-import { usePermissions } from "../../hooks/usePermissions";
+import { usePermissions, retryAuth } from "../../hooks/usePermissions";
 import {
   getOrganization,
   updateOrganization,
+  uploadOrganizationLogo,
+  deleteOrganizationLogo,
   type DjangoOrganization,
   type PatientScope,
 } from "../../api/organization";
@@ -72,12 +78,17 @@ const OrganizationSettingsPage: React.FC = () => {
   const orgId = activeOrganization?.id ?? null;
 
   const [org, setOrg] = React.useState<DjangoOrganization | null>(null);
+  const [name, setName] = React.useState("");
   const [scope, setScope] = React.useState<PatientScope>("shared");
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
+
+  const [logoBusy, setLogoBusy] = React.useState(false);
+  const [logoError, setLogoError] = React.useState<string | null>(null);
+  const logoInputRef = React.useRef<HTMLInputElement>(null);
 
   const load = React.useCallback(async () => {
     if (orgId == null) {
@@ -90,6 +101,7 @@ const OrganizationSettingsPage: React.FC = () => {
     try {
       const data = await getOrganization(orgId);
       setOrg(data);
+      setName(data.name);
       setScope(data.patientScope);
     } catch (err) {
       setLoadError(extractErrorMessage(err));
@@ -102,7 +114,10 @@ const OrganizationSettingsPage: React.FC = () => {
     load();
   }, [load]);
 
-  const dirty = !!org && scope !== org.patientScope;
+  const trimmedName = name.trim();
+  const nameDirty = !!org && trimmedName !== "" && trimmedName !== org.name;
+  const scopeDirty = !!org && scope !== org.patientScope;
+  const dirty = nameDirty || scopeDirty;
 
   const handleSave = async () => {
     if (!org || !dirty) return;
@@ -110,14 +125,64 @@ const OrganizationSettingsPage: React.FC = () => {
     setSaveError(null);
     setSaved(false);
     try {
-      const updated = await updateOrganization(org.id, { patientScope: scope });
+      const updated = await updateOrganization(org.id, {
+        ...(nameDirty ? { name: trimmedName } : {}),
+        ...(scopeDirty ? { patientScope: scope } : {}),
+      });
       setOrg(updated);
+      setName(updated.name);
       setScope(updated.patientScope);
       setSaved(true);
+      // Название организации показывается в переключателе контекста в сайдбаре —
+      // перечитываем /auth/me/, чтобы оно обновилось без перезагрузки страницы.
+      if (nameDirty) retryAuth();
     } catch (err) {
       setSaveError(extractErrorMessage(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleLogoSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    // Сбрасываем value, иначе повторный выбор того же файла не вызовет onChange.
+    e.target.value = "";
+    if (!file || !org) return;
+    if (!file.type.startsWith("image/")) {
+      setLogoError("Можно загрузить только изображение (PNG, JPG, SVG, WebP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoError("Файл слишком большой — максимум 5 МБ.");
+      return;
+    }
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const updated = await uploadOrganizationLogo(org.id, file);
+      setOrg(updated);
+      retryAuth();
+    } catch (err) {
+      setLogoError(extractErrorMessage(err));
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleLogoDelete = async () => {
+    if (!org?.logoUrl) return;
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      await deleteOrganizationLogo(org.id);
+      setOrg({ ...org, logoUrl: null });
+      retryAuth();
+    } catch (err) {
+      setLogoError(extractErrorMessage(err));
+    } finally {
+      setLogoBusy(false);
     }
   };
 
@@ -154,19 +219,93 @@ const OrganizationSettingsPage: React.FC = () => {
 
         {!loading && !loadError && org && (
           <>
-            {/* Read-only profile summary */}
-            <Box>
-              <Typography variant="subtitle2" fontWeight={600}>
-                {org.name}
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontFamily: "monospace" }}
+            {/* Logo */}
+            <Stack direction="row" alignItems="center" gap={2}>
+              <Avatar
+                variant="rounded"
+                src={org.logoUrl ?? undefined}
+                alt={org.name}
+                sx={{
+                  width: 64,
+                  height: 64,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.default",
+                  color: "text.secondary",
+                }}
               >
-                {org.slug}
-              </Typography>
-            </Box>
+                <BusinessOutlined />
+              </Avatar>
+              <Box>
+                <Stack direction="row" gap={1}>
+                  <AppButton
+                    size="small"
+                    variant="outlined"
+                    startIcon={<FileUploadOutlined />}
+                    disabled={!canUpdate || logoBusy}
+                    loading={logoBusy}
+                    onClick={() => logoInputRef.current?.click()}
+                  >
+                    {org.logoUrl ? "Заменить логотип" : "Загрузить логотип"}
+                  </AppButton>
+                  {org.logoUrl && (
+                    <AppButton
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteOutlineOutlined />}
+                      disabled={!canUpdate || logoBusy}
+                      onClick={handleLogoDelete}
+                    >
+                      Удалить
+                    </AppButton>
+                  )}
+                </Stack>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 0.5 }}
+                >
+                  PNG, JPG, SVG или WebP, до 5 МБ.
+                </Typography>
+              </Box>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={handleLogoSelect}
+              />
+            </Stack>
+
+            {logoError && (
+              <Alert severity="error" onClose={() => setLogoError(null)}>
+                {logoError}
+              </Alert>
+            )}
+
+            {/* Name */}
+            <TextField
+              label="Название организации"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setSaved(false);
+              }}
+              disabled={!canUpdate || busy}
+              size="small"
+              fullWidth
+              error={trimmedName === ""}
+              helperText={
+                trimmedName === ""
+                  ? "Название не может быть пустым"
+                  : org.slug
+              }
+              FormHelperTextProps={
+                trimmedName === ""
+                  ? undefined
+                  : { sx: { fontFamily: "monospace" } }
+              }
+            />
 
             {/* Patient registry scope */}
             <FormControl disabled={!canUpdate || busy}>
@@ -230,7 +369,7 @@ const OrganizationSettingsPage: React.FC = () => {
                 <AppButton
                   variant="contained"
                   onClick={handleSave}
-                  disabled={!dirty}
+                  disabled={!dirty || trimmedName === ""}
                   loading={busy}
                 >
                   {busy ? "Сохранение…" : "Сохранить"}
