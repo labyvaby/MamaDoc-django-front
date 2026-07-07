@@ -47,9 +47,13 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
+import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
+import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
+import { getTasksSummary } from "../../api/tasks";
+import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
@@ -379,6 +383,9 @@ const SidebarSecondary: React.FC = () => {
     storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
     // УПРАВЛЕНИЕ
     salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
+    // Задачи: пока модуль на моках — виден всем в Django-режиме.
+    // TODO при интеграции с бэком: IS_DJANGO_BACKEND && (isSuper || can("tasks.list"))
+    tasks: IS_DJANGO_BACKEND,
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     expenses: true,
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
@@ -393,12 +400,22 @@ const SidebarSecondary: React.FC = () => {
     ),
   };
 
+  // Бейдж «Задачи»: есть новые задачи для меня/моей группы.
+  // Тот же queryKey, что у сводки на доске задач, — кэш общий.
+  const tasksSummaryQuery = useQuery({
+    queryKey: djangoQueryKeys.tasks.summary,
+    queryFn: ({ signal }) => getTasksSummary(signal),
+    enabled: can_.tasks && !permissionsLoading,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const tasksBadge = (tasksSummaryQuery.data?.newForMe ?? 0) > 0;
+
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
     "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
-    "management": can_.salaryReports || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -609,6 +626,17 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 
+        {/* Задачи */}
+        {show("management") && can_.tasks && (
+          <SidebarMenuItem
+            to="/tasks"
+            icon={<AssignmentOutlined />}
+            label="Задачи"
+            collapsed={siderCollapsed}
+            showBadge={tasksBadge}
+          />
+        )}
+
         {/* Расходы */}
         {show("management") && can_.expenses && (
           <SidebarMenuItem
@@ -705,16 +733,17 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
       }}
     >
       <ListItemText primary={label} />
+      {/* Standalone Badge с variant="dot" имеет нулевой размер и точку за своими
+          границами (absolute + translate 50%) — её срезал overflow:hidden.
+          Поэтому в развёрнутом сайдбаре рисуем обычный кружок. */}
       {showBadge && !collapsedFinal && (
-        <Badge
-          variant="dot"
-          color="error"
+        <Box
           sx={{
-            '& .MuiBadge-dot': {
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-            }
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: 'error.main',
+            flexShrink: 0,
           }}
         />
       )}

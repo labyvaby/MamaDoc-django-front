@@ -81,9 +81,11 @@ const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPag
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
+const TasksPage = lazy(() => import("./pages/tasks"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
+const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
@@ -439,6 +441,11 @@ function App() {
                         list: "/bookings",
                         show: "/bookings/show/:id",
                         meta: { label: "Брони" }
+                      },
+                      {
+                        name: "tasks",
+                        list: "/tasks",
+                        meta: { label: "Задачи" }
                       },
                       {
                         name: "all-procedures",
@@ -947,6 +954,17 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Настройки задач: пока на моках — без RequirePermission.
+                                TODO при интеграции: обернуть в
+                                <RequirePermission permission="tasks.manage"> */}
+                            <Route
+                              path="settings/tasks"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <TasksSettingsPage />
+                                </Suspense>
+                              }
+                            />
                             <Route
                               path="reviews"
                               element={
@@ -965,6 +983,18 @@ function App() {
                                     <BookingsPage />
                                   </Suspense>
                                 </RequirePermission>
+                              }
+                            />
+                            {/* Задачи: пока на моках — без RequirePermission (бэкенд ещё не
+                                выдаёт tasks.*); страница сама проверяет доступ.
+                                TODO при интеграции: обернуть в
+                                <RequirePermission permission="tasks.list"> */}
+                            <Route
+                              path="tasks"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <TasksPage />
+                                </Suspense>
                               }
                             />
                             <Route
