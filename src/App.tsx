@@ -786,25 +786,21 @@ function App() {
                         <Route
                           path="all-appointments"
                           element={
-                            <LegacyRouteGuard title="Все приемы в разработке">
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <AllAppointmentsPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <RequirePermission permission="appointments.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <AllAppointmentsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="all-procedures"
                           element={
-                            <LegacyRouteGuard title="Все процедуры в разработке">
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <AllProceduresPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <RequirePermission permission="appointments.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <AllProceduresPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
 

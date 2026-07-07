@@ -373,8 +373,8 @@ const SidebarSecondary: React.FC = () => {
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
-    allAppointments: true,
-    allProcedures: true,
+    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
+    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
@@ -563,7 +563,7 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
         )}
 
-        {/* Все приемы — в Django-mode ведёт на /all-appointments (placeholder) */}
+        {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
         )}
