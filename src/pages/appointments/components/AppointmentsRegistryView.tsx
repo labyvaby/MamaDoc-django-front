@@ -4,7 +4,8 @@
  * (src/pages/products/django/index.tsx):
  *   - 2 колонки: список (md=5) + детали (md=7, AppointmentDetailsPanel);
  *   - кликабельные чипы-сводки по статусу оплаты над списком;
- *   - горизонтальная лента чипов сотрудников (аналог ленты категорий);
+ *   - фильтр по сотруднику — лента аватарок внутри AppointmentListPanel
+ *     (как в «Регистратуре»), отдельной ленты чипов нет;
  *   - период и услуга — в Drawer «Фильтры» с бейджем активных фильтров.
  * Data layer: Django REST API (getAppointments), без Supabase.
  */
@@ -51,8 +52,6 @@ import RegistryFilterDrawer, {
   defaultRegistryFilters,
 } from "./RegistryFilterDrawer";
 
-const NO_EMPLOYEE = "Без сотрудника";
-
 type PaymentFilter = "all" | PaymentStatus;
 
 /**
@@ -87,6 +86,11 @@ type Props = {
   getLines?: (h: DjangoAppointment) => AppointmentServiceLine[];
   /** Показывать ли приём в реестре (для процедур — есть ли строка медсестры). */
   isVisible?: (h: DjangoAppointment) => boolean;
+  /**
+   * Группировать записи в AppointmentListPanel только по этим employee id
+   * (для процедур — медсёстры, чтобы не появлялись группы врачей).
+   */
+  groupEmployeeIds?: Set<number> | null;
   /** Дополнительный признак загрузки (например, справочник медсестёр). */
   extraLoading?: boolean;
 };
@@ -99,6 +103,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   searchPlaceholder,
   getLines = defaultGetLines,
   isVisible,
+  groupEmployeeIds = null,
   extraLoading = false,
 }) => {
   usePageTitle(pageTitle);
@@ -117,7 +122,15 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   const [filters, setFilters] = React.useState<RegistryFilters>(defaultRegistryFilters);
   const [filterDrawerOpen, setFilterDrawerOpen] = React.useState(false);
   const [paymentFilter, setPaymentFilter] = React.useState<PaymentFilter>("all");
-  const [employeeFilter, setEmployeeFilter] = React.useState<string | null>(null);
+  // Выбор исполнителя в ленте аватарок панели (управляемый режим) — нужен
+  // здесь, чтобы счётчик в тулбаре учитывал выбранного сотрудника.
+  const [doctorFilter, setDoctorFilter] = React.useState<string | null>(null);
+
+  // При смене периода лента строится заново — сбрасываем выбор (панель в
+  // неуправляемом режиме делает то же самое при смене даты).
+  React.useEffect(() => {
+    setDoctorFilter(null);
+  }, [filters.year, filters.month]);
 
   // ── Data ───────────────────────────────────────────────────────────────────
   const [history, setHistory] = React.useState<DjangoAppointment[]>([]);
@@ -196,14 +209,6 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
     );
   }, [visibleHistory, searchQuery]);
 
-  const employeeNamesOf = React.useCallback(
-    (h: DjangoAppointment) => {
-      const names = Array.from(new Set(getLines(h).map((sl) => sl.employee!.fullName)));
-      return names.length > 0 ? names : [NO_EMPLOYEE];
-    },
-    [getLines],
-  );
-
   // Сводка по оплате — счётчики для чипов-фильтров.
   const paymentCounts = React.useMemo(() => {
     const counts = new Map<PaymentFilter, number>([["all", baseHistory.length]]);
@@ -215,33 +220,10 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
     return counts;
   }, [baseHistory]);
 
-  // Лента сотрудников (аналог ленты категорий у товаров).
-  const employeeChips = React.useMemo(() => {
-    const map = new Map<string, number>();
-    for (const h of baseHistory) {
-      for (const name of employeeNamesOf(h)) {
-        map.set(name, (map.get(name) ?? 0) + 1);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [baseHistory, employeeNamesOf]);
-
-  // Выбранный сотрудник пропал после смены периода/поиска — сбрасываем фильтр.
-  React.useEffect(() => {
-    if (employeeFilter && !employeeChips.some((e) => e.name === employeeFilter)) {
-      setEmployeeFilter(null);
-    }
-  }, [employeeChips, employeeFilter]);
-
   const displayList = React.useMemo(() => {
     let list = baseHistory;
     if (paymentFilter !== "all") {
       list = list.filter((h) => h.paymentStatus === paymentFilter);
-    }
-    if (employeeFilter) {
-      list = list.filter((h) => employeeNamesOf(h).includes(employeeFilter));
     }
     if (filters.serviceName) {
       list = list.filter((h) =>
@@ -249,7 +231,16 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
       );
     }
     return list;
-  }, [baseHistory, paymentFilter, employeeFilter, filters.serviceName, employeeNamesOf, getLines]);
+  }, [baseHistory, paymentFilter, filters.serviceName, getLines]);
+
+  // Для счётчика в тулбаре: тот же фильтр по исполнителю, что панель
+  // применяет внутри к items (сам список фильтрует панель).
+  const doctorFilteredCount = React.useMemo(() => {
+    if (!doctorFilter) return displayList.length;
+    return displayList.filter((h) =>
+      h.services.some((sl) => sl.employee?.fullName === doctorFilter),
+    ).length;
+  }, [displayList, doctorFilter]);
 
   // ── Drawer-фильтры: бейдж и чипы применённых значений ─────────────────────
   const defaults = defaultRegistryFilters();
@@ -291,7 +282,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   );
 
   const isLoading = loading || extraLoading;
-  const isFiltered = displayList.length !== baseHistory.length;
+  const isFiltered = doctorFilteredCount !== baseHistory.length;
 
   const detailsPanel = selectedAppt ? (
     <AppointmentDetailsPanel
@@ -388,7 +379,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                 sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", gap: 1 }}
               >
                 <Typography variant="subtitle2" fontWeight={600}>
-                  {listLabel} ({isFiltered ? `${displayList.length} из ${baseHistory.length}` : baseHistory.length})
+                  {listLabel} ({isFiltered ? `${doctorFilteredCount} из ${baseHistory.length}` : baseHistory.length})
                 </Typography>
                 <Badge badgeContent={activeFilterCount} color="primary">
                   <Button
@@ -448,55 +439,6 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                 })}
               </Stack>
 
-              {/* Сотрудники — горизонтальная лента чипов */}
-              {employeeChips.length > 0 && (
-                <Box
-                  sx={{
-                    px: 1.5,
-                    py: 1,
-                    borderBottom: 1,
-                    borderColor: "divider",
-                    display: "flex",
-                    gap: 0.75,
-                    overflowX: "auto",
-                    scrollbarWidth: "none",
-                    "&::-webkit-scrollbar": { display: "none" },
-                  }}
-                >
-                  {[{ name: null as string | null, count: 0, label: "Все сотрудники" },
-                    ...employeeChips.map((e) => ({ name: e.name as string | null, count: e.count, label: `${e.name} · ${e.count}` })),
-                  ].map((e) => {
-                    const active = employeeFilter === e.name;
-                    return (
-                      <Chip
-                        key={e.name ?? "__all"}
-                        size="small"
-                        clickable
-                        label={e.label}
-                        onClick={() => setEmployeeFilter(e.name)}
-                        sx={(t) => ({
-                          height: 26,
-                          borderRadius: "8px",
-                          fontWeight: 500,
-                          flexShrink: 0,
-                          border: 1,
-                          borderColor: active ? alpha(t.palette.primary.main, 0.4) : "divider",
-                          color: active ? "primary.onSurface" : "text.secondary",
-                          bgcolor: active
-                            ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
-                            : "transparent",
-                          "&:hover": {
-                            bgcolor: active
-                              ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.22 : 0.12)
-                              : subtleBg(t, true),
-                          },
-                        })}
-                      />
-                    );
-                  })}
-                </Box>
-              )}
-
               {/* Чипы применённых фильтров из Drawer */}
               {appliedFilterChips.length > 0 && (
                 <Stack
@@ -527,6 +469,12 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                   canUpdate={canUpdate}
                   canManageFinance={canManageFinance}
                   canViewFinance={canViewFinance}
+                  // Фильтр по сотруднику — внутренняя лента аватарок панели
+                  // (как в «Регистратуре»); управляемый режим, чтобы счётчик
+                  // в тулбаре учитывал выбор.
+                  doctorFilter={doctorFilter}
+                  onDoctorFilterChange={setDoctorFilter}
+                  groupEmployeeIds={groupEmployeeIds}
                   onSelect={(appt) => setSelectedAppt((prev) => (prev?.id === appt.id ? null : appt))}
                   onEdit={setEditTarget}
                   onPay={setPaymentTarget}

@@ -48,6 +48,7 @@ export const AllProceduresList: React.FC = () => {
       searchPlaceholder="Поиск пациента, процедуры..."
       getLines={nurseLines}
       isVisible={hasNurseLine}
+      groupEmployeeIds={nurseIds}
       extraLoading={nurseIdsQuery.isLoading}
     />
   );
