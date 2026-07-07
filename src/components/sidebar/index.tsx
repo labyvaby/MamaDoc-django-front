@@ -48,6 +48,7 @@ import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -376,6 +377,9 @@ const SidebarSecondary: React.FC = () => {
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
+    // Достижения: пока модуль на моках — виден всем в Django-режиме.
+    // TODO при интеграции с бэком: IS_DJANGO_BACKEND && (isSuper || can("achievements.view"))
+    achievements: IS_DJANGO_BACKEND,
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -413,7 +417,7 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
-    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.diagnoses,
+    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -581,6 +585,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Услуги */}
         {show("org") && can_.services && (
           <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
+        )}
+
+        {/* Достижения (Django-mode only, пока на моках) */}
+        {show("org") && can_.achievements && (
+          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}

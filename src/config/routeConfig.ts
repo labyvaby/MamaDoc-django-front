@@ -66,6 +66,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
   {
     path: '/tasks',
   },
+
+  // Достижения — просмотр доступен любому сотруднику.
+  // TODO при интеграции с бэком: requiredPermissions: [PERMISSIONS.ACHIEVEMENTS_VIEW]
+  {
+    path: '/achievements',
+  },
 ];
 
 /**

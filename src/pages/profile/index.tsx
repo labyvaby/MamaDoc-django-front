@@ -14,6 +14,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
+import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import { AppButton } from "../../components/ui/AppButton";
 import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import TelegramIcon from "@mui/icons-material/Telegram";
@@ -34,6 +35,7 @@ import { IS_DJANGO_BACKEND } from "../../config/backend";
 import ChangePasswordCard from "./ChangePasswordCard";
 import EditProfileDrawer, { type ProfileFormValues } from "./EditProfileDrawer";
 import ProfileDocumentsBlock from "./ProfileDocumentsBlock";
+import AchievementsGrid from "../../components/achievements/AchievementsGrid";
 
 const MotionBox = motion(Box);
 
@@ -237,6 +239,21 @@ const ProfilePage: React.FC = () => {
       ),
     },
   ];
+
+  // Достижения: пока модуль на моках — доступно в Django-режиме.
+  // TODO при интеграции с бэком: дополнительно гейтить can("achievements.view").
+  if (IS_DJANGO_BACKEND) {
+    tabs.push({
+      key: "achievements",
+      label: "Достижения",
+      icon: <EmojiEventsOutlined fontSize="small" />,
+      content: (
+        <AppCard variant="outlined" title="Достижения">
+          <AchievementsGrid />
+        </AppCard>
+      ),
+    });
+  }
 
   if (hasDjangoEmp && canViewDocs) {
     tabs.push({

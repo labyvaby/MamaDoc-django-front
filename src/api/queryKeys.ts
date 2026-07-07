@@ -140,6 +140,18 @@ export const djangoQueryKeys = {
     myStats: ["django", "tasks", "my-stats"] as const,
   },
 
+  achievements: {
+    all: ["django", "achievements"] as const,
+    definitions: ["django", "achievements", "definitions"] as const,
+    me: ["django", "achievements", "me"] as const,
+    employee: (employeeId: number) =>
+      ["django", "achievements", "employee", employeeId] as const,
+    organization: ["django", "achievements", "organization"] as const,
+    feed: (params: Record<string, unknown>) =>
+      ["django", "achievements", "feed", params] as const,
+    unseen: ["django", "achievements", "unseen"] as const,
+  },
+
   staff: {
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,

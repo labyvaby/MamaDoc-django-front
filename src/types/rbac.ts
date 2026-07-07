@@ -178,6 +178,9 @@ export const PERMISSIONS = {
   TASKS_UPDATE: 'tasks.update',
   TASKS_LIST: 'tasks.list',
   TASKS_MANAGE: 'tasks.manage',
+
+  // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
+  ACHIEVEMENTS_VIEW: 'achievements.view',
 } as const;
 
 // Тип для ключей разрешений

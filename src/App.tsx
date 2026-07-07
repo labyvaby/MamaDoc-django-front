@@ -27,6 +27,7 @@ import { useLocation, useNavigate } from "react-router";
 
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
+import { AchievementToast } from "./components/achievements/AchievementToast";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { RefreshProvider } from "./contexts/refresh-context";
@@ -83,6 +84,7 @@ const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django
 const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
 const TasksPage = lazy(() => import("./pages/tasks"));
+const AchievementsPage = lazy(() => import("./pages/achievements"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -450,6 +452,11 @@ function App() {
                         meta: { label: "Задачи" }
                       },
                       {
+                        name: "achievements",
+                        list: "/achievements",
+                        meta: { label: "Достижения" }
+                      },
+                      {
                         name: "all-procedures",
                         list: "/all-procedures",
                         meta: { label: "Все процедуры" }
@@ -498,6 +505,8 @@ function App() {
                                 <DjangoContextRemount>
                                   <Outlet />
                                 </DjangoContextRemount>
+                                {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
+                                <AchievementToast />
                               </ThemedLayout>
                             </MobileSidebarProvider>
                           </RequireAuth>
@@ -1008,6 +1017,17 @@ function App() {
                               element={
                                 <Suspense fallback={<LinearProgress />}>
                                   <TasksPage />
+                                </Suspense>
+                              }
+                            />
+                            {/* Достижения: пока на моках — без RequirePermission.
+                                TODO при интеграции: обернуть в
+                                <RequirePermission permission="achievements.view"> */}
+                            <Route
+                              path="achievements"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <AchievementsPage />
                                 </Suspense>
                               }
                             />
