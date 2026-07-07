@@ -63,6 +63,14 @@ interface AppointmentListPanelProps {
   /** Скрыть ленту аватарок-исполнителей (процедурный кабинет её не показывает). */
   hideDoctorStrip?: boolean;
   /**
+   * Управляемый выбор исполнителя в ленте аватарок: если проп передан
+   * (не undefined), панель использует его вместо внутреннего состояния,
+   * а изменения сообщает через onDoctorFilterChange. Нужно реестрам
+   * («Все приёмы»/«Все процедуры»), где счётчик в тулбаре учитывает выбор.
+   */
+  doctorFilter?: string | null;
+  onDoctorFilterChange?: (name: string | null) => void;
+  /**
    * Если задано — группировать и считать исполнителей только по этим employee id.
    * Процедурный кабинет передаёт сюда id медсестёр, чтобы совместный приём
    * врач+медсестра группировался под медсестрой, а групп врачей не было.
@@ -224,17 +232,28 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   onPay: _onPay,
   onAddSlot,
   hideDoctorStrip = false,
+  doctorFilter,
+  onDoctorFilterChange,
   groupEmployeeIds = null,
 }) => {
   const theme = useTheme();
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
 
-  // ── Doctor filter state ────────────────────────────────────────────────────
-  const [selectedDoctor, setSelectedDoctor] = React.useState<string | null>(null);
+  // ── Doctor filter state: управляемый (doctorFilter) или внутренний ────────
+  const isDoctorControlled = doctorFilter !== undefined;
+  const [internalDoctor, setInternalDoctor] = React.useState<string | null>(null);
+  const selectedDoctor = isDoctorControlled ? doctorFilter : internalDoctor;
+  const setSelectedDoctor = React.useCallback(
+    (name: string | null) => {
+      if (!isDoctorControlled) setInternalDoctor(name);
+      onDoctorFilterChange?.(name);
+    },
+    [isDoctorControlled, onDoctorFilterChange],
+  );
 
   React.useEffect(() => {
-    setSelectedDoctor(null);
-  }, [titleDate]);
+    if (!isDoctorControlled) setInternalDoctor(null);
+  }, [titleDate, isDoctorControlled]);
 
   // ── Build doctor list from appointments (id → name, photoUrl) ─────────────
   const availableDoctors = React.useMemo(() => {

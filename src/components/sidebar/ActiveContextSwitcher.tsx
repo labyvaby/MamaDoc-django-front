@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Avatar,
   Box,
   Typography,
   IconButton,
@@ -126,6 +127,13 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
             >
               {switching ? (
                 <CircularProgress size={16} />
+              ) : activeOrganization?.logoUrl ? (
+                <Avatar
+                  variant="rounded"
+                  src={activeOrganization.logoUrl}
+                  alt={activeOrganization.name}
+                  sx={{ width: 20, height: 20 }}
+                />
               ) : (
                 <BusinessOutlined fontSize="small" />
               )}
@@ -180,7 +188,18 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
       }}
       onClick={handleOpen}
     >
-      <LeadIcon fontSize="small" sx={{ color: "text.secondary" }} />
+      {/* Логотип организации главнее типовой иконки; в филиальном контексте
+          лидирует иконка филиала, логотип уходит в подпись организации ниже. */}
+      {!branchLabel && activeOrganization?.logoUrl ? (
+        <Avatar
+          variant="rounded"
+          src={activeOrganization.logoUrl}
+          alt={orgLabel}
+          sx={{ width: 24, height: 24 }}
+        />
+      ) : (
+        <LeadIcon fontSize="small" sx={{ color: "text.secondary" }} />
+      )}
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography
           variant="caption"
@@ -215,7 +234,16 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
               color: "text.secondary",
             }}
           >
-            <BusinessOutlined sx={{ fontSize: 12 }} />
+            {activeOrganization?.logoUrl ? (
+              <Avatar
+                variant="rounded"
+                src={activeOrganization.logoUrl}
+                alt={orgLabel}
+                sx={{ width: 12, height: 12 }}
+              />
+            ) : (
+              <BusinessOutlined sx={{ fontSize: 12 }} />
+            )}
             <Typography
               variant="caption"
               sx={{

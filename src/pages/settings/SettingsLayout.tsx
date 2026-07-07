@@ -21,8 +21,11 @@ import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 
+import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+
 import { useCanChecker } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { TASKS_USE_MOCKS } from "../../api/tasks";
 
 /**
  * Permission codes that gate each tab.  Kept in sync with the
@@ -39,6 +42,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   insurers: "finance.view",
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
+  tasks: "tasks.manage",
 } as const;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
@@ -105,6 +109,12 @@ const TABS: TabDef[] = [
     to: "/settings/diagnoses",
     icon: <LocalHospitalOutlined fontSize="small" />,
   },
+  {
+    key: "tasks",
+    label: "Задачи",
+    to: "/settings/tasks",
+    icon: <AssignmentOutlined fontSize="small" />,
+  },
 ];
 
 /**
@@ -115,7 +125,12 @@ const TABS: TabDef[] = [
  */
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
-  return TABS.filter((tab) => can(SETTINGS_TAB_PERMISSIONS[tab.key]));
+  return TABS.filter((tab) => {
+    // Задачи: пока модуль на моках — таб виден без прав.
+    // TODO при интеграции с бэком: убрать исключение, оставить только can().
+    if (tab.key === "tasks" && TASKS_USE_MOCKS) return true;
+    return can(SETTINGS_TAB_PERMISSIONS[tab.key]);
+  });
 }
 
 /**

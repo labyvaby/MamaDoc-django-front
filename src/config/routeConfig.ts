@@ -60,6 +60,18 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/categories',
     allowedRoles: ['superadmin', 'admin'],
   },
+
+  // Задачи/заявки — подача доступна любому сотруднику.
+  // TODO при интеграции с бэком: requiredPermissions: [PERMISSIONS.TASKS_LIST]
+  {
+    path: '/tasks',
+  },
+
+  // Достижения — просмотр доступен любому сотруднику.
+  // TODO при интеграции с бэком: requiredPermissions: [PERMISSIONS.ACHIEVEMENTS_VIEW]
+  {
+    path: '/achievements',
+  },
 ];
 
 /**

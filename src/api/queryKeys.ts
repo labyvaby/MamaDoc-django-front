@@ -127,6 +127,31 @@ export const djangoQueryKeys = {
       ["django", "reviews", "appointment", appointmentId] as const,
   },
 
+  tasks: {
+    all: ["django", "tasks"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "tasks", "list", params] as const,
+    detail: (id: number) => ["django", "tasks", id] as const,
+    categories: ["django", "tasks", "categories"] as const,
+    recurringRules: ["django", "tasks", "recurring-rules"] as const,
+    suggestions: ["django", "tasks", "automation-suggestions"] as const,
+    templates: ["django", "tasks", "templates"] as const,
+    summary: ["django", "tasks", "summary"] as const,
+    myStats: ["django", "tasks", "my-stats"] as const,
+  },
+
+  achievements: {
+    all: ["django", "achievements"] as const,
+    definitions: ["django", "achievements", "definitions"] as const,
+    me: ["django", "achievements", "me"] as const,
+    employee: (employeeId: number) =>
+      ["django", "achievements", "employee", employeeId] as const,
+    organization: ["django", "achievements", "organization"] as const,
+    feed: (params: Record<string, unknown>) =>
+      ["django", "achievements", "feed", params] as const,
+    unseen: ["django", "achievements", "unseen"] as const,
+  },
+
   staff: {
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,

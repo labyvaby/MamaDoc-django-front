@@ -47,9 +47,14 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
+import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
+import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
+import { getTasksSummary } from "../../api/tasks";
+import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
@@ -252,6 +257,37 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   );
 };
 
+// Бренд в шапке сайдбара: логотип активной организации (если загружен в
+// «Настройки → Организация»), иначе — статичный логотип приложения. Название
+// организации рядом не дублируем — оно уже показано в ActiveContextSwitcher.
+const SidebarBrand: React.FC<{ height: number }> = ({ height }) => {
+  const { activeOrganization } = usePermissions();
+  const logoUrl = activeOrganization?.logoUrl ?? null;
+  const [broken, setBroken] = useState(false);
+
+  useEffect(() => {
+    setBroken(false);
+  }, [logoUrl]);
+
+  const useOrgLogo = !!logoUrl && !broken;
+
+  return (
+    <Box
+      component="img"
+      src={useOrgLogo ? logoUrl : appLogo}
+      alt={useOrgLogo ? activeOrganization?.name ?? "Организация" : "Мама Доктор"}
+      onError={useOrgLogo ? () => setBroken(true) : undefined}
+      sx={{
+        height,
+        width: "auto",
+        maxWidth: height * 6,
+        objectFit: "contain",
+        borderRadius: useOrgLogo ? 1 : 0,
+      }}
+    />
+  );
+};
+
 // Mobile header with logo (< 768px - мобильные и планшеты)
 const MobileSidebarHeader: React.FC = () => {
   const { mobileOpen } = useMobileSidebar();
@@ -270,15 +306,7 @@ const MobileSidebarHeader: React.FC = () => {
         transition: "all 400ms cubic-bezier(0.4, 0, 0.2, 1)",
       }}
     >
-      <Box
-        component="img"
-        src={appLogo}
-        alt="Мама Доктор"
-        sx={{
-          height: 36,
-          width: "auto",
-        }}
-      />
+      <SidebarBrand height={36} />
     </Box>
   );
 };
@@ -311,15 +339,7 @@ const DesktopSidebarHeader: React.FC = () => {
           overflow: "hidden",
         }}
       >
-        <Box
-          component="img"
-          src={appLogo}
-          alt="Мама Доктор"
-          sx={{
-            height: 28,
-            width: "auto",
-          }}
-        />
+        <SidebarBrand height={28} />
       </Box>
 
       {/* Кнопка бургера - всегда видна */}
@@ -369,9 +389,12 @@ const SidebarSecondary: React.FC = () => {
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
-    allAppointments: true,
-    allProcedures: true,
+    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
+    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
+    // Достижения: пока модуль на моках — виден всем в Django-режиме.
+    // TODO при интеграции с бэком: IS_DJANGO_BACKEND && (isSuper || can("achievements.view"))
+    achievements: IS_DJANGO_BACKEND,
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -379,6 +402,9 @@ const SidebarSecondary: React.FC = () => {
     storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
     // УПРАВЛЕНИЕ
     salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
+    // Задачи: пока модуль на моках — виден всем в Django-режиме.
+    // TODO при интеграции с бэком: IS_DJANGO_BACKEND && (isSuper || can("tasks.list"))
+    tasks: IS_DJANGO_BACKEND,
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     expenses: true,
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
@@ -393,12 +419,22 @@ const SidebarSecondary: React.FC = () => {
     ),
   };
 
+  // Бейдж «Задачи»: есть новые задачи для меня/моей группы.
+  // Тот же queryKey, что у сводки на доске задач, — кэш общий.
+  const tasksSummaryQuery = useQuery({
+    queryKey: djangoQueryKeys.tasks.summary,
+    queryFn: ({ signal }) => getTasksSummary(signal),
+    enabled: can_.tasks && !permissionsLoading,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const tasksBadge = (tasksSummaryQuery.data?.newForMe ?? 0) > 0;
+
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
-    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.diagnoses,
+    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
-    "management": can_.salaryReports || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -546,7 +582,7 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
         )}
 
-        {/* Все приемы — в Django-mode ведёт на /all-appointments (placeholder) */}
+        {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
         )}
@@ -564,6 +600,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Услуги */}
         {show("org") && can_.services && (
           <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
+        )}
+
+        {/* Достижения (Django-mode only, пока на моках) */}
+        {show("org") && can_.achievements && (
+          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
@@ -607,6 +648,17 @@ const SidebarSecondary: React.FC = () => {
         {/* Отзывы (Django-mode only) */}
         {show("management") && IS_DJANGO_BACKEND && (isSuper || can(['reviews.view', 'reviews.manage'])) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
+        )}
+
+        {/* Задачи */}
+        {show("management") && can_.tasks && (
+          <SidebarMenuItem
+            to="/tasks"
+            icon={<AssignmentOutlined />}
+            label="Задачи"
+            collapsed={siderCollapsed}
+            showBadge={tasksBadge}
+          />
         )}
 
         {/* Расходы */}
@@ -705,16 +757,17 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
       }}
     >
       <ListItemText primary={label} />
+      {/* Standalone Badge с variant="dot" имеет нулевой размер и точку за своими
+          границами (absolute + translate 50%) — её срезал overflow:hidden.
+          Поэтому в развёрнутом сайдбаре рисуем обычный кружок. */}
       {showBadge && !collapsedFinal && (
-        <Badge
-          variant="dot"
-          color="error"
+        <Box
           sx={{
-            '& .MuiBadge-dot': {
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-            }
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: 'error.main',
+            flexShrink: 0,
           }}
         />
       )}

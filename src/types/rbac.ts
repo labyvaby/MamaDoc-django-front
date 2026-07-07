@@ -171,6 +171,16 @@ export const PERMISSIONS = {
   // Настройки и отчеты
   SETTINGS_MANAGE: 'settings.manage',
   REPORTS_VIEW: 'reports.view',
+
+  // Задачи/заявки (контракт: MamaDoc/backend_ticket_tasks_module.md)
+  TASKS_CREATE: 'tasks.create',
+  TASKS_READ: 'tasks.read',
+  TASKS_UPDATE: 'tasks.update',
+  TASKS_LIST: 'tasks.list',
+  TASKS_MANAGE: 'tasks.manage',
+
+  // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
+  ACHIEVEMENTS_VIEW: 'achievements.view',
 } as const;
 
 // Тип для ключей разрешений
