@@ -25,7 +25,6 @@ import {
   Tooltip,
 } from "@mui/material";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
-import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
@@ -289,8 +288,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
   const [bonusRow, setBonusRow] = React.useState<PayrollRow | null>(null);
   const [payoutRow, setPayoutRow] = React.useState<PayrollRow | null>(null);
-  // Страничные дравера: «Расход» (без префилла) и «Единоразовая надбавка».
-  const [expenseDrawerOpen, setExpenseDrawerOpen] = React.useState(false);
+  // Страничный дравер «Единоразовая надбавка».
   const [bonusDrawerOpen, setBonusDrawerOpen] = React.useState(false);
 
   const handleLock = async () => {
@@ -349,20 +347,6 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 color={report.status === "locked" ? "success" : "default"}
                 variant={report.status === "locked" ? "filled" : "outlined"}
               />
-            )}
-            {canCreateExpense && (
-              <Tooltip title="Создать расход (аванс / ЗП / прочее)">
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="error"
-                  onClick={() => setExpenseDrawerOpen(true)}
-                  startIcon={compactHeader ? undefined : <ReceiptLongOutlinedIcon />}
-                  sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
-                >
-                  {compactHeader ? <ReceiptLongOutlinedIcon fontSize="small" /> : "Расход"}
-                </Button>
-              </Tooltip>
             )}
             {canManage && report?.status === "draft" && (
               <Tooltip title="Единоразовая надбавка сотруднику">
@@ -525,6 +509,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               month={month}
                               organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
                               isMobile
+                              onPayout={canCreateExpense ? setPayoutRow : undefined}
                             />
                           ))}
                         </Stack>
@@ -565,6 +550,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               month={month}
                               organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
                               isMobile
+                              onPayout={canCreateExpense ? setPayoutRow : undefined}
                             />
                           ))}
                         </Stack>
@@ -644,6 +630,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Зарплата</TableCell>}
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
+                              {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -656,6 +643,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                                 organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
                                 columns={cols}
                                 periodSettings={report?.settings}
+                                onPayout={canCreateExpense ? setPayoutRow : undefined}
                               />
                             ))}
                           </TableBody>
@@ -702,6 +690,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Часы</TableCell>
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
+                              {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -714,6 +703,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                                 organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
                                 columns={COLUMNS_ADMIN}
                                 periodSettings={report?.settings}
+                                onPayout={canCreateExpense ? setPayoutRow : undefined}
                               />
                             ))}
                           </TableBody>
@@ -781,29 +771,16 @@ const DjangoSalaryReportsPage: React.FC = () => {
           branchId={activeBranch?.id ?? undefined}
           prefill={{
             employee: { id: payoutRow.employeeId, fullName: payoutRow.fullName },
-            categoryKind: "advance",
-            cashAmount: payoutRow.netSalary,
+            // Текущий месяц — аванс (зачтётся в него же); закрытый месяц — зарплата
+            // (kind=salary зачитывается в предыдущий месяц относительно даты расхода).
+            categoryKind: dayjs().isSame(parsed, "month") ? "advance" : "salary",
+            cardAmount: payoutRow.netSalary,
             name: `Зарплата — ${payoutRow.fullName}`,
           }}
           onCreated={() => {
             setPayoutRow(null);
             void query.refetch();
             notify?.({ type: "success", message: "Выплата проведена" });
-          }}
-        />
-      )}
-
-      {/* Страничный «Расход» из шапки — без префилла, тот же компонент */}
-      {expenseDrawerOpen && (
-        <DjangoAddExpenseDrawer
-          open
-          onClose={() => setExpenseDrawerOpen(false)}
-          organizationId={report?.organizationId}
-          branchId={activeBranch?.id ?? undefined}
-          onCreated={() => {
-            setExpenseDrawerOpen(false);
-            void query.refetch();
-            notify?.({ type: "success", message: "Расход создан" });
           }}
         />
       )}
