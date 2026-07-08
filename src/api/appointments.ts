@@ -208,6 +208,10 @@ export interface DjangoAppointment {
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
+  /** Auth-user id создавшего/изменившего запись (проверено на проде 08.07.2026:
+   *  бэк шлёт только id; имя фронт достаёт через staff.employees.authUserId). */
+  createdById?: number | null;
+  updatedById?: number | null;
   // Payment fields — included in list/detail responses by backend
   paymentStatus?: import("./payments").PaymentStatus;
   paidTotal?: string;
