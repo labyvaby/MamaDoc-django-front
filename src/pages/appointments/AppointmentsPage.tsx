@@ -340,9 +340,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     nightOnly,
   });
 
-  // Лёгкая timestamp-синхронизация вместо интервального поллинга: раз в 15с
-  // проверяем last-update и перезапрашиваем тяжёлый список только при изменении.
-  // Пауза, пока открыт любой дровер/диалог — чтобы не мешать вводу.
+  // Лёгкая timestamp-синхронизация вместо интервального поллинга: раз в 2.5с
+  // проверяем дешёвый last-update и перезапрашиваем тяжёлый список только при
+  // изменении. Пауза, пока открыт любой дровер/диалог — чтобы не мешать вводу
+  // (изменения за время паузы подтянутся сразу после закрытия дровера).
   useAppointmentsAutoSync({
     branchId,
     paused: createOpen || editTarget !== null || paymentTarget !== null || confirm !== null,
@@ -351,6 +352,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       // чтобы при переходе на них отображались актуальные данные.
       queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.all,
+      });
+      // Свободные окна считаются от занятости приёмов: новый/перенесённый приём
+      // должен сразу закрывать слот и в виде «Окна».
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.scheduling.availabilityAll,
       });
     },
   });
