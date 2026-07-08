@@ -45,6 +45,7 @@ import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/query
 import { getStatusConfig, getStatusChipSx, normalizeDjangoStatus } from "../../../config/appointmentStatuses";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
 import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
 import AppointmentReviewBlock from "../../reviews/AppointmentReviewBlock";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
@@ -105,6 +106,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 }) => {
   const theme = useTheme();
   const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
+
+  // Кто создал/изменил приём: бэк отдаёт только auth-user id, имя — из
+  // справочника сотрудников (authUserId → ФИО).
+  const userNames = useAuthUserNames(appt.createdById != null || appt.updatedById != null);
+  const createdByName = appt.createdById != null ? userNames[appt.createdById] : undefined;
+  const updatedByName = appt.updatedById != null ? userNames[appt.updatedById] : undefined;
 
   // Заключение теперь открывается отдельной (третьей) колонкой на уровне
   // страницы — карточка лишь переключает её через onToggleConclusion.
@@ -532,18 +539,20 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   <Typography
                     variant="caption"
                     color="text.disabled"
-                    sx={{ fontSize: "0.725rem", lineHeight: 1.2 }}
+                    sx={{ fontSize: "0.725rem", lineHeight: 1.2, textAlign: "right" }}
                   >
                     Создан: {dayjs(appt.createdAt).format("DD.MM HH:mm")}
+                    {createdByName ? ` · ${createdByName}` : ""}
                   </Typography>
                 )}
                 {appt.updatedAt && appt.updatedAt !== appt.createdAt && (
                   <Typography
                     variant="caption"
                     color="text.disabled"
-                    sx={{ fontSize: "0.725rem", lineHeight: 1.2 }}
+                    sx={{ fontSize: "0.725rem", lineHeight: 1.2, textAlign: "right" }}
                   >
                     Изм: {dayjs(appt.updatedAt).format("DD.MM HH:mm")}
+                    {updatedByName ? ` · ${updatedByName}` : ""}
                   </Typography>
                 )}
               </Stack>

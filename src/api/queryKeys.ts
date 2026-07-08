@@ -155,6 +155,8 @@ export const djangoQueryKeys = {
   },
 
   staff: {
+    /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
+    userNames: ["django", "staff", "userNames"] as const,
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,
     banks: (organizationId: number | null | undefined) =>
@@ -173,6 +175,9 @@ export const djangoQueryKeys = {
       ["django", "scheduling", "exceptions", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
+    // Root key — инвалидация всех запросов свободных окон разом
+    // (занятость меняется при любом изменении приёмов).
+    availabilityAll: ["django", "scheduling", "availability"] as const,
   },
 
   catalog: {
