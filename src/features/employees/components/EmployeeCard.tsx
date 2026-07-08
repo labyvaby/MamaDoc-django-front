@@ -13,6 +13,7 @@ import {
   ImageListItem,
   Modal,
   IconButton,
+  Tooltip,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
@@ -41,6 +42,7 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
+import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import type { EmployesRow } from "../types";
@@ -57,6 +59,18 @@ import { subtleBg } from "../../../theme/uiHelpers";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { getServices } from "../../../api/catalog";
+import {
+  getAchievementDefinitions,
+  getEmployeeAchievements,
+  topEarnedByCode,
+} from "../../../api/achievements";
+import {
+  djangoQueryKeys,
+  DJANGO_LIST_STALE_TIME_MS,
+  DJANGO_REFERENCE_STALE_TIME_MS,
+} from "../../../api/queryKeys";
+import { AchievementBadge } from "../../../components/achievements/AchievementBadge";
+import { tierTone } from "../../../components/achievements/meta";
 import EmployeeRelatedModal, { type RelatedModalType } from "./EmployeeRelatedModal";
 import {
   useEmployeeShiftsMonth,
@@ -259,6 +273,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const canViewAttendance = useCan("attendance.view");
   const canViewExpenses = useCan(["finance.view", "finance.expense.view"]);
   const canViewPayroll = useCan("payroll.view");
+  const canViewAchievements = useCan("achievements.view");
 
   // For Django mode: Cache services via react-query
   const empIdNum = emp?.id ? Number(emp.id) : 0;
@@ -297,6 +312,38 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   );
   const payrollRow = payrollQ.data?.rows.find((r) => r.employeeId === empIdNum);
   const monthNetSalary = toNum(payrollRow?.netSalary);
+
+  // Бейджи достижений коллеги — только полученные, без прогресса (ТЗ достижений).
+  const achievementsEnabled = IS_DJANGO_BACKEND && empIdNum > 0 && canViewAchievements;
+  const employeeAchievementsQuery = useQuery({
+    queryKey: djangoQueryKeys.achievements.employee(empIdNum),
+    queryFn: ({ signal }) => getEmployeeAchievements(empIdNum, signal),
+    enabled: achievementsEnabled,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const achievementDefinitionsQuery = useQuery({
+    queryKey: djangoQueryKeys.achievements.definitions,
+    queryFn: ({ signal }) => getAchievementDefinitions(signal),
+    enabled: achievementsEnabled && (employeeAchievementsQuery.data?.length ?? 0) > 0,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const employeeBadges = React.useMemo(() => {
+    const earned = employeeAchievementsQuery.data ?? [];
+    if (earned.length === 0) return [];
+    const defByCode = new Map(
+      (achievementDefinitionsQuery.data ?? []).map((d) => [d.code, d]),
+    );
+    return [...topEarnedByCode(earned).values()]
+      .sort((a, b) => b.achievedAt.localeCompare(a.achievedAt))
+      .map((e) => {
+        const def = defByCode.get(e.code);
+        return {
+          ...e,
+          title: def?.title ?? e.code,
+          tone: tierTone(e.level, def?.tiers.length ?? 3),
+        };
+      });
+  }, [employeeAchievementsQuery.data, achievementDefinitionsQuery.data]);
 
   // Каталог услуг — для картинок/цен в списке услуг сотрудника (Django).
   const catalogQuery = useQuery({
@@ -774,6 +821,25 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                           sx={{ borderRadius: "7px", height: 30 }}
                         />
                       )}
+                </Stack>
+              </Box>
+            )}
+
+            {/* Достижения — только полученные бейджи, без прогресса и счётчиков */}
+            {achievementsEnabled && employeeBadges.length > 0 && (
+              <Box>
+                <SectionHeader icon={<EmojiEventsOutlined />} title="Достижения" />
+                <Stack direction="row" flexWrap="wrap" gap={1}>
+                  {employeeBadges.map((b) => (
+                    <Tooltip
+                      key={b.code}
+                      title={`${b.title} — ${b.tierName} · ${formatDateRu(b.achievedAt)}`}
+                    >
+                      <Box sx={{ display: "inline-flex" }}>
+                        <AchievementBadge code={b.code} tone={b.tone} size={44} />
+                      </Box>
+                    </Tooltip>
+                  ))}
                 </Stack>
               </Box>
             )}

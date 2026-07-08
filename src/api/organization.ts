@@ -12,8 +12,8 @@ export interface DjangoOrganization {
   status: string;
   patientScope: PatientScope;
   /** Абсолютный URL логотипа организации; null — логотип не загружен.
-   *  Контракт: MamaDoc/backend_ticket_organization_logo.md (бэкенд ещё не отдаёт
-   *  поле — до деплоя нормализуем в null, UI показывает заглушку). */
+   *  Контракт: MamaDoc/backend_ticket_organization_logo.md (реализовано бэком
+   *  08.07.2026; в /auth/me и /auth/context поле относительное `/media/...`). */
   logoUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -99,8 +99,8 @@ export function updateOrganization(
 
 /**
  * PUT /organization/<id>/logo/ — загрузка/замена логотипа (multipart, поле
- * `logo`). Возвращает обновлённую организацию с новым logoUrl.
- * Контракт предложен бэкенду: MamaDoc/backend_ticket_organization_logo.md.
+ * `logo`; ≤ 5 МБ, jpg/jpeg/png/webp/svg). Возвращает обновлённую организацию
+ * с новым logoUrl. Право: organization.update.
  */
 export function uploadOrganizationLogo(
   id: number,

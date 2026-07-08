@@ -27,7 +27,7 @@ import dayjs from "dayjs";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
-import { useCan } from "../../hooks/useCan";
+import { useCan, useCanChecker } from "../../hooks/useCan";
 import { PageHeader, AppCard, UserAvatar, InfoTile } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { getCurrentUser } from "../../api/auth";
@@ -160,6 +160,7 @@ const ProfilePage: React.FC = () => {
   const canViewPrivate = useCan("staff.private.view");
   const canViewDocs = useCan("staff.documents.view");
   const canManagePrivate = useCan("staff.private.manage");
+  const { can } = useCanChecker();
 
   const [editOpen, setEditOpen] = React.useState(false);
   const [tab, setTab] = React.useState(0);
@@ -240,9 +241,7 @@ const ProfilePage: React.FC = () => {
     },
   ];
 
-  // Достижения: пока модуль на моках — доступно в Django-режиме.
-  // TODO при интеграции с бэком: дополнительно гейтить can("achievements.view").
-  if (IS_DJANGO_BACKEND) {
+  if (IS_DJANGO_BACKEND && can("achievements.view")) {
     tabs.push({
       key: "achievements",
       label: "Достижения",

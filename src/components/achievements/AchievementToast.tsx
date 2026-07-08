@@ -13,6 +13,7 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
+import { useCanChecker } from "../../hooks/useCan";
 import { AchievementBadge } from "./AchievementBadge";
 import { tierTone } from "./meta";
 
@@ -24,13 +25,13 @@ import { tierTone } from "./meta";
  */
 export const AchievementToast: React.FC = () => {
   const queryClient = useQueryClient();
+  const { can } = useCanChecker();
   const [dismissed, setDismissed] = React.useState(false);
 
-  // TODO при интеграции с бэком: enabled дополнительно по can("achievements.view").
   const unseenQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.unseen,
     queryFn: ({ signal }) => getUnseenAchievements(signal),
-    enabled: IS_DJANGO_BACKEND,
+    enabled: IS_DJANGO_BACKEND && can("achievements.view"),
     staleTime: Infinity,
   });
   const definitionsQuery = useQuery({

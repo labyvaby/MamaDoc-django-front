@@ -4,13 +4,13 @@ import { apiRequest } from "./client";
  * Модуль внутренних заявок/задач.
  *
  * Контракт: MamaDoc/backend_ticket_tasks_module.md — НЕ менять без согласования
- * с бэкенд-командой. Пока бэкенд не готов, модуль работает на in-memory моках
- * (TASKS_USE_MOCKS = true). После готовности бэка: выставить флаг в false —
- * сигнатуры функций совпадают с контрактом один в один.
+ * с бэкенд-командой. Бэкенд реализован (гайд frontend-tickets-2026-07-guide.md,
+ * 08.07.2026), модуль работает на живом API. Моки оставлены для локальной
+ * разработки без бэка (TASKS_USE_MOCKS = true).
  */
 
-// Переключить в false, когда бэкенд реализует app `tasks`.
-export const TASKS_USE_MOCKS = true;
+// Бэкенд app `tasks` задеплоен — моки только для локальной отладки.
+export const TASKS_USE_MOCKS = false;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -141,7 +141,12 @@ export interface UpdateTaskPayload {
   categoryId?: number;
   assigneeId?: number | null;
   dueDate?: string | null;
+  /** Только для tasks.manage (иначе 400). */
   priority?: TaskPriority;
+  /** Tri-state бэка (msgspec не отличает «не прислали» от null): чтобы снять
+   *  исполнителя/срок, слать явный флаг — `assigneeId: null` поле НЕ очищает. */
+  clearAssignee?: boolean;
+  clearDueDate?: boolean;
 }
 
 export interface ReasonPayload {
@@ -152,9 +157,6 @@ export interface ReasonPayload {
 
 /** Текущий сотрудник в моках. Бэкенд определяет «me» по сессии. */
 const MOCK_ME = { id: 101, name: "Вы (текущий сотрудник)" };
-
-/** Для UI в мок-режиме: подставной id «меня» (см. TODO при интеграции). */
-export const TASKS_MOCK_EMPLOYEE_ID = MOCK_ME.id;
 
 const mockCategories: TaskCategory[] = [
   { id: 1, name: "Расходники", assignedRoles: ["nurse"], defaultPriority: "normal", isActive: true },
@@ -655,6 +657,10 @@ export interface UpdateRecurringRulePayload {
   dayOfWeek?: number | null;
   dayOfMonth?: number | null;
   isActive?: boolean;
+  /** Tri-state бэка: очистка dayOfWeek/dayOfMonth — только явным флагом
+   *  (null в JSON поле не очищает, см. UpdateTaskPayload). */
+  clearDayOfWeek?: boolean;
+  clearDayOfMonth?: boolean;
 }
 
 let mockRuleSeq = 300;
@@ -767,6 +773,112 @@ export function deleteRecurringRule(ruleId: number): Promise<void> {
     return mockDelay(undefined);
   }
   return apiRequest<void>(`/tasks/recurring-rules/${ruleId}/`, { method: "DELETE" });
+}
+
+// ── API: правила порогов остатков (StockTaskRule) ──────────────────────────────
+
+/**
+ * Порог остатка поверх учёта warehouse: остаток товара на складе упал ниже
+ * minThreshold → поллер бэка создаёт задачу source=auto_stock (дедуп: пока по
+ * правилу открыта задача, новая не создаётся).
+ */
+export interface StockTaskRule {
+  id: number;
+  productId: number;
+  productName: string;
+  warehouseId: number;
+  warehouseName: string;
+  categoryId: number;
+  /** Гайд бэка фиксирует только productName/warehouseName — categoryName
+   *  резолвим по справочнику категорий, если бэк его не прислал. */
+  categoryName?: string;
+  /** Строка-decimal ("5.00") — форма бэка, не число. */
+  minThreshold: string;
+  isActive: boolean;
+}
+
+export interface CreateStockRulePayload {
+  productId: number;
+  warehouseId: number;
+  categoryId: number;
+  minThreshold: string;
+}
+
+export interface UpdateStockRulePayload {
+  categoryId?: number;
+  minThreshold?: string;
+  isActive?: boolean;
+}
+
+let mockStockRuleSeq = 500;
+
+const mockStockRules: StockTaskRule[] = [
+  {
+    id: ++mockStockRuleSeq,
+    productId: 1,
+    productName: "Перчатки нитриловые M",
+    warehouseId: 1,
+    warehouseName: "Основной склад",
+    categoryId: 1,
+    categoryName: "Расходники",
+    minThreshold: "50.00",
+    isActive: true,
+  },
+];
+
+export function getStockRules(signal?: AbortSignal): Promise<StockTaskRule[]> {
+  if (TASKS_USE_MOCKS) {
+    return mockDelay(mockStockRules);
+  }
+  return apiRequest<{ results: StockTaskRule[] } | StockTaskRule[]>(
+    "/tasks/stock-rules/",
+    { signal },
+  ).then((data) => (Array.isArray(data) ? data : data.results));
+}
+
+export function createStockRule(payload: CreateStockRulePayload): Promise<StockTaskRule> {
+  if (TASKS_USE_MOCKS) {
+    const cat = mockCategories.find((c) => c.id === payload.categoryId);
+    const rule: StockTaskRule = {
+      id: ++mockStockRuleSeq,
+      productId: payload.productId,
+      productName: `Товар #${payload.productId}`,
+      warehouseId: payload.warehouseId,
+      warehouseName: `Склад #${payload.warehouseId}`,
+      categoryId: payload.categoryId,
+      categoryName: cat?.name,
+      minThreshold: payload.minThreshold,
+      isActive: true,
+    };
+    mockStockRules.push(rule);
+    return mockDelay(rule);
+  }
+  return apiRequest<StockTaskRule>("/tasks/stock-rules/", { method: "POST", body: payload });
+}
+
+export function updateStockRule(
+  ruleId: number,
+  payload: UpdateStockRulePayload,
+): Promise<StockTaskRule> {
+  if (TASKS_USE_MOCKS) {
+    const rule = mockStockRules.find((r) => r.id === ruleId);
+    if (!rule) return Promise.reject(new Error("Правило не найдено"));
+    Object.assign(rule, payload);
+    return mockDelay(rule);
+  }
+  return apiRequest<StockTaskRule>(`/tasks/stock-rules/${ruleId}/`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export function deleteStockRule(ruleId: number): Promise<void> {
+  if (TASKS_USE_MOCKS) {
+    const idx = mockStockRules.findIndex((r) => r.id === ruleId);
+    if (idx >= 0) mockStockRules.splice(idx, 1);
+    return mockDelay(undefined);
+  }
+  return apiRequest<void>(`/tasks/stock-rules/${ruleId}/`, { method: "DELETE" });
 }
 
 // ── API: предложения автономности ──────────────────────────────────────────────
@@ -961,4 +1073,82 @@ export function thankTask(taskId: number): Promise<Task> {
     return mockDelay(toTask(r));
   }
   return apiRequest<Task>(`/tasks/${taskId}/thank/`, { method: "POST" });
+}
+
+// ── API: внутрисистемные уведомления ───────────────────────────────────────────
+
+/** События уведомлений — зафиксированы в ответе бэка (frontend-tickets-2026-07-guide.md). */
+export type TaskNotificationEvent =
+  | "assigned"
+  | "new_in_group"
+  | "awaiting_approval"
+  | "done"
+  | "rejected"
+  | "thanked"
+  | "due_soon"
+  | "overdue";
+
+/**
+ * Форма элемента — предположение фронта: гайд бэка фиксирует только эндпоинты
+ * и поле `event`. Открытый вопрос бэку: точные имена остальных полей
+ * (taskId/taskTitle/createdAt/readAt) — UI написан терпимо к отсутствию readAt.
+ */
+export interface TaskNotification {
+  id: number;
+  event: TaskNotificationEvent;
+  taskId: number;
+  taskTitle: string;
+  createdAt: string;
+  readAt?: string | null;
+}
+
+let mockNotificationSeq = 40000;
+
+const mockNotifications: TaskNotification[] = [
+  {
+    id: ++mockNotificationSeq,
+    event: "assigned",
+    taskId: mockTasks[0]?.id ?? 0,
+    taskTitle: mockTasks[0]?.title ?? "",
+    createdAt: nowIso(),
+    readAt: null,
+  },
+  {
+    id: ++mockNotificationSeq,
+    event: "due_soon",
+    taskId: mockTasks[1]?.id ?? 0,
+    taskTitle: mockTasks[1]?.title ?? "",
+    createdAt: nowIso(),
+    readAt: null,
+  },
+];
+
+export function getTaskNotifications(
+  opts: { unread?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<TaskNotification[]> {
+  if (TASKS_USE_MOCKS) {
+    return mockDelay(
+      opts.unread ? mockNotifications.filter((n) => n.readAt == null) : mockNotifications,
+    );
+  }
+  const q = opts.unread ? "?unread=true" : "";
+  return apiRequest<{ results: TaskNotification[] } | TaskNotification[]>(
+    `/tasks/notifications/${q}`,
+    { signal },
+  ).then((data) => (Array.isArray(data) ? data : data.results));
+}
+
+/** Пометить уведомления прочитанными (без ids — все мои). */
+export function markTaskNotificationsRead(ids?: number[]): Promise<void> {
+  if (TASKS_USE_MOCKS) {
+    for (const n of mockNotifications) {
+      if (!ids || ids.includes(n.id)) n.readAt = nowIso();
+    }
+    return mockDelay(undefined);
+  }
+  return apiRequest<void>("/tasks/notifications/mark-read/", {
+    method: "POST",
+    body: ids ? { ids } : {},
+  });
 }

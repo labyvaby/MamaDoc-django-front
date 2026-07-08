@@ -392,9 +392,7 @@ const SidebarSecondary: React.FC = () => {
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
-    // Достижения: пока модуль на моках — виден всем в Django-режиме.
-    // TODO при интеграции с бэком: IS_DJANGO_BACKEND && (isSuper || can("achievements.view"))
-    achievements: IS_DJANGO_BACKEND,
+    achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -402,9 +400,7 @@ const SidebarSecondary: React.FC = () => {
     storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
     // УПРАВЛЕНИЕ
     salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
-    // Задачи: пока модуль на моках — виден всем в Django-режиме.
-    // TODO при интеграции с бэком: IS_DJANGO_BACKEND && (isSuper || can("tasks.list"))
-    tasks: IS_DJANGO_BACKEND,
+    tasks: IS_DJANGO_BACKEND && (isSuper || can("tasks.list")),
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     expenses: true,
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
