@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -39,20 +40,26 @@ import { subtleBg } from "../../theme/uiHelpers";
 import {
   approveAutomationSuggestion,
   createRecurringRule,
+  createStockRule,
   createTaskCategory,
   deleteRecurringRule,
+  deleteStockRule,
   dismissAutomationSuggestion,
   getAllTaskCategories,
   getAutomationSuggestions,
   getRecurringRules,
+  getStockRules,
   updateRecurringRule,
+  updateStockRule,
   updateTaskCategory,
   type AutomationSuggestion,
   type RecurringInterval,
   type RecurringTaskRule,
+  type StockTaskRule,
   type TaskCategory,
   type TaskPriority,
 } from "../../api/tasks";
+import { getProducts, getWarehouses, type DjangoProduct } from "../../api/warehouse";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { TASK_PRIORITY_META, TASK_PRIORITY_OPTIONS } from "../tasks/meta";
 
@@ -410,6 +417,197 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
   );
 };
 
+// ── Диалог порога остатков ─────────────────────────────────────────────────────
+
+/** Порог: до 2 знаков после точки, форма бэка — строка-decimal ("5.00"). */
+const normalizeThreshold = (raw: string): string | null => {
+  const v = raw.trim().replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(v)) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n.toFixed(2);
+};
+
+type StockRuleDialogProps = {
+  open: boolean;
+  onClose: () => void;
+  categories: TaskCategory[];
+  rule: StockTaskRule | null; // null — создание; иначе правка порога/категории
+  onSaved: () => void;
+};
+
+const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, categories, rule, onSaved }) => {
+  const [product, setProduct] = React.useState<DjangoProduct | null>(null);
+  const [warehouseId, setWarehouseId] = React.useState<number | "">("");
+  const [categoryId, setCategoryId] = React.useState<number | "">("");
+  const [threshold, setThreshold] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Товары/склады — из warehouse-модуля; нужен warehouse.view (у tasks.manage
+  // обычно есть). Грузим только при открытом диалоге создания.
+  const productsQuery = useQuery({
+    queryKey: ["django", "warehouse", "products", "stock-rule-picker"],
+    queryFn: ({ signal }) => getProducts(signal),
+    enabled: open && rule == null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const warehousesQuery = useQuery({
+    queryKey: ["django", "warehouse", "list", "stock-rule-picker"],
+    queryFn: ({ signal }) => getWarehouses(signal),
+    enabled: open && rule == null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+
+  React.useEffect(() => {
+    if (open) {
+      setProduct(null);
+      setWarehouseId(rule?.warehouseId ?? "");
+      setCategoryId(rule?.categoryId ?? "");
+      setThreshold(rule ? String(parseFloat(rule.minThreshold)) : "");
+      setBusy(false);
+      setError(null);
+    }
+  }, [open, rule]);
+
+  const normalized = normalizeThreshold(threshold);
+  const valid =
+    normalized != null && categoryId !== "" && (rule != null || (product != null && warehouseId !== ""));
+
+  const handleSubmit = async () => {
+    if (!valid || normalized == null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (rule) {
+        await updateStockRule(rule.id, {
+          minThreshold: normalized,
+          categoryId: categoryId as number,
+        });
+      } else {
+        await createStockRule({
+          productId: product!.id,
+          warehouseId: warehouseId as number,
+          categoryId: categoryId as number,
+          minThreshold: normalized,
+        });
+      }
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(errMsg(e, "Не удалось сохранить порог"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pickersError = productsQuery.isError || warehousesQuery.isError;
+
+  return (
+    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>{rule ? "Изменить порог" : "Новый порог остатка"}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {rule ? (
+            <TextField
+              label="Товар · склад"
+              size="small"
+              fullWidth
+              disabled
+              value={`${rule.productName} · ${rule.warehouseName}`}
+            />
+          ) : (
+            <>
+              <Autocomplete
+                options={productsQuery.data ?? []}
+                value={product}
+                onChange={(_, v) => setProduct(v)}
+                getOptionLabel={(p) => p.name}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                loading={productsQuery.isLoading}
+                disabled={busy}
+                noOptionsText="Товары не найдены"
+                renderInput={(params) => (
+                  <TextField {...params} label="Товар *" size="small" autoFocus />
+                )}
+              />
+              <TextField
+                select
+                label="Склад *"
+                size="small"
+                fullWidth
+                disabled={busy || warehousesQuery.isLoading}
+                value={warehouseId === "" ? "" : String(warehouseId)}
+                onChange={(e) => setWarehouseId(e.target.value === "" ? "" : Number(e.target.value))}
+              >
+                {(warehousesQuery.data ?? []).map((w) => (
+                  <MenuItem key={w.id} value={String(w.id)}>
+                    {w.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </>
+          )}
+          <TextField
+            label="Минимальный остаток *"
+            size="small"
+            fullWidth
+            disabled={busy}
+            value={threshold}
+            onChange={(e) => setThreshold(e.target.value)}
+            inputProps={{ inputMode: "decimal" }}
+            error={threshold.trim() !== "" && normalized == null}
+            helperText={
+              threshold.trim() !== "" && normalized == null
+                ? "Число больше нуля, до 2 знаков после точки"
+                : product?.unit
+                ? `Единица: ${product.unit}. Остаток ниже порога — автозадача на пополнение`
+                : "Остаток ниже порога — автозадача на пополнение"
+            }
+          />
+          <TextField
+            select
+            label="Категория заявки *"
+            size="small"
+            fullWidth
+            disabled={busy}
+            value={categoryId === "" ? "" : String(categoryId)}
+            onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
+            helperText="Группа этой категории получит автозадачу"
+          >
+            {categories
+              .filter((c) => c.isActive)
+              .map((c) => (
+                <MenuItem key={c.id} value={String(c.id)}>
+                  {c.name}
+                </MenuItem>
+              ))}
+          </TextField>
+          {pickersError && rule == null && (
+            <Alert severity="error">
+              Не удалось загрузить товары или склады — нужен доступ к модулю «Склады»
+            </Alert>
+          )}
+          {error && <Alert severity="error">{error}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>
+          Отмена
+        </Button>
+        <Button
+          variant="contained"
+          onClick={handleSubmit}
+          disabled={busy || !valid}
+          startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
+        >
+          {busy ? "Сохранение…" : rule ? "Сохранить" : "Добавить"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 // ── Главный компонент ──────────────────────────────────────────────────────────
 
 const TasksSettingsPage: React.FC = () => {
@@ -422,6 +620,11 @@ const TasksSettingsPage: React.FC = () => {
   });
   const [ruleDialogOpen, setRuleDialogOpen] = React.useState(false);
   const [ruleToDelete, setRuleToDelete] = React.useState<RecurringTaskRule | null>(null);
+  const [stockDialog, setStockDialog] = React.useState<{ open: boolean; rule: StockTaskRule | null }>({
+    open: false,
+    rule: null,
+  });
+  const [stockRuleToDelete, setStockRuleToDelete] = React.useState<StockTaskRule | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   const categoriesQuery = useQuery({
@@ -432,6 +635,11 @@ const TasksSettingsPage: React.FC = () => {
   const rulesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.recurringRules,
     queryFn: ({ signal }) => getRecurringRules(signal),
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const stockRulesQuery = useQuery({
+    queryKey: djangoQueryKeys.tasks.stockRules,
+    queryFn: ({ signal }) => getStockRules(signal),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const suggestionsQuery = useQuery({
@@ -465,6 +673,21 @@ const TasksSettingsPage: React.FC = () => {
     onError: (e) => setError(errMsg(e, "Не удалось удалить правило")),
   });
 
+  const toggleStockRule = useMutation({
+    mutationFn: (r: StockTaskRule) => updateStockRule(r.id, { isActive: !r.isActive }),
+    onSuccess: invalidateAll,
+    onError: (e) => setError(errMsg(e, "Не удалось обновить порог")),
+  });
+
+  const removeStockRule = useMutation({
+    mutationFn: (ruleId: number) => deleteStockRule(ruleId),
+    onSuccess: () => {
+      setStockRuleToDelete(null);
+      invalidateAll();
+    },
+    onError: (e) => setError(errMsg(e, "Не удалось удалить порог")),
+  });
+
   const approveSuggestion = useMutation({
     mutationFn: (s: AutomationSuggestion) => approveAutomationSuggestion(s.id),
     onSuccess: invalidateAll,
@@ -479,7 +702,14 @@ const TasksSettingsPage: React.FC = () => {
 
   const categories = categoriesQuery.data ?? [];
   const rules = rulesQuery.data ?? [];
+  const stockRules = stockRulesQuery.data ?? [];
   const suggestions = suggestionsQuery.data ?? [];
+
+  const categoryName = (id: number) => categories.find((c) => c.id === id)?.name ?? `#${id}`;
+  const thresholdLabel = (v: string) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n.toLocaleString("ru-RU") : v;
+  };
 
   return (
     <SettingsLayout>
@@ -643,6 +873,91 @@ const TasksSettingsPage: React.FC = () => {
 
         <Divider />
 
+        {/* ══ Пороги товаров ══ */}
+        <Stack spacing={2}>
+          <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
+            <Box>
+              <Typography variant="h6" fontWeight={600}>
+                Пороги товаров
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Остаток на складе упал ниже порога — система сама создаёт заявку на пополнение.
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AddOutlined />}
+              onClick={() => setStockDialog({ open: true, rule: null })}
+            >
+              Новый порог
+            </Button>
+          </Stack>
+
+          {stockRulesQuery.isLoading ? (
+            <Stack alignItems="center" py={3}>
+              <CircularProgress size={24} />
+            </Stack>
+          ) : stockRules.length === 0 ? (
+            <Typography variant="body2" color="text.disabled" sx={{ py: 3, textAlign: "center" }}>
+              Порогов пока нет
+            </Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Товар</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Склад</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="right">
+                      Порог
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Категория заявки</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="center">
+                      Активно
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {stockRules.map((r) => (
+                    <TableRow key={r.id} hover>
+                      <TableCell sx={{ opacity: r.isActive ? 1 : 0.5 }}>{r.productName}</TableCell>
+                      <TableCell>{r.warehouseName}</TableCell>
+                      <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                        {thresholdLabel(r.minThreshold)}
+                      </TableCell>
+                      <TableCell>{r.categoryName ?? categoryName(r.categoryId)}</TableCell>
+                      <TableCell align="center">
+                        <Switch
+                          size="small"
+                          checked={r.isActive}
+                          onChange={() => toggleStockRule.mutate(r)}
+                          disabled={toggleStockRule.isPending}
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Изменить">
+                          <IconButton size="small" onClick={() => setStockDialog({ open: true, rule: r })}>
+                            <EditOutlined sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Удалить">
+                          <IconButton size="small" onClick={() => setStockRuleToDelete(r)}>
+                            <DeleteOutlined sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Stack>
+
+        <Divider />
+
         {/* ══ Предложения автономности ══ */}
         <Stack spacing={2}>
           <Box>
@@ -744,6 +1059,13 @@ const TasksSettingsPage: React.FC = () => {
         onClose={() => setRuleDialogOpen(false)}
         onSaved={invalidateAll}
       />
+      <StockRuleDialog
+        open={stockDialog.open}
+        rule={stockDialog.rule}
+        categories={categories}
+        onClose={() => setStockDialog({ open: false, rule: null })}
+        onSaved={invalidateAll}
+      />
       <ConfirmDialog
         open={ruleToDelete != null}
         title="Удалить правило?"
@@ -753,6 +1075,20 @@ const TasksSettingsPage: React.FC = () => {
         loading={removeRule.isPending}
         onConfirm={() => ruleToDelete && removeRule.mutate(ruleToDelete.id)}
         onClose={() => setRuleToDelete(null)}
+      />
+      <ConfirmDialog
+        open={stockRuleToDelete != null}
+        title="Удалить порог?"
+        message={
+          stockRuleToDelete
+            ? `Автозадачи на пополнение «${stockRuleToDelete.productName}» больше не будут создаваться.`
+            : ""
+        }
+        confirmText="Удалить"
+        variant="error"
+        loading={removeStockRule.isPending}
+        onConfirm={() => stockRuleToDelete && removeStockRule.mutate(stockRuleToDelete.id)}
+        onClose={() => setStockRuleToDelete(null)}
       />
     </SettingsLayout>
   );

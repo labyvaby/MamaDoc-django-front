@@ -75,6 +75,7 @@ import {
 import { TaskPriorityChip, TaskStatusChip } from "../../components/tasks/TaskChips";
 import CreateTaskDrawer from "../../components/tasks/CreateTaskDrawer";
 import TaskDetailDrawer from "../../components/tasks/TaskDetailDrawer";
+import TaskNotificationsBell from "../../components/tasks/TaskNotificationsBell";
 import { dueInfo, TASK_PRIORITY_OPTIONS, TASK_STATUS_OPTIONS } from "./meta";
 
 const PAGE_SIZE = 20;
@@ -688,6 +689,8 @@ const TasksPage: React.FC = () => {
               tone="success"
             />
           )}
+
+          <TaskNotificationsBell onOpenTask={(taskId) => setSelectedId(taskId)} />
 
           {canCreate && !isMobile && (
             <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => setCreateOpen(true)}>
