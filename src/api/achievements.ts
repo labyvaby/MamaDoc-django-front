@@ -416,6 +416,18 @@ let mockUnseen: EarnedAchievement[] = [
 
 // ── API ────────────────────────────────────────────────────────────────────────
 
+/**
+ * Бэк выводит организацию из membership сессии, но суперпользователю (и
+ * мультиорг-аккаунту) нужен явный query-параметр organizationId — на всех
+ * орг-скоупных эндпоинтах модуля (проверено на живом API 08.07.2026;
+ * definitions — глобальный справочник, ему organizationId не нужен).
+ */
+function withOrg(path: string, organizationId?: number): string {
+  if (organizationId == null) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}organizationId=${organizationId}`;
+}
+
 export function getAchievementDefinitions(
   signal?: AbortSignal,
 ): Promise<AchievementDefinition[]> {
@@ -428,16 +440,22 @@ export function getAchievementDefinitions(
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
-export function getMyAchievements(signal?: AbortSignal): Promise<MyAchievementsResponse> {
+export function getMyAchievements(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<MyAchievementsResponse> {
   if (ACHIEVEMENTS_USE_MOCKS) {
     return mockDelay({ achievements: mockMyAchievements, progress: mockMyProgress });
   }
-  return apiRequest<MyAchievementsResponse>("/achievements/me/", { signal });
+  return apiRequest<MyAchievementsResponse>(withOrg("/achievements/me/", organizationId), {
+    signal,
+  });
 }
 
 /** Полученные бейджи коллеги — без прогресса и счётчиков (решение по видимости). */
 export function getEmployeeAchievements(
   employeeId: number,
+  organizationId?: number,
   signal?: AbortSignal,
 ): Promise<EarnedAchievement[]> {
   if (ACHIEVEMENTS_USE_MOCKS) {
@@ -449,22 +467,26 @@ export function getEmployeeAchievements(
     return mockDelay(mockEmployeeAchievements[employeeId] ?? []);
   }
   return apiRequest<{ results: EarnedAchievement[] } | EarnedAchievement[]>(
-    `/achievements/employees/${employeeId}/`,
+    withOrg(`/achievements/employees/${employeeId}/`, organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 export function getOrganizationAchievements(
+  organizationId?: number,
   signal?: AbortSignal,
 ): Promise<MyAchievementsResponse> {
   if (ACHIEVEMENTS_USE_MOCKS) {
     return mockDelay({ achievements: mockOrgAchievements, progress: mockOrgProgress });
   }
-  return apiRequest<MyAchievementsResponse>("/achievements/organization/", { signal });
+  return apiRequest<MyAchievementsResponse>(
+    withOrg("/achievements/organization/", organizationId),
+    { signal },
+  );
 }
 
 export function getAchievementsFeed(
-  params: { page?: number; pageSize?: number } = {},
+  params: { page?: number; pageSize?: number; organizationId?: number } = {},
   signal?: AbortSignal,
 ): Promise<AchievementsFeedResponse> {
   if (ACHIEVEMENTS_USE_MOCKS) {
@@ -482,29 +504,33 @@ export function getAchievementsFeed(
   const q = new URLSearchParams();
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   return apiRequest<AchievementsFeedResponse>(`/achievements/feed/?${q.toString()}`, {
     signal,
   });
 }
 
 /** Мои непросмотренные достижения — для поздравления при заходе. */
-export function getUnseenAchievements(signal?: AbortSignal): Promise<EarnedAchievement[]> {
+export function getUnseenAchievements(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<EarnedAchievement[]> {
   if (ACHIEVEMENTS_USE_MOCKS) {
     return mockDelay(mockUnseen);
   }
   return apiRequest<{ results: EarnedAchievement[] } | EarnedAchievement[]>(
-    "/achievements/unseen/",
+    withOrg("/achievements/unseen/", organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 /** Пометить достижения просмотренными (без ids — все мои). */
-export function markAchievementsSeen(ids?: number[]): Promise<void> {
+export function markAchievementsSeen(ids?: number[], organizationId?: number): Promise<void> {
   if (ACHIEVEMENTS_USE_MOCKS) {
     mockUnseen = [];
     return mockDelay(undefined);
   }
-  return apiRequest<void>("/achievements/mark-seen/", {
+  return apiRequest<void>(withOrg("/achievements/mark-seen/", organizationId), {
     method: "POST",
     body: ids ? { ids } : {},
   });

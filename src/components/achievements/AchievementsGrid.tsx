@@ -16,6 +16,7 @@ import {
 } from "../../api/queryKeys";
 import { AchievementCard } from "./AchievementCard";
 import { ACHIEVEMENT_KIND_LABELS } from "./meta";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 
 const KIND_ORDER: AchievementKind[] = ["milestone", "streak", "tenure"];
 
@@ -24,6 +25,7 @@ const KIND_ORDER: AchievementKind[] = ["milestone", "streak", "tenure"];
  * Нерелевантные метрики (нет ни бейджа, ни прогресса от бэка) скрыты.
  */
 export const AchievementsGrid: React.FC = () => {
+  const orgId = useApiOrgId();
   const definitionsQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.definitions,
     queryFn: ({ signal }) => getAchievementDefinitions(signal),
@@ -31,7 +33,7 @@ export const AchievementsGrid: React.FC = () => {
   });
   const myQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.me,
-    queryFn: ({ signal }) => getMyAchievements(signal),
+    queryFn: ({ signal }) => getMyAchievements(orgId, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 

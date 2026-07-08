@@ -34,6 +34,7 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import { guessCategoryId, TASK_PRIORITY_OPTIONS } from "../../pages/tasks/meta";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 
 type FormValues = {
   title: string;
@@ -60,6 +61,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   initialFile = null,
 }) => {
   const queryClient = useQueryClient();
+  const orgId = useApiOrgId();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [file, setFile] = React.useState<File | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -93,7 +95,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
 
   const categoriesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.categories,
-    queryFn: ({ signal }) => getTaskCategories(signal),
+    queryFn: ({ signal }) => getTaskCategories(orgId, signal),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
@@ -107,7 +109,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
 
   const templatesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.templates,
-    queryFn: ({ signal }) => getTaskTemplates(signal),
+    queryFn: ({ signal }) => getTaskTemplates(orgId, signal),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
@@ -138,15 +140,18 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
 
   const mutation = useMutation({
     mutationFn: async (values: FormValues) => {
-      const task = await createTask({
-        title: values.title.trim(),
-        description: values.description.trim() || undefined,
-        categoryId: values.categoryId as number,
-        assigneeId: values.assigneeId === "" ? undefined : (values.assigneeId as number),
-        dueDate: values.dueDate ? values.dueDate.format("YYYY-MM-DD") : undefined,
-        priority: canManage && values.priority !== "" ? values.priority : undefined,
-      });
-      if (file) await uploadTaskAttachment(task.id, file);
+      const task = await createTask(
+        {
+          title: values.title.trim(),
+          description: values.description.trim() || undefined,
+          categoryId: values.categoryId as number,
+          assigneeId: values.assigneeId === "" ? undefined : (values.assigneeId as number),
+          dueDate: values.dueDate ? values.dueDate.format("YYYY-MM-DD") : undefined,
+          priority: canManage && values.priority !== "" ? values.priority : undefined,
+        },
+        orgId,
+      );
+      if (file) await uploadTaskAttachment(task.id, file, undefined, orgId);
       return task;
     },
     onSuccess: () => {

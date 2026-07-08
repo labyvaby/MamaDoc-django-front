@@ -52,6 +52,7 @@ import "dayjs/locale/ru";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { subtleBg } from "../../theme/uiHelpers";
 import {
@@ -108,7 +109,7 @@ type RowAction = {
   key: "take" | "complete" | "approve";
   label: string;
   icon: React.ReactNode;
-  fn: (taskId: number) => Promise<Task>;
+  fn: (taskId: number, organizationId?: number) => Promise<Task>;
 };
 
 /** Компактная плитка сводки (по образцу StatTile из «Броней»). */
@@ -296,6 +297,7 @@ const TasksPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { can, loading: permLoading } = useCanChecker();
   const { activeEmployee } = usePermissions();
+  const orgId = useApiOrgId();
   const queryClient = useQueryClient();
 
   const canList = can("tasks.list");
@@ -353,6 +355,7 @@ const TasksPage: React.FC = () => {
     createdFrom: tab === "my-requests" && createdRange ? createdRange.from.format("YYYY-MM-DD") : undefined,
     createdTo: tab === "my-requests" && createdRange ? createdRange.to.format("YYYY-MM-DD") : undefined,
     ordering: "smart",
+    organizationId: orgId,
   };
 
   const enabled = !permLoading && canList;
@@ -367,28 +370,29 @@ const TasksPage: React.FC = () => {
 
   const categoriesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.categories,
-    queryFn: ({ signal }) => getTaskCategories(signal),
+    queryFn: ({ signal }) => getTaskCategories(orgId, signal),
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
   const summaryQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.summary,
-    queryFn: ({ signal }) => getTasksSummary(signal),
+    queryFn: ({ signal }) => getTasksSummary(orgId, signal),
     enabled: enabled && tab === "board",
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
   const myStatsQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.myStats,
-    queryFn: ({ signal }) => getMyTaskStats(signal),
+    queryFn: ({ signal }) => getMyTaskStats(orgId, signal),
     enabled: enabled && tab === "mine",
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
   // ── Быстрые действия из списка ──
   const rowMutation = useMutation({
-    mutationFn: ({ action, taskId }: { action: RowAction; taskId: number }) => action.fn(taskId),
+    mutationFn: ({ action, taskId }: { action: RowAction; taskId: number }) =>
+      action.fn(taskId, orgId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
     },
