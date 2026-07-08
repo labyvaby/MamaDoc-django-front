@@ -32,6 +32,7 @@ import {
 } from "../../api/tasks";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { subtleBg } from "../../theme/uiHelpers";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 
 const EVENT_META: Record<
   TaskNotificationEvent,
@@ -64,11 +65,12 @@ export interface TaskNotificationsBellProps {
  */
 export const TaskNotificationsBell: React.FC<TaskNotificationsBellProps> = ({ onOpenTask }) => {
   const queryClient = useQueryClient();
+  const orgId = useApiOrgId();
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
 
   const unreadQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.notifications,
-    queryFn: ({ signal }) => getTaskNotifications({ unread: true }, signal),
+    queryFn: ({ signal }) => getTaskNotifications({ unread: true, organizationId: orgId }, signal),
     // Внутрисистемные уведомления без realtime — мягкий поллинг раз в минуту.
     refetchInterval: 60_000,
     staleTime: 30_000,
@@ -79,7 +81,7 @@ export const TaskNotificationsBell: React.FC<TaskNotificationsBellProps> = ({ on
   };
 
   const markRead = useMutation({
-    mutationFn: (ids?: number[]) => markTaskNotificationsRead(ids),
+    mutationFn: (ids?: number[]) => markTaskNotificationsRead(ids, orgId),
     onSuccess: invalidate,
     onError: invalidate,
   });

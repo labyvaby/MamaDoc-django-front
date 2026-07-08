@@ -132,8 +132,13 @@ const mapMovement = (raw: RawMovement): DjangoStockMovement => ({
 
 // ── Warehouses ───────────────────────────────────────────────────────────────
 
-export function getWarehouses(signal?: AbortSignal): Promise<DjangoWarehouse[]> {
-    return apiRequest<DjangoWarehouse[]>("/warehouse/warehouses/", { signal });
+export function getWarehouses(
+    signal?: AbortSignal,
+    /** Явный орг-контекст для суперпользователя/мультиорг (как в tasks API). */
+    organizationId?: number,
+): Promise<DjangoWarehouse[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoWarehouse[]>(`/warehouse/warehouses/${qs}`, { signal });
 }
 
 /** Склады других филиалов, доступные для подключения в текущий филиал. */
@@ -201,11 +206,12 @@ const mapProduct = (raw: RawProduct): DjangoProduct => ({
 
 export async function getProducts(
     signal?: AbortSignal,
-    opts: { includeInactive?: boolean; category?: string } = {},
+    opts: { includeInactive?: boolean; category?: string; organizationId?: number } = {},
 ): Promise<DjangoProduct[]> {
     const q = new URLSearchParams();
     if (opts.includeInactive) q.set("includeInactive", "true");
     if (opts.category) q.set("category", opts.category);
+    if (opts.organizationId != null) q.set("organizationId", String(opts.organizationId));
     const qs = q.toString();
     const rows = await apiRequest<RawProduct[]>(
         `/warehouse/products/${qs ? `?${qs}` : ""}`,

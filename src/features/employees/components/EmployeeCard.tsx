@@ -57,6 +57,7 @@ import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { AppButton, UserAvatar, InfoTile } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
 import { getServices } from "../../../api/catalog";
 import {
@@ -274,6 +275,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const canViewExpenses = useCan(["finance.view", "finance.expense.view"]);
   const canViewPayroll = useCan("payroll.view");
   const canViewAchievements = useCan("achievements.view");
+  const apiOrgId = useApiOrgId();
 
   // For Django mode: Cache services via react-query
   const empIdNum = emp?.id ? Number(emp.id) : 0;
@@ -317,7 +319,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const achievementsEnabled = IS_DJANGO_BACKEND && empIdNum > 0 && canViewAchievements;
   const employeeAchievementsQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.employee(empIdNum),
-    queryFn: ({ signal }) => getEmployeeAchievements(empIdNum, signal),
+    queryFn: ({ signal }) => getEmployeeAchievements(empIdNum, apiOrgId, signal),
     enabled: achievementsEnabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });

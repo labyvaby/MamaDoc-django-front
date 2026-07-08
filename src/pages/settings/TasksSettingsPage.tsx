@@ -34,6 +34,7 @@ import dayjs from "dayjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { SettingsLayout } from "./SettingsLayout";
 import { ConfirmDialog } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -105,6 +106,7 @@ type CategoryDialogProps = {
 };
 
 const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category, onSaved }) => {
+  const orgId = useApiOrgId();
   const [name, setName] = React.useState("");
   const [roles, setRoles] = React.useState<string[]>([]);
   const [priority, setPriority] = React.useState<TaskPriority>("normal");
@@ -129,17 +131,24 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
     setError(null);
     try {
       if (category) {
-        await updateTaskCategory(category.id, {
-          name: name.trim(),
-          assignedRoles: roles,
-          defaultPriority: priority,
-        });
+        await updateTaskCategory(
+          category.id,
+          {
+            name: name.trim(),
+            assignedRoles: roles,
+            defaultPriority: priority,
+          },
+          orgId,
+        );
       } else {
-        await createTaskCategory({
-          name: name.trim(),
-          assignedRoles: roles,
-          defaultPriority: priority,
-        });
+        await createTaskCategory(
+          {
+            name: name.trim(),
+            assignedRoles: roles,
+            defaultPriority: priority,
+          },
+          orgId,
+        );
       }
       onSaved();
       onClose();
@@ -239,6 +248,7 @@ type RuleDialogProps = {
 };
 
 const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSaved }) => {
+  const orgId = useApiOrgId();
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
@@ -270,15 +280,18 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
     setBusy(true);
     setError(null);
     try {
-      await createRecurringRule({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        categoryId: categoryId as number,
-        priority: priority === "" ? undefined : priority,
-        interval,
-        dayOfWeek: interval === "weekly" ? dayOfWeek : undefined,
-        dayOfMonth: interval === "monthly" ? dayOfMonth : undefined,
-      });
+      await createRecurringRule(
+        {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          categoryId: categoryId as number,
+          priority: priority === "" ? undefined : priority,
+          interval,
+          dayOfWeek: interval === "weekly" ? dayOfWeek : undefined,
+          dayOfMonth: interval === "monthly" ? dayOfMonth : undefined,
+        },
+        orgId,
+      );
       onSaved();
       onClose();
     } catch (e) {
@@ -437,6 +450,7 @@ type StockRuleDialogProps = {
 };
 
 const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, categories, rule, onSaved }) => {
+  const orgId = useApiOrgId();
   const [product, setProduct] = React.useState<DjangoProduct | null>(null);
   const [warehouseId, setWarehouseId] = React.useState<number | "">("");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
@@ -448,13 +462,13 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
   // обычно есть). Грузим только при открытом диалоге создания.
   const productsQuery = useQuery({
     queryKey: ["django", "warehouse", "products", "stock-rule-picker"],
-    queryFn: ({ signal }) => getProducts(signal),
+    queryFn: ({ signal }) => getProducts(signal, { organizationId: orgId }),
     enabled: open && rule == null,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const warehousesQuery = useQuery({
     queryKey: ["django", "warehouse", "list", "stock-rule-picker"],
-    queryFn: ({ signal }) => getWarehouses(signal),
+    queryFn: ({ signal }) => getWarehouses(signal, orgId),
     enabled: open && rule == null,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
@@ -480,17 +494,24 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
     setError(null);
     try {
       if (rule) {
-        await updateStockRule(rule.id, {
-          minThreshold: normalized,
-          categoryId: categoryId as number,
-        });
+        await updateStockRule(
+          rule.id,
+          {
+            minThreshold: normalized,
+            categoryId: categoryId as number,
+          },
+          orgId,
+        );
       } else {
-        await createStockRule({
-          productId: product!.id,
-          warehouseId: warehouseId as number,
-          categoryId: categoryId as number,
-          minThreshold: normalized,
-        });
+        await createStockRule(
+          {
+            productId: product!.id,
+            warehouseId: warehouseId as number,
+            categoryId: categoryId as number,
+            minThreshold: normalized,
+          },
+          orgId,
+        );
       }
       onSaved();
       onClose();
@@ -612,6 +633,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
 
 const TasksSettingsPage: React.FC = () => {
   usePageTitle("Настройки задач");
+  const orgId = useApiOrgId();
   const queryClient = useQueryClient();
 
   const [categoryDialog, setCategoryDialog] = React.useState<{ open: boolean; category: TaskCategory | null }>({
@@ -629,22 +651,22 @@ const TasksSettingsPage: React.FC = () => {
 
   const categoriesQuery = useQuery({
     queryKey: [...djangoQueryKeys.tasks.categories, "all"],
-    queryFn: ({ signal }) => getAllTaskCategories(signal),
+    queryFn: ({ signal }) => getAllTaskCategories(orgId, signal),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const rulesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.recurringRules,
-    queryFn: ({ signal }) => getRecurringRules(signal),
+    queryFn: ({ signal }) => getRecurringRules(orgId, signal),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const stockRulesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.stockRules,
-    queryFn: ({ signal }) => getStockRules(signal),
+    queryFn: ({ signal }) => getStockRules(orgId, signal),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const suggestionsQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.suggestions,
-    queryFn: ({ signal }) => getAutomationSuggestions(signal),
+    queryFn: ({ signal }) => getAutomationSuggestions(orgId, signal),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
@@ -653,19 +675,20 @@ const TasksSettingsPage: React.FC = () => {
   };
 
   const toggleCategory = useMutation({
-    mutationFn: (c: TaskCategory) => updateTaskCategory(c.id, { isActive: !c.isActive }),
+    mutationFn: (c: TaskCategory) => updateTaskCategory(c.id, { isActive: !c.isActive }, orgId),
     onSuccess: invalidateAll,
     onError: (e) => setError(errMsg(e, "Не удалось обновить категорию")),
   });
 
   const toggleRule = useMutation({
-    mutationFn: (r: RecurringTaskRule) => updateRecurringRule(r.id, { isActive: !r.isActive }),
+    mutationFn: (r: RecurringTaskRule) =>
+      updateRecurringRule(r.id, { isActive: !r.isActive }, orgId),
     onSuccess: invalidateAll,
     onError: (e) => setError(errMsg(e, "Не удалось обновить правило")),
   });
 
   const removeRule = useMutation({
-    mutationFn: (ruleId: number) => deleteRecurringRule(ruleId),
+    mutationFn: (ruleId: number) => deleteRecurringRule(ruleId, orgId),
     onSuccess: () => {
       setRuleToDelete(null);
       invalidateAll();
@@ -674,13 +697,13 @@ const TasksSettingsPage: React.FC = () => {
   });
 
   const toggleStockRule = useMutation({
-    mutationFn: (r: StockTaskRule) => updateStockRule(r.id, { isActive: !r.isActive }),
+    mutationFn: (r: StockTaskRule) => updateStockRule(r.id, { isActive: !r.isActive }, orgId),
     onSuccess: invalidateAll,
     onError: (e) => setError(errMsg(e, "Не удалось обновить порог")),
   });
 
   const removeStockRule = useMutation({
-    mutationFn: (ruleId: number) => deleteStockRule(ruleId),
+    mutationFn: (ruleId: number) => deleteStockRule(ruleId, orgId),
     onSuccess: () => {
       setStockRuleToDelete(null);
       invalidateAll();
@@ -689,13 +712,13 @@ const TasksSettingsPage: React.FC = () => {
   });
 
   const approveSuggestion = useMutation({
-    mutationFn: (s: AutomationSuggestion) => approveAutomationSuggestion(s.id),
+    mutationFn: (s: AutomationSuggestion) => approveAutomationSuggestion(s.id, orgId),
     onSuccess: invalidateAll,
     onError: (e) => setError(errMsg(e, "Не удалось принять предложение")),
   });
 
   const dismissSuggestion = useMutation({
-    mutationFn: (s: AutomationSuggestion) => dismissAutomationSuggestion(s.id),
+    mutationFn: (s: AutomationSuggestion) => dismissAutomationSuggestion(s.id, orgId),
     onSuccess: invalidateAll,
     onError: (e) => setError(errMsg(e, "Не удалось отклонить предложение")),
   });

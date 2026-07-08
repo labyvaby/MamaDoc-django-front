@@ -14,6 +14,7 @@ import {
 } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { useCanChecker } from "../../hooks/useCan";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { AchievementBadge } from "./AchievementBadge";
 import { tierTone } from "./meta";
 
@@ -26,11 +27,12 @@ import { tierTone } from "./meta";
 export const AchievementToast: React.FC = () => {
   const queryClient = useQueryClient();
   const { can } = useCanChecker();
+  const orgId = useApiOrgId();
   const [dismissed, setDismissed] = React.useState(false);
 
   const unseenQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.unseen,
-    queryFn: ({ signal }) => getUnseenAchievements(signal),
+    queryFn: ({ signal }) => getUnseenAchievements(orgId, signal),
     enabled: IS_DJANGO_BACKEND && can("achievements.view"),
     staleTime: Infinity,
   });
@@ -42,7 +44,7 @@ export const AchievementToast: React.FC = () => {
   });
 
   const markSeen = useMutation({
-    mutationFn: () => markAchievementsSeen(),
+    mutationFn: () => markAchievementsSeen(undefined, orgId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.achievements.unseen });
     },

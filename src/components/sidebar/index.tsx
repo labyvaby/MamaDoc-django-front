@@ -67,6 +67,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useSkudActions } from "../../hooks/useSkudActions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import { AccountBalanceWalletOutlined } from "@mui/icons-material";
@@ -360,6 +361,7 @@ const SidebarSecondary: React.FC = () => {
   useWorkShift();
   const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
+  const orgId = useApiOrgId();
   const isNurse = isNurseFunc();
   const isSuper = isSuperAdmin();
   const hasAccessToCashbox = isSuper || hasRole(['admin', 'superadmin', 'accountant', 'receptionist']);
@@ -419,7 +421,7 @@ const SidebarSecondary: React.FC = () => {
   // Тот же queryKey, что у сводки на доске задач, — кэш общий.
   const tasksSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.summary,
-    queryFn: ({ signal }) => getTasksSummary(signal),
+    queryFn: ({ signal }) => getTasksSummary(orgId, signal),
     enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });

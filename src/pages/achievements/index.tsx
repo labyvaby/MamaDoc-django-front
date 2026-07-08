@@ -20,6 +20,7 @@ import FlagOutlined from "@mui/icons-material/FlagOutlined";
 
 import { AppButton, AppCard, PageHeader, UserAvatar } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { formatDateRu } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import {
@@ -505,6 +506,7 @@ const OrgAchievementRow: React.FC<{
  */
 const AchievementsPage: React.FC = () => {
   usePageTitle("Достижения");
+  const orgId = useApiOrgId();
 
   const definitionsQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.definitions,
@@ -514,14 +516,14 @@ const AchievementsPage: React.FC = () => {
 
   const myQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.me,
-    queryFn: ({ signal }) => getMyAchievements(signal),
+    queryFn: ({ signal }) => getMyAchievements(orgId, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
   const feedQuery = useInfiniteQuery({
     queryKey: djangoQueryKeys.achievements.feed({ pageSize: FEED_PAGE_SIZE }),
     queryFn: ({ pageParam, signal }) =>
-      getAchievementsFeed({ page: pageParam, pageSize: FEED_PAGE_SIZE }, signal),
+      getAchievementsFeed({ page: pageParam, pageSize: FEED_PAGE_SIZE, organizationId: orgId }, signal),
     initialPageParam: 1,
     getNextPageParam: (last, pages) => (last.next ? pages.length + 1 : undefined),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
@@ -529,7 +531,7 @@ const AchievementsPage: React.FC = () => {
 
   const orgQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.organization,
-    queryFn: ({ signal }) => getOrganizationAchievements(signal),
+    queryFn: ({ signal }) => getOrganizationAchievements(orgId, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 

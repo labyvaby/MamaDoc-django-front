@@ -49,6 +49,7 @@ import {
   type TaskStatus,
 } from "../../api/tasks";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { TASK_SOURCE_META, TASK_STATUS_META } from "../../pages/tasks/meta";
 import { TaskPriorityChip, TaskStatusChip } from "./TaskChips";
 
@@ -263,6 +264,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   meEmployeeId,
 }) => {
   const queryClient = useQueryClient();
+  const orgId = useApiOrgId();
   const [commentText, setCommentText] = React.useState("");
   const [reasonAction, setReasonAction] = React.useState<ReasonAction>(null);
   const [reasonText, setReasonText] = React.useState("");
@@ -270,7 +272,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
 
   const query = useQuery({
     queryKey: djangoQueryKeys.tasks.detail(taskId ?? 0),
-    queryFn: ({ signal }) => getTask(taskId!, signal),
+    queryFn: ({ signal }) => getTask(taskId!, orgId, signal),
     enabled: taskId != null,
   });
 
@@ -287,7 +289,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   });
 
   const commentMutation = useMutation({
-    mutationFn: () => addTaskComment(taskId!, commentText.trim()),
+    mutationFn: () => addTaskComment(taskId!, commentText.trim(), orgId),
     onSuccess: () => {
       setCommentText("");
       invalidate();
@@ -306,10 +308,10 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     const payload = { reason: reasonText.trim() };
     const fn =
       reasonAction === "pause"
-        ? () => pauseTask(id, payload)
+        ? () => pauseTask(id, payload, orgId)
         : reasonAction === "reject"
-        ? () => rejectTask(id, payload)
-        : () => cancelTask(id, payload);
+        ? () => rejectTask(id, payload, orgId)
+        : () => cancelTask(id, payload, orgId);
     actionMutation.mutate(fn);
     closeReasonDialog();
   };
@@ -330,7 +332,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
         label: status === "paused" ? "Возобновить" : "Взять в работу",
         icon: <PlayArrowOutlined />,
         primary: true,
-        onClick: () => actionMutation.mutate(() => takeTask(id)),
+        onClick: () => actionMutation.mutate(() => takeTask(id, orgId)),
       });
     }
     if (status === "in_progress" && (isMine || canManage)) {
@@ -339,7 +341,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
         label: "Исполнить",
         icon: <CheckOutlined />,
         primary: true,
-        onClick: () => actionMutation.mutate(() => completeTask(id)),
+        onClick: () => actionMutation.mutate(() => completeTask(id, orgId)),
       });
       actions.push({
         key: "pause",
@@ -354,7 +356,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
         label: "Подтвердить",
         icon: <DoneAllOutlined />,
         primary: true,
-        onClick: () => actionMutation.mutate(() => approveTask(id)),
+        onClick: () => actionMutation.mutate(() => approveTask(id, orgId)),
       });
       actions.push({
         key: "reject",
@@ -384,7 +386,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
         label: "Спасибо исполнителю",
         icon: <ThumbUpOutlined />,
         primary: true,
-        onClick: () => actionMutation.mutate(() => thankTask(id)),
+        onClick: () => actionMutation.mutate(() => thankTask(id, orgId)),
       });
     }
   }

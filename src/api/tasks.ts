@@ -122,6 +122,8 @@ export interface TasksFilters {
   ordering?: "smart" | "created";
   page?: number;
   pageSize?: number;
+  /** Обязателен для суперпользователя/мультиорг (см. withOrg). */
+  organizationId?: number;
 }
 
 export interface CreateTaskPayload {
@@ -315,6 +317,17 @@ function toTask(r: MockTaskRecord): Task {
 
 // ── API: список / деталь ───────────────────────────────────────────────────────
 
+/**
+ * Бэк выводит организацию из membership сессии, но суперпользователю (и
+ * мультиорг-аккаунту) нужен явный query-параметр organizationId — на всех
+ * эндпоинтах модуля, включая POST/PATCH (проверено на живом API 08.07.2026).
+ */
+function withOrg(path: string, organizationId?: number): string {
+  if (organizationId == null) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}organizationId=${organizationId}`;
+}
+
 function buildTaskParams(filters: TasksFilters): URLSearchParams {
   const q = new URLSearchParams();
   if (filters.status) q.set("status", filters.status);
@@ -330,6 +343,7 @@ function buildTaskParams(filters: TasksFilters): URLSearchParams {
   if (filters.ordering) q.set("ordering", filters.ordering);
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
+  if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   return q;
 }
 
@@ -383,7 +397,11 @@ export function getTasks(
   return apiRequest<TasksResponse>(`/tasks/?${q.toString()}`, { signal });
 }
 
-export function getTask(taskId: number, signal?: AbortSignal): Promise<TaskDetail> {
+export function getTask(
+  taskId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TaskDetail> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     return mockDelay({
@@ -393,10 +411,10 @@ export function getTask(taskId: number, signal?: AbortSignal): Promise<TaskDetai
       statusLog: r.statusLog,
     });
   }
-  return apiRequest<TaskDetail>(`/tasks/${taskId}/`, { signal });
+  return apiRequest<TaskDetail>(withOrg(`/tasks/${taskId}/`, organizationId), { signal });
 }
 
-export function createTask(payload: CreateTaskPayload): Promise<Task> {
+export function createTask(payload: CreateTaskPayload, organizationId?: number): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const cat = mockCategories.find((c) => c.id === payload.categoryId);
     if (!cat) return Promise.reject(new Error("Категория не найдена"));
@@ -415,21 +433,28 @@ export function createTask(payload: CreateTaskPayload): Promise<Task> {
     mockTasks.unshift(rec);
     return mockDelay(toTask(rec));
   }
-  return apiRequest<Task>("/tasks/", { method: "POST", body: payload });
+  return apiRequest<Task>(withOrg("/tasks/", organizationId), { method: "POST", body: payload });
 }
 
-export function updateTask(taskId: number, payload: UpdateTaskPayload): Promise<Task> {
+export function updateTask(
+  taskId: number,
+  payload: UpdateTaskPayload,
+  organizationId?: number,
+): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     Object.assign(r, payload, { updatedAt: nowIso() });
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/`, { method: "PATCH", body: payload });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/`, organizationId), {
+    method: "PATCH",
+    body: payload,
+  });
 }
 
 // ── API: действия со статусами ─────────────────────────────────────────────────
 
-export function takeTask(taskId: number): Promise<Task> {
+export function takeTask(taskId: number, organizationId?: number): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     r.assigneeId = MOCK_ME.id;
@@ -437,33 +462,42 @@ export function takeTask(taskId: number): Promise<Task> {
     mockLog(r, "in_progress");
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/take/`, { method: "POST" });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/take/`, organizationId), { method: "POST" });
 }
 
-export function pauseTask(taskId: number, payload: ReasonPayload): Promise<Task> {
+export function pauseTask(
+  taskId: number,
+  payload: ReasonPayload,
+  organizationId?: number,
+): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     mockLog(r, "paused", payload.reason);
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/pause/`, { method: "POST", body: payload });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/pause/`, organizationId), {
+    method: "POST",
+    body: payload,
+  });
 }
 
 /**
  * Исполнить. Бэкенд: assignee → awaiting_approval; обладатель tasks.manage →
  * сразу done (решение Рика 07.07.2026). В моках — всегда awaiting_approval.
  */
-export function completeTask(taskId: number): Promise<Task> {
+export function completeTask(taskId: number, organizationId?: number): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     mockLog(r, "awaiting_approval");
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/complete/`, { method: "POST" });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/complete/`, organizationId), {
+    method: "POST",
+  });
 }
 
 /** Подтвердить исполнение (только tasks.manage). */
-export function approveTask(taskId: number): Promise<Task> {
+export function approveTask(taskId: number, organizationId?: number): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     r.approvedById = MOCK_ME.id;
@@ -471,31 +505,51 @@ export function approveTask(taskId: number): Promise<Task> {
     mockLog(r, "done");
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/approve/`, { method: "POST" });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/approve/`, organizationId), {
+    method: "POST",
+  });
 }
 
 /** Вернуть в работу с приёмки (только tasks.manage). */
-export function rejectTask(taskId: number, payload: ReasonPayload): Promise<Task> {
+export function rejectTask(
+  taskId: number,
+  payload: ReasonPayload,
+  organizationId?: number,
+): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     mockLog(r, "in_progress", payload.reason);
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/reject/`, { method: "POST", body: payload });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/reject/`, organizationId), {
+    method: "POST",
+    body: payload,
+  });
 }
 
-export function cancelTask(taskId: number, payload: ReasonPayload): Promise<Task> {
+export function cancelTask(
+  taskId: number,
+  payload: ReasonPayload,
+  organizationId?: number,
+): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     mockLog(r, "cancelled", payload.reason);
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/cancel/`, { method: "POST", body: payload });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/cancel/`, organizationId), {
+    method: "POST",
+    body: payload,
+  });
 }
 
 // ── API: комментарии и вложения ────────────────────────────────────────────────
 
-export function addTaskComment(taskId: number, text: string): Promise<TaskComment> {
+export function addTaskComment(
+  taskId: number,
+  text: string,
+  organizationId?: number,
+): Promise<TaskComment> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     const comment: TaskComment = {
@@ -510,7 +564,7 @@ export function addTaskComment(taskId: number, text: string): Promise<TaskCommen
     r.updatedAt = nowIso();
     return mockDelay(comment);
   }
-  return apiRequest<TaskComment>(`/tasks/${taskId}/comments/`, {
+  return apiRequest<TaskComment>(withOrg(`/tasks/${taskId}/comments/`, organizationId), {
     method: "POST",
     body: { text },
   });
@@ -520,6 +574,7 @@ export function uploadTaskAttachment(
   taskId: number,
   file: File,
   commentId?: number,
+  organizationId?: number,
 ): Promise<TaskAttachment> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
@@ -539,7 +594,7 @@ export function uploadTaskAttachment(
   const formData = new FormData();
   formData.append("file", file);
   if (commentId != null) formData.append("commentId", String(commentId));
-  return apiRequest<TaskAttachment>(`/tasks/${taskId}/attachments/`, {
+  return apiRequest<TaskAttachment>(withOrg(`/tasks/${taskId}/attachments/`, organizationId), {
     method: "POST",
     formData,
   });
@@ -547,23 +602,29 @@ export function uploadTaskAttachment(
 
 // ── API: категории (справочник) ────────────────────────────────────────────────
 
-export function getTaskCategories(signal?: AbortSignal): Promise<TaskCategory[]> {
+export function getTaskCategories(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TaskCategory[]> {
   if (TASKS_USE_MOCKS) {
     return mockDelay(mockCategories.filter((c) => c.isActive));
   }
   return apiRequest<{ results: TaskCategory[] } | TaskCategory[]>(
-    "/tasks/categories/",
+    withOrg("/tasks/categories/", organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 /** Все категории, включая неактивные — для админ-настроек (tasks.manage). */
-export function getAllTaskCategories(signal?: AbortSignal): Promise<TaskCategory[]> {
+export function getAllTaskCategories(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TaskCategory[]> {
   if (TASKS_USE_MOCKS) {
     return mockDelay(mockCategories);
   }
   return apiRequest<{ results: TaskCategory[] } | TaskCategory[]>(
-    "/tasks/categories/?includeInactive=true",
+    withOrg("/tasks/categories/?includeInactive=true", organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
@@ -583,7 +644,10 @@ export interface UpdateTaskCategoryPayload {
 
 let mockCategorySeq = 100;
 
-export function createTaskCategory(payload: CreateTaskCategoryPayload): Promise<TaskCategory> {
+export function createTaskCategory(
+  payload: CreateTaskCategoryPayload,
+  organizationId?: number,
+): Promise<TaskCategory> {
   if (TASKS_USE_MOCKS) {
     const category: TaskCategory = {
       id: ++mockCategorySeq,
@@ -595,12 +659,16 @@ export function createTaskCategory(payload: CreateTaskCategoryPayload): Promise<
     mockCategories.push(category);
     return mockDelay(category);
   }
-  return apiRequest<TaskCategory>("/tasks/categories/", { method: "POST", body: payload });
+  return apiRequest<TaskCategory>(withOrg("/tasks/categories/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function updateTaskCategory(
   categoryId: number,
   payload: UpdateTaskCategoryPayload,
+  organizationId?: number,
 ): Promise<TaskCategory> {
   if (TASKS_USE_MOCKS) {
     const category = mockCategories.find((c) => c.id === categoryId);
@@ -608,7 +676,7 @@ export function updateTaskCategory(
     Object.assign(category, payload);
     return mockDelay(category);
   }
-  return apiRequest<TaskCategory>(`/tasks/categories/${categoryId}/`, {
+  return apiRequest<TaskCategory>(withOrg(`/tasks/categories/${categoryId}/`, organizationId), {
     method: "PATCH",
     body: payload,
   });
@@ -712,17 +780,23 @@ const mockRules: RecurringTaskRule[] = [
   },
 ];
 
-export function getRecurringRules(signal?: AbortSignal): Promise<RecurringTaskRule[]> {
+export function getRecurringRules(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<RecurringTaskRule[]> {
   if (TASKS_USE_MOCKS) {
     return mockDelay(mockRules);
   }
   return apiRequest<{ results: RecurringTaskRule[] } | RecurringTaskRule[]>(
-    "/tasks/recurring-rules/",
+    withOrg("/tasks/recurring-rules/", organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
-export function createRecurringRule(payload: CreateRecurringRulePayload): Promise<RecurringTaskRule> {
+export function createRecurringRule(
+  payload: CreateRecurringRulePayload,
+  organizationId?: number,
+): Promise<RecurringTaskRule> {
   if (TASKS_USE_MOCKS) {
     const cat = mockCategories.find((c) => c.id === payload.categoryId);
     if (!cat) return Promise.reject(new Error("Категория не найдена"));
@@ -743,7 +817,7 @@ export function createRecurringRule(payload: CreateRecurringRulePayload): Promis
     mockRules.push(rule);
     return mockDelay(rule);
   }
-  return apiRequest<RecurringTaskRule>("/tasks/recurring-rules/", {
+  return apiRequest<RecurringTaskRule>(withOrg("/tasks/recurring-rules/", organizationId), {
     method: "POST",
     body: payload,
   });
@@ -752,6 +826,7 @@ export function createRecurringRule(payload: CreateRecurringRulePayload): Promis
 export function updateRecurringRule(
   ruleId: number,
   payload: UpdateRecurringRulePayload,
+  organizationId?: number,
 ): Promise<RecurringTaskRule> {
   if (TASKS_USE_MOCKS) {
     const rule = mockRules.find((r) => r.id === ruleId);
@@ -760,19 +835,24 @@ export function updateRecurringRule(
     rule.nextRun = ruleNextRun(rule.interval, rule.dayOfWeek, rule.dayOfMonth);
     return mockDelay(rule);
   }
-  return apiRequest<RecurringTaskRule>(`/tasks/recurring-rules/${ruleId}/`, {
-    method: "PATCH",
-    body: payload,
-  });
+  return apiRequest<RecurringTaskRule>(
+    withOrg(`/tasks/recurring-rules/${ruleId}/`, organizationId),
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
 }
 
-export function deleteRecurringRule(ruleId: number): Promise<void> {
+export function deleteRecurringRule(ruleId: number, organizationId?: number): Promise<void> {
   if (TASKS_USE_MOCKS) {
     const idx = mockRules.findIndex((r) => r.id === ruleId);
     if (idx >= 0) mockRules.splice(idx, 1);
     return mockDelay(undefined);
   }
-  return apiRequest<void>(`/tasks/recurring-rules/${ruleId}/`, { method: "DELETE" });
+  return apiRequest<void>(withOrg(`/tasks/recurring-rules/${ruleId}/`, organizationId), {
+    method: "DELETE",
+  });
 }
 
 // ── API: правила порогов остатков (StockTaskRule) ──────────────────────────────
@@ -826,17 +906,23 @@ const mockStockRules: StockTaskRule[] = [
   },
 ];
 
-export function getStockRules(signal?: AbortSignal): Promise<StockTaskRule[]> {
+export function getStockRules(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<StockTaskRule[]> {
   if (TASKS_USE_MOCKS) {
     return mockDelay(mockStockRules);
   }
   return apiRequest<{ results: StockTaskRule[] } | StockTaskRule[]>(
-    "/tasks/stock-rules/",
+    withOrg("/tasks/stock-rules/", organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
-export function createStockRule(payload: CreateStockRulePayload): Promise<StockTaskRule> {
+export function createStockRule(
+  payload: CreateStockRulePayload,
+  organizationId?: number,
+): Promise<StockTaskRule> {
   if (TASKS_USE_MOCKS) {
     const cat = mockCategories.find((c) => c.id === payload.categoryId);
     const rule: StockTaskRule = {
@@ -853,12 +939,16 @@ export function createStockRule(payload: CreateStockRulePayload): Promise<StockT
     mockStockRules.push(rule);
     return mockDelay(rule);
   }
-  return apiRequest<StockTaskRule>("/tasks/stock-rules/", { method: "POST", body: payload });
+  return apiRequest<StockTaskRule>(withOrg("/tasks/stock-rules/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function updateStockRule(
   ruleId: number,
   payload: UpdateStockRulePayload,
+  organizationId?: number,
 ): Promise<StockTaskRule> {
   if (TASKS_USE_MOCKS) {
     const rule = mockStockRules.find((r) => r.id === ruleId);
@@ -866,19 +956,21 @@ export function updateStockRule(
     Object.assign(rule, payload);
     return mockDelay(rule);
   }
-  return apiRequest<StockTaskRule>(`/tasks/stock-rules/${ruleId}/`, {
+  return apiRequest<StockTaskRule>(withOrg(`/tasks/stock-rules/${ruleId}/`, organizationId), {
     method: "PATCH",
     body: payload,
   });
 }
 
-export function deleteStockRule(ruleId: number): Promise<void> {
+export function deleteStockRule(ruleId: number, organizationId?: number): Promise<void> {
   if (TASKS_USE_MOCKS) {
     const idx = mockStockRules.findIndex((r) => r.id === ruleId);
     if (idx >= 0) mockStockRules.splice(idx, 1);
     return mockDelay(undefined);
   }
-  return apiRequest<void>(`/tasks/stock-rules/${ruleId}/`, { method: "DELETE" });
+  return apiRequest<void>(withOrg(`/tasks/stock-rules/${ruleId}/`, organizationId), {
+    method: "DELETE",
+  });
 }
 
 // ── API: предложения автономности ──────────────────────────────────────────────
@@ -931,18 +1023,24 @@ const mockSuggestions: AutomationSuggestion[] = [
   },
 ];
 
-export function getAutomationSuggestions(signal?: AbortSignal): Promise<AutomationSuggestion[]> {
+export function getAutomationSuggestions(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<AutomationSuggestion[]> {
   if (TASKS_USE_MOCKS) {
     return mockDelay(mockSuggestions);
   }
   return apiRequest<{ results: AutomationSuggestion[] } | AutomationSuggestion[]>(
-    "/tasks/automation-suggestions/",
+    withOrg("/tasks/automation-suggestions/", organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 /** Принять предложение → бэкенд создаёт RecurringTaskRule. */
-export function approveAutomationSuggestion(suggestionId: number): Promise<RecurringTaskRule> {
+export function approveAutomationSuggestion(
+  suggestionId: number,
+  organizationId?: number,
+): Promise<RecurringTaskRule> {
   if (TASKS_USE_MOCKS) {
     const idx = mockSuggestions.findIndex((s) => s.id === suggestionId);
     if (idx < 0) return Promise.reject(new Error("Предложение не найдено"));
@@ -956,21 +1054,25 @@ export function approveAutomationSuggestion(suggestionId: number): Promise<Recur
     });
   }
   return apiRequest<RecurringTaskRule>(
-    `/tasks/automation-suggestions/${suggestionId}/approve/`,
+    withOrg(`/tasks/automation-suggestions/${suggestionId}/approve/`, organizationId),
     { method: "POST" },
   );
 }
 
 /** Отклонить предложение (больше не показывать для этого шаблона). */
-export function dismissAutomationSuggestion(suggestionId: number): Promise<void> {
+export function dismissAutomationSuggestion(
+  suggestionId: number,
+  organizationId?: number,
+): Promise<void> {
   if (TASKS_USE_MOCKS) {
     const idx = mockSuggestions.findIndex((s) => s.id === suggestionId);
     if (idx >= 0) mockSuggestions.splice(idx, 1);
     return mockDelay(undefined);
   }
-  return apiRequest<void>(`/tasks/automation-suggestions/${suggestionId}/dismiss/`, {
-    method: "POST",
-  });
+  return apiRequest<void>(
+    withOrg(`/tasks/automation-suggestions/${suggestionId}/dismiss/`, organizationId),
+    { method: "POST" },
+  );
 }
 
 // ── API: быстрые шаблоны заявок ────────────────────────────────────────────────
@@ -985,7 +1087,10 @@ export interface TaskTemplate {
   count: number;
 }
 
-export function getTaskTemplates(signal?: AbortSignal): Promise<TaskTemplate[]> {
+export function getTaskTemplates(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TaskTemplate[]> {
   if (TASKS_USE_MOCKS) {
     // Из истории моков: группируем ручные заявки по названию.
     const byTitle = new Map<string, TaskTemplate>();
@@ -1008,9 +1113,10 @@ export function getTaskTemplates(signal?: AbortSignal): Promise<TaskTemplate[]> 
     const templates = [...byTitle.values()].sort((a, b) => b.count - a.count).slice(0, 6);
     return mockDelay(templates);
   }
-  return apiRequest<{ results: TaskTemplate[] } | TaskTemplate[]>("/tasks/templates/", {
-    signal,
-  }).then((data) => (Array.isArray(data) ? data : data.results));
+  return apiRequest<{ results: TaskTemplate[] } | TaskTemplate[]>(
+    withOrg("/tasks/templates/", organizationId),
+    { signal },
+  ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 // ── API: сводка и личная статистика ────────────────────────────────────────────
@@ -1025,7 +1131,10 @@ export interface TasksSummary {
   newForMe: number;
 }
 
-export function getTasksSummary(signal?: AbortSignal): Promise<TasksSummary> {
+export function getTasksSummary(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<TasksSummary> {
   if (TASKS_USE_MOCKS) {
     const today = new Date().toISOString().slice(0, 10);
     const open = mockTasks.filter((t) => t.status !== "done" && t.status !== "cancelled");
@@ -1037,7 +1146,7 @@ export function getTasksSummary(signal?: AbortSignal): Promise<TasksSummary> {
       newForMe: open.filter((t) => t.status === "new" && (t.assigneeId == null || t.assigneeId === MOCK_ME.id)).length,
     });
   }
-  return apiRequest<TasksSummary>("/tasks/summary/", { signal });
+  return apiRequest<TasksSummary>(withOrg("/tasks/summary/", organizationId), { signal });
 }
 
 /** Личная статистика исполнителя (лёгкая геймификация). */
@@ -1046,7 +1155,10 @@ export interface MyTaskStats {
   doneLast30Days: number;
 }
 
-export function getMyTaskStats(signal?: AbortSignal): Promise<MyTaskStats> {
+export function getMyTaskStats(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<MyTaskStats> {
   if (TASKS_USE_MOCKS) {
     const since = (days: number) => {
       const d = new Date();
@@ -1059,20 +1171,20 @@ export function getMyTaskStats(signal?: AbortSignal): Promise<MyTaskStats> {
       doneLast30Days: mineDone.filter((t) => t.updatedAt >= since(30)).length,
     });
   }
-  return apiRequest<MyTaskStats>("/tasks/stats/me/", { signal });
+  return apiRequest<MyTaskStats>(withOrg("/tasks/stats/me/", organizationId), { signal });
 }
 
 // ── API: «спасибо» от автора ───────────────────────────────────────────────────
 
 /** Автор благодарит исполнителя выполненной задачи (однократно). */
-export function thankTask(taskId: number): Promise<Task> {
+export function thankTask(taskId: number, organizationId?: number): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     r.thankedByAuthor = true;
     r.updatedAt = nowIso();
     return mockDelay(toTask(r));
   }
-  return apiRequest<Task>(`/tasks/${taskId}/thank/`, { method: "POST" });
+  return apiRequest<Task>(withOrg(`/tasks/${taskId}/thank/`, organizationId), { method: "POST" });
 }
 
 // ── API: внутрисистемные уведомления ───────────────────────────────────────────
@@ -1124,7 +1236,7 @@ const mockNotifications: TaskNotification[] = [
 ];
 
 export function getTaskNotifications(
-  opts: { unread?: boolean } = {},
+  opts: { unread?: boolean; organizationId?: number } = {},
   signal?: AbortSignal,
 ): Promise<TaskNotification[]> {
   if (TASKS_USE_MOCKS) {
@@ -1134,20 +1246,23 @@ export function getTaskNotifications(
   }
   const q = opts.unread ? "?unread=true" : "";
   return apiRequest<{ results: TaskNotification[] } | TaskNotification[]>(
-    `/tasks/notifications/${q}`,
+    withOrg(`/tasks/notifications/${q}`, opts.organizationId),
     { signal },
   ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 /** Пометить уведомления прочитанными (без ids — все мои). */
-export function markTaskNotificationsRead(ids?: number[]): Promise<void> {
+export function markTaskNotificationsRead(
+  ids?: number[],
+  organizationId?: number,
+): Promise<void> {
   if (TASKS_USE_MOCKS) {
     for (const n of mockNotifications) {
       if (!ids || ids.includes(n.id)) n.readAt = nowIso();
     }
     return mockDelay(undefined);
   }
-  return apiRequest<void>("/tasks/notifications/mark-read/", {
+  return apiRequest<void>(withOrg("/tasks/notifications/mark-read/", organizationId), {
     method: "POST",
     body: ids ? { ids } : {},
   });
