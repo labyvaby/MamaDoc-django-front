@@ -5,9 +5,9 @@ import { apiRequest } from "./client";
  *
  * Контракт: docs/backend-achievements-api.md (тикет:
  * MamaDoc/backend_ticket_achievements_module.md) — НЕ менять без
- * согласования с бэкенд-командой. Пока бэкенд не готов, модуль работает на
- * in-memory моках (ACHIEVEMENTS_USE_MOCKS = true). После готовности бэка:
- * выставить флаг в false — сигнатуры функций совпадают с контрактом один в один.
+ * согласования с бэкенд-командой. Бэкенд реализован (гайд
+ * frontend-tickets-2026-07-guide.md, 08.07.2026), модуль работает на живом API.
+ * Моки оставлены для локальной разработки без бэка (ACHIEVEMENTS_USE_MOCKS = true).
  *
  * Принципы (см. ТЗ MamaDoc/TZ_achievements_module.md):
  * - фронт ничего не вычисляет — только отображает данные бэка;
@@ -15,8 +15,8 @@ import { apiRequest } from "./client";
  * - приёмы/процедуры засчитываются по оплате (paid|discounted).
  */
 
-// Переключить в false, когда бэкенд реализует app `achievements`.
-export const ACHIEVEMENTS_USE_MOCKS = true;
+// Бэкенд app `achievements` задеплоен — моки только для локальной отладки.
+export const ACHIEVEMENTS_USE_MOCKS = false;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

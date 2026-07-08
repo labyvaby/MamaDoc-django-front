@@ -977,15 +977,14 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Настройки задач: пока на моках — без RequirePermission.
-                                TODO при интеграции: обернуть в
-                                <RequirePermission permission="tasks.manage"> */}
                             <Route
                               path="settings/tasks"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <TasksSettingsPage />
-                                </Suspense>
+                                <RequirePermission permission="tasks.manage">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <TasksSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
                               }
                             />
                             <Route
@@ -1008,27 +1007,24 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Задачи: пока на моках — без RequirePermission (бэкенд ещё не
-                                выдаёт tasks.*); страница сама проверяет доступ.
-                                TODO при интеграции: обернуть в
-                                <RequirePermission permission="tasks.list"> */}
                             <Route
                               path="tasks"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <TasksPage />
-                                </Suspense>
+                                <RequirePermission permission="tasks.list">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <TasksPage />
+                                  </Suspense>
+                                </RequirePermission>
                               }
                             />
-                            {/* Достижения: пока на моках — без RequirePermission.
-                                TODO при интеграции: обернуть в
-                                <RequirePermission permission="achievements.view"> */}
                             <Route
                               path="achievements"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <AchievementsPage />
-                                </Suspense>
+                                <RequirePermission permission="achievements.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <AchievementsPage />
+                                  </Suspense>
+                                </RequirePermission>
                               }
                             />
                             <Route

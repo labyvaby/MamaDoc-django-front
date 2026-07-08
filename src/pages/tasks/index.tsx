@@ -62,8 +62,6 @@ import {
   getTasks,
   getTasksSummary,
   takeTask,
-  TASKS_MOCK_EMPLOYEE_ID,
-  TASKS_USE_MOCKS,
   type Task,
   type TaskPriority,
   type TaskStatus,
@@ -299,17 +297,13 @@ const TasksPage: React.FC = () => {
   const { activeEmployee } = usePermissions();
   const queryClient = useQueryClient();
 
-  // Пока бэкенд не включил модуль `tasks` и права tasks.* — работаем на моках,
-  // доступ открыт (TASKS_USE_MOCKS). Убрать `|| TASKS_USE_MOCKS` при интеграции.
-  const canList = can("tasks.list") || TASKS_USE_MOCKS;
-  const canCreate = can("tasks.create") || TASKS_USE_MOCKS;
-  const canUpdate = can("tasks.update") || TASKS_USE_MOCKS;
+  const canList = can("tasks.list");
+  const canCreate = can("tasks.create");
+  const canUpdate = can("tasks.update");
   const canManage = can("tasks.manage");
 
-  // В мок-режиме «я» — подставной сотрудник из моков, чтобы кликался весь флоу.
-  // TODO при интеграции: оставить только activeEmployee.id.
-  const realMeId: number | null = (activeEmployee as { id?: number } | null | undefined)?.id ?? null;
-  const meEmployeeId = TASKS_USE_MOCKS ? TASKS_MOCK_EMPLOYEE_ID : realMeId;
+  const meEmployeeId: number | null =
+    (activeEmployee as { id?: number } | null | undefined)?.id ?? null;
 
   // ── Состояние ──
   const [tab, setTab] = React.useState<TasksTab>(() => {

@@ -4,13 +4,13 @@ import { apiRequest } from "./client";
  * Модуль внутренних заявок/задач.
  *
  * Контракт: MamaDoc/backend_ticket_tasks_module.md — НЕ менять без согласования
- * с бэкенд-командой. Пока бэкенд не готов, модуль работает на in-memory моках
- * (TASKS_USE_MOCKS = true). После готовности бэка: выставить флаг в false —
- * сигнатуры функций совпадают с контрактом один в один.
+ * с бэкенд-командой. Бэкенд реализован (гайд frontend-tickets-2026-07-guide.md,
+ * 08.07.2026), модуль работает на живом API. Моки оставлены для локальной
+ * разработки без бэка (TASKS_USE_MOCKS = true).
  */
 
-// Переключить в false, когда бэкенд реализует app `tasks`.
-export const TASKS_USE_MOCKS = true;
+// Бэкенд app `tasks` задеплоен — моки только для локальной отладки.
+export const TASKS_USE_MOCKS = false;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -141,7 +141,12 @@ export interface UpdateTaskPayload {
   categoryId?: number;
   assigneeId?: number | null;
   dueDate?: string | null;
+  /** Только для tasks.manage (иначе 400). */
   priority?: TaskPriority;
+  /** Tri-state бэка (msgspec не отличает «не прислали» от null): чтобы снять
+   *  исполнителя/срок, слать явный флаг — `assigneeId: null` поле НЕ очищает. */
+  clearAssignee?: boolean;
+  clearDueDate?: boolean;
 }
 
 export interface ReasonPayload {
@@ -152,9 +157,6 @@ export interface ReasonPayload {
 
 /** Текущий сотрудник в моках. Бэкенд определяет «me» по сессии. */
 const MOCK_ME = { id: 101, name: "Вы (текущий сотрудник)" };
-
-/** Для UI в мок-режиме: подставной id «меня» (см. TODO при интеграции). */
-export const TASKS_MOCK_EMPLOYEE_ID = MOCK_ME.id;
 
 const mockCategories: TaskCategory[] = [
   { id: 1, name: "Расходники", assignedRoles: ["nurse"], defaultPriority: "normal", isActive: true },
@@ -655,6 +657,10 @@ export interface UpdateRecurringRulePayload {
   dayOfWeek?: number | null;
   dayOfMonth?: number | null;
   isActive?: boolean;
+  /** Tri-state бэка: очистка dayOfWeek/dayOfMonth — только явным флагом
+   *  (null в JSON поле не очищает, см. UpdateTaskPayload). */
+  clearDayOfWeek?: boolean;
+  clearDayOfMonth?: boolean;
 }
 
 let mockRuleSeq = 300;
@@ -962,3 +968,4 @@ export function thankTask(taskId: number): Promise<Task> {
   }
   return apiRequest<Task>(`/tasks/${taskId}/thank/`, { method: "POST" });
 }
+
