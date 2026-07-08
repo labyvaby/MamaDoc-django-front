@@ -1,12 +1,20 @@
 /**
  * AuthCard.tsx
- * Переиспользуемая карточка для экранов аутентификации.
- * Оборачивает содержимое формы (поля, кнопки, ссылки).
- * Стиль: плоская AppCard на гранях, в духе общего гайда.
+ * Обёртка формы для экранов аутентификации.
+ *
+ * В split-screen-раскладке (см. AuthLayout) форма сидит плоско в левой колонке,
+ * поэтому карточка-контейнер (рамка/тень) больше не нужна — это просто
+ * ограничитель ширины с адаптивными полями. Так форма выглядит частью экрана,
+ * а не «плавает» отдельным блоком.
+ *
+ * minHeight резервирует стабильную высоту: вкладки «Телефон» и «Email» имеют
+ * разную высоту содержимого, и без резерва блок (центрированный по вертикали в
+ * AuthLayout) пере-центрируется при переключении — визуальный «прыжок».
+ * Контент выравниваем по верху, поэтому заголовок/вкладки/первое поле всегда
+ * остаются на одном месте.
  */
 import React from "react";
-import { CardContent } from "@mui/material";
-import { AppCard } from "../ui";
+import { Box } from "@mui/material";
 
 type Props = {
   children: React.ReactNode;
@@ -14,17 +22,18 @@ type Props = {
 
 const AuthCard: React.FC<Props> = ({ children }) => {
   return (
-    <AppCard
-      variant="outlined"
-      sx={{
+    <Box
+      sx={(theme) => ({
         width: "100%",
         maxWidth: 400,
-        bgcolor: "background.paper",
-      }}
-      disableContentPadding
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-start",
+        minHeight: { xs: "auto", md: theme.appLayout.auth.cardMinHeight },
+      })}
     >
-      <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>{children}</CardContent>
-    </AppCard>
+      {children}
+    </Box>
   );
 };
 
