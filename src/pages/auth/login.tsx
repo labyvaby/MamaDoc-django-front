@@ -11,11 +11,14 @@ import {
   InputAdornment,
   Tabs,
   Tab,
+  CircularProgress,
 } from "@mui/material";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphoneOutlined";
 import EmailIcon from "@mui/icons-material/EmailOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import smallIcon from "../../assets/img/icon_2s.png";
 import {
   login as djangoLogin,
@@ -28,21 +31,47 @@ import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
+import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import { PhoneCountryCodeSelect } from "../../components/ui";
 import {
   composePhone,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  normalizePhoneLocal,
+  formatPhoneLocalDisplay,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { ROLE_HOME_PAGES, type RoleName } from "../../types/rbac";
+import { subtleBg } from "../../theme";
+
+// Формат таймера кулдауна: секунды → "M:SS".
+const formatMMSS = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+const OTP_RESEND_COOLDOWN = 60; // сек — задержка перед повторной отправкой кода
+
+// Простая проверка формата email для инлайн-валидации (не заменяет серверную).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Запоминаем последний выбранный способ входа, чтобы при следующем визите
+// открыть привычную вкладку (персонал заходит ежедневно).
+const AUTH_METHOD_KEY = "mamadoc:auth-method";
+
+const readSavedAuthMethod = (): "email" | "phone" => {
+  try {
+    const saved = window.localStorage.getItem(AUTH_METHOD_KEY);
+    if (saved === "email" || saved === "phone") return saved;
+  } catch {
+    // localStorage может быть недоступен (приватный режим) — молча игнорируем
+  }
+  return "phone";
+};
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const redirectTo = params.get("to") || "/home";
 
-  const [authMethod, setAuthMethod] = React.useState<"email" | "phone">("phone");
+  const [authMethod, setAuthMethod] = React.useState<"email" | "phone">(readSavedAuthMethod);
 
   // -- PHONE STATES --
   const [phoneCountryCode, setPhoneCountryCode] = React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
@@ -61,6 +90,15 @@ const LoginPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
   const [isResetting, setIsResetting] = React.useState(false);
+  const [resendCooldown, setResendCooldown] = React.useState(0);
+  const [redirecting, setRedirecting] = React.useState(false);
+
+  // Тик кулдауна повторной отправки OTP: 1 раз в секунду до нуля.
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   // Django-режим: слушаем authStatus из глобального state (уже инициализирован)
   const { authStatus } = usePermissions();
@@ -111,6 +149,11 @@ const LoginPage: React.FC = () => {
 
   const handleMethodChange = (_: React.SyntheticEvent, newValue: "email" | "phone") => {
     setAuthMethod(newValue);
+    try {
+      window.localStorage.setItem(AUTH_METHOD_KEY, newValue);
+    } catch {
+      // localStorage недоступен — не критично, просто не запомним выбор
+    }
     setErrorMsg(null);
     setInfoMsg(null);
     setIsOtpSent(false);
@@ -232,8 +275,8 @@ const LoginPage: React.FC = () => {
 
 
   // --- ЛОГИКА ТЕЛЕФОНА ---
-  const sendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendOtp = async (e?: React.FormEvent) => {
+    e?.preventDefault();
 
     setLoading(true);
     setErrorMsg(null);
@@ -261,6 +304,7 @@ const LoginPage: React.FC = () => {
         setIsOtpSent(true);
         setLastSentPhone(fullPhone);
         setInfoMsg("Если номер зарегистрирован, на него отправлен код.");
+        setResendCooldown(OTP_RESEND_COOLDOWN);
       } catch (err: unknown) {
         setErrorMsg(getErrorMessage(err));
       } finally {
@@ -307,6 +351,7 @@ const LoginPage: React.FC = () => {
       setIsOtpSent(true);
       setLastSentPhone(fullPhone);
       setInfoMsg("Код отправлен!");
+      setResendCooldown(OTP_RESEND_COOLDOWN);
     } catch (err: unknown) {
       setErrorMsg(getErrorMessage(err));
     } finally {
@@ -314,8 +359,8 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  const verifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const verifyOtp = async (e?: React.FormEvent) => {
+    e?.preventDefault();
 
     setLoading(true);
     setErrorMsg(null);
@@ -331,6 +376,7 @@ const LoginPage: React.FC = () => {
     if (IS_DJANGO_BACKEND) {
       try {
         const meData = await djangoVerifyOtp(fullPhone, otpCode.trim());
+        setRedirecting(true);
         applyMeResponse(meData);
         navigate(redirectTo, { replace: true });
       } catch (err: unknown) {
@@ -378,6 +424,7 @@ const LoginPage: React.FC = () => {
         // djangoLogin возвращает MeResponse — сразу заполняем глобальный state,
         // второй GET /auth/me/ не нужен
         const meData = await djangoLogin(normalizedEmail, password);
+        setRedirecting(true);
         applyMeResponse(meData);
         navigate(redirectTo, { replace: true });
         return;
@@ -407,12 +454,8 @@ const LoginPage: React.FC = () => {
     setErrorMsg(null);
     setInfoMsg(null);
     try {
-      if (IS_DJANGO_BACKEND) {
-        setInfoMsg("Сброс пароля через Django еще не подключен. Обратитесь к администратору.");
-        setIsResetting(false);
-        return;
-      }
-
+      // В Django-режиме сброс по почте недоступен (кнопка скрыта, форма
+      // недостижима), поэтому этот путь исполняется только в Supabase-режиме.
       const normalizedEmail = email.trim().toLowerCase();
       const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${window.location.origin}/update-password`,
@@ -427,23 +470,78 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  // Инлайн-валидация: показываем подсказку у поля, только когда пользователь
+  // уже что-то ввёл, но значение ещё неполное/некорректное.
+  const phoneMaxLen = getPhoneLocalMaxLength(phoneCountryCode);
+  const phoneIncomplete = phoneLocal.length > 0 && phoneLocal.length < phoneMaxLen;
+  const emailInvalid = email.trim().length > 0 && !EMAIL_RE.test(email.trim());
+
+  // Сбрасываем ошибку сразу при правке поля, а не только при смене вкладки.
+  const clearError = () => setErrorMsg((prev) => (prev ? null : prev));
+
   return (
     <AuthLayout>
       <AuthCard>
-        <Box sx={{ textAlign: "center", mb: 2 }}>
-          <Stack direction="row" justifyContent="center" alignItems="center" gap={1} mb={2}>
-            <Box component="img" src={smallIcon} sx={{ height: 32 }} />
-            <Typography variant="h5" fontWeight={600}>Мама Доктор</Typography>
+        <Box sx={{ mb: 3 }}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            gap={1.25}
+            mb={3.5}
+            sx={{ display: { xs: "none", md: "flex" } }}
+          >
+            <Box component="img" src={smallIcon} sx={{ height: 34 }} />
+            <Typography variant="h6" fontWeight={700}>Мама Доктор</Typography>
           </Stack>
 
-          <Tabs value={authMethod} onChange={handleMethodChange} centered sx={{ mb: 2 }}>
-            <Tab icon={<PhoneIphoneIcon />} label="Телефон" value="phone" />
-            <Tab icon={<EmailIcon />} label="Email" value="email" />
+          <Typography variant="h5" fontWeight={600} sx={{ mb: 0.5 }}>
+            Вход в систему
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+            Рады видеть вас снова
+          </Typography>
+
+          {/* Сегмент-контрол: способ входа. Логика через тот же handleMethodChange. */}
+          <Tabs
+            value={authMethod}
+            onChange={handleMethodChange}
+            variant="fullWidth"
+            sx={(theme) => ({
+              minHeight: 44,
+              p: 0.5,
+              borderRadius: "14px",
+              bgcolor: subtleBg(theme),
+              "& .MuiTabs-indicator": { display: "none" },
+              "& .MuiTab-root": {
+                minHeight: 36,
+                py: 0.5,
+                borderRadius: "10px",
+                textTransform: "none",
+                fontWeight: 500,
+                color: "text.secondary",
+                border: "1px solid transparent",
+                transition: "background-color .15s ease, color .15s ease",
+                "@media (prefers-reduced-motion: reduce)": {
+                  transition: "none",
+                },
+              },
+              "& .MuiTab-root.Mui-selected": {
+                bgcolor: "background.paper",
+                color: "text.primary",
+                border: `1px solid ${theme.palette.divider}`,
+              },
+            })}
+          >
+            <Tab iconPosition="start" icon={<PhoneIphoneIcon fontSize="small" />} label="Телефон" value="phone" />
+            <Tab iconPosition="start" icon={<EmailIcon fontSize="small" />} label="Email" value="email" />
           </Tabs>
         </Box>
 
-        {errorMsg && <Alert severity="error" sx={{ mb: 2 }}>{errorMsg}</Alert>}
-        {infoMsg && <Alert severity="info" sx={{ mb: 2 }}>{infoMsg}</Alert>}
+        {/* Постоянный live-регион: новые сообщения озвучиваются скринридером. */}
+        <Box aria-live="polite" role="status">
+          {errorMsg && <Alert severity="error" sx={{ mb: 2 }}>{errorMsg}</Alert>}
+          {infoMsg && <Alert severity="info" sx={{ mb: 2 }}>{infoMsg}</Alert>}
+        </Box>
 
         {/* --- ВКЛАДКА ТЕЛЕФОН --- */}
         {authMethod === "phone" && (
@@ -455,13 +553,17 @@ const LoginPage: React.FC = () => {
                     Номер телефона
                   </Typography>
                   <TextField
-                    value={phoneLocal}
+                    value={formatPhoneLocalDisplay(phoneCountryCode, phoneLocal)}
                     onChange={(e) => {
-                      const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
-                      setPhoneLocal(e.target.value.replace(/[^0-9]/g, "").slice(0, maxLen));
+                      setPhoneLocal(normalizePhoneLocal(phoneCountryCode, e.target.value));
+                      clearError();
                     }}
                     fullWidth
                     autoFocus
+                    type="tel"
+                    error={phoneIncomplete}
+                    helperText={phoneIncomplete ? "Введите полный номер" : " "}
+                    inputProps={{ inputMode: "numeric", autoComplete: "tel-national" }}
                     placeholder={getPhoneLocalMaxLength(phoneCountryCode) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
                     InputProps={{
                       startAdornment: (
@@ -490,29 +592,66 @@ const LoginPage: React.FC = () => {
                     }}
                   />
 
-                  <Button type="submit" variant="contained" fullWidth disabled={loading}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    fullWidth
+                    disabled={loading}
+                    startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
+                  >
                     {loading ? "Отправка..." : "Получить код"}
                   </Button>
                 </Stack>
               </form>
             ) : (
               <form onSubmit={verifyOtp}>
-                <Stack spacing={2}>
-                  <Typography variant="body2" textAlign="center">
-                    Код отправлен на {lastSentPhone ?? composePhone(phoneCountryCode, phoneLocal) ?? ""}
-                  </Typography>
-                  <TextField
-                    label="Код из СМС"
+                <Stack spacing={2.5}>
+                  <Box sx={{ textAlign: "center" }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Код отправлен на номер
+                    </Typography>
+                    <Stack direction="row" justifyContent="center" alignItems="center" gap={0.5}>
+                      <Typography variant="subtitle1" fontWeight={600}>
+                        {lastSentPhone ?? composePhone(phoneCountryCode, phoneLocal) ?? ""}
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => setIsOtpSent(false)}
+                        disabled={loading}
+                        aria-label="Изменить номер"
+                      >
+                        <EditOutlined fontSize="small" />
+                      </IconButton>
+                    </Stack>
+                  </Box>
+
+                  <OtpCodeInput
                     value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
-                    fullWidth
+                    onChange={(v) => {
+                      setOtpCode(v);
+                      clearError();
+                    }}
+                    onComplete={() => verifyOtp()}
+                    disabled={loading}
                     autoFocus
                   />
-                  <Button type="submit" variant="contained" fullWidth disabled={loading}>
-                    {loading ? "Проверка..." : "Войти"}
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    fullWidth
+                    disabled={loading || redirecting}
+                    startIcon={(loading || redirecting) ? <CircularProgress size={18} color="inherit" /> : null}
+                  >
+                    {redirecting ? "Входим…" : loading ? "Проверка..." : "Войти"}
                   </Button>
-                  <Button variant="text" onClick={() => setIsOtpSent(false)} disabled={loading}>
-                    Изменить данные
+                  <Button
+                    variant="text"
+                    onClick={() => sendOtp()}
+                    disabled={loading || resendCooldown > 0}
+                  >
+                    {resendCooldown > 0
+                      ? `Отправить код повторно через ${formatMMSS(resendCooldown)}`
+                      : "Отправить код повторно"}
                   </Button>
                 </Stack>
               </form>
@@ -525,39 +664,97 @@ const LoginPage: React.FC = () => {
           <Stack spacing={2}>
             {!isResetting ? (
               <Stack component="form" onSubmit={handleEmailSubmit} spacing={2}>
-                <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required fullWidth />
+                <TextField
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    clearError();
+                  }}
+                  required
+                  fullWidth
+                  autoComplete="email"
+                  error={emailInvalid}
+                  helperText={emailInvalid ? "Введите корректный email" : " "}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <EmailIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
                 <TextField
                   label="Пароль"
                   type={showPw ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearError();
+                  }}
                   required
                   fullWidth
+                  autoComplete="current-password"
                   InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LockOutlined fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
                     endAdornment: (
                       <InputAdornment position="end">
-                        <IconButton onClick={() => setShowPw(!showPw)}>
+                        <IconButton
+                          onClick={() => setShowPw(!showPw)}
+                          edge="end"
+                          aria-label={showPw ? "Скрыть пароль" : "Показать пароль"}
+                        >
                           {showPw ? <VisibilityOffOutlined /> : <VisibilityOutlined />}
                         </IconButton>
                       </InputAdornment>
                     ),
                   }}
                 />
-                <Button type="submit" variant="contained" disabled={loading} fullWidth>
-                  {loading ? "..." : "Войти"}
-                </Button>
                 <Button
-                  variant="text"
-                  size="small"
-                  onClick={() => {
-                    setIsResetting(true);
-                    setErrorMsg(null);
-                    setInfoMsg(null);
-                  }}
-                  sx={{ textTransform: 'none' }}
+                  type="submit"
+                  variant="contained"
+                  disabled={loading || redirecting}
+                  fullWidth
+                  startIcon={(loading || redirecting) ? <CircularProgress size={18} color="inherit" /> : null}
                 >
-                  Забыли пароль?
+                  {redirecting ? "Входим…" : loading ? "Вход..." : "Войти"}
                 </Button>
+                {IS_DJANGO_BACKEND ? (
+                  // Восстановление по почте на Django не подключено, а тикет бэку
+                  // заводить не хотим. Но забывший пароль всё равно может войти по
+                  // SMS-коду и сменить пароль в профиле — ведём его туда.
+                  <Button
+                    variant="text"
+                    size="small"
+                    onClick={() => {
+                      setAuthMethod("phone");
+                      setIsResetting(false);
+                      setErrorMsg(null);
+                      setInfoMsg(null);
+                    }}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Не помните пароль? Войдите по SMS-коду
+                  </Button>
+                ) : (
+                  <Button
+                    variant="text"
+                    size="small"
+                    onClick={() => {
+                      setIsResetting(true);
+                      setErrorMsg(null);
+                      setInfoMsg(null);
+                    }}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Забыли пароль?
+                  </Button>
+                )}
               </Stack>
             ) : (
               <Stack component="form" onSubmit={handleResetRequest} spacing={2}>
@@ -568,12 +765,29 @@ const LoginPage: React.FC = () => {
                   label="Email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    clearError();
+                  }}
                   required
                   fullWidth
                   autoFocus
+                  autoComplete="email"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <EmailIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
                 />
-                <Button type="submit" variant="contained" disabled={loading} fullWidth>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={loading}
+                  fullWidth
+                  startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
+                >
                   {loading ? "Отправка..." : "Сбросить пароль"}
                 </Button>
                 <Button
@@ -592,6 +806,13 @@ const LoginPage: React.FC = () => {
             )}
           </Stack>
         )}
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", textAlign: "center", mt: "auto", pt: 3 }}
+        >
+          Нужна помощь? Напишите администратору
+        </Typography>
       </AuthCard>
     </AuthLayout>
   );

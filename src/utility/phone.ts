@@ -19,6 +19,47 @@ export function getPhoneLocalMaxLength(countryCode: PhoneCountryCode): number {
 }
 
 /**
+ * Нормализует локальную часть номера под выбранный код страны:
+ * убирает нецифровые символы, отбрасывает национальный trunk-префикс
+ * (который добавляет автозаполнение формата tel-national или ручной ввод)
+ * и обрезает до максимальной длины.
+ *
+ * Примеры:
+ *  +996 «0709789228» → «709789228» (ведущий 0 — trunk-префикс, не часть локальной)
+ *  +7   «8 900 123 45 67» → «9001234567» (8 — российский trunk-префикс)
+ */
+export function normalizePhoneLocal(countryCode: PhoneCountryCode, raw: string): string {
+  let digits = String(raw ?? "").replace(/[^0-9]/g, "");
+
+  if (countryCode === "+996") {
+    digits = digits.replace(/^0+/, ""); // локальная часть KG не начинается с нуля
+  } else if (countryCode === "+7") {
+    if (digits.startsWith("8")) digits = digits.slice(1); // 8 — trunk-префикс РФ
+  }
+
+  return digits.slice(0, getPhoneLocalMaxLength(countryCode));
+}
+
+/**
+ * Форматирует локальную часть номера для отображения (группировка пробелами):
+ *  +996 «709789228» → «709 789 228» (3-3-3)
+ *  +7   «9001234567» → «900 123 45 67» (3-3-2-2)
+ * Хранимое значение остаётся строкой из цифр — форматирование только для UI.
+ */
+export function formatPhoneLocalDisplay(countryCode: PhoneCountryCode, local: string): string {
+  const d = String(local ?? "")
+    .replace(/[^0-9]/g, "")
+    .slice(0, getPhoneLocalMaxLength(countryCode));
+
+  const groups =
+    countryCode === "+7"
+      ? [d.slice(0, 3), d.slice(3, 6), d.slice(6, 8), d.slice(8, 10)]
+      : [d.slice(0, 3), d.slice(3, 6), d.slice(6, 9)];
+
+  return groups.filter(Boolean).join(" ");
+}
+
+/**
  * Парсит полный номер телефона в формате E.164 (+кодСтраны + локальная часть)
  * в структуру { countryCode, local }.
  * Поддерживает коды +996 и +7. Для остальных вариантов
@@ -64,7 +105,9 @@ export function parsePhone(raw: string | null | undefined): ParsedPhone {
  * Если локальная часть пуста, возвращает null.
  */
 export function composePhone(countryCode: PhoneCountryCode, local: string): string | null {
-  const normalizedLocal = local.replace(/[^0-9]/g, "");
+  // Защита: убираем trunk-префикс и на этом шаге, даже если он просочился
+  // из внешнего источника, чтобы не собрать номер вида +9960709789228.
+  const normalizedLocal = normalizePhoneLocal(countryCode, local);
   if (!normalizedLocal) return null;
 
   if (countryCode === "+996") {

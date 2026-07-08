@@ -43,6 +43,11 @@ export interface AppLayoutConfig {
     paddingX: number; // spacing-юниты для горизонтальных отступов
     paddingY: number; // spacing-юниты для вертикальных отступов
   };
+  auth: {
+    // Мин. высота обёртки формы на десктопе (px). Резервирует стабильную
+    // высоту, чтобы блок не «прыгал» при переключении вкладок вход/OTP/email.
+    cardMinHeight: number;
+  };
   table: {
     rowHeight: number; // px — базовая высота строки таблиц/гридов
     headerRowHeight: number; // px — высота строки заголовка
@@ -198,6 +203,9 @@ export function getAppTheme(
     card: {
       paddingX: 3,
       paddingY: 3,
+    },
+    auth: {
+      cardMinHeight: 520,
     },
     table: {
       rowHeight: 44,
@@ -367,6 +375,14 @@ export function getAppTheme(
             backgroundRepeat: "no-repeat",
             backgroundAttachment: "fixed",
           },
+          // Убираем жёлтый фон автозаполнения Chrome/WebKit: откладываем переход
+          // фона «в бесконечность», текст берём из темы. Работает в обеих темах.
+          "input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus, input:-webkit-autofill:active": {
+            transitionDelay: "9999s",
+            transitionProperty: "background-color, color",
+            WebkitTextFillColor: "inherit",
+            caretColor: "inherit",
+          },
           // Hide scrollbars inside MUI X time picker (hours/minutes) columns
           ".MuiPickersSectionList-root, .MuiMultiSectionDigitalClock-root .MuiPickersSectionList-root, .MuiMultiSectionDigitalClock-root ul, .MuiMultiSectionDigitalClock-root [role='listbox']": {
             scrollbarWidth: "none",
@@ -445,6 +461,16 @@ export function getAppTheme(
         styleOverrides: {
           root: ({ theme }) => ({
             minHeight: theme.appLayout.controls.inputHeight,
+            // Автозаполнение Chrome/WebKit красит фон поля синим (особенно
+            // заметно в тёмной теме). Перекрываем его цветом поверхности через
+            // inset box-shadow, а текст берём из темы — работает в обеих темах.
+            "& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus, & input:-webkit-autofill:active": {
+              WebkitBoxShadow: `0 0 0 1000px ${theme.palette.background.paper} inset`,
+              WebkitTextFillColor: theme.palette.text.primary,
+              caretColor: theme.palette.text.primary,
+              borderRadius: "inherit",
+              transition: "background-color 9999s ease-in-out 0s",
+            },
           }),
         },
       },
