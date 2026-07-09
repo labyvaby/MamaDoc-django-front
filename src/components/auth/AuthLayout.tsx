@@ -115,7 +115,7 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
       {/* Десктоп: левая колонка — брендовая панель (скрыта на мобильных) */}
       <Box
         aria-hidden
-        sx={(theme) => ({
+        sx={{
           display: { xs: "none", md: "flex" },
           position: "relative",
           overflow: "hidden",
@@ -124,7 +124,7 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
           p: 6,
           bgcolor: "primary.main",
           color: "primary.contrastText",
-        })}
+        }}
       >
         {/* Декоративные мягкие круги (через alpha от contrastText — без hex) */}
         <Box
