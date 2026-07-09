@@ -359,12 +359,15 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  const verifyOtp = async (e?: React.FormEvent) => {
+  // codeOverride — для авто-сабмита из OtpCodeInput: он зовёт onComplete сразу
+  // после onChange, когда otpCode в состоянии ещё без последней цифры.
+  const verifyOtp = async (e?: React.FormEvent, codeOverride?: string) => {
     e?.preventDefault();
 
     setLoading(true);
     setErrorMsg(null);
 
+    const code = (codeOverride ?? otpCode).trim();
     const fullPhone = composePhone(phoneCountryCode, phoneLocal);
 
     if (!fullPhone) {
@@ -375,7 +378,7 @@ const LoginPage: React.FC = () => {
 
     if (IS_DJANGO_BACKEND) {
       try {
-        const meData = await djangoVerifyOtp(fullPhone, otpCode.trim());
+        const meData = await djangoVerifyOtp(fullPhone, code);
         setRedirecting(true);
         applyMeResponse(meData);
         navigate(redirectTo, { replace: true });
@@ -394,7 +397,7 @@ const LoginPage: React.FC = () => {
     try {
       const { data, error } = await supabase.auth.verifyOtp({
         phone: fullPhone,
-        token: otpCode.trim(),
+        token: code,
         type: "sms",
       });
 
@@ -631,7 +634,7 @@ const LoginPage: React.FC = () => {
                       setOtpCode(v);
                       clearError();
                     }}
-                    onComplete={() => verifyOtp()}
+                    onComplete={(code) => verifyOtp(undefined, code)}
                     disabled={loading}
                     autoFocus
                   />
