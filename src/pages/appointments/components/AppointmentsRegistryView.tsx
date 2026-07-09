@@ -269,6 +269,18 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   ];
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+  const handleConfirmVisit = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        await updateAppointment(appt.id, { status: "confirmed" });
+        void fetchData();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [fetchData, notify],
+  );
+
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
@@ -293,6 +305,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
       canViewConclusions={canViewConclusions}
       onEdit={setEditTarget}
       onPay={setPaymentTarget}
+      onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
       onClose={() => setSelectedAppt(null)}
     />

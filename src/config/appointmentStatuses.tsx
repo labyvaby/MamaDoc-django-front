@@ -4,6 +4,7 @@ import {
   CheckCircle as CheckCircleIcon,
   HourglassEmpty as HourglassEmptyIcon,
   Done as DoneIcon,
+  EventAvailable as EventAvailableIcon,
   Build as BuildIcon,
   Paid as PaidIcon,
   PieChart as PieChartIcon,
@@ -19,6 +20,7 @@ import { alpha } from "@mui/material/styles";
 export const APPOINTMENT_STATUSES = {
   CANCELLED: "Отменено",
   PATIENT_ARRIVED: "Пациент здесь",
+  CONFIRMED: "Подтверждён",
   EXPECTED: "Ожидаем",
   COMPLETED: "Завершено",
   IN_PROGRESS: "В работе",
@@ -36,6 +38,7 @@ export const APPOINTMENT_STATUSES = {
 export type AppointmentStatus =
   | typeof APPOINTMENT_STATUSES.CANCELLED
   | typeof APPOINTMENT_STATUSES.PATIENT_ARRIVED
+  | typeof APPOINTMENT_STATUSES.CONFIRMED
   | typeof APPOINTMENT_STATUSES.EXPECTED
   | typeof APPOINTMENT_STATUSES.COMPLETED
   | typeof APPOINTMENT_STATUSES.IN_PROGRESS
@@ -95,6 +98,19 @@ export const getStatusConfig = (status: any): StatusConfig => {
       color: "error",
       icon: <CancelIcon fontSize="small" />,
       label: status,
+    };
+  }
+
+  // Подтверждён (пациент подтвердил визит по телефону) - синий
+  if (
+    statusLower === APPOINTMENT_STATUSES.CONFIRMED.toLowerCase() ||
+    statusLower === "подтвержден" ||
+    statusLower === "confirmed"
+  ) {
+    return {
+      color: "info",
+      icon: <EventAvailableIcon fontSize="small" />,
+      label: resolved,
     };
   }
 
