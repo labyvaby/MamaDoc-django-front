@@ -32,6 +32,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PersonOffOutlined from "@mui/icons-material/PersonOffOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DirectionsWalkOutlined from "@mui/icons-material/DirectionsWalkOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -67,6 +68,8 @@ interface AppointmentDetailsPanelProps {
   onToggleConclusion?: () => void;
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
+  /** Пациент подтвердил визит по телефону: scheduled → confirmed. */
+  onConfirmVisit?: (a: DjangoAppointment) => void;
   onArrived?: (a: DjangoAppointment) => void;
   /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
   onStartAppointment?: (a: DjangoAppointment) => void;
@@ -98,6 +101,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onToggleConclusion,
   onEdit,
   onPay,
+  onConfirmVisit,
   onArrived,
   onStartAppointment,
   onCancelAppt,
@@ -376,8 +380,24 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 useFlexGap
                 sx={{ gap: { xs: 0.5, sm: 1 } }}
               >
-                {/* Пациент здесь — только если scheduled */}
-                {canUpdate && onArrived && appt.status === "scheduled" && (
+                {/* Подтвердить — пациент подтвердил визит по телефону, но ещё
+                    не пришёл. Только до подтверждения (scheduled). */}
+                {canUpdate && onConfirmVisit && appt.status === "scheduled" && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="info"
+                    startIcon={<EventAvailableOutlined />}
+                    onClick={() => onConfirmVisit(appt)}
+                  >
+                    Подтвердить
+                  </Button>
+                )}
+
+                {/* Пациент здесь — пока пациента не отметили пришедшим */}
+                {canUpdate &&
+                  onArrived &&
+                  (appt.status === "scheduled" || appt.status === "confirmed") && (
                   <Button
                     size="small"
                     variant="outlined"

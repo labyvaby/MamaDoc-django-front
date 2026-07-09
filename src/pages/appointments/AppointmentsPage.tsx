@@ -446,6 +446,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setPaymentTarget(appt);
   }, []);
 
+  // «Подтвердить»: пациент подтвердил визит по телефону, scheduled → confirmed
+  const handleConfirmVisit = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      try {
+        await updateAppointment(appt.id, { status: "confirmed" });
+        void refresh();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refresh, notify],
+  );
+
   // "Пациент здесь": scheduled → waiting
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
@@ -519,6 +532,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onToggleConclusion={() => setConclusionOpen((v) => !v)}
       onEdit={handleEdit}
       onPay={handlePay}
+      onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
       onStartAppointment={handleStartAppointment}
       onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}

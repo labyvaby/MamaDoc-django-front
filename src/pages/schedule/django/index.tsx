@@ -4,6 +4,7 @@ import {
   Autocomplete,
   Box,
   Button,
+  ButtonBase,
   Chip,
   CircularProgress,
   Dialog,
@@ -26,19 +27,22 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
+import { motion } from "framer-motion";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNotification } from "@refinedev/core";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
-import { PageHeader, CustomDatePicker } from "../../../components/ui";
+import { CustomDatePicker } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
 import {
   getScheduleRules,
@@ -49,10 +53,15 @@ import {
   createScheduleException,
   deleteScheduleException,
   type ScheduleRule,
+  type ScheduleException,
   type ScheduleExceptionKind,
 } from "../../../api/scheduling";
 import { parseBackendError } from "../../../api/appointments";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
+import ScheduleCalendar from "./ScheduleCalendar";
+import ScheduleDayDrawer from "./ScheduleDayDrawer";
+import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
+import { useEmployeeColorMap } from "./employeeColors";
 
 const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -107,8 +116,10 @@ const RuleFormDrawer: React.FC<{
   onClose: () => void;
   rule: ScheduleRule | null; // null → создание
   organizationId?: number;
+  /** Активный филиал — новое правило создаётся в нём, а не «общим». */
+  branchId?: number;
   onSaved: () => void;
-}> = ({ open, onClose, rule, organizationId, onSaved }) => {
+}> = ({ open, onClose, rule, organizationId, branchId, onSaved }) => {
   const isEdit = rule !== null;
   const [employee, setEmployee] = React.useState<DjangoEmployeeListItem | null>(null);
   const [dateFrom, setDateFrom] = React.useState<Dayjs>(dayjs());
@@ -192,6 +203,7 @@ const RuleFormDrawer: React.FC<{
           lunchEnd: hasLunch ? lunchEnd : undefined,
           comment: comment.trim(),
           organizationId,
+          branchId,
         });
       }
       onSaved();
@@ -392,7 +404,8 @@ const ExceptionDialog: React.FC<{
   onClose: () => void;
   organizationId?: number;
   onSaved: () => void;
-}> = ({ open, onClose, organizationId, onSaved }) => {
+  initialDate?: Dayjs | null;
+}> = ({ open, onClose, organizationId, onSaved, initialDate }) => {
   const [employee, setEmployee] = React.useState<DjangoEmployeeListItem | null>(null);
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const [kind, setKind] = React.useState<ScheduleExceptionKind>("day_off");
@@ -405,7 +418,7 @@ const ExceptionDialog: React.FC<{
   React.useEffect(() => {
     if (open) {
       setEmployee(null);
-      setDate(dayjs());
+      setDate(initialDate ?? dayjs());
       setKind("day_off");
       setStartTime("09:00");
       setEndTime("13:00");
@@ -413,7 +426,7 @@ const ExceptionDialog: React.FC<{
       setError(null);
       setBusy(false);
     }
-  }, [open]);
+  }, [open, initialDate]);
 
   const canSubmit =
     employee != null && date.isValid() && (kind !== "extra" || startTime < endTime);
@@ -527,20 +540,36 @@ const ExceptionDialog: React.FC<{
   );
 };
 
+// ── Вкладки страницы ────────────────────────────────────────────────────────
+
+type ScheduleTab = "calendar" | "settings";
+
+const SCHEDULE_TABS: { id: ScheduleTab; label: string; icon: React.ElementType }[] = [
+  { id: "calendar", label: "Календарь", icon: CalendarMonthOutlined },
+  { id: "settings", label: "Настройка", icon: TuneOutlined },
+];
+
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const DjangoSchedulePage: React.FC = () => {
   usePageTitle("Расписание");
   const theme = useTheme();
   const canManage = useCan("schedule.manage");
-  const { isSuperAdmin, activeOrganization } = usePermissions();
+  const { isSuperAdmin, activeOrganization, activeBranch, activeEmployee } = usePermissions();
   const orgId = isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined;
   const queryClient = useQueryClient();
+  const { open: notify } = useNotification();
+
+  const [tab, setTab] = React.useState<ScheduleTab>("calendar");
+  const [month, setMonth] = React.useState<Dayjs>(dayjs());
 
   const [employeeFilter, setEmployeeFilter] = React.useState<DjangoEmployeeListItem | null>(null);
   const [ruleFormOpen, setRuleFormOpen] = React.useState(false);
   const [editingRule, setEditingRule] = React.useState<ScheduleRule | null>(null);
   const [exceptionFormOpen, setExceptionFormOpen] = React.useState(false);
+  const [exceptionInitialDate, setExceptionInitialDate] = React.useState<Dayjs | null>(null);
+  const [selectedDay, setSelectedDay] = React.useState<Dayjs | null>(null);
+  const [dayDrawerOpen, setDayDrawerOpen] = React.useState(false);
 
   const rulesParams = { employeeId: employeeFilter?.id ?? null, orgId: orgId ?? null };
   const rulesQuery = useQuery({
@@ -567,6 +596,31 @@ const DjangoSchedulePage: React.FC = () => {
       ),
   });
 
+  // Исключения за видимый диапазон месячной сетки (шире месяца — грид
+  // из 6 недель захватывает хвосты соседних месяцев). Отдельный запрос
+  // от exceptionsQuery выше (тот — только "с сегодняшнего дня" для вкладки
+  // «Настройка»).
+  const monthRange = {
+    dateFrom: month.startOf("month").subtract(7, "day").format("YYYY-MM-DD"),
+    dateTo: month.endOf("month").add(13, "day").format("YYYY-MM-DD"),
+  };
+  const monthExceptionsQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({ ...monthRange, orgId: orgId ?? null }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions({ ...monthRange, organizationId: orgId }, signal),
+    enabled: tab === "calendar",
+  });
+
+  // Сотрудники скоупятся по активному филиалу на сервере (getDjangoEmployees
+  // поддерживает branchId). Правила и исключения — клиентски, см. ниже.
+  const branchId = activeBranch?.id ?? undefined;
+  const employeesQuery = useQuery({
+    queryKey: [...djangoQueryKeys.reference.employees, branchId ?? null],
+    queryFn: ({ signal }) => getDjangoEmployees({ pageSize: 200, branchId }, signal),
+    enabled: tab === "calendar",
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
   };
@@ -580,26 +634,93 @@ const DjangoSchedulePage: React.FC = () => {
     onSuccess: invalidate,
   });
 
-  const rules = rulesQuery.data ?? [];
+  const employees = React.useMemo(() => employeesQuery.data?.results ?? [], [employeesQuery.data]);
+
+  /**
+   * Скоуп по филиалу.
+   *
+   * Бэкенд не умеет фильтровать правила по branchId (нет query-параметра), а у
+   * исключений branchId нет вовсе — поэтому режем на клиенте:
+   *  - правило видно, если оно этого филиала или общее (branchId = null);
+   *  - исключение видно, если его сотрудник виден в этом филиале.
+   * Без активного филиала (суперадмин «все филиалы») не фильтруем.
+   *
+   * ⚠ Семантика branchId = null («общее правило») — предположение фронта,
+   * вынесено в тикет MamaDoc/backend_ticket_scheduling_branch_scoping.md.
+   */
+  const rules = React.useMemo(() => {
+    const all = rulesQuery.data ?? [];
+    if (branchId == null) return all;
+    return all.filter((r) => r.branchId == null || r.branchId === branchId);
+  }, [rulesQuery.data, branchId]);
+
+  const visibleEmployeeIds = React.useMemo(() => new Set(employees.map((e) => e.id)), [employees]);
+
+  const scopeExceptions = React.useCallback(
+    (list: ScheduleException[]) =>
+      branchId == null ? list : list.filter((e) => visibleEmployeeIds.has(e.employeeId)),
+    [branchId, visibleEmployeeIds],
+  );
+
   const exceptions = exceptionsQuery.data ?? [];
+  const monthExceptions = React.useMemo(
+    () => scopeExceptions(monthExceptionsQuery.data ?? []),
+    [monthExceptionsQuery.data, scopeExceptions],
+  );
+  const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const employeeColorMap = useEmployeeColorMap(employees);
+
+  const selectedDayOccurrences = React.useMemo<DayOccurrence[]>(
+    () => (selectedDay ? computeDayOccurrences(selectedDay, rules, monthExceptions) : []),
+    [selectedDay, rules, monthExceptions],
+  );
+
+  const handleDayClick = (day: Dayjs) => {
+    setSelectedDay(day);
+    setDayDrawerOpen(true);
+  };
+
+  const handleMarkDayOff = async (employeeId: number) => {
+    if (!selectedDay) return;
+    try {
+      await createScheduleException({
+        employeeId,
+        date: selectedDay.format("YYYY-MM-DD"),
+        kind: "day_off",
+        organizationId: orgId,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+      notify?.({ type: "success", message: "Выходной отмечен" });
+    } catch (e) {
+      notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
+      throw e;
+    }
+  };
+
+  const handleAddShiftForSelectedDay = () => {
+    setExceptionInitialDate(selectedDay);
+    setExceptionFormOpen(true);
+  };
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <PageHeader
-        title="Расписание"
-        showTitle={false}
-        showSearch={false}
-        actions={
-          canManage ? (
+    <Box
+      sx={(t) => ({
+        height: {
+          xs: `calc(100dvh - ${t.appLayout.header.height.mobile}px)`,
+          md: `calc(100dvh - ${t.appLayout.header.height.desktop}px)`,
+        },
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        overflow: "hidden",
+      })}
+    >
+      {/* Строка-хедер: кнопка действия слева (как на других экранах), переключатель справа */}
+      <Box sx={{ px: theme.appLayout.page.paddingX, pt: 0, pb: 1.5 }}>
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" useFlexGap>
+          {/* Действия слева — зависят от активной вкладки */}
+          {canManage && tab === "settings" && (
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<EventBusyOutlined />}
-                onClick={() => setExceptionFormOpen(true)}
-              >
-                Исключение
-              </Button>
               <Button
                 size="small"
                 variant="contained"
@@ -611,32 +732,127 @@ const DjangoSchedulePage: React.FC = () => {
               >
                 Добавить правило
               </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<EventBusyOutlined />}
+                onClick={() => {
+                  setExceptionInitialDate(null);
+                  setExceptionFormOpen(true);
+                }}
+              >
+                Исключение
+              </Button>
             </Stack>
-          ) : undefined
-        }
-      />
+          )}
+          {canManage && tab === "calendar" && (
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() => {
+                setExceptionInitialDate(dayjs());
+                setExceptionFormOpen(true);
+              }}
+            >
+              Добавить смену
+            </Button>
+          )}
+
+          <Box sx={{ flex: 1 }} />
+
+          {/* Переключатель вкладок справа — сегмент-табы по гайду §5.7 */}
+          <Stack
+            direction="row"
+            sx={{
+              p: 0.5,
+              gap: 0.25,
+              border: 1,
+              borderColor: "divider",
+              borderRadius: "10px",
+              bgcolor: "background.paper",
+              width: "fit-content",
+            }}
+          >
+            {SCHEDULE_TABS.map(({ id, label, icon: Icon }) => {
+              const active = tab === id;
+              return (
+                <ButtonBase
+                  key={id}
+                  onClick={() => setTab(id)}
+                  sx={{
+                    position: "relative",
+                    px: 1.5,
+                    py: 0.75,
+                    borderRadius: "7px",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    color: active ? "primary.contrastText" : "text.secondary",
+                    transition: "color .15s ease",
+                  }}
+                >
+                  {active && (
+                    <Box
+                      component={motion.span}
+                      layoutId="schedule-tab-bg"
+                      transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                      sx={{ position: "absolute", inset: 0, borderRadius: "7px", bgcolor: "primary.main" }}
+                    />
+                  )}
+                  <Stack direction="row" alignItems="center" gap={0.75} sx={{ position: "relative" }}>
+                    <Icon sx={{ fontSize: 17 }} />
+                    <span>{label}</span>
+                  </Stack>
+                </ButtonBase>
+              );
+            })}
+          </Stack>
+        </Stack>
+      </Box>
 
       <Box
         sx={{
           flex: 1,
-          overflowY: "auto",
+          minHeight: 0,
+          // Календарь скроллится внутри себя; на вкладке «Настройка» скроллим
+          // содержимое (таблицы правил/исключений).
+          overflowY: tab === "calendar" ? "hidden" : "auto",
           px: theme.appLayout.page.paddingX,
-          py: 2,
+          pb: 2,
           display: "flex",
           flexDirection: "column",
           gap: 2,
         }}
       >
-        {/* Фильтр по сотруднику */}
-        <Box sx={{ maxWidth: 360 }}>
-          <EmployeePicker value={employeeFilter} onChange={setEmployeeFilter} />
-        </Box>
-
-        {rulesQuery.isError && (
-          <Alert severity="error">{parseBackendError(rulesQuery.error)}</Alert>
+        {tab === "calendar" && (
+          <>
+            {monthExceptionsQuery.isError && (
+              <Alert severity="error">{parseBackendError(monthExceptionsQuery.error)}</Alert>
+            )}
+            <ScheduleCalendar
+              employees={employees}
+              rules={rules}
+              exceptions={monthExceptions}
+              month={month}
+              onMonthChange={setMonth}
+              onDayClick={handleDayClick}
+              currentEmployeeId={activeEmployee?.id ?? null}
+            />
+          </>
         )}
 
-        {/* Правила */}
+        {tab === "settings" && (
+          <>
+            {/* Фильтр по сотруднику */}
+            <Box sx={{ maxWidth: 360 }}>
+              <EmployeePicker value={employeeFilter} onChange={setEmployeeFilter} />
+            </Box>
+
+            {rulesQuery.isError && (
+              <Alert severity="error">{parseBackendError(rulesQuery.error)}</Alert>
+            )}
+
+            {/* Правила */}
         <Box
           sx={{
             border: "1px solid",
@@ -796,8 +1012,10 @@ const DjangoSchedulePage: React.FC = () => {
                 </TableBody>
               </Table>
             </TableContainer>
-          )}
-        </Box>
+              )}
+            </Box>
+          </>
+        )}
       </Box>
 
       <RuleFormDrawer
@@ -805,6 +1023,7 @@ const DjangoSchedulePage: React.FC = () => {
         onClose={() => setRuleFormOpen(false)}
         rule={editingRule}
         organizationId={orgId}
+        branchId={branchId}
         onSaved={invalidate}
       />
       <ExceptionDialog
@@ -812,6 +1031,18 @@ const DjangoSchedulePage: React.FC = () => {
         onClose={() => setExceptionFormOpen(false)}
         organizationId={orgId}
         onSaved={invalidate}
+        initialDate={exceptionInitialDate}
+      />
+      <ScheduleDayDrawer
+        open={dayDrawerOpen}
+        onClose={() => setDayDrawerOpen(false)}
+        day={selectedDay}
+        occurrences={selectedDayOccurrences}
+        employeesById={employeesById}
+        employeeColorMap={employeeColorMap}
+        canManage={canManage}
+        onMarkDayOff={handleMarkDayOff}
+        onAddShift={handleAddShiftForSelectedDay}
       />
     </Box>
   );
