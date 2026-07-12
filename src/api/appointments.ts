@@ -18,6 +18,16 @@ import { apiRequest, ApiError } from "./client";
 const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
 
 function humanizeBackendMessage(raw: string): string {
+  // Валидатор бэкенда: branchId обязателен, а активный филиал не выбран
+  // (режим «Все филиалы»). Форма это блокирует, но ошибка может прийти и
+  // другим путём — переводим её в понятную инструкцию.
+  if (/\$\.parsed_body\.branchId/.test(raw)) {
+    return (
+      "Не выбран филиал. Нажмите на название клиники вверху бокового меню " +
+      "(на телефоне сначала откройте меню кнопкой ☰), выберите нужный филиал " +
+      "и попробуйте снова."
+    );
+  }
   return raw
     .split(";")
     .map((part) => part.replace(_FIELD_PREFIX, "").trim())

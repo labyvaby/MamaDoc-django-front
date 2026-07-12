@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  AlertTitle,
   Autocomplete,
   Box,
   Button,
@@ -98,6 +99,12 @@ export type DjangoAddAppointmentDrawerProps = {
   onClose: () => void;
   onCreated?: () => void;
   initialDate?: string | null;
+  /**
+   * Использовать initialDate как точное время, без округления к шагу
+   * тайм-пикера. Передаётся при клике по свободному окну («Есть окно на
+   * 12:10») — иначе время окна сдвинулось бы на соседний шаг.
+   */
+  initialDateExact?: boolean;
   initialEmployeeId?: number | null;
   initialServiceId?: number | null;
 };
@@ -109,6 +116,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   onClose,
   onCreated,
   initialDate,
+  initialDateExact = false,
   initialEmployeeId,
   initialServiceId,
 }) => {
@@ -176,7 +184,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     // съедет на соседний слот.
     const isSlotPrefill = Boolean(initialEmployeeId || initialServiceId);
     const base = initialDate
-      ? isSlotPrefill
+      ? isSlotPrefill || initialDateExact
         ? initialDate
         : roundDateTimeLocalToStep(initialDate, 15)
       : nowRounded();
@@ -193,7 +201,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         },
       ]);
     }
-  }, [open, initialDate, initialEmployeeId, initialServiceId]);
+  }, [open, initialDate, initialDateExact, initialEmployeeId, initialServiceId]);
 
   // ── load sellable products (with context stock) ────────────────────────────
   React.useEffect(() => {
@@ -302,6 +310,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setTouched(true);
+    // Без активного филиала бэкенд отклонит запрос (branchId обязателен) —
+    // не даём отправить форму, предупреждение уже показано сверху.
+    if (!activeBranch) return;
     if (!isValid) return;
     setSaveError(null);
     setSaving(true);
@@ -420,6 +431,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           }}
         >
           <Stack spacing={2.5}>
+            {!activeBranch && (
+              <Alert severity="warning">
+                <AlertTitle>Не выбран филиал</AlertTitle>
+                Приём всегда создаётся в конкретном филиале, а сейчас включён
+                режим «Все филиалы» — поэтому кнопка «Сохранить» недоступна.
+                <br />
+                Как выбрать филиал: нажмите на <b>название клиники вверху
+                бокового меню</b> (на телефоне сначала откройте меню кнопкой ☰)
+                и в списке выберите нужный филиал. После этого вернитесь сюда и
+                создайте приём.
+              </Alert>
+            )}
             {saveError && (
               <Alert ref={errorRef} severity="error" onClose={() => setSaveError(null)}>
                 {saveError}
@@ -1074,7 +1097,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             </Button>
             <Button
               variant="contained"
-              disabled={saving || data.loading}
+              disabled={saving || data.loading || !activeBranch}
               onMouseEnter={() => { if (!touched) setTouched(true); }}
               onClick={handleSave}
               startIcon={
