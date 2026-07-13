@@ -42,6 +42,10 @@ export interface DjangoBranch {
   googleMapsUrl: string;
   timezone: string;
   isActive: boolean;
+  /** Абсолютный URL логотипа филиала; null — логотип не загружен.
+   *  Контракт: MamaDoc/backend_ticket_branch_logo.md (зеркало логотипа
+   *  организации; до реализации на бэке поле отсутствует в ответе). */
+  logoUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,10 +57,13 @@ export interface DjangoBranch {
  *  с миграцией phones/карт не задеплоен. */
 type DjangoBranchWire = Omit<
   DjangoBranch,
-  "phones" | "twoGisUrl" | "yandexMapsUrl" | "googleMapsUrl"
+  "phones" | "twoGisUrl" | "yandexMapsUrl" | "googleMapsUrl" | "logoUrl"
 > &
   Partial<
-    Pick<DjangoBranch, "phones" | "twoGisUrl" | "yandexMapsUrl" | "googleMapsUrl">
+    Pick<
+      DjangoBranch,
+      "phones" | "twoGisUrl" | "yandexMapsUrl" | "googleMapsUrl" | "logoUrl"
+    >
   > & {
     /** Устаревшее поле старого бэкенда. */
     phone?: string;
@@ -70,6 +77,7 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
     twoGisUrl: raw.twoGisUrl ?? "",
     yandexMapsUrl: raw.yandexMapsUrl ?? "",
     googleMapsUrl: raw.googleMapsUrl ?? "",
+    logoUrl: raw.logoUrl ?? null,
   };
 }
 
@@ -117,6 +125,27 @@ export function uploadOrganizationLogo(
 /** DELETE /organization/<id>/logo/ — удаление логотипа. Возвращает 204. */
 export function deleteOrganizationLogo(id: number): Promise<void> {
   return apiRequest<void>(`/organization/${id}/logo/`, { method: "DELETE" });
+}
+
+/**
+ * PUT /organization/branches/<id>/logo/ — загрузка/замена логотипа филиала
+ * (multipart, поле `logo`; ≤ 5 МБ, jpg/jpeg/png/webp/svg). Возвращает
+ * обновлённый филиал. Контракт: MamaDoc/backend_ticket_branch_logo.md.
+ */
+export function uploadBranchLogo(id: number, file: File): Promise<DjangoBranch> {
+  const formData = new FormData();
+  formData.append("logo", file);
+  return apiRequest<DjangoBranchWire>(`/organization/branches/${id}/logo/`, {
+    method: "PUT",
+    formData,
+  }).then(normalizeBranch);
+}
+
+/** DELETE /organization/branches/<id>/logo/ — удаление логотипа филиала, 204. */
+export function deleteBranchLogo(id: number): Promise<void> {
+  return apiRequest<void>(`/organization/branches/${id}/logo/`, {
+    method: "DELETE",
+  });
 }
 
 export function getBranches(): Promise<DjangoBranch[]> {

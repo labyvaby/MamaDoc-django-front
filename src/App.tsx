@@ -28,6 +28,7 @@ import { useLocation, useNavigate } from "react-router";
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { AchievementToast } from "./components/achievements/AchievementToast";
+import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { RefreshProvider } from "./contexts/refresh-context";
@@ -507,6 +508,8 @@ function App() {
                                 </DjangoContextRemount>
                                 {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
                                 <AchievementToast />
+                                {/* Выбор филиала после логина (флаг ставит login.tsx) */}
+                                <BranchPickerDialog />
                               </ThemedLayout>
                             </MobileSidebarProvider>
                           </RequireAuth>

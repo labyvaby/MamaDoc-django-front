@@ -258,32 +258,35 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   );
 };
 
-// Бренд в шапке сайдбара: логотип активной организации (если загружен в
-// «Настройки → Организация»), иначе — статичный логотип приложения. Название
-// организации рядом не дублируем — оно уже показано в ActiveContextSwitcher.
+// Бренд в шапке сайдбара: логотип активного филиала (если загружен в
+// «Настройки → Филиалы»), иначе логотип организации, иначе — статичный логотип
+// приложения. Название рядом не дублируем — оно уже в ActiveContextSwitcher.
 const SidebarBrand: React.FC<{ height: number }> = ({ height }) => {
-  const { activeOrganization } = usePermissions();
-  const logoUrl = activeOrganization?.logoUrl ?? null;
+  const { activeOrganization, activeBranch } = usePermissions();
+  const logoUrl = activeBranch?.logoUrl ?? activeOrganization?.logoUrl ?? null;
+  const logoAlt = activeBranch?.logoUrl
+    ? activeBranch.name
+    : activeOrganization?.name ?? "Организация";
   const [broken, setBroken] = useState(false);
 
   useEffect(() => {
     setBroken(false);
   }, [logoUrl]);
 
-  const useOrgLogo = !!logoUrl && !broken;
+  const useCustomLogo = !!logoUrl && !broken;
 
   return (
     <Box
       component="img"
-      src={useOrgLogo ? logoUrl : appLogo}
-      alt={useOrgLogo ? activeOrganization?.name ?? "Организация" : "Мама Доктор"}
-      onError={useOrgLogo ? () => setBroken(true) : undefined}
+      src={useCustomLogo ? logoUrl : appLogo}
+      alt={useCustomLogo ? logoAlt : "Мама Доктор"}
+      onError={useCustomLogo ? () => setBroken(true) : undefined}
       sx={{
         height,
         width: "auto",
         maxWidth: height * 6,
         objectFit: "contain",
-        borderRadius: useOrgLogo ? 1 : 0,
+        borderRadius: useCustomLogo ? 1 : 0,
       }}
     />
   );
