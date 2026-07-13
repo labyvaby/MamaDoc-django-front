@@ -88,6 +88,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
       PERMISSIONS.CLEANING_MANAGE,
     ],
   },
+
+  // База знаний
+  {
+    path: '/knowledge',
+    requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
+  },
 ];
 
 /**

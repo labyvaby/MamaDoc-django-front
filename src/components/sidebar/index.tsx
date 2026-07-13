@@ -51,6 +51,7 @@ import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -58,6 +59,7 @@ import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
 import { DOCUMENTS_USE_MOCKS } from "../../api/documents";
 import { CLEANING_USE_MOCKS } from "../../api/cleaning";
+import { KNOWLEDGE_USE_MOCKS } from "../../api/knowledge";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
@@ -406,6 +408,8 @@ const SidebarSecondary: React.FC = () => {
     achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
     // TODO(после интеграции): убрать обход DOCUMENTS_USE_MOCKS — как в tasks.
     documents: IS_DJANGO_BACKEND && (DOCUMENTS_USE_MOCKS || isSuper || can("documents.view")),
+    // TODO(после интеграции): убрать обход KNOWLEDGE_USE_MOCKS — как в tasks.
+    knowledge: IS_DJANGO_BACKEND && (KNOWLEDGE_USE_MOCKS || isSuper || can("knowledge.view")),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -441,7 +445,7 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud || can_.cleaning,
-    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.documents || can_.diagnoses,
+    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.documents || can_.knowledge || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -624,6 +628,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Документы организации (Django-mode only, пока на моках) */}
         {show("org") && can_.documents && (
           <SidebarMenuItem to="/documents" icon={<FolderOutlined />} label="Документы" collapsed={siderCollapsed} />
+        )}
+
+        {/* База знаний (Django-mode only, пока на моках) */}
+        {show("org") && can_.knowledge && (
+          <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}

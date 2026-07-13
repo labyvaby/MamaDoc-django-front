@@ -190,6 +190,10 @@ export const PERMISSIONS = {
   CLEANING_REPORT: 'cleaning.report',
   CLEANING_VIEW: 'cleaning.view',
   CLEANING_MANAGE: 'cleaning.manage',
+
+  // База знаний (контракт: MamaDoc/backend_ticket_knowledge_module.md)
+  KNOWLEDGE_VIEW: 'knowledge.view',
+  KNOWLEDGE_MANAGE: 'knowledge.manage',
 } as const;
 
 // Тип для ключей разрешений

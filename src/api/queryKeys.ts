@@ -171,6 +171,18 @@ export const djangoQueryKeys = {
     settings: ["django", "cleaning", "settings"] as const,
   },
 
+  knowledge: {
+    all: ["django", "knowledge"] as const,
+    categories: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "categories", params] as const,
+    articles: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "articles", params] as const,
+    article: (articleId: number) =>
+      ["django", "knowledge", "article", articleId] as const,
+    videos: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "videos", params] as const,
+  },
+
   staff: {
     /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
     userNames: ["django", "staff", "userNames"] as const,

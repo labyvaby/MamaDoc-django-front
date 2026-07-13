@@ -89,6 +89,7 @@ const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
 const CleaningPage = lazy(() => import("./pages/cleaning"));
 const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSettingsPage"));
+const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -1060,6 +1061,17 @@ function App() {
                               element={
                                 <Suspense fallback={<LinearProgress />}>
                                   <CleaningSettingsPage />
+                                </Suspense>
+                              }
+                            />
+                            {/* База знаний: на моках без RequirePermission (права
+                                knowledge.* появятся с бэком) — TODO вернуть гейт
+                                при интеграции, как делали с tasks/achievements. */}
+                            <Route
+                              path="knowledge"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <KnowledgePage />
                                 </Suspense>
                               }
                             />
