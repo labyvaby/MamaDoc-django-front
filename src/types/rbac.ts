@@ -181,6 +181,10 @@ export const PERMISSIONS = {
 
   // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
   ACHIEVEMENTS_VIEW: 'achievements.view',
+
+  // Документы организации (контракт: MamaDoc/backend_ticket_documents_module.md)
+  DOCUMENTS_VIEW: 'documents.view',
+  DOCUMENTS_MANAGE: 'documents.manage',
 } as const;
 
 // Тип для ключей разрешений

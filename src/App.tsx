@@ -86,6 +86,7 @@ const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
+const DocumentsPage = lazy(() => import("./pages/documents"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -1028,6 +1029,17 @@ function App() {
                                     <AchievementsPage />
                                   </Suspense>
                                 </RequirePermission>
+                              }
+                            />
+                            {/* Документы организации: на моках без RequirePermission
+                                (права documents.* появятся с бэком) — TODO вернуть
+                                гейт при интеграции, как делали с tasks/achievements. */}
+                            <Route
+                              path="documents"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DocumentsPage />
+                                </Suspense>
                               }
                             />
                             <Route

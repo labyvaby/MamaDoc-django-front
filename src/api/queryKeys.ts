@@ -154,6 +154,12 @@ export const djangoQueryKeys = {
     unseen: ["django", "achievements", "unseen"] as const,
   },
 
+  documents: {
+    all: ["django", "documents"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "documents", "list", params] as const,
+  },
+
   staff: {
     /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
     userNames: ["django", "staff", "userNames"] as const,

@@ -49,11 +49,13 @@ import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
+import { DOCUMENTS_USE_MOCKS } from "../../api/documents";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
@@ -398,6 +400,8 @@ const SidebarSecondary: React.FC = () => {
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
     achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
+    // TODO(после интеграции): убрать обход DOCUMENTS_USE_MOCKS — как в tasks.
+    documents: IS_DJANGO_BACKEND && (DOCUMENTS_USE_MOCKS || isSuper || can("documents.view")),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -433,7 +437,7 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
-    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.diagnoses,
+    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.documents || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -606,6 +610,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Достижения (Django-mode only, пока на моках) */}
         {show("org") && can_.achievements && (
           <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
+        )}
+
+        {/* Документы организации (Django-mode only, пока на моках) */}
+        {show("org") && can_.documents && (
+          <SidebarMenuItem to="/documents" icon={<FolderOutlined />} label="Документы" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
@@ -783,7 +792,7 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         selected={isActive}
         sx={{
           borderRadius: "10px",
-          my: 0.5,
+          my: 0.25,
           px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           '& .MuiListItemIcon-root': {

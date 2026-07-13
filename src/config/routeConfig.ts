@@ -72,6 +72,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/achievements',
     requiredPermissions: [PERMISSIONS.ACHIEVEMENTS_VIEW],
   },
+
+  // Документы организации
+  {
+    path: '/documents',
+    requiredPermissions: [PERMISSIONS.DOCUMENTS_VIEW],
+  },
 ];
 
 /**
