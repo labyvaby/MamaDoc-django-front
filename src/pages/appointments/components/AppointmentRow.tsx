@@ -77,7 +77,9 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
   selected,
   canUpdate,
   canManageFinance,
-  canViewFinance,
+  // Не влияет на бейджи оплаты (факт — общий операционный статус); проп
+  // сохранён в контракте для будущих финансовых деталей.
+  canViewFinance: _canViewFinance,
   onClick,
   onEdit,
   onPay,
@@ -115,8 +117,6 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
     appt.status === "canceled" ||
     (appt.status as string) === "cancelled" ||
     appt.status === "no_show";
-  const showPayCol = canViewFinance || canManageFinance;
-
   const hasPaid = appt.paidTotal && appt.paidTotal !== "0.00" && appt.paidTotal !== "0";
   const hasDebt = appt.debt && appt.debt !== "0.00" && appt.debt !== "0";
 
@@ -226,8 +226,11 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
 
             {/* Payment status chip with method icons — like original.
                 У отменённых не показываем (статус-чип «Отменено» уже есть) —
-                иначе дублируется метка «Отменено». */}
-            {!isCancelled && showPayCol && payStatusSafe && hasPaid && payChipSx && (
+                иначе дублируется метка «Отменено».
+                Факт оплаты — операционный статус (вызывать ли пациента),
+                виден всем ролям; финансовые ДЕЙСТВИЯ (кнопка «Оплата»)
+                остаются под canManageFinance ниже. */}
+            {!isCancelled && payStatusSafe && hasPaid && payChipSx && (
               <Chip
                 label={
                   <Stack direction="row" alignItems="center" gap={0.5}>
@@ -239,7 +242,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
                 sx={payChipSx}
               />
             )}
-            {!isCancelled && showPayCol && payStatusSafe && !hasPaid && payChipSx && (
+            {!isCancelled && payStatusSafe && !hasPaid && payChipSx && (
               <Chip
                 label={payDisplayLabel}
                 size="small"
@@ -249,7 +252,6 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
 
             {/* Бейдж «Страховка» — визит (со)оплачен страховой компанией. */}
             {!isCancelled &&
-              showPayCol &&
               (appt.paymentMethods ?? []).includes("insurance") && (
                 <Tooltip title="Оплата страховкой">
                   <Chip
@@ -292,8 +294,8 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
               Итого: {totalStr}
             </Typography>
           )}
-          {/* Debt highlight */}
-          {showPayCol && debtStr && (
+          {/* Debt highlight — факт долга виден всем (операционный статус). */}
+          {debtStr && (
             <Typography variant="caption" color="warning.main" fontWeight={700}>
               {debtStr}
             </Typography>

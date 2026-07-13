@@ -63,7 +63,11 @@ export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options)
     onMessage: (msg) => {
       // Оплаты и возвраты приходят тоже как entity="appointment" (платёж
       // меняет кэш-поля приёма) — отдельной ветки для них не нужно.
-      if (msg.entity === "appointment") wsEventRef.current?.();
+      // Заключения (entity="conclusion") тоже меняют экраны приёмов:
+      // иконка печати и статус строки услуги живут в данных списка.
+      if (msg.entity === "appointment" || msg.entity === "conclusion") {
+        wsEventRef.current?.();
+      }
     },
   });
 

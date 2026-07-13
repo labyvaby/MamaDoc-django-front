@@ -87,6 +87,58 @@ export type DjangoConclusionDrawerProps = {
   onSaved?: (saved: MedicalConclusion) => void;
 };
 
+// ── localStorage draft persistence ─────────────────────────────────────────────
+// Черновик заключения хранится локально: 1 заключение (строка услуги) =
+// 1 запись в localStorage. Восстанавливается при повторном открытии и
+// удаляется после успешного сохранения на сервере.
+
+const conclusionDraftKey = (serviceLineId: number) =>
+  `conclusion_draft_${serviceLineId}`;
+
+type ConclusionDraftBody = {
+  complaints: string;
+  anamnesis: string;
+  objective: string;
+  conclusionText: string;
+  selectedDiagnoses: CatalogDiagnosis[];
+  photoUrls: string[];
+  weightKg: string;
+  heightCm: string;
+  temperature: string;
+  internalComment: string;
+  status: ConclusionStatus;
+};
+
+type ConclusionDraft = ConclusionDraftBody & { savedAt: string };
+
+function readConclusionDraft(serviceLineId: number): ConclusionDraft | null {
+  try {
+    const raw = window.localStorage.getItem(conclusionDraftKey(serviceLineId));
+    return raw ? (JSON.parse(raw) as ConclusionDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeConclusionDraft(serviceLineId: number, body: ConclusionDraftBody) {
+  try {
+    window.localStorage.setItem(
+      conclusionDraftKey(serviceLineId),
+      JSON.stringify({ ...body, savedAt: new Date().toISOString() }),
+    );
+  } catch {
+    /* localStorage переполнен или недоступен — работаем без черновика */
+  }
+}
+
+function clearConclusionDraft(serviceLineId: number) {
+  try {
+    window.localStorage.removeItem(conclusionDraftKey(serviceLineId));
+  } catch {
+    /* ignore */
+  }
+}
+
 // ── vitals validation helpers ──────────────────────────────────────────────────
 
 function validateVitals(
@@ -266,59 +318,189 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 
   const readOnly = !canEdit;
 
-  // ── populate from existing conclusion ────────────────────────────────────
+  // Локальный черновик: hydratedRef — форма заполнена (можно писать черновик),
+  // baselineRef — снимок формы на момент открытия (не пишем, пока нет правок),
+  // draftNotifiedRef — уведомление о восстановлении показываем один раз.
+  const hydratedRef = React.useRef(false);
+  const baselineRef = React.useRef("");
+  const draftNotifiedRef = React.useRef(false);
+  // Последние правки, ещё не записанные отложенным таймером, — дописываются
+  // при закрытии/размонтировании, чтобы не потерять хвост ввода.
+  const pendingDraftRef = React.useRef<ConclusionDraftBody | null>(null);
+
+  const applyDraftBody = (body: ConclusionDraftBody) => {
+    setComplaints(body.complaints ?? "");
+    setAnamnesis(body.anamnesis ?? "");
+    setObjective(body.objective ?? "");
+    setConclusionText(body.conclusionText ?? "");
+    setSelectedDiagnoses(body.selectedDiagnoses ?? []);
+    setPhotoUrls(body.photoUrls ?? []);
+    setWeightKg(body.weightKg ?? "");
+    setHeightCm(body.heightCm ?? "");
+    setTemperature(body.temperature ?? "");
+    setInternalComment(body.internalComment ?? "");
+    setStatus(body.status ?? "draft");
+  };
+
+  // ── populate from existing conclusion / local draft ───────────────────────
   React.useEffect(() => {
     if (!open) {
-      setComplaints("");
-      setAnamnesis("");
-      setObjective("");
-      setConclusionText("");
-      setSelectedDiagnoses([]);
-      setPhotoUrls([]);
-      setWeightKg("");
-      setHeightCm("");
-      setTemperature("");
-      setInternalComment("");
-      setStatus("draft");
+      // Закрыли до срабатывания отложенной записи — дописываем черновик.
+      if (hydratedRef.current && pendingDraftRef.current) {
+        writeConclusionDraft(serviceLineId, pendingDraftRef.current);
+      }
+      pendingDraftRef.current = null;
+      applyDraftBody({
+        complaints: "",
+        anamnesis: "",
+        objective: "",
+        conclusionText: "",
+        selectedDiagnoses: [],
+        photoUrls: [],
+        weightKg: "",
+        heightCm: "",
+        temperature: "",
+        internalComment: "",
+        status: "draft",
+      });
       setTouched(false);
       setSaving(false);
       setSaveError(null);
+      hydratedRef.current = false;
+      draftNotifiedRef.current = false;
       return;
     }
 
-    if (!conclusion) {
-      setSelectedDiagnoses([]);
-      setPhotoUrls([]);
+    // Несохранённый черновик из localStorage приоритетнее серверных данных,
+    // если он свежее последнего сохранения на сервере.
+    const draft = readOnly ? null : readConclusionDraft(serviceLineId);
+    const draftIsFresh =
+      !!draft &&
+      (!conclusion?.updatedAt ||
+        !draft.savedAt ||
+        dayjs(draft.savedAt).isAfter(dayjs(conclusion.updatedAt)));
+    if (draft && !draftIsFresh) clearConclusionDraft(serviceLineId);
+
+    if (draft && draftIsFresh) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { savedAt: _savedAt, ...body } = draft;
+      applyDraftBody(body);
+      baselineRef.current = JSON.stringify(body);
+      hydratedRef.current = true;
+      if (!draftNotifiedRef.current) {
+        draftNotifiedRef.current = true;
+        notify?.({
+          type: "success",
+          message: "Восстановлен несохранённый черновик заключения",
+        });
+      }
       return;
     }
 
-    setComplaints(conclusion.complaints ?? "");
-    setAnamnesis(conclusion.anamnesis ?? "");
-    setObjective(conclusion.objective ?? "");
-    setConclusionText(conclusion.conclusion ?? "");
     // Restore selected diagnoses from saved diagnosisData (match against
     // catalog by code when possible; keep a synthetic item otherwise).
-    setSelectedDiagnoses(
-      (conclusion.diagnosisData ?? []).map((d) => {
-        const fromCatalog = catalog.find((c) => c.code === d.diagnosisCode);
-        return (
-          fromCatalog ?? {
-            id: d.id ? Number(d.id) : -1,
-            code: d.diagnosisCode ?? "",
-            title: d.title ?? "",
-            isActive: true,
-            sortOrder: 0,
-          }
-        );
-      }),
-    );
-    setWeightKg(conclusion.weightKg ?? "");
-    setHeightCm(conclusion.heightCm ?? "");
-    setTemperature(conclusion.temperature ?? "");
-    setInternalComment(conclusion.internalComment ?? "");
-    setPhotoUrls(conclusion.photoUrls ?? []);
-    setStatus(conclusion.status ?? "draft");
-  }, [open, conclusion, catalog]);
+    const body: ConclusionDraftBody = conclusion
+      ? {
+          complaints: conclusion.complaints ?? "",
+          anamnesis: conclusion.anamnesis ?? "",
+          objective: conclusion.objective ?? "",
+          conclusionText: conclusion.conclusion ?? "",
+          selectedDiagnoses: (conclusion.diagnosisData ?? []).map((d) => {
+            const fromCatalog = catalog.find((c) => c.code === d.diagnosisCode);
+            return (
+              fromCatalog ?? {
+                id: d.id ? Number(d.id) : -1,
+                code: d.diagnosisCode ?? "",
+                title: d.title ?? "",
+                isActive: true,
+                sortOrder: 0,
+              }
+            );
+          }),
+          photoUrls: conclusion.photoUrls ?? [],
+          weightKg: conclusion.weightKg ?? "",
+          heightCm: conclusion.heightCm ?? "",
+          temperature: conclusion.temperature ?? "",
+          internalComment: conclusion.internalComment ?? "",
+          status: conclusion.status ?? "draft",
+        }
+      : {
+          complaints: "",
+          anamnesis: "",
+          objective: "",
+          conclusionText: "",
+          selectedDiagnoses: [],
+          photoUrls: [],
+          weightKg: "",
+          heightCm: "",
+          temperature: "",
+          internalComment: "",
+          status: "draft",
+        };
+    applyDraftBody(body);
+    baselineRef.current = JSON.stringify(body);
+    hydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, readOnly, conclusion, catalog, serviceLineId]);
+
+  // ── autosave draft to localStorage (1 заключение = 1 запись) ──────────────
+  React.useEffect(() => {
+    if (!open || readOnly || !hydratedRef.current) return;
+    const body: ConclusionDraftBody = {
+      complaints,
+      anamnesis,
+      objective,
+      conclusionText,
+      selectedDiagnoses,
+      photoUrls,
+      weightKg,
+      heightCm,
+      temperature,
+      internalComment,
+      status,
+    };
+    // Пока пользователь ничего не менял — фантомный черновик не создаём.
+    if (JSON.stringify(body) === baselineRef.current) {
+      pendingDraftRef.current = null;
+      return;
+    }
+    pendingDraftRef.current = body;
+    const timer = window.setTimeout(() => {
+      // hydratedRef сбрасывается после сохранения на сервер — отложенная
+      // запись не должна воскресить уже удалённый черновик.
+      if (hydratedRef.current) {
+        writeConclusionDraft(serviceLineId, body);
+        pendingDraftRef.current = null;
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    open,
+    readOnly,
+    serviceLineId,
+    complaints,
+    anamnesis,
+    objective,
+    conclusionText,
+    selectedDiagnoses,
+    photoUrls,
+    weightKg,
+    heightCm,
+    temperature,
+    internalComment,
+    status,
+  ]);
+
+  // Размонтирование (дровер удаляют из дерева, уход со страницы) — дописываем
+  // незаписанный хвост черновика.
+  React.useEffect(() => {
+    return () => {
+      if (hydratedRef.current && pendingDraftRef.current) {
+        writeConclusionDraft(serviceLineId, pendingDraftRef.current);
+        pendingDraftRef.current = null;
+      }
+    };
+  }, [serviceLineId]);
 
   // ── load diagnosis catalog when drawer opens ──────────────────────────────
   React.useEffect(() => {
@@ -432,6 +614,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       } else {
         saved = await upsertConclusion(serviceLineId, payload);
       }
+      // Заключение на сервере — локальный черновик больше не нужен.
+      clearConclusionDraft(serviceLineId);
+      hydratedRef.current = false;
+      pendingDraftRef.current = null;
       notify?.({
         type: "success",
         message:

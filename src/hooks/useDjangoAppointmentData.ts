@@ -1,7 +1,6 @@
 import React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { type DjangoPatient } from "../api/patients";
-import { getDjangoEmployees, type DjangoEmployeeListItem } from "../api/staff";
 import { getServices, type Service as CatalogService } from "../api/catalog";
 import {
   getServiceAssignments,
@@ -15,7 +14,12 @@ import {
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export interface DjangoEmployeeWithServices extends DjangoEmployeeListItem {
+/**
+ * Performer option for the appointment form. Sourced from
+ * /appointments/service-providers/ (bulk mode) — NOT /staff/employees/,
+ * because clinicians (nurse/doctor) have appointments.view but no staff.view.
+ */
+export interface DjangoEmployeeWithServices extends ServiceProvider {
   assignedServiceIds: Set<number>;
 }
 
@@ -41,9 +45,11 @@ export interface UseDjangoAppointmentDataResult {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 /**
- * Loads patients, employees, services, and the service↔employee assignment
- * matrix for the appointment form. ``branchId`` narrows services and the
- * matrix to the specified branch (matching appointment save-time validation).
+ * Loads performers, services, and the service↔employee assignment matrix for
+ * the appointment form. ``branchId`` narrows services and the matrix to the
+ * specified branch (matching appointment save-time validation). Everything is
+ * fetched through appointments/catalog endpoints (appointments.view +
+ * catalog.view) — no staff.view required, so clinicians can open the form.
  */
 export function useDjangoAppointmentData(
   enabled: boolean,
@@ -59,12 +65,15 @@ export function useDjangoAppointmentData(
       // NOTE: patients are intentionally NOT loaded here — the table can have
       // tens of thousands of rows. The Add/Edit appointment drawers query
       // patients server-side via searchPatients() as the user types.
-      const [rawEmployees, rawServices, rawAssignments] = await Promise.all([
-        getDjangoEmployees({ branchId: branchId ?? undefined }, signal),
+      // Performers come from the appointments-scoped service-providers
+      // endpoint (bulk mode), NOT /staff/employees/ — clinicians lack
+      // staff.view and were getting 403 on opening the form.
+      const [rawProviders, rawServices, rawAssignments] = await Promise.all([
+        getServiceProviders({ branchId: branchId ?? undefined }, signal),
         getServices(branchId ?? null, signal),
         getServiceAssignments(branchId ?? undefined, signal),
       ]);
-      return { rawEmployees, rawServices, rawAssignments };
+      return { rawProviders, rawServices, rawAssignments };
     },
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
@@ -75,7 +84,7 @@ export function useDjangoAppointmentData(
   const patients: DjangoPatient[] = [];
 
   const { employees, services, empByService, svcByEmployee } = React.useMemo(() => {
-    const rawEmployees = dataQuery.data?.rawEmployees?.results ?? [];
+    const rawProviders = dataQuery.data?.rawProviders ?? [];
     const rawServices = dataQuery.data?.rawServices ?? [];
     const pairs = dataQuery.data?.rawAssignments ?? [];
 
@@ -91,7 +100,7 @@ export function useDjangoAppointmentData(
       svcs.add(serviceId);
     }
 
-    const enrichedEmployees: DjangoEmployeeWithServices[] = rawEmployees.map((emp) => ({
+    const enrichedEmployees: DjangoEmployeeWithServices[] = rawProviders.map((emp) => ({
       ...emp,
       assignedServiceIds: svcByEmployee.get(emp.id) ?? new Set<number>(),
     }));
@@ -110,7 +119,7 @@ export function useDjangoAppointmentData(
       svcByEmployee,
     };
   }, [
-    dataQuery.data?.rawEmployees,
+    dataQuery.data?.rawProviders,
     dataQuery.data?.rawServices,
     dataQuery.data?.rawAssignments,
   ]);

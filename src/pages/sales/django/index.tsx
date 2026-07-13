@@ -20,6 +20,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
+import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { ApiError, isAbortError } from "../../../api/client";
 import {
@@ -335,6 +336,13 @@ const DjangoSalesPage: React.FC = () => {
         else if (view === "product") fetchByProduct();
         else fetchByDay();
     };
+
+    // Realtime: продажи коллег (создание/правка/удаление) подтягиваются
+    // мгновенно по /ws/changes/; focus-refetch остаётся страховкой.
+    useRealtimeRefetch({
+        entities: ["sale"],
+        onEvent: refetchCurrent,
+    });
 
     const handleDeleteSale = async (sale: DjangoSale) => {
         try {

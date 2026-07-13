@@ -41,6 +41,7 @@ import { DjangoAddExpenseDrawer } from "../../components/expenses/DjangoAddExpen
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
+import { useRealtimeRefetch } from "../../hooks/useRealtimeRefetch";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
   getExpenses,
@@ -452,6 +453,17 @@ const DjangoExpensesPage: React.FC = () => {
   const [voidTarget, setVoidTarget] = React.useState<Expense | null>(null);
 
   const queryClient = useQueryClient();
+
+  // Realtime: расходы коллег (создание/аннулирование/фото) инвалидируют
+  // кэш мгновенно по /ws/changes/; обычные refetch-механизмы react-query
+  // остаются страховкой. Расход без филиала (org-wide) не бродкастится.
+  useRealtimeRefetch({
+    entities: ["expense"],
+    onEvent: () =>
+      void queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.expenses.all,
+      }),
+  });
 
   // Сбрасываем при смене орг/филиала
   const prevOrgId = React.useRef<number | undefined>(orgId);

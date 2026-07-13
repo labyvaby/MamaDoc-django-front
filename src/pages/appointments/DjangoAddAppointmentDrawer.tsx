@@ -24,6 +24,7 @@ import {
   Typography,
 } from "@mui/material";
 import { ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
@@ -92,6 +93,18 @@ function parseQty(raw: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Поиск исполнителя по ФИО и специализации («гинеколог» находит врача).
+const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
+  matchFrom: "any",
+  stringify: (e) => `${e.fullName} ${(e.specializations ?? []).join(" ")}`,
+});
+
+// Поиск товара по названию, штрихкоду и цене.
+const productFilter = createFilterOptions<DjangoProduct>({
+  matchFrom: "any",
+  stringify: (p) => `${p.name} ${p.barcode} ${p.price}`,
+});
+
 // ── types ─────────────────────────────────────────────────────────────────────
 
 export type DjangoAddAppointmentDrawerProps = {
@@ -122,7 +135,21 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 }) => {
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
-  const { activeBranch, activeOrganization, activeMembership } = usePermissions();
+  const {
+    activeBranch,
+    activeOrganization,
+    activeMembership,
+    activeEmployee,
+    isNurse,
+    isAdmin,
+  } = usePermissions();
+
+  // Процедурный кабинет: настоящая медсестра (не админ) создаёт процедуры
+  // только на себя — поле исполнителя фиксируется её employee id. Без
+  // известного employee id поле не блокируем, иначе форма станет незаполнимой.
+  const nurseEmployeeId =
+    isNurse() && !isAdmin() ? activeEmployee?.id ?? null : null;
+  const isWorkplaceNurse = nurseEmployeeId !== null;
 
   const data = useDjangoAppointmentData(
     open,
@@ -202,6 +229,17 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       ]);
     }
   }, [open, initialDate, initialDateExact, initialEmployeeId, initialServiceId]);
+
+  // Если зашла медсестра — фиксируем её как исполнителя в пустых строках.
+  React.useEffect(() => {
+    if (!open || nurseEmployeeId === null) return;
+    setServiceRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        employeeId: row.employeeId ?? nurseEmployeeId,
+      })),
+    );
+  }, [open, nurseEmployeeId]);
 
   // ── load sellable products (with context stock) ────────────────────────────
   React.useEffect(() => {
@@ -686,10 +724,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                               )}
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
+                                disabled={isWorkplaceNurse}
                                 options={
                                   row.serviceId !== null ? availableEmployees : data.employees
                                 }
                                 loading={data.loading}
+                                filterOptions={employeeFilter}
                                 value={selectedEmployee}
                                 onChange={(_, v) => {
                                   updateRow(index, {
@@ -827,7 +867,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                             ...prev,
                             {
                               serviceId: null,
-                              employeeId: prev[prev.length - 1]?.employeeId ?? null,
+                              employeeId:
+                                nurseEmployeeId ??
+                                prev[prev.length - 1]?.employeeId ??
+                                null,
                               quantity: 1,
                             },
                           ])
@@ -915,6 +958,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 sx={{ flex: 1 }}
                                 options={products}
                                 loading={productsLoading}
+                                filterOptions={productFilter}
                                 value={selectedProduct}
                                 onChange={(_, v) =>
                                   setProductRows((prev) =>

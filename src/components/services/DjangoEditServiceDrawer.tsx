@@ -19,6 +19,7 @@ import {
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { useNotification } from "@refinedev/core";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
 import {
@@ -53,6 +54,7 @@ type Props = {
 
 const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpdated }) => {
   const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
   const { activeMembership } = usePermissions();
 
   const availableBranches: RbacBranch[] = React.useMemo(
@@ -151,6 +153,11 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         await deleteServiceImage(record.id);
       }
       notify?.({ type: "success", message: "Услуга обновлена" });
+      // Список услуг формы приёма кэшируется на 10 минут — обновляем,
+      // чтобы правки (название, цена, филиалы, активность) сразу попали в форму.
+      void queryClient.invalidateQueries({
+        queryKey: ["django", "appointments", "form-data"],
+      });
       onUpdated?.();
       onClose();
     } catch (e) {

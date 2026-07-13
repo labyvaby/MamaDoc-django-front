@@ -406,14 +406,14 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
  * Mirrors the backend ServiceProviderPayload (rename='camel').
  */
 export interface ServiceProvider {
-  employeeId: number;
-  employeeFullName: string;
-  serviceId: number;
-  serviceName: string;
-  /** Effective price for this employee/service pair (overridden or base). */
-  price: string;
-  /** Effective duration in minutes. */
-  durationMinutes: number;
+  id: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  /** Primary branch (null when not set). */
+  branch: { id: number; name: string } | null;
+  /** Specialization names — the appointment form's performer search uses them. */
+  specializations: string[];
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
@@ -531,9 +531,11 @@ export function getHomeDashboard(params: {
 /**
  * GET /api/appointments/service-providers/
  *
- * Returns all active employee/service pairs visible to the caller,
- * optionally filtered by serviceId and/or branchId.
- * Replaces the N+1 pattern of calling getEmployeeServices() per employee.
+ * Returns employees who can provide services, visible to the caller.
+ * With serviceId — only providers of that service; without — every employee
+ * with at least one active assignment (bulk source for the appointment form's
+ * performer picker: requires appointments.view, NOT staff.view, so clinicians
+ * without staff access can load it).
  */
 export function getServiceProviders(params?: {
   serviceId?: number;

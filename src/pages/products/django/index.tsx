@@ -40,6 +40,7 @@ import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
+import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { ApiError, isAbortError } from "../../../api/client";
 import {
@@ -161,6 +162,19 @@ const DjangoProductsPage: React.FC = () => {
       fetchProducts();
       fetchCategories();
     }
+  });
+
+  // Realtime: изменения товаров коллегами (создание/правка/архив/фото)
+  // подтягиваются мгновенно по /ws/changes/; focus-refetch выше остаётся
+  // страховкой на случай обрыва сокета.
+  useRealtimeRefetch({
+    entities: ["product"],
+    onEvent: () => {
+      if (!permLoading && canView) {
+        fetchProducts();
+        fetchCategories();
+      }
+    },
   });
 
   // Auto-select first product on desktop if none selected

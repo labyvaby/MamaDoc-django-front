@@ -17,6 +17,7 @@ import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
 import { useNotification } from "@refinedev/core";
+import { useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import DrawerBase from "./DrawerBase";
@@ -120,6 +121,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   onUpdated,
 }) => {
   const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
 
   const canManagePrivate = useCan("staff.private.manage");
   const canViewSpecs = useCan("staff.specializations.view");
@@ -511,6 +513,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             }
           }
         }
+
+        // Справочники формы приёма (исполнители + матрица услуга↔сотрудник)
+        // кэшируются на 10 минут — без инвалидации изменённые привязки не
+        // попадут в форму создания приёма до перезагрузки страницы.
+        void queryClient.invalidateQueries({
+          queryKey: ["django", "appointments", "form-data"],
+        });
       }
 
       // 4. Salary rules — only when actually changed (skip the needless PUT).
