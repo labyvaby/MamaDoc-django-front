@@ -9,7 +9,7 @@ import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
-import { occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
+import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
 
 const NAME_COL_W = 210;
 const DAY_COL_MIN_W = 96;
@@ -52,10 +52,12 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
     () => new Set(weekOccurrences.map((o) => o.employeeId)),
     [weekOccurrences],
   );
-  const groups = useResourceGroups(employees, employeeIdsWithShifts);
+  const namesById = React.useMemo(() => namesFromOccurrences(weekOccurrences), [weekOccurrences]);
+  const groups = useResourceGroups(employees, employeeIdsWithShifts, namesById);
 
   const colorOf = React.useCallback(
-    (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? 0, mode),
+    // ?? employeeId — сотрудника может не быть в справочнике (см. resourceRows).
+    (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? employeeId, mode),
     [employeeColorMap, mode],
   );
 

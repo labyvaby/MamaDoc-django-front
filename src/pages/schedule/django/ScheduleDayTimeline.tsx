@@ -9,7 +9,7 @@ import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
-import { occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
+import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
 
 // ── Геометрия ────────────────────────────────────────────────────────────────
 
@@ -67,10 +67,12 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
     () => new Set(occurrences.map((o) => o.employeeId)),
     [occurrences],
   );
-  const groups = useResourceGroups(employees, employeeIdsWithShifts);
+  const namesById = React.useMemo(() => namesFromOccurrences(occurrences), [occurrences]);
+  const groups = useResourceGroups(employees, employeeIdsWithShifts, namesById);
 
   const colorOf = React.useCallback(
-    (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? 0, mode),
+    // ?? employeeId — сотрудника может не быть в справочнике (см. resourceRows).
+    (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? employeeId, mode),
     [employeeColorMap, mode],
   );
 

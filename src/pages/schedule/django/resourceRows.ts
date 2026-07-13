@@ -19,6 +19,30 @@ const NO_SPEC = "__no_spec__";
 const NO_SPEC_LABEL = "Без специализации";
 
 /**
+ * Минимальная карточка для сотрудника, которого нет в справочнике: смены
+ * приходят по всей организации, а /staff/employees/ скоупится по филиалу —
+ * без этого фолбэка такие смены исчезали бы из видов «День»/«Неделя».
+ */
+function synthesizeEmployee(id: number, fullName: string): DjangoEmployeeListItem {
+  return {
+    id,
+    organizationId: 0,
+    branch: null,
+    authUserId: null,
+    fullName,
+    phone: "",
+    email: "",
+    nickname: "",
+    status: "active",
+    clinicalRole: "other" as DjangoEmployeeListItem["clinicalRole"],
+    photoUrl: null,
+    role: null,
+    specializations: [],
+    operationalBranches: [],
+  };
+}
+
+/**
  * Группирует сотрудников по специализации. Сотрудник с несколькими
  * специализациями попадает в первую (по алфавиту) — строка одна, иначе
  * смены дублировались бы в разных группах.
@@ -27,13 +51,21 @@ export function useResourceGroups(
   employees: DjangoEmployeeListItem[],
   /** Показывать только сотрудников, у которых есть смены в периоде. */
   employeeIdsWithShifts: Set<number>,
+  /** Имена из смен — для сотрудников, отсутствующих в справочнике. */
+  namesFromShifts?: Map<number, string>,
 ): ResourceGroup[] {
   return React.useMemo(() => {
     const byKey = new Map<string, ResourceGroup>();
+    const known = new Set(employees.map((e) => e.id));
 
-    for (const employee of employees) {
-      if (!employeeIdsWithShifts.has(employee.id)) continue;
+    const rows: DjangoEmployeeListItem[] = employees.filter((e) => employeeIdsWithShifts.has(e.id));
+    if (namesFromShifts) {
+      for (const [id, name] of namesFromShifts) {
+        if (!known.has(id) && employeeIdsWithShifts.has(id)) rows.push(synthesizeEmployee(id, name));
+      }
+    }
 
+    for (const employee of rows) {
       const spec = [...employee.specializations].sort((a, b) => a.name.localeCompare(b.name))[0];
       const key = spec ? String(spec.id) : NO_SPEC;
       const label = spec ? spec.name : NO_SPEC_LABEL;
@@ -50,7 +82,14 @@ export function useResourceGroups(
       if (b.key === NO_SPEC) return -1;
       return a.label.localeCompare(b.label);
     });
-  }, [employees, employeeIdsWithShifts]);
+  }, [employees, employeeIdsWithShifts, namesFromShifts]);
+}
+
+/** Имена сотрудников из смен (для строк, которых нет в справочнике). */
+export function namesFromOccurrences(occs: DayOccurrence[]): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const o of occs) if (!map.has(o.employeeId)) map.set(o.employeeId, o.employeeName);
+  return map;
 }
 
 /** Свёрнутые группы: набор ключей. */
