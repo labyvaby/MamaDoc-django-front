@@ -10,6 +10,14 @@ export const DJANGO_POLL_INTERVAL_MS = 30_000;
  * (см. useAppointmentsAutoSync). Поллинг идёт лишь на видимой вкладке.
  */
 export const DJANGO_HEARTBEAT_INTERVAL_MS = 2_500;
+/**
+ * Интервал того же heartbeat-чека, когда живо WebSocket-соединение
+ * `/ws/changes/` (см. useChangesSocket): обновления приходят по сокету
+ * мгновенно, а редкий polling остаётся страховкой на случай тихого обрыва
+ * сокета (wifi, сон ноутбука, прокси) — экран не «застынет» на устаревших
+ * данных. Сокет отвалился → возвращаемся к частому интервалу выше.
+ */
+export const DJANGO_REALTIME_FALLBACK_INTERVAL_MS = 25_000;
 
 export const djangoQueryKeys = {
   all: ["django"] as const,

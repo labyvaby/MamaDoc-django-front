@@ -51,6 +51,16 @@ export default defineConfig(({ mode }) => {
               changeOrigin: true,
               secure: false,
             },
+            // Realtime (Django Channels): по контракту клиент открывает
+            // ws://<origin>/ws/changes/ — в проде Caddy роутит /ws/* на
+            // daphne, в деве проксируем на локальный ws-контейнер (8001).
+            // ws: true обязателен — это Upgrade-запрос, а не обычный HTTP.
+            "/ws": {
+              target: env.VITE_WS_PROXY_TARGET || "ws://localhost:8001",
+              changeOrigin: true,
+              secure: false,
+              ws: true,
+            },
           }
         : undefined,
     },
