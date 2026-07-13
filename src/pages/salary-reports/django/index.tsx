@@ -279,7 +279,10 @@ const DjangoSalaryReportsPage: React.FC = () => {
   });
 
   // Месяцы, в которых есть приёмы, — пустые месяцы в навигации не показываем.
-  const orgIdForMonths = isSuper ? activeOrganization?.id ?? undefined : undefined;
+  // organizationId шлём всегда: для суперюзера он обязателен, для обычного
+  // мульти-орг пользователя сужает месяцы до активной организации (иначе бэк
+  // собирал бы их по всем членствам сразу).
+  const orgIdForMonths = activeOrganization?.id ?? undefined;
   const activeMonthsQuery = useQuery({
     queryKey: djangoQueryKeys.reports.activeMonths(orgIdForMonths ?? null),
     queryFn: ({ signal }) => getActiveMonths({ organizationId: orgIdForMonths }, signal),
@@ -465,6 +468,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 dateFrom={dayjs(date).startOf("month").toISOString()}
                 dateTo={dayjs(date).endOf("month").toISOString()}
                 employeeId={canView ? undefined : (employeeId || undefined)}
+                branchId={branchFilterId}
                 extraCards={[
                   {
                     title: "Аванс",

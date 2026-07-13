@@ -83,9 +83,12 @@ const DjangoReportsPage: React.FC = () => {
     placeholderData: keepPreviousData,
   });
 
+  // organizationId шлём всегда: для обычного мульти-орг пользователя он сужает
+  // месяцы до активной организации (иначе бэк собирает по всем членствам).
+  const orgIdForMonths = activeOrganization?.id ?? undefined;
   const activeMonthsQuery = useQuery({
-    queryKey: djangoQueryKeys.reports.activeMonths(orgId ?? null),
-    queryFn: ({ signal }) => getActiveMonths({ organizationId: orgId }, signal),
+    queryKey: djangoQueryKeys.reports.activeMonths(orgIdForMonths ?? null),
+    queryFn: ({ signal }) => getActiveMonths({ organizationId: orgIdForMonths }, signal),
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });

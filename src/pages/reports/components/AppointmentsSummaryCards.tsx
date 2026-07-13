@@ -28,6 +28,8 @@ interface AppointmentsSummaryCardsProps {
     dateFrom: string;
     dateTo: string;
     employeeId?: string;
+    /** Срез по филиалу (только Django-бэкенд); без него — вся организация. */
+    branchId?: number;
     appointments?: any[];
     extraCards?: ExtraCard[];
 }
@@ -36,6 +38,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     dateFrom,
     dateTo,
     employeeId,
+    branchId,
     appointments: providedAppointments,
     extraCards = [],
 }) => {
@@ -43,7 +46,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     const { activeOrganization } = usePermissions();
 
     const { data: rpcData, isFetching } = useQuery({
-        queryKey: ['appointments-summary', dateFrom, dateTo, employeeId, activeOrganization?.id],
+        queryKey: ['appointments-summary', dateFrom, dateTo, employeeId, activeOrganization?.id, branchId ?? null],
         queryFn: async () => {
             if (providedAppointments) return null;
             if (IS_DJANGO_BACKEND) {
@@ -52,6 +55,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
                     month: monthStr,
                     employeeId: employeeId ? parseInt(employeeId, 10) : undefined,
                     organizationId: activeOrganization?.id ?? undefined,
+                    branchId,
                 });
             }
             const { data, error } = await supabase.rpc('get_appointments_summary', {
