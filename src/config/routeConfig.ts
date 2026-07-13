@@ -78,6 +78,16 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/documents',
     requiredPermissions: [PERMISSIONS.DOCUMENTS_VIEW],
   },
+
+  // Уборка (уборщице достаточно cleaning.report, админу — view/manage)
+  {
+    path: '/cleaning',
+    requiredPermissions: [
+      PERMISSIONS.CLEANING_REPORT,
+      PERMISSIONS.CLEANING_VIEW,
+      PERMISSIONS.CLEANING_MANAGE,
+    ],
+  },
 ];
 
 /**

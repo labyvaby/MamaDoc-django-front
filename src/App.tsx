@@ -87,6 +87,8 @@ const BookingsPage = lazy(() => import("./pages/bookings"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
+const CleaningPage = lazy(() => import("./pages/cleaning"));
+const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSettingsPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -1039,6 +1041,25 @@ function App() {
                               element={
                                 <Suspense fallback={<LinearProgress />}>
                                   <DocumentsPage />
+                                </Suspense>
+                              }
+                            />
+                            {/* Уборка: на моках без RequirePermission (права
+                                cleaning.* появятся с бэком) — TODO вернуть гейт
+                                при интеграции, как делали с tasks/achievements. */}
+                            <Route
+                              path="cleaning"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <CleaningPage />
+                                </Suspense>
+                              }
+                            />
+                            <Route
+                              path="settings/cleaning"
+                              element={
+                                <Suspense fallback={<LinearProgress />}>
+                                  <CleaningSettingsPage />
                                 </Suspense>
                               }
                             />

@@ -185,6 +185,11 @@ export const PERMISSIONS = {
   // Документы организации (контракт: MamaDoc/backend_ticket_documents_module.md)
   DOCUMENTS_VIEW: 'documents.view',
   DOCUMENTS_MANAGE: 'documents.manage',
+
+  // Уборка (контракт: MamaDoc/backend_ticket_cleaning_module.md)
+  CLEANING_REPORT: 'cleaning.report',
+  CLEANING_VIEW: 'cleaning.view',
+  CLEANING_MANAGE: 'cleaning.manage',
 } as const;
 
 // Тип для ключей разрешений

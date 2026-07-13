@@ -22,8 +22,10 @@ import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
+import { CLEANING_USE_MOCKS } from "../../api/cleaning";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 
 /**
@@ -42,6 +44,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
   tasks: "tasks.manage",
+  cleaning: "cleaning.manage",
 } as const;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
@@ -114,6 +117,12 @@ const TABS: TabDef[] = [
     to: "/settings/tasks",
     icon: <AssignmentOutlined fontSize="small" />,
   },
+  {
+    key: "cleaning",
+    label: "Уборка",
+    to: "/settings/cleaning",
+    icon: <CleaningServicesOutlined fontSize="small" />,
+  },
 ];
 
 /**
@@ -124,7 +133,12 @@ const TABS: TabDef[] = [
  */
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
-  return TABS.filter((tab) => can(SETTINGS_TAB_PERMISSIONS[tab.key]));
+  return TABS.filter(
+    (tab) =>
+      // TODO(после интеграции): убрать обход CLEANING_USE_MOCKS — как в tasks.
+      (tab.key === "cleaning" && CLEANING_USE_MOCKS) ||
+      can(SETTINGS_TAB_PERMISSIONS[tab.key]),
+  );
 }
 
 /**

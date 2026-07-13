@@ -17,6 +17,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   tasks: 'tasks',
   achievements: 'achievements',
   documents: 'documents',
+  cleaning: 'cleaning',
 };
 
 /**

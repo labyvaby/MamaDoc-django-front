@@ -50,12 +50,14 @@ import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
 import { DOCUMENTS_USE_MOCKS } from "../../api/documents";
+import { CLEANING_USE_MOCKS } from "../../api/cleaning";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
@@ -394,6 +396,8 @@ const SidebarSecondary: React.FC = () => {
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
     schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
+    // TODO(после интеграции): убрать обход CLEANING_USE_MOCKS — как в tasks.
+    cleaning: IS_DJANGO_BACKEND && (CLEANING_USE_MOCKS || isSuper || can(["cleaning.report", "cleaning.view", "cleaning.manage"])),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
@@ -436,7 +440,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
+    "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud || can_.cleaning,
     "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.documents || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -576,6 +580,11 @@ const SidebarSecondary: React.FC = () => {
         {/* СКУД */}
         {show("my-work") && can_.skud && (
           <SidebarSkudItem collapsed={siderCollapsed} />
+        )}
+
+        {/* Уборка (Django-mode only, пока на моках) */}
+        {show("my-work") && can_.cleaning && (
+          <SidebarMenuItem to="/cleaning" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════

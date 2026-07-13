@@ -160,6 +160,17 @@ export const djangoQueryKeys = {
       ["django", "documents", "list", params] as const,
   },
 
+  cleaning: {
+    all: ["django", "cleaning"] as const,
+    zones: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "zones", params] as const,
+    records: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "records", params] as const,
+    summary: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "summary", params] as const,
+    settings: ["django", "cleaning", "settings"] as const,
+  },
+
   staff: {
     /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
     userNames: ["django", "staff", "userNames"] as const,
