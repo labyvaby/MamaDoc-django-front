@@ -16,6 +16,8 @@ import {
 } from "../api/attendance";
 import { djangoQueryKeys } from "../api/queryKeys";
 import { useCan } from "./useCan";
+import { isIpInCidr } from "../utility/network";
+
 
 const IP_QUERY_KEY = ["common", "userIp"] as const;
 
@@ -73,7 +75,9 @@ export function useDjangoSkudActions(
   // Пустая строка = ни одного IP не настроено (проверка отключена).
   const effectiveAllowedIp = allowedIps.join(", ");
   const isIpCorrect =
-    allowedIps.length === 0 || (!!userIp && allowedIps.includes(userIp));
+    allowedIps.length === 0 ||
+    (!!userIp && allowedIps.some((allowed) => isIpInCidr(userIp, allowed)));
+
 
   // 3. Current active shift.
   const activeQuery = useQuery({

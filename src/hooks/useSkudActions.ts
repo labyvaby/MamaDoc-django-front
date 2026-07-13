@@ -7,6 +7,8 @@ import { usePermissions } from "./usePermissions";
 import { useWorkShift } from "./useWorkShift";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { IS_DJANGO_BACKEND } from "../config/backend";
+import { isIpInCidr } from "../utility/network";
+
 
 dayjs.extend(duration);
 
@@ -67,7 +69,8 @@ export const useSkudActions = (
     });
 
     const effectiveAllowedIp = dbAllowedIp || import.meta.env.VITE_OFFICE_IP || "";
-    const isIpCorrect = !effectiveAllowedIp || userIp === effectiveAllowedIp;
+    const isIpCorrect = !effectiveAllowedIp || (!!userIp && isIpInCidr(userIp, effectiveAllowedIp));
+
     const [actionLoading, setActionLoading] = React.useState(false);
 
     // History Logic (Only fetch if enabled)
