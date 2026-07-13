@@ -105,6 +105,8 @@ interface SalaryReportRowProps {
   year: number;
   month: number;
   organizationId?: number;
+  /** Филиальный срез — дневная детализация фильтруется тем же филиалом. */
+  branchId?: number;
   isMobile?: boolean;
   columns?: ColumnConfig;
   periodSettings?: any;
@@ -117,6 +119,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   year,
   month,
   organizationId,
+  branchId,
   isMobile,
   columns,
   periodSettings,
@@ -143,14 +146,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const detailFetchedRef = useRef<string>("");
   useEffect(() => {
     if (!open) return;
-    const cacheKey = `${row.employeeId}-${year}-${month}`;
+    const cacheKey = `${row.employeeId}-${year}-${month}-${branchId ?? "all"}`;
     if (detailFetchedRef.current === cacheKey) return;
     detailFetchedRef.current = cacheKey;
 
     setDetailLoading(true);
     setDailyData([]);
 
-    getEmployeeDailyDetails(row.employeeId, { year, month, organizationId })
+    getEmployeeDailyDetails(row.employeeId, { year, month, organizationId, branchId })
       .then((data) => {
         // Пустые дни (без часов, приёмов, начислений и выплат) не показываем.
         setDailyData(
@@ -172,7 +175,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
       .finally(() => {
         setDetailLoading(false);
       });
-  }, [open, row.employeeId, year, month, organizationId]);
+  }, [open, row.employeeId, year, month, organizationId, branchId]);
 
   const collapseRef = useRef<HTMLDivElement>(null);
 

@@ -250,11 +250,18 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const month = parsed.month() + 1;
   const selectedMonth = parsed.startOf("month").format("YYYY-MM-DD");
 
+  // Филиальный срез следует за выбранным в сайдбаре филиалом (как остальные
+  // страницы): «Все филиалы» — полный org-wide расчёт (участвует в заморозке),
+  // конкретный филиал — живой срез (приёмы и авансы филиала, без часов СКУД —
+  // у смен нет филиала). Заморозка в срезе недоступна.
+  const branchFilterId = activeBranch?.id ?? undefined;
+
   const query = useQuery({
     queryKey: djangoQueryKeys.payroll.report({
       year,
       month,
       orgId: isSuper ? activeOrganization?.id ?? null : null,
+      branchId: branchFilterId ?? null,
     }),
     queryFn: ({ signal }) =>
       getPayrollReport(
@@ -262,6 +269,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
           year,
           month,
           organizationId: isSuper ? activeOrganization?.id ?? undefined : undefined,
+          branchId: branchFilterId,
         },
         signal,
       ),
@@ -393,12 +401,24 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 </Button>
               </Tooltip>
             )}
-            {canManage && report?.status === "draft" && (
+            {/* Срез по филиалу — всегда живой расчёт; заморозка (org-wide
+                снимки) доступна только в режиме «Все филиалы». */}
+            {branchFilterId != null && (
+              <Tooltip title="Срез по филиалу: приёмы и авансы этого филиала, всегда живой расчёт. Часы СКУД и заморозка — в режиме «Все филиалы» (у смен нет филиала).">
+                <Chip
+                  size="small"
+                  color="info"
+                  variant="outlined"
+                  label={`Срез: ${activeBranch?.name ?? "филиал"}`}
+                />
+              </Tooltip>
+            )}
+            {canManage && branchFilterId == null && report?.status === "draft" && (
               <Button size="small" variant="outlined" disabled={busy} onClick={handleLock}>
                 Заморозить
               </Button>
             )}
-            {canManage && report?.status === "locked" && (
+            {canManage && branchFilterId == null && report?.status === "locked" && (
               <Button
                 size="small"
                 variant="outlined"
@@ -408,7 +428,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 Пересчитать
               </Button>
             )}
-            {canManage && report?.status === "locked" && (
+            {canManage && branchFilterId == null && report?.status === "locked" && (
               <Button
                 size="small"
                 variant="outlined"
@@ -535,6 +555,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               year={year}
                               month={month}
                               organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                              branchId={branchFilterId}
                               isMobile
                               onPayout={canCreateExpense ? setPayoutRow : undefined}
                             />
@@ -576,6 +597,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               year={year}
                               month={month}
                               organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                              branchId={branchFilterId}
                               isMobile
                               onPayout={canCreateExpense ? setPayoutRow : undefined}
                             />
@@ -668,6 +690,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                                 year={year}
                                 month={month}
                                 organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                              branchId={branchFilterId}
                                 columns={cols}
                                 periodSettings={report?.settings}
                                 onPayout={canCreateExpense ? setPayoutRow : undefined}
@@ -728,6 +751,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                                 year={year}
                                 month={month}
                                 organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
+                              branchId={branchFilterId}
                                 columns={COLUMNS_ADMIN}
                                 periodSettings={report?.settings}
                                 onPayout={canCreateExpense ? setPayoutRow : undefined}
