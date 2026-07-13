@@ -398,7 +398,7 @@ const DjangoWarehousesPage: React.FC = () => {
     const showDetailColumn = !isMobile;
 
     const warehouseLabel = (w: DjangoWarehouse) =>
-        `${w.name}${w.isLinked ? ` — филиал: ${w.branchName}` : ""}${w.isPrimary && !w.isLinked ? " • основной" : ""}`;
+        `${w.name}${w.isLinked ? ` — филиал: ${w.branchName}` : ""}${w.isPrimary && !w.isLinked ? " • основной" : ""}${w.isSales ? " • продажи" : ""}`;
 
     return (
         <Box

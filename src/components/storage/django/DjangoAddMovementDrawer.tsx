@@ -106,11 +106,15 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, product, editingMovement, defaultWarehouseId]);
 
+    // Приход (закуп) можно проводить по 0 сом — бесплатные/бонусные поставки;
+    // пустое поле суммы трактуем как 0. Для списания сумма обязательна.
+    const isReceipt = mode === "in" || !!editingMovement;
+
     const handleSubmit = async () => {
         const qty = parseFloat(quantity);
-        const amt = parseFloat(amount);
+        const amt = isReceipt && amount.trim() === "" ? 0 : parseFloat(amount);
         if (isNaN(qty) || qty <= 0) return;
-        if (isNaN(amt) || amt <= 0) return;
+        if (isNaN(amt) || (isReceipt ? amt < 0 : amt <= 0)) return;
         if (!product && !selectedProduct && !editingMovement) return;
         if (showWarehouseSelect && !selectedWarehouse) return;
 
@@ -141,7 +145,8 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
 
     const amtNum = parseFloat(amount) || 0;
     const qtyNum = parseFloat(quantity) || 0;
-    const isValid = qtyNum > 0 && amtNum > 0
+    const amtValid = isReceipt ? amtNum >= 0 : amtNum > 0;
+    const isValid = qtyNum > 0 && amtValid
         && (!!product || !!selectedProduct || !!editingMovement)
         && (!showWarehouseSelect || !!selectedWarehouse);
 

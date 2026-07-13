@@ -57,6 +57,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
     const [name, setName] = useState("");
     const [address, setAddress] = useState("");
     const [isPrimary, setIsPrimary] = useState(false);
+    const [isSales, setIsSales] = useState(false);
     const [loading, setLoading] = useState(false);
     const [touched, setTouched] = useState(false);
 
@@ -77,6 +78,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
             setName(editItem?.name || "");
             setAddress(editItem?.address || "");
             setIsPrimary(editItem?.isPrimary || false);
+            setIsSales(editItem?.isSales || false);
             setLoading(false);
             setTouched(false);
             setSelectedLinkId(null);
@@ -115,13 +117,14 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
         try {
             setLoading(true);
             if (editItem) {
-                await updateWarehouse(editItem.id, { name, address, isPrimary });
+                await updateWarehouse(editItem.id, { name, address, isPrimary, isSales });
                 notify?.({ type: "success", message: "Склад обновлен" });
             } else {
                 await createWarehouse({
                     name,
                     address,
                     isPrimary,
+                    isSales,
                     branchId: isOrgWide ? selectedBranch?.id : undefined,
                 });
                 notify?.({ type: "success", message: "Склад создан" });
@@ -243,6 +246,21 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                             }
                             label="Основной склад филиала"
                         />
+                        <Box>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={isSales}
+                                        onChange={(e) => setIsSales(e.target.checked)}
+                                    />
+                                }
+                                label="Склад продаж"
+                            />
+                            <Typography variant="caption" color="text.secondary" display="block">
+                                Продажи товаров списываются с этого склада.
+                                Без него — с основного склада филиала.
+                            </Typography>
+                        </Box>
                     </Stack>
 
                     <Box sx={{ p: 2, borderTop: 1, borderColor: "divider" }}>

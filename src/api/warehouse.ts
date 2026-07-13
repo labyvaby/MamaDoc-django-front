@@ -10,6 +10,8 @@ export type DjangoWarehouse = {
     name: string;
     address: string;
     isPrimary: boolean;
+    /** Склад продаж: продажи товаров списываются с него (иначе — с основного). */
+    isSales: boolean;
     /** Склад другого филиала, подключённый в текущий контекст. */
     isLinked: boolean;
     createdAt: string;
@@ -154,6 +156,7 @@ export function createWarehouse(data: {
     name: string;
     address?: string;
     isPrimary?: boolean;
+    isSales?: boolean;
     branchId?: number;
 }): Promise<DjangoWarehouse> {
     return apiRequest<DjangoWarehouse>("/warehouse/warehouses/", {
@@ -164,7 +167,7 @@ export function createWarehouse(data: {
 
 export function updateWarehouse(
     id: number,
-    data: { name?: string; address?: string; isPrimary?: boolean },
+    data: { name?: string; address?: string; isPrimary?: boolean; isSales?: boolean },
 ): Promise<DjangoWarehouse> {
     return apiRequest<DjangoWarehouse>(`/warehouse/warehouses/${id}/`, {
         method: "PATCH",
