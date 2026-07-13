@@ -53,6 +53,7 @@ import {
   getPayrollReport,
   lockPeriod,
   recalculatePeriod,
+  unlockPeriod,
   type PayrollRow,
 } from "../../../api/payroll";
 import { getActiveMonths } from "../../../api/reports";
@@ -284,6 +285,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
 
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
+  const [unlockOpen, setUnlockOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
   const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
   const [bonusRow, setBonusRow] = React.useState<PayrollRow | null>(null);
@@ -312,6 +314,20 @@ const DjangoSalaryReportsPage: React.FC = () => {
       setRecalcOpen(false);
       setReason("");
       notify?.({ type: "success", message: "Пересчитано" });
+    } catch (e) {
+      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnlock = async () => {
+    setBusy(true);
+    try {
+      await unlockPeriod(year, month);
+      await query.refetch();
+      setUnlockOpen(false);
+      notify?.({ type: "success", message: "Месяц разморожен — отчёт снова живой" });
     } catch (e) {
       notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
     } finally {
@@ -390,6 +406,17 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 onClick={() => setRecalcOpen(true)}
               >
                 Пересчитать
+              </Button>
+            )}
+            {canManage && report?.status === "locked" && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                disabled={busy}
+                onClick={() => setUnlockOpen(true)}
+              >
+                Разморозить
               </Button>
             )}
           </Stack>
@@ -746,6 +773,25 @@ const DjangoSalaryReportsPage: React.FC = () => {
             variant="contained"
           >
             Пересчитать
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={unlockOpen} onClose={() => (busy ? undefined : setUnlockOpen(false))}>
+        <DialogTitle>Разморозить месяц</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Отчёт снова станет живым: цифры будут пересчитываться на лету, а
+            надбавки и настройки — редактироваться. Все сохранённые снимки
+            останутся в истории; при повторной заморозке появится новая ревизия.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnlockOpen(false)} disabled={busy} color="inherit">
+            Отмена
+          </Button>
+          <Button onClick={handleUnlock} disabled={busy} variant="contained" color="warning">
+            Разморозить
           </Button>
         </DialogActions>
       </Dialog>

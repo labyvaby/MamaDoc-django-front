@@ -153,6 +153,14 @@ export function recalculatePeriod(
   });
 }
 
+/** POST /api/payroll/periods/unlock/ — разморозить месяц (отчёт снова живой). */
+export function unlockPeriod(year: number, month: number): Promise<PayrollReport> {
+  return apiRequest<PayrollReport>("/payroll/periods/unlock/", {
+    method: "POST",
+    body: { year, month },
+  });
+}
+
 /** POST /api/payroll/periods/settings/ — save period settings. */
 export function updatePeriodSettings(
   year: number,
