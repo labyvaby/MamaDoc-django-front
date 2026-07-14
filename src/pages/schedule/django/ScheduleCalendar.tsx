@@ -34,6 +34,18 @@ import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { employeeColorHex, useEmployeeColorMap } from "./employeeColors";
+import {
+  HOUR_GUIDES,
+  LANE_H,
+  MAX_LANES,
+  MONTH_CELL_HEAD_H,
+  MONTH_CELL_HEIGHT,
+  hourlyOccupancy,
+  packIntoLanes,
+  timeToLeftPct,
+  type LaneSegment,
+  type PackedLane,
+} from "./monthTimeline";
 import ScheduleDayTimeline from "./ScheduleDayTimeline";
 import ScheduleWeekResourceGrid from "./ScheduleWeekResourceGrid";
 import ScheduleFilters from "./ScheduleFilters";
@@ -42,95 +54,7 @@ import { useScheduleFilters } from "./useScheduleFilters";
 dayjs.extend(isoWeek);
 dayjs.locale("ru");
 
-// ── Геометрия ────────────────────────────────────────────────────────────────
-
-// Месячная ячейка — горизонтальный мини-таймлайн рабочего окна 07:00–22:00
-// (портировано из ветки redesigned-calendar). Смены вне окна клампятся к краям.
-const MONTH_DAY_START_MIN = 7 * 60;
-const MONTH_DAY_END_MIN = 22 * 60;
-const MONTH_DAY_WINDOW = MONTH_DAY_END_MIN - MONTH_DAY_START_MIN;
-
-// Опорные часы — вертикальные направляющие внутри ячейки.
-const HOUR_GUIDES = [9, 12, 15, 18] as const;
-// Почасовые слоты для полосы загрузки: 07..21.
-const OCCUPANCY_HOURS = Array.from({ length: 15 }, (_, i) => 7 + i);
-
-const MONTH_CELL_HEIGHT = 184;
-/** Высота хедера ячейки (номер дня + счётчик) — дорожки начинаются ниже. */
-const MONTH_CELL_HEAD_H = 28;
-/** Высота одной дорожки-«кабинета». */
-const LANE_H = 22;
-/** Больше дорожек сворачиваем в «+N». */
-const MAX_LANES = 5;
-
-const clampMin = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-/** "HH:MM" → минуты от полуночи (по умолчанию — начало окна). */
-const occMinutes = (t: string): number => {
-  const m = /^([01]?\d|2[0-3]):([0-5]\d)/.exec(t);
-  if (!m) return MONTH_DAY_START_MIN;
-  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-};
-
-/** Минута → позиция слева в % (07:00 → 0%, 22:00 → 100%). */
-const timeToLeftPct = (min: number): number =>
-  ((clampMin(min, MONTH_DAY_START_MIN, MONTH_DAY_END_MIN) - MONTH_DAY_START_MIN) /
-    MONTH_DAY_WINDOW) *
-  100;
-
-interface LaneSegment {
-  occ: DayOccurrence;
-  startMin: number;
-  endMin: number;
-}
-
-interface PackedLane {
-  segments: LaneSegment[];
-  lastEndMin: number;
-}
-
-/**
- * Укладывает смены дня в минимум горизонтальных дорожек: непересекающиеся по
- * времени смены делят одну дорожку (интервальная упаковка, 1 дорожка ≈ «поток»).
- */
-function packIntoLanes(occs: DayOccurrence[]): PackedLane[] {
-  const segs: LaneSegment[] = occs
-    .map((occ) => ({
-      occ,
-      startMin: clampMin(occMinutes(occ.startTime), MONTH_DAY_START_MIN, MONTH_DAY_END_MIN),
-      endMin: clampMin(occMinutes(occ.endTime), MONTH_DAY_START_MIN, MONTH_DAY_END_MIN),
-    }))
-    .filter((s) => s.endMin > s.startMin)
-    .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
-  const lanes: PackedLane[] = [];
-  for (const seg of segs) {
-    const lane = lanes.find((l) => l.lastEndMin <= seg.startMin);
-    if (lane) {
-      lane.segments.push(seg);
-      lane.lastEndMin = seg.endMin;
-    } else {
-      lanes.push({ segments: [seg], lastEndMin: seg.endMin });
-    }
-  }
-  return lanes;
-}
-
-/**
- * Почасовая загрузка: число уникальных сотрудников в смене в каждый час 07..21.
- * (В API расписания нет «кабинетов», поэтому загрузку меряем людьми, а не
- * долей занятых кабинетов, как в исходном supabase-редизайне.)
- */
-function hourlyOccupancy(occs: DayOccurrence[]): number[] {
-  return OCCUPANCY_HOURS.map((h) => {
-    const min = h * 60;
-    const ids = new Set<number>();
-    for (const o of occs) {
-      if (occMinutes(o.startTime) <= min && occMinutes(o.endTime) > min) ids.add(o.employeeId);
-    }
-    return ids.size;
-  });
-}
+// ── Геометрия месячной ячейки — вынесена в monthTimeline.ts ──────────────────
 
 /** "09:00" → "9", "09:30" → "9:30", "13:00" → "13". */
 const shortTime = (t: string): string => {
@@ -283,6 +207,24 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     return map;
   }, [occurrencesByDate, filterOccurrences]);
 
+  /**
+   * Дорожки и почасовая загрузка месячных ячеек: считаем один раз на изменение
+   * данных/фильтров, а не 42 × packIntoLanes на каждый ререндер компонента.
+   */
+  const monthCellsByDate = React.useMemo(() => {
+    const map = new Map<string, { lanes: PackedLane[]; occupancy: number[]; peak: number }>();
+    if (view !== "month" || isMobile) return map;
+    filteredOccurrencesByDate.forEach((occs, date) => {
+      const occupancy = hourlyOccupancy(occs);
+      map.set(date, {
+        lanes: packIntoLanes(occs),
+        occupancy,
+        peak: occupancy.reduce((m, c) => Math.max(m, c), 0),
+      });
+    });
+    return map;
+  }, [view, isMobile, filteredOccurrencesByDate]);
+
   // Число уникальных сотрудников со сменами в день (реальные данные,
   // без выдумки про «кабинеты» — их в API расписания нет).
   const staffCount = React.useCallback(
@@ -413,11 +355,13 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     const isCurrentMonth = day.isSame(month, "month");
     const isWeekend = day.isoWeekday() >= 6;
     const occs = filteredOccurrencesByDate.get(key) ?? [];
-    const lanes = packIntoLanes(occs);
+    const { lanes, occupancy, peak } = monthCellsByDate.get(key) ?? {
+      lanes: [] as PackedLane[],
+      occupancy: [] as number[],
+      peak: 0,
+    };
     const visibleLanes = lanes.slice(0, MAX_LANES);
     const overflow = lanes.length - visibleLanes.length;
-    const occupancy = hourlyOccupancy(occs);
-    const peak = occupancy.reduce((m, c) => Math.max(m, c), 0);
 
     return (
       <TableCell
