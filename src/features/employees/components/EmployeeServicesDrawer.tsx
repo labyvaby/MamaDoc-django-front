@@ -21,6 +21,7 @@ import VisibilityOffOutlined from "@mui/icons-material/VisibilityOff";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import { useNotification } from "@refinedev/core";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { AppButton } from "../../../components/ui";
 import {
@@ -76,8 +77,18 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   onChanged,
 }) => {
   const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
   const canView = useCan("staff.view");
   const canEdit = useCan("staff.update");
+
+  // Справочники формы приёма (исполнители + матрица услуга↔сотрудник)
+  // кэшируются на 10 минут — без инвалидации свежая привязка не появится
+  // в форме до перезагрузки страницы («услуга привязана, но нет для выбора»).
+  const invalidateAppointmentFormData = React.useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ["django", "appointments", "form-data"],
+    });
+  }, [queryClient]);
   const { activeOrganization, activeMembership, activeBranch } = usePermissions();
 
   const activeBranchId = activeBranch?.id ?? null;
@@ -194,6 +205,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
       notify?.({ type: "success", message: "Услуга назначена" });
       setShowForm(false);
       setForm(EMPTY_FORM);
+      invalidateAppointmentFormData();
       onChanged?.(employeeId);
     } catch (err: unknown) {
       if (capturedContextKey !== currentContextKeyRef.current) return;
@@ -214,6 +226,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
         type: "success",
         message: isActive ? "Услуга активирована" : "Услуга деактивирована",
       });
+      invalidateAppointmentFormData();
       onChanged?.(employeeId);
     } catch (err: unknown) {
       if (capturedContextKey !== currentContextKeyRef.current) return;

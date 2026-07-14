@@ -32,11 +32,13 @@ import type { RbacBranch, RbacMembership } from "../../api/auth";
  *
  * Behavior:
  *  - Hidden entirely outside Django mode.
- *  - When user has 1 membership and ≤ 1 branch — renders read-only chip
- *    showing the current branch (no menu).
+ *  - When user has 1 membership and no branches — renders read-only chip
+ *    (nothing to switch to).
  *  - Otherwise — chip opens a popover menu with organizations grouped,
- *    each listing its accessible branches. Selecting a branch calls
- *    switchContext({ membershipId, branchId }).
+ *    each listing its accessible branches (plus the org-wide «Все филиалы»
+ *    mode). Selecting a branch calls switchContext({ membershipId, branchId }).
+ *    Even a single branch needs the menu: a fresh session starts org-wide,
+ *    and appointment creation requires a concrete branch.
  *  - Calls `onSwitched` after a successful switch so the parent can
  *    e.g. close the mobile sidebar.
  */
@@ -70,7 +72,11 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   // Nothing to render at all — user has no orgs/branches assigned.
   if (memberships.length === 0) return null;
 
-  const isInteractive = memberships.length > 1 || totalBranches > 1;
+  // Меню нужно, как только есть хотя бы один филиал: даже с единственным
+  // филиалом сессия после логина находится в режиме «Все филиалы»
+  // (activeBranch=null), и без меню переключиться в филиал невозможно —
+  // а создание приёма требует конкретный филиал.
+  const isInteractive = memberships.length > 1 || totalBranches >= 1;
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
     if (!isInteractive || switching) return;

@@ -19,6 +19,7 @@ import {
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { useNotification } from "@refinedev/core";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
 import { createService, uploadServiceImage } from "../../api/catalog";
@@ -47,6 +48,7 @@ type Props = {
 
 const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
   const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
   const { activeMembership, activeBranch } = usePermissions();
 
   const availableBranches: RbacBranch[] = React.useMemo(
@@ -149,6 +151,11 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         }
       }
       notify?.({ type: "success", message: "Услуга создана" });
+      // Список услуг формы приёма кэшируется на 10 минут — обновляем,
+      // чтобы новая услуга сразу была доступна при создании приёма.
+      void queryClient.invalidateQueries({
+        queryKey: ["django", "appointments", "form-data"],
+      });
       onCreated?.();
       onClose();
     } catch (e) {

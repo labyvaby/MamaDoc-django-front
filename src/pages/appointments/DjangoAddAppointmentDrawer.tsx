@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  AlertTitle,
   Autocomplete,
   Box,
   Button,
@@ -23,6 +24,7 @@ import {
   Typography,
 } from "@mui/material";
 import { ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
@@ -91,6 +93,18 @@ function parseQty(raw: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Поиск исполнителя по ФИО и специализации («гинеколог» находит врача).
+const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
+  matchFrom: "any",
+  stringify: (e) => `${e.fullName} ${(e.specializations ?? []).join(" ")}`,
+});
+
+// Поиск товара по названию, штрихкоду и цене.
+const productFilter = createFilterOptions<DjangoProduct>({
+  matchFrom: "any",
+  stringify: (p) => `${p.name} ${p.barcode} ${p.price}`,
+});
+
 // ── types ─────────────────────────────────────────────────────────────────────
 
 export type DjangoAddAppointmentDrawerProps = {
@@ -98,6 +112,12 @@ export type DjangoAddAppointmentDrawerProps = {
   onClose: () => void;
   onCreated?: () => void;
   initialDate?: string | null;
+  /**
+   * Использовать initialDate как точное время, без округления к шагу
+   * тайм-пикера. Передаётся при клике по свободному окну («Есть окно на
+   * 12:10») — иначе время окна сдвинулось бы на соседний шаг.
+   */
+  initialDateExact?: boolean;
   initialEmployeeId?: number | null;
   initialServiceId?: number | null;
 };
@@ -109,12 +129,27 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   onClose,
   onCreated,
   initialDate,
+  initialDateExact = false,
   initialEmployeeId,
   initialServiceId,
 }) => {
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
-  const { activeBranch, activeOrganization, activeMembership } = usePermissions();
+  const {
+    activeBranch,
+    activeOrganization,
+    activeMembership,
+    activeEmployee,
+    isNurse,
+    isAdmin,
+  } = usePermissions();
+
+  // Процедурный кабинет: настоящая медсестра (не админ) создаёт процедуры
+  // только на себя — поле исполнителя фиксируется её employee id. Без
+  // известного employee id поле не блокируем, иначе форма станет незаполнимой.
+  const nurseEmployeeId =
+    isNurse() && !isAdmin() ? activeEmployee?.id ?? null : null;
+  const isWorkplaceNurse = nurseEmployeeId !== null;
 
   const data = useDjangoAppointmentData(
     open,
@@ -176,7 +211,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     // съедет на соседний слот.
     const isSlotPrefill = Boolean(initialEmployeeId || initialServiceId);
     const base = initialDate
-      ? isSlotPrefill
+      ? isSlotPrefill || initialDateExact
         ? initialDate
         : roundDateTimeLocalToStep(initialDate, 15)
       : nowRounded();
@@ -193,7 +228,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         },
       ]);
     }
-  }, [open, initialDate, initialEmployeeId, initialServiceId]);
+  }, [open, initialDate, initialDateExact, initialEmployeeId, initialServiceId]);
+
+  // Если зашла медсестра — фиксируем её как исполнителя в пустых строках.
+  React.useEffect(() => {
+    if (!open || nurseEmployeeId === null) return;
+    setServiceRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        employeeId: row.employeeId ?? nurseEmployeeId,
+      })),
+    );
+  }, [open, nurseEmployeeId]);
 
   // ── load sellable products (with context stock) ────────────────────────────
   React.useEffect(() => {
@@ -302,6 +348,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setTouched(true);
+    // Без активного филиала бэкенд отклонит запрос (branchId обязателен) —
+    // не даём отправить форму, предупреждение уже показано сверху.
+    if (!activeBranch) return;
     if (!isValid) return;
     setSaveError(null);
     setSaving(true);
@@ -420,6 +469,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           }}
         >
           <Stack spacing={2.5}>
+            {!activeBranch && (
+              <Alert severity="warning">
+                <AlertTitle>Не выбран филиал</AlertTitle>
+                Приём всегда создаётся в конкретном филиале, а сейчас включён
+                режим «Все филиалы» — поэтому кнопка «Сохранить» недоступна.
+                <br />
+                Как выбрать филиал: нажмите на <b>название клиники вверху
+                бокового меню</b> (на телефоне сначала откройте меню кнопкой ☰)
+                и в списке выберите нужный филиал. После этого вернитесь сюда и
+                создайте приём.
+              </Alert>
+            )}
             {saveError && (
               <Alert ref={errorRef} severity="error" onClose={() => setSaveError(null)}>
                 {saveError}
@@ -663,10 +724,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                               )}
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
+                                disabled={isWorkplaceNurse}
                                 options={
                                   row.serviceId !== null ? availableEmployees : data.employees
                                 }
                                 loading={data.loading}
+                                filterOptions={employeeFilter}
                                 value={selectedEmployee}
                                 onChange={(_, v) => {
                                   updateRow(index, {
@@ -804,7 +867,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                             ...prev,
                             {
                               serviceId: null,
-                              employeeId: prev[prev.length - 1]?.employeeId ?? null,
+                              employeeId:
+                                nurseEmployeeId ??
+                                prev[prev.length - 1]?.employeeId ??
+                                null,
                               quantity: 1,
                             },
                           ])
@@ -892,6 +958,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 sx={{ flex: 1 }}
                                 options={products}
                                 loading={productsLoading}
+                                filterOptions={productFilter}
                                 value={selectedProduct}
                                 onChange={(_, v) =>
                                   setProductRows((prev) =>
@@ -1074,7 +1141,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             </Button>
             <Button
               variant="contained"
-              disabled={saving || data.loading}
+              disabled={saving || data.loading || !activeBranch}
               onMouseEnter={() => { if (!touched) setTouched(true); }}
               onClick={handleSave}
               startIcon={

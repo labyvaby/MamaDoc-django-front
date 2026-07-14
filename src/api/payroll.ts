@@ -118,9 +118,19 @@ export interface RuleWriteData {
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
-/** GET /api/payroll/report/ — monthly per-employee salary report (org-wide). */
+/** GET /api/payroll/report/ — monthly per-employee salary report.
+
+ * branchId — аналитический срез по филиалу (приёмы и авансы филиала;
+ * часы СКУД в срез не входят — у смен нет филиала). Без branchId —
+ * полный org-wide расчёт, участвующий в заморозке.
+ */
 export function getPayrollReport(
-  params: { year?: number; month?: number; organizationId?: number } = {},
+  params: {
+    year?: number;
+    month?: number;
+    organizationId?: number;
+    branchId?: number;
+  } = {},
   signal?: AbortSignal,
 ): Promise<PayrollReport> {
   const q = new URLSearchParams();
@@ -129,6 +139,7 @@ export function getPayrollReport(
   if (params.organizationId != null) {
     q.set("organizationId", String(params.organizationId));
   }
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   const qs = q.toString();
   return apiRequest<PayrollReport>(`/payroll/report/${qs ? `?${qs}` : ""}`, { signal });
 }
@@ -150,6 +161,14 @@ export function recalculatePeriod(
   return apiRequest<PayrollReport>("/payroll/periods/recalculate/", {
     method: "POST",
     body: { year, month, reason },
+  });
+}
+
+/** POST /api/payroll/periods/unlock/ — разморозить месяц (отчёт снова живой). */
+export function unlockPeriod(year: number, month: number): Promise<PayrollReport> {
+  return apiRequest<PayrollReport>("/payroll/periods/unlock/", {
+    method: "POST",
+    body: { year, month },
   });
 }
 
@@ -254,10 +273,18 @@ export function deleteBonus(id: number): Promise<void> {
   return apiRequest<void>(`/payroll/bonuses/${id}/`, { method: "DELETE" });
 }
 
-/** GET /api/payroll/employees/<id>/details/ — employee's per-day breakdown. */
+/** GET /api/payroll/employees/<id>/details/ — employee's per-day breakdown.
+
+ * branchId — тот же филиальный срез, что и в месячном отчёте.
+ */
 export function getEmployeeDailyDetails(
   employeeId: number,
-  params: { year?: number; month?: number; organizationId?: number } = {},
+  params: {
+    year?: number;
+    month?: number;
+    organizationId?: number;
+    branchId?: number;
+  } = {},
   signal?: AbortSignal,
 ): Promise<EmployeeDailyDetailRow[]> {
   const q = new URLSearchParams();
@@ -266,6 +293,7 @@ export function getEmployeeDailyDetails(
   if (params.organizationId != null) {
     q.set("organizationId", String(params.organizationId));
   }
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   const qs = q.toString();
   return apiRequest<EmployeeDailyDetailRow[]>(
     `/payroll/employees/${employeeId}/details/${qs ? `?${qs}` : ""}`,

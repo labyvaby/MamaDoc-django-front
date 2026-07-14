@@ -23,9 +23,19 @@ export interface ActiveShiftResponse {
   shift: WorkShiftRow | null;
 }
 
-export interface OfficeIp {
+export interface BranchOfficeIp {
+  branchId: number;
+  branchName: string;
   officeIp: string;
   updatedAt: string | null;
+}
+
+export interface OfficeIp {
+  /** Общий IP организации (дефолт, если у филиала нет своего). */
+  officeIp: string;
+  updatedAt: string | null;
+  /** Wi-Fi IP по каждому активному филиалу. */
+  branches: BranchOfficeIp[];
 }
 
 export interface ShiftWriteData {
@@ -113,10 +123,16 @@ export function getOfficeIp(signal?: AbortSignal): Promise<OfficeIp> {
   return apiRequest<OfficeIp>("/attendance/office-ip/", { signal });
 }
 
-/** PATCH /api/attendance/office-ip/ — set the org's office IP (admin). */
-export function setOfficeIp(officeIp: string): Promise<OfficeIp> {
+/**
+ * PATCH /api/attendance/office-ip/ — set an office IP (admin).
+ * Без branchId меняется общий IP организации, с branchId — IP филиала.
+ */
+export function setOfficeIp(
+  officeIp: string,
+  branchId?: number | null,
+): Promise<OfficeIp> {
   return apiRequest<OfficeIp>("/attendance/office-ip/", {
     method: "PATCH",
-    body: { officeIp },
+    body: branchId != null ? { officeIp, branchId } : { officeIp },
   });
 }

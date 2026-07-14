@@ -170,6 +170,19 @@ export const DjangoWarehouseList: React.FC<DjangoWarehouseListProps> = ({
                                                     }}
                                                 />
                                             )}
+                                            {w.isSales && (
+                                                <Chip
+                                                    size="small"
+                                                    label="Продажи"
+                                                    color="success"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: "0.7rem",
+                                                        fontWeight: 500,
+                                                        "& .MuiChip-label": { px: 0.75 },
+                                                    }}
+                                                />
+                                            )}
                                             {w.isLinked && (
                                                 <Chip
                                                     size="small"

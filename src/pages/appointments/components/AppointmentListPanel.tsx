@@ -222,8 +222,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   error,
   date,
   selectedId,
-  canManageFinance,
-  canViewFinance,
+  // Права на финансы больше не влияют на бейджи оплаты (факт оплаты — общий
+  // операционный статус); canUpdate/canManageFinance/canViewFinance сохранены
+  // в контракте пропсов для деталей/действий, но панелью не используются.
   notificationsMap,
   onSelect,
   onAddSlot,
@@ -431,7 +432,6 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     scrollContainerRef.current.scrollLeft = scrollLeftRef.current - (x - startX.current) * 2;
   };
 
-  const showPayCol = canViewFinance || canManageFinance;
   const groupEntries = Object.entries(groupedItemsWithGaps);
 
   return (
@@ -699,8 +699,11 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                 )}
 
                                 {/* Чип оплаты — показываем «Оплачено»/«Частично
-                                    оплачено» (статус ОПЛАТЫ, не статус приёма). */}
-                                {showPayCol && hasPaid && (
+                                    оплачено» (статус ОПЛАТЫ, не статус приёма).
+                                    Факт оплаты — операционный статус, виден всем
+                                    ролям (врачу важно знать, закрыт ли чек);
+                                    финансовые действия остаются под правами. */}
+                                {hasPaid && (
                                   <Chip
                                     label={
                                       <Stack direction="row" alignItems="center" gap={0.5}>
@@ -730,8 +733,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                 {/* Бейдж «Страховка» — визит (со)оплачен страховой
                                     компанией; синий тинт, отличим от зелёного
                                     чипа оплаты в обеих темах. */}
-                                {showPayCol &&
-                                  (a.paymentMethods ?? []).includes("insurance") && (
+                                {(a.paymentMethods ?? []).includes("insurance") && (
                                     <Tooltip title="Оплата страховкой">
                                       <Chip
                                         label={

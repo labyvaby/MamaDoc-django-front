@@ -275,8 +275,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Вид регистратуры: список приёмов или свободные окна врачей.
   const [viewMode, setViewMode] = React.useState<"list" | "slots">("list");
   // Предзаполнение создания приёма из клика по свободному окну.
+  // employeeId/serviceId заполнены из вида «Окна» (врач+услуга известны);
+  // клик по «Есть окно на HH:mm» в списке передаёт только время.
   const [slotPrefill, setSlotPrefill] = React.useState<
-    { employeeId: number; dateTime: string; serviceId: number } | null
+    { employeeId: number | null; dateTime: string; serviceId: number | null } | null
   >(null);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
@@ -340,10 +342,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     nightOnly,
   });
 
-  // Лёгкая timestamp-синхронизация вместо интервального поллинга: раз в 2.5с
-  // проверяем дешёвый last-update и перезапрашиваем тяжёлый список только при
-  // изменении. Пауза, пока открыт любой дровер/диалог — чтобы не мешать вводу
-  // (изменения за время паузы подтянутся сразу после закрытия дровера).
+  // Синхронизация с изменениями коллег: WebSocket /ws/changes/ как мгновенный
+  // триггер + лёгкий timestamp-polling как страховка (частый, когда сокет
+  // недоступен; редкий, пока он жив). Тяжёлый список перезапрашивается только
+  // при реальном изменении. Пауза, пока открыт любой дровер/диалог — чтобы не
+  // мешать вводу (изменения за время паузы подтянутся сразу после закрытия).
   useAppointmentsAutoSync({
     branchId,
     paused: createOpen || editTarget !== null || paymentTarget !== null || confirm !== null,
@@ -673,7 +676,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onSelect={handleSelect}
               onEdit={handleEdit}
               onPay={handlePay}
-              onAddSlot={canCreate ? () => {
+              onAddSlot={canCreate ? (dateIso) => {
+                // Клик по «Есть окно на HH:mm» — время окна попадает в форму.
+                setSlotPrefill({ employeeId: null, dateTime: dateIso, serviceId: null });
                 setCreateOpen(true);
               } : undefined}
               hideDoctorStrip={hideEmployeeStrip}
@@ -800,6 +805,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               ? date.format("YYYY-MM-DD") + "T" + dayjs().format("HH:mm")
               : undefined
         }
+        initialDateExact={!!slotPrefill}
         initialEmployeeId={slotPrefill?.employeeId ?? null}
         initialServiceId={slotPrefill?.serviceId ?? null}
       />

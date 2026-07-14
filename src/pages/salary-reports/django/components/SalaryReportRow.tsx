@@ -17,10 +17,13 @@ import {
   Collapse,
   Grid2,
   Tooltip,
+  Button,
+  Chip,
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -102,9 +105,13 @@ interface SalaryReportRowProps {
   year: number;
   month: number;
   organizationId?: number;
+  /** Филиальный срез — дневная детализация фильтруется тем же филиалом. */
+  branchId?: number;
   isMobile?: boolean;
   columns?: ColumnConfig;
   periodSettings?: any;
+  /** Открыть дравер создания расхода с префиллом (сотрудник + остаток к выплате). */
+  onPayout?: (row: PayrollRow) => void;
 }
 
 const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
@@ -112,9 +119,11 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   year,
   month,
   organizationId,
+  branchId,
   isMobile,
   columns,
   periodSettings,
+  onPayout,
 }) => {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
@@ -128,18 +137,23 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const totalHours = parseFloat(row.dayHours || "0") + parseFloat(row.nightHours || "0");
   const hasHours = parseFloat(row.dayHours || "0") > 0 || parseFloat(row.nightHours || "0") > 0;
 
+  // payable — есть остаток к выплате; paid — начислено, но авансы всё покрыли; none — начислений нет.
+  const netPayable = Math.round(parseFloat(row.netSalary || "0"));
+  const payState: "payable" | "paid" | "none" =
+    netPayable > 0 ? "payable" : parseFloat(row.earnings || "0") > 0 ? "paid" : "none";
+
   // Detail loading on expand
   const detailFetchedRef = useRef<string>("");
   useEffect(() => {
     if (!open) return;
-    const cacheKey = `${row.employeeId}-${year}-${month}`;
+    const cacheKey = `${row.employeeId}-${year}-${month}-${branchId ?? "all"}`;
     if (detailFetchedRef.current === cacheKey) return;
     detailFetchedRef.current = cacheKey;
 
     setDetailLoading(true);
     setDailyData([]);
 
-    getEmployeeDailyDetails(row.employeeId, { year, month, organizationId })
+    getEmployeeDailyDetails(row.employeeId, { year, month, organizationId, branchId })
       .then((data) => {
         // Пустые дни (без часов, приёмов, начислений и выплат) не показываем.
         setDailyData(
@@ -161,7 +175,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
       .finally(() => {
         setDetailLoading(false);
       });
-  }, [open, row.employeeId, year, month, organizationId]);
+  }, [open, row.employeeId, year, month, organizationId, branchId]);
 
   const collapseRef = useRef<HTMLDivElement>(null);
 
@@ -401,6 +415,29 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.netSalary)}
                     </Typography>
                   </Stack>
+                  {onPayout && payState === "payable" && (
+                    <Button
+                      fullWidth
+                      size="small"
+                      variant="contained"
+                      color="success"
+                      disableElevation
+                      startIcon={<PaymentsOutlinedIcon />}
+                      onClick={() => onPayout(row)}
+                      sx={{ mt: 1.25, borderRadius: 1.5, fontWeight: 700 }}
+                    >
+                      Выплатить {formatKGS(row.netSalary)}
+                    </Button>
+                  )}
+                  {onPayout && payState === "paid" && (
+                    <Chip
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                      label="✓ Выплачено"
+                      sx={{ mt: 1.25, fontWeight: 700, alignSelf: "flex-start" }}
+                    />
+                  )}
                 </Box>
               </Stack>
             )}
@@ -493,6 +530,48 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
         <TableCell align="right" sx={{ color: "primary.main", fontWeight: 700 }}>
           {formatKGS(row.netSalary)}
         </TableCell>
+
+        {onPayout && (
+          <TableCell
+            align="right"
+            onClick={(e) => e.stopPropagation()}
+            sx={{ whiteSpace: "nowrap", width: 0, cursor: "default" }}
+          >
+            {payState === "payable" ? (
+              <Tooltip title={`Создать расход: выплата ${formatKGS(row.netSalary)} — ${row.fullName}`}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="success"
+                  onClick={() => onPayout(row)}
+                  startIcon={<PaymentsOutlinedIcon sx={{ fontSize: "1rem !important" }} />}
+                  sx={{
+                    borderRadius: 1.5,
+                    fontWeight: 700,
+                    fontSize: "0.7rem",
+                    lineHeight: 1.4,
+                    py: 0.25,
+                    px: 1,
+                    minWidth: "auto",
+                    whiteSpace: "nowrap",
+                    bgcolor: alpha(theme.palette.success.main, 0.06),
+                    "&:hover": { bgcolor: alpha(theme.palette.success.main, 0.14) },
+                  }}
+                >
+                  Выплатить
+                </Button>
+              </Tooltip>
+            ) : payState === "paid" ? (
+              <Chip
+                size="small"
+                color="success"
+                variant="outlined"
+                label="✓ Выплачено"
+                sx={{ fontWeight: 700, height: 22, fontSize: "0.65rem" }}
+              />
+            ) : null}
+          </TableCell>
+        )}
       </TableRow>
 
       <TableRow sx={{ bgcolor: alpha(theme.palette.background.default, 0.4) }}>

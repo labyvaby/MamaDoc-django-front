@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import { ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import Grid from "@mui/material/Grid";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
@@ -85,6 +86,12 @@ function nowRounded(): string {
   return roundDateTimeLocalToStep(`${yyyy}-${mm}-${dd}T${hh}:${mi}`, 15);
 }
 
+// Поиск исполнителя по ФИО и специализации («гинеколог» находит врача).
+const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
+  matchFrom: "any",
+  stringify: (e) => `${e.fullName} ${(e.specializations ?? []).join(" ")}`,
+});
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = ({
@@ -96,7 +103,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const canUpdate = useCan("appointments.update");
-  const { activeOrganization, activeMembership } = usePermissions();
+  const {
+    activeOrganization,
+    activeMembership,
+    activeEmployee,
+    isNurse,
+    isAdmin,
+  } = usePermissions();
+
+  // Процедурный кабинет: настоящая медсестра (не админ) не может переназначить
+  // исполнителя — поле фиксируется её employee id (как в форме создания).
+  const nurseEmployeeId =
+    isNurse() && !isAdmin() ? activeEmployee?.id ?? null : null;
+  const isWorkplaceNurse = nurseEmployeeId !== null;
 
   const data = useDjangoAppointmentData(
     open,
@@ -193,6 +212,18 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       ]);
     }
   }, [open, appointment]);
+
+  // Если зашла медсестра — фиксируем её как исполнителя в пустых строках
+  // (например, у бронирования без услуг). Заполненные строки не трогаем.
+  React.useEffect(() => {
+    if (!open || nurseEmployeeId === null) return;
+    setServiceRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        employeeId: row.employeeId ?? nurseEmployeeId,
+      })),
+    );
+  }, [open, appointment, nurseEmployeeId]);
 
   // ── populate patient from the appointment itself (no full list needed) ──────
   React.useEffect(() => {
@@ -611,8 +642,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               )}
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
+                                disabled={isWorkplaceNurse}
                                 options={row.serviceId !== null ? availableEmployees : data.employees}
                                 loading={data.loading}
+                                filterOptions={employeeFilter}
                                 value={selectedEmployee}
                                 onChange={(_, v) =>
                                   updateRow(index, {
@@ -725,7 +758,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               {
                                 lineId: null,
                                 serviceId: null,
-                                employeeId: prev[prev.length - 1]?.employeeId ?? null,
+                                employeeId:
+                                  nurseEmployeeId ??
+                                  prev[prev.length - 1]?.employeeId ??
+                                  null,
                                 quantity: 1,
                                 unitPrice: "",
                                 discountAmount: "",

@@ -16,6 +16,8 @@ import {
 } from "../api/attendance";
 import { djangoQueryKeys } from "../api/queryKeys";
 import { useCan } from "./useCan";
+import { isIpInCidr } from "../utility/network";
+
 
 const IP_QUERY_KEY = ["common", "userIp"] as const;
 
@@ -61,8 +63,21 @@ export function useDjangoSkudActions(
   });
 
   const envIp = import.meta.env.VITE_OFFICE_IP as string | undefined;
-  const effectiveAllowedIp = officeIpData?.officeIp || envIp || "";
-  const isIpCorrect = !effectiveAllowedIp || userIp === effectiveAllowedIp;
+  // Разрешённые IP: Wi-Fi каждого филиала + общий IP организации (или env).
+  // Сотрудник может начать смену из любого филиала клиники.
+  const allowedIps = React.useMemo(() => {
+    const branchIps = (officeIpData?.branches ?? [])
+      .map((b) => b.officeIp)
+      .filter(Boolean);
+    const orgIp = officeIpData?.officeIp || envIp || "";
+    return orgIp ? [...branchIps, orgIp] : branchIps;
+  }, [officeIpData, envIp]);
+  // Пустая строка = ни одного IP не настроено (проверка отключена).
+  const effectiveAllowedIp = allowedIps.join(", ");
+  const isIpCorrect =
+    allowedIps.length === 0 ||
+    (!!userIp && allowedIps.some((allowed) => isIpInCidr(userIp, allowed)));
+
 
   // 3. Current active shift.
   const activeQuery = useQuery({

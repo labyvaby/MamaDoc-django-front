@@ -41,6 +41,7 @@ import { DjangoAddExpenseDrawer } from "../../components/expenses/DjangoAddExpen
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
+import { useRealtimeRefetch } from "../../hooks/useRealtimeRefetch";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
   getExpenses,
@@ -453,6 +454,17 @@ const DjangoExpensesPage: React.FC = () => {
 
   const queryClient = useQueryClient();
 
+  // Realtime: расходы коллег (создание/аннулирование/фото) инвалидируют
+  // кэш мгновенно по /ws/changes/; обычные refetch-механизмы react-query
+  // остаются страховкой. Расход без филиала (org-wide) не бродкастится.
+  useRealtimeRefetch({
+    entities: ["expense"],
+    onEvent: () =>
+      void queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.expenses.all,
+      }),
+  });
+
   // Сбрасываем при смене орг/филиала
   const prevOrgId = React.useRef<number | undefined>(orgId);
   const prevBranchId = React.useRef<number | undefined>(branchId);
@@ -482,12 +494,14 @@ const DjangoExpensesPage: React.FC = () => {
     const f: Record<string, unknown> = { organizationId: orgId, branchId };
     if (selectedCategoryId) f.categoryId = selectedCategoryId;
     if (selectedYear && selectedMonth) {
-      const y = Number(selectedYear);
-      const m = Number(selectedMonth) - 1;
-      const from = new Date(y, m, 1);
-      const to = new Date(y, m + 1, 0);
-      f.dateFrom = from.toISOString().slice(0, 10);
-      f.dateTo = to.toISOString().slice(0, 10);
+      // selectedMonth хранится как "YYYY-MM"; берём номер месяца из него.
+      const y = Number(selectedMonth.slice(0, 4));
+      const m = Number(selectedMonth.slice(5, 7)) - 1;
+      // Последний день месяца: day=0 следующего месяца. Собираем строку
+      // вручную, без toISOString(), чтобы не ловить сдвиг по UTC.
+      const lastDay = new Date(y, m + 1, 0).getDate();
+      f.dateFrom = `${selectedMonth}-01`;
+      f.dateTo = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
     } else if (selectedYear) {
       f.dateFrom = `${selectedYear}-01-01`;
       f.dateTo = `${selectedYear}-12-31`;

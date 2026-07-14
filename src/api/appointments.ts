@@ -18,6 +18,16 @@ import { apiRequest, ApiError } from "./client";
 const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
 
 function humanizeBackendMessage(raw: string): string {
+  // Валидатор бэкенда: branchId обязателен, а активный филиал не выбран
+  // (режим «Все филиалы»). Форма это блокирует, но ошибка может прийти и
+  // другим путём — переводим её в понятную инструкцию.
+  if (/\$\.parsed_body\.branchId/.test(raw)) {
+    return (
+      "Не выбран филиал. Нажмите на название клиники вверху бокового меню " +
+      "(на телефоне сначала откройте меню кнопкой ☰), выберите нужный филиал " +
+      "и попробуйте снова."
+    );
+  }
   return raw
     .split(";")
     .map((part) => part.replace(_FIELD_PREFIX, "").trim())
@@ -396,14 +406,14 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
  * Mirrors the backend ServiceProviderPayload (rename='camel').
  */
 export interface ServiceProvider {
-  employeeId: number;
-  employeeFullName: string;
-  serviceId: number;
-  serviceName: string;
-  /** Effective price for this employee/service pair (overridden or base). */
-  price: string;
-  /** Effective duration in minutes. */
-  durationMinutes: number;
+  id: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  /** Primary branch (null when not set). */
+  branch: { id: number; name: string } | null;
+  /** Specialization names — the appointment form's performer search uses them. */
+  specializations: string[];
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
@@ -521,9 +531,11 @@ export function getHomeDashboard(params: {
 /**
  * GET /api/appointments/service-providers/
  *
- * Returns all active employee/service pairs visible to the caller,
- * optionally filtered by serviceId and/or branchId.
- * Replaces the N+1 pattern of calling getEmployeeServices() per employee.
+ * Returns employees who can provide services, visible to the caller.
+ * With serviceId — only providers of that service; without — every employee
+ * with at least one active assignment (bulk source for the appointment form's
+ * performer picker: requires appointments.view, NOT staff.view, so clinicians
+ * without staff access can load it).
  */
 export function getServiceProviders(params?: {
   serviceId?: number;

@@ -94,6 +94,19 @@ if (IS_DJANGO_BACKEND && typeof window !== 'undefined') {
       authError: null,
     });
   });
+
+  // Права роли могли измениться, пока вкладка была неактивна (например,
+  // администратор выдал роли новые доступы) — при возврате фокуса
+  // перечитываем /auth/me/. fetchPermissions сам троттлит (COOLDOWN_MS),
+  // так что Alt+Tab не спамит запросами.
+  const refetchOnReturn = () => {
+    if (globalState.authStatus !== 'authenticated') return;
+    void fetchPermissions();
+  };
+  window.addEventListener('focus', refetchOnReturn);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refetchOnReturn();
+  });
 }
 
 type RolePermissionsRow = { permissions?: Permission | Permission[] | null };

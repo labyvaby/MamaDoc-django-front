@@ -74,6 +74,7 @@ export type DjangoAddExpenseDrawerProps = {
     employee?: { id: number; fullName: string };
     categoryKind?: ExpenseCategoryKind;
     cashAmount?: string;
+    cardAmount?: string;
     name?: string;
   };
 };
@@ -145,7 +146,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       setCategoryId("");
       setName(prefill?.name ?? "");
       setCashAmount(prefill?.cashAmount ?? "");
-      setCardAmount("");
+      setCardAmount(prefill?.cardAmount ?? "");
       setDescription("");
       setPhotoFile(null);
       setPhotoPreview(null);
