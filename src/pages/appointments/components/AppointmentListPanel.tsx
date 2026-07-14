@@ -75,6 +75,17 @@ interface AppointmentListPanelProps {
    * врач+медсестра группировался под медсестрой, а групп врачей не было.
    */
   groupEmployeeIds?: Set<number> | null;
+  /**
+   * Смены сотрудников на выбранную дату (из модуля расписания): плашки
+   * «Есть окно на HH:mm» показываются только внутри рабочих часов исполнителя.
+   * `scheduledIds` — сотрудники, у которых на эту дату есть активное правило
+   * расписания; для остальных (расписание не ведётся) ограничение не действует.
+   * null/undefined — расписание недоступно, поведение как раньше.
+   */
+  dayShifts?: {
+    scheduledIds: Set<number>;
+    segments: Map<number, { start: string; end: string }[]>;
+  } | null;
 }
 
 type GapSlot = {
@@ -232,6 +243,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   doctorFilter,
   onDoctorFilterChange,
   groupEmployeeIds = null,
+  dayShifts = null,
 }) => {
   const theme = useTheme();
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
@@ -347,6 +359,32 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const isCoveredByActive = (t: number) =>
         activeRanges.some((r) => t >= r.from && t < r.to);
 
+      // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
+      // (например, «Есть окно на 16:00» при графике до 16:00). Если расписание
+      // на сотрудника не ведётся (нет активного правила на дату) — не ограничиваем.
+      let shiftSegments: { start: string; end: string }[] | null = null;
+      if (dayShifts) {
+        let empId: number | null = null;
+        outer: for (const a of sorted) {
+          for (const sl of a.services) {
+            if (sl.employee && sl.employee.fullName === docName) {
+              empId = sl.employee.id;
+              break outer;
+            }
+          }
+        }
+        if (empId != null && dayShifts.scheduledIds.has(empId)) {
+          shiftSegments = dayShifts.segments.get(empId) ?? [];
+        }
+      }
+      const slotInShift = (d: dayjs.Dayjs) => {
+        if (!shiftSegments) return true;
+        // "HH:mm" сравниваются лексикографически (= хронологически);
+        // начало слота должно быть строго раньше конца смены.
+        const hm = d.format("HH:mm");
+        return shiftSegments.some((s) => hm >= s.start && hm < s.end);
+      };
+
       for (let i = 0; i < sorted.length; i++) {
         const current = sorted[i];
         const start = dayjs(current.scheduledAt);
@@ -354,7 +392,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
         // Cancelled future appointment → show gap slot before it,
         // если на это время нет активной записи (одна плашка на слот)
-        if (isCancelled && start.isAfter(dayjs()) && !isCoveredByActive(start.valueOf())) {
+        if (isCancelled && start.isAfter(dayjs()) && !isCoveredByActive(start.valueOf()) && slotInShift(start)) {
           const key = `gap-can-${start.valueOf()}`;
           if (!addedGapKeys.has(key)) {
             addedGapKeys.add(key);
@@ -374,7 +412,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           if (!isCancelledStatus(next.status)) {
             const currentEnd = start.add(DEFAULT_DURATION_MINS, "minute");
             const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
-            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs())) {
+            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
               const key = `gap-${current.id}-${next.id}`;
               renderItems.push({
                 isGap: true,
@@ -386,7 +424,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           }
         } else if (!isCancelled && i === sorted.length - 1) {
           const currentEnd = start.add(DEFAULT_DURATION_MINS, "minute");
-          if (currentEnd.isAfter(dayjs())) {
+          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
             renderItems.push({
               isGap: true,
               id: `gap-after-${current.id}`,
@@ -401,7 +439,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     });
 
     return result;
-  }, [rawGroups, onAddSlot]);
+  }, [rawGroups, onAddSlot, dayShifts]);
 
   // ── Drag-scroll for doctor strip ──────────────────────────────────────────
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
