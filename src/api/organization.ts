@@ -43,7 +43,7 @@ export interface DjangoBranch {
   timezone: string;
   isActive: boolean;
   /** Абсолютный URL логотипа филиала; null — логотип не загружен.
-   *  Контракт: MamaDoc/backend_ticket_branch_logo.md (зеркало логотипа
+   *  Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_branch_logo.md (зеркало логотипа
    *  организации; до реализации на бэке поле отсутствует в ответе). */
   logoUrl: string | null;
   createdAt: string;
@@ -130,7 +130,7 @@ export function deleteOrganizationLogo(id: number): Promise<void> {
 /**
  * PUT /organization/branches/<id>/logo/ — загрузка/замена логотипа филиала
  * (multipart, поле `logo`; ≤ 5 МБ, jpg/jpeg/png/webp/svg). Возвращает
- * обновлённый филиал. Контракт: MamaDoc/backend_ticket_branch_logo.md.
+ * обновлённый филиал. Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_branch_logo.md.
  */
 export function uploadBranchLogo(id: number, file: File): Promise<DjangoBranch> {
   const formData = new FormData();

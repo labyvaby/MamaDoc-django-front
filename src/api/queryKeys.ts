@@ -168,7 +168,8 @@ export const djangoQueryKeys = {
       ["django", "cleaning", "records", params] as const,
     summary: (params: Record<string, unknown>) =>
       ["django", "cleaning", "summary", params] as const,
-    settings: ["django", "cleaning", "settings"] as const,
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "cleaning", "settings", organizationId ?? null] as const,
   },
 
   knowledge: {

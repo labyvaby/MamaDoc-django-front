@@ -25,7 +25,7 @@ import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
-import { CLEANING_USE_MOCKS } from "../../api/cleaning";
+import { useModuleGate } from "../../hooks/useModuleGate";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 
 /**
@@ -133,11 +133,12 @@ const TABS: TabDef[] = [
  */
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
-  return TABS.filter(
-    (tab) =>
-      // TODO(после интеграции): убрать обход CLEANING_USE_MOCKS — как в tasks.
-      (tab.key === "cleaning" && CLEANING_USE_MOCKS) ||
-      can(SETTINGS_TAB_PERMISSIONS[tab.key]),
+  const { moduleGate } = useModuleGate();
+  return TABS.filter((tab) =>
+    // Уборка на моках: гейт единый с роутом и сайдбаром (см. useModuleGate).
+    tab.key === "cleaning"
+      ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
+      : can(SETTINGS_TAB_PERMISSIONS[tab.key]),
   );
 }
 

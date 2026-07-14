@@ -39,9 +39,6 @@ import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 
 import type { KnowledgeArticle, KnowledgeArticlePayload, KnowledgeCategory } from "../../api/knowledge";
 
-/** Пустой документ TipTap — чтобы отличать «ничего не написано». */
-const EMPTY_HTML = "<p></p>";
-
 interface ArticleEditorDrawerProps {
   open: boolean;
   /** null — создание новой статьи. */
@@ -84,21 +81,37 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   // Активные форматы для тулбара (v3 не ререндерит на каждую транзакцию сам).
   const editorState = useEditorState({
     editor,
-    selector: ({ editor: e }) => ({
-      bold: e?.isActive("bold") ?? false,
-      italic: e?.isActive("italic") ?? false,
-      underline: e?.isActive("underline") ?? false,
-      strike: e?.isActive("strike") ?? false,
-      h2: e?.isActive("heading", { level: 2 }) ?? false,
-      h3: e?.isActive("heading", { level: 3 }) ?? false,
-      bulletList: e?.isActive("bulletList") ?? false,
-      orderedList: e?.isActive("orderedList") ?? false,
-      blockquote: e?.isActive("blockquote") ?? false,
-      codeBlock: e?.isActive("codeBlock") ?? false,
-      link: e?.isActive("link") ?? false,
-      canUndo: e?.can().undo() ?? false,
-      canRedo: e?.can().redo() ?? false,
-    }),
+    selector: ({ editor: e }) => {
+      // isDestroyed — обязательная проверка: после destroy (StrictMode-ремаунт
+      // в dev, уход со страницы) у редактора обнулён commandManager, и
+      // can()/isActive() бросают TypeError, роняя страницу в ErrorBoundary.
+      if (!e || e.isDestroyed) {
+        return {
+          bold: false, italic: false, underline: false, strike: false,
+          h2: false, h3: false, bulletList: false, orderedList: false,
+          blockquote: false, codeBlock: false, link: false,
+          canUndo: false, canRedo: false, isEmpty: true,
+        };
+      }
+      return {
+        bold: e.isActive("bold"),
+        italic: e.isActive("italic"),
+        underline: e.isActive("underline"),
+        strike: e.isActive("strike"),
+        h2: e.isActive("heading", { level: 2 }),
+        h3: e.isActive("heading", { level: 3 }),
+        bulletList: e.isActive("bulletList"),
+        orderedList: e.isActive("orderedList"),
+        blockquote: e.isActive("blockquote"),
+        codeBlock: e.isActive("codeBlock"),
+        link: e.isActive("link"),
+        canUndo: e.can().undo(),
+        canRedo: e.can().redo(),
+        // Для валидации «Сохранить»: без isEmpty селектор не меняется при
+        // опустошении текста (canUndo остаётся true) и ререндера нет.
+        isEmpty: e.isEmpty,
+      };
+    },
   });
 
   React.useEffect(() => {
@@ -131,8 +144,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   };
 
   // ── Сохранение ────────────────────────────────────────────────────────────
-  const contentHtml = editor?.getHTML() ?? "";
-  const hasContent = contentHtml.trim() !== "" && contentHtml !== EMPTY_HTML;
+  const hasContent = !(editorState?.isEmpty ?? true);
   const valid = title.trim().length > 0 && hasContent;
 
   const handleSubmit = () => {

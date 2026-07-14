@@ -57,9 +57,7 @@ import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
-import { DOCUMENTS_USE_MOCKS } from "../../api/documents";
-import { CLEANING_USE_MOCKS } from "../../api/cleaning";
-import { KNOWLEDGE_USE_MOCKS } from "../../api/knowledge";
+import { useModuleGate } from "../../hooks/useModuleGate";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
@@ -370,6 +368,7 @@ const SidebarSecondary: React.FC = () => {
   useWorkShift();
   const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
+  const { moduleGate } = useModuleGate();
   const orgId = useApiOrgId();
   const isNurse = isNurseFunc();
   const isSuper = isSuperAdmin();
@@ -398,18 +397,15 @@ const SidebarSecondary: React.FC = () => {
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
     schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
-    // TODO(после интеграции): убрать обход CLEANING_USE_MOCKS — как в tasks.
-    cleaning: IS_DJANGO_BACKEND && (CLEANING_USE_MOCKS || isSuper || can(["cleaning.report", "cleaning.view", "cleaning.manage"])),
+    cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
     achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
-    // TODO(после интеграции): убрать обход DOCUMENTS_USE_MOCKS — как в tasks.
-    documents: IS_DJANGO_BACKEND && (DOCUMENTS_USE_MOCKS || isSuper || can("documents.view")),
-    // TODO(после интеграции): убрать обход KNOWLEDGE_USE_MOCKS — как в tasks.
-    knowledge: IS_DJANGO_BACKEND && (KNOWLEDGE_USE_MOCKS || isSuper || can("knowledge.view")),
+    documents: IS_DJANGO_BACKEND && moduleGate("documents"),
+    knowledge: IS_DJANGO_BACKEND && moduleGate("knowledge"),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),

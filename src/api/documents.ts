@@ -1,10 +1,11 @@
 import { apiRequest } from "./client";
+import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
  * Модуль «Документы организации» — плоское файловое хранилище уровня
  * организации (уставные документы, лицензии, договоры).
  *
- * Контракт: MamaDoc/backend_ticket_documents_module.md — НЕ менять без
+ * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_documents_module.md — НЕ менять без
  * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
  * на моках (DOCUMENTS_USE_MOCKS = true); после деплоя бэка выключить флаг и
  * вернуть can-гейты (сайдбар, App.tsx), как делали с tasks/achievements.
@@ -53,23 +54,41 @@ export const DOCUMENT_MAX_SIZE_MB = 25;
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const MOCK_LATENCY_MS = 250;
-
-function mockDelay<T>(value: T): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), MOCK_LATENCY_MS));
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 let mockSeq = 100;
 
+/**
+ * Мини-PDF одной страницей для демо-предпросмотра (латиница — без встраивания
+ * шрифтов). Относительные заглушки вида "#mock" не годятся: iframe
+ * предпросмотра загружал бы по ним само приложение (рекурсивно).
+ */
+const MOCK_PDF_URL = `data:application/pdf;base64,${btoa(
+  [
+    "%PDF-1.4",
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 400 200]",
+    "  /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj",
+    "4 0 obj << /Length 55 >> stream",
+    "BT /F1 16 Tf 30 120 Td (MamaDoc - demo document) Tj ET",
+    "endstream endobj",
+    "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+    "trailer << /Size 6 /Root 1 0 R >>",
+    "%%EOF",
+  ].join("\n"),
+)}`;
+
+/** Заглушка для непревьюируемых типов (docx и т.п.) — скачивается файликом. */
+const MOCK_FILE_URL = `data:application/octet-stream;base64,${btoa("MamaDoc demo file")}`;
+
 const mockDocs: OrganizationDocument[] = [
   {
     id: 1,
     name: "Устав организации.pdf",
-    fileUrl: "#mock-ustav",
+    fileUrl: MOCK_PDF_URL,
     fileSize: 1_240_000,
     branchId: null,
     branchName: null,
@@ -79,7 +98,7 @@ const mockDocs: OrganizationDocument[] = [
   {
     id: 2,
     name: "Лицензия на мед. деятельность.pdf",
-    fileUrl: "#mock-license",
+    fileUrl: MOCK_PDF_URL,
     fileSize: 860_000,
     branchId: null,
     branchName: null,
@@ -89,7 +108,7 @@ const mockDocs: OrganizationDocument[] = [
   {
     id: 3,
     name: "Договор аренды (Сейтек 9-10).docx",
-    fileUrl: "#mock-arenda",
+    fileUrl: MOCK_FILE_URL,
     fileSize: 145_000,
     branchId: 2,
     branchName: "Мама Доктор Плюс",
@@ -99,12 +118,6 @@ const mockDocs: OrganizationDocument[] = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function withOrg(path: string, organizationId?: number): string {
-  if (organizationId == null) return path;
-  const sep = path.includes("?") ? "&" : "?";
-  return `${path}${sep}organizationId=${organizationId}`;
-}
 
 function buildParams(filters: DocumentsFilters): URLSearchParams {
   const q = new URLSearchParams();
@@ -131,15 +144,7 @@ export function getDocuments(
     if (filters.branch === "null") list = list.filter((d) => d.branchId === null);
     else if (filters.branch != null) list = list.filter((d) => d.branchId === filters.branch);
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const page = filters.page ?? 1;
-    const pageSize = filters.pageSize ?? 20;
-    const start = (page - 1) * pageSize;
-    return mockDelay({
-      results: list.slice(start, start + pageSize),
-      count: list.length,
-      next: start + pageSize < list.length ? "mock" : null,
-      previous: page > 1 ? "mock" : null,
-    });
+    return mockDelay(paginate(list, filters.page, filters.pageSize));
   }
   const q = buildParams(filters);
   return apiRequest<DocumentsResponse>(`/documents/?${q.toString()}`, { signal });

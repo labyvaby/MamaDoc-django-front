@@ -32,7 +32,7 @@ export type RbacBranch = {
   timezone: string;
   isActive: boolean;
   /** URL логотипа филиала. Опционально: бэкенд добавит поле в селектор
-   *  /auth/me/ по тикету MamaDoc/backend_ticket_branch_logo.md;
+   *  /auth/me/ по тикету MamaDoc/backend_tickets_2026-07-13/backend_ticket_branch_logo.md;
    *  до этого поле отсутствует и UI показывает иконку-заглушку. */
   logoUrl?: string | null;
 };

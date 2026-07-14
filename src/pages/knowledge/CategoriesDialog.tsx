@@ -10,20 +10,14 @@ import {
   IconButton,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
-import ArrowUpwardOutlined from "@mui/icons-material/ArrowUpwardOutlined";
-import ArrowDownwardOutlined from "@mui/icons-material/ArrowDownwardOutlined";
+import DragIndicatorOutlined from "@mui/icons-material/DragIndicatorOutlined";
+import { Reorder } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 
@@ -63,7 +57,9 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
       getKnowledgeCategories({ includeInactive: true, organizationId: orgId }, signal),
     enabled: open,
   });
-  const categories = categoriesQuery.data ?? [];
+  // Стабильная ссылка (а не `data ?? []` в каждом рендере) — от неё зависят
+  // useMemo/useEffect ниже.
+  const categories = React.useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
 
   const [newName, setNewName] = React.useState("");
   const [deleting, setDeleting] = React.useState<KnowledgeCategory | null>(null);
@@ -100,16 +96,56 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
       notify?.({ type: "error", message: "Не удалось удалить раздел", description: errMsg(e, "") }),
   });
 
-  /** Меняет местами position с соседом (стрелки вверх/вниз). */
-  const move = (index: number, delta: -1 | 1) => {
-    const a = categories[index];
-    const b = categories[index + delta];
-    if (!a || !b) return;
-    updateMutation.mutate({ id: a.id, payload: { position: b.position } });
-    updateMutation.mutate({ id: b.id, payload: { position: a.position } });
+  // ── Drag&drop порядок ─────────────────────────────────────────────────────
+  // Локальный порядок для перетаскивания; после дропа отправляется на сервер.
+  // Зависимость — data запроса (стабильная ссылка), НЕ производный `categories`
+  // (`?? []` даёт новый массив на каждый рендер → бесконечный setState-цикл);
+  // при совпадении порядка возвращаем prev, чтобы не менять state впустую.
+  const [order, setOrder] = React.useState<number[]>([]);
+  React.useEffect(() => {
+    const next = (categoriesQuery.data ?? []).map((c) => c.id);
+    setOrder((prev) =>
+      prev.length === next.length && prev.every((id, i) => id === next[i]) ? prev : next,
+    );
+  }, [categoriesQuery.data]);
+
+  const orderedCategories = React.useMemo(
+    () =>
+      order
+        .map((id) => categories.find((c) => c.id === id))
+        .filter((c): c is KnowledgeCategory => Boolean(c)),
+    [order, categories],
+  );
+
+  const reorderMutation = useMutation({
+    // Последовательно, а не параллельно: PATCH позиций не атомарен,
+    // параллельные запросы могли бы перемешаться на бэке.
+    mutationFn: async (items: { id: number; position: number }[]) => {
+      for (const item of items) {
+        await updateKnowledgeCategory(item.id, { position: item.position }, orgId);
+      }
+    },
+    onSuccess: () => invalidate(),
+    onError: (e) => {
+      notify?.({ type: "error", message: "Не удалось сохранить порядок", description: errMsg(e, "") });
+      // Часть PATCH могла успеть примениться — обновляем список в любом случае.
+      invalidate();
+    },
+  });
+
+  /** Отправляет новые позиции после завершения перетаскивания. */
+  const commitOrder = () => {
+    const changed = order
+      .map((id, idx) => ({ id, position: idx + 1 }))
+      .filter(({ id, position }) => categories.find((c) => c.id === id)?.position !== position);
+    if (changed.length > 0) reorderMutation.mutate(changed);
   };
 
-  const busy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  const busy =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending ||
+    reorderMutation.isPending;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -118,7 +154,7 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
             Разделы общие для статей и видеоуроков. Неактивные скрыты из фильтров,
-            но материалы в них остаются доступны.
+            но материалы в них остаются доступны. Порядок меняется перетаскиванием.
           </Typography>
 
           <Stack direction="row" gap={1}>
@@ -151,34 +187,51 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
             <Alert severity="error">{errMsg(categoriesQuery.error, "Не удалось загрузить разделы")}</Alert>
           )}
 
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Название</TableCell>
-                  <TableCell align="center">Активен</TableCell>
-                  <TableCell align="right" />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {categoriesQuery.isLoading && (
-                  <TableRow>
-                    <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
-                      <CircularProgress size={22} />
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!categoriesQuery.isLoading && categories.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3} align="center" sx={{ py: 3, color: "text.secondary" }}>
-                      Разделов пока нет
-                    </TableCell>
-                  </TableRow>
-                )}
-                {categories.map((category, i) => (
-                  <TableRow key={category.id} hover>
-                    <TableCell sx={{ fontWeight: 500 }}>{category.name}</TableCell>
-                    <TableCell align="center">
+          {categoriesQuery.isLoading && (
+            <Stack alignItems="center" sx={{ py: 3 }}>
+              <CircularProgress size={22} />
+            </Stack>
+          )}
+          {!categoriesQuery.isLoading && categories.length === 0 && (
+            <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
+              Разделов пока нет
+            </Typography>
+          )}
+          {orderedCategories.length > 0 && (
+            <Reorder.Group
+              axis="y"
+              values={order}
+              onReorder={setOrder}
+              style={{ listStyle: "none", padding: 0, margin: 0 }}
+            >
+              {orderedCategories.map((category) => (
+                <Reorder.Item
+                  key={category.id}
+                  value={category.id}
+                  dragListener={!busy}
+                  onDragEnd={commitOrder}
+                  style={{ listStyle: "none" }}
+                >
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    gap={1}
+                    sx={{
+                      p: 1,
+                      mb: 0.75,
+                      borderRadius: "10px",
+                      border: 1,
+                      borderColor: "divider",
+                      bgcolor: "background.paper",
+                      cursor: busy ? "default" : "grab",
+                      "&:active": { cursor: busy ? "default" : "grabbing" },
+                    }}
+                  >
+                    <DragIndicatorOutlined fontSize="small" sx={{ color: "text.disabled" }} />
+                    <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1, minWidth: 0 }}>
+                      {category.name}
+                    </Typography>
+                    <Tooltip title={category.isActive ? "Раздел активен" : "Раздел скрыт"}>
                       <Switch
                         size="small"
                         checked={category.isActive}
@@ -190,44 +243,24 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
                           })
                         }
                       />
-                    </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                      <Tooltip title="Выше">
-                        <span>
-                          <IconButton size="small" disabled={busy || i === 0} onClick={() => move(i, -1)}>
-                            <ArrowUpwardOutlined fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="Ниже">
-                        <span>
-                          <IconButton
-                            size="small"
-                            disabled={busy || i === categories.length - 1}
-                            onClick={() => move(i, 1)}
-                          >
-                            <ArrowDownwardOutlined fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="Удалить">
-                        <span>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            disabled={busy}
-                            onClick={() => setDeleting(category)}
-                          >
-                            <DeleteOutlined fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                    </Tooltip>
+                    <Tooltip title="Удалить">
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          disabled={busy}
+                          onClick={() => setDeleting(category)}
+                        >
+                          <DeleteOutlined fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                </Reorder.Item>
+              ))}
+            </Reorder.Group>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>

@@ -182,16 +182,16 @@ export const PERMISSIONS = {
   // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
   ACHIEVEMENTS_VIEW: 'achievements.view',
 
-  // Документы организации (контракт: MamaDoc/backend_ticket_documents_module.md)
+  // Документы организации (контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_documents_module.md)
   DOCUMENTS_VIEW: 'documents.view',
   DOCUMENTS_MANAGE: 'documents.manage',
 
-  // Уборка (контракт: MamaDoc/backend_ticket_cleaning_module.md)
+  // Уборка (контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_cleaning_module.md)
   CLEANING_REPORT: 'cleaning.report',
   CLEANING_VIEW: 'cleaning.view',
   CLEANING_MANAGE: 'cleaning.manage',
 
-  // База знаний (контракт: MamaDoc/backend_ticket_knowledge_module.md)
+  // База знаний (контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md)
   KNOWLEDGE_VIEW: 'knowledge.view',
   KNOWLEDGE_MANAGE: 'knowledge.manage',
 } as const;

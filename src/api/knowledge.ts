@@ -1,11 +1,12 @@
 import { apiRequest } from "./client";
+import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
  * Модуль «База знаний» — статьи (rich-text, TipTap → HTML) и видеоуроки
  * (только ссылки на YouTube, файлы не храним). Знания общие на организацию,
  * скоупа по филиалам нет. Статьи редактирует только админ (knowledge.manage).
  *
- * Контракт: MamaDoc/backend_ticket_knowledge_module.md — НЕ менять без
+ * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md — НЕ менять без
  * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
  * на моках (KNOWLEDGE_USE_MOCKS = true); после деплоя бэка выключить флаг и
  * вернуть can-гейты (сайдбар, App.tsx), как делали с tasks/achievements.
@@ -108,12 +109,6 @@ export const youtubeEmbedUrl = (videoId: string): string =>
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const MOCK_LATENCY_MS = 250;
-
-function mockDelay<T>(value: T): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), MOCK_LATENCY_MS));
-}
-
 let mockSeq = 800;
 
 const mockCategories: KnowledgeCategory[] = [
@@ -122,7 +117,7 @@ const mockCategories: KnowledgeCategory[] = [
   { id: 3, name: "Архив", position: 3, isActive: false },
 ];
 
-interface MockArticle extends KnowledgeArticle {}
+type MockArticle = KnowledgeArticle;
 
 const mockArticles: MockArticle[] = [
   {
@@ -192,14 +187,9 @@ const categoryName = (id: number | null): string | null =>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function withOrg(path: string, organizationId?: number): string {
-  if (organizationId == null) return path;
-  const sep = path.includes("?") ? "&" : "?";
-  return `${path}${sep}organizationId=${organizationId}`;
-}
-
 const stripListItem = (a: MockArticle): KnowledgeArticleListItem => {
-  const { content: _content, ...rest } = a;
+  const { content, ...rest } = a;
+  void content; // content намеренно отбрасывается — форма списка без тела статьи
   return rest;
 };
 
@@ -290,15 +280,7 @@ export function getKnowledgeArticles(
     }
     if (filters.isPublished != null) list = list.filter((a) => a.isPublished === filters.isPublished);
     list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    const page = filters.page ?? 1;
-    const pageSize = filters.pageSize ?? 20;
-    const start = (page - 1) * pageSize;
-    return mockDelay({
-      results: list.slice(start, start + pageSize).map(stripListItem),
-      count: list.length,
-      next: start + pageSize < list.length ? "mock" : null,
-      previous: page > 1 ? "mock" : null,
-    });
+    return mockDelay(paginate(list.map(stripListItem), filters.page, filters.pageSize));
   }
   const q = new URLSearchParams();
   if (filters.category != null) q.set("category", String(filters.category));

@@ -166,7 +166,7 @@ const CleaningSettingsPage: React.FC = () => {
 
   // ── Ставка ────────────────────────────────────────────────────────────────
   const settingsQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.settings,
+    queryKey: djangoQueryKeys.cleaning.settings(orgId),
     queryFn: ({ signal }) => getCleaningSettings(orgId, signal),
   });
 

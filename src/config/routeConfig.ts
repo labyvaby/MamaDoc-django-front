@@ -4,6 +4,12 @@ import { PERMISSIONS } from '../types/rbac';
 /**
  * Конфигурация маршрутов с правами доступа
  * Определяет, какие роли и разрешения требуются для каждого маршрута
+ *
+ * ⚠ СПРАВОЧНЫЙ ФАЙЛ: сейчас ни ROUTE_PERMISSIONS, ни canAccessRoute нигде
+ * не подключены — реальное принуждение прав живёт в App.tsx через
+ * <RequirePermission> / <RequireModule>. Матрица здесь поддерживается как
+ * документация (на неё ссылается CLAUDE.md); при изменении гейтов в App.tsx
+ * обновляйте и её. Не полагайтесь на этот файл как на защиту.
  */
 
 export interface RoutePermissionConfig {
@@ -88,10 +94,19 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
       PERMISSIONS.CLEANING_MANAGE,
     ],
   },
+  // Настройки уборки (зоны, ставка) — только manage
+  {
+    path: '/settings/cleaning',
+    requiredPermissions: [PERMISSIONS.CLEANING_MANAGE],
+  },
 
-  // База знаний
+  // База знаний (страница статьи /knowledge/:articleId — те же права)
   {
     path: '/knowledge',
+    requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
+  },
+  {
+    path: '/knowledge/:articleId',
     requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
   },
 ];

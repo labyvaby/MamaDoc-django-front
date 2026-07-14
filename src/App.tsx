@@ -38,6 +38,7 @@ import { PageCacheProvider } from "./contexts/page-cache-context";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { ProtectedRoute } from "./components/rbac/ProtectedRoute";
 import { RequirePermission } from "./components/rbac/RequirePermission";
+import { RequireModule } from "./components/rbac/RequireModule";
 import { CallNotification } from "./components/CallNotification";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
@@ -90,6 +91,7 @@ const DocumentsPage = lazy(() => import("./pages/documents"));
 const CleaningPage = lazy(() => import("./pages/cleaning"));
 const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSettingsPage"));
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
+const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -1034,45 +1036,58 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Документы организации: на моках без RequirePermission
-                                (права documents.* появятся с бэком) — TODO вернуть
-                                гейт при интеграции, как делали с tasks/achievements. */}
+                            {/* Модули на моках (documents/cleaning/knowledge):
+                                RequireModule пускает всех в демо-режиме и начнёт
+                                требовать права автоматически после выключения
+                                *_USE_MOCKS — см. useModuleGate. */}
                             <Route
                               path="documents"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DocumentsPage />
-                                </Suspense>
+                                <RequireModule module="documents">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DocumentsPage />
+                                  </Suspense>
+                                </RequireModule>
                               }
                             />
-                            {/* Уборка: на моках без RequirePermission (права
-                                cleaning.* появятся с бэком) — TODO вернуть гейт
-                                при интеграции, как делали с tasks/achievements. */}
                             <Route
                               path="cleaning"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <CleaningPage />
-                                </Suspense>
+                                <RequireModule module="cleaning">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <CleaningPage />
+                                  </Suspense>
+                                </RequireModule>
                               }
                             />
                             <Route
                               path="settings/cleaning"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <CleaningSettingsPage />
-                                </Suspense>
+                                <RequireModule module="cleaning" permissions={["cleaning.manage"]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <CleaningSettingsPage />
+                                  </Suspense>
+                                </RequireModule>
                               }
                             />
-                            {/* База знаний: на моках без RequirePermission (права
-                                knowledge.* появятся с бэком) — TODO вернуть гейт
-                                при интеграции, как делали с tasks/achievements. */}
                             <Route
                               path="knowledge"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <KnowledgePage />
-                                </Suspense>
+                                <RequireModule module="knowledge">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <KnowledgePage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            <Route
+                              path="knowledge/:articleId"
+                              element={
+                                <RequireModule module="knowledge">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <KnowledgeArticlePage />
+                                  </Suspense>
+                                </RequireModule>
                               }
                             />
                             <Route

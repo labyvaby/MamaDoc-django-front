@@ -1,11 +1,12 @@
 import { apiRequest } from "./client";
+import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
  * Модуль «Уборка» — учёт уборок с фотоотчётом и выплатой в ЗП.
  * Уборщица отмечает уборку зоны с обязательными фото, админ подтверждает
  * или отклоняет; в ЗП попадает только подтверждённое (ставка × количество).
  *
- * Контракт: MamaDoc/backend_ticket_cleaning_module.md — НЕ менять без
+ * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_cleaning_module.md — НЕ менять без
  * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
  * на моках (CLEANING_USE_MOCKS = true); после деплоя бэка выключить флаг и
  * вернуть can-гейты (сайдбар, App.tsx, SettingsLayout), как делали с tasks.
@@ -90,12 +91,6 @@ export const CLEANING_PHOTO_MAX_SIZE_MB = 10;
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const MOCK_LATENCY_MS = 250;
-
-function mockDelay<T>(value: T): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), MOCK_LATENCY_MS));
-}
-
 let mockSeq = 500;
 
 /** Плейсхолдер-фото для демо-данных: инлайновый SVG, без внешних запросов. */
@@ -166,14 +161,6 @@ const mockRecords: CleaningRecord[] = [
 ];
 
 let mockRate = "150.00";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function withOrg(path: string, organizationId?: number): string {
-  if (organizationId == null) return path;
-  const sep = path.includes("?") ? "&" : "?";
-  return `${path}${sep}organizationId=${organizationId}`;
-}
 
 // ── Зоны ──────────────────────────────────────────────────────────────────────
 
@@ -262,15 +249,7 @@ export function getCleaningRecords(
     if (filters.zone != null) list = list.filter((r) => r.zoneId === filters.zone);
     if (filters.status) list = list.filter((r) => r.status === filters.status);
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const page = filters.page ?? 1;
-    const pageSize = filters.pageSize ?? 20;
-    const start = (page - 1) * pageSize;
-    return mockDelay({
-      results: list.slice(start, start + pageSize),
-      count: list.length,
-      next: start + pageSize < list.length ? "mock" : null,
-      previous: page > 1 ? "mock" : null,
-    });
+    return mockDelay(paginate(list, filters.page, filters.pageSize));
   }
   const q = new URLSearchParams();
   if (filters.dateFrom) q.set("date_from", filters.dateFrom);
