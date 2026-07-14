@@ -670,13 +670,18 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           : displayStatus;
 
                       const statusCfg = getStatusConfig(displayStatus);
+                      // 100% скидка: оплат нет (paidTotal=0), но чек закрыт —
+                      // показываем чип «Со скидкой» вместо статуса «Ожидаем»,
+                      // иначе приём выглядит неоплаченным.
+                      const isDiscounted = a.paymentStatus === "discounted" && !hasPaid;
                       // Прячем статус-чип, когда состояние и так понятно по
-                      // другим меткам: завершён, оплачен/частично, или есть
-                      // заключение (его передаёт иконка принтера).
+                      // другим меткам: завершён, оплачен/частично/скидка, или
+                      // есть заключение (его передаёт иконка принтера).
                       const hideStatusChip =
                         a.status === "completed" ||
                         a.paymentStatus === "paid" ||
                         a.paymentStatus === "partial" ||
+                        isDiscounted ||
                         hasConclusion;
 
                       return (
@@ -765,6 +770,17 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     }
                                     size="small"
                                     sx={getStatusChipSx(paymentStyleStatus)}
+                                  />
+                                )}
+
+                                {/* 100% скидка: оплат нет, но приём закрыт —
+                                    фиолетовый чип «Со скидкой» (как в истории
+                                    пациента и реестре «Все приёмы»). */}
+                                {isDiscounted && (
+                                  <Chip
+                                    label="Со скидкой"
+                                    size="small"
+                                    sx={getStatusChipSx("Со скидкой")}
                                   />
                                 )}
 
