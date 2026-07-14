@@ -420,7 +420,10 @@ const DjangoExpensesPage: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const canView = useCan(["finance.view", "finance.expense.view"]);
-  const canManage = useCan("finance.expense.manage");
+  // Управление расходами: узкое право ИЛИ общее finance.manage — на бэке
+  // (проверено по /api/rbac/roles/) registrator/cashier имеют finance.manage
+  // без finance.expense.manage, а в старой версии кнопка у них была.
+  const canManage = useCan(["finance.expense.manage", "finance.manage"]);
 
   const {
     isSuperAdmin,
