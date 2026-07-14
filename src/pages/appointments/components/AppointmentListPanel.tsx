@@ -37,7 +37,6 @@ import {
   getStatusConfig,
   getStatusChipSx,
   normalizeDjangoStatus,
-  DJANGO_STATUS_LABEL,
 } from "../../../config/appointmentStatuses";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -223,13 +222,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   error,
   date,
   selectedId,
-  canUpdate: _canUpdate,
   canManageFinance,
   canViewFinance,
   notificationsMap,
   onSelect,
-  onEdit: _onEdit,
-  onPay: _onPay,
   onAddSlot,
   hideDoctorStrip = false,
   doctorFilter,
@@ -338,14 +334,27 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const renderItems: RenderItem[] = [];
       const addedGapKeys = new Set<string>();
 
+      // Интервалы активных (неотменённых) приёмов группы: слот отменённого
+      // приёма считается занятым, если его начало попадает в такой интервал
+      // (на это время уже записан другой пациент — окна нет).
+      const activeRanges = sorted
+        .filter((a) => !isCancelledStatus(a.status))
+        .map((a) => {
+          const from = dayjs(a.scheduledAt).valueOf();
+          return { from, to: from + DEFAULT_DURATION_MINS * 60 * 1000 };
+        });
+      const isCoveredByActive = (t: number) =>
+        activeRanges.some((r) => t >= r.from && t < r.to);
+
       for (let i = 0; i < sorted.length; i++) {
         const current = sorted[i];
         const start = dayjs(current.scheduledAt);
         const isCancelled = isCancelledStatus(current.status);
 
-        // Cancelled future appointment → show gap slot before it
-        if (isCancelled && start.isAfter(dayjs())) {
-          const key = `gap-can-${current.id}`;
+        // Cancelled future appointment → show gap slot before it,
+        // если на это время нет активной записи (одна плашка на слот)
+        if (isCancelled && start.isAfter(dayjs()) && !isCoveredByActive(start.valueOf())) {
+          const key = `gap-can-${start.valueOf()}`;
           if (!addedGapKeys.has(key)) {
             addedGapKeys.add(key);
             renderItems.push({
@@ -598,7 +607,6 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       // используем paymentStatus как proxy
                       const paidTotal = Number(a.paidTotal ?? 0);
                       const totalAmount = Number(a.totalAmount ?? 0);
-                      const debt = Number(a.debt ?? 0);
                       const hasPaid = paidTotal > 0;
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
