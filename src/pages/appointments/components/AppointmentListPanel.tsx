@@ -645,6 +645,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       // используем paymentStatus как proxy
                       const paidTotal = Number(a.paidTotal ?? 0);
                       const totalAmount = Number(a.totalAmount ?? 0);
+                      const discountAmount = Number(a.discountAmount ?? 0);
                       const hasPaid = paidTotal > 0;
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
@@ -773,12 +774,13 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   />
                                 )}
 
-                                {/* 100% скидка: оплат нет, но приём закрыт —
-                                    фиолетовый чип «Со скидкой» (как в истории
-                                    пациента и реестре «Все приёмы»). */}
+                                {/* Полная скидка: оплат нет, но приём закрыт —
+                                    фиолетовый чип (статус discounted на бэке
+                                    ставится только при остатке 0 без оплат,
+                                    т.е. это всегда скидка 100%). */}
                                 {isDiscounted && (
                                   <Chip
-                                    label="Со скидкой"
+                                    label="Скидка 100%"
                                     size="small"
                                     sx={getStatusChipSx("Со скидкой")}
                                   />
@@ -850,6 +852,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   sx={{ mt: 0.5 }}
                                 >
                                   Итого: {formatKGS(totalAmount)}
+                                  {/* Скидка видна и при частичной (чек оплачен
+                                      с дисконтом — чип этого не показывает). */}
+                                  {discountAmount > 0 &&
+                                    ` · скидка ${formatKGS(discountAmount)}`}
                                 </Typography>
                               )}
 
