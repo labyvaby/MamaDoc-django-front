@@ -37,7 +37,6 @@ import {
   getStatusConfig,
   getStatusChipSx,
   normalizeDjangoStatus,
-  DJANGO_STATUS_LABEL,
 } from "../../../config/appointmentStatuses";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,6 +75,17 @@ interface AppointmentListPanelProps {
    * врач+медсестра группировался под медсестрой, а групп врачей не было.
    */
   groupEmployeeIds?: Set<number> | null;
+  /**
+   * Смены сотрудников на выбранную дату (из модуля расписания): плашки
+   * «Есть окно на HH:mm» показываются только внутри рабочих часов исполнителя.
+   * `scheduledIds` — сотрудники, у которых на эту дату есть активное правило
+   * расписания; для остальных (расписание не ведётся) ограничение не действует.
+   * null/undefined — расписание недоступно, поведение как раньше.
+   */
+  dayShifts?: {
+    scheduledIds: Set<number>;
+    segments: Map<number, { start: string; end: string }[]>;
+  } | null;
 }
 
 type GapSlot = {
@@ -223,20 +233,17 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   error,
   date,
   selectedId,
-  canUpdate: _canUpdate,
   // Права на финансы больше не влияют на бейджи оплаты (факт оплаты — общий
-  // операционный статус); пропсы сохранены в контракте для деталей/действий.
-  canManageFinance: _canManageFinance,
-  canViewFinance: _canViewFinance,
+  // операционный статус); canUpdate/canManageFinance/canViewFinance сохранены
+  // в контракте пропсов для деталей/действий, но панелью не используются.
   notificationsMap,
   onSelect,
-  onEdit: _onEdit,
-  onPay: _onPay,
   onAddSlot,
   hideDoctorStrip = false,
   doctorFilter,
   onDoctorFilterChange,
   groupEmployeeIds = null,
+  dayShifts = null,
 }) => {
   const theme = useTheme();
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
@@ -340,14 +347,53 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const renderItems: RenderItem[] = [];
       const addedGapKeys = new Set<string>();
 
+      // Интервалы активных (неотменённых) приёмов группы: слот отменённого
+      // приёма считается занятым, если его начало попадает в такой интервал
+      // (на это время уже записан другой пациент — окна нет).
+      const activeRanges = sorted
+        .filter((a) => !isCancelledStatus(a.status))
+        .map((a) => {
+          const from = dayjs(a.scheduledAt).valueOf();
+          return { from, to: from + DEFAULT_DURATION_MINS * 60 * 1000 };
+        });
+      const isCoveredByActive = (t: number) =>
+        activeRanges.some((r) => t >= r.from && t < r.to);
+
+      // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
+      // (например, «Есть окно на 16:00» при графике до 16:00). Если расписание
+      // на сотрудника не ведётся (нет активного правила на дату) — не ограничиваем.
+      let shiftSegments: { start: string; end: string }[] | null = null;
+      if (dayShifts) {
+        let empId: number | null = null;
+        outer: for (const a of sorted) {
+          for (const sl of a.services) {
+            if (sl.employee && sl.employee.fullName === docName) {
+              empId = sl.employee.id;
+              break outer;
+            }
+          }
+        }
+        if (empId != null && dayShifts.scheduledIds.has(empId)) {
+          shiftSegments = dayShifts.segments.get(empId) ?? [];
+        }
+      }
+      const slotInShift = (d: dayjs.Dayjs) => {
+        if (!shiftSegments) return true;
+        // "HH:mm" сравниваются лексикографически (= хронологически);
+        // начало слота должно быть строго раньше конца смены.
+        const hm = d.format("HH:mm");
+        return shiftSegments.some((s) => hm >= s.start && hm < s.end);
+      };
+
       for (let i = 0; i < sorted.length; i++) {
         const current = sorted[i];
         const start = dayjs(current.scheduledAt);
         const isCancelled = isCancelledStatus(current.status);
 
-        // Cancelled future appointment → show gap slot before it
-        if (isCancelled && start.isAfter(dayjs())) {
-          const key = `gap-can-${current.id}`;
+        // Cancelled future appointment → show gap slot before it,
+        // если на это время нет активной записи (одна плашка на слот)
+        if (isCancelled && start.isAfter(dayjs()) && !isCoveredByActive(start.valueOf()) && slotInShift(start)) {
+          const key = `gap-can-${start.valueOf()}`;
           if (!addedGapKeys.has(key)) {
             addedGapKeys.add(key);
             renderItems.push({
@@ -366,7 +412,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           if (!isCancelledStatus(next.status)) {
             const currentEnd = start.add(DEFAULT_DURATION_MINS, "minute");
             const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
-            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs())) {
+            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
               const key = `gap-${current.id}-${next.id}`;
               renderItems.push({
                 isGap: true,
@@ -378,7 +424,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           }
         } else if (!isCancelled && i === sorted.length - 1) {
           const currentEnd = start.add(DEFAULT_DURATION_MINS, "minute");
-          if (currentEnd.isAfter(dayjs())) {
+          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
             renderItems.push({
               isGap: true,
               id: `gap-after-${current.id}`,
@@ -393,7 +439,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     });
 
     return result;
-  }, [rawGroups, onAddSlot]);
+  }, [rawGroups, onAddSlot, dayShifts]);
 
   // ── Drag-scroll for doctor strip ──────────────────────────────────────────
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -599,7 +645,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       // используем paymentStatus как proxy
                       const paidTotal = Number(a.paidTotal ?? 0);
                       const totalAmount = Number(a.totalAmount ?? 0);
-                      const debt = Number(a.debt ?? 0);
+                      const discountAmount = Number(a.discountAmount ?? 0);
                       const hasPaid = paidTotal > 0;
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
@@ -625,13 +671,18 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           : displayStatus;
 
                       const statusCfg = getStatusConfig(displayStatus);
+                      // 100% скидка: оплат нет (paidTotal=0), но чек закрыт —
+                      // показываем чип «Со скидкой» вместо статуса «Ожидаем»,
+                      // иначе приём выглядит неоплаченным.
+                      const isDiscounted = a.paymentStatus === "discounted" && !hasPaid;
                       // Прячем статус-чип, когда состояние и так понятно по
-                      // другим меткам: завершён, оплачен/частично, или есть
-                      // заключение (его передаёт иконка принтера).
+                      // другим меткам: завершён, оплачен/частично/скидка, или
+                      // есть заключение (его передаёт иконка принтера).
                       const hideStatusChip =
                         a.status === "completed" ||
                         a.paymentStatus === "paid" ||
                         a.paymentStatus === "partial" ||
+                        isDiscounted ||
                         hasConclusion;
 
                       return (
@@ -723,6 +774,18 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   />
                                 )}
 
+                                {/* Полная скидка: оплат нет, но приём закрыт —
+                                    фиолетовый чип (статус discounted на бэке
+                                    ставится только при остатке 0 без оплат,
+                                    т.е. это всегда скидка 100%). */}
+                                {isDiscounted && (
+                                  <Chip
+                                    label="Скидка 100%"
+                                    size="small"
+                                    sx={getStatusChipSx("Со скидкой")}
+                                  />
+                                )}
+
                                 {/* Бейдж «Страховка» — визит (со)оплачен страховой
                                     компанией; синий тинт, отличим от зелёного
                                     чипа оплаты в обеих темах. */}
@@ -789,6 +852,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   sx={{ mt: 0.5 }}
                                 >
                                   Итого: {formatKGS(totalAmount)}
+                                  {/* Скидка видна и при частичной (чек оплачен
+                                      с дисконтом — чип этого не показывает). */}
+                                  {discountAmount > 0 &&
+                                    ` · скидка ${formatKGS(discountAmount)}`}
                                 </Typography>
                               )}
 

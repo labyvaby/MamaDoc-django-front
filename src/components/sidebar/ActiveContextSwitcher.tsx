@@ -133,11 +133,11 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
             >
               {switching ? (
                 <CircularProgress size={16} />
-              ) : activeOrganization?.logoUrl ? (
+              ) : activeBranch?.logoUrl ?? activeOrganization?.logoUrl ? (
                 <Avatar
                   variant="rounded"
-                  src={activeOrganization.logoUrl}
-                  alt={activeOrganization.name}
+                  src={activeBranch?.logoUrl ?? activeOrganization?.logoUrl ?? undefined}
+                  alt={activeBranch?.name ?? activeOrganization?.name}
                   sx={{ width: 20, height: 20 }}
                 />
               ) : (
@@ -194,9 +194,17 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
       }}
       onClick={handleOpen}
     >
-      {/* Логотип организации главнее типовой иконки; в филиальном контексте
-          лидирует иконка филиала, логотип уходит в подпись организации ниже. */}
-      {!branchLabel && activeOrganization?.logoUrl ? (
+      {/* Логотип главнее типовой иконки: в филиальном контексте лидирует
+          логотип филиала (если загружен), логотип организации уходит в
+          подпись ниже; без филиала лидирует логотип организации. */}
+      {branchLabel && activeBranch?.logoUrl ? (
+        <Avatar
+          variant="rounded"
+          src={activeBranch.logoUrl}
+          alt={branchLabel}
+          sx={{ width: 24, height: 24 }}
+        />
+      ) : !branchLabel && activeOrganization?.logoUrl ? (
         <Avatar
           variant="rounded"
           src={activeOrganization.logoUrl}
@@ -372,10 +380,19 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                     onClick={() => onSelect(m, b)}
                     selected={isActive}
                   >
-                    <StoreOutlined
-                      fontSize="small"
-                      sx={{ mr: 1, color: "text.secondary" }}
-                    />
+                    {b.logoUrl ? (
+                      <Avatar
+                        variant="rounded"
+                        src={b.logoUrl}
+                        alt={b.name}
+                        sx={{ width: 20, height: 20, mr: 1 }}
+                      />
+                    ) : (
+                      <StoreOutlined
+                        fontSize="small"
+                        sx={{ mr: 1, color: "text.secondary" }}
+                      />
+                    )}
                     <ListItemText
                       primary={b.name}
                       primaryTypographyProps={{ variant: "body2" }}

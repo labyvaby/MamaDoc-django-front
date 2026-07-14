@@ -6,6 +6,9 @@ import {
   Divider,
   Drawer,
   IconButton,
+  List,
+  ListItem,
+  ListItemText,
   Skeleton,
   Stack,
   Typography,
@@ -14,10 +17,17 @@ import CloseIcon from "@mui/icons-material/Close";
 import LocalPhoneOutlinedIcon from "@mui/icons-material/LocalPhoneOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
 import { getPatient, type DjangoPatient } from "../../api/patients";
+import { getAppointments, type DjangoAppointment } from "../../api/appointments";
+import {
+  getStatusConfig,
+  getStatusChipSx,
+  normalizeDjangoStatus,
+} from "../../config/appointmentStatuses";
 
 dayjs.locale("ru");
 
@@ -54,13 +64,33 @@ function ageLabel(birthDate: string | null): string {
   return `${months} ${plural(months, ["месяц", "месяца", "месяцев"])}`;
 }
 
+function doctorsLabel(appt: DjangoAppointment): string {
+  const names = Array.from(
+    new Set(appt.services.filter((s) => s.employee).map((s) => s.employee!.fullName)),
+  );
+  if (names.length === 0) return "—";
+  if (names.length === 1) return names[0];
+  return `${names.length} исполнит.`;
+}
+
+function servicesLabel(appt: DjangoAppointment): string {
+  if (appt.services.length === 0) return "—";
+  if (appt.services.length === 1) return appt.services[0].service?.name ?? "—";
+  return `${appt.services.length} услуг`;
+}
+
+const RECENT_LIMIT = 5;
+
 const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientId }) => {
   const [loading, setLoading] = React.useState(false);
   const [patient, setPatient] = React.useState<DjangoPatient | null>(null);
+  const [recent, setRecent] = React.useState<DjangoAppointment[]>([]);
+  const [recentLoading, setRecentLoading] = React.useState(false);
 
   React.useEffect(() => {
     if (!patientId || !open) {
       setPatient(null);
+      setRecent([]);
       return;
     }
     let active = true;
@@ -75,6 +105,21 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
       .finally(() => {
         if (active) setLoading(false);
       });
+
+    setRecentLoading(true);
+    getAppointments({ patientId })
+      .then((rows) => {
+        if (!active) return;
+        const sorted = [...rows].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
+        setRecent(sorted.slice(0, RECENT_LIMIT));
+      })
+      .catch(() => {
+        if (active) setRecent([]);
+      })
+      .finally(() => {
+        if (active) setRecentLoading(false);
+      });
+
     return () => {
       active = false;
     };
@@ -205,6 +250,74 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                 </Stack>
               )}
             </Stack>
+
+            <Divider />
+
+            {/* Последние приёмы */}
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                <MedicalServicesOutlinedIcon fontSize="small" color="primary" />
+                <Typography variant="subtitle2" fontWeight={600}>
+                  Последние приёмы
+                </Typography>
+              </Stack>
+
+              {recentLoading ? (
+                <Stack spacing={1}>
+                  <Skeleton variant="rectangular" height={56} />
+                  <Skeleton variant="rectangular" height={56} />
+                </Stack>
+              ) : recent.length > 0 ? (
+                <List disablePadding>
+                  {recent.map((appt) => {
+                    const displayStatus = normalizeDjangoStatus(appt.status);
+                    const statusCfg = getStatusConfig(displayStatus);
+                    return (
+                      <ListItem
+                        key={appt.id}
+                        sx={{
+                          px: 0,
+                          py: 1.5,
+                          borderBottom: 1,
+                          borderColor: "divider",
+                          "&:last-child": { borderBottom: 0 },
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                              <Typography variant="body2" fontWeight={500}>
+                                {dayjs(appt.scheduledAt).format("D MMMM YYYY, HH:mm")}
+                              </Typography>
+                              <Chip
+                                label={statusCfg.label}
+                                icon={statusCfg.icon}
+                                size="small"
+                                sx={{ ...getStatusChipSx(displayStatus), height: 20 }}
+                              />
+                            </Stack>
+                          }
+                          secondary={
+                            <>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                Врач: {doctorsLabel(appt)}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                Услуги: {servicesLabel(appt)}
+                              </Typography>
+                            </>
+                          }
+                        />
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                  Нет записей о приёмах
+                </Typography>
+              )}
+            </Box>
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>

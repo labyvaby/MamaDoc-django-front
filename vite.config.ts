@@ -114,6 +114,11 @@ export default defineConfig(({ mode }) => {
         '@mui/material',
         '@refinedev/core',
         '@refinedev/mui',
+        // Транзитивная зависимость @refinedev/mui, импортируется напрямую
+        // (useSnackbar в страницах настроек). Без пребандла в dev получаются
+        // два экземпляра модуля: провайдер Refine из одного, хук из другого —
+        // useSnackbar() возвращает undefined и страница падает.
+        'notistack',
         'pdfmake/build/pdfmake',
       ],
     },

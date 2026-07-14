@@ -135,3 +135,13 @@ export async function apiRequest<T>(
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
+
+/**
+ * Человекочитаемое сообщение из любого исключения — для catch-блоков страниц.
+ * ApiError уже несёт готовое сообщение (см. apiRequest → extractErrorMessage),
+ * поэтому достаточно err.message.
+ */
+export function getErrorMessage(err: unknown, fallback = "Неизвестная ошибка"): string {
+  if (err instanceof Error) return err.message || fallback;
+  return fallback;
+}

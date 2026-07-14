@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Chip,
@@ -19,16 +20,20 @@ import { alpha, useTheme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import MapOutlined from "@mui/icons-material/MapOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import { useSnackbar } from "notistack";
 
 import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
+import { retryAuth } from "../../hooks/usePermissions";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
 import {
   createBranch,
   updateBranch,
+  uploadBranchLogo,
+  deleteBranchLogo,
   type DjangoBranch,
 } from "../../api/organization";
 
@@ -134,6 +139,13 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   const [error, setError] = React.useState<string | null>(null);
   const [touched, setTouched] = React.useState(false);
 
+  // Логотип живёт отдельно от формы: загрузка/удаление уходят на бэк сразу
+  // (PUT/DELETE .../logo/), поэтому в isDirty/handleSubmit не участвуют.
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = React.useState(false);
+  const [logoError, setLogoError] = React.useState<string | null>(null);
+  const logoInputRef = React.useRef<HTMLInputElement>(null);
+
   const nameRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -141,6 +153,9 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     setError(null);
     setBusy(false);
     setTouched(false);
+    setLogoUrl(editing?.logoUrl ?? null);
+    setLogoBusy(false);
+    setLogoError(null);
     if (editing) {
       setName(editing.name);
       setAddress(editing.address);
@@ -258,6 +273,51 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     }
   };
 
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Сбрасываем value, иначе повторный выбор того же файла не вызовет onChange.
+    e.target.value = "";
+    if (!file || !editing) return;
+    if (!file.type.startsWith("image/")) {
+      setLogoError("Можно загрузить только изображение (PNG, JPG, SVG, WebP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoError("Файл слишком большой — максимум 5 МБ.");
+      return;
+    }
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const updated = await uploadBranchLogo(editing.id, file);
+      setLogoUrl(updated.logoUrl);
+      onSaved(updated);
+      // Логотип филиала показывается в сайдбаре и переключателе контекста —
+      // перечитываем /auth/me/, чтобы он обновился без перезагрузки страницы.
+      retryAuth();
+    } catch (err) {
+      setLogoError(extractErrorMessage(err));
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleLogoDelete = async () => {
+    if (!editing || !logoUrl) return;
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      await deleteBranchLogo(editing.id);
+      setLogoUrl(null);
+      onSaved({ ...editing, logoUrl: null });
+      retryAuth();
+    } catch (err) {
+      setLogoError(extractErrorMessage(err));
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
   const content = (
     <>
       {/* Header */}
@@ -318,6 +378,76 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
         }}
       >
         <Stack spacing={2.5}>
+          {/* Логотип — только при редактировании: файл уходит на бэк сразу,
+              новому филиалу сначала нужен id. */}
+          {isEdit && (
+            <Stack spacing={0.5}>
+              <FieldLabel>Логотип</FieldLabel>
+              <Stack direction="row" alignItems="center" gap={2}>
+                <Avatar
+                  variant="rounded"
+                  src={logoUrl ?? undefined}
+                  alt={editing!.name}
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    bgcolor: "background.default",
+                    color: "text.secondary",
+                  }}
+                >
+                  <StoreOutlined />
+                </Avatar>
+                <Box>
+                  <Stack direction="row" gap={1}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={
+                        logoBusy ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <FileUploadOutlined />
+                        )
+                      }
+                      disabled={logoBusy || busy}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      {logoUrl ? "Заменить" : "Загрузить"}
+                    </Button>
+                    {logoUrl && (
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteOutlineOutlined />}
+                        disabled={logoBusy || busy}
+                        onClick={handleLogoDelete}
+                      >
+                        Удалить
+                      </Button>
+                    )}
+                  </Stack>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5 }}
+                  >
+                    PNG, JPG, SVG или WebP, до 5 МБ.
+                  </Typography>
+                </Box>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={handleLogoSelect}
+                />
+              </Stack>
+              {logoError && <Alert severity="error">{logoError}</Alert>}
+            </Stack>
+          )}
+
           {/* Название */}
           <Stack spacing={0.5}>
             <FieldLabel counter={`${name.length}/${NAME_MAX}`}>Название *</FieldLabel>

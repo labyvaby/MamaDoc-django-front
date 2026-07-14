@@ -48,6 +48,8 @@ import {
   type HomeDashboard,
 } from "../../api/appointments";
 import { getDjangoEmployees } from "../../api/staff";
+import { getScheduleRules, getScheduleExceptions } from "../../api/scheduling";
+import { computeDayOccurrences } from "../schedule/django/occurrences";
 import { useNotification } from "@refinedev/core";
 import {
   djangoQueryKeys,
@@ -363,6 +365,61 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       });
     },
   });
+
+  // ── Смены на день: «Есть окно…» не должно предлагаться вне графика врача ──
+  // Правила/исключения расписания грузим отдельно от home-агрегата; у части
+  // ролей может не быть доступа к /scheduling/ — тогда деградируем к старому
+  // поведению (окна без ограничения по графику), retry не нужен.
+  const schedOrgId = isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined;
+  const scheduleRulesQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.rules({ employeeId: null, orgId: schedOrgId ?? null }),
+    queryFn: ({ signal }) => getScheduleRules({ organizationId: schedOrgId }, signal),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    retry: false,
+  });
+  const scheduleExceptionsQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.exceptions({
+      dateFrom: dateStr,
+      dateTo: dateStr,
+      orgId: schedOrgId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getScheduleExceptions(
+        { dateFrom: dateStr, dateTo: dateStr, organizationId: schedOrgId },
+        signal,
+      ),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    retry: false,
+  });
+  const dayShifts = React.useMemo(() => {
+    const allRules = scheduleRulesQuery.data;
+    if (!allRules || allRules.length === 0) return null;
+    // Правило другого филиала не даёт окон в текущем (branchId=null — общие).
+    const rules = branchId
+      ? allRules.filter((r) => r.branchId == null || r.branchId === branchId)
+      : allRules;
+    const occurrences = computeDayOccurrences(
+      date,
+      rules,
+      scheduleExceptionsQuery.data ?? [],
+    );
+    const segments = new Map<number, { start: string; end: string }[]>();
+    for (const o of occurrences) {
+      const list = segments.get(o.employeeId) ?? [];
+      list.push({ start: o.startTime, end: o.endTime });
+      segments.set(o.employeeId, list);
+    }
+    // «Расписание ведётся» = есть активное правило, покрывающее эту дату.
+    // Для таких сотрудников окна ограничены сменами (нет смены — нет окон);
+    // сотрудники без правил ведут себя как раньше.
+    const scheduledIds = new Set<number>();
+    for (const r of rules) {
+      if (r.isActive && !date.isBefore(r.dateFrom, "day") && !date.isAfter(r.dateTo, "day")) {
+        scheduledIds.add(r.employeeId);
+      }
+    }
+    return { scheduledIds, segments };
+  }, [scheduleRulesQuery.data, scheduleExceptionsQuery.data, date, branchId]);
 
   // Привилегированный кабинет группируется строго по клиницистам своего типа
   // (врачи / медсёстры), чтобы из совместного приёма не появлялась группа второго
@@ -683,6 +740,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               } : undefined}
               hideDoctorStrip={hideEmployeeStrip}
               groupEmployeeIds={groupEmployeeIds}
+              dayShifts={dayShifts}
             />
           </Box>
 

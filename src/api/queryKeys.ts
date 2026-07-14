@@ -162,6 +162,36 @@ export const djangoQueryKeys = {
     unseen: ["django", "achievements", "unseen"] as const,
   },
 
+  documents: {
+    all: ["django", "documents"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "documents", "list", params] as const,
+  },
+
+  cleaning: {
+    all: ["django", "cleaning"] as const,
+    zones: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "zones", params] as const,
+    records: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "records", params] as const,
+    summary: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "summary", params] as const,
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "cleaning", "settings", organizationId ?? null] as const,
+  },
+
+  knowledge: {
+    all: ["django", "knowledge"] as const,
+    categories: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "categories", params] as const,
+    articles: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "articles", params] as const,
+    article: (articleId: number) =>
+      ["django", "knowledge", "article", articleId] as const,
+    videos: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "videos", params] as const,
+  },
+
   staff: {
     /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
     userNames: ["django", "staff", "userNames"] as const,

@@ -88,7 +88,8 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                     size={38}
                     sx={{
                       border: `2px solid ${employeeColorHex(
-                        employeeColorMap.get(occ.employeeId) ?? 0,
+                        // ?? id — сотрудника может не быть в справочнике (см. resourceRows).
+                        employeeColorMap.get(occ.employeeId) ?? occ.employeeId,
                         theme.palette.mode,
                       )}`,
                     }}

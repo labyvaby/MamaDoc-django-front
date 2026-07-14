@@ -364,6 +364,19 @@ export function getAppTheme(
           ":root": {
             colorScheme: m,
           },
+          // Единое фокус-кольцо для клавиатурной навигации: только :focus-visible,
+          // чтобы не мешать кликам мышью. Цвет — из primary, работает в обеих темах.
+          ":focus-visible": {
+            outline: `2px solid ${alpha(primary, 0.55)}`,
+            outlineOffset: 2,
+            borderRadius: 4,
+          },
+          // У полей ввода MUI своя индикация фокуса (граница OutlinedInput,
+          // underline) — глобальное кольцо на внутреннем input дало бы двойную
+          // обводку.
+          "input:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible": {
+            outline: "none",
+          },
           body: {
             margin: 0,
             overflowX: "hidden",
@@ -439,6 +452,9 @@ export function getAppTheme(
           root: ({ theme }) => ({
             borderRadius: 10,
             minHeight: theme.appLayout.controls.buttonHeight,
+            // Тактильный отклик: лёгкое сжатие при нажатии (без теней и подъёма).
+            transition: "background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease",
+            "&:active": { transform: "scale(0.98)" },
           }),
           containedPrimary: {
             backgroundImage:
@@ -488,6 +504,10 @@ export function getAppTheme(
             borderRadius: 8,
           },
         },
+      },
+      MuiSkeleton: {
+        // Shimmer вместо пульсации — заметно «дороже» выглядит на скелетонах.
+        defaultProps: { animation: "wave" },
       },
       MuiListItemButton: {
         styleOverrides: {

@@ -28,6 +28,7 @@ import { useLocation, useNavigate } from "react-router";
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { AchievementToast } from "./components/achievements/AchievementToast";
+import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { RefreshProvider } from "./contexts/refresh-context";
@@ -37,6 +38,7 @@ import { PageCacheProvider } from "./contexts/page-cache-context";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { ProtectedRoute } from "./components/rbac/ProtectedRoute";
 import { RequirePermission } from "./components/rbac/RequirePermission";
+import { RequireModule } from "./components/rbac/RequireModule";
 import { CallNotification } from "./components/CallNotification";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
@@ -85,6 +87,11 @@ const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
+const DocumentsPage = lazy(() => import("./pages/documents"));
+const CleaningPage = lazy(() => import("./pages/cleaning"));
+const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSettingsPage"));
+const KnowledgePage = lazy(() => import("./pages/knowledge"));
+const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -507,6 +514,8 @@ function App() {
                                 </DjangoContextRemount>
                                 {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
                                 <AchievementToast />
+                                {/* Выбор филиала после логина (флаг ставит login.tsx) */}
+                                <BranchPickerDialog />
                               </ThemedLayout>
                             </MobileSidebarProvider>
                           </RequireAuth>
@@ -1025,6 +1034,60 @@ function App() {
                                     <AchievementsPage />
                                   </Suspense>
                                 </RequirePermission>
+                              }
+                            />
+                            {/* Модули на моках (documents/cleaning/knowledge):
+                                RequireModule пускает всех в демо-режиме и начнёт
+                                требовать права автоматически после выключения
+                                *_USE_MOCKS — см. useModuleGate. */}
+                            <Route
+                              path="documents"
+                              element={
+                                <RequireModule module="documents">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DocumentsPage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            <Route
+                              path="cleaning"
+                              element={
+                                <RequireModule module="cleaning">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <CleaningPage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            <Route
+                              path="settings/cleaning"
+                              element={
+                                <RequireModule module="cleaning" permissions={["cleaning.manage"]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <CleaningSettingsPage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            <Route
+                              path="knowledge"
+                              element={
+                                <RequireModule module="knowledge">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <KnowledgePage />
+                                  </Suspense>
+                                </RequireModule>
+                              }
+                            />
+                            <Route
+                              path="knowledge/:articleId"
+                              element={
+                                <RequireModule module="knowledge">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <KnowledgeArticlePage />
+                                  </Suspense>
+                                </RequireModule>
                               }
                             />
                             <Route

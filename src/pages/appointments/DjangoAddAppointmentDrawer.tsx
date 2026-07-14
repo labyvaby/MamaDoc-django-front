@@ -40,7 +40,11 @@ import { formatKGS } from "../../utility/format";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
-import { createAppointment, parseBackendError } from "../../api/appointments";
+import {
+  createAppointment,
+  getAppointments,
+  parseBackendError,
+} from "../../api/appointments";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import {
@@ -92,6 +96,10 @@ function parseQty(raw: string): number {
   const n = Math.floor(Number(raw));
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
+
+// Статусы, при которых запись пациента считается активной — на такое же время
+// вторая запись почти наверняка дубль (отменённые/завершённые не мешают).
+const ACTIVE_APPT_STATUSES = new Set(["scheduled", "confirmed", "arrived", "in_progress"]);
 
 // Поиск исполнителя по ФИО и специализации («гинеколог» находит врача).
 const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
@@ -177,6 +185,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
+  const [confirmDuplicateOpen, setConfirmDuplicateOpen] = React.useState(false);
   // Чтобы ошибка была видна, даже если пользователь прокрутил вниз к «Сохранить».
   const errorRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -201,6 +210,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       setSaving(false);
       setSaveError(null);
       setConfirmCloseOpen(false);
+      setConfirmDuplicateOpen(false);
       return;
     }
     // Округляем initialDate под шаг тайм-пикера (15 мин): вызывающая сторона
@@ -228,7 +238,13 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         },
       ]);
     }
-  }, [open, initialDate, initialDateExact, initialEmployeeId, initialServiceId]);
+    // Инициализация — только в момент открытия. initialDate у вызывающей
+    // стороны может пересчитываться на каждом ре-рендере (текущее время +
+    // heartbeat каждые 2.5с) — если оставить его в deps, эффект молча
+    // затирает дату, которую пользователь уже ввёл в открытой форме (приём
+    // уходил на другое время, чем показывало поле).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Если зашла медсестра — фиксируем её как исполнителя в пустых строках.
   React.useEffect(() => {
@@ -311,6 +327,30 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     : 0;
   const patientHasDebt = !!balanceQuery.data && patientBalanceNum < 0;
 
+  // ── защита от дублей: активные записи пациента на выбранное время ──────────
+  // Дубли реально случались (пациент записан дважды на один слот): проверяем
+  // существующие записи пациента и предупреждаем до создания.
+  const patientApptsQuery = useQuery({
+    queryKey: djangoQueryKeys.appointments.list({
+      patientId: selectedPatient?.id ?? 0,
+    }),
+    queryFn: ({ signal }) =>
+      getAppointments({ patientId: selectedPatient!.id }, signal),
+    enabled: open && !!selectedPatient && !isBooking,
+    // Короткий staleTime: запись могли только что создать в соседнем окне.
+    staleTime: 15_000,
+    retry: false,
+  });
+  const duplicateAppointments = React.useMemo(() => {
+    if (!selectedPatient || isBooking || !scheduledAt) return [];
+    const target = dayjs(scheduledAt);
+    return (patientApptsQuery.data ?? []).filter(
+      (a) =>
+        ACTIVE_APPT_STATUSES.has(a.status) &&
+        dayjs(a.scheduledAt).isSame(target, "minute"),
+    );
+  }, [patientApptsQuery.data, selectedPatient, isBooking, scheduledAt]);
+
   // ── validation ────────────────────────────────────────────────────────────
   const validRows = serviceRows.filter((r) => r.serviceId !== null && r.employeeId !== null);
   const incompatibleRows = validRows.filter(
@@ -346,12 +386,26 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   }, [validRows, data.services, validProductRows, products]);
 
   // ── submit ────────────────────────────────────────────────────────────────
-  const handleSave = async () => {
+  const handleSave = () => {
+    // Guard от повторного входа: кнопка блокируется через state с задержкой
+    // на ре-рендер, быстрый двойной клик успел бы отправить два POST.
+    if (saving) return;
     setTouched(true);
     // Без активного филиала бэкенд отклонит запрос (branchId обязателен) —
     // не даём отправить форму, предупреждение уже показано сверху.
     if (!activeBranch) return;
     if (!isValid) return;
+    // У пациента уже есть активная запись на это время — создание только
+    // через явное подтверждение (диалог вызовет performSave сам).
+    if (duplicateAppointments.length > 0) {
+      setConfirmDuplicateOpen(true);
+      return;
+    }
+    void performSave();
+  };
+
+  const performSave = async () => {
+    if (saving) return;
     setSaveError(null);
     setSaving(true);
     try {
@@ -654,6 +708,30 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     У пациента задолженность:{" "}
                     {formatKGS(Math.abs(patientBalanceNum))}
+                  </Typography>
+                </Alert>
+              )}
+
+              {!isBooking && duplicateAppointments.length > 0 && (
+                <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    У пациента уже есть запись на это время
+                  </Typography>
+                  {duplicateAppointments.map((a) => {
+                    const line = a.services[0];
+                    const parts = [
+                      dayjs(a.scheduledAt).format("D MMMM, HH:mm"),
+                      line?.employee?.fullName,
+                      line?.service?.name,
+                    ].filter(Boolean);
+                    return (
+                      <Typography key={a.id} variant="body2">
+                        {parts.join(" — ")}
+                      </Typography>
+                    );
+                  })}
+                  <Typography variant="body2" color="text.secondary">
+                    Проверьте, не создаёте ли вы дубль.
                   </Typography>
                 </Alert>
               )}
@@ -1163,6 +1241,36 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           setAddPatientOpen(false);
         }}
       />
+
+      {/* Подтверждение создания при уже существующей записи на это время */}
+      <Dialog open={confirmDuplicateOpen} onClose={() => setConfirmDuplicateOpen(false)}>
+        <DialogTitle>У пациента уже есть запись на это время</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {selectedPatient?.fullName || "Пациент"} уже записан на{" "}
+            {scheduledAt ? dayjs(scheduledAt).format("D MMMM YYYY, HH:mm") : "это время"}
+            {duplicateAppointments[0]?.services[0]?.employee?.fullName
+              ? ` (${duplicateAppointments[0].services[0].employee!.fullName})`
+              : ""}
+            . Создать ещё одну запись на то же время?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDuplicateOpen(false)} autoFocus>
+            Отмена
+          </Button>
+          <Button
+            color="warning"
+            variant="contained"
+            onClick={() => {
+              setConfirmDuplicateOpen(false);
+              void performSave();
+            }}
+          >
+            Всё равно создать
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Подтверждение закрытия при несохранённых данных */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)}>

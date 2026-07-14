@@ -49,11 +49,15 @@ import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
+import { useModuleGate } from "../../hooks/useModuleGate";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
@@ -258,32 +262,35 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   );
 };
 
-// Бренд в шапке сайдбара: логотип активной организации (если загружен в
-// «Настройки → Организация»), иначе — статичный логотип приложения. Название
-// организации рядом не дублируем — оно уже показано в ActiveContextSwitcher.
+// Бренд в шапке сайдбара: логотип активного филиала (если загружен в
+// «Настройки → Филиалы»), иначе логотип организации, иначе — статичный логотип
+// приложения. Название рядом не дублируем — оно уже в ActiveContextSwitcher.
 const SidebarBrand: React.FC<{ height: number }> = ({ height }) => {
-  const { activeOrganization } = usePermissions();
-  const logoUrl = activeOrganization?.logoUrl ?? null;
+  const { activeOrganization, activeBranch } = usePermissions();
+  const logoUrl = activeBranch?.logoUrl ?? activeOrganization?.logoUrl ?? null;
+  const logoAlt = activeBranch?.logoUrl
+    ? activeBranch.name
+    : activeOrganization?.name ?? "Организация";
   const [broken, setBroken] = useState(false);
 
   useEffect(() => {
     setBroken(false);
   }, [logoUrl]);
 
-  const useOrgLogo = !!logoUrl && !broken;
+  const useCustomLogo = !!logoUrl && !broken;
 
   return (
     <Box
       component="img"
-      src={useOrgLogo ? logoUrl : appLogo}
-      alt={useOrgLogo ? activeOrganization?.name ?? "Организация" : "Мама Доктор"}
-      onError={useOrgLogo ? () => setBroken(true) : undefined}
+      src={useCustomLogo ? logoUrl : appLogo}
+      alt={useCustomLogo ? logoAlt : "Мама Доктор"}
+      onError={useCustomLogo ? () => setBroken(true) : undefined}
       sx={{
         height,
         width: "auto",
         maxWidth: height * 6,
         objectFit: "contain",
-        borderRadius: useOrgLogo ? 1 : 0,
+        borderRadius: useCustomLogo ? 1 : 0,
       }}
     />
   );
@@ -361,6 +368,7 @@ const SidebarSecondary: React.FC = () => {
   useWorkShift();
   const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
+  const { moduleGate } = useModuleGate();
   const orgId = useApiOrgId();
   const isNurse = isNurseFunc();
   const isSuper = isSuperAdmin();
@@ -389,12 +397,15 @@ const SidebarSecondary: React.FC = () => {
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
     schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
+    cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
     achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
+    documents: IS_DJANGO_BACKEND && moduleGate("documents"),
+    knowledge: IS_DJANGO_BACKEND && moduleGate("knowledge"),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -429,8 +440,8 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud,
-    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.diagnoses,
+    "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud || can_.cleaning,
+    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.documents || can_.knowledge || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -571,6 +582,11 @@ const SidebarSecondary: React.FC = () => {
           <SidebarSkudItem collapsed={siderCollapsed} />
         )}
 
+        {/* Уборка (Django-mode only, пока на моках) */}
+        {show("my-work") && can_.cleaning && (
+          <SidebarMenuItem to="/cleaning" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />
+        )}
+
         {/* ══════════════════════════════════════════
             ОРГАНИЗАЦИЯ
             ══════════════════════════════════════════ */}
@@ -603,6 +619,16 @@ const SidebarSecondary: React.FC = () => {
         {/* Достижения (Django-mode only, пока на моках) */}
         {show("org") && can_.achievements && (
           <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
+        )}
+
+        {/* Документы организации (Django-mode only, пока на моках) */}
+        {show("org") && can_.documents && (
+          <SidebarMenuItem to="/documents" icon={<FolderOutlined />} label="Документы" collapsed={siderCollapsed} />
+        )}
+
+        {/* База знаний (Django-mode only, пока на моках) */}
+        {show("org") && can_.knowledge && (
+          <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
@@ -780,7 +806,7 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         selected={isActive}
         sx={{
           borderRadius: "10px",
-          my: 0.5,
+          my: 0.25,
           px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           '& .MuiListItemIcon-root': {

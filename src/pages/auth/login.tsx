@@ -26,6 +26,7 @@ import {
   verifyOtp as djangoVerifyOtp,
 } from "../../api";
 import { applyMeResponse, usePermissions } from "../../hooks/usePermissions";
+import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
 import { ApiError } from "../../api/client";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
@@ -380,6 +381,7 @@ const LoginPage: React.FC = () => {
       try {
         const meData = await djangoVerifyOtp(fullPhone, code);
         setRedirecting(true);
+        markBranchPickerPending();
         applyMeResponse(meData);
         navigate(redirectTo, { replace: true });
       } catch (err: unknown) {
@@ -428,6 +430,7 @@ const LoginPage: React.FC = () => {
         // второй GET /auth/me/ не нужен
         const meData = await djangoLogin(normalizedEmail, password);
         setRedirecting(true);
+        markBranchPickerPending();
         applyMeResponse(meData);
         navigate(redirectTo, { replace: true });
         return;

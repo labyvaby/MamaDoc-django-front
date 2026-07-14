@@ -34,6 +34,18 @@ import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { employeeColorHex, useEmployeeColorMap } from "./employeeColors";
+import {
+  HOUR_GUIDES,
+  LANE_H,
+  MAX_LANES,
+  MONTH_CELL_HEAD_H,
+  MONTH_CELL_HEIGHT,
+  hourlyOccupancy,
+  packIntoLanes,
+  timeToLeftPct,
+  type LaneSegment,
+  type PackedLane,
+} from "./monthTimeline";
 import ScheduleDayTimeline from "./ScheduleDayTimeline";
 import ScheduleWeekResourceGrid from "./ScheduleWeekResourceGrid";
 import ScheduleFilters from "./ScheduleFilters";
@@ -42,10 +54,7 @@ import { useScheduleFilters } from "./useScheduleFilters";
 dayjs.extend(isoWeek);
 dayjs.locale("ru");
 
-// ── Геометрия ────────────────────────────────────────────────────────────────
-
-const MONTH_CELL_HEIGHT = 138;
-const MONTH_MAX_EVENTS = 4;
+// ── Геометрия месячной ячейки — вынесена в monthTimeline.ts ──────────────────
 
 /** "09:00" → "9", "09:30" → "9:30", "13:00" → "13". */
 const shortTime = (t: string): string => {
@@ -115,8 +124,14 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     currentEmployeeId,
   );
 
+  /**
+   * Цвет сотрудника. Сотрудника может не быть в справочнике (правила приходят
+   * по всей организации, а /staff/employees/ скоупится по филиалу) — тогда
+   * берём стабильный индекс из его id, иначе все такие смены слились бы в один
+   * цвет палитры.
+   */
   const colorOf = React.useCallback(
-    (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? 0, mode),
+    (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? employeeId, mode),
     [employeeColorMap, mode],
   );
 
@@ -192,6 +207,24 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     return map;
   }, [occurrencesByDate, filterOccurrences]);
 
+  /**
+   * Дорожки и почасовая загрузка месячных ячеек: считаем один раз на изменение
+   * данных/фильтров, а не 42 × packIntoLanes на каждый ререндер компонента.
+   */
+  const monthCellsByDate = React.useMemo(() => {
+    const map = new Map<string, { lanes: PackedLane[]; occupancy: number[]; peak: number }>();
+    if (view !== "month" || isMobile) return map;
+    filteredOccurrencesByDate.forEach((occs, date) => {
+      const occupancy = hourlyOccupancy(occs);
+      map.set(date, {
+        lanes: packIntoLanes(occs),
+        occupancy,
+        peak: occupancy.reduce((m, c) => Math.max(m, c), 0),
+      });
+    });
+    return map;
+  }, [view, isMobile, filteredOccurrencesByDate]);
+
   // Число уникальных сотрудников со сменами в день (реальные данные,
   // без выдумки про «кабинеты» — их в API расписания нет).
   const staffCount = React.useCallback(
@@ -249,55 +282,95 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     );
   };
 
-  // ── Плашка-событие (месяц / список) ─────────────────────────────────────────
-  const EventPill: React.FC<{ occ: DayOccurrence }> = ({ occ }) => {
-    const color = colorOf(occ.employeeId);
-    const isExtra = occ.kind === "extra";
+  // ── Дорожка-«поток»: горизонтальные полосы смен по времени (07:00→22:00) ──────
+  const MonthLane: React.FC<{ segments: LaneSegment[] }> = ({ segments }) => {
+    const tip = [...segments]
+      .sort((a, b) => a.startMin - b.startMin)
+      .map((s) => `${s.occ.employeeName}: ${shortTime(s.occ.startTime)}–${shortTime(s.occ.endTime)}`)
+      .join("  •  ");
     return (
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 0.5,
-          px: 0.75,
-          py: "2px",
-          borderRadius: "4px",
-          borderLeft: `3px solid ${color}`,
-          border: isExtra ? `1.5px dashed ${alpha(theme.palette.success.main, 0.9)}` : undefined,
-          borderLeftColor: color,
-          bgcolor: alpha(color, mode === "dark" ? 0.24 : 0.14),
-          minWidth: 0,
-        }}
-      >
-        <Typography
-          noWrap
-          sx={{ fontSize: "0.72rem", fontWeight: 600, color: "text.primary", flex: 1, minWidth: 0 }}
+      <Tooltip title={tip} arrow placement="top" enterDelay={250}>
+        <Box
+          sx={{
+            position: "relative",
+            height: LANE_H,
+            width: "100%",
+            borderRadius: "4px",
+            bgcolor: "action.hover",
+            overflow: "hidden",
+            flexShrink: 0,
+          }}
         >
-          {surname(occ.employeeName)}
-        </Typography>
-        <Typography sx={{ fontSize: "0.68rem", color: "text.secondary", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-          {timeRange(occ)}
-        </Typography>
-      </Box>
+          {segments.map((s) => {
+            const occ = s.occ;
+            const c = colorOf(occ.employeeId);
+            const isExtra = occ.kind === "extra";
+            const left = timeToLeftPct(s.startMin);
+            const width = Math.max(timeToLeftPct(s.endMin) - left, 3);
+            const emp = employeesById.get(occ.employeeId);
+            return (
+              <Box
+                key={`${occ.kind}_${occ.sourceId}_${s.startMin}`}
+                sx={{
+                  position: "absolute",
+                  left: `${left}%`,
+                  width: `${width}%`,
+                  top: "1px",
+                  bottom: "1px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  px: "3px",
+                  borderRadius: "3px",
+                  overflow: "hidden",
+                  bgcolor: alpha(c, mode === "dark" ? 0.9 : 0.85),
+                  border: isExtra ? `1.5px dashed ${theme.palette.background.paper}` : undefined,
+                }}
+              >
+                <UserAvatar name={occ.employeeName} src={emp?.photoUrl} size={16} />
+                <Typography
+                  noWrap
+                  sx={{
+                    fontSize: "0.62rem",
+                    fontWeight: 700,
+                    color: "#fff",
+                    lineHeight: 1,
+                    textShadow: "0 1px 2px rgba(0,0,0,0.55)",
+                  }}
+                >
+                  {surname(occ.employeeName)}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      </Tooltip>
     );
   };
 
-  // ── Ячейка месяца ────────────────────────────────────────────────────────────
+  // ── Ячейка месяца — горизонтальный мини-таймлайн: дорожки + загрузка по часам ──
   const renderMonthCell = (day: Dayjs) => {
+    const key = day.format("YYYY-MM-DD");
     const isToday = day.isSame(today, "day");
     const isCurrentMonth = day.isSame(month, "month");
     const isWeekend = day.isoWeekday() >= 6;
-    const occs = occsFor(day).sort((a, b) => a.startTime.localeCompare(b.startTime));
-    const visible = occs.length <= MONTH_MAX_EVENTS ? occs : occs.slice(0, MONTH_MAX_EVENTS - 1);
-    const overflow = occs.length - visible.length;
+    const occs = filteredOccurrencesByDate.get(key) ?? [];
+    const { lanes, occupancy, peak } = monthCellsByDate.get(key) ?? {
+      lanes: [] as PackedLane[],
+      occupancy: [] as number[],
+      peak: 0,
+    };
+    const visibleLanes = lanes.slice(0, MAX_LANES);
+    const overflow = lanes.length - visibleLanes.length;
 
     return (
       <TableCell
-        key={day.format("YYYY-MM-DD")}
+        key={key}
         onClick={() => onDayClick(day)}
         sx={{
           verticalAlign: "top",
           height: MONTH_CELL_HEIGHT,
+          p: 0,
           border: "1px solid",
           borderColor: "divider",
           outline: isToday ? `2px solid ${theme.palette.primary.main}` : "none",
@@ -309,25 +382,113 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
             ? "background.paper"
             : "action.hover",
           opacity: isCurrentMonth ? 1 : 0.55,
-          p: 0.5,
           "&:hover": { bgcolor: isToday ? alpha(theme.palette.primary.main, 0.05) : "action.selected" },
         }}
       >
-        <Stack sx={{ height: "100%" }}>
-          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 0.25 }}>
+        <Box sx={{ position: "relative", height: "100%", width: "100%" }}>
+          {/* Номер дня + счётчик — поверх, клики проходят к ячейке */}
+          <Box
+            sx={{
+              position: "absolute",
+              top: 2,
+              left: 4,
+              right: 4,
+              zIndex: 3,
+              display: "flex",
+              justifyContent: "flex-end",
+              pointerEvents: "none",
+            }}
+          >
             <DayCounter day={day} occs={occs} show={isCurrentMonth} />
           </Box>
-          <Stack spacing={0.375} sx={{ minWidth: 0 }}>
-            {visible.map((occ) => (
-              <EventPill key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`} occ={occ} />
-            ))}
-            {overflow > 0 && (
-              <Typography sx={{ fontSize: "0.68rem", color: "text.secondary", fontWeight: 600, pl: 0.5 }}>
-                +{overflow} ещё
-              </Typography>
+
+          {/* Область таймлайна (07:00 → 22:00 слева направо) */}
+          <Box sx={{ position: "absolute", top: `${MONTH_CELL_HEAD_H}px`, bottom: 4, left: 3, right: 3 }}>
+            {/* Полоса загрузки по часам (интенсивность = число работающих) */}
+            {peak > 0 && (
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 6,
+                  display: "flex",
+                  borderRadius: "2px",
+                  overflow: "hidden",
+                  zIndex: 2,
+                }}
+              >
+                {occupancy.map((count, idx) => (
+                  <Box
+                    key={idx}
+                    sx={{
+                      flex: 1,
+                      bgcolor:
+                        count > 0
+                          ? alpha(theme.palette.success.main, 0.25 + (count / peak) * 0.5)
+                          : "transparent",
+                    }}
+                  />
+                ))}
+              </Box>
             )}
-          </Stack>
-        </Stack>
+
+            {/* Метки часов (07, 9, 12, 15, 18, 22) */}
+            {([7, ...HOUR_GUIDES, 22] as const).map((hour) => {
+              const isEdge = hour === 7 || hour === 22;
+              return (
+                <Typography
+                  key={`lbl-${hour}`}
+                  component="span"
+                  sx={{
+                    position: "absolute",
+                    left: hour === 22 ? "auto" : `${timeToLeftPct(hour * 60)}%`,
+                    right: hour === 22 ? 0 : "auto",
+                    top: 0,
+                    fontSize: "0.5rem",
+                    color: isEdge ? "text.secondary" : "text.disabled",
+                    lineHeight: 1,
+                    userSelect: "none",
+                    pointerEvents: "none",
+                    zIndex: 2,
+                  }}
+                >
+                  {hour}
+                </Typography>
+              );
+            })}
+
+            {/* Вертикальные направляющие */}
+            {HOUR_GUIDES.map((hour) => (
+              <Box
+                key={hour}
+                sx={{
+                  position: "absolute",
+                  left: `${timeToLeftPct(hour * 60)}%`,
+                  top: 10,
+                  bottom: 0,
+                  width: "1px",
+                  bgcolor: "divider",
+                  opacity: 0.5,
+                  zIndex: 0,
+                }}
+              />
+            ))}
+
+            {/* Дорожки смен */}
+            <Stack spacing={0.4} sx={{ position: "relative", zIndex: 1, mt: "10px" }}>
+              {visibleLanes.map((lane, idx) => (
+                <MonthLane key={idx} segments={lane.segments} />
+              ))}
+              {overflow > 0 && (
+                <Typography sx={{ fontSize: "0.6rem", color: "text.disabled", lineHeight: 1, pl: 0.25 }}>
+                  +{overflow}
+                </Typography>
+              )}
+            </Stack>
+          </Box>
+        </Box>
       </TableCell>
     );
   };
