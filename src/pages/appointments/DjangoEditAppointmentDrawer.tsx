@@ -17,13 +17,13 @@ import {
 } from "@mui/material";
 import { ToggleButton, ToggleButtonGroup } from "@mui/material";
 import Grid from "@mui/material/Grid";
-import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import dayjs from "dayjs";
 import { useNotification } from "@refinedev/core";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { AppCard, CustomDateTimePicker } from "../../components/ui";
 import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
@@ -39,6 +39,7 @@ import {
   type DjangoAppointment,
 } from "../../api/appointments";
 import { normalizeDjangoStatus } from "../../config/appointmentStatuses";
+import { djangoQueryKeys } from "../../api/queryKeys";
 import type { DjangoPatient } from "../../api/patients";
 import { searchPatients } from "../../api/patients";
 import type {
@@ -93,6 +94,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   onSaved,
 }) => {
   const { open: notify } = useNotification();
+  const queryClient = useQueryClient();
   const canUpdate = useCan("appointments.update");
   const { activeOrganization, activeMembership } = usePermissions();
 
@@ -293,6 +295,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         })),
       });
       notify?.({ type: "success", message: "Приём обновлён" });
+      // Панель деталей показывает сумму из кэша платежей (pay?.totalAmount
+      // приоритетнее appt.totalAmount) — сбрасываем, иначе до staleTime видна
+      // старая сумма после смены услуг.
+      void queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.appointments.payments(appointment.id),
+      });
       onSaved?.(updated);
       onClose();
     } catch (err: unknown) {
@@ -615,6 +623,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                           ? row.serviceId
                                           : null
                                         : row.serviceId,
+                                    // Цена строки зафиксирована для старой пары
+                                    // услуга/исполнитель, и PATCH с id её не
+                                    // пересчитывает — пересоздаём строку, чтобы
+                                    // бэк взял актуальную цену новой пары.
+                                    ...((v?.id ?? null) !== row.employeeId
+                                      ? { lineId: null, unitPrice: "", discountAmount: "" }
+                                      : {}),
                                   })
                                 }
                                 getOptionLabel={(e) => e.fullName}
@@ -650,6 +665,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                             ? row.employeeId
                                             : null
                                           : row.employeeId,
+                                      // Смена услуги: бэк не пересчитывает цену
+                                      // существующей строки (PATCH с id хранит
+                                      // старый unitPrice — проверено на живом API
+                                      // 14.07.2026), поэтому пересоздаём строку:
+                                      // без id бэк возьмёт актуальную цену услуги.
+                                      ...((v?.id ?? null) !== row.serviceId
+                                        ? { lineId: null, unitPrice: "", discountAmount: "" }
+                                        : {}),
                                     })
                                   }
                                   getOptionLabel={(s) => `${s.name} — ${Number(s.basePrice)} с`}
