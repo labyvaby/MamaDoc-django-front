@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Chip, Tooltip, Typography } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import dayjs, { type Dayjs } from "dayjs";
@@ -291,13 +291,13 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                   bottom: 5,
                                   zIndex: 2,
                                   borderRadius: "5px",
-                                  bgcolor: alpha(c, mode === "dark" ? 0.32 : 0.18),
-                                  borderLeft: `3px solid ${c}`,
+                                  // Сплошная заливка вместо полупрозрачной —
+                                  // см. комментарий в ScheduleWeekResourceGrid.
+                                  bgcolor: c,
                                   border:
                                     occ.kind === "extra"
-                                      ? `1.5px dashed ${alpha(theme.palette.success.main, 0.9)}`
+                                      ? `1.5px dashed ${theme.palette.background.paper}`
                                       : undefined,
-                                  borderLeftColor: c,
                                   display: "flex",
                                   alignItems: "center",
                                   px: 0.75,
@@ -309,7 +309,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                   sx={{
                                     fontSize: "0.7rem",
                                     fontWeight: 600,
-                                    color: "text.primary",
+                                    color: theme.palette.getContrastText(c),
                                     fontVariantNumeric: "tabular-nums",
                                   }}
                                 >

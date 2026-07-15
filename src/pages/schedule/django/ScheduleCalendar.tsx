@@ -33,7 +33,7 @@ import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
-import { employeeColorHex, useEmployeeColorMap } from "./employeeColors";
+import { employeeColorHex } from "./employeeColors";
 import {
   HOUR_GUIDES,
   LANE_H,
@@ -93,6 +93,8 @@ export interface ScheduleCalendarProps {
   onMonthChange: (month: Dayjs) => void;
   onDayClick: (day: Dayjs) => void;
   currentEmployeeId?: number | null;
+  /** Общая карта цветов (строится в index.tsx по сменам периода). */
+  employeeColorMap: Map<number, number>;
 }
 
 const WEEKDAY_FULL = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
@@ -108,6 +110,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   onMonthChange,
   onDayClick,
   currentEmployeeId,
+  employeeColorMap,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -118,7 +121,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   const [view, setView] = React.useState<ScheduleView>("day");
 
   const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-  const employeeColorMap = useEmployeeColorMap(employees);
   const { filters, set: setFilter, reset: resetFilters, apply: filterOccurrences } = useScheduleFilters(
     employeesById,
     currentEmployeeId,
