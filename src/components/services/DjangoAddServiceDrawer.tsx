@@ -10,6 +10,7 @@ import {
   Drawer,
   IconButton,
   InputAdornment,
+  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -22,7 +23,14 @@ import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
-import { createService, uploadServiceImage } from "../../api/catalog";
+import {
+  createService,
+  uploadServiceImage,
+  SERVICE_CATEGORIES_ENABLED,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_CATEGORY_OPTIONS,
+  type ServiceCategory,
+} from "../../api/catalog";
 import { usePermissions } from "../../hooks/usePermissions";
 import type { RbacBranch } from "../../api/auth";
 
@@ -59,6 +67,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const [name, setName] = React.useState("");
   const [price, setPrice] = React.useState("");
   const [durationMinutes, setDurationMinutes] = React.useState("30");
+  const [category, setCategory] = React.useState<ServiceCategory | "">("");
   const [description, setDescription] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -83,6 +92,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       setName("");
       setPrice("");
       setDurationMinutes("30");
+      setCategory("");
       setDescription("");
       setIsActive(true);
       setPhotoFile(null);
@@ -142,6 +152,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         basePrice: String(priceNum),
         isActive,
         branchIds: effectiveBranchIds,
+        ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
       });
       if (photoFile) {
         try {
@@ -317,6 +328,29 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                 />
               </Stack>
             </Stack>
+
+            {/* Категория (для фильтра на странице услуг) */}
+            {SERVICE_CATEGORIES_ENABLED && (
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  Категория
+                </Typography>
+                <TextField
+                  select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as ServiceCategory | "")}
+                  fullWidth
+                  disabled={busy}
+                >
+                  <MenuItem value="">Без категории</MenuItem>
+                  {SERVICE_CATEGORY_OPTIONS.map((c) => (
+                    <MenuItem key={c} value={c}>
+                      {SERVICE_CATEGORY_LABELS[c]}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            )}
 
             {/* Описание */}
             <Stack spacing={0.5}>
