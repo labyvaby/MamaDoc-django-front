@@ -70,7 +70,7 @@ const RejectDialog: React.FC<RejectDialogProps> = ({ record, onClose, onSuccess 
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
-            {record?.zoneName} ·{" "}
+            {record?.typeName} ·{" "}
             {record ? dayjs(record.createdAt).format("DD.MM.YYYY HH:mm") : ""} ·{" "}
             {record?.employeeName}
           </Typography>

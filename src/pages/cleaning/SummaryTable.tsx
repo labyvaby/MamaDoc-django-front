@@ -39,19 +39,15 @@ interface SummaryTableProps {
   loading: boolean;
   /** null — ошибки нет. */
   error: string | null;
-  /** Ставка за подтверждённую уборку (decimal строкой) — null, пока грузится. */
-  rate: string | null;
 }
 
 /** Сводка за месяц: подтверждено/ждёт/отклонено и сумма к выплате по сотрудникам. */
-const SummaryTable: React.FC<SummaryTableProps> = ({ rows, loading, error, rate }) => (
+const SummaryTable: React.FC<SummaryTableProps> = ({ rows, loading, error }) => (
   <Stack gap={1.5} sx={{ flex: 1, minHeight: 0 }}>
-    {rate != null && (
-      <Typography variant="body2" color="text.secondary">
-        Ставка: {formatKGS(rate)} за подтверждённую уборку. В ЗП попадают только
-        подтверждённые уборки.
-      </Typography>
-    )}
+    <Typography variant="body2" color="text.secondary">
+      К выплате: сумма ставок типов по подтверждённым уборкам. Ставки настраиваются
+      в «Настройки → Уборка»; в ЗП попадают только подтверждённые уборки.
+    </Typography>
     {error && <Alert severity="error">{error}</Alert>}
     <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: "14px" }}>
       <Table size="small">

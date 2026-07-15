@@ -3,24 +3,28 @@ import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
  * Модуль «Уборка» — учёт уборок с фотоотчётом и выплатой в ЗП.
- * Уборщица отмечает уборку зоны с обязательными фото, админ подтверждает
- * или отклоняет; в ЗП попадает только подтверждённое (ставка × количество).
+ * Уборщица отмечает уборку (тип: ежедневная/генеральная/…) с обязательными
+ * фото, админ подтверждает или отклоняет; в ЗП попадает только
+ * подтверждённое (Σ ставка типа × количество).
  *
  * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_cleaning_module.md — НЕ менять без
  * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
  * на моках (CLEANING_USE_MOCKS = true); после деплоя бэка выключить флаг и
  * вернуть can-гейты (сайдбар, App.tsx, SettingsLayout), как делали с tasks.
+ * UPD 15.07.2026: зоны уборки заменены на типы уборки со ставкой за тип
+ * (единая ставка организации удалена) — отражено в тикете тем же UPD.
  */
 
 export const CLEANING_USE_MOCKS = true;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface CleaningZone {
+/** Тип уборки — справочник организации; ставка за одну подтверждённую уборку. */
+export interface CleaningType {
   id: number;
   name: string;
-  branchId: number;
-  branchName: string;
+  /** Ставка, сом — decimal строкой (как stock-rules.minThreshold). */
+  rate: string;
   isActive: boolean;
 }
 
@@ -33,8 +37,9 @@ export interface CleaningPhoto {
 
 export interface CleaningRecord {
   id: number;
-  zoneId: number;
-  zoneName: string;
+  typeId: number;
+  typeName: string;
+  /** Филиал записи — активный филиал сотрудника на момент отметки. */
   branchId: number;
   branchName: string;
   employeeId: number;
@@ -60,7 +65,7 @@ export interface CleaningRecordsFilters {
   dateFrom?: string;
   dateTo?: string;
   branch?: number;
-  zone?: number;
+  type?: number;
   status?: CleaningRecordStatus;
   page?: number;
   pageSize?: number;
@@ -74,14 +79,8 @@ export interface CleaningSummaryRow {
   approvedCount: number;
   pendingCount: number;
   rejectedCount: number;
-  /** approvedCount × ставка, сом. */
+  /** Σ по подтверждённым: ставка типа × количество, сом (считает бэк). */
   amount: number;
-}
-
-/** Ставка за одну подтверждённую уборку — настройка на организацию.
- *  Decimal строкой, как stock-rules.minThreshold (открытый вопрос бэку). */
-export interface CleaningSettings {
-  rate: string;
 }
 
 // Валидации зеркалят тикет: бэк — источник правды, фронт проверяет до отправки.
@@ -103,11 +102,13 @@ function mockPhoto(label: string, hue: number): CleaningPhoto {
   return { id: ++mockSeq, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` };
 }
 
-const mockZones: CleaningZone[] = [
-  { id: 1, name: "Холл 1 этаж", branchId: 1, branchName: "Мама Доктор", isActive: true },
-  { id: 2, name: "Санузел 2 этаж", branchId: 1, branchName: "Мама Доктор", isActive: true },
-  { id: 3, name: "Процедурный кабинет", branchId: 2, branchName: "Мама Доктор Плюс", isActive: true },
-  { id: 4, name: "Игровая зона", branchId: 2, branchName: "Мама Доктор Плюс", isActive: false },
+// Дефолтные типы — предложены как сиды при включении модуля (см. тикет),
+// менеджер правит названия/ставки под свою клинику.
+const mockTypes: CleaningType[] = [
+  { id: 1, name: "Ежедневная уборка", rate: "150.00", isActive: true },
+  { id: 2, name: "Генеральная уборка", rate: "500.00", isActive: true },
+  { id: 3, name: "Дезинфекция", rate: "300.00", isActive: true },
+  { id: 4, name: "Экспресс-уборка", rate: "100.00", isActive: false },
 ];
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -115,8 +116,8 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const mockRecords: CleaningRecord[] = [
   {
     id: 101,
-    zoneId: 1,
-    zoneName: "Холл 1 этаж",
+    typeId: 1,
+    typeName: "Ежедневная уборка",
     branchId: 1,
     branchName: "Мама Доктор",
     employeeId: 900,
@@ -130,8 +131,8 @@ const mockRecords: CleaningRecord[] = [
   },
   {
     id: 102,
-    zoneId: 2,
-    zoneName: "Санузел 2 этаж",
+    typeId: 2,
+    typeName: "Генеральная уборка",
     branchId: 1,
     branchName: "Мама Доктор",
     employeeId: 900,
@@ -145,8 +146,8 @@ const mockRecords: CleaningRecord[] = [
   },
   {
     id: 103,
-    zoneId: 3,
-    zoneName: "Процедурный кабинет",
+    typeId: 3,
+    typeName: "Дезинфекция",
     branchId: 2,
     branchName: "Мама Доктор Плюс",
     employeeId: 901,
@@ -160,77 +161,66 @@ const mockRecords: CleaningRecord[] = [
   },
 ];
 
-let mockRate = "150.00";
+// ── Типы уборки ───────────────────────────────────────────────────────────────
 
-// ── Зоны ──────────────────────────────────────────────────────────────────────
-
-export function getCleaningZones(
-  params: { branch?: number; organizationId?: number } = {},
+export function getCleaningTypes(
+  params: { organizationId?: number } = {},
   signal?: AbortSignal,
-): Promise<CleaningZone[]> {
+): Promise<CleaningType[]> {
   if (CLEANING_USE_MOCKS) {
-    let list = [...mockZones];
-    if (params.branch != null) list = list.filter((z) => z.branchId === params.branch);
-    return mockDelay(list);
+    return mockDelay([...mockTypes]);
   }
-  const q = new URLSearchParams();
-  if (params.branch != null) q.set("branch", String(params.branch));
-  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
-  const qs = q.toString();
-  return apiRequest<CleaningZone[]>(`/cleaning/zones/${qs ? `?${qs}` : ""}`, { signal });
+  return apiRequest<CleaningType[]>(withOrg("/cleaning/types/", params.organizationId), {
+    signal,
+  }).then((items) => (Array.isArray(items) ? items : []));
 }
 
-export interface CleaningZonePayload {
+export interface CleaningTypePayload {
   name: string;
-  branchId: number;
+  /** Decimal строкой: "150.00". */
+  rate: string;
   isActive: boolean;
 }
 
-export function createCleaningZone(
-  payload: CleaningZonePayload,
+export function createCleaningType(
+  payload: CleaningTypePayload,
   organizationId?: number,
-): Promise<CleaningZone> {
+): Promise<CleaningType> {
   if (CLEANING_USE_MOCKS) {
-    const zone: CleaningZone = {
-      id: ++mockSeq,
-      name: payload.name,
-      branchId: payload.branchId,
-      branchName: `Филиал #${payload.branchId}`,
-      isActive: payload.isActive,
-    };
-    mockZones.push(zone);
-    return mockDelay(zone);
+    const type: CleaningType = { id: ++mockSeq, ...payload };
+    mockTypes.push(type);
+    return mockDelay(type);
   }
-  return apiRequest<CleaningZone>(withOrg("/cleaning/zones/", organizationId), {
+  return apiRequest<CleaningType>(withOrg("/cleaning/types/", organizationId), {
     method: "POST",
     body: payload,
   });
 }
 
-export function updateCleaningZone(
-  zoneId: number,
-  payload: Partial<CleaningZonePayload>,
+export function updateCleaningType(
+  typeId: number,
+  payload: Partial<CleaningTypePayload>,
   organizationId?: number,
-): Promise<CleaningZone> {
+): Promise<CleaningType> {
   if (CLEANING_USE_MOCKS) {
-    const zone = mockZones.find((z) => z.id === zoneId);
-    if (!zone) return Promise.reject(new Error("Зона не найдена (мок)"));
-    Object.assign(zone, payload);
-    return mockDelay({ ...zone });
+    const type = mockTypes.find((t) => t.id === typeId);
+    if (!type) return Promise.reject(new Error("Тип уборки не найден (мок)"));
+    Object.assign(type, payload);
+    return mockDelay({ ...type });
   }
-  return apiRequest<CleaningZone>(withOrg(`/cleaning/zones/${zoneId}/`, organizationId), {
+  return apiRequest<CleaningType>(withOrg(`/cleaning/types/${typeId}/`, organizationId), {
     method: "PATCH",
     body: payload,
   });
 }
 
-export function deleteCleaningZone(zoneId: number, organizationId?: number): Promise<void> {
+export function deleteCleaningType(typeId: number, organizationId?: number): Promise<void> {
   if (CLEANING_USE_MOCKS) {
-    const idx = mockZones.findIndex((z) => z.id === zoneId);
-    if (idx >= 0) mockZones.splice(idx, 1);
+    const idx = mockTypes.findIndex((t) => t.id === typeId);
+    if (idx >= 0) mockTypes.splice(idx, 1);
     return mockDelay(undefined);
   }
-  return apiRequest<void>(withOrg(`/cleaning/zones/${zoneId}/`, organizationId), {
+  return apiRequest<void>(withOrg(`/cleaning/types/${typeId}/`, organizationId), {
     method: "DELETE",
   });
 }
@@ -246,7 +236,7 @@ export function getCleaningRecords(
     if (filters.dateFrom) list = list.filter((r) => r.createdAt.slice(0, 10) >= filters.dateFrom!);
     if (filters.dateTo) list = list.filter((r) => r.createdAt.slice(0, 10) <= filters.dateTo!);
     if (filters.branch != null) list = list.filter((r) => r.branchId === filters.branch);
-    if (filters.zone != null) list = list.filter((r) => r.zoneId === filters.zone);
+    if (filters.type != null) list = list.filter((r) => r.typeId === filters.type);
     if (filters.status) list = list.filter((r) => r.status === filters.status);
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return mockDelay(paginate(list, filters.page, filters.pageSize));
@@ -255,7 +245,7 @@ export function getCleaningRecords(
   if (filters.dateFrom) q.set("date_from", filters.dateFrom);
   if (filters.dateTo) q.set("date_to", filters.dateTo);
   if (filters.branch != null) q.set("branch", String(filters.branch));
-  if (filters.zone != null) q.set("zone", String(filters.zone));
+  if (filters.type != null) q.set("type", String(filters.type));
   if (filters.status) q.set("status", filters.status);
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
@@ -264,7 +254,7 @@ export function getCleaningRecords(
 }
 
 export interface CreateCleaningRecordPayload {
-  zoneId: number;
+  typeId: number;
   /** 1..5 фото, уже сжатых через compressImage. */
   photos: File[];
   organizationId?: number;
@@ -274,13 +264,14 @@ export function createCleaningRecord(
   payload: CreateCleaningRecordPayload,
 ): Promise<CleaningRecord> {
   if (CLEANING_USE_MOCKS) {
-    const zone = mockZones.find((z) => z.id === payload.zoneId);
+    const type = mockTypes.find((t) => t.id === payload.typeId);
     const record: CleaningRecord = {
       id: ++mockSeq,
-      zoneId: payload.zoneId,
-      zoneName: zone?.name ?? `Зона #${payload.zoneId}`,
-      branchId: zone?.branchId ?? 0,
-      branchName: zone?.branchName ?? "",
+      typeId: payload.typeId,
+      typeName: type?.name ?? `Тип #${payload.typeId}`,
+      // На живом бэке филиал записи — активный филиал сотрудника из сессии.
+      branchId: 1,
+      branchName: "Мама Доктор",
       employeeId: 0,
       employeeName: "Вы (мок)",
       status: "pending",
@@ -294,7 +285,7 @@ export function createCleaningRecord(
     return mockDelay(record);
   }
   const formData = new FormData();
-  formData.append("zone", String(payload.zoneId));
+  formData.append("type", String(payload.typeId));
   for (const photo of payload.photos) formData.append("photos", photo);
   return apiRequest<CleaningRecord>(withOrg("/cleaning/records/", payload.organizationId), {
     method: "POST",
@@ -341,6 +332,25 @@ export function rejectCleaningRecord(
   );
 }
 
+/**
+ * Месяцы, в которых есть хотя бы одна уборка (YYYY-MM) — для ленты месяцев:
+ * пустые и будущие месяцы страница скрывает. Контракт — UPD 15.07.2026 в
+ * тикете cleaning-модуля; форма ответа 1-в-1 с GET /reports/active-months/.
+ */
+export function getCleaningActiveMonths(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  if (CLEANING_USE_MOCKS) {
+    const months = new Set(mockRecords.map((r) => r.createdAt.slice(0, 7)));
+    return mockDelay([...months]);
+  }
+  return apiRequest<{ months: string[] }>(
+    withOrg("/cleaning/active-months/", organizationId),
+    { signal },
+  ).then((data) => (Array.isArray(data?.months) ? data.months : []));
+}
+
 // ── Сводка за месяц ───────────────────────────────────────────────────────────
 
 export function getCleaningSummary(
@@ -348,7 +358,8 @@ export function getCleaningSummary(
   signal?: AbortSignal,
 ): Promise<CleaningSummaryRow[]> {
   if (CLEANING_USE_MOCKS) {
-    const rate = Number(mockRate) || 0;
+    const rateOf = (typeId: number) =>
+      Number(mockTypes.find((t) => t.id === typeId)?.rate) || 0;
     const byEmployee = new Map<number, CleaningSummaryRow>();
     for (const r of mockRecords) {
       if (!r.createdAt.startsWith(params.month)) continue;
@@ -365,13 +376,15 @@ export function getCleaningSummary(
         };
         byEmployee.set(r.employeeId, row);
       }
-      if (r.status === "approved") row.approvedCount += 1;
-      else if (r.status === "pending") row.pendingCount += 1;
+      if (r.status === "approved") {
+        row.approvedCount += 1;
+        row.amount += rateOf(r.typeId);
+      } else if (r.status === "pending") row.pendingCount += 1;
       else row.rejectedCount += 1;
     }
-    const rows = [...byEmployee.values()]
-      .map((row) => ({ ...row, amount: row.approvedCount * rate }))
-      .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+    const rows = [...byEmployee.values()].sort((a, b) =>
+      a.employeeName.localeCompare(b.employeeName),
+    );
     return mockDelay(rows);
   }
   const q = new URLSearchParams({ month: params.month });
@@ -380,28 +393,3 @@ export function getCleaningSummary(
   return apiRequest<CleaningSummaryRow[]>(`/cleaning/summary/?${q.toString()}`, { signal });
 }
 
-// ── Ставка (настройка организации) ────────────────────────────────────────────
-// Форма эндпоинта — предположение фронта (в тикете «на усмотрение бэка»),
-// вынесено в «Открытые вопросы» тикета: GET/PUT /cleaning/settings/ → {rate}.
-
-export function getCleaningSettings(
-  organizationId?: number,
-  signal?: AbortSignal,
-): Promise<CleaningSettings> {
-  if (CLEANING_USE_MOCKS) return mockDelay({ rate: mockRate });
-  return apiRequest<CleaningSettings>(withOrg("/cleaning/settings/", organizationId), { signal });
-}
-
-export function updateCleaningSettings(
-  payload: CleaningSettings,
-  organizationId?: number,
-): Promise<CleaningSettings> {
-  if (CLEANING_USE_MOCKS) {
-    mockRate = payload.rate;
-    return mockDelay({ rate: mockRate });
-  }
-  return apiRequest<CleaningSettings>(withOrg("/cleaning/settings/", organizationId), {
-    method: "PUT",
-    body: payload,
-  });
-}

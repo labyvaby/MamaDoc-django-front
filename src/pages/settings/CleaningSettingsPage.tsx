@@ -9,10 +9,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
   InputAdornment,
-  MenuItem,
   Stack,
   Switch,
   Table,
@@ -33,60 +31,55 @@ import { useNotification } from "@refinedev/core";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
-import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
 import { ConfirmDialog } from "../../components/ui";
+import { formatKGS } from "../../utility/format";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   CLEANING_USE_MOCKS,
-  createCleaningZone,
-  deleteCleaningZone,
-  getCleaningSettings,
-  getCleaningZones,
-  updateCleaningSettings,
-  updateCleaningZone,
-  type CleaningZone,
+  createCleaningType,
+  deleteCleaningType,
+  getCleaningTypes,
+  updateCleaningType,
+  type CleaningType,
+  type CleaningTypePayload,
 } from "../../api/cleaning";
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
-// ── Диалог зоны (создание/редактирование) ─────────────────────────────────────
+const RATE_RE = /^\d+(\.\d{1,2})?$/;
 
-interface ZoneDialogProps {
+// ── Диалог типа уборки (создание/редактирование) ──────────────────────────────
+
+interface TypeDialogProps {
   open: boolean;
-  zone: CleaningZone | null;
-  branches: { id: number; name: string }[];
+  type: CleaningType | null;
   busy: boolean;
   error: string | null;
   onClose: () => void;
-  onSubmit: (values: { name: string; branchId: number; isActive: boolean }) => void;
+  onSubmit: (values: CleaningTypePayload) => void;
 }
 
-const ZoneDialog: React.FC<ZoneDialogProps> = ({
-  open,
-  zone,
-  branches,
-  busy,
-  error,
-  onClose,
-  onSubmit,
-}) => {
+const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClose, onSubmit }) => {
   const [name, setName] = React.useState("");
-  const [branchId, setBranchId] = React.useState<number | "">("");
+  const [rate, setRate] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
+  const [touched, setTouched] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
-    setName(zone?.name ?? "");
-    setBranchId(zone?.branchId ?? (branches.length === 1 ? branches[0].id : ""));
-    setIsActive(zone?.isActive ?? true);
-  }, [open, zone, branches]);
+    setName(type?.name ?? "");
+    setRate(type?.rate ?? "");
+    setIsActive(type?.isActive ?? true);
+    setTouched(false);
+  }, [open, type]);
 
-  const valid = name.trim().length > 0 && branchId !== "";
+  const rateValid = RATE_RE.test(rate.trim());
+  const valid = name.trim().length > 0 && rateValid;
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{zone ? "Изменить зону" : "Новая зона уборки"}</DialogTitle>
+      <DialogTitle>{type ? "Изменить тип уборки" : "Новый тип уборки"}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <TextField
@@ -94,32 +87,37 @@ const ZoneDialog: React.FC<ZoneDialogProps> = ({
             size="small"
             fullWidth
             autoFocus
-            placeholder="Например: Холл 1 этаж"
+            placeholder="Например: Генеральная уборка"
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={busy}
           />
           <TextField
-            select
-            label="Филиал"
+            label="Ставка"
             size="small"
             fullWidth
-            value={branchId === "" ? "" : String(branchId)}
-            onChange={(e) => setBranchId(Number(e.target.value))}
-            disabled={busy || !!zone}
-            helperText={zone ? "Филиал зоны не меняется" : undefined}
-          >
-            {branches.map((b) => (
-              <MenuItem key={b.id} value={String(b.id)}>
-                {b.name}
-              </MenuItem>
-            ))}
-          </TextField>
+            placeholder="150"
+            value={rate}
+            onChange={(e) => {
+              setRate(e.target.value);
+              setTouched(true);
+            }}
+            disabled={busy}
+            error={touched && !rateValid}
+            helperText={
+              touched && !rateValid
+                ? "Число, максимум 2 знака после точки"
+                : "За одну подтверждённую уборку этого типа"
+            }
+            InputProps={{
+              endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+            }}
+          />
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Box>
-              <Typography variant="body2">Активна</Typography>
+              <Typography variant="body2">Активен</Typography>
               <Typography variant="caption" color="text.secondary">
-                По активной зоне ожидается одна уборка в день
+                Неактивный тип нельзя выбрать при отметке уборки
               </Typography>
             </Box>
             <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} disabled={busy} />
@@ -134,7 +132,7 @@ const ZoneDialog: React.FC<ZoneDialogProps> = ({
         <Button
           variant="contained"
           disabled={busy || !valid}
-          onClick={() => onSubmit({ name: name.trim(), branchId: branchId as number, isActive })}
+          onClick={() => onSubmit({ name: name.trim(), rate: rate.trim(), isActive })}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           Сохранить
@@ -151,84 +149,52 @@ const CleaningSettingsPage: React.FC = () => {
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const orgId = useApiOrgId();
-  const { activeMembership } = usePermissions();
-
-  const branches = React.useMemo(
-    () =>
-      (activeMembership?.branches ?? [])
-        .filter((b) => b.isActive)
-        .map((b) => ({ id: b.id, name: b.name })),
-    [activeMembership],
-  );
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.cleaning.all });
 
-  // ── Ставка ────────────────────────────────────────────────────────────────
-  const settingsQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.settings(orgId),
-    queryFn: ({ signal }) => getCleaningSettings(orgId, signal),
+  // ── Типы уборки ───────────────────────────────────────────────────────────
+  const typesQuery = useQuery({
+    queryKey: djangoQueryKeys.cleaning.types({ orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getCleaningTypes({ organizationId: orgId }, signal),
   });
+  const types = typesQuery.data ?? [];
 
-  const [rateInput, setRateInput] = React.useState<string | null>(null);
-  const rateValue = rateInput ?? settingsQuery.data?.rate ?? "";
+  const [typeDialogOpen, setTypeDialogOpen] = React.useState(false);
+  const [typeEditing, setTypeEditing] = React.useState<CleaningType | null>(null);
+  const [typeError, setTypeError] = React.useState<string | null>(null);
+  const [typeDeleting, setTypeDeleting] = React.useState<CleaningType | null>(null);
 
-  const rateMutation = useMutation({
-    mutationFn: (rate: string) => updateCleaningSettings({ rate }, orgId),
+  const typeSaveMutation = useMutation({
+    mutationFn: (values: CleaningTypePayload) =>
+      typeEditing
+        ? updateCleaningType(typeEditing.id, values, orgId)
+        : createCleaningType(values, orgId),
     onSuccess: () => {
-      notify?.({ type: "success", message: "Ставка сохранена" });
-      setRateInput(null);
+      notify?.({ type: "success", message: typeEditing ? "Тип обновлён" : "Тип создан" });
+      setTypeDialogOpen(false);
       invalidate();
     },
-    onError: (e) =>
-      notify?.({ type: "error", message: "Не удалось сохранить ставку", description: errMsg(e, "") }),
+    onError: (e) => setTypeError(errMsg(e, "Не удалось сохранить тип уборки")),
   });
 
-  const rateDirty = rateInput != null && rateInput !== (settingsQuery.data?.rate ?? "");
-  const rateValid = /^\d+(\.\d{1,2})?$/.test(rateValue.trim());
-
-  // ── Зоны ──────────────────────────────────────────────────────────────────
-  const zonesQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.zones({ orgId: orgId ?? null }),
-    queryFn: ({ signal }) => getCleaningZones({ organizationId: orgId }, signal),
-  });
-  const zones = zonesQuery.data ?? [];
-
-  const [zoneDialogOpen, setZoneDialogOpen] = React.useState(false);
-  const [zoneEditing, setZoneEditing] = React.useState<CleaningZone | null>(null);
-  const [zoneError, setZoneError] = React.useState<string | null>(null);
-  const [zoneDeleting, setZoneDeleting] = React.useState<CleaningZone | null>(null);
-
-  const zoneSaveMutation = useMutation({
-    mutationFn: (values: { name: string; branchId: number; isActive: boolean }) =>
-      zoneEditing
-        ? updateCleaningZone(zoneEditing.id, values, orgId)
-        : createCleaningZone(values, orgId),
-    onSuccess: () => {
-      notify?.({ type: "success", message: zoneEditing ? "Зона обновлена" : "Зона создана" });
-      setZoneDialogOpen(false);
-      invalidate();
-    },
-    onError: (e) => setZoneError(errMsg(e, "Не удалось сохранить зону")),
-  });
-
-  const zoneToggleMutation = useMutation({
-    mutationFn: (zone: CleaningZone) =>
-      updateCleaningZone(zone.id, { isActive: !zone.isActive }, orgId),
+  const typeToggleMutation = useMutation({
+    mutationFn: (type: CleaningType) =>
+      updateCleaningType(type.id, { isActive: !type.isActive }, orgId),
     onSuccess: () => invalidate(),
     onError: (e) =>
-      notify?.({ type: "error", message: "Не удалось изменить зону", description: errMsg(e, "") }),
+      notify?.({ type: "error", message: "Не удалось изменить тип", description: errMsg(e, "") }),
   });
 
-  const zoneDeleteMutation = useMutation({
-    mutationFn: (zone: CleaningZone) => deleteCleaningZone(zone.id, orgId),
+  const typeDeleteMutation = useMutation({
+    mutationFn: (type: CleaningType) => deleteCleaningType(type.id, orgId),
     onSuccess: () => {
-      notify?.({ type: "success", message: "Зона удалена" });
-      setZoneDeleting(null);
+      notify?.({ type: "success", message: "Тип удалён" });
+      setTypeDeleting(null);
       invalidate();
     },
     onError: (e) =>
-      notify?.({ type: "error", message: "Не удалось удалить зону", description: errMsg(e, "") }),
+      notify?.({ type: "error", message: "Не удалось удалить тип", description: errMsg(e, "") }),
   });
 
   return (
@@ -243,47 +209,14 @@ const CleaningSettingsPage: React.FC = () => {
           )}
         </Stack>
 
-        {/* Ставка */}
-        <Stack spacing={1}>
-          <Typography variant="subtitle2">Ставка за уборку</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Сумма за одну подтверждённую уборку. В ЗП попадает: ставка × количество
-            подтверждённых уборок за месяц.
-          </Typography>
-          <Stack direction="row" gap={1} alignItems="center">
-            <TextField
-              size="small"
-              value={rateValue}
-              onChange={(e) => setRateInput(e.target.value)}
-              disabled={settingsQuery.isLoading || rateMutation.isPending}
-              error={rateDirty && !rateValid}
-              helperText={rateDirty && !rateValid ? "Число, максимум 2 знака после точки" : undefined}
-              InputProps={{
-                endAdornment: <InputAdornment position="end">сом</InputAdornment>,
-              }}
-              sx={{ width: 180 }}
-            />
-            <Button
-              variant="contained"
-              size="small"
-              disabled={!rateDirty || !rateValid || rateMutation.isPending}
-              onClick={() => rateMutation.mutate(rateValue.trim())}
-              startIcon={rateMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
-            >
-              Сохранить
-            </Button>
-          </Stack>
-        </Stack>
-
-        <Divider />
-
-        {/* Зоны */}
+        {/* Типы уборки */}
         <Stack spacing={1.5}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Box>
-              <Typography variant="subtitle2">Зоны уборки</Typography>
+              <Typography variant="subtitle2">Типы уборки</Typography>
               <Typography variant="body2" color="text.secondary">
-                Активная зона — ожидается одна уборка в день (график v1, без временных слотов).
+                Уборщица выбирает тип при отметке. В ЗП попадает сумма ставок типов по
+                подтверждённым уборкам за месяц.
               </Typography>
             </Box>
             <Button
@@ -291,17 +224,19 @@ const CleaningSettingsPage: React.FC = () => {
               size="small"
               startIcon={<AddOutlined />}
               onClick={() => {
-                setZoneEditing(null);
-                setZoneError(null);
-                setZoneDialogOpen(true);
+                setTypeEditing(null);
+                setTypeError(null);
+                setTypeDialogOpen(true);
               }}
             >
               Добавить
             </Button>
           </Stack>
 
-          {zonesQuery.isError && (
-            <Alert severity="error">{errMsg(zonesQuery.error, "Не удалось загрузить зоны")}</Alert>
+          {typesQuery.isError && (
+            <Alert severity="error">
+              {errMsg(typesQuery.error, "Не удалось загрузить типы уборки")}
+            </Alert>
           )}
 
           <TableContainer>
@@ -309,36 +244,38 @@ const CleaningSettingsPage: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Название</TableCell>
-                  <TableCell>Филиал</TableCell>
-                  <TableCell align="center">Активна</TableCell>
+                  <TableCell align="right">Ставка</TableCell>
+                  <TableCell align="center">Активен</TableCell>
                   <TableCell align="right" />
                 </TableRow>
               </TableHead>
               <TableBody>
-                {zonesQuery.isLoading && (
+                {typesQuery.isLoading && (
                   <TableRow>
                     <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
                       <CircularProgress size={22} />
                     </TableCell>
                   </TableRow>
                 )}
-                {!zonesQuery.isLoading && zones.length === 0 && (
+                {!typesQuery.isLoading && types.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} align="center" sx={{ py: 3, color: "text.secondary" }}>
-                      Зон пока нет — добавьте первую
+                      Типов пока нет — добавьте первый
                     </TableCell>
                   </TableRow>
                 )}
-                {zones.map((zone) => (
-                  <TableRow key={zone.id} hover>
-                    <TableCell sx={{ fontWeight: 500 }}>{zone.name}</TableCell>
-                    <TableCell>{zone.branchName}</TableCell>
+                {types.map((type) => (
+                  <TableRow key={type.id} hover>
+                    <TableCell sx={{ fontWeight: 500 }}>{type.name}</TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      {formatKGS(type.rate)}
+                    </TableCell>
                     <TableCell align="center">
                       <Switch
                         size="small"
-                        checked={zone.isActive}
-                        disabled={zoneToggleMutation.isPending}
-                        onChange={() => zoneToggleMutation.mutate(zone)}
+                        checked={type.isActive}
+                        disabled={typeToggleMutation.isPending}
+                        onChange={() => typeToggleMutation.mutate(type)}
                       />
                     </TableCell>
                     <TableCell align="right">
@@ -346,16 +283,16 @@ const CleaningSettingsPage: React.FC = () => {
                         <IconButton
                           size="small"
                           onClick={() => {
-                            setZoneEditing(zone);
-                            setZoneError(null);
-                            setZoneDialogOpen(true);
+                            setTypeEditing(type);
+                            setTypeError(null);
+                            setTypeDialogOpen(true);
                           }}
                         >
                           <EditOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Удалить">
-                        <IconButton size="small" color="error" onClick={() => setZoneDeleting(zone)}>
+                        <IconButton size="small" color="error" onClick={() => setTypeDeleting(type)}>
                           <DeleteOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -368,25 +305,24 @@ const CleaningSettingsPage: React.FC = () => {
         </Stack>
       </Stack>
 
-      <ZoneDialog
-        open={zoneDialogOpen}
-        zone={zoneEditing}
-        branches={branches}
-        busy={zoneSaveMutation.isPending}
-        error={zoneError}
-        onClose={() => setZoneDialogOpen(false)}
-        onSubmit={(values) => zoneSaveMutation.mutate(values)}
+      <TypeDialog
+        open={typeDialogOpen}
+        type={typeEditing}
+        busy={typeSaveMutation.isPending}
+        error={typeError}
+        onClose={() => setTypeDialogOpen(false)}
+        onSubmit={(values) => typeSaveMutation.mutate(values)}
       />
 
       <ConfirmDialog
-        open={zoneDeleting !== null}
-        title="Удалить зону?"
-        message={`Зона «${zoneDeleting?.name ?? ""}» будет удалена. История уборок по ней сохранится.`}
+        open={typeDeleting !== null}
+        title="Удалить тип уборки?"
+        message={`Тип «${typeDeleting?.name ?? ""}» будет удалён. История уборок по нему сохранится.`}
         confirmText="Удалить"
         variant="error"
-        loading={zoneDeleteMutation.isPending}
-        onConfirm={() => zoneDeleting && zoneDeleteMutation.mutate(zoneDeleting)}
-        onClose={() => setZoneDeleting(null)}
+        loading={typeDeleteMutation.isPending}
+        onConfirm={() => typeDeleting && typeDeleteMutation.mutate(typeDeleting)}
+        onClose={() => setTypeDeleting(null)}
       />
     </SettingsLayout>
   );

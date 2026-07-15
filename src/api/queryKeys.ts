@@ -170,14 +170,14 @@ export const djangoQueryKeys = {
 
   cleaning: {
     all: ["django", "cleaning"] as const,
-    zones: (params: Record<string, unknown>) =>
-      ["django", "cleaning", "zones", params] as const,
+    types: (params: Record<string, unknown>) =>
+      ["django", "cleaning", "types", params] as const,
     records: (params: Record<string, unknown>) =>
       ["django", "cleaning", "records", params] as const,
     summary: (params: Record<string, unknown>) =>
       ["django", "cleaning", "summary", params] as const,
-    settings: (organizationId: number | null | undefined) =>
-      ["django", "cleaning", "settings", organizationId ?? null] as const,
+    activeMonths: (organizationId: number | null | undefined) =>
+      ["django", "cleaning", "active-months", organizationId ?? null] as const,
   },
 
   knowledge: {

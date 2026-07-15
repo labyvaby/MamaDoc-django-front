@@ -22,34 +22,35 @@ import { useNotification } from "@refinedev/core";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { getErrorMessage } from "../../api/client";
 import { compressImage } from "../../utility/imageCompression";
+import { formatKGS } from "../../utility/format";
 import {
   CLEANING_MAX_PHOTOS,
   CLEANING_PHOTO_MAX_SIZE_MB,
   createCleaningRecord,
-  type CleaningZone,
+  type CleaningType,
 } from "../../api/cleaning";
 
 interface ReportDialogProps {
   open: boolean;
-  /** Активные зоны для выбора (уже отфильтрованы родителем). */
-  activeZones: CleaningZone[];
+  /** Активные типы уборки для выбора (уже отфильтрованы родителем). */
+  activeTypes: CleaningType[];
   onClose: () => void;
   /** Успешная отправка — родитель инвалидирует списки. */
   onSuccess: () => void;
 }
 
 /**
- * Диалог «Отметить уборку»: выбор зоны + 1..5 фото (сжимаются compressImage).
- * Весь стейт фотоотчёта живёт здесь; blob-URL превью освобождаются при
- * открытии/закрытии, успешной отправке и размонтировании.
+ * Диалог «Отметить уборку»: выбор типа уборки + 1..5 фото (сжимаются
+ * compressImage). Весь стейт фотоотчёта живёт здесь; blob-URL превью
+ * освобождаются при открытии/закрытии, успешной отправке и размонтировании.
  */
-const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeZones, onClose, onSuccess }) => {
+const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeTypes, onClose, onSuccess }) => {
   const theme = useTheme();
   const { open: notify } = useNotification();
   const orgId = useApiOrgId();
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const [zoneId, setZoneId] = React.useState<number | "">("");
+  const [typeId, setTypeId] = React.useState<number | "">("");
   const [photos, setPhotos] = React.useState<{ file: File; url: string }[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -74,10 +75,10 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeZones, onClose,
   // Сброс формы при каждом открытии.
   React.useEffect(() => {
     if (!open) return;
-    setZoneId(activeZones.length === 1 ? activeZones[0].id : "");
+    setTypeId(activeTypes.length === 1 ? activeTypes[0].id : "");
     clearPhotos();
     setError(null);
-    // activeZones меняются только при рефетче зон — пересброс формы не нужен.
+    // activeTypes меняются только при рефетче типов — пересброс формы не нужен.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clearPhotos]);
 
@@ -155,12 +156,12 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeZones, onClose,
   };
 
   const handleSubmit = async () => {
-    if (zoneId === "" || photos.length === 0) return;
+    if (typeId === "" || photos.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       await createCleaningRecord({
-        zoneId,
+        typeId,
         photos: photos.map((p) => p.file),
         organizationId: orgId,
       });
@@ -186,16 +187,16 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeZones, onClose,
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <TextField
             select
-            label="Зона"
+            label="Тип уборки"
             size="small"
             fullWidth
-            value={zoneId === "" ? "" : String(zoneId)}
-            onChange={(e) => setZoneId(Number(e.target.value))}
+            value={typeId === "" ? "" : String(typeId)}
+            onChange={(e) => setTypeId(Number(e.target.value))}
             disabled={busy}
           >
-            {activeZones.map((z) => (
-              <MenuItem key={z.id} value={String(z.id)}>
-                {z.name} · {z.branchName}
+            {activeTypes.map((t) => (
+              <MenuItem key={t.id} value={String(t.id)}>
+                {t.name} · {formatKGS(t.rate)}
               </MenuItem>
             ))}
           </TextField>
@@ -276,7 +277,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeZones, onClose,
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || zoneId === "" || photos.length === 0}
+          disabled={busy || typeId === "" || photos.length === 0}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Отправка…" : "Отправить"}
