@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -34,6 +35,8 @@ import DriveFileRenameOutlineOutlined from "@mui/icons-material/DriveFileRenameO
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
+import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -55,9 +58,11 @@ import {
   DOCUMENT_ALLOWED_EXTENSIONS,
   DOCUMENT_MAX_SIZE_MB,
   deleteDocument,
+  getDocumentRoleOptions,
   getDocuments,
-  renameDocument,
+  updateDocument,
   uploadDocument,
+  type DocumentRoleOption,
   type OrganizationDocument,
 } from "../../api/documents";
 import DocumentPreviewDialog from "./DocumentPreviewDialog";
@@ -153,11 +158,20 @@ const DocumentsPage: React.FC = () => {
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.documents.all });
 
+  // ── Роли для селекта доступа (нужны только менеджеру) ─────────────────────
+  const rolesQuery = useQuery({
+    queryKey: djangoQueryKeys.documents.roles(orgId ?? null),
+    queryFn: ({ signal }) => getDocumentRoleOptions(orgId, signal),
+    enabled: canManage,
+  });
+  const roleOptions = rolesQuery.data ?? [];
+
   // ── Загрузка ──────────────────────────────────────────────────────────────
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploadFile, setUploadFile] = React.useState<File | null>(null);
   const [uploadName, setUploadName] = React.useState("");
   const [uploadScope, setUploadScope] = React.useState<Exclude<BranchScope, "all">>("shared");
+  const [uploadRoles, setUploadRoles] = React.useState<DocumentRoleOption[]>([]);
   const [uploadBusy, setUploadBusy] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
 
@@ -184,6 +198,7 @@ const DocumentsPage: React.FC = () => {
       setUploadFile(file);
       setUploadName(file.name);
       setUploadScope("shared");
+      setUploadRoles([]);
       setUploadError(null);
     },
     [notify],
@@ -239,6 +254,7 @@ const DocumentsPage: React.FC = () => {
         file: uploadFile,
         name: uploadName.trim() || undefined,
         branchId: uploadScope === "shared" ? null : Number(uploadScope),
+        visibleRoleIds: uploadRoles.map((r) => r.id),
         organizationId: orgId,
       });
       notify?.({ type: "success", message: "Документ загружен" });
@@ -251,31 +267,42 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  // ── Переименование ────────────────────────────────────────────────────────
-  const [renameTarget, setRenameTarget] = React.useState<OrganizationDocument | null>(null);
-  const [renameValue, setRenameValue] = React.useState("");
-  const [renameBusy, setRenameBusy] = React.useState(false);
-  const [renameError, setRenameError] = React.useState<string | null>(null);
+  // ── Изменение (имя + доступ по ролям) ─────────────────────────────────────
+  const [editTarget, setEditTarget] = React.useState<OrganizationDocument | null>(null);
+  const [editName, setEditName] = React.useState("");
+  const [editRoles, setEditRoles] = React.useState<DocumentRoleOption[]>([]);
+  const [editBusy, setEditBusy] = React.useState(false);
+  const [editError, setEditError] = React.useState<string | null>(null);
 
-  const openRename = (doc: OrganizationDocument) => {
-    setRenameTarget(doc);
-    setRenameValue(doc.name);
-    setRenameError(null);
+  const openEdit = (doc: OrganizationDocument) => {
+    setEditTarget(doc);
+    setEditName(doc.name);
+    setEditRoles(
+      doc.visibleRoleIds.map((id, i) => ({
+        id,
+        name: doc.visibleRoleNames[i] ?? `Роль #${id}`,
+      })),
+    );
+    setEditError(null);
   };
 
-  const handleRename = async () => {
-    if (!renameTarget || !renameValue.trim()) return;
-    setRenameBusy(true);
-    setRenameError(null);
+  const handleEditSave = async () => {
+    if (!editTarget || !editName.trim()) return;
+    setEditBusy(true);
+    setEditError(null);
     try {
-      await renameDocument(renameTarget.id, renameValue.trim(), orgId);
-      notify?.({ type: "success", message: "Документ переименован" });
-      setRenameTarget(null);
+      await updateDocument(
+        editTarget.id,
+        { name: editName.trim(), visibleRoleIds: editRoles.map((r) => r.id) },
+        orgId,
+      );
+      notify?.({ type: "success", message: "Документ обновлён" });
+      setEditTarget(null);
       invalidate();
     } catch (err) {
-      setRenameError(extractErrorMessage(err));
+      setEditError(extractErrorMessage(err));
     } finally {
-      setRenameBusy(false);
+      setEditBusy(false);
     }
   };
 
@@ -356,6 +383,37 @@ const DocumentsPage: React.FC = () => {
           ),
       },
       {
+        field: "visibleRoleNames",
+        headerName: "Доступ",
+        width: 190,
+        sortable: false,
+        renderCell: (p) =>
+          p.row.visibleRoleIds.length === 0 ? (
+            <Chip
+              size="small"
+              variant="outlined"
+              icon={<GroupsOutlined />}
+              label="Все сотрудники"
+              sx={{ borderRadius: "7px" }}
+            />
+          ) : (
+            <Tooltip title={p.row.visibleRoleNames.join(", ")} arrow>
+              <Chip
+                size="small"
+                variant="outlined"
+                color="warning"
+                icon={<LockOutlined />}
+                label={
+                  p.row.visibleRoleNames.length === 1
+                    ? p.row.visibleRoleNames[0]
+                    : `${p.row.visibleRoleNames[0]} +${p.row.visibleRoleNames.length - 1}`
+                }
+                sx={{ borderRadius: "7px", maxWidth: "100%" }}
+              />
+            </Tooltip>
+          ),
+      },
+      {
         field: "fileSize",
         headerName: "Размер",
         width: 100,
@@ -400,8 +458,8 @@ const DocumentsPage: React.FC = () => {
             </Tooltip>
             {canManage && (
               <>
-                <Tooltip title="Переименовать">
-                  <IconButton size="small" onClick={() => openRename(p.row)}>
+                <Tooltip title="Изменить (название, доступ)">
+                  <IconButton size="small" onClick={() => openEdit(p.row)}>
                     <DriveFileRenameOutlineOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -549,7 +607,11 @@ const DocumentsPage: React.FC = () => {
             disableRowSelectionOnClick
             rowHeight={52}
             columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-            columnVisibilityModel={{ uploadedByName: !isMobile, fileSize: !isMobile }}
+            columnVisibilityModel={{
+              uploadedByName: !isMobile,
+              fileSize: !isMobile,
+              visibleRoleNames: !isMobile,
+            }}
             localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
             slots={{
               noRowsOverlay: () => (
@@ -630,6 +692,25 @@ const DocumentsPage: React.FC = () => {
                 </MenuItem>
               ))}
             </TextField>
+            <Autocomplete<DocumentRoleOption, true>
+              multiple
+              size="small"
+              options={roleOptions}
+              loading={rolesQuery.isLoading}
+              value={uploadRoles}
+              onChange={(_, v) => setUploadRoles(v)}
+              getOptionLabel={(r) => r.name}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              disabled={uploadBusy}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Доступ по ролям"
+                  placeholder={uploadRoles.length === 0 ? "Все сотрудники" : undefined}
+                  helperText="Пусто — документ видят все сотрудники. Выберите роли, чтобы ограничить доступ (менеджеры документов видят всё)."
+                />
+              )}
+            />
             {uploadError && <Alert severity="error">{uploadError}</Alert>}
           </Stack>
         </DialogContent>
@@ -648,42 +729,62 @@ const DocumentsPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Диалог переименования */}
+      {/* Диалог изменения: название + доступ по ролям */}
       <Dialog
-        open={renameTarget !== null}
-        onClose={renameBusy ? undefined : () => setRenameTarget(null)}
+        open={editTarget !== null}
+        onClose={editBusy ? undefined : () => setEditTarget(null)}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Переименовать документ</DialogTitle>
+        <DialogTitle>Изменить документ</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <TextField
+              label="Название"
               size="small"
               fullWidth
               autoFocus
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              disabled={renameBusy}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              disabled={editBusy}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  void handleRename();
+                  void handleEditSave();
                 }
               }}
             />
-            {renameError && <Alert severity="error">{renameError}</Alert>}
+            <Autocomplete<DocumentRoleOption, true>
+              multiple
+              size="small"
+              options={roleOptions}
+              loading={rolesQuery.isLoading}
+              value={editRoles}
+              onChange={(_, v) => setEditRoles(v)}
+              getOptionLabel={(r) => r.name}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              disabled={editBusy}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Доступ по ролям"
+                  placeholder={editRoles.length === 0 ? "Все сотрудники" : undefined}
+                  helperText="Пусто — документ видят все сотрудники. Выберите роли, чтобы ограничить доступ (менеджеры документов видят всё)."
+                />
+              )}
+            />
+            {editError && <Alert severity="error">{editError}</Alert>}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRenameTarget(null)} disabled={renameBusy}>
+          <Button onClick={() => setEditTarget(null)} disabled={editBusy}>
             Отмена
           </Button>
           <Button
             variant="contained"
-            onClick={handleRename}
-            disabled={renameBusy || !renameValue.trim()}
-            startIcon={renameBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
+            onClick={handleEditSave}
+            disabled={editBusy || !editName.trim()}
+            startIcon={editBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             Сохранить
           </Button>

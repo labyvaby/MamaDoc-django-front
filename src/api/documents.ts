@@ -25,8 +25,20 @@ export interface OrganizationDocument {
   /** null — общий документ организации, иначе привязан к филиалу. */
   branchId: number | null;
   branchName: string | null;
+  /**
+   * Доступ по ролям (UPD 15.07.2026): пустой массив — виден всем сотрудникам
+   * с documents.view; непустой — только этим ролям + всем с documents.manage.
+   */
+  visibleRoleIds: number[];
+  visibleRoleNames: string[];
   uploadedByName: string | null;
   createdAt: string;
+}
+
+/** Роль для селекта доступа (сокращение RbacRole). */
+export interface DocumentRoleOption {
+  id: number;
+  name: string;
 }
 
 export interface DocumentsResponse {
@@ -84,6 +96,15 @@ const MOCK_PDF_URL = `data:application/pdf;base64,${btoa(
 /** Заглушка для непревьюируемых типов (docx и т.п.) — скачивается файликом. */
 const MOCK_FILE_URL = `data:application/octet-stream;base64,${btoa("MamaDoc demo file")}`;
 
+/** Мок-роли для селекта доступа (на живом бэке — GET /rbac/roles/). */
+const mockRoles: DocumentRoleOption[] = [
+  { id: 4, name: "Управляющий организацией" },
+  { id: 8, name: "Врач" },
+  { id: 9, name: "Медсестра" },
+  { id: 10, name: "Бухгалтер" },
+  { id: 26, name: "Регистратор" },
+];
+
 const mockDocs: OrganizationDocument[] = [
   {
     id: 1,
@@ -92,6 +113,8 @@ const mockDocs: OrganizationDocument[] = [
     fileSize: 1_240_000,
     branchId: null,
     branchName: null,
+    visibleRoleIds: [],
+    visibleRoleNames: [],
     uploadedByName: "Шаршебаев Автандил",
     createdAt: "2026-07-01T10:15:00Z",
   },
@@ -102,6 +125,8 @@ const mockDocs: OrganizationDocument[] = [
     fileSize: 860_000,
     branchId: null,
     branchName: null,
+    visibleRoleIds: [4, 10],
+    visibleRoleNames: ["Управляющий организацией", "Бухгалтер"],
     uploadedByName: "Шаршебаев Автандил",
     createdAt: "2026-07-03T09:00:00Z",
   },
@@ -112,6 +137,8 @@ const mockDocs: OrganizationDocument[] = [
     fileSize: 145_000,
     branchId: 2,
     branchName: "Мама Доктор Плюс",
+    visibleRoleIds: [],
+    visibleRoleNames: [],
     uploadedByName: "Шаршебаев Автандил",
     createdAt: "2026-07-10T14:30:00Z",
   },
@@ -150,17 +177,40 @@ export function getDocuments(
   return apiRequest<DocumentsResponse>(`/documents/?${q.toString()}`, { signal });
 }
 
+/**
+ * Роли организации для селекта доступа. На живом бэке — GET /rbac/roles/
+ * (эндпоинт уже существует); правка формы селекта не требует изменений тикета
+ * documents.
+ */
+export function getDocumentRoleOptions(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<DocumentRoleOption[]> {
+  if (DOCUMENTS_USE_MOCKS) return mockDelay([...mockRoles]);
+  const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+  return apiRequest<Array<{ id: number; name: string }>>(`/rbac/roles/${qs}`, { signal }).then(
+    (items) =>
+      (Array.isArray(items) ? items : []).map((r) => ({ id: r.id, name: r.name })),
+  );
+}
+
 export interface UploadDocumentPayload {
   file: File;
   /** Отображаемое имя; по умолчанию бэк берёт имя файла. */
   name?: string;
   /** null/undefined — общий документ. */
   branchId?: number | null;
+  /** Пусто/undefined — доступен всем сотрудникам с documents.view. */
+  visibleRoleIds?: number[];
   organizationId?: number;
 }
 
+const mockRoleNames = (ids: number[]): string[] =>
+  ids.map((id) => mockRoles.find((r) => r.id === id)?.name ?? `Роль #${id}`);
+
 export function uploadDocument(payload: UploadDocumentPayload): Promise<OrganizationDocument> {
   if (DOCUMENTS_USE_MOCKS) {
+    const roleIds = payload.visibleRoleIds ?? [];
     const doc: OrganizationDocument = {
       id: ++mockSeq,
       name: payload.name?.trim() || payload.file.name,
@@ -168,6 +218,8 @@ export function uploadDocument(payload: UploadDocumentPayload): Promise<Organiza
       fileSize: payload.file.size,
       branchId: payload.branchId ?? null,
       branchName: payload.branchId != null ? `Филиал #${payload.branchId}` : null,
+      visibleRoleIds: roleIds,
+      visibleRoleNames: mockRoleNames(roleIds),
       uploadedByName: "Вы (мок)",
       createdAt: nowIso(),
     };
@@ -178,26 +230,40 @@ export function uploadDocument(payload: UploadDocumentPayload): Promise<Organiza
   formData.append("file", payload.file);
   if (payload.name?.trim()) formData.append("name", payload.name.trim());
   if (payload.branchId != null) formData.append("branchId", String(payload.branchId));
+  // Повторяющееся поле — стандарт multipart для списков (getlist на бэке).
+  for (const roleId of payload.visibleRoleIds ?? []) {
+    formData.append("visibleRoleIds", String(roleId));
+  }
   return apiRequest<OrganizationDocument>(withOrg("/documents/", payload.organizationId), {
     method: "POST",
     formData,
   });
 }
 
-export function renameDocument(
+export interface UpdateDocumentPayload {
+  name?: string;
+  /** Пустой массив снимает ограничение (документ снова виден всем). */
+  visibleRoleIds?: number[];
+}
+
+export function updateDocument(
   documentId: number,
-  name: string,
+  payload: UpdateDocumentPayload,
   organizationId?: number,
 ): Promise<OrganizationDocument> {
   if (DOCUMENTS_USE_MOCKS) {
     const doc = mockDocs.find((d) => d.id === documentId);
     if (!doc) return Promise.reject(new Error("Документ не найден (мок)"));
-    doc.name = name;
+    if (payload.name !== undefined) doc.name = payload.name;
+    if (payload.visibleRoleIds !== undefined) {
+      doc.visibleRoleIds = payload.visibleRoleIds;
+      doc.visibleRoleNames = mockRoleNames(payload.visibleRoleIds);
+    }
     return mockDelay({ ...doc });
   }
   return apiRequest<OrganizationDocument>(withOrg(`/documents/${documentId}/`, organizationId), {
     method: "PATCH",
-    body: { name },
+    body: payload,
   });
 }
 
