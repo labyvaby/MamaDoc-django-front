@@ -41,6 +41,7 @@ import {
 } from "../../api/appointments";
 import { normalizeDjangoStatus } from "../../config/appointmentStatuses";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import type { DjangoPatient } from "../../api/patients";
 import { searchPatients } from "../../api/patients";
 import type {
@@ -68,6 +69,27 @@ type ServiceRow = {
   discountAmount: string;
 };
 
+type ProductRow = {
+  /** id существующей AppointmentProductLine, null для новых строк */
+  lineId: number | null;
+  productId: number | null;
+  // Строкой, чтобы поле можно было полностью стереть при вводе (как в форме
+  // создания); нормализуется к >= 1 на onBlur / при сабмите.
+  quantity: string;
+  /** Цена за единицу: у существующих строк — из приёма, у новых — из каталога. */
+  unitPrice: number;
+  /** Подпись существующей строки: товар может пропасть из каталога продажи. */
+  name: string;
+  unit: string;
+};
+
+// Редактирование товаров через PATCH: бэкенд пока молча игнорирует поле
+// ``products`` (проверено на живом API 15.07.2026, приём 12127 в тестовом
+// филиале) — тикет MamaDoc/backend_ticket_appointments_patch_products.md.
+// До реализации секция «Товары» работает только на чтение; после деплоя
+// бэка переключить в true — payload уже прокинут.
+const EDIT_APPOINTMENT_PRODUCTS_ENABLED = false;
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function inferWorkMode(iso: string): "day" | "night" {
@@ -91,6 +113,18 @@ const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
   matchFrom: "any",
   stringify: (e) => `${e.fullName} ${(e.specializations ?? []).join(" ")}`,
 });
+
+// Поиск товара по названию, штрихкоду и цене.
+const productFilter = createFilterOptions<DjangoProduct>({
+  matchFrom: "any",
+  stringify: (p) => `${p.name} ${p.barcode} ${p.price}`,
+});
+
+// Числовое количество товара из «сырой» строки (пусто/0/мусор → 0).
+function parseQty(raw: string): number {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -133,6 +167,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
     { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
   ]);
+  const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
+  const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+  const [productsLoading, setProductsLoading] = React.useState(false);
   const [complaints, setComplaints] = React.useState("");
   const [doctorComplaints, setDoctorComplaints] = React.useState("");
   const [adminComment, setAdminComment] = React.useState("");
@@ -177,6 +214,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       setServiceRows([
         { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
       ]);
+      setProductRows([]);
       setComplaints("");
       setDoctorComplaints("");
       setAdminComment("");
@@ -211,6 +249,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
       ]);
     }
+
+    setProductRows(
+      (appointment.productLines ?? [])
+        .filter((line) => line.status !== "canceled")
+        .map((line) => ({
+          lineId: line.id,
+          productId: line.product.id,
+          quantity: String(line.quantity),
+          unitPrice: Number(line.unitPrice) || Number(line.product.price) || 0,
+          name: line.product.name,
+          unit: line.product.unit,
+        })),
+    );
   }, [open, appointment]);
 
   // Если зашла медсестра — фиксируем её как исполнителя в пустых строках
@@ -249,6 +300,28 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       updatedAt: "",
     });
   }, [open, appointment]);
+
+  // ── каталог товаров для секции «Товары» ────────────────────────────────────
+  // Нужен только когда редактирование товаров включено; на чтение хватает
+  // данных из productLines самого приёма.
+  React.useEffect(() => {
+    if (!open || !EDIT_APPOINTMENT_PRODUCTS_ENABLED) return;
+    const ctrl = new AbortController();
+    setProductsLoading(true);
+    getProducts(ctrl.signal)
+      .then((list) => {
+        if (ctrl.signal.aborted) return;
+        // Только товары на продажу и с остатком.
+        setProducts(list.filter((p) => p.isActive && p.isForSale && p.stock > 0));
+      })
+      .catch(() => {
+        /* товары опциональны; ошибку загрузки молча игнорируем */
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setProductsLoading(false);
+      });
+    return () => ctrl.abort();
+  }, [open]);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
@@ -300,7 +373,38 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     }, 0),
     [validRows, data.services],
   );
-  const grandTotal = servicesTotal;
+  const productsTotal = React.useMemo(
+    () => productRows.reduce((sum, r) => sum + r.unitPrice * parseQty(r.quantity), 0),
+    [productRows],
+  );
+  const grandTotal = servicesTotal + productsTotal;
+
+  // Каталог + товары существующих строк, выпавшие из каталога (кончился
+  // остаток / сняты с продажи) — чтобы Autocomplete не терял значение строки.
+  const productOptions = React.useMemo<DjangoProduct[]>(() => {
+    if (!EDIT_APPOINTMENT_PRODUCTS_ENABLED) return products;
+    const missing = productRows
+      .filter((r) => r.productId !== null && !products.some((p) => p.id === r.productId))
+      .map((r): DjangoProduct => ({
+        id: r.productId!,
+        organizationId: 0,
+        name: r.name,
+        category: "",
+        barcode: "",
+        unit: r.unit,
+        price: r.unitPrice,
+        isInfusion: false,
+        description: "",
+        comment: "",
+        isForSale: true,
+        isActive: true,
+        imageUrl: null,
+        stock: 0,
+        createdAt: "",
+        updatedAt: "",
+      }));
+    return [...missing, ...products];
+  }, [products, productRows]);
 
   // ── submit ───────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -324,6 +428,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
           ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
         })),
+        // Пока флаг выключен, products в PATCH не шлём вовсе: бэкенд поле
+        // игнорирует, а слать «глухие» данные — маскировать проблему.
+        ...(EDIT_APPOINTMENT_PRODUCTS_ENABLED
+          ? {
+              products: productRows
+                .filter((r) => r.productId !== null && parseQty(r.quantity) > 0)
+                .map((r) => ({
+                  ...(r.lineId != null ? { id: r.lineId } : {}),
+                  productId: r.productId!,
+                  quantity: parseQty(r.quantity),
+                })),
+            }
+          : {}),
       });
       notify?.({ type: "success", message: "Приём обновлён" });
       // Панель деталей показывает сумму из кэша платежей (pay?.totalAmount
@@ -773,6 +890,195 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                           + Добавить услугу
                         </Button>
 
+                        <Divider />
+
+                        {/* ── Товары ── */}
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                            Товары
+                          </Typography>
+                          {productsLoading && <CircularProgress size={14} />}
+                        </Stack>
+
+                        {!EDIT_APPOINTMENT_PRODUCTS_ENABLED && (
+                          <>
+                            {productRows.map((row) => (
+                              <Stack
+                                key={row.lineId}
+                                direction="row"
+                                justifyContent="space-between"
+                                alignItems="center"
+                                spacing={1}
+                              >
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography variant="body2" noWrap>
+                                    {row.name}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {parseQty(row.quantity)} {row.unit} × {formatKGS(row.unitPrice)}
+                                  </Typography>
+                                </Box>
+                                <Typography variant="body2" fontWeight={600}>
+                                  {formatKGS(row.unitPrice * parseQty(row.quantity))}
+                                </Typography>
+                              </Stack>
+                            ))}
+                            <Typography variant="caption" color="text.secondary">
+                              {productRows.length > 0
+                                ? "Изменить товары созданного приёма пока нельзя. Дополнительные расходники оформляются отдельной продажей в разделе «Продажи»."
+                                : "Товары добавляются при создании приёма. К созданному приёму расходники (шприц, зонд и т.п.) оформляются отдельной продажей в разделе «Продажи»."}
+                            </Typography>
+                          </>
+                        )}
+
+                        {EDIT_APPOINTMENT_PRODUCTS_ENABLED && (
+                          <>
+                            {productRows.map((row, index) => {
+                              const selectedProduct =
+                                productOptions.find((p) => p.id === row.productId) ?? null;
+                              // Для существующих строк товар уже списан со
+                              // склада — остаток проверяем только у новых.
+                              const overstocked =
+                                row.lineId === null &&
+                                selectedProduct !== null &&
+                                parseQty(row.quantity) > selectedProduct.stock;
+                              return (
+                                <Stack key={index} spacing={1}>
+                                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                                    <Autocomplete<DjangoProduct>
+                                      sx={{ flex: 1 }}
+                                      options={productOptions}
+                                      loading={productsLoading}
+                                      filterOptions={productFilter}
+                                      value={selectedProduct}
+                                      onChange={(_, v) => {
+                                        setTouched(true);
+                                        setProductRows((prev) =>
+                                          prev.map((r, i) =>
+                                            i === index
+                                              ? {
+                                                  ...r,
+                                                  productId: v?.id ?? null,
+                                                  // Смена товара = пересоздание строки:
+                                                  // как и у услуг, PATCH с id не
+                                                  // пересчитал бы цену.
+                                                  ...((v?.id ?? null) !== r.productId
+                                                    ? {
+                                                        lineId: null,
+                                                        unitPrice: v?.price ?? 0,
+                                                        name: v?.name ?? "",
+                                                        unit: v?.unit ?? "",
+                                                      }
+                                                    : {}),
+                                                }
+                                              : r,
+                                          ),
+                                        );
+                                      }}
+                                      getOptionLabel={(p) => `${p.name} — ${formatKGS(p.price)}`}
+                                      isOptionEqualToValue={(a, b) => a.id === b.id}
+                                      noOptionsText="Нет товаров в наличии"
+                                      renderOption={(props, p) => (
+                                        <li {...props} key={p.id}>
+                                          <Stack>
+                                            <Typography variant="body2">{p.name}</Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                              {formatKGS(p.price)} · в наличии: {p.stock} {p.unit}
+                                            </Typography>
+                                          </Stack>
+                                        </li>
+                                      )}
+                                      renderInput={(params) => (
+                                        <TextField
+                                          {...params}
+                                          placeholder="Товар"
+                                          size="small"
+                                          fullWidth
+                                        />
+                                      )}
+                                    />
+                                    <TextField
+                                      type="number"
+                                      size="small"
+                                      label="Кол-во"
+                                      value={row.quantity}
+                                      onChange={(e) => {
+                                        // Разрешаем пустую строку (можно стереть) и
+                                        // только неотрицательные целые.
+                                        const raw = e.target.value;
+                                        const next =
+                                          raw === ""
+                                            ? ""
+                                            : String(Math.max(0, Math.floor(Number(raw) || 0)));
+                                        setTouched(true);
+                                        setProductRows((prev) =>
+                                          prev.map((r, i) =>
+                                            i === index ? { ...r, quantity: next } : r,
+                                          ),
+                                        );
+                                      }}
+                                      onBlur={() => {
+                                        // При уходе из поля пустое/0 → 1.
+                                        setProductRows((prev) =>
+                                          prev.map((r, i) =>
+                                            i === index && parseQty(r.quantity) < 1
+                                              ? { ...r, quantity: "1" }
+                                              : r,
+                                          ),
+                                        );
+                                      }}
+                                      inputProps={{ min: 0, style: { width: 56 } }}
+                                      error={overstocked}
+                                    />
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={() => {
+                                        setTouched(true);
+                                        setProductRows((prev) =>
+                                          prev.filter((_, i) => i !== index),
+                                        );
+                                      }}
+                                      sx={{ mt: 0.25, border: "1px solid", borderColor: "error.main" }}
+                                    >
+                                      <DeleteOutlined fontSize="small" />
+                                    </IconButton>
+                                  </Stack>
+                                  {selectedProduct && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Сумма:{" "}
+                                      <strong>
+                                        {formatKGS(row.unitPrice * parseQty(row.quantity))}
+                                      </strong>
+                                      {overstocked
+                                        ? ` · недостаточно на складе (в наличии ${selectedProduct.stock})`
+                                        : ""}
+                                    </Typography>
+                                  )}
+                                  {overstocked && (
+                                    <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                      Количество превышает остаток на складе
+                                    </Alert>
+                                  )}
+                                </Stack>
+                              );
+                            })}
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                setTouched(true);
+                                setProductRows((prev) => [
+                                  ...prev,
+                                  { lineId: null, productId: null, quantity: "1", unitPrice: 0, name: "", unit: "" },
+                                ]);
+                              }}
+                              disabled={productsLoading || products.length === 0}
+                              sx={{ alignSelf: "flex-start" }}
+                            >
+                              + Добавить товар
+                            </Button>
+                          </>
+                        )}
 
                         <Divider />
 

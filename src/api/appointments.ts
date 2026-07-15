@@ -247,6 +247,8 @@ export interface AppointmentServiceLineCreate {
 
 /** Frontend product line (write path). Goods sold within the visit. */
 export interface AppointmentProductLineCreate {
+  /** When set, identifies an existing line to update in-place (diff semantics). */
+  id?: number | null;
   productId: number;
   quantity?: number;
   unitPrice?: string;
@@ -280,6 +282,12 @@ export interface UpdateAppointmentPayload {
   doctorComplaints?: string | null;
   adminComment?: string | null;
   services?: AppointmentServiceLineCreate[];
+  /**
+   * Товары приёма. ⚠ Бэкенд ПОКА игнорирует это поле в PATCH (проверено на
+   * живом API 15.07.2026: 200, но productLines не меняется) — тикет
+   * MamaDoc/backend_ticket_appointments_patch_products.md.
+   */
+  products?: AppointmentProductLineCreate[];
 }
 
 // ── Request denormalization ───────────────────────────────────────────────────
@@ -296,6 +304,7 @@ interface BackendServiceLine {
 
 /** Backend product line shape (write path). */
 interface BackendProductLine {
+  id?: number;
   productId: number;
   quantity?: number;
   unitPrice?: string;
@@ -333,6 +342,7 @@ interface BackendUpdateBody {
   adminComment?: string | null;
   // Backend update payload also names this ``services`` (not ``serviceLines``).
   services?: BackendServiceLine[];
+  products?: BackendProductLine[];
 }
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
@@ -347,8 +357,9 @@ function toBackendServiceLines(services: AppointmentServiceLineCreate[]): Backen
 }
 
 function toBackendProducts(products: AppointmentProductLineCreate[]): BackendProductLine[] {
-  return products.map(({ productId, quantity, unitPrice, discountAmount }) => {
+  return products.map(({ id, productId, quantity, unitPrice, discountAmount }) => {
     const line: BackendProductLine = { productId };
+    if (id != null) line.id = id;
     if (quantity !== undefined) line.quantity = quantity;
     if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
     if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
@@ -395,6 +406,9 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
   }
   if (payload.services !== undefined) {
     body.services = toBackendServiceLines(payload.services);
+  }
+  if (payload.products !== undefined) {
+    body.products = toBackendProducts(payload.products);
   }
   return body;
 }
