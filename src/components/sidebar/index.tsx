@@ -389,23 +389,29 @@ const SidebarSecondary: React.FC = () => {
   // Эти же флаги используются и для условий рендера пунктов ниже, и для расчёта
   // видимости вкладки группы (groupVisible). Так вкладка скрывается, когда у
   // сотрудника нет доступа НИ К ОДНОЙ странице раздела.
+  // Группировка пунктов — пожелание заказчика 14.07.2026: «Моя работа» —
+  // всё ежедневное (брони, задачи, расходы, база знаний, достижения),
+  // «Организация» — справочное (пациенты, приёмы, услуги, документы).
   const can_ = {
     // МОЯ РАБОТА
     registratura: isSuper || (!isNurse && !isDoctor()),
+    bookings: IS_DJANGO_BACKEND && (isSuper || can(["bookings.view", "bookings.manage"])),
     doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
     nurseRoom: isSuper || isAdmin() || isNurse,
-    patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
     schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
     cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
+    tasks: IS_DJANGO_BACKEND && (isSuper || can("tasks.list")),
+    expenses: true,
+    knowledge: IS_DJANGO_BACKEND && moduleGate("knowledge"),
+    achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
+    patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
-    achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
     documents: IS_DJANGO_BACKEND && moduleGate("documents"),
-    knowledge: IS_DJANGO_BACKEND && moduleGate("knowledge"),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
     products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
@@ -413,9 +419,7 @@ const SidebarSecondary: React.FC = () => {
     storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
     // УПРАВЛЕНИЕ
     salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
-    tasks: IS_DJANGO_BACKEND && (isSuper || can("tasks.list")),
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
-    expenses: true,
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
     load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
     notifications: isSuper,
@@ -440,10 +444,10 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.doctorRoom || can_.nurseRoom || can_.patients || can_.schedule || can_.skud || can_.cleaning,
-    "org": can_.employees || can_.allAppointments || can_.allProcedures || can_.services || can_.achievements || can_.documents || can_.knowledge || can_.diagnoses,
+    "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
-    "management": can_.salaryReports || can_.tasks || can_.reports || can_.expenses || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -552,6 +556,11 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
+        {/* Брони (operator.kg, Django-mode only) */}
+        {show("my-work") && can_.bookings && (
+          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} />
+        )}
+
         {/* Кабинет врача */}
         {show("my-work") && can_.doctorRoom && (
           <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label="Кабинет врача" collapsed={siderCollapsed} />
@@ -560,16 +569,6 @@ const SidebarSecondary: React.FC = () => {
         {/* Процедурный кабинет */}
         {show("my-work") && can_.nurseRoom && (
           <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
-        )}
-
-        {/* Все пациенты */}
-        {show("my-work") && can_.patients && (
-          <SidebarMenuItem
-            to={IS_DJANGO_BACKEND ? "/patients" : "/patient-search"}
-            icon={<SearchOutlined />}
-            label="Все пациенты"
-            collapsed={siderCollapsed}
-          />
         )}
 
         {/* Расписание */}
@@ -587,6 +586,37 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/cleaning" icon={<CleaningServicesOutlined />} label="Уборка" collapsed={siderCollapsed} />
         )}
 
+        {/* Задачи */}
+        {show("my-work") && can_.tasks && (
+          <SidebarMenuItem
+            to="/tasks"
+            icon={<AssignmentOutlined />}
+            label="Задачи"
+            collapsed={siderCollapsed}
+            showBadge={tasksBadge}
+          />
+        )}
+
+        {/* Расходы */}
+        {show("my-work") && can_.expenses && (
+          <SidebarMenuItem
+            to="/expenses"
+            icon={<PaymentsOutlined />}
+            label="Расходы"
+            collapsed={siderCollapsed}
+          />
+        )}
+
+        {/* База знаний (Django-mode only, пока на моках) */}
+        {show("my-work") && can_.knowledge && (
+          <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />
+        )}
+
+        {/* Достижения (Django-mode only) */}
+        {show("my-work") && can_.achievements && (
+          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
+        )}
+
         {/* ══════════════════════════════════════════
             ОРГАНИЗАЦИЯ
             ══════════════════════════════════════════ */}
@@ -596,14 +626,19 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
         )}
 
+        {/* Все пациенты */}
+        {show("org") && can_.patients && (
+          <SidebarMenuItem
+            to={IS_DJANGO_BACKEND ? "/patients" : "/patient-search"}
+            icon={<SearchOutlined />}
+            label="Все пациенты"
+            collapsed={siderCollapsed}
+          />
+        )}
+
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
-        )}
-
-        {/* Брони (operator.kg, Django-mode only) */}
-        {show("org") && IS_DJANGO_BACKEND && (isSuper || can(['bookings.view', 'bookings.manage'])) && (
-          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} />
         )}
 
         {/* Все процедуры */}
@@ -616,19 +651,9 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/services" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={siderCollapsed} />
         )}
 
-        {/* Достижения (Django-mode only, пока на моках) */}
-        {show("org") && can_.achievements && (
-          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
-        )}
-
         {/* Документы организации (Django-mode only, пока на моках) */}
         {show("org") && can_.documents && (
           <SidebarMenuItem to="/documents" icon={<FolderOutlined />} label="Документы" collapsed={siderCollapsed} />
-        )}
-
-        {/* База знаний (Django-mode only, пока на моках) */}
-        {show("org") && can_.knowledge && (
-          <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />
         )}
 
         {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
@@ -672,27 +697,6 @@ const SidebarSecondary: React.FC = () => {
         {/* Отзывы (Django-mode only) */}
         {show("management") && IS_DJANGO_BACKEND && (isSuper || can(['reviews.view', 'reviews.manage'])) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
-        )}
-
-        {/* Задачи */}
-        {show("management") && can_.tasks && (
-          <SidebarMenuItem
-            to="/tasks"
-            icon={<AssignmentOutlined />}
-            label="Задачи"
-            collapsed={siderCollapsed}
-            showBadge={tasksBadge}
-          />
-        )}
-
-        {/* Расходы */}
-        {show("management") && can_.expenses && (
-          <SidebarMenuItem
-            to="/expenses"
-            icon={<PaymentsOutlined />}
-            label="Расходы"
-            collapsed={siderCollapsed}
-          />
         )}
 
         {/* Касса */}
