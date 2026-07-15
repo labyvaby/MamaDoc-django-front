@@ -22,6 +22,7 @@ import {
 import { useTheme, alpha } from "@mui/material/styles";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Youtube from "@tiptap/extension-youtube";
 
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import UndoOutlined from "@mui/icons-material/UndoOutlined";
@@ -36,8 +37,15 @@ import FormatQuoteOutlined from "@mui/icons-material/FormatQuoteOutlined";
 import CodeOutlined from "@mui/icons-material/CodeOutlined";
 import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
+import SmartDisplayOutlined from "@mui/icons-material/SmartDisplayOutlined";
 
-import type { KnowledgeArticle, KnowledgeArticlePayload, KnowledgeCategory } from "../../api/knowledge";
+import {
+  parseYoutubeId,
+  youtubeEmbedUrl,
+  type KnowledgeArticle,
+  type KnowledgeArticlePayload,
+  type KnowledgeCategory,
+} from "../../api/knowledge";
 
 interface ArticleEditorDrawerProps {
   open: boolean;
@@ -52,8 +60,10 @@ interface ArticleEditorDrawerProps {
 
 /**
  * Редактор статьи базы знаний: заголовок, раздел, публикация и rich-text
- * (TipTap StarterKit). Кнопки вставки изображений нет намеренно — эндпоинт
- * загрузки картинок в v1 не согласован (открытый вопрос тикета knowledge).
+ * (TipTap StarterKit + YouTube-эмбеды: видео вставляются прямо в статью,
+ * отдельной сущности «видеоурок» нет — UPD заказчика 15.07.2026). Кнопки
+ * вставки изображений нет намеренно — эндпоинт загрузки картинок в v1 не
+ * согласован (открытый вопрос тикета knowledge).
  */
 const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   open,
@@ -71,7 +81,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   const [isPublished, setIsPublished] = React.useState(false);
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      // nocookie — единый домен эмбедов (youtube-nocookie.com), как в
+      // youtubeEmbedUrl; его же ждёт allowlist санитизации на бэке.
+      Youtube.configure({ nocookie: true, width: 640, height: 360 }),
+    ],
     content: "",
     editorProps: {
       attributes: { class: "tiptap-editor" },
@@ -141,6 +156,19 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
     }
     setLinkOpen(false);
+  };
+
+  // ── Видео (YouTube-эмбед в тело статьи) ───────────────────────────────────
+  const [videoOpen, setVideoOpen] = React.useState(false);
+  const [videoUrl, setVideoUrl] = React.useState("");
+  const videoId = parseYoutubeId(videoUrl);
+
+  const applyVideo = () => {
+    if (!editor || !videoId) return;
+    // Нормализуем любую форму ссылки (watch/youtu.be/shorts) к embed-URL.
+    editor.chain().focus().setYoutubeVideo({ src: youtubeEmbedUrl(videoId) }).run();
+    setVideoOpen(false);
+    setVideoUrl("");
   };
 
   // ── Сохранение ────────────────────────────────────────────────────────────
@@ -272,6 +300,8 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             {tb("Ссылка", <LinkOutlined fontSize="small" />, editorState?.link ?? false, openLinkDialog)}
             {tb("Убрать ссылку", <LinkOffOutlined fontSize="small" />, false, () => editor?.chain().focus().unsetLink().run(), !editorState?.link)}
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            {tb("Видео (YouTube)", <SmartDisplayOutlined fontSize="small" />, false, () => { setVideoUrl(""); setVideoOpen(true); })}
           </Stack>
 
           {/* Контент */}
@@ -310,6 +340,18 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 overflowX: "auto",
               },
               "& .tiptap-editor a": { color: theme.palette.primary.main },
+              "& .tiptap-editor div[data-youtube-video]": {
+                margin: theme.spacing(1, 0),
+                "& iframe": {
+                  display: "block",
+                  width: "100%",
+                  maxWidth: 640,
+                  aspectRatio: "16/9",
+                  height: "auto",
+                  border: 0,
+                  borderRadius: 8,
+                },
+              },
             }}
           >
             <EditorContent editor={editor} />
@@ -359,6 +401,40 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
           <Button onClick={() => setLinkOpen(false)}>Отмена</Button>
           <Button variant="contained" onClick={applyLink}>
             Применить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Диалог вставки видео */}
+      <Dialog open={videoOpen} onClose={() => setVideoOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Видео (YouTube)</DialogTitle>
+        <DialogContent>
+          <TextField
+            size="small"
+            fullWidth
+            autoFocus
+            placeholder="https://www.youtube.com/watch?v=…"
+            value={videoUrl}
+            onChange={(e) => setVideoUrl(e.target.value)}
+            sx={{ mt: 0.5 }}
+            error={videoUrl.trim() !== "" && !videoId}
+            helperText={
+              videoUrl.trim() !== "" && !videoId
+                ? "Не похоже на ссылку YouTube (youtube.com / youtu.be)"
+                : "Видео вставится в текст статьи в месте курсора"
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applyVideo();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setVideoOpen(false)}>Отмена</Button>
+          <Button variant="contained" onClick={applyVideo} disabled={!videoId}>
+            Вставить
           </Button>
         </DialogActions>
       </Dialog>

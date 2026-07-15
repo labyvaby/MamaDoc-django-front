@@ -2,18 +2,21 @@ import { apiRequest } from "./client";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
- * Модуль «База знаний» — статьи (rich-text, TipTap → HTML) и видеоуроки
- * (только ссылки на YouTube, файлы не храним). Знания общие на организацию,
- * скоупа по филиалам нет. Статьи редактирует только админ (knowledge.manage).
+ * Модуль «База знаний» — статьи (rich-text, TipTap → HTML). Видео вставляются
+ * прямо в статью (YouTube-эмбед через @tiptap/extension-youtube), отдельной
+ * сущности «видеоурок» нет (UPD заказчика 15.07.2026; была — удалена).
+ * Знания общие на организацию, скоупа по филиалам нет. Статьи редактирует
+ * только админ (knowledge.manage).
  *
  * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md — НЕ менять без
  * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
  * на моках (KNOWLEDGE_USE_MOCKS = true); после деплоя бэка выключить флаг и
  * вернуть can-гейты (сайдбар, App.tsx), как делали с tasks/achievements.
  *
- * ⚠ content — HTML: санитизация на бэке (allowlist тегов), фронт рендерит
- * ответ бэка как доверенный. Картинки в статьях — v2 (открытый вопрос тикета),
- * кнопки вставки изображения в редакторе нет.
+ * ⚠ content — HTML: санитизация на бэке (allowlist тегов; iframe разрешён
+ * ТОЛЬКО с src на youtube-nocookie.com/youtube.com — см. UPD тикета), фронт
+ * рендерит ответ бэка как доверенный. Картинки в статьях — v2 (открытый
+ * вопрос тикета), кнопки вставки изображения в редакторе нет.
  */
 
 export const KNOWLEDGE_USE_MOCKS = true;
@@ -43,18 +46,6 @@ export interface KnowledgeArticleListItem {
 export interface KnowledgeArticle extends KnowledgeArticleListItem {
   /** HTML из TipTap; бэк санитизирует по allowlist. */
   content: string;
-}
-
-export interface KnowledgeVideo {
-  id: number;
-  title: string;
-  youtubeUrl: string;
-  description: string;
-  categoryId: number | null;
-  categoryName: string | null;
-  position: number;
-  isPublished: boolean;
-  createdAt: string;
 }
 
 export interface KnowledgeArticlesResponse {
@@ -101,9 +92,6 @@ export function parseYoutubeId(url: string): string | null {
   return null;
 }
 
-export const youtubeThumbnailUrl = (videoId: string): string =>
-  `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-
 export const youtubeEmbedUrl = (videoId: string): string =>
   `https://www.youtube-nocookie.com/embed/${videoId}`;
 
@@ -120,6 +108,21 @@ const mockCategories: KnowledgeCategory[] = [
 type MockArticle = KnowledgeArticle;
 
 const mockArticles: MockArticle[] = [
+  {
+    id: 10,
+    title: "Обзор CRM для новых сотрудников",
+    categoryId: 1,
+    categoryName: "Регистратура",
+    authorName: "Шаршебаев Автандил",
+    isPublished: true,
+    // Видео в статье — HTML, который генерирует @tiptap/extension-youtube.
+    content:
+      "<p>Полный тур по системе: приёмы, пациенты, расписание.</p>" +
+      '<div data-youtube-video><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" allowfullscreen="true"></iframe></div>' +
+      "<p>После просмотра — попробуйте создать тестовый приём в своём филиале.</p>",
+    createdAt: "2026-07-02T10:00:00Z",
+    updatedAt: "2026-07-02T10:00:00Z",
+  },
   {
     id: 11,
     title: "Как оформить приём пациента",
@@ -154,31 +157,6 @@ const mockArticles: MockArticle[] = [
     content: "<p>Черновик: правила открытия/закрытия смены, инкассация…</p>",
     createdAt: "2026-07-12T15:00:00Z",
     updatedAt: "2026-07-12T15:00:00Z",
-  },
-];
-
-const mockVideos: KnowledgeVideo[] = [
-  {
-    id: 21,
-    title: "Обзор CRM для новых сотрудников",
-    youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    description: "Полный тур по системе: приёмы, пациенты, расписание.",
-    categoryId: 1,
-    categoryName: "Регистратура",
-    position: 1,
-    isPublished: true,
-    createdAt: "2026-07-02T10:00:00Z",
-  },
-  {
-    id: 22,
-    title: "Как отмечать процедуры",
-    youtubeUrl: "https://youtu.be/jNQXAC9IVRw",
-    description: "",
-    categoryId: 2,
-    categoryName: "Врачам и медсёстрам",
-    position: 2,
-    isPublished: true,
-    createdAt: "2026-07-06T10:00:00Z",
   },
 ];
 
@@ -374,78 +352,3 @@ export function deleteKnowledgeArticle(
   });
 }
 
-// ── Видеоуроки ────────────────────────────────────────────────────────────────
-
-export function getKnowledgeVideos(
-  params: { category?: number; organizationId?: number } = {},
-  signal?: AbortSignal,
-): Promise<KnowledgeVideo[]> {
-  if (KNOWLEDGE_USE_MOCKS) {
-    let list = [...mockVideos].sort((a, b) => a.position - b.position);
-    if (params.category != null) list = list.filter((v) => v.categoryId === params.category);
-    return mockDelay(list);
-  }
-  const q = new URLSearchParams();
-  if (params.category != null) q.set("category", String(params.category));
-  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
-  const qs = q.toString();
-  return apiRequest<KnowledgeVideo[]>(`/knowledge/videos/${qs ? `?${qs}` : ""}`, { signal });
-}
-
-export interface KnowledgeVideoPayload {
-  title: string;
-  youtubeUrl: string;
-  description: string;
-  categoryId: number | null;
-  isPublished: boolean;
-}
-
-export function createKnowledgeVideo(
-  payload: KnowledgeVideoPayload,
-  organizationId?: number,
-): Promise<KnowledgeVideo> {
-  if (KNOWLEDGE_USE_MOCKS) {
-    const video: KnowledgeVideo = {
-      id: ++mockSeq,
-      ...payload,
-      categoryName: categoryName(payload.categoryId),
-      position: mockVideos.length + 1,
-      createdAt: new Date().toISOString(),
-    };
-    mockVideos.push(video);
-    return mockDelay({ ...video });
-  }
-  return apiRequest<KnowledgeVideo>(withOrg("/knowledge/videos/", organizationId), {
-    method: "POST",
-    body: payload,
-  });
-}
-
-export function updateKnowledgeVideo(
-  videoId: number,
-  payload: Partial<KnowledgeVideoPayload>,
-  organizationId?: number,
-): Promise<KnowledgeVideo> {
-  if (KNOWLEDGE_USE_MOCKS) {
-    const video = mockVideos.find((v) => v.id === videoId);
-    if (!video) return Promise.reject(new Error("Видео не найдено (мок)"));
-    Object.assign(video, payload);
-    if (payload.categoryId !== undefined) video.categoryName = categoryName(payload.categoryId);
-    return mockDelay({ ...video });
-  }
-  return apiRequest<KnowledgeVideo>(withOrg(`/knowledge/videos/${videoId}/`, organizationId), {
-    method: "PATCH",
-    body: payload,
-  });
-}
-
-export function deleteKnowledgeVideo(videoId: number, organizationId?: number): Promise<void> {
-  if (KNOWLEDGE_USE_MOCKS) {
-    const idx = mockVideos.findIndex((v) => v.id === videoId);
-    if (idx >= 0) mockVideos.splice(idx, 1);
-    return mockDelay(undefined);
-  }
-  return apiRequest<void>(withOrg(`/knowledge/videos/${videoId}/`, organizationId), {
-    method: "DELETE",
-  });
-}
