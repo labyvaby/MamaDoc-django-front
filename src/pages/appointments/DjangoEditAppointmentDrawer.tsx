@@ -37,6 +37,7 @@ import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import {
   updateAppointment,
   parseBackendError,
+  type AppointmentServiceLine,
   type DjangoAppointment,
 } from "../../api/appointments";
 import { normalizeDjangoStatus } from "../../config/appointmentStatuses";
@@ -67,6 +68,12 @@ type ServiceRow = {
   quantity: number;
   unitPrice: string;
   discountAmount: string;
+  /**
+   * По строке уже создано медзаключение (draft/completed): бэк не даёт удалить
+   * такую строку, поэтому её нельзя пересоздавать при смене услуги и нельзя
+   * убирать из списка.
+   */
+  hasConclusion: boolean;
 };
 
 type ProductRow = {
@@ -126,6 +133,25 @@ function parseQty(raw: string): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Черновик тоже считается созданным заключением — бэк блокирует удаление строки.
+function lineHasConclusion(line: AppointmentServiceLine): boolean {
+  return (
+    line.conclusionId != null ||
+    line.conclusionState === "draft" ||
+    line.conclusionState === "completed"
+  );
+}
+
+const EMPTY_SERVICE_ROW: ServiceRow = {
+  lineId: null,
+  serviceId: null,
+  employeeId: null,
+  quantity: 1,
+  unitPrice: "",
+  discountAmount: "",
+  hasConclusion: false,
+};
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = ({
@@ -165,7 +191,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
-    { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
+    { ...EMPTY_SERVICE_ROW },
   ]);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
@@ -211,9 +237,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       setIsBooking(false);
       setSelectedPatient(null);
       setPatientSearch("");
-      setServiceRows([
-        { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
-      ]);
+      setServiceRows([{ ...EMPTY_SERVICE_ROW }]);
       setProductRows([]);
       setComplaints("");
       setDoctorComplaints("");
@@ -242,12 +266,11 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           quantity: line.quantity ?? 1,
           unitPrice: line.unitPrice ?? "",
           discountAmount: line.discountAmount ?? "",
+          hasConclusion: lineHasConclusion(line),
         })),
       );
     } else {
-      setServiceRows([
-        { lineId: null, serviceId: null, employeeId: null, quantity: 1, unitPrice: "", discountAmount: "" },
-      ]);
+      setServiceRows([{ ...EMPTY_SERVICE_ROW }]);
     }
 
     setProductRows(
@@ -777,7 +800,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     // услуга/исполнитель, и PATCH с id её не
                                     // пересчитывает — пересоздаём строку, чтобы
                                     // бэк взял актуальную цену новой пары.
-                                    ...((v?.id ?? null) !== row.employeeId
+                                    // Строку с медзаключением бэк удалить не даст —
+                                    // id сохраняем, меняется только исполнитель.
+                                    ...((v?.id ?? null) !== row.employeeId &&
+                                    !row.hasConclusion
                                       ? { lineId: null, unitPrice: "", discountAmount: "" }
                                       : {}),
                                   })
@@ -803,6 +829,11 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               <Stack direction="row" spacing={1} alignItems="flex-start">
                                 <Autocomplete<DjangoCatalogServiceWithEmployees>
                                   sx={{ flex: 1 }}
+                                  // Смену услуги на строке с медзаключением бэк
+                                  // отбивает 400-й (проверено на живом API
+                                  // 16.07.2026, строка 13160) — блокируем поле
+                                  // сразу, а не ошибкой после «Сохранить».
+                                  disabled={row.hasConclusion}
                                   options={row.employeeId !== null ? availableServices : data.services}
                                   loading={data.loading}
                                   value={selectedService}
@@ -839,25 +870,39 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   )}
                                 />
                                 {serviceRows.length > 1 && (
-                                  <Tooltip title="Удалить услугу">
-                                    <IconButton
-                                      size="small"
-                                      color="error"
-                                      onClick={() =>
-                                        setServiceRows((prev) => prev.filter((_, i) => i !== index))
-                                      }
-                                      sx={{
-                                        mt: 0.5,
-                                        border: "1px solid",
-                                        borderColor: "error.main",
-                                        "&:hover": { backgroundColor: "error.lighter" },
-                                      }}
-                                    >
-                                      <DeleteOutlined fontSize="small" />
-                                    </IconButton>
+                                  <Tooltip
+                                    title={
+                                      row.hasConclusion
+                                        ? "Нельзя удалить: по услуге уже создано медзаключение"
+                                        : "Удалить услугу"
+                                    }
+                                  >
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        disabled={row.hasConclusion}
+                                        onClick={() =>
+                                          setServiceRows((prev) => prev.filter((_, i) => i !== index))
+                                        }
+                                        sx={{
+                                          mt: 0.5,
+                                          border: "1px solid",
+                                          borderColor: row.hasConclusion ? "divider" : "error.main",
+                                          "&:hover": { backgroundColor: "error.lighter" },
+                                        }}
+                                      >
+                                        <DeleteOutlined fontSize="small" />
+                                      </IconButton>
+                                    </span>
                                   </Tooltip>
                                 )}
                               </Stack>
+                              {row.hasConclusion && (
+                                <Typography variant="caption" color="text.secondary">
+                                  По услуге создано медзаключение — изменить или удалить её нельзя
+                                </Typography>
+                              )}
                               {incompatible && (
                                 <Alert severity="error" sx={{ py: 0 }}>
                                   Этот сотрудник не оказывает выбранную услугу
@@ -873,15 +918,11 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                             setServiceRows((prev) => [
                               ...prev,
                               {
-                                lineId: null,
-                                serviceId: null,
+                                ...EMPTY_SERVICE_ROW,
                                 employeeId:
                                   nurseEmployeeId ??
                                   prev[prev.length - 1]?.employeeId ??
                                   null,
-                                quantity: 1,
-                                unitPrice: "",
-                                discountAmount: "",
                               },
                             ])
                           }
