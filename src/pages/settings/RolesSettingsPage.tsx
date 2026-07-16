@@ -345,6 +345,32 @@ function RoleFormDrawer({
               модуль не включён. Пользователи с этой ролью увидят изменения
               после возврата на вкладку или перезагрузки страницы.
             </Typography>
+            {/* Quick overview by group */}
+            {grouped.length > 0 && selectedCodes.length > 0 && (
+              <Box mb={1.5}>
+                <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.5}>
+                  По категориям:
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                  {grouped.map((g) => {
+                    const count = g.items.filter((p) =>
+                      selectedCodes.includes(p.code),
+                    ).length;
+                    if (count === 0) return null;
+                    return (
+                      <Chip
+                        key={g.category}
+                        label={`${g.label} · ${count}/${g.items.length}`}
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                      />
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
+
             <Autocomplete
               multiple
               disableCloseOnSelect
@@ -430,32 +456,6 @@ function RoleFormDrawer({
               <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
                 Выбрано: {selectedCodes.length} из {permissions.length}
               </Typography>
-            )}
-
-            {/* Quick overview by group */}
-            {grouped.length > 0 && selectedCodes.length > 0 && (
-              <Box mt={2}>
-                <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.5}>
-                  По категориям:
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={0.5}>
-                  {grouped.map((g) => {
-                    const count = g.items.filter((p) =>
-                      selectedCodes.includes(p.code),
-                    ).length;
-                    if (count === 0) return null;
-                    return (
-                      <Chip
-                        key={g.category}
-                        label={`${g.label} · ${count}/${g.items.length}`}
-                        size="small"
-                        variant="outlined"
-                        color="primary"
-                      />
-                    );
-                  })}
-                </Stack>
-              </Box>
             )}
           </Box>
         </Stack>

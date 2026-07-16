@@ -35,8 +35,14 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../hooks/usePermissions";
-import { getServices, deleteService } from "../../api/catalog";
-import type { Service, BranchRef } from "../../api/catalog";
+import {
+  getServices,
+  deleteService,
+  SERVICE_CATEGORIES_ENABLED,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_CATEGORY_OPTIONS,
+} from "../../api/catalog";
+import type { Service, BranchRef, ServiceCategory } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
 import DjangoAddServiceDrawer from "../../components/services/DjangoAddServiceDrawer";
 import DjangoEditServiceDrawer from "../../components/services/DjangoEditServiceDrawer";
@@ -45,6 +51,8 @@ import ServiceDetailsPanel from "../../components/services/ServiceDetailsPanel";
 
 type StatusFilter = "all" | "active" | "inactive";
 type SortKey = "name" | "priceAsc" | "priceDesc" | "duration";
+/** «none» — услуги без категории. */
+type CategoryFilter = "all" | "none" | ServiceCategory;
 
 const BATCH_SIZE = 20;
 
@@ -99,6 +107,7 @@ const DjangoServicesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [branchFilter, setBranchFilter] = React.useState<number | "all">("all");
+  const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
 
   const orgId = activeOrganization?.id ?? null;
@@ -167,6 +176,7 @@ const DjangoServicesPage: React.FC = () => {
     setSearchQuery("");
     setStatusFilter("all");
     setBranchFilter("all");
+    setCategoryFilter("all");
     setSortKey("name");
 
     void loadAll(contextKey);
@@ -196,7 +206,7 @@ const DjangoServicesPage: React.FC = () => {
     }
   }, [branchOptions, branchFilter]);
 
-  // Фильтрация: поиск + статус + филиал
+  // Фильтрация: поиск + статус + филиал + категория
   const filtered = React.useMemo(() => {
     const lower = searchQuery.trim().toLowerCase();
     return allServices.filter((s) => {
@@ -204,9 +214,12 @@ const DjangoServicesPage: React.FC = () => {
       if (statusFilter === "active" && !s.isActive) return false;
       if (statusFilter === "inactive" && s.isActive) return false;
       if (branchFilter !== "all" && !s.branches.some((b) => b.id === branchFilter)) return false;
+      if (categoryFilter === "none" && s.category !== null) return false;
+      if (categoryFilter !== "all" && categoryFilter !== "none" && s.category !== categoryFilter)
+        return false;
       return true;
     });
-  }, [allServices, searchQuery, statusFilter, branchFilter]);
+  }, [allServices, searchQuery, statusFilter, branchFilter, categoryFilter]);
 
   // Сортировка
   const sorted = React.useMemo(() => {
@@ -235,18 +248,22 @@ const DjangoServicesPage: React.FC = () => {
   );
 
   const hasActiveFilters =
-    searchQuery.trim() !== "" || statusFilter !== "all" || branchFilter !== "all";
+    searchQuery.trim() !== "" ||
+    statusFilter !== "all" ||
+    branchFilter !== "all" ||
+    categoryFilter !== "all";
 
   const handleResetFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
     setBranchFilter("all");
+    setCategoryFilter("all");
   };
 
   // Reset visible count when filters/sort/search change
   React.useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [searchQuery, statusFilter, branchFilter, sortKey]);
+  }, [searchQuery, statusFilter, branchFilter, categoryFilter, sortKey]);
 
   // IntersectionObserver — подгрузка при скролле
   React.useEffect(() => {
@@ -345,6 +362,16 @@ const DjangoServicesPage: React.FC = () => {
               <Typography variant="caption" sx={{ whiteSpace: "nowrap" }}>
                 {formatDuration(s.durationMinutes)}
               </Typography>
+              {SERVICE_CATEGORIES_ENABLED && s.category && (
+                <>
+                  <Box component="span" sx={{ color: "text.disabled" }}>
+                    ·
+                  </Box>
+                  <Typography variant="caption" sx={{ whiteSpace: "nowrap" }}>
+                    {SERVICE_CATEGORY_LABELS[s.category]}
+                  </Typography>
+                </>
+              )}
               {s.branches.length > 0 && (
                 <>
                   <Box component="span" sx={{ color: "text.disabled" }}>
@@ -515,6 +542,25 @@ const DjangoServicesPage: React.FC = () => {
               </MenuItem>
             ))}
           </TextField>
+
+          {SERVICE_CATEGORIES_ENABLED && (
+            <TextField
+              select
+              size="small"
+              label="Категория"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
+              sx={{ flexShrink: 0, minWidth: 190 }}
+            >
+              <MenuItem value="all">Все категории</MenuItem>
+              {SERVICE_CATEGORY_OPTIONS.map((c) => (
+                <MenuItem key={c} value={c}>
+                  {SERVICE_CATEGORY_LABELS[c]}
+                </MenuItem>
+              ))}
+              <MenuItem value="none">Без категории</MenuItem>
+            </TextField>
+          )}
 
           <TextField
             select

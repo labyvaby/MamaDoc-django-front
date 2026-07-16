@@ -47,10 +47,10 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   CLEANING_USE_MOCKS,
   approveCleaningRecord,
+  getCleaningActiveMonths,
   getCleaningRecords,
-  getCleaningSettings,
   getCleaningSummary,
-  getCleaningZones,
+  getCleaningTypes,
   type CleaningRecord,
   type CleaningRecordStatus,
 } from "../../api/cleaning";
@@ -127,7 +127,7 @@ const CleaningPage: React.FC = () => {
   const [tab, setTab] = React.useState<"records" | "summary">("records");
   const [month, setMonth] = React.useState<Dayjs>(dayjs().startOf("month"));
   const [statusFilter, setStatusFilter] = React.useState<CleaningRecordStatus | "all">("all");
-  const [zoneFilter, setZoneFilter] = React.useState<number | "all">("all");
+  const [typeFilter, setTypeFilter] = React.useState<number | "all">("all");
   const [page, setPage] = React.useState(0); // 0-based для DataGrid
 
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -139,18 +139,18 @@ const CleaningPage: React.FC = () => {
   );
 
   // ── Данные ────────────────────────────────────────────────────────────────
-  const zonesQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.zones({ orgId: orgId ?? null }),
-    queryFn: ({ signal }) => getCleaningZones({ organizationId: orgId }, signal),
+  const typesQuery = useQuery({
+    queryKey: djangoQueryKeys.cleaning.types({ orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getCleaningTypes({ organizationId: orgId }, signal),
   });
-  const zones = zonesQuery.data ?? [];
-  const activeZones = zones.filter((z) => z.isActive);
+  const types = typesQuery.data ?? [];
+  const activeTypes = types.filter((t) => t.isActive);
 
   const recordsQuery = useQuery({
     queryKey: djangoQueryKeys.cleaning.records({
       month: monthStr,
       status: statusFilter,
-      zone: zoneFilter,
+      type: typeFilter,
       page,
       orgId: orgId ?? null,
     }),
@@ -160,7 +160,7 @@ const CleaningPage: React.FC = () => {
           dateFrom: month.format("YYYY-MM-DD"),
           dateTo: month.endOf("month").format("YYYY-MM-DD"),
           status: statusFilter === "all" ? undefined : statusFilter,
-          zone: zoneFilter === "all" ? undefined : zoneFilter,
+          type: typeFilter === "all" ? undefined : typeFilter,
           page: page + 1,
           pageSize: PAGE_SIZE,
           organizationId: orgId,
@@ -179,11 +179,17 @@ const CleaningPage: React.FC = () => {
     enabled: tab === "summary",
   });
 
-  const settingsQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.settings(orgId),
-    queryFn: ({ signal }) => getCleaningSettings(orgId, signal),
-    enabled: tab === "summary",
+  // Лента месяцев: показываем только месяцы, где были уборки, + текущий
+  // (уборщица работает в нём с первого дня). Будущие месяцы в набор не
+  // попадают и потому скрыты. Пока список не загружен (null) — без фильтра.
+  const monthsQuery = useQuery({
+    queryKey: djangoQueryKeys.cleaning.activeMonths(orgId ?? null),
+    queryFn: ({ signal }) => getCleaningActiveMonths(orgId, signal),
   });
+  const activeMonths = React.useMemo(() => {
+    if (!monthsQuery.data) return null;
+    return new Set([...monthsQuery.data, dayjs().format("YYYY-MM")]);
+  }, [monthsQuery.data]);
 
   // ── Диалоги ───────────────────────────────────────────────────────────────
   const [reportOpen, setReportOpen] = React.useState(false);
@@ -222,15 +228,15 @@ const CleaningPage: React.FC = () => {
         valueFormatter: (value: string) => dayjs(value).format("DD.MM.YYYY HH:mm"),
       },
       {
-        field: "zoneName",
-        headerName: "Зона",
+        field: "typeName",
+        headerName: "Тип уборки",
         flex: 1,
         minWidth: 200,
         sortable: false,
         renderCell: (p) => (
           <Stack sx={{ minWidth: 0, justifyContent: "center", height: "100%" }}>
             <Typography variant="body2" fontWeight={500} noWrap>
-              {p.row.zoneName}
+              {p.row.typeName}
             </Typography>
             <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.secondary" }}>
               <StoreOutlined sx={{ fontSize: 14 }} />
@@ -351,6 +357,7 @@ const CleaningPage: React.FC = () => {
               setMonth(dayjs(d).startOf("month"));
               setPage(0);
             }}
+            activeMonths={activeMonths}
           />
         }
       />
@@ -423,33 +430,33 @@ const CleaningPage: React.FC = () => {
             <TextField
               select
               size="small"
-              label="Зона"
-              value={String(zoneFilter)}
+              label="Тип уборки"
+              value={String(typeFilter)}
               onChange={(e) => {
-                setZoneFilter(e.target.value === "all" ? "all" : Number(e.target.value));
+                setTypeFilter(e.target.value === "all" ? "all" : Number(e.target.value));
                 setPage(0);
               }}
               sx={{ width: { xs: "100%", sm: 240 } }}
             >
-              <MenuItem value="all">Все зоны</MenuItem>
-              {zones.map((z) => (
-                <MenuItem key={z.id} value={String(z.id)}>
-                  {z.name} · {z.branchName}
+              <MenuItem value="all">Все типы</MenuItem>
+              {types.map((t) => (
+                <MenuItem key={t.id} value={String(t.id)}>
+                  {t.name}
                 </MenuItem>
               ))}
             </TextField>
             </MotionBox>
 
-          {zonesQuery.isError && (
+          {typesQuery.isError && (
             <Alert
               severity="error"
               action={
-                <Button size="small" color="inherit" onClick={() => zonesQuery.refetch()}>
+                <Button size="small" color="inherit" onClick={() => typesQuery.refetch()}>
                   Повторить
                 </Button>
               }
             >
-              Не удалось загрузить зоны: {getErrorMessage(zonesQuery.error)}
+              Не удалось загрузить типы уборки: {getErrorMessage(typesQuery.error)}
             </Alert>
           )}
           {recordsQuery.isError && (
@@ -524,7 +531,6 @@ const CleaningPage: React.FC = () => {
             rows={summaryQuery.data ?? []}
             loading={summaryQuery.isLoading}
             error={summaryQuery.isError ? getErrorMessage(summaryQuery.error) : null}
-            rate={settingsQuery.data?.rate ?? null}
           />
         </MotionBox>
       )}
@@ -532,7 +538,7 @@ const CleaningPage: React.FC = () => {
 
       <ReportDialog
         open={reportOpen}
-        activeZones={activeZones}
+        activeTypes={activeTypes}
         onClose={() => setReportOpen(false)}
         onSuccess={invalidate}
       />

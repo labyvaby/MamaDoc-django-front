@@ -10,6 +10,7 @@ import {
   Drawer,
   IconButton,
   InputAdornment,
+  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -26,7 +27,11 @@ import {
   updateService,
   uploadServiceImage,
   deleteServiceImage,
+  SERVICE_CATEGORIES_ENABLED,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_CATEGORY_OPTIONS,
   type Service,
+  type ServiceCategory,
 } from "../../api/catalog";
 import { usePermissions } from "../../hooks/usePermissions";
 import type { RbacBranch } from "../../api/auth";
@@ -65,6 +70,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [name, setName] = React.useState(record.name);
   const [price, setPrice] = React.useState(record.basePrice ?? "");
   const [durationMinutes, setDurationMinutes] = React.useState(String(record.durationMinutes ?? 30));
+  const [category, setCategory] = React.useState<ServiceCategory | "">(record.category ?? "");
   const [description, setDescription] = React.useState(record.description ?? "");
   const [isActive, setIsActive] = React.useState(record.isActive ?? true);
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -91,6 +97,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setName(record.name);
       setPrice(record.basePrice ?? "");
       setDurationMinutes(String(record.durationMinutes ?? 30));
+      setCategory(record.category ?? "");
       setDescription(record.description ?? "");
       setIsActive(record.isActive ?? true);
       setPhotoFile(null);
@@ -146,6 +153,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         basePrice: String(priceNum),
         isActive,
         branchIds: selectedBranches.map((b) => b.id),
+        ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
       });
       if (photoFile) {
         await uploadServiceImage(record.id, photoFile);
@@ -318,6 +326,29 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                 />
               </Stack>
             </Stack>
+
+            {/* Категория (для фильтра на странице услуг) */}
+            {SERVICE_CATEGORIES_ENABLED && (
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  Категория
+                </Typography>
+                <TextField
+                  select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as ServiceCategory | "")}
+                  fullWidth
+                  disabled={busy}
+                >
+                  <MenuItem value="">Без категории</MenuItem>
+                  {SERVICE_CATEGORY_OPTIONS.map((c) => (
+                    <MenuItem key={c} value={c}>
+                      {SERVICE_CATEGORY_LABELS[c]}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            )}
 
             {/* Описание */}
             <Stack spacing={0.5}>

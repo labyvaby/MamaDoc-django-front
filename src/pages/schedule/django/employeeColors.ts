@@ -16,12 +16,28 @@ export const EMPLOYEE_PALETTE: { light: string; dark: string }[] = [
   { light: "#eb6834", dark: "#d95926" }, // оранжевый
 ];
 
-/** Стабильный индекс цвета в палитре по id сотрудника (не зависит от порядка списка). */
-export function useEmployeeColorMap(employees: { id: number }[]): Map<number, number> {
+/**
+ * Стабильный индекс цвета в палитре по id сотрудника (не зависит от порядка
+ * списка). `scheduledIds` сужает нумерацию до сотрудников, реально
+ * участвующих в расписании: без этого индекс считался по всему справочнику
+ * и соседние строки календаря часто получали один оттенок (жалоба заказчика
+ * 14.07.2026 «цвет таблицы времени»).
+ */
+export function useEmployeeColorMap(
+  employees: { id: number }[],
+  scheduledIds?: Set<number>,
+): Map<number, number> {
   return React.useMemo(() => {
-    const sorted = [...employees].sort((a, b) => a.id - b.id);
-    return new Map(sorted.map((e, i) => [e.id, i % EMPLOYEE_PALETTE.length]));
-  }, [employees]);
+    // Прямо из scheduledIds, без пересечения со справочником: сотрудник со
+    // сменой может отсутствовать в филиальном справочнике (общее правило
+    // branchId=null чужого филиала), а цвет ему всё равно нужен.
+    const ids =
+      scheduledIds && scheduledIds.size > 0
+        ? [...scheduledIds]
+        : employees.map((e) => e.id);
+    ids.sort((a, b) => a - b);
+    return new Map(ids.map((id, i) => [id, i % EMPLOYEE_PALETTE.length]));
+  }, [employees, scheduledIds]);
 }
 
 export function employeeColorHex(colorIndex: number, mode: "light" | "dark"): string {

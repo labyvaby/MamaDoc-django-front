@@ -668,7 +668,22 @@ const DjangoSchedulePage: React.FC = () => {
     [monthExceptionsQuery.data, scopeExceptions],
   );
   const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
-  const employeeColorMap = useEmployeeColorMap(employees);
+  // Пул цветов — сотрудники со сменами в отображаемом периоде (месяц + 2
+  // недели, как monthRange). Раньше нумерация шла по всему справочнику, и
+  // соседние строки календаря часто делили один оттенок. Карта одна на
+  // календарь и дровер дня — цвета согласованы.
+  const scheduledIds = React.useMemo(() => {
+    const ids = new Set<number>();
+    const start = month.startOf("month");
+    const days = month.daysInMonth() + 13;
+    for (let d = 0; d < days; d += 1) {
+      for (const occ of computeDayOccurrences(start.add(d, "day"), rules, monthExceptions)) {
+        ids.add(occ.employeeId);
+      }
+    }
+    return ids;
+  }, [month, rules, monthExceptions]);
+  const employeeColorMap = useEmployeeColorMap(employees, scheduledIds);
 
   const selectedDayOccurrences = React.useMemo<DayOccurrence[]>(
     () => (selectedDay ? computeDayOccurrences(selectedDay, rules, monthExceptions) : []),
@@ -837,6 +852,7 @@ const DjangoSchedulePage: React.FC = () => {
               onMonthChange={setMonth}
               onDayClick={handleDayClick}
               currentEmployeeId={activeEmployee?.id ?? null}
+              employeeColorMap={employeeColorMap}
             />
           </>
         )}

@@ -305,6 +305,19 @@ const ArticleViewPage: React.FC = () => {
               },
               "& a": { color: "primary.main" },
               "& img": { maxWidth: "100%", borderRadius: 1.5 },
+              // Видео в статье (@tiptap/extension-youtube).
+              "& div[data-youtube-video]": {
+                my: 2,
+                "& iframe": {
+                  display: "block",
+                  width: "100%",
+                  maxWidth: 720,
+                  aspectRatio: "16/9",
+                  height: "auto",
+                  border: 0,
+                  borderRadius: 1.5,
+                },
+              },
               "& table": { borderCollapse: "collapse", width: "100%" },
               "& td, & th": { border: `1px solid ${theme.palette.divider}`, p: 1 },
               // Якорь не прячется под sticky-прогрессбаром при переходе из оглавления.

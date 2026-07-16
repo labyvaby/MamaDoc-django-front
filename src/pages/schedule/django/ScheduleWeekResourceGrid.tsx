@@ -243,13 +243,15 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                       borderRadius: "4px",
                                       px: 0.5,
                                       py: "1px",
-                                      bgcolor: alpha(c, mode === "dark" ? 0.26 : 0.15),
-                                      borderLeft: `3px solid ${c}`,
+                                      // Сплошная заливка вместо полупрозрачной:
+                                      // на тёмном фоне тинты жёлтого/оранжевого
+                                      // выглядели грязно-бурыми и одинаковыми
+                                      // (жалоба заказчика 14.07.2026).
+                                      bgcolor: c,
                                       border:
                                         occ.kind === "extra"
-                                          ? `1.5px dashed ${alpha(theme.palette.success.main, 0.9)}`
+                                          ? `1.5px dashed ${theme.palette.background.paper}`
                                           : undefined,
-                                      borderLeftColor: c,
                                     }}
                                   >
                                     <Typography
@@ -257,7 +259,7 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                       sx={{
                                         fontSize: "0.7rem",
                                         fontWeight: 600,
-                                        color: "text.primary",
+                                        color: theme.palette.getContrastText(c),
                                         fontVariantNumeric: "tabular-nums",
                                       }}
                                     >

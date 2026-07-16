@@ -73,7 +73,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       {record && (
         <>
           <DialogTitle sx={{ pb: 1 }}>
-            {record.zoneName} · {dayjs(record.createdAt).format("DD.MM.YYYY HH:mm")}
+            {record.typeName} · {dayjs(record.createdAt).format("DD.MM.YYYY HH:mm")}
             <Typography variant="body2" color="text.secondary">
               {record.employeeName} · фото {Math.min(index, record.photos.length - 1) + 1} из{" "}
               {record.photos.length}

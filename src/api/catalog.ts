@@ -7,6 +7,28 @@ export interface BranchRef {
   name: string;
 }
 
+/**
+ * Категории услуг (заказчик 15.07.2026, для фильтра). ⚠ Бэкенд поле
+ * ``category`` ПОКА не хранит (проверено на живом API 15.07.2026 — в ответе
+ * его нет, msgspec молча дропнет его в POST/PATCH) — тикет
+ * MamaDoc/backend_ticket_service_categories.md. До деплоя бэка UI категорий
+ * скрыт флагом; после — переключить в true, других правок не нужно.
+ */
+export const SERVICE_CATEGORIES_ENABLED = false;
+
+export type ServiceCategory = "doctor" | "nurse" | "lab" | "hardware";
+
+export const SERVICE_CATEGORY_LABELS: Record<ServiceCategory, string> = {
+  doctor: "Услуги врачей",
+  nurse: "Услуги медсестёр",
+  lab: "Лаборатория",
+  hardware: "Аппаратные услуги",
+};
+
+export const SERVICE_CATEGORY_OPTIONS = Object.keys(
+  SERVICE_CATEGORY_LABELS,
+) as ServiceCategory[];
+
 export interface Service {
   id: number;
   organizationId: number;
@@ -18,6 +40,8 @@ export interface Service {
   isActive: boolean;
   imageUrl: string | null;
   sortOrder: number;
+  /** Категория услуги; null — без категории. */
+  category: ServiceCategory | null;
   /** Branches visible to the current user. */
   branches: BranchRef[];
   /** True when the service is also assigned to branches outside the caller's scope. */
@@ -38,6 +62,8 @@ export interface ServiceCreatePayload {
   basePrice?: string;
   isActive?: boolean;
   sortOrder?: number;
+  /** Категория; null/отсутствие — без категории. */
+  category?: ServiceCategory | null;
 }
 
 export interface ServiceUpdatePayload {
@@ -54,11 +80,15 @@ export interface ServiceUpdatePayload {
    * Empty array → the backend returns 400.
    */
   branchIds?: number[];
+  /** Категория; null очищает (тикет: PATCH category=null → без категории). */
+  category?: ServiceCategory | null;
 }
 
 function normalizeService(service: Service): Service {
   return {
     ...service,
+    // Пока бэк не отдаёт category, поле undefined → нормализуем в null.
+    category: service.category ?? null,
     branches: Array.isArray(service.branches) ? service.branches : [],
     hasHiddenBranches: Boolean(service.hasHiddenBranches),
   };

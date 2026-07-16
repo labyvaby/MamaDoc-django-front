@@ -347,17 +347,17 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const renderItems: RenderItem[] = [];
       const addedGapKeys = new Set<string>();
 
-      // Интервалы активных (неотменённых) приёмов группы: слот отменённого
-      // приёма считается занятым, если его начало попадает в такой интервал
-      // (на это время уже записан другой пациент — окна нет).
-      const activeRanges = sorted
-        .filter((a) => !isCancelledStatus(a.status))
-        .map((a) => {
-          const from = dayjs(a.scheduledAt).valueOf();
-          return { from, to: from + DEFAULT_DURATION_MINS * 60 * 1000 };
-        });
-      const isCoveredByActive = (t: number) =>
-        activeRanges.some((r) => t >= r.from && t < r.to);
+      // Времена активных (неотменённых) приёмов группы: слот отменённого
+      // приёма считается занятым, только если на это же время (минута в
+      // минуту) уже есть живая запись — например, после переноса. Длительность
+      // услуги соседней записи промежуток не блокирует: запись можно создать
+      // и внутри чужих 30 минут.
+      const activeStarts = new Set(
+        sorted
+          .filter((a) => !isCancelledStatus(a.status))
+          .map((a) => dayjs(a.scheduledAt).startOf("minute").valueOf()),
+      );
+      const isCoveredByActive = (t: number) => activeStarts.has(t);
 
       // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
       // (например, «Есть окно на 16:00» при графике до 16:00). Если расписание
@@ -392,7 +392,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
         // Cancelled future appointment → show gap slot before it,
         // если на это время нет активной записи (одна плашка на слот)
-        if (isCancelled && start.isAfter(dayjs()) && !isCoveredByActive(start.valueOf()) && slotInShift(start)) {
+        if (isCancelled && start.isAfter(dayjs()) && !isCoveredByActive(start.startOf("minute").valueOf()) && slotInShift(start)) {
           const key = `gap-can-${start.valueOf()}`;
           if (!addedGapKeys.has(key)) {
             addedGapKeys.add(key);
