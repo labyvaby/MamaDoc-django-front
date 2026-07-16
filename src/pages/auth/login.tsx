@@ -36,10 +36,10 @@ import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import { PhoneCountryCodeSelect } from "../../components/ui";
 import {
   composePhone,
-  DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
   normalizePhoneLocal,
   formatPhoneLocalDisplay,
+  parsePhone,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { ROLE_HOME_PAGES, type RoleName } from "../../types/rbac";
@@ -67,6 +67,26 @@ const readSavedAuthMethod = (): "email" | "phone" => {
   return "phone";
 };
 
+// Запоминаем последний успешно вошедший номер и предзаполняем его при
+// следующем визите: персонал заходит ежедневно с одного и того же устройства.
+const AUTH_PHONE_KEY = "mamadoc:auth-phone";
+
+const readSavedPhone = () => {
+  try {
+    return parsePhone(window.localStorage.getItem(AUTH_PHONE_KEY));
+  } catch {
+    return parsePhone(null);
+  }
+};
+
+const saveAuthPhone = (fullPhone: string) => {
+  try {
+    window.localStorage.setItem(AUTH_PHONE_KEY, fullPhone);
+  } catch {
+    // localStorage недоступен — просто не запомним номер
+  }
+};
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -75,8 +95,10 @@ const LoginPage: React.FC = () => {
   const [authMethod, setAuthMethod] = React.useState<"email" | "phone">(readSavedAuthMethod);
 
   // -- PHONE STATES --
-  const [phoneCountryCode, setPhoneCountryCode] = React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
-  const [phoneLocal, setPhoneLocal] = React.useState("");
+  const [phoneCountryCode, setPhoneCountryCode] = React.useState<PhoneCountryCode>(
+    () => readSavedPhone().countryCode,
+  );
+  const [phoneLocal, setPhoneLocal] = React.useState(() => readSavedPhone().local);
   const [lastSentPhone, setLastSentPhone] = React.useState<string | null>(null);
   const [otpCode, setOtpCode] = React.useState("");
   const [isOtpSent, setIsOtpSent] = React.useState(false);
@@ -380,6 +402,7 @@ const LoginPage: React.FC = () => {
     if (IS_DJANGO_BACKEND) {
       try {
         const meData = await djangoVerifyOtp(fullPhone, code);
+        saveAuthPhone(fullPhone);
         setRedirecting(true);
         markBranchPickerPending();
         applyMeResponse(meData);
@@ -405,6 +428,7 @@ const LoginPage: React.FC = () => {
 
       if (error) throw error;
       console.log("Успех:", data);
+      saveAuthPhone(fullPhone);
       if (data.session?.user?.id) {
         await handleLoginSuccess(data.session.user.id, { phone: fullPhone });
       } else {
@@ -567,6 +591,7 @@ const LoginPage: React.FC = () => {
                     fullWidth
                     autoFocus
                     type="tel"
+                    name="phone"
                     error={phoneIncomplete}
                     helperText={phoneIncomplete ? "Введите полный номер" : " "}
                     inputProps={{ inputMode: "numeric", autoComplete: "tel-national" }}

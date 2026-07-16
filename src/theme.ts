@@ -1,5 +1,6 @@
 import { alpha, createTheme, responsiveFontSizes, lighten, darken, getContrastRatio } from "@mui/material/styles";
 import type { PaletteMode, Theme } from "@mui/material/styles";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import { RefineThemes } from "@refinedev/mui";
 import "@mui/x-data-grid/themeAugmentation";
 
@@ -556,6 +557,20 @@ export function getAppTheme(
       MuiTextField: {
         defaultProps: {
           size: "small",
+        },
+      },
+      MuiAutocomplete: {
+        defaultProps: {
+          // Мобильные клавиатуры после принятия подсказки дописывают пробел
+          // («Запор »), а дефолтный фильтр Autocomplete ввод не тримит
+          // (trim: false) — поиск «не находил» существующие опции. Тримим
+          // глобально; компонент со своим filterOptions перекрывает дефолт.
+          filterOptions: createFilterOptions({ trim: true }),
+          noOptionsText: "Ничего не найдено",
+          loadingText: "Загрузка…",
+          clearText: "Очистить",
+          closeText: "Закрыть",
+          openText: "Открыть",
         },
       },
       MuiDataGrid: {
