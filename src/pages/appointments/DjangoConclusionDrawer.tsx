@@ -297,6 +297,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   >([]);
   const [catalog, setCatalog] = React.useState<CatalogDiagnosis[]>([]);
   const [catalogLoading, setCatalogLoading] = React.useState(false);
+  const [catalogError, setCatalogError] = React.useState(false);
   const [photoUrls, setPhotoUrls] = React.useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
   const [previewPhoto, setPreviewPhoto] = React.useState<string | null>(null);
@@ -507,10 +508,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     if (!open) return;
     const ctrl = new AbortController();
     setCatalogLoading(true);
+    setCatalogError(false);
     getDiagnoses(undefined, ctrl.signal)
       .then((items) => setCatalog(items))
       .catch(() => {
-        /* каталог недоступен — оставляем пустым, поле всё равно работает */
+        // Каталог недоступен — поле остаётся рабочим, но молчать нельзя:
+        // пустой список выглядит как «поиск не работает».
+        if (!ctrl.signal.aborted) setCatalogError(true);
       })
       .finally(() => setCatalogLoading(false));
     return () => ctrl.abort();
@@ -1121,6 +1125,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 />
               )}
             />
+            {catalogError && (
+              <Alert severity="warning" sx={{ py: 0 }}>
+                Не удалось загрузить каталог диагнозов — поиск по нему не
+                будет работать. Закройте и откройте форму, чтобы повторить.
+              </Alert>
+            )}
             {/* сводка выбранных диагнозов (как в оригинале) */}
             <Paper
               variant="outlined"
