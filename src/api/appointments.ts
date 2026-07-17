@@ -207,6 +207,10 @@ export interface DjangoAppointment {
   branchId: number | null;
   patient: AppointmentPatientShort | null;
   scheduledAt: string;
+  /** Конец приёма, посчитанный бэком как начало + сумма длительностей строк
+   *  услуг. Не равен scheduledAt + 30 мин: приём с несколькими услугами длиннее,
+   *  и именно этот интервал бэк проверяет на пересечения при сохранении. */
+  endsAt: string;
   isNight: boolean;
   status: DjangoAppointmentStatus;
   complaints: string | null;

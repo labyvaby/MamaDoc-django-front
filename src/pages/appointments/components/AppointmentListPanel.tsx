@@ -32,6 +32,12 @@ import EventBusyOutlined from "@mui/icons-material/EventBusy";
 import dayjs from "dayjs";
 
 import type { DjangoAppointment } from "../../../api/appointments";
+import {
+  appointmentEnd,
+  busyIntervals,
+  isCancelledStatus,
+  isSlotCovered,
+} from "./slotAvailability";
 import { formatKGS } from "../../../utility/format";
 import {
   getStatusConfig,
@@ -102,10 +108,6 @@ function isGap(item: RenderItem): item is GapSlot {
 }
 
 const GAP_THRESHOLD_MS = 30 * 60 * 1000;
-const DEFAULT_DURATION_MINS = 30;
-
-const isCancelledStatus = (s?: string | null) =>
-  s === "canceled" || s === "cancelled" || s === "no_show";
 
 // ─── SMS-уведомления: маппинг тип → иконка/подпись/цвет (1-в-1 со старым фронтом) ─
 const NOTIF_CONFIG: Record<
@@ -347,17 +349,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const renderItems: RenderItem[] = [];
       const addedGapKeys = new Set<string>();
 
-      // Времена активных (неотменённых) приёмов группы: слот отменённого
-      // приёма считается занятым, только если на это же время (минута в
-      // минуту) уже есть живая запись — например, после переноса. Длительность
-      // услуги соседней записи промежуток не блокирует: запись можно создать
-      // и внутри чужих 30 минут.
-      const activeStarts = new Set(
-        sorted
-          .filter((a) => !isCancelledStatus(a.status))
-          .map((a) => dayjs(a.scheduledAt).startOf("minute").valueOf()),
-      );
-      const isCoveredByActive = (t: number) => activeStarts.has(t);
+      // Занятые интервалы активных (неотменённых) приёмов группы — см.
+      // slotAvailability.ts: модель занятости должна совпадать с серверной.
+      const activeIntervals = busyIntervals(sorted);
+      const isCoveredByActive = (t: number) => isSlotCovered(activeIntervals, t);
 
       // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
       // (например, «Есть окно на 16:00» при графике до 16:00). Если расписание
@@ -410,9 +405,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         if (!isCancelled && i + 1 < sorted.length) {
           const next = sorted[i + 1];
           if (!isCancelledStatus(next.status)) {
-            const currentEnd = start.add(DEFAULT_DURATION_MINS, "minute");
+            const currentEnd = appointmentEnd(current);
             const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
-            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)
+                && !isCoveredByActive(currentEnd.valueOf())) {
               const key = `gap-${current.id}-${next.id}`;
               renderItems.push({
                 isGap: true,
@@ -423,8 +419,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
             }
           }
         } else if (!isCancelled && i === sorted.length - 1) {
-          const currentEnd = start.add(DEFAULT_DURATION_MINS, "minute");
-          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+          const currentEnd = appointmentEnd(current);
+          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)
+              && !isCoveredByActive(currentEnd.valueOf())) {
             renderItems.push({
               isGap: true,
               id: `gap-after-${current.id}`,
