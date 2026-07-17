@@ -7,10 +7,6 @@ import {
   ButtonBase,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   Drawer,
   IconButton,
@@ -68,7 +64,7 @@ const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const KIND_LABELS: Record<ScheduleExceptionKind, string> = {
   day_off: "Выходной",
   vacation: "Отпуск",
-  extra: "Доп. смена",
+  extra: "Смена",
 };
 
 function weekdaysLabel(weekdays: number[]): string {
@@ -397,15 +393,27 @@ const RuleFormDrawer: React.FC<{
   );
 };
 
-// ── Форма исключения ──────────────────────────────────────────────────────────
+// ── Форма исключения (правый сайдбар) ─────────────────────────────────────────
 
-const ExceptionDialog: React.FC<{
+const ExceptionDrawer: React.FC<{
   open: boolean;
   onClose: () => void;
   organizationId?: number;
   onSaved: () => void;
   initialDate?: Dayjs | null;
-}> = ({ open, onClose, organizationId, onSaved, initialDate }) => {
+  /** Тип, с которым открывается форма. «Добавить смену» → "extra". */
+  initialKind?: ScheduleExceptionKind;
+  /** Заголовок панели — зависит от точки входа. */
+  title?: string;
+}> = ({
+  open,
+  onClose,
+  organizationId,
+  onSaved,
+  initialDate,
+  initialKind = "day_off",
+  title = "Исключение из расписания",
+}) => {
   const [employee, setEmployee] = React.useState<DjangoEmployeeListItem | null>(null);
   const [date, setDate] = React.useState<Dayjs>(dayjs());
   const [kind, setKind] = React.useState<ScheduleExceptionKind>("day_off");
@@ -419,14 +427,14 @@ const ExceptionDialog: React.FC<{
     if (open) {
       setEmployee(null);
       setDate(initialDate ?? dayjs());
-      setKind("day_off");
+      setKind(initialKind);
       setStartTime("09:00");
       setEndTime("13:00");
       setComment("");
       setError(null);
       setBusy(false);
     }
-  }, [open, initialDate]);
+  }, [open, initialDate, initialKind]);
 
   const canSubmit =
     employee != null && date.isValid() && (kind !== "extra" || startTime < endTime);
@@ -453,19 +461,45 @@ const ExceptionDialog: React.FC<{
     }
   };
 
+  const HeaderIcon = initialKind === "extra" ? AddOutlined : EventBusyOutlined;
+
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Исключение из расписания</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ pt: 1 }}>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : onClose}
+      PaperProps={{
+        sx: {
+          width: { xs: "100%", sm: 440 },
+          maxWidth: "100%",
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2.5, py: 1.5 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <HeaderIcon color="primary" />
+          <Typography variant="h6" fontWeight={600}>
+            {title}
+          </Typography>
+        </Stack>
+        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть" edge="end">
+          <CloseOutlined />
+        </IconButton>
+      </Box>
+      <Divider />
+
+      <Box sx={{ p: 2.5, flex: 1, overflowY: "auto" }}>
+        <Stack spacing={2.5}>
           <Stack spacing={0.5}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Сотрудник *
             </Typography>
             <EmployeePicker value={employee} onChange={setEmployee} disabled={busy} />
           </Stack>
           <Stack spacing={0.5}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Дата *
             </Typography>
             <CustomDatePicker
@@ -475,7 +509,7 @@ const ExceptionDialog: React.FC<{
             />
           </Stack>
           <Stack spacing={0.5}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Тип *
             </Typography>
             <TextField
@@ -487,56 +521,66 @@ const ExceptionDialog: React.FC<{
             >
               <MenuItem value="day_off">Выходной</MenuItem>
               <MenuItem value="vacation">Отпуск</MenuItem>
-              <MenuItem value="extra">Доп. смена</MenuItem>
+              <MenuItem value="extra">Смена</MenuItem>
             </TextField>
           </Stack>
           {kind === "extra" && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TextField
-                type="time"
-                size="small"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                sx={{ flex: 1 }}
-                disabled={busy}
-              />
-              <Typography color="text.secondary">—</Typography>
-              <TextField
-                type="time"
-                size="small"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                sx={{ flex: 1 }}
-                disabled={busy}
-              />
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Время смены *
+              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TextField
+                  type="time"
+                  size="small"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  sx={{ flex: 1 }}
+                  disabled={busy}
+                />
+                <Typography color="text.secondary">—</Typography>
+                <TextField
+                  type="time"
+                  size="small"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  sx={{ flex: 1 }}
+                  disabled={busy}
+                />
+              </Stack>
             </Stack>
           )}
-          <TextField
-            size="small"
-            fullWidth
-            label="Комментарий"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            disabled={busy}
-            inputProps={{ maxLength: 255 }}
-          />
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Комментарий
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Необязательно"
+              disabled={busy}
+              inputProps={{ maxLength: 255 }}
+            />
+          </Stack>
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={busy}>
-          Отмена
-        </Button>
+      </Box>
+
+      <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>
         <Button
+          fullWidth
           variant="contained"
+          size="large"
           onClick={handleSubmit}
           disabled={!canSubmit || busy}
-          startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
+          startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : "Добавить"}
         </Button>
-      </DialogActions>
-    </Dialog>
+      </Box>
+    </Drawer>
   );
 };
 
@@ -566,8 +610,14 @@ const DjangoSchedulePage: React.FC = () => {
   const [employeeFilter, setEmployeeFilter] = React.useState<DjangoEmployeeListItem | null>(null);
   const [ruleFormOpen, setRuleFormOpen] = React.useState(false);
   const [editingRule, setEditingRule] = React.useState<ScheduleRule | null>(null);
-  const [exceptionFormOpen, setExceptionFormOpen] = React.useState(false);
-  const [exceptionInitialDate, setExceptionInitialDate] = React.useState<Dayjs | null>(null);
+  // Одна и та же форма исключения работает в разных режимах (см. openExceptionDialog):
+  // «Добавить смену» → kind "extra", «Исключение» → kind "day_off".
+  const [exceptionDialog, setExceptionDialog] = React.useState<{
+    open: boolean;
+    kind: ScheduleExceptionKind;
+    title: string;
+    date: Dayjs | null;
+  }>({ open: false, kind: "day_off", title: "Исключение из расписания", date: null });
   const [selectedDay, setSelectedDay] = React.useState<Dayjs | null>(null);
   const [dayDrawerOpen, setDayDrawerOpen] = React.useState(false);
 
@@ -690,6 +740,20 @@ const DjangoSchedulePage: React.FC = () => {
     [selectedDay, rules, monthExceptions],
   );
 
+  const openExceptionDialog = (opts: {
+    kind?: ScheduleExceptionKind;
+    title?: string;
+    date?: Dayjs | null;
+  }) =>
+    setExceptionDialog({
+      open: true,
+      kind: opts.kind ?? "day_off",
+      title: opts.title ?? "Исключение из расписания",
+      date: opts.date ?? null,
+    });
+
+  const closeExceptionDialog = () => setExceptionDialog((s) => ({ ...s, open: false }));
+
   const handleDayClick = (day: Dayjs) => {
     setSelectedDay(day);
     setDayDrawerOpen(true);
@@ -713,8 +777,7 @@ const DjangoSchedulePage: React.FC = () => {
   };
 
   const handleAddShiftForSelectedDay = () => {
-    setExceptionInitialDate(selectedDay);
-    setExceptionFormOpen(true);
+    openExceptionDialog({ kind: "extra", title: "Добавить смену", date: selectedDay });
   };
 
   return (
@@ -751,10 +814,7 @@ const DjangoSchedulePage: React.FC = () => {
                 size="small"
                 variant="outlined"
                 startIcon={<EventBusyOutlined />}
-                onClick={() => {
-                  setExceptionInitialDate(null);
-                  setExceptionFormOpen(true);
-                }}
+                onClick={() => openExceptionDialog({ kind: "day_off" })}
               >
                 Исключение
               </Button>
@@ -765,10 +825,9 @@ const DjangoSchedulePage: React.FC = () => {
               size="small"
               variant="contained"
               startIcon={<AddOutlined />}
-              onClick={() => {
-                setExceptionInitialDate(dayjs());
-                setExceptionFormOpen(true);
-              }}
+              onClick={() =>
+                openExceptionDialog({ kind: "extra", title: "Добавить смену", date: dayjs() })
+              }
             >
               Добавить смену
             </Button>
@@ -1042,12 +1101,14 @@ const DjangoSchedulePage: React.FC = () => {
         branchId={branchId}
         onSaved={invalidate}
       />
-      <ExceptionDialog
-        open={exceptionFormOpen}
-        onClose={() => setExceptionFormOpen(false)}
+      <ExceptionDrawer
+        open={exceptionDialog.open}
+        onClose={closeExceptionDialog}
         organizationId={orgId}
         onSaved={invalidate}
-        initialDate={exceptionInitialDate}
+        initialDate={exceptionDialog.date}
+        initialKind={exceptionDialog.kind}
+        title={exceptionDialog.title}
       />
       <ScheduleDayDrawer
         open={dayDrawerOpen}
