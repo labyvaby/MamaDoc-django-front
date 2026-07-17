@@ -108,7 +108,7 @@ const ScheduleFilters: React.FC<ScheduleFiltersProps> = ({
             sx={{ width: 14, height: 10, borderRadius: "3px", border: `1.5px dashed ${theme.palette.success.main}` }}
           />
           <Typography variant="caption" color="text.disabled" noWrap>
-            Доп. смена
+            Смена
           </Typography>
         </Stack>
       </Stack>

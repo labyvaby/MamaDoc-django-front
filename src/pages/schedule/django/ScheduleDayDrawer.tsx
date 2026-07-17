@@ -103,7 +103,7 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                         {occ.startTime}–{occ.endTime}
                       </Typography>
                       {occ.kind === "extra" && (
-                        <Chip label="Доп. смена" size="small" color="success" variant="outlined" />
+                        <Chip label="Смена" size="small" color="success" variant="outlined" />
                       )}
                     </Stack>
                   </Box>
