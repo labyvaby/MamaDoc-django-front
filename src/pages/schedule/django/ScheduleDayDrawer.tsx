@@ -4,6 +4,7 @@ import { useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import type { Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
@@ -20,6 +21,8 @@ export interface ScheduleDayDrawerProps {
   employeeColorMap: Map<number, number>;
   canManage: boolean;
   onMarkDayOff: (employeeId: number) => Promise<void>;
+  /** Удаление добавленной вручную смены (исключение kind="extra"). */
+  onDeleteShift: (exceptionId: number) => Promise<void>;
   onAddShift: () => void;
 }
 
@@ -32,17 +35,20 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
   employeeColorMap,
   canManage,
   onMarkDayOff,
+  onDeleteShift,
   onAddShift,
 }) => {
   const theme = useTheme();
-  const [busyEmployeeId, setBusyEmployeeId] = React.useState<number | null>(null);
+  // Ключ занятой строки — идентичность смены, а не сотрудник: у одного
+  // человека в дне может быть и смена по графику, и добавленная вручную.
+  const [busyKey, setBusyKey] = React.useState<string | null>(null);
 
-  const handleMarkDayOff = async (employeeId: number) => {
-    setBusyEmployeeId(employeeId);
+  const runAction = async (key: string, action: () => Promise<void>) => {
+    setBusyKey(key);
     try {
-      await onMarkDayOff(employeeId);
+      await action();
     } finally {
-      setBusyEmployeeId(null);
+      setBusyKey(null);
     }
   };
 
@@ -69,9 +75,12 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
           <Stack spacing={1}>
             {sorted.map((occ) => {
               const employee = employeesById.get(occ.employeeId);
+              const occKey = `${occ.kind}_${occ.sourceId}_${occ.startTime}`;
+              const busy = busyKey === occKey;
+              const isExtra = occ.kind === "extra";
               return (
                 <Box
-                  key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
+                  key={occKey}
                   sx={{
                     p: 1.5,
                     borderRadius: "10px",
@@ -113,17 +122,23 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                       color="error"
                       variant="text"
                       startIcon={
-                        busyEmployeeId === occ.employeeId ? (
+                        busy ? (
                           <CircularProgress size={14} color="inherit" />
+                        ) : isExtra ? (
+                          <DeleteOutline fontSize="small" />
                         ) : (
                           <EventBusyOutlined fontSize="small" />
                         )
                       }
-                      disabled={busyEmployeeId === occ.employeeId}
-                      onClick={() => handleMarkDayOff(occ.employeeId)}
+                      disabled={busy}
+                      onClick={() =>
+                        isExtra
+                          ? runAction(occKey, () => onDeleteShift(occ.sourceId))
+                          : runAction(occKey, () => onMarkDayOff(occ.employeeId))
+                      }
                       sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                     >
-                      Выходной
+                      {isExtra ? "Удалить" : "Выходной"}
                     </Button>
                   )}
                 </Box>

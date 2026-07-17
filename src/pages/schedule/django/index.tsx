@@ -776,6 +776,17 @@ const DjangoSchedulePage: React.FC = () => {
     }
   };
 
+  const handleDeleteShift = async (exceptionId: number) => {
+    try {
+      await deleteScheduleException(exceptionId);
+      void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
+      notify?.({ type: "success", message: "Смена удалена" });
+    } catch (e) {
+      notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
+      throw e;
+    }
+  };
+
   const handleAddShiftForSelectedDay = () => {
     openExceptionDialog({ kind: "extra", title: "Добавить смену", date: selectedDay });
   };
@@ -1119,6 +1130,7 @@ const DjangoSchedulePage: React.FC = () => {
         employeeColorMap={employeeColorMap}
         canManage={canManage}
         onMarkDayOff={handleMarkDayOff}
+        onDeleteShift={handleDeleteShift}
         onAddShift={handleAddShiftForSelectedDay}
       />
     </Box>
