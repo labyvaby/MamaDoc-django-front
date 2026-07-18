@@ -163,6 +163,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const canUpdate = useCan("appointments.update");
+  // Право «Редактирование приёмов с медзаключением» — мягкое: разблокирует
+  // смену услуги/исполнителя у строки с заключением (правка in-place, заключение
+  // сохраняется). Удаление и отмена такой строки остаются недоступны для всех.
+  const canEditLocked = useCan("appointments.edit_with_conclusion");
   const {
     activeOrganization,
     activeMembership,
@@ -833,7 +837,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   // отбивает 400-й (проверено на живом API
                                   // 16.07.2026, строка 13160) — блокируем поле
                                   // сразу, а не ошибкой после «Сохранить».
-                                  disabled={row.hasConclusion}
+                                  // С правом appointments.edit_with_conclusion
+                                  // мягкая правка разрешена — поле активно.
+                                  disabled={row.hasConclusion && !canEditLocked}
                                   options={row.employeeId !== null ? availableServices : data.services}
                                   loading={data.loading}
                                   value={selectedService}
@@ -851,7 +857,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       // старый unitPrice — проверено на живом API
                                       // 14.07.2026), поэтому пересоздаём строку:
                                       // без id бэк возьмёт актуальную цену услуги.
-                                      ...((v?.id ?? null) !== row.serviceId
+                                      // Но строку с медзаключением пересоздавать
+                                      // нельзя — удаление каскадом снесёт заключение
+                                      // (OneToOne, on_delete=CASCADE). Сохраняем id:
+                                      // бэк обновит услугу in-place, заключение живо.
+                                      ...((v?.id ?? null) !== row.serviceId &&
+                                      !row.hasConclusion
                                         ? { lineId: null, unitPrice: "", discountAmount: "" }
                                         : {}),
                                     })
@@ -900,7 +911,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               </Stack>
                               {row.hasConclusion && (
                                 <Typography variant="caption" color="text.secondary">
-                                  По услуге создано медзаключение — изменить или удалить её нельзя
+                                  {canEditLocked
+                                    ? "По услуге есть медзаключение: можно изменить услугу или исполнителя (заключение сохранится), удалить строку нельзя"
+                                    : "По услуге создано медзаключение — изменить или удалить её нельзя"}
                                 </Typography>
                               )}
                               {incompatible && (
