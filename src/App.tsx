@@ -46,6 +46,7 @@ import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "r
 import { useAuthIdentitySync } from "./hooks/useAuthIdentitySync";
 import { IS_DJANGO_BACKEND } from "./config/backend";
 import { djangoQueryKeys } from "./api/queryKeys";
+import { ApiError } from "./api/client";
 import { LegacyRouteGuard } from "./components/routing/LegacyRouteGuard";
 import { djangoDataProvider } from "./config/djangoDataProvider";
 // 🔥 SUPABASE — только в Supabase-mode
@@ -485,7 +486,15 @@ function App() {
                               staleTime: 5 * 60 * 1000, // 5 minutes
                               gcTime: 10 * 60 * 1000, // 10 minutes
                               refetchOnWindowFocus: false,
-                              retry: 1,
+                              // Повторяем один раз только временные сбои. 429 уже
+                              // содержит Retry-After; мгновенный retry лишь сильнее
+                              // перегружает лимитер.
+                              retry: (failureCount, error) =>
+                                !(
+                                  IS_DJANGO_BACKEND &&
+                                  error instanceof ApiError &&
+                                  error.status === 429
+                                ) && failureCount < 1,
                             },
                           },
                         },

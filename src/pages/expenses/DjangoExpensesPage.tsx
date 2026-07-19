@@ -531,7 +531,7 @@ const DjangoExpensesPage: React.FC = () => {
     enabled: !permLoading && canView && !needsOrg,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     retry: (count, err) => {
-      if ((err as ApiError)?.status === 403) return false;
+      if ([403, 429].includes((err as ApiError)?.status)) return false;
       return count < 1;
     },
   });

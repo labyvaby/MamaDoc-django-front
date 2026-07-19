@@ -73,10 +73,10 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
     queryFn: ({ signal }) => getPatientBalance(patientId, signal),
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     retry: (count, err) => {
-      // Don't retry on 403/404 — these are permission/not-found responses
+      // Не повторяем permission/not-found/rate-limit ответы.
       if (err && typeof err === "object" && "status" in err) {
         const status = (err as { status: number }).status;
-        if (status === 403 || status === 404) return false;
+        if (status === 403 || status === 404 || status === 429) return false;
       }
       return count < 2;
     },

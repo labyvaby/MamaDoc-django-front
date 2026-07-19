@@ -163,7 +163,7 @@ const SpecializationsSettingsPage: React.FC = () => {
     enabled: !permLoading && !needsOrg,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     retry: (count, err) => {
-      if ((err as ApiError)?.status === 403) return false;
+      if ([403, 429].includes((err as ApiError)?.status)) return false;
       return count < 1;
     },
   });

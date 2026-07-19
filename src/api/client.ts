@@ -31,6 +31,9 @@ export class ApiError extends Error {
  *   { <field>: ["msg", ...] }              — Django validation dict
  */
 export function extractErrorMessage(payload: unknown, status: number): string {
+  if (status === 429) {
+    return "Слишком много запросов. Подождите немного и повторите попытку.";
+  }
   if (!payload || typeof payload !== "object") {
     return `Ошибка сервера (${status})`;
   }

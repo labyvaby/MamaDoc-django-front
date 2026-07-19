@@ -108,7 +108,7 @@ const ShiftHistoryPanel: React.FC<Props> = ({
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     retry: (count, err) => {
       const status = (err as ApiError)?.status;
-      if (status === 403 || status === 400) return false;
+      if (status === 403 || status === 400 || status === 429) return false;
       return count < 1;
     },
   });
