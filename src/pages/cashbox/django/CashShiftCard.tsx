@@ -23,6 +23,7 @@ import {
   getCurrentShift,
   parseBackendError,
 } from "../../../api/cashboxShifts";
+import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import { formatSom } from "./FlowCard";
 import ShiftOpenDialog from "./shifts/ShiftOpenDialog";
@@ -34,6 +35,17 @@ const num = (s: string | null | undefined): number => {
   const n = parseFloat(s ?? "0");
   return Number.isNaN(n) ? 0 : n;
 };
+
+/** Наличный остаток по учёту: всё с начала записей до сегодня. */
+function cashNet(s: CashboxSummary): number {
+  return (
+    num(s.cashIncome) +
+    num(s.salesCashIncome) -
+    num(s.cashRefunds) -
+    num(s.cashExpenses) -
+    num(s.supplyCashExpenses)
+  );
+}
 
 function shiftMoment(iso: string): string {
   const d = dayjs(iso).locale("ru");
@@ -95,6 +107,12 @@ type Props = {
   enabled: boolean;
   canOpen: boolean;
   canClose: boolean;
+  /**
+   * finance.view_history: остаток «по учёту» (накопительно, независимо от
+   * смен) — для ролей-надзора (управляющий/бухгалтер/суперадмин) и клиник,
+   * не ведущих смены.
+   */
+  canViewHistory: boolean;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -113,6 +131,7 @@ const CashShiftCard: React.FC<Props> = ({
   enabled,
   canOpen,
   canClose,
+  canViewHistory,
 }) => {
   const [openDialog, setOpenDialog] = React.useState(false);
   const [closeDialog, setCloseDialog] = React.useState(false);
@@ -160,6 +179,27 @@ const CashShiftCard: React.FC<Props> = ({
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
   const lastClosed = lastClosedQuery.data?.results?.[0] ?? null;
+
+  // Остаток «по учёту» — накопительный summary до сегодня. Не зависит от
+  // смен и не требует филиала (без филиала — по всем доступным). Бэкенд
+  // разрешает накопительный запрос только при finance.view_history, поэтому
+  // без права запрос выключен (день-онли роли не ловят 403).
+  const accountingQuery = useQuery({
+    queryKey: djangoQueryKeys.cashbox.summary({
+      organizationId: organizationId ?? null,
+      branchId: branchId ?? null,
+      view: "cashAccountingBalance",
+    }),
+    queryFn: ({ signal }) =>
+      getCashboxSummary(
+        { organizationId, branchId, dateTo: dayjs().format("YYYY-MM-DD") },
+        signal,
+      ),
+    enabled: enabled && canViewHistory,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    refetchInterval: enabled && canViewHistory ? 60_000 : false,
+  });
+  const accountingCash = accountingQuery.data ? cashNet(accountingQuery.data) : null;
 
   const breakdown: BreakdownRow[] = [
     { key: "payment", label: "Оплаты приёмов", amount: num(summary?.cashIncome), direction: 1 },
@@ -225,7 +265,32 @@ const CashShiftCard: React.FC<Props> = ({
         </Stack>
 
         {/* ── Филиал не выбран ── */}
-        {!branchSelected && (
+        {!branchSelected && canViewHistory && (
+          <Box sx={{ mt: 2 }}>
+            {accountingQuery.isLoading ? (
+              <Skeleton variant="text" width="55%" height={44} />
+            ) : (
+              <Typography
+                variant="h4"
+                fontWeight={700}
+                sx={{
+                  letterSpacing: -0.8,
+                  fontVariantNumeric: "tabular-nums",
+                  color: (accountingCash ?? 0) < 0 ? "error.main" : "text.primary",
+                }}
+              >
+                {accountingCash == null ? "—" : formatSom(accountingCash)}
+              </Typography>
+            )}
+            <Typography variant="caption" color="text.secondary" display="block">
+              остаток по учёту · все доступные филиалы
+            </Typography>
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 1.25 }}>
+              Выберите филиал, чтобы видеть кассовый ящик и работать со сменой.
+            </Typography>
+          </Box>
+        )}
+        {!branchSelected && !canViewHistory && (
           <Box
             sx={{
               mt: 2,
@@ -262,7 +327,7 @@ const CashShiftCard: React.FC<Props> = ({
         {branchSelected && !shiftQuery.isLoading && !shiftError && !shiftOpen && (
           <>
             <Box sx={{ mt: 2 }}>
-              {lastClosedQuery.isLoading ? (
+              {lastClosedQuery.isLoading || (!lastClosed && accountingQuery.isLoading) ? (
                 <Skeleton variant="text" width="55%" height={44} />
               ) : (
                 <Typography
@@ -271,17 +336,41 @@ const CashShiftCard: React.FC<Props> = ({
                   sx={{
                     letterSpacing: -0.8,
                     fontVariantNumeric: "tabular-nums",
-                    color: lastClosed ? "text.primary" : "text.disabled",
+                    color:
+                      lastClosed || accountingCash != null
+                        ? (lastClosed ? num(lastClosed.actualCash) : (accountingCash ?? 0)) < 0
+                          ? "error.main"
+                          : "text.primary"
+                        : "text.disabled",
                   }}
                 >
-                  {lastClosed ? formatSom(num(lastClosed.actualCash)) : "—"}
+                  {lastClosed
+                    ? formatSom(num(lastClosed.actualCash))
+                    : accountingCash != null
+                      ? formatSom(accountingCash)
+                      : "—"}
                 </Typography>
               )}
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" display="block">
                 {lastClosed
                   ? `остаток при закрытии ${shiftMoment(lastClosed.closedAt ?? lastClosed.openedAt)}`
-                  : "смен в этом филиале ещё не было"}
+                  : accountingCash != null
+                    ? "остаток по учёту (смены в филиале не ведутся)"
+                    : "смен в этом филиале ещё не было"}
               </Typography>
+              {/* Сверка с учётом: физический пересчёт vs данные системы */}
+              {lastClosed && accountingCash != null && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 0.5, fontVariantNumeric: "tabular-nums" }}
+                >
+                  по учёту:{" "}
+                  <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                    {formatSom(accountingCash)}
+                  </Box>
+                </Typography>
+              )}
             </Box>
             {canOpen && (
               <Button
