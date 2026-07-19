@@ -44,7 +44,10 @@ import {
   createAppointment,
   getAppointments,
   parseBackendError,
+  parseOverlapConflict,
+  type AppointmentOverlapConflict,
 } from "../../api/appointments";
+import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import {
@@ -186,6 +189,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
   const [confirmDuplicateOpen, setConfirmDuplicateOpen] = React.useState(false);
+  const [overlapConflict, setOverlapConflict] =
+    React.useState<AppointmentOverlapConflict | null>(null);
   // Чтобы ошибка была видна, даже если пользователь прокрутил вниз к «Сохранить».
   const errorRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -404,7 +409,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     void performSave();
   };
 
-  const performSave = async () => {
+  const performSave = async (allowOverlap = false) => {
     if (saving) return;
     setSaveError(null);
     setSaving(true);
@@ -428,12 +433,22 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           productId: r.productId!,
           quantity: parseQty(r.quantity) > 0 ? parseQty(r.quantity) : 1,
         })),
+        ...(allowOverlap ? { allowOverlap: true } : {}),
       });
+      setOverlapConflict(null);
       notify?.({ type: "success", message: "Приём успешно создан!" });
       onCreated?.();
       onClose();
     } catch (err: unknown) {
-      setSaveError(parseBackendError(err));
+      // Org "warn" mode: the backend lists the conflicts and waits for
+      // confirmation. Show the modal instead of a raw error; confirming
+      // re-sends with allowOverlap=true.
+      const conflict = parseOverlapConflict(err);
+      if (conflict && !allowOverlap) {
+        setOverlapConflict(conflict);
+      } else {
+        setSaveError(parseBackendError(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -1271,6 +1286,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Пересечение с приёмом сотрудника (режим организации "warn") */}
+      <OverlapConfirmDialog
+        conflict={overlapConflict}
+        saving={saving}
+        onCancel={() => setOverlapConflict(null)}
+        onConfirm={() => void performSave(true)}
+      />
 
       {/* Подтверждение закрытия при несохранённых данных */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)}>

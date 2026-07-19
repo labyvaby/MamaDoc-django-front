@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
+import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 
@@ -30,6 +31,7 @@ import {
   deleteOrganizationLogo,
   type DjangoOrganization,
   type PatientScope,
+  type AppointmentOverlapMode,
 } from "../../api/organization";
 import { ApiError } from "../../api/client";
 
@@ -69,6 +71,25 @@ const PATIENT_SCOPE_OPTIONS: {
   },
 ];
 
+// ── Overlap-mode option descriptions ─────────────────────────────────────────
+
+const OVERLAP_MODE_OPTIONS: {
+  value: AppointmentOverlapMode;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "forbid",
+    label: "Запрещать пересечение",
+    hint: "Если приём пересекается с другим приёмом сотрудника, сохранить нельзя.",
+  },
+  {
+    value: "warn",
+    label: "Разрешать после подтверждения",
+    hint: "Система покажет предупреждение со списком пересечений и позволит сохранить после подтверждения. Свободные окна считаются без изменений.",
+  },
+];
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const OrganizationSettingsPage: React.FC = () => {
@@ -80,6 +101,8 @@ const OrganizationSettingsPage: React.FC = () => {
   const [org, setOrg] = React.useState<DjangoOrganization | null>(null);
   const [name, setName] = React.useState("");
   const [scope, setScope] = React.useState<PatientScope>("shared");
+  const [overlapMode, setOverlapMode] =
+    React.useState<AppointmentOverlapMode>("forbid");
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -103,6 +126,7 @@ const OrganizationSettingsPage: React.FC = () => {
       setOrg(data);
       setName(data.name);
       setScope(data.patientScope);
+      setOverlapMode(data.appointmentOverlapMode);
     } catch (err) {
       setLoadError(extractErrorMessage(err));
     } finally {
@@ -117,7 +141,8 @@ const OrganizationSettingsPage: React.FC = () => {
   const trimmedName = name.trim();
   const nameDirty = !!org && trimmedName !== "" && trimmedName !== org.name;
   const scopeDirty = !!org && scope !== org.patientScope;
-  const dirty = nameDirty || scopeDirty;
+  const overlapDirty = !!org && overlapMode !== org.appointmentOverlapMode;
+  const dirty = nameDirty || scopeDirty || overlapDirty;
 
   const handleSave = async () => {
     if (!org || !dirty) return;
@@ -128,10 +153,12 @@ const OrganizationSettingsPage: React.FC = () => {
       const updated = await updateOrganization(org.id, {
         ...(nameDirty ? { name: trimmedName } : {}),
         ...(scopeDirty ? { patientScope: scope } : {}),
+        ...(overlapDirty ? { appointmentOverlapMode: overlapMode } : {}),
       });
       setOrg(updated);
       setName(updated.name);
       setScope(updated.patientScope);
+      setOverlapMode(updated.appointmentOverlapMode);
       setSaved(true);
       // Название организации показывается в переключателе контекста в сайдбаре —
       // перечитываем /auth/me/, чтобы оно обновилось без перезагрузки страницы.
@@ -325,6 +352,46 @@ const OrganizationSettingsPage: React.FC = () => {
                 }}
               >
                 {PATIENT_SCOPE_OPTIONS.map((opt) => (
+                  <FormControlLabel
+                    key={opt.value}
+                    value={opt.value}
+                    control={<Radio size="small" />}
+                    sx={{ alignItems: "flex-start", mt: 0.5 }}
+                    label={
+                      <Box sx={{ py: 0.25 }}>
+                        <Typography variant="body2" fontWeight={500}>
+                          {opt.label}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {opt.hint}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                ))}
+              </RadioGroup>
+            </FormControl>
+
+            {/* Appointment overlap policy */}
+            <FormControl disabled={!canUpdate || busy}>
+              <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
+                <LayersOutlined fontSize="small" color="action" />
+                <FormLabel sx={{ fontWeight: 600 }}>
+                  Пересечение приёмов
+                </FormLabel>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" mb={1}>
+                Как поступать, когда новый приём пересекается по времени
+                с другим приёмом сотрудника.
+              </Typography>
+              <RadioGroup
+                value={overlapMode}
+                onChange={(e) => {
+                  setOverlapMode(e.target.value as AppointmentOverlapMode);
+                  setSaved(false);
+                }}
+              >
+                {OVERLAP_MODE_OPTIONS.map((opt) => (
                   <FormControlLabel
                     key={opt.value}
                     value={opt.value}

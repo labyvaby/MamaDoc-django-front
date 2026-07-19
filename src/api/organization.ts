@@ -5,12 +5,18 @@ import { apiRequest } from "./client";
 /** Patient registry scope — must match server PatientScope choices. */
 export type PatientScope = "shared" | "per_branch";
 
+/** Overlap policy — must match server AppointmentOverlapMode choices.
+ *  forbid — пересечение приёмов запрещено; warn — разрешено после
+ *  подтверждения (бэк отвечает 409 со списком конфликтов). */
+export type AppointmentOverlapMode = "forbid" | "warn";
+
 export interface DjangoOrganization {
   id: number;
   name: string;
   slug: string;
   status: string;
   patientScope: PatientScope;
+  appointmentOverlapMode: AppointmentOverlapMode;
   /** Абсолютный URL логотипа организации; null — логотип не загружен.
    *  Контракт: MamaDoc/backend_ticket_organization_logo.md (реализовано бэком
    *  08.07.2026; в /auth/me и /auth/context поле относительное `/media/...`). */
@@ -25,6 +31,7 @@ export interface UpdateOrganizationPayload {
   slug?: string;
   status?: string;
   patientScope?: PatientScope;
+  appointmentOverlapMode?: AppointmentOverlapMode;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -81,12 +88,20 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
   };
 }
 
-/** Старый бэкенд не отдаёт logoUrl — приводим отсутствующее поле к null. */
-type DjangoOrganizationWire = Omit<DjangoOrganization, "logoUrl"> &
-  Partial<Pick<DjangoOrganization, "logoUrl">>;
+/** Старый бэкенд не отдаёт logoUrl / appointmentOverlapMode — приводим
+ *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
+type DjangoOrganizationWire = Omit<
+  DjangoOrganization,
+  "logoUrl" | "appointmentOverlapMode"
+> &
+  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode">>;
 
 function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization {
-  return { ...raw, logoUrl: raw.logoUrl ?? null };
+  return {
+    ...raw,
+    logoUrl: raw.logoUrl ?? null,
+    appointmentOverlapMode: raw.appointmentOverlapMode ?? "forbid",
+  };
 }
 
 export function getOrganization(id: number): Promise<DjangoOrganization> {

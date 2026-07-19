@@ -83,6 +83,48 @@ export function parseBackendError(err: unknown): string {
   return err instanceof Error ? err.message : "Неизвестная ошибка";
 }
 
+// ── Overlap conflict (HTTP 409, org "warn" mode) ──────────────────────────────
+
+/** One existing appointment the requested slot runs into (mirrors backend). */
+export interface OverlapConflict {
+  appointmentId: number;
+  startsAt: string;
+  endsAt: string;
+  employeeId: number | null;
+  employeeName: string;
+  patientName: string;
+}
+
+/** Body of the HTTP 409 returned when the org "warn" mode blocks an overlap. */
+export interface AppointmentOverlapConflict {
+  code: "appointment_overlap";
+  message: string;
+  requestedSlot: { startsAt: string; endsAt: string };
+  overlaps: OverlapConflict[];
+}
+
+/**
+ * Detect the structured overlap conflict (409 with code "appointment_overlap").
+ * Returns the parsed body, or null for any other error — callers then show the
+ * confirmation modal and resend the same request with `allowOverlap: true`.
+ * Keyed on the machine `code`, never on the message text.
+ */
+export function parseOverlapConflict(
+  err: unknown,
+): AppointmentOverlapConflict | null {
+  if (err instanceof ApiError && err.status === 409) {
+    const p = err.payload;
+    if (
+      p &&
+      typeof p === "object" &&
+      (p as Record<string, unknown>).code === "appointment_overlap"
+    ) {
+      return p as AppointmentOverlapConflict;
+    }
+  }
+  return null;
+}
+
 // ── Nested shapes ─────────────────────────────────────────────────────────────
 
 export interface AppointmentPatientShort {
@@ -273,6 +315,9 @@ export interface CreateAppointmentPayload {
   adminComment?: string | null;
   services: AppointmentServiceLineCreate[];
   products?: AppointmentProductLineCreate[];
+  /** Подтверждение пересечения при режиме организации "warn": первый запрос без
+   *  него получает 409 со списком конфликтов; повтор с true — сохраняет. */
+  allowOverlap?: boolean;
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -286,6 +331,8 @@ export interface UpdateAppointmentPayload {
   doctorComplaints?: string | null;
   adminComment?: string | null;
   services?: AppointmentServiceLineCreate[];
+  /** См. CreateAppointmentPayload.allowOverlap. */
+  allowOverlap?: boolean;
   /**
    * Товары приёма. ⚠ Бэкенд ПОКА игнорирует это поле в PATCH (проверено на
    * живом API 15.07.2026: 200, но productLines не меняется) — тикет
@@ -331,6 +378,7 @@ interface BackendCreateBody {
   // silently drops unknown keys, so a wrong name → "no service" 400.
   services: BackendServiceLine[];
   products?: BackendProductLine[];
+  allowOverlap?: boolean;
 }
 
 /** Backend update body shape (all fields optional). */
@@ -347,6 +395,7 @@ interface BackendUpdateBody {
   // Backend update payload also names this ``services`` (not ``serviceLines``).
   services?: BackendServiceLine[];
   products?: BackendProductLine[];
+  allowOverlap?: boolean;
 }
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
@@ -391,6 +440,8 @@ function denormalizeCreatePayload(payload: CreateAppointmentPayload): BackendCre
   if (payload.complaints !== undefined) body.complaints = payload.complaints ?? "";
   if (payload.doctorComplaints !== undefined) body.doctorComplaints = payload.doctorComplaints ?? "";
   if (payload.adminComment !== undefined) body.adminComment = payload.adminComment ?? "";
+  // Шлём только когда true — по умолчанию бэкенд считает false.
+  if (payload.allowOverlap) body.allowOverlap = true;
   return body;
 }
 
@@ -414,6 +465,7 @@ function denormalizeUpdatePayload(payload: UpdateAppointmentPayload): BackendUpd
   if (payload.products !== undefined) {
     body.products = toBackendProducts(payload.products);
   }
+  if (payload.allowOverlap) body.allowOverlap = true;
   return body;
 }
 

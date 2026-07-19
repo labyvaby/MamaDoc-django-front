@@ -37,9 +37,12 @@ import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import {
   updateAppointment,
   parseBackendError,
+  parseOverlapConflict,
+  type AppointmentOverlapConflict,
   type AppointmentServiceLine,
   type DjangoAppointment,
 } from "../../api/appointments";
+import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
 import { normalizeDjangoStatus } from "../../config/appointmentStatuses";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
@@ -206,6 +209,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [touched, setTouched] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [overlapConflict, setOverlapConflict] =
+    React.useState<AppointmentOverlapConflict | null>(null);
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
   // Чтобы ошибка была видна, даже если пользователь прокрутил вниз к «Сохранить».
   const errorRef = React.useRef<HTMLDivElement | null>(null);
@@ -434,9 +439,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   }, [products, productRows]);
 
   // ── submit ───────────────────────────────────────────────────────────────
-  const handleSave = async () => {
+  const handleSave = () => {
     setTouched(true);
     if (!isValid || !appointment) return;
+    void performSave();
+  };
+
+  const performSave = async (allowOverlap = false) => {
+    if (saving || !appointment) return;
     setSaveError(null);
     setSaving(true);
     try {
@@ -468,7 +478,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                 })),
             }
           : {}),
+        ...(allowOverlap ? { allowOverlap: true } : {}),
       });
+      setOverlapConflict(null);
       notify?.({ type: "success", message: "Приём обновлён" });
       // Панель деталей показывает сумму из кэша платежей (pay?.totalAmount
       // приоритетнее appt.totalAmount) — сбрасываем, иначе до staleTime видна
@@ -479,7 +491,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       onSaved?.(updated);
       onClose();
     } catch (err: unknown) {
-      setSaveError(parseBackendError(err));
+      // Org "warn" mode: show the conflict list and confirm (resend with
+      // allowOverlap=true) rather than surfacing a raw error.
+      const conflict = parseOverlapConflict(err);
+      if (conflict && !allowOverlap) {
+        setOverlapConflict(conflict);
+      } else {
+        setSaveError(parseBackendError(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -1243,6 +1262,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           setSelectedPatient(p);
           setAddPatientOpen(false);
         }}
+      />
+
+      {/* Пересечение с приёмом сотрудника (режим организации "warn") */}
+      <OverlapConfirmDialog
+        conflict={overlapConflict}
+        saving={saving}
+        onCancel={() => setOverlapConflict(null)}
+        onConfirm={() => void performSave(true)}
       />
     </>
   );
