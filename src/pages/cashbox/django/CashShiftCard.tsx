@@ -323,8 +323,50 @@ const CashShiftCard: React.FC<Props> = ({
           </Typography>
         )}
 
-        {/* ── Смена не открыта ── */}
-        {branchSelected && !shiftQuery.isLoading && !shiftError && !shiftOpen && (
+        {/* ── Смена не открыта: без права на историю — заметный призыв ── */}
+        {branchSelected && !shiftQuery.isLoading && !shiftError && !shiftOpen && !canViewHistory && (
+          <>
+            <Box
+              sx={(t) => ({
+                mt: 2,
+                px: 2,
+                py: 2,
+                borderRadius: "10px",
+                border: "1px solid",
+                borderColor: alpha(t.palette.success.main, 0.4),
+                bgcolor: alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.12 : 0.06),
+              })}
+            >
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <LockOpenOutlined sx={{ color: "success.main", fontSize: 20 }} />
+                <Typography variant="subtitle1" fontWeight={600} sx={{ letterSpacing: -0.2 }}>
+                  Начните смену, чтобы увидеть кассу
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                {lastClosed
+                  ? `при закрытии ${shiftMoment(lastClosed.closedAt ?? lastClosed.openedAt)} в кассе оставалось ${formatSom(num(lastClosed.actualCash))}`
+                  : "Пересчитайте наличные в ящике и откройте смену — карточка покажет живой остаток."}
+              </Typography>
+            </Box>
+            {canOpen && (
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                disableElevation
+                startIcon={<LockOpenOutlined />}
+                onClick={() => setOpenDialog(true)}
+                sx={{ mt: 2 }}
+              >
+                Открыть смену
+              </Button>
+            )}
+          </>
+        )}
+
+        {/* ── Смена не открыта: с правом — остаток последней закрытой / по учёту ── */}
+        {branchSelected && !shiftQuery.isLoading && !shiftError && !shiftOpen && canViewHistory && (
           <>
             <Box sx={{ mt: 2 }}>
               {lastClosedQuery.isLoading || (!lastClosed && accountingQuery.isLoading) ? (
