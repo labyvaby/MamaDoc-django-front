@@ -37,6 +37,7 @@ import {
 } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
+import AddressAutocomplete from "./AddressAutocomplete";
 
 type Props = {
   open: boolean;
@@ -62,6 +63,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
   const [birth, setBirth] = React.useState("");
+  const [address, setAddress] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
@@ -80,6 +82,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
     const maxLen = getPhoneLocalMaxLength(parsed.countryCode);
     setPhone(parsed.local.replace(/[^\d]/g, "").slice(0, maxLen));
     setBirth(patient.birthDate || "");
+    setAddress(patient.address || "");
     setInn(patient.inn || "");
     setIsBlacklisted(patient.isBlacklisted || false);
     setBlacklistReason(patient.blacklistReason || "");
@@ -126,6 +129,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
         fullName: fioTrim,
         phone: fullPhone || undefined,
         birthDate: birth || null,
+        address: address.trim() || null,
         inn: inn.trim() || undefined,
         isBlacklisted: canManageBlacklist ? isBlacklisted : undefined,
         blacklistReason:
@@ -316,6 +320,18 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                     disabled: busy,
                   },
                 }}
+              />
+            </Stack>
+
+            {/* ── Адрес ── */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Адрес
+              </Typography>
+              <AddressAutocomplete
+                value={address}
+                onChange={setAddress}
+                disabled={busy}
               />
             </Stack>
 

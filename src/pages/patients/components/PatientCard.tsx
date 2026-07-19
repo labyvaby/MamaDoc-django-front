@@ -28,6 +28,7 @@ import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
 import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import MergeTypeIcon from "@mui/icons-material/MergeTypeOutlined";
@@ -223,6 +224,13 @@ const PatientCard: React.FC<Props> = ({
                       <Typography variant="body2">
                         {formatDateRu(patient.birthDate)} {calculateAge(patient.birthDate)}
                       </Typography>
+                    </Stack>
+                  )}
+
+                  {patient.address && (
+                    <Stack direction="row" alignItems="flex-start" gap={1} color="text.secondary" sx={{ mt: 0.5 }}>
+                      <PlaceOutlined fontSize="small" sx={{ mt: "1px", flexShrink: 0 }} />
+                      <Typography variant="body2">{patient.address}</Typography>
                     </Stack>
                   )}
                 </Box>
