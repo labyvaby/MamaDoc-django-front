@@ -91,18 +91,18 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Divider />
 
             {/* Cash */}
-            <Typography variant="caption" color="text.disabled" fontWeight={600} textTransform="uppercase">
+            <Typography variant="caption" color="success.main" fontWeight={600} textTransform="uppercase">
               Наличные
             </Typography>
-            <Row label="Начальные наличные" value={`${fmt(shift?.openingCash)} с`} />
+            <Row label="Начальные наличные" value={`${fmt(shift?.openingCash)} с`} color="success.main" />
             <Row label="Приход" value={`+ ${fmt(s.cashIncome)} с`} color="success.main" />
-            <Row label="Возвраты" value={`− ${fmt(s.cashRefunds)} с`} color="error.main" />
-            <Row label="Расходы" value={`− ${fmt(s.cashExpenses)} с`} color="error.main" />
-            <Row label="Ожидается в кассе" value={`${fmt(s.expectedCash)} с`} bold />
+            <Row label="Возвраты" value={`− ${fmt(s.cashRefunds)} с`} color="success.main" />
+            <Row label="Расходы" value={`− ${fmt(s.cashExpenses)} с`} color="success.main" />
+            <Row label="Ожидается в кассе" value={`${fmt(s.expectedCash)} с`} color="success.main" bold />
 
             {shift?.actualCash != null && (
               <>
-                <Row label="Фактически" value={`${fmt(shift.actualCash)} с`} bold />
+                <Row label="Фактически" value={`${fmt(shift.actualCash)} с`} color="success.main" bold />
                 <Row
                   label="Разница"
                   value={(() => {
@@ -124,12 +124,12 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Divider />
 
             {/* Card */}
-            <Typography variant="caption" color="text.disabled" fontWeight={600} textTransform="uppercase">
+            <Typography variant="caption" color="primary.main" fontWeight={600} textTransform="uppercase">
               Безналичные
             </Typography>
-            <Row label="Карта приход" value={`${fmt(s.cardIncome)} с`} />
-            <Row label="Карта возвраты" value={`− ${fmt(s.cardRefunds)} с`} color="error.main" />
-            <Row label="Карта расходы" value={`− ${fmt(s.cardExpenses)} с`} color="error.main" />
+            <Row label="Карта приход" value={`${fmt(s.cardIncome)} с`} color="primary.main" />
+            <Row label="Карта возвраты" value={`− ${fmt(s.cardRefunds)} с`} color="primary.main" />
+            <Row label="Карта расходы" value={`− ${fmt(s.cardExpenses)} с`} color="primary.main" />
 
             {(parseFloat(s.balancePayments) > 0 || parseFloat(s.balanceRefunds) > 0) && (
               <>

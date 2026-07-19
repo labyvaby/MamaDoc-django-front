@@ -71,7 +71,7 @@ const RowLine: React.FC<{ row: BreakdownRow; loading?: boolean }> = ({ row, load
             height: 7,
             borderRadius: "50%",
             flexShrink: 0,
-            bgcolor: empty ? "text.disabled" : row.direction > 0 ? "success.main" : "error.main",
+            bgcolor: empty ? "text.disabled" : "success.main",
           }}
         />
         <Typography variant="body2" color="text.secondary">
@@ -86,7 +86,7 @@ const RowLine: React.FC<{ row: BreakdownRow; loading?: boolean }> = ({ row, load
           fontWeight={empty ? 400 : 600}
           sx={{
             fontVariantNumeric: "tabular-nums",
-            color: empty ? "text.disabled" : row.direction > 0 ? "success.main" : "error.main",
+            color: empty ? "text.disabled" : "success.main",
           }}
         >
           {empty ? "—" : (row.direction > 0 ? "+ " : "− ") + formatSom(row.amount)}
@@ -276,7 +276,7 @@ const CashShiftCard: React.FC<Props> = ({
                 sx={{
                   letterSpacing: -0.8,
                   fontVariantNumeric: "tabular-nums",
-                  color: (accountingCash ?? 0) < 0 ? "error.main" : "text.primary",
+                  color: (accountingCash ?? 0) < 0 ? "error.main" : "success.main",
                 }}
               >
                 {accountingCash == null ? "—" : formatSom(accountingCash)}
@@ -340,7 +340,7 @@ const CashShiftCard: React.FC<Props> = ({
                       lastClosed || accountingCash != null
                         ? (lastClosed ? num(lastClosed.actualCash) : (accountingCash ?? 0)) < 0
                           ? "error.main"
-                          : "text.primary"
+                          : "success.main"
                         : "text.disabled",
                   }}
                 >
@@ -366,7 +366,7 @@ const CashShiftCard: React.FC<Props> = ({
                   sx={{ display: "block", mt: 0.5, fontVariantNumeric: "tabular-nums" }}
                 >
                   по учёту:{" "}
-                  <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                  <Box component="span" sx={{ fontWeight: 600, color: "success.main" }}>
                     {formatSom(accountingCash)}
                   </Box>
                 </Typography>
@@ -401,7 +401,7 @@ const CashShiftCard: React.FC<Props> = ({
                     sx={{
                       letterSpacing: -0.8,
                       fontVariantNumeric: "tabular-nums",
-                      color: num(summary?.expectedCash) < 0 ? "error.main" : "text.primary",
+                      color: num(summary?.expectedCash) < 0 ? "error.main" : "success.main",
                     }}
                   >
                     {formatSom(num(summary?.expectedCash ?? shift!.openingCash))}
@@ -420,7 +420,7 @@ const CashShiftCard: React.FC<Props> = ({
               sx={{ display: "block", mt: 1.25, mb: 1.75, fontVariantNumeric: "tabular-nums" }}
             >
               при открытии:{" "}
-              <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+              <Box component="span" sx={{ fontWeight: 600, color: "success.main" }}>
                 {formatSom(num(shift!.openingCash))}
               </Box>
               {shift!.openedByName ? ` · открыл(а) ${shift!.openedByName}` : ""}

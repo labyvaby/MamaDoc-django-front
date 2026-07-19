@@ -65,6 +65,8 @@ export interface CashboxEntry {
   appointmentId: number | null;
   patientId: number | null;
   patientName: string | null;
+  /** Названия позиций продажи; заполнено только для entryType === "sale". */
+  productNames?: string[] | null;
   branchId: number | null;
   branchName: string | null;
   createdById: number | null;

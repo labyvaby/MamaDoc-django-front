@@ -82,12 +82,22 @@ function isInflow(entry: CashboxEntry): boolean {
 }
 
 function entryTitle(e: CashboxEntry): string {
+  if (e.entryType === "sale") {
+    return e.productNames?.filter(Boolean).join(", ") || "Товар не указан";
+  }
   if (e.patientName) return e.patientName;
   if (e.entryType === "expense") return e.categoryName ?? TYPE_LABELS.expense;
   return TYPE_LABELS[e.entryType];
 }
 
 function entrySubtitle(e: CashboxEntry): string {
+  if (e.entryType === "sale") {
+    const parts = [TYPE_LABELS.sale];
+    if (e.patientName) parts.push(e.patientName);
+    if (e.note) parts.push(e.note);
+    return parts.join(" · ");
+  }
+
   // Если заголовок — это уже название типа (нет пациента/категории),
   // не повторяем его в подзаголовке.
   const titleIsTypeLabel = entryTitle(e) === TYPE_LABELS[e.entryType];
@@ -102,7 +112,7 @@ function entrySubtitle(e: CashboxEntry): string {
     parts.push(e.note);
   }
   if (parts.length === 0) {
-    parts.push(e.entryType === "sale" ? "продажа со склада" : "без описания");
+    parts.push("без описания");
   }
   return parts.join(" · ");
 }
@@ -183,8 +193,9 @@ const DirTabs: React.FC<{ value: Direction; onChange: (v: Direction) => void }> 
 
 const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
   const inflow = isInflow(entry);
-  const paletteKey = inflow ? "success" : "error";
-  const methodChipKey =
+  // Цвет кодирует способ оплаты на всей странице: наличные — зелёный,
+  // безнал — синий. Направление по-прежнему видно по стрелке и знаку.
+  const methodPaletteKey =
     entry.method === "cash" ? "success" : entry.method === "card" ? "primary" : "info";
 
   return (
@@ -224,9 +235,9 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: `${paletteKey}.main`,
+          color: `${methodPaletteKey}.main`,
           bgcolor: alpha(
-            t.palette[paletteKey].main,
+            t.palette[methodPaletteKey].main,
             t.palette.mode === "dark" ? 0.16 : 0.1,
           ),
           "& .MuiSvgIcon-root": { fontSize: 16 },
@@ -264,9 +275,9 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
           borderRadius: "7px",
           fontWeight: 500,
           fontSize: "0.72rem",
-          color: `${methodChipKey}.${methodChipKey === "primary" ? "onSurface" : "main"}`,
+          color: `${methodPaletteKey}.${methodPaletteKey === "primary" ? "onSurface" : "main"}`,
           bgcolor: alpha(
-            t.palette[methodChipKey].main,
+            t.palette[methodPaletteKey].main,
             t.palette.mode === "dark" ? 0.18 : 0.1,
           ),
         })}
@@ -280,7 +291,7 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
           minWidth: 96,
           textAlign: "right",
           fontVariantNumeric: "tabular-nums",
-          color: inflow ? "success.main" : "error.main",
+          color: `${methodPaletteKey}.main`,
         }}
       >
         {(inflow ? "+ " : "− ") + formatSom(parseFloat(entry.amount))}

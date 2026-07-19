@@ -92,7 +92,7 @@ const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, lo
               sx={{
                 letterSpacing: -0.8,
                 fontVariantNumeric: "tabular-nums",
-                color: net < 0 ? "error.main" : "text.primary",
+                color: "primary.main",
               }}
             >
               {(net < 0 ? "− " : "") + formatSom(Math.abs(net))}
@@ -118,27 +118,31 @@ const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, lo
           <Box
             sx={{
               width: railTotal > 0 ? `${(inflow / railTotal) * 100}%` : 0,
-              bgcolor: "success.main",
+              bgcolor: "primary.main",
               transition: "width .4s cubic-bezier(.22,1,.36,1)",
             }}
           />
           <Box
             sx={{
               width: railTotal > 0 ? `${(outflow / railTotal) * 100}%` : 0,
-              bgcolor: "error.main",
-              opacity: 0.85,
+              bgcolor: "primary.main",
+              opacity: 0.35,
               transition: "width .4s cubic-bezier(.22,1,.36,1)",
             }}
           />
         </Box>
         <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.75, mb: 1.75 }}>
-          <Typography variant="caption" color="success.main" sx={{ fontVariantNumeric: "tabular-nums" }}>
+          <Typography variant="caption" color="primary.main" sx={{ fontVariantNumeric: "tabular-nums" }}>
             приход{" "}
             <Box component="span" fontWeight={600}>
               {loading ? "…" : formatSom(inflow)}
             </Box>
           </Typography>
-          <Typography variant="caption" color="error.main" sx={{ fontVariantNumeric: "tabular-nums" }}>
+          <Typography
+            variant="caption"
+            color="primary.main"
+            sx={{ fontVariantNumeric: "tabular-nums", opacity: 0.75 }}
+          >
             расход{" "}
             <Box component="span" fontWeight={600}>
               {loading ? "…" : `− ${formatSom(outflow)}`}
@@ -165,11 +169,7 @@ const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, lo
                       height: 7,
                       borderRadius: "50%",
                       flexShrink: 0,
-                      bgcolor: empty
-                        ? "text.disabled"
-                        : row.direction > 0
-                          ? "success.main"
-                          : "error.main",
+                      bgcolor: empty ? "text.disabled" : "primary.main",
                     }}
                   />
                   <Typography variant="body2" color="text.secondary">
@@ -184,11 +184,7 @@ const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, lo
                     fontWeight={empty ? 400 : 600}
                     sx={{
                       fontVariantNumeric: "tabular-nums",
-                      color: empty
-                        ? "text.disabled"
-                        : row.direction > 0
-                          ? "success.main"
-                          : "error.main",
+                      color: empty ? "text.disabled" : "primary.main",
                     }}
                   >
                     {empty ? "—" : signedSom(row.amount, row.direction)}

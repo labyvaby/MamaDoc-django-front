@@ -118,7 +118,7 @@ const ShiftCloseDialog: React.FC<Props> = ({
             <Stack spacing={0.5}>
               <Stack direction="row" justifyContent="space-between">
                 <Typography variant="body2" color="text.secondary">Ожидаемые наличные:</Typography>
-                <Typography variant="body2" fontWeight={600}>
+                <Typography variant="body2" fontWeight={600} color="success.main">
                   {fmt(expectedCash)} с
                 </Typography>
               </Stack>
@@ -126,26 +126,26 @@ const ShiftCloseDialog: React.FC<Props> = ({
                 <>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="caption" color="text.secondary">Приход наличными:</Typography>
-                    <Typography variant="caption">+ {fmt(summary.cashIncome)} с</Typography>
+                    <Typography variant="caption" color="success.main">+ {fmt(summary.cashIncome)} с</Typography>
                   </Stack>
                   {parseFloat(summary.salesCash ?? "0") > 0 && (
                     <Stack direction="row" justifyContent="space-between">
                       <Typography variant="caption" color="text.secondary">Продажи товаров:</Typography>
-                      <Typography variant="caption">+ {fmt(summary.salesCash)} с</Typography>
+                      <Typography variant="caption" color="success.main">+ {fmt(summary.salesCash)} с</Typography>
                     </Stack>
                   )}
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="caption" color="text.secondary">Возвраты наличными:</Typography>
-                    <Typography variant="caption" color="error.main">− {fmt(summary.cashRefunds)} с</Typography>
+                    <Typography variant="caption" color="success.main">− {fmt(summary.cashRefunds)} с</Typography>
                   </Stack>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="caption" color="text.secondary">Расходы наличными:</Typography>
-                    <Typography variant="caption" color="error.main">− {fmt(summary.cashExpenses)} с</Typography>
+                    <Typography variant="caption" color="success.main">− {fmt(summary.cashExpenses)} с</Typography>
                   </Stack>
                   {parseFloat(summary.supplyCash ?? "0") > 0 && (
                     <Stack direction="row" justifyContent="space-between">
                       <Typography variant="caption" color="text.secondary">Закупки товара:</Typography>
-                      <Typography variant="caption" color="error.main">− {fmt(summary.supplyCash)} с</Typography>
+                      <Typography variant="caption" color="success.main">− {fmt(summary.supplyCash)} с</Typography>
                     </Stack>
                   )}
                 </>
