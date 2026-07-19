@@ -642,6 +642,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   </ToggleButton>
                 </ToggleButtonGroup>
               )}
+              {/* ВРЕМЕННО СКРЫТО: чип «Только ночные»
               {viewMode === "list" && (
                 <Chip
                   label="Только ночные"
@@ -651,6 +652,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   onClick={() => setNightOnly((v) => !v)}
                 />
               )}
+              */}
+              {/* ВРЕМЕННО СКРЫТО: кнопка «Обновить»
               <Tooltip title="Обновить">
                 <span>
                   <IconButton size="small" onClick={() => { void refresh(); }}>
@@ -658,6 +661,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   </IconButton>
                 </span>
               </Tooltip>
+              */}
             </Stack>
           }
         />
