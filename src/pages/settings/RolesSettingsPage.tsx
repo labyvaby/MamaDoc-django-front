@@ -63,6 +63,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   finance: "Финансы",
   warehouse: "Склад",
   reports: "Отчёты",
+  attendance: "СКУД",
   schedule: "Расписание",
   services: "Услуги",
   expenses: "Расходы",

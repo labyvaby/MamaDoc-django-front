@@ -28,9 +28,10 @@ const IP_QUERY_KEY = ["common", "userIp"] as const;
  */
 export function useDjangoSkudActions(
   enableHistory = false,
-  filterEmployeeId?: number | null,
+  filterEmployeeId?: number | "me" | null,
   filterStartDate?: string | null,
   filterEndDate?: string | null,
+  enabled = true,
 ) {
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
@@ -41,7 +42,7 @@ export function useDjangoSkudActions(
   const [actionLoading, setActionLoading] = React.useState(false);
 
   // 1. User's public IP (cached forever).
-  const { data: userIp } = useQuery({
+  const { data: userIp, isLoading: userIpLoading } = useQuery({
     queryKey: IP_QUERY_KEY,
     queryFn: async () => {
       const response = await fetch("https://api.ipify.org?format=json");
@@ -51,15 +52,15 @@ export function useDjangoSkudActions(
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    enabled: canClock,
+    enabled: enabled && canClock,
   });
 
   // 2. Allowed office IP from the backend (cached 5 min).
-  const { data: officeIpData } = useQuery({
+  const { data: officeIpData, isLoading: officeIpLoading } = useQuery({
     queryKey: djangoQueryKeys.attendance.officeIp,
     queryFn: ({ signal }) => getOfficeIp(signal),
     staleTime: 5 * 60 * 1000,
-    enabled: canView,
+    enabled: enabled && canView,
   });
 
   const envIp = import.meta.env.VITE_OFFICE_IP as string | undefined;
@@ -84,7 +85,7 @@ export function useDjangoSkudActions(
     queryKey: djangoQueryKeys.attendance.active,
     queryFn: ({ signal }) => getActiveShift(signal),
     staleTime: 60 * 1000,
-    enabled: canView,
+    enabled: enabled && canView,
   });
   const currentShift = activeQuery.data?.shift ?? null;
 
@@ -107,7 +108,7 @@ export function useDjangoSkudActions(
         },
         signal,
       ),
-    enabled: enableHistory && canView,
+    enabled: enabled && enableHistory && canView,
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
   });
@@ -167,6 +168,11 @@ export function useDjangoSkudActions(
     canClock,
     canManage,
     actionLoading,
+    statusLoading:
+      activeQuery.isLoading || (enableHistory && historyQuery.isLoading),
+    statusError:
+      activeQuery.isError || (enableHistory && historyQuery.isError),
+    locationLoading: userIpLoading || officeIpLoading,
     effectiveAllowedIp,
     userIp,
     isIpCorrect,

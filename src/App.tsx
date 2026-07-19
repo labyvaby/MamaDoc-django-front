@@ -28,6 +28,7 @@ import { useLocation, useNavigate } from "react-router";
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { AchievementToast } from "./components/achievements/AchievementToast";
+import { AttendanceReminder } from "./components/attendance/AttendanceReminder";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
@@ -519,7 +520,10 @@ function App() {
                                 }}
                               >
                                 <DjangoContextRemount>
-                                  <Outlet />
+                                  <>
+                                    <Outlet />
+                                    {IS_DJANGO_BACKEND && <AttendanceReminder />}
+                                  </>
                                 </DjangoContextRemount>
                                 {/* Поздравление с новыми достижениями (mark-seen при закрытии) */}
                                 <AchievementToast />

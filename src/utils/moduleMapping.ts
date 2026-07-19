@@ -9,6 +9,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   catalog: 'catalog',
   finance: 'finance',
   warehouse: 'warehouse',
+  attendance: 'attendance',
   reports: 'reports',
   organization: 'organization',
   branches: 'organization',
