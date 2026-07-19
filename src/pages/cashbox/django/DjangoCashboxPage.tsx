@@ -21,7 +21,7 @@ import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import FlowCard, { formatSom, type FlowBreakdownRow } from "./FlowCard";
-import CashShiftCard from "./CashShiftCard";
+import CashBalanceCard from "./CashBalanceCard";
 import CashFlowFeed from "./CashFlowFeed";
 
 // ── Period presets ────────────────────────────────────────────────────────────
@@ -112,8 +112,6 @@ const DjangoCashboxPage: React.FC = () => {
   const theme = useTheme();
   const canView = useCan("finance.view");
   const canViewHistory = useCan("finance.view_history");
-  const canOpenShift = useCan(["finance.cashbox.shift.open", "finance.cashbox.shift.manage"]);
-  const canCloseShift = useCan(["finance.cashbox.shift.close", "finance.cashbox.shift.manage"]);
   const { isSuperAdmin, activeOrganization, activeBranch, memberships, loading: permLoading } =
     usePermissions();
   const isSuper = isSuperAdmin();
@@ -202,7 +200,7 @@ const DjangoCashboxPage: React.FC = () => {
                   Касса
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Наличные — состояние смены филиала · безнал и лента — {windowLabel}
+                  Наличные — остаток на сейчас · безнал и лента — {windowLabel}
                 </Typography>
               </Box>
               <DateRangeField
@@ -224,14 +222,11 @@ const DjangoCashboxPage: React.FC = () => {
                 alignItems: "start",
               }}
             >
-              <CashShiftCard
+              <CashBalanceCard
                 branchId={activeBranch?.id ?? undefined}
                 branchName={activeBranch?.name ?? undefined}
                 organizationId={orgRequired ? (activeOrganization?.id ?? undefined) : undefined}
                 enabled={queriesEnabled}
-                canOpen={canOpenShift}
-                canClose={canCloseShift}
-                canViewHistory={canViewHistory}
               />
               <FlowCard
                 periodLabel={windowLabel}
