@@ -128,6 +128,12 @@ const ShiftCloseDialog: React.FC<Props> = ({
                     <Typography variant="caption" color="text.secondary">Приход наличными:</Typography>
                     <Typography variant="caption">+ {fmt(summary.cashIncome)} с</Typography>
                   </Stack>
+                  {parseFloat(summary.salesCash ?? "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="caption" color="text.secondary">Продажи товаров:</Typography>
+                      <Typography variant="caption">+ {fmt(summary.salesCash)} с</Typography>
+                    </Stack>
+                  )}
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="caption" color="text.secondary">Возвраты наличными:</Typography>
                     <Typography variant="caption" color="error.main">− {fmt(summary.cashRefunds)} с</Typography>
@@ -136,6 +142,12 @@ const ShiftCloseDialog: React.FC<Props> = ({
                     <Typography variant="caption" color="text.secondary">Расходы наличными:</Typography>
                     <Typography variant="caption" color="error.main">− {fmt(summary.cashExpenses)} с</Typography>
                   </Stack>
+                  {parseFloat(summary.supplyCash ?? "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="caption" color="text.secondary">Закупки товара:</Typography>
+                      <Typography variant="caption" color="error.main">− {fmt(summary.supplyCash)} с</Typography>
+                    </Stack>
+                  )}
                 </>
               )}
             </Stack>

@@ -35,6 +35,12 @@ export interface DateRangeFieldProps {
   onChange: (range: DateRange, presetKey: string | null) => void;
   /** Preset list (left column). Pass [] to hide presets (plain range). */
   presets?: DateRangePreset[];
+  /**
+   * "range" (default) — два клика задают период; "day" — один клик выбирает
+   * ровно один день (from=to). Day-режим для пользователей без права
+   * просмотра истории за произвольный период.
+   */
+  mode?: "range" | "day";
   fullWidth?: boolean;
   minWidth?: number;
   disabled?: boolean;
@@ -141,6 +147,7 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
   value,
   onChange,
   presets = DEFAULT_RANGE_PRESETS,
+  mode = "range",
   fullWidth = false,
   minWidth,
   disabled = false,
@@ -169,6 +176,12 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
 
   const handleDayClick = (day: Dayjs | null) => {
     if (!day) return;
+    // Day-режим: один клик = один день, второго клика не ждём.
+    if (mode === "day") {
+      onChange({ from: day.startOf("day"), to: day.endOf("day") }, null);
+      close();
+      return;
+    }
     if (pendingStart == null) {
       setPendingStart(day.startOf("day"));
       return;

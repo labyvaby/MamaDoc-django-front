@@ -3,7 +3,7 @@ import { Alert, Box, Stack, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import ShieldOutlined from "@mui/icons-material/ShieldOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
-import dayjs, { type Dayjs } from "dayjs";
+import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import { useQuery } from "@tanstack/react-query";
 
@@ -21,11 +21,13 @@ import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import FlowCard, { formatSom, type FlowBreakdownRow } from "./FlowCard";
+import CashShiftCard from "./CashShiftCard";
 import CashFlowFeed from "./CashFlowFeed";
 
 // ── Period presets ────────────────────────────────────────────────────────────
 
-const RANGE_PRESETS: DateRangePreset[] = [
+// Day-режим (finance.view): только конкретный день.
+const DAY_PRESETS: DateRangePreset[] = [
   { key: "today", label: "Сегодня", range: () => [dayjs().startOf("day"), dayjs().endOf("day")] },
   {
     key: "yesterday",
@@ -35,6 +37,11 @@ const RANGE_PRESETS: DateRangePreset[] = [
       dayjs().subtract(1, "day").endOf("day"),
     ],
   },
+];
+
+// Range-режим (finance.view_history): произвольные периоды.
+const RANGE_PRESETS: DateRangePreset[] = [
+  ...DAY_PRESETS,
   { key: "7d", label: "Последние 7 дней", range: () => [dayjs().subtract(6, "day").startOf("day"), dayjs().endOf("day")] },
   { key: "30d", label: "Последние 30 дней", range: () => [dayjs().subtract(29, "day").startOf("day"), dayjs().endOf("day")] },
   { key: "month", label: "Этот месяц", range: () => [dayjs().startOf("month"), dayjs().endOf("month")] },
@@ -48,12 +55,11 @@ const RANGE_PRESETS: DateRangePreset[] = [
   },
 ];
 
-// ── Summary math (нал / безнал) ───────────────────────────────────────────────
+// ── Summary math (безнал) ─────────────────────────────────────────────────────
 
 type FlowNumbers = {
   inflow: number;
   outflow: number;
-  net: number;
   breakdown: FlowBreakdownRow[];
 };
 
@@ -62,19 +68,16 @@ const num = (s: string | undefined): number => {
   return Number.isNaN(n) ? 0 : n;
 };
 
-function flowNumbers(s: CashboxSummary | undefined, kind: "cash" | "card"): FlowNumbers {
-  const payments = num(kind === "cash" ? s?.cashIncome : s?.cardIncome);
-  const sales = num(kind === "cash" ? s?.salesCashIncome : s?.salesCardIncome);
-  const refunds = num(kind === "cash" ? s?.cashRefunds : s?.cardRefunds);
-  const expenses = num(kind === "cash" ? s?.cashExpenses : s?.cardExpenses);
-  const supplies = num(kind === "cash" ? s?.supplyCashExpenses : s?.supplyCardExpenses);
+function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
+  const payments = num(s?.cardIncome);
+  const sales = num(s?.salesCardIncome);
+  const refunds = num(s?.cardRefunds);
+  const expenses = num(s?.cardExpenses);
+  const supplies = num(s?.supplyCardExpenses);
 
-  const inflow = payments + sales;
-  const outflow = refunds + expenses + supplies;
   return {
-    inflow,
-    outflow,
-    net: inflow - outflow,
+    inflow: payments + sales,
+    outflow: refunds + expenses + supplies,
     breakdown: [
       { key: "payment", label: "Оплаты приёмов", amount: payments, direction: 1 },
       { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
@@ -85,12 +88,32 @@ function flowNumbers(s: CashboxSummary | undefined, kind: "cash" | "card"): Flow
   };
 }
 
+function periodLabel(range: DateRange): string {
+  const f = range.from.locale("ru");
+  const t = range.to.locale("ru");
+  if (f.isSame(t, "day")) {
+    return t.isSame(dayjs(), "day") ? "за сегодня" : `за ${t.format("D MMMM")}`;
+  }
+  if (f.isSame(t, "month")) return `за ${f.format("D")} – ${t.format("D MMM")}`;
+  return `за ${f.format("D MMM")} – ${t.format("D MMM")}`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/**
+ * Касса. Два независимых смысловых блока:
+ *  - «Наличные» — операционное состояние кассового ящика (открытая смена
+ *    филиала). От фильтра периода НЕ зависит.
+ *  - «Безнал» + лента — отчёт за выбранный день; произвольный период
+ *    доступен только с правом finance.view_history (day-picker ↔ range-picker).
+ */
 const DjangoCashboxPage: React.FC = () => {
   usePageTitle("Касса");
   const theme = useTheme();
   const canView = useCan("finance.view");
+  const canViewHistory = useCan("finance.view_history");
+  const canOpenShift = useCan(["finance.cashbox.shift.open", "finance.cashbox.shift.manage"]);
+  const canCloseShift = useCan(["finance.cashbox.shift.close", "finance.cashbox.shift.manage"]);
   const { isSuperAdmin, activeOrganization, activeBranch, memberships, loading: permLoading } =
     usePermissions();
   const isSuper = isSuperAdmin();
@@ -98,17 +121,14 @@ const DjangoCashboxPage: React.FC = () => {
   const orgRequired = isSuper || isMultiOrg;
   const needsOrg = orgRequired && !activeOrganization;
 
-  // По умолчанию — последние 30 дней: показывает недавнее движение сразу,
-  // не упираясь в пустой текущий месяц.
+  // Касса — рабочий инструмент «на сегодня»; история — по явному выбору.
   const [range, setRange] = React.useState<DateRange>(() => ({
-    from: dayjs().subtract(29, "day").startOf("day"),
+    from: dayjs().startOf("day"),
     to: dayjs().endOf("day"),
   }));
 
   const dateFrom = range.from.format("YYYY-MM-DD");
   const dateTo = range.to.format("YYYY-MM-DD");
-  // Остатки считаем накопительно: всё с начала учёта по границу даты.
-  const openingDateTo = range.from.subtract(1, "day").format("YYYY-MM-DD");
 
   const scopeFilters = React.useMemo(
     () => ({
@@ -120,45 +140,33 @@ const DjangoCashboxPage: React.FC = () => {
 
   const queriesEnabled = !permLoading && canView && !needsOrg;
 
-  const makeSummaryQuery = (key: string, filters: { dateFrom?: string; dateTo?: string }) => ({
-    queryKey: djangoQueryKeys.cashbox.summary({ ...scopeFilters, ...filters, view: key }),
+  // Единственный summary-запрос — поток за выбранное окно. Накопительных
+  // запросов «с начала учёта» больше нет: остаток наличных живёт в смене.
+  const periodQuery = useQuery({
+    queryKey: djangoQueryKeys.cashbox.summary({ ...scopeFilters, dateFrom, dateTo, view: "period" }),
     queryFn: ({ signal }: { signal?: AbortSignal }) =>
-      getCashboxSummary({ ...scopeFilters, ...filters }, signal),
+      getCashboxSummary({ ...scopeFilters, dateFrom, dateTo }, signal),
     enabled: queriesEnabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     refetchInterval: queriesEnabled ? 60_000 : (false as const),
   });
 
-  // Поток за выбранный период.
-  const periodQuery = useQuery(makeSummaryQuery("period", { dateFrom, dateTo }));
-  // Остаток на начало периода (накопительно до dateFrom).
-  const openingQuery = useQuery(makeSummaryQuery("opening", { dateTo: openingDateTo }));
-  // Остаток на конец периода (накопительно до dateTo) — «сколько было в кассе на дату».
-  const closingQuery = useQuery(makeSummaryQuery("closing", { dateTo }));
-
-  if (!permLoading && !canView) return <AccessDenied />;
-
-  const period = periodQuery.data;
-  const loading = periodQuery.isLoading || openingQuery.isLoading || closingQuery.isLoading;
-
-  const cashFlow = flowNumbers(period, "cash");
-  const cardFlow = flowNumbers(period, "card");
-  const cashOpening = openingQuery.data ? flowNumbers(openingQuery.data, "cash").net : null;
-  const cardOpening = openingQuery.data ? flowNumbers(openingQuery.data, "card").net : null;
-  const cashClosing = closingQuery.data ? flowNumbers(closingQuery.data, "cash").net : null;
-  const cardClosing = closingQuery.data ? flowNumbers(closingQuery.data, "card").net : null;
-
-  // Дата остатка: конец периода, но не позже сегодняшнего дня.
-  const closingDate: Dayjs = range.to.isAfter(dayjs(), "day") ? dayjs() : range.to;
-  const closingLabel = `на ${closingDate.locale("ru").format("D MMM YYYY")}`;
-
-  const insuranceIncome = num(period?.insuranceIncome);
-  const balancePayments = num(period?.balancePayments);
-
   const baseFeedFilters = React.useMemo(
     () => ({ ...scopeFilters, dateFrom, dateTo }),
     [scopeFilters, dateFrom, dateTo],
   );
+
+  // После всех хуков — ранний выход не ломает их порядок между рендерами.
+  if (!permLoading && !canView) return <AccessDenied />;
+
+  const period = periodQuery.data;
+  const loading = periodQuery.isLoading;
+
+  const cardFlow = cardFlowNumbers(period);
+  const windowLabel = periodLabel(range);
+
+  const insuranceIncome = num(period?.insuranceIncome);
+  const balancePayments = num(period?.balancePayments);
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -180,7 +188,7 @@ const DjangoCashboxPage: React.FC = () => {
           }}
         >
           <Box sx={{ width: "100%", pt: 1 }}>
-            {/* Заголовок + период */}
+            {/* Заголовок + выбор дня/периода (влияет на безнал и ленту) */}
             <Stack
               direction="row"
               alignItems="flex-end"
@@ -194,44 +202,41 @@ const DjangoCashboxPage: React.FC = () => {
                   Касса
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Движение денежных средств за период
+                  Наличные — состояние смены филиала · безнал и лента — {windowLabel}
                 </Typography>
               </Box>
               <DateRangeField
                 value={range}
                 onChange={(next) => setRange(next)}
-                presets={RANGE_PRESETS}
-                minWidth={220}
+                presets={canViewHistory ? RANGE_PRESETS : DAY_PRESETS}
+                mode={canViewHistory ? "range" : "day"}
+                minWidth={200}
               />
             </Stack>
 
-            {/* Карточки потоков: наличные / безнал */}
+            {/* Наличные (смена, без периода) / Безнал (за окно) */}
             <Box
               sx={{
                 display: "grid",
                 gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
                 gap: 1.5,
                 mb: 1.5,
+                alignItems: "start",
               }}
             >
-              <FlowCard
-                kind="cash"
-                closing={cashClosing}
-                opening={cashOpening}
-                inflow={cashFlow.inflow}
-                outflow={cashFlow.outflow}
-                breakdown={cashFlow.breakdown}
-                closingLabel={closingLabel}
-                loading={loading}
+              <CashShiftCard
+                branchId={activeBranch?.id ?? undefined}
+                branchName={activeBranch?.name ?? undefined}
+                organizationId={orgRequired ? (activeOrganization?.id ?? undefined) : undefined}
+                enabled={queriesEnabled}
+                canOpen={canOpenShift}
+                canClose={canCloseShift}
               />
               <FlowCard
-                kind="card"
-                closing={cardClosing}
-                opening={cardOpening}
+                periodLabel={windowLabel}
                 inflow={cardFlow.inflow}
                 outflow={cardFlow.outflow}
                 breakdown={cardFlow.breakdown}
-                closingLabel={closingLabel}
                 loading={loading}
               />
             </Box>
@@ -248,7 +253,7 @@ const DjangoCashboxPage: React.FC = () => {
               >
                 <InfoTile
                   icon={<ShieldOutlined />}
-                  label="Покрыто страховкой за период (долг страховых, не касса)"
+                  label={`Покрыто страховкой ${windowLabel} (долг страховых, не касса)`}
                   value={formatSom(insuranceIncome)}
                   active={insuranceIncome > 0}
                 />
@@ -261,7 +266,7 @@ const DjangoCashboxPage: React.FC = () => {
               </Box>
             )}
 
-            {/* Лента движения средств */}
+            {/* Лента движения средств — то же окно, что и безнал */}
             <CashFlowFeed baseFilters={baseFeedFilters} enabled={queriesEnabled} />
           </Box>
         </Box>

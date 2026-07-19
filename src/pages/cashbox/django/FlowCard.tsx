@@ -1,7 +1,6 @@
 import React from "react";
 import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 
 import { AppCard } from "../../../components/ui";
@@ -18,18 +17,13 @@ export type FlowBreakdownRow = {
 };
 
 type Props = {
-  kind: "cash" | "card";
-  /** Остаток на конец периода (накопительно с начала учёта), null — грузится */
-  closing: number | null;
-  /** Остаток на начало периода, null — грузится */
-  opening: number | null;
-  /** Приход за период (сумма положительных потоков) */
+  /** Подпись окна отчёта, напр. «за 19 июля» или «за 1 – 19 июл». */
+  periodLabel: string;
+  /** Приход за окно (сумма положительных потоков) */
   inflow: number;
-  /** Расход за период (сумма отрицательных потоков, положительное число) */
+  /** Расход за окно (сумма отрицательных потоков, положительное число) */
   outflow: number;
   breakdown: FlowBreakdownRow[];
-  /** Подпись даты остатка, напр. «на 8 июл 2026» */
-  closingLabel: string;
   loading: boolean;
 };
 
@@ -48,21 +42,11 @@ function signedSom(value: number, direction: 1 | -1): string {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Карточка денежного потока (наличные / безнал): остаток на дату, рейка
- * приход-расход за период и разбивка по типам операций.
+ * Карточка «Безнал» — отчёт по безналичному потоку за выбранное окно
+ * (день или период). Накопительного остатка у безнала нет намеренно:
+ * деньги уходят в банк, «остаток на терминале» не существует физически.
  */
-const FlowCard: React.FC<Props> = ({
-  kind,
-  closing,
-  opening,
-  inflow,
-  outflow,
-  breakdown,
-  closingLabel,
-  loading,
-}) => {
-  const isCash = kind === "cash";
-  const paletteKey = isCash ? "success" : "primary";
+const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, loading }) => {
   const railTotal = inflow + outflow;
   const net = inflow - outflow;
 
@@ -80,29 +64,26 @@ const FlowCard: React.FC<Props> = ({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: `${paletteKey}.onSurface`,
-              bgcolor: alpha(
-                t.palette[paletteKey].main,
-                t.palette.mode === "dark" ? 0.16 : 0.1,
-              ),
+              color: "primary.onSurface",
+              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
               "& .MuiSvgIcon-root": { fontSize: 20 },
             })}
           >
-            {isCash ? <PaymentsOutlined /> : <CreditCardOutlined />}
+            <CreditCardOutlined />
           </Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body1" fontWeight={600} sx={{ letterSpacing: -0.15 }}>
-              {isCash ? "Наличные" : "Безнал"}
+              Безнал
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block">
-              {isCash ? "Деньги в кассовом ящике" : "Оплаты картой через терминал"}
+              Оплаты картой через терминал
             </Typography>
           </Box>
         </Stack>
 
-        {/* Остаток на дату */}
+        {/* Итог за окно */}
         <Box sx={{ mt: 2 }}>
-          {loading || closing == null ? (
+          {loading ? (
             <Skeleton variant="text" width="55%" height={44} />
           ) : (
             <Typography
@@ -111,46 +92,22 @@ const FlowCard: React.FC<Props> = ({
               sx={{
                 letterSpacing: -0.8,
                 fontVariantNumeric: "tabular-nums",
-                color: closing < 0 ? "error.main" : "text.primary",
+                color: net < 0 ? "error.main" : "text.primary",
               }}
             >
-              {formatSom(closing)}
+              {(net < 0 ? "− " : "") + formatSom(Math.abs(net))}
             </Typography>
           )}
           <Typography variant="caption" color="text.secondary">
-            остаток {closingLabel}
+            итого {periodLabel}
           </Typography>
         </Box>
-
-        {/* На начало периода + поток за период */}
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{ mt: 1.25, mb: 1.75, flexWrap: "wrap", rowGap: 0.5 }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
-            на начало периода:{" "}
-            {loading || opening == null ? "…" : (
-              <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
-                {formatSom(opening)}
-              </Box>
-            )}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
-            за период:{" "}
-            <Box
-              component="span"
-              sx={{ fontWeight: 600, color: net < 0 ? "error.main" : "success.main" }}
-            >
-              {loading ? "…" : signedSom(Math.abs(net), net < 0 ? -1 : 1)}
-            </Box>
-          </Typography>
-        </Stack>
 
         {/* Рейка приход/расход */}
         <Box
           aria-hidden
           sx={(t) => ({
+            mt: 1.75,
             height: 8,
             borderRadius: "4px",
             overflow: "hidden",

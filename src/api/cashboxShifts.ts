@@ -39,6 +39,14 @@ export interface CashboxShiftSummary {
   paymentCount: number;
   refundCount: number;
   expenseCount: number;
+  // Продажи товаров (приход) и закупки (расход) за окно смены —
+  // обе двигают кассовый ящик и входят в expectedCash.
+  salesCash: string;
+  salesCard: string;
+  saleCount: number;
+  supplyCash: string;
+  supplyCard: string;
+  supplyCount: number;
 }
 
 export interface CashboxShiftListResponse {
@@ -95,7 +103,7 @@ export async function getCurrentShift(
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   try {
     return await apiRequest<CashboxShift>(
-      `/finance/cashbox-shifts/current/?${q.toString()}`,
+      `/cashbox/cashbox-shifts/current/?${q.toString()}`,
       { signal },
     );
   } catch (err) {
@@ -111,7 +119,7 @@ export function getCashboxShifts(
 ): Promise<CashboxShiftListResponse> {
   const q = buildShiftListParams(filters);
   return apiRequest<CashboxShiftListResponse>(
-    `/finance/cashbox-shifts/?${q.toString()}`,
+    `/cashbox/cashbox-shifts/?${q.toString()}`,
     { signal },
   );
 }
@@ -121,13 +129,13 @@ export function getCashboxShiftSummary(
   signal?: AbortSignal,
 ): Promise<CashboxShiftSummary> {
   return apiRequest<CashboxShiftSummary>(
-    `/finance/cashbox-shifts/${id}/summary/`,
+    `/cashbox/cashbox-shifts/${id}/summary/`,
     { signal },
   );
 }
 
 export function openCashboxShift(payload: OpenShiftPayload): Promise<CashboxShift> {
-  return apiRequest<CashboxShift>("/finance/cashbox-shifts/open/", {
+  return apiRequest<CashboxShift>("/cashbox/cashbox-shifts/open/", {
     method: "POST",
     body: payload,
   });
@@ -137,7 +145,7 @@ export function closeCashboxShift(
   id: number,
   payload: CloseShiftPayload,
 ): Promise<CashboxShift> {
-  return apiRequest<CashboxShift>(`/finance/cashbox-shifts/${id}/close/`, {
+  return apiRequest<CashboxShift>(`/cashbox/cashbox-shifts/${id}/close/`, {
     method: "POST",
     body: payload,
   });
