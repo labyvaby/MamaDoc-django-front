@@ -231,6 +231,7 @@ const DjangoCashboxPage: React.FC = () => {
                 enabled={queriesEnabled}
                 canOpen={canOpenShift}
                 canClose={canCloseShift}
+                canViewHistory={canViewHistory}
               />
               <FlowCard
                 periodLabel={windowLabel}
