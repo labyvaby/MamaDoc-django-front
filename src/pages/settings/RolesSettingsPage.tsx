@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   Divider,
   Drawer,
@@ -10,17 +11,21 @@ import {
   Paper,
   Skeleton,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
   alpha,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import {
   AdminPanelSettingsOutlined,
   AddOutlined,
   CloseOutlined,
   EditOutlined,
   KeyOutlined,
+  KeyboardArrowRightOutlined,
   LockOutlined,
   SearchOutlined,
 } from "@mui/icons-material";
@@ -144,6 +149,240 @@ function useSnack() {
   return { snack, show, hide };
 }
 
+// ── MobilePermissionPicker ──────────────────────────────────────────────────
+// Тач-редактор прав для мобильной версии: аккордеон категорий с мастер-
+// переключателем, крупные тумблеры, поиск и липкая сводка — вместо десктопного
+// Autocomplete с грудой чипов, неудобного на телефоне.
+
+interface MobilePermissionPickerProps {
+  grouped: { category: string; label: string; items: RbacPermission[] }[];
+  selectedCodes: string[];
+  onChange: (codes: string[]) => void;
+  isModuleOff: (code: string) => boolean;
+  disabled?: boolean;
+  totalCount: number;
+  /** Права роли на момент открытия — задают, какие категории раскрыты сразу. */
+  initialSelectedCodes: string[];
+}
+
+function MobilePermissionPicker({
+  grouped,
+  selectedCodes,
+  onChange,
+  isModuleOff,
+  disabled,
+  totalCount,
+  initialSelectedCodes,
+}: MobilePermissionPickerProps) {
+  const [search, setSearch] = React.useState("");
+  // По умолчанию раскрыты категории, где у роли уже есть права.
+  const [expanded, setExpanded] = React.useState<Set<string>>(() => {
+    const init = new Set(initialSelectedCodes);
+    return new Set(
+      grouped.filter((g) => g.items.some((p) => init.has(p.code))).map((g) => g.category),
+    );
+  });
+
+  const selected = React.useMemo(() => new Set(selectedCodes), [selectedCodes]);
+  const q = search.trim().toLowerCase();
+
+  const togglePerm = (code: string) => {
+    if (disabled) return;
+    const next = new Set(selected);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    onChange([...next]);
+  };
+  const toggleCategory = (items: RbacPermission[]) => {
+    if (disabled) return;
+    const codes = items.map((p) => p.code);
+    const allOn = codes.every((c) => selected.has(c));
+    const next = new Set(selected);
+    codes.forEach((c) => (allOn ? next.delete(c) : next.add(c)));
+    onChange([...next]);
+  };
+  const toggleExpand = (cat: string) => {
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(cat)) n.delete(cat);
+      else n.add(cat);
+      return n;
+    });
+  };
+
+  const visibleGroups = grouped
+    .map((g) => ({
+      ...g,
+      matched: q
+        ? g.items.filter(
+            (p) =>
+              (p.name || "").toLowerCase().includes(q) ||
+              p.code.toLowerCase().includes(q) ||
+              g.label.toLowerCase().includes(q),
+          )
+        : g.items,
+    }))
+    .filter((g) => g.matched.length > 0);
+
+  return (
+    <Box>
+      {/* Липкая сводка + поиск */}
+      <Box sx={{ position: "sticky", top: 0, zIndex: 2, bgcolor: "background.paper", pb: 1 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          gap={1.5}
+          sx={(t) => ({
+            px: 1.5,
+            py: 1,
+            mb: 1,
+            borderRadius: "12px",
+            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+          })}
+        >
+          <Typography
+            sx={{
+              fontSize: 22,
+              fontWeight: 700,
+              color: "primary.onSurface",
+              lineHeight: 1,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {selected.size}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            выбрано из {totalCount}
+            {selected.size ? "" : " · роль пока без прав"}
+          </Typography>
+          {selected.size > 0 && !disabled && (
+            <Button
+              size="small"
+              onClick={() => onChange([])}
+              sx={{ textTransform: "none", minWidth: 0, px: 1 }}
+            >
+              Очистить
+            </Button>
+          )}
+        </Stack>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Поиск права…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchOutlined fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
+        />
+      </Box>
+
+      <Stack spacing={1} sx={{ mt: 1 }}>
+        {visibleGroups.length === 0 ? (
+          <Typography variant="body2" color="text.disabled" sx={{ textAlign: "center", py: 3 }}>
+            Прав по запросу не найдено
+          </Typography>
+        ) : (
+          visibleGroups.map((g) => {
+            const selCount = g.items.filter((p) => selected.has(p.code)).length;
+            const allOn = selCount === g.items.length;
+            const open = expanded.has(g.category) || !!q;
+            return (
+              <Paper key={g.category} variant="outlined" sx={{ overflow: "hidden" }}>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  sx={{ px: 1.5, py: 1.25, cursor: "pointer" }}
+                  onClick={() => toggleExpand(g.category)}
+                >
+                  <KeyboardArrowRightOutlined
+                    sx={{
+                      color: open ? "primary.onSurface" : "text.disabled",
+                      transform: open ? "rotate(90deg)" : "none",
+                      transition: "transform .2s ease",
+                    }}
+                  />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      {g.label}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: selCount ? "primary.onSurface" : "text.secondary" }}
+                    >
+                      {selCount} из {g.items.length}
+                    </Typography>
+                  </Box>
+                  <Switch
+                    size="small"
+                    checked={allOn}
+                    disabled={disabled}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleCategory(g.items)}
+                  />
+                </Stack>
+                {open && (
+                  <Box sx={{ borderTop: "1px solid", borderColor: "divider" }}>
+                    {g.matched.map((p, i) => {
+                      const off = isModuleOff(p.code);
+                      return (
+                        <Stack
+                          key={p.code}
+                          direction="row"
+                          alignItems="center"
+                          gap={1}
+                          sx={{
+                            px: 1.5,
+                            py: 1,
+                            borderTop: i > 0 ? "1px solid" : "none",
+                            borderColor: "divider",
+                          }}
+                        >
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" fontWeight={500} lineHeight={1.3}>
+                              {p.name || p.code}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontFamily: "monospace" }}
+                            >
+                              {p.code}
+                            </Typography>
+                            {off && (
+                              <Typography
+                                variant="caption"
+                                sx={{ display: "block", color: "warning.main", fontWeight: 600, mt: 0.25 }}
+                              >
+                                не действует, пока модуль выключен
+                              </Typography>
+                            )}
+                          </Box>
+                          <Switch
+                            size="small"
+                            checked={selected.has(p.code)}
+                            disabled={disabled}
+                            onChange={() => togglePerm(p.code)}
+                          />
+                        </Stack>
+                      );
+                    })}
+                  </Box>
+                )}
+              </Paper>
+            );
+          })
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
 // ── RoleFormDrawer ──────────────────────────────────────────────────────────
 
 interface RoleFormDrawerProps {
@@ -187,6 +426,9 @@ function RoleFormDrawer({
       setSelectedCodes([]);
     }
   }, [open, mode, initial]);
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
   const grouped = React.useMemo(() => groupPermissions(permissions), [permissions]);
@@ -347,6 +589,18 @@ function RoleFormDrawer({
               модуль не включён. Пользователи с этой ролью увидят изменения
               после возврата на вкладку или перезагрузки страницы.
             </Typography>
+            {isMobile ? (
+              <MobilePermissionPicker
+                grouped={grouped}
+                selectedCodes={selectedCodes}
+                onChange={setSelectedCodes}
+                isModuleOff={isModuleOff}
+                disabled={busy}
+                totalCount={permissions.length}
+                initialSelectedCodes={initial?.permissions ?? []}
+              />
+            ) : (
+             <>
             {/* Quick overview by group */}
             {grouped.length > 0 && selectedCodes.length > 0 && (
               <Box mb={1.5}>
@@ -458,6 +712,8 @@ function RoleFormDrawer({
               <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
                 Выбрано: {selectedCodes.length} из {permissions.length}
               </Typography>
+            )}
+             </>
             )}
           </Box>
         </Stack>
