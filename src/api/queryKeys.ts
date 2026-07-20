@@ -194,6 +194,25 @@ export const djangoQueryKeys = {
       ["django", "knowledge", "videos", params] as const,
   },
 
+  vaccinations: {
+    all: ["django", "vaccinations"] as const,
+    vaccines: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "vaccines", params] as const,
+    batches: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "batches", params] as const,
+    records: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records", params] as const,
+    record: (id: number) => ["django", "vaccinations", "records", id] as const,
+    // Дашборд «кому пора» (по всем пациентам филиала).
+    schedule: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "schedule", params] as const,
+    // Календарь и история одного пациента.
+    patientSchedule: (patientId: number) =>
+      ["django", "vaccinations", "patients", patientId, "schedule"] as const,
+    patientHistory: (patientId: number) =>
+      ["django", "vaccinations", "patients", patientId, "history"] as const,
+  },
+
   staff: {
     /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
     userNames: ["django", "staff", "userNames"] as const,

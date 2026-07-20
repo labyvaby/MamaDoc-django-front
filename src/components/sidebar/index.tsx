@@ -27,6 +27,7 @@ import appLogo from "../../assets/img/logo.png";
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
@@ -408,6 +409,7 @@ const SidebarSecondary: React.FC = () => {
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
+    vaccinations: IS_DJANGO_BACKEND && (isSuper || can("vaccinations.view")),
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
@@ -445,7 +447,7 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.diagnoses,
+    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -634,6 +636,11 @@ const SidebarSecondary: React.FC = () => {
             label="Все пациенты"
             collapsed={siderCollapsed}
           />
+        )}
+
+        {/* Прививки */}
+        {show("org") && can_.vaccinations && (
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Прививки" collapsed={siderCollapsed} />
         )}
 
         {/* Все приемы */}

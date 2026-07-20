@@ -88,6 +88,7 @@ const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django
 const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
 const TasksPage = lazy(() => import("./pages/tasks"));
+const VaccinationsPage = lazy(() => import("./pages/vaccinations"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
 const CleaningPage = lazy(() => import("./pages/cleaning"));
@@ -459,6 +460,11 @@ function App() {
                         name: "tasks",
                         list: "/tasks",
                         meta: { label: "Задачи" }
+                      },
+                      {
+                        name: "vaccinations",
+                        list: "/vaccinations",
+                        meta: { label: "Прививки" }
                       },
                       {
                         name: "achievements",
@@ -1035,6 +1041,16 @@ function App() {
                                 <RequirePermission permission="tasks.list">
                                   <Suspense fallback={<LinearProgress />}>
                                     <TasksPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="vaccinations"
+                              element={
+                                <RequirePermission permission="vaccinations.view">
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <VaccinationsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

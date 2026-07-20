@@ -194,6 +194,11 @@ export const PERMISSIONS = {
   // База знаний (контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md)
   KNOWLEDGE_VIEW: 'knowledge.view',
   KNOWLEDGE_MANAGE: 'knowledge.manage',
+
+  // Прививки (контракт: frontend-vaccinations-guide.md)
+  VACCINATIONS_VIEW: 'vaccinations.view',
+  VACCINATIONS_MANAGE: 'vaccinations.manage',
+  VACCINATIONS_RECORD: 'vaccinations.record',
 } as const;
 
 // Тип для ключей разрешений
