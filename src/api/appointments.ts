@@ -736,10 +736,15 @@ export function getAppointmentsLastUpdate(
   const query = new URLSearchParams();
   if (branchId) query.set("branchId", String(branchId));
   const qs = query.toString();
-  return apiRequest<{ lastUpdate: string | null }>(
+  return apiRequest<{ lastUpdate: string | null; count?: number }>(
     `/appointments/last-update/${qs ? `?${qs}` : ""}`,
     { signal },
-  ).then((r) => r.lastUpdate ?? null);
+  ).then((r) => {
+    // count входит в change token: hard-delete обычно не сдвигает MAX(updated_at),
+    // но меняет число видимых приёмов. Старый бэк без count остаётся совместим.
+    const timestamp = r.lastUpdate ?? "";
+    return r.count == null ? timestamp || null : `${timestamp}:${r.count}`;
+  });
 }
 
 export function createAppointment(
