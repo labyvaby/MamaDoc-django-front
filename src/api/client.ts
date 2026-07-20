@@ -70,12 +70,22 @@ export function extractErrorMessage(payload: unknown, status: number): string {
     if (parts.length) return parts.join("; ");
   }
 
+  // { code, message, ... } — структурированная бизнес-ошибка с готовым текстом
+  // (например, appointment_overlap: { code, message, requestedSlot, overlaps[] }).
+  // Берём message, иначе overlaps (массив объектов) уходит в дикт-fallback ниже
+  // и печатается как «overlaps: [object Object]».
+  if (typeof p.message === "string" && p.message) return p.message;
+
   // Django validation dict — keys are field names, values are string[]
   const fieldErrors: string[] = [];
   for (const [key, val] of Object.entries(p)) {
     if (key === "error" || key === "detail" || key === "errors") continue;
     if (Array.isArray(val)) {
-      fieldErrors.push(`${key}: ${val.join(", ")}`);
+      // Только примитивы: массив объектов дал бы «[object Object]».
+      const strs = val
+        .filter((v) => typeof v === "string" || typeof v === "number")
+        .map(String);
+      if (strs.length) fieldErrors.push(`${key}: ${strs.join(", ")}`);
     }
   }
   if (fieldErrors.length) return fieldErrors.join("; ");
