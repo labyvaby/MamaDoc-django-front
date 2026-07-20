@@ -21,15 +21,13 @@ import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { usePermissions } from "../../hooks/usePermissions";
 
 const MotionBox = motion(Box);
-const SNOOZE_MS = 30 * 60 * 1000;
 
-function readSnooze(storageKey: string | null): number | null {
-  if (!storageKey) return null;
+function hasReminderBeenShown(storageKey: string | null): boolean {
+  if (!storageKey) return false;
   try {
-    const value = Number(window.localStorage.getItem(storageKey));
-    return Number.isFinite(value) && value > Date.now() ? value : null;
+    return window.localStorage.getItem(storageKey) === "shown";
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -38,8 +36,8 @@ function readSnooze(storageKey: string | null): number | null {
  *
  * Показывается только сотрудникам с отдельным правом роли, если сегодня ещё
  * не было ни одной отметки и прямо сейчас нет открытой смены. После закрытой
- * смены повторно не появляется. Крестик откладывает напоминание на 30 минут,
- * чтобы оно не мешало работе с пациентом, но не терялось до конца дня.
+ * смены повторно не появляется. Напоминание показывается не более одного
+ * раза за календарный день для каждого сотрудника.
  */
 export const AttendanceReminder: React.FC = () => {
   const canShowReminder = useCan("attendance.reminder");
@@ -49,8 +47,8 @@ export const AttendanceReminder: React.FC = () => {
   const storageKey = activeEmployee
     ? `mamadoc:attendance-reminder:${activeEmployee.id}:${today}`
     : null;
-  const [snoozedUntil, setSnoozedUntil] = React.useState<number | null>(() =>
-    readSnooze(storageKey),
+  const [hasBeenShownToday, setHasBeenShownToday] = React.useState(() =>
+    hasReminderBeenShown(storageKey),
   );
 
   const {
@@ -74,30 +72,18 @@ export const AttendanceReminder: React.FC = () => {
   );
 
   React.useEffect(() => {
-    setSnoozedUntil(readSnooze(storageKey));
+    setHasBeenShownToday(hasReminderBeenShown(storageKey));
   }, [storageKey]);
 
-  React.useEffect(() => {
-    if (!snoozedUntil) return;
-    const remaining = snoozedUntil - Date.now();
-    if (remaining <= 0) {
-      setSnoozedUntil(null);
-      return;
-    }
-    const timeoutId = window.setTimeout(() => setSnoozedUntil(null), remaining);
-    return () => window.clearTimeout(timeoutId);
-  }, [snoozedUntil]);
-
-  const handleSnooze = () => {
+  const handleDismiss = () => {
     if (!storageKey) return;
-    const until = Date.now() + SNOOZE_MS;
     try {
-      window.localStorage.setItem(storageKey, String(until));
+      window.localStorage.setItem(storageKey, "shown");
     } catch {
       // localStorage может быть недоступен в приватном режиме — локальный
       // state всё равно корректно скроет напоминание на текущей странице.
     }
-    setSnoozedUntil(until);
+    setHasBeenShownToday(true);
   };
 
   const show =
@@ -109,7 +95,17 @@ export const AttendanceReminder: React.FC = () => {
     !statusError &&
     !currentShift &&
     !hasAttendanceToday &&
-    (snoozedUntil == null || snoozedUntil <= Date.now());
+    !hasBeenShownToday;
+
+  React.useEffect(() => {
+    if (!show || !storageKey) return;
+    try {
+      window.localStorage.setItem(storageKey, "shown");
+    } catch {
+      // Если хранилище недоступно, баннер всё равно отработает корректно
+      // в текущей сессии и закроется по кнопке.
+    }
+  }, [show, storageKey]);
 
   const clockButton = (mobile: boolean) => (
     <Tooltip
@@ -233,10 +229,10 @@ export const AttendanceReminder: React.FC = () => {
                     sx={{ display: { xs: "none", md: "flex" }, flexShrink: 0 }}
                   >
                     {clockButton(false)}
-                    <Tooltip title="Напомнить через 30 минут" placement="bottom">
+                    <Tooltip title="Закрыть напоминание" placement="bottom">
                       <IconButton
-                        aria-label="Напомнить через 30 минут"
-                        onClick={handleSnooze}
+                        aria-label="Закрыть напоминание"
+                        onClick={handleDismiss}
                         sx={(t) => ({
                           width: 40,
                           height: 40,
@@ -261,10 +257,10 @@ export const AttendanceReminder: React.FC = () => {
                   {clockButton(true)}
                 </Box>
 
-                <Tooltip title="Напомнить через 30 минут" placement="bottom">
+                <Tooltip title="Закрыть напоминание" placement="bottom">
                   <IconButton
-                    aria-label="Напомнить через 30 минут"
-                    onClick={handleSnooze}
+                    aria-label="Закрыть напоминание"
+                    onClick={handleDismiss}
                     sx={(t) => ({
                       display: { xs: "inline-flex", md: "none" },
                       position: "absolute",
