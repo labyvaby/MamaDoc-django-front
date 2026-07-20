@@ -469,7 +469,7 @@ function App() {
                       {
                         name: "achievements",
                         list: "/achievements",
-                        meta: { label: "Достижения" }
+                        meta: { label: "Награды" }
                       },
                       {
                         name: "all-procedures",

@@ -128,7 +128,7 @@ export const Sidebar: React.FC = () => {
     <>
       {isMobile && <MobileSidebarHeader />}
       {isDesktop && <DesktopSidebarHeader />}
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 0.5 }} />
       {IS_DJANGO_BACKEND && (
         <ActiveContextSwitcher
           onSwitched={() => {
@@ -476,7 +476,7 @@ const SidebarSecondary: React.FC = () => {
     <>
       {/* ── Фильтр-вкладки (мобильный + раскрытый десктоп) ── */}
       {(!siderCollapsed || isMobile) && (
-        <Box sx={{ px: 1, pt: 1, pb: 0.5 }}>
+        <Box sx={{ px: 1, pt: 0.5, pb: 0.5 }}>
           {/* Кнопка "Все" — на всю ширину, меньше высотой */}
           <Box
             component="button"
@@ -487,8 +487,8 @@ const SidebarSecondary: React.FC = () => {
               justifyContent: "center",
               gap: 1,
               width: "100%",
-              mb: 1,
-              py: 1,
+              mb: 0.75,
+              py: 0.75,
               px: 2,
               border: "1px solid",
               borderRadius: 1,
@@ -516,8 +516,8 @@ const SidebarSecondary: React.FC = () => {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 0.75,
-                  py: 1.5,
+                  gap: 0.5,
+                  py: 1,
                   px: 1,
                   border: "1px solid",
                   borderRadius: 1,
@@ -529,7 +529,7 @@ const SidebarSecondary: React.FC = () => {
                   "&:hover": { borderColor: "primary.main", color: "primary.onSurface" },
                 }}
               >
-                <Icon sx={{ fontSize: 20 }} />
+                <Icon sx={{ fontSize: 18 }} />
                 <Typography variant="caption" fontWeight={500} sx={{ fontSize: "0.65rem", lineHeight: 1.2, textAlign: "center" }}>
                   {label}
                 </Typography>
@@ -616,7 +616,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Достижения (Django-mode only) */}
         {show("my-work") && can_.achievements && (
-          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Награды" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -817,7 +817,8 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         selected={isActive}
         sx={{
           borderRadius: "10px",
-          my: 0.25,
+          my: 0,
+          py: 0.5,
           px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           '& .MuiListItemIcon-root': {
