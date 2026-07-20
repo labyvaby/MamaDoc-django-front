@@ -430,8 +430,12 @@ function denormalizeCreatePayload(payload: CreateAppointmentPayload): BackendCre
   if (payload.products && payload.products.length > 0) {
     body.products = toBackendProducts(payload.products);
   }
-  if (payload.patientId !== undefined) body.patientId = payload.patientId;
-  if (payload.branchId !== undefined) body.branchId = payload.branchId;
+  // patientId/branchId на создании — обязательные int у бэка (не int|None):
+  // явный null в JSON ловит "Expected int, got null" (репорт пользователя,
+  // создание приёма-брони без пациента) — поле нужно не слать вовсе, а не
+  // слать null. organizationId ниже по той же причине уже был на != null.
+  if (payload.patientId != null) body.patientId = payload.patientId;
+  if (payload.branchId != null) body.branchId = payload.branchId;
   if (payload.organizationId != null) body.organizationId = payload.organizationId;
   if (payload.isNight !== undefined) body.isNight = payload.isNight;
   if (payload.isBooking !== undefined) body.isBooking = payload.isBooking;
