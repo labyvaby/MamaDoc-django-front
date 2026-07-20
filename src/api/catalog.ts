@@ -8,13 +8,12 @@ export interface BranchRef {
 }
 
 /**
- * Категории услуг (заказчик 15.07.2026, для фильтра). ⚠ Бэкенд поле
- * ``category`` ПОКА не хранит (проверено на живом API 15.07.2026 — в ответе
- * его нет, msgspec молча дропнет его в POST/PATCH) — тикет
- * MamaDoc/backend_ticket_service_categories.md. До деплоя бэка UI категорий
- * скрыт флагом; после — переключить в true, других правок не нужно.
+ * Категории услуг (заказчик 15.07.2026, для фильтра). Бэк реализовал
+ * (тикет MamaDoc/backend_ticket_service_categories.md) — проверено на живом
+ * API 20.07.2026 на тестовом филиале: GET отдаёт category, PATCH сохраняет
+ * и очищает (null), неизвестный slug → 400.
  */
-export const SERVICE_CATEGORIES_ENABLED = false;
+export const SERVICE_CATEGORIES_ENABLED = true;
 
 export type ServiceCategory = "doctor" | "nurse" | "lab" | "hardware";
 
