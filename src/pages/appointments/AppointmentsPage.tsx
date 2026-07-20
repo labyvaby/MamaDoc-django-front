@@ -691,8 +691,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             <FreeSlotsView
               branchId={branchId}
               organizationId={isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined}
-              onBook={(employeeId, dateTime, serviceId) => {
-                setSlotPrefill({ employeeId, dateTime, serviceId });
+              onBook={(employeeId, dateTime) => {
+                // Услугу регистратор выбирает уже в форме записи.
+                setSlotPrefill({ employeeId, dateTime, serviceId: null });
                 setCreateOpen(true);
               }}
             />

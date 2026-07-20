@@ -215,6 +215,8 @@ export const djangoQueryKeys = {
       ["django", "scheduling", "exceptions", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
+    availabilitySummary: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "availability", "summary", params] as const,
     // Root key — инвалидация всех запросов свободных окон разом
     // (занятость меняется при любом изменении приёмов).
     availabilityAll: ["django", "scheduling", "availability"] as const,
