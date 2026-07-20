@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
+import { getDjangoEmployees } from "./staff";
 
 /**
  * Модуль «Уборка» — учёт уборок с фотоотчётом и выплатой в ЗП.
@@ -73,6 +74,12 @@ export interface CleaningRecordsFilters {
   organizationId?: number;
 }
 
+/** Кандидат-исполнитель для ручного назначения уборки (только cleaning.manage). */
+export interface CleaningEmployee {
+  id: number;
+  fullName: string;
+}
+
 export interface CleaningSummaryRow {
   employeeId: number;
   employeeName: string;
@@ -109,6 +116,13 @@ const mockTypes: CleaningType[] = [
   { id: 2, name: "Генеральная уборка", rate: "500.00", isActive: true },
   { id: 3, name: "Дезинфекция", rate: "300.00", isActive: true },
   { id: 4, name: "Экспресс-уборка", rate: "100.00", isActive: false },
+];
+
+// Кандидаты-исполнители (роль «Уборщица») — для селектора ручного назначения.
+const mockCleaners: CleaningEmployee[] = [
+  { id: 900, fullName: "Айгуль Осмонова" },
+  { id: 901, fullName: "Гульмира Токтогулова" },
+  { id: 902, fullName: "Назгуль Асанова" },
 ];
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -173,6 +187,25 @@ export function getCleaningTypes(
   return apiRequest<CleaningType[]>(withOrg("/cleaning/types/", params.organizationId), {
     signal,
   }).then((items) => (Array.isArray(items) ? items : []));
+}
+
+/**
+ * Кандидаты-исполнители для ручного назначения уборки (селектор виден только
+ * cleaning.manage). Уборщица = сотрудник с ролью `cleaner`, которой раздаётся
+ * cleaning.report (см. тикет cleaning-модуля). Признака «есть право X» список
+ * /staff/employees не отдаёт, поэтому фильтруем по role.code === "cleaner".
+ * Если бэк заведёт выделенный /cleaning/employees/ (кандидаты по cleaning.report)
+ * — переключить сюда, фильтр по роли убрать. См. «Открытые вопросы» тикета.
+ */
+export function getCleaningEmployees(signal?: AbortSignal): Promise<CleaningEmployee[]> {
+  if (CLEANING_USE_MOCKS) {
+    return mockDelay([...mockCleaners]);
+  }
+  return getDjangoEmployees({ status: "active", pageSize: 200 }, signal).then((page) =>
+    page.results
+      .filter((e) => e.role?.code === "cleaner")
+      .map((e) => ({ id: e.id, fullName: e.fullName })),
+  );
 }
 
 export interface CleaningTypePayload {
@@ -257,6 +290,11 @@ export interface CreateCleaningRecordPayload {
   typeId: number;
   /** 1..5 фото, уже сжатых через compressImage. */
   photos: File[];
+  /**
+   * Ручное назначение исполнителя (только cleaning.manage). Без него бэк
+   * ставит текущего пользователя из сессии (обычный сценарий уборщицы).
+   */
+  employeeId?: number;
   organizationId?: number;
 }
 
@@ -265,6 +303,10 @@ export function createCleaningRecord(
 ): Promise<CleaningRecord> {
   if (CLEANING_USE_MOCKS) {
     const type = mockTypes.find((t) => t.id === payload.typeId);
+    const assignee =
+      payload.employeeId != null
+        ? mockCleaners.find((c) => c.id === payload.employeeId)
+        : undefined;
     const record: CleaningRecord = {
       id: ++mockSeq,
       typeId: payload.typeId,
@@ -272,8 +314,8 @@ export function createCleaningRecord(
       // На живом бэке филиал записи — активный филиал сотрудника из сессии.
       branchId: 1,
       branchName: "Мама Доктор",
-      employeeId: 0,
-      employeeName: "Вы (мок)",
+      employeeId: assignee?.id ?? 0,
+      employeeName: assignee?.fullName ?? "Вы (мок)",
       status: "pending",
       photos: payload.photos.map((f) => ({ id: ++mockSeq, url: URL.createObjectURL(f) })),
       rejectReason: "",
@@ -286,6 +328,9 @@ export function createCleaningRecord(
   }
   const formData = new FormData();
   formData.append("type", String(payload.typeId));
+  // Явное назначение исполнителя — только cleaning.manage; бэк должен принять
+  // поле employee и разрешить создание записи менеджеру (см. тикет).
+  if (payload.employeeId != null) formData.append("employee", String(payload.employeeId));
   for (const photo of payload.photos) formData.append("photos", photo);
   return apiRequest<CleaningRecord>(withOrg("/cleaning/records/", payload.organizationId), {
     method: "POST",

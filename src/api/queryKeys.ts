@@ -180,6 +180,8 @@ export const djangoQueryKeys = {
       ["django", "cleaning", "summary", params] as const,
     activeMonths: (organizationId: number | null | undefined) =>
       ["django", "cleaning", "active-months", organizationId ?? null] as const,
+    employees: (organizationId: number | null | undefined) =>
+      ["django", "cleaning", "employees", organizationId ?? null] as const,
   },
 
   knowledge: {

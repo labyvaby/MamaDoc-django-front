@@ -123,6 +123,9 @@ const CleaningPage: React.FC = () => {
   // требовать право автоматически (см. useModuleGate).
   const canReport = moduleGate("cleaning", ["cleaning.report"]);
   const canManage = moduleGate("cleaning", ["cleaning.manage"]);
+  // Форму «Отметить уборку» открывает и уборщица (на себя), и менеджер
+  // (с ручным назначением исполнителя). У менеджера может не быть cleaning.report.
+  const canCreate = canReport || canManage;
 
   const [tab, setTab] = React.useState<"records" | "summary">("records");
   const [month, setMonth] = React.useState<Dayjs>(dayjs().startOf("month"));
@@ -347,7 +350,7 @@ const CleaningPage: React.FC = () => {
       <PageHeader
         title="Уборка"
         showTitle={false}
-        onAdd={canReport ? () => setReportOpen(true) : undefined}
+        onAdd={canCreate ? () => setReportOpen(true) : undefined}
         addButtonText="Отметить уборку"
         addButtonIcon={<AddAPhotoOutlined />}
         dateNavigation={
@@ -494,12 +497,12 @@ const CleaningPage: React.FC = () => {
                     icon={<CleaningServicesOutlined />}
                     title="За этот месяц уборок нет"
                     description={
-                      canReport
+                      canCreate
                         ? "Отметьте уборку с фотоотчётом — администратор подтвердит её, и она попадёт в зарплату."
                         : "Здесь появятся записи с фотоотчётами, когда сотрудники начнут отмечать уборки."
                     }
                     action={
-                      canReport ? (
+                      canCreate ? (
                         <Button
                           variant="outlined"
                           startIcon={<AddAPhotoOutlined />}
@@ -539,6 +542,7 @@ const CleaningPage: React.FC = () => {
       <ReportDialog
         open={reportOpen}
         activeTypes={activeTypes}
+        canAssign={canManage}
         onClose={() => setReportOpen(false)}
         onSuccess={invalidate}
       />
