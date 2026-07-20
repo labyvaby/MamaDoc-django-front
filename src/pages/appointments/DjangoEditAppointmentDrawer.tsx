@@ -22,6 +22,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import dayjs from "dayjs";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
@@ -692,7 +693,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                   renderOption={(props, p) => (
                     <li {...props} key={p.id}>
                       <Stack>
-                        <Typography variant="body2">{p.fullName}</Typography>
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                          <Typography variant="body2">{p.fullName}</Typography>
+                          {p.isBlacklisted && (
+                            <ReportProblemIcon color="error" sx={{ fontSize: 16 }} />
+                          )}
+                        </Stack>
                         {p.phone && (
                           <Typography variant="caption" color="text.secondary">
                             {p.phone}
@@ -713,6 +719,16 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                     />
                   )}
                 />
+                {!isBooking && selectedPatient?.isBlacklisted && (
+                  <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Клиент находится в чёрном списке
+                    </Typography>
+                    <Typography variant="body2">
+                      Причина: {selectedPatient.blacklistReason || "не указана"}
+                    </Typography>
+                  </Alert>
+                )}
               </Stack>
 
               {/* ── Кастомный Toggle бронирования (1-в-1 с оригиналом) ── */}

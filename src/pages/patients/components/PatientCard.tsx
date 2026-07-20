@@ -6,6 +6,7 @@
 import React from "react";
 import {
   Alert,
+  AlertTitle,
   Avatar,
   Box,
   Button,
@@ -177,6 +178,12 @@ const PatientCard: React.FC<Props> = ({
         <CardContent sx={{ p: 0, flex: 1, overflowY: "auto", minHeight: 0 }}>
           {patient ? (
             <Stack spacing={2} sx={{ p: 2 }}>
+              {patient.isBlacklisted && (
+                <Alert severity="error" variant="filled">
+                  <AlertTitle>В чёрном списке</AlertTitle>
+                  {patient.blacklistReason || "Причина не указана"}
+                </Alert>
+              )}
               <Stack direction="row" alignItems="center" spacing={2}>
                 <Avatar
                   src={patient.photoUrl ?? undefined}

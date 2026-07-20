@@ -17,9 +17,11 @@ import {
   ListItemButton,
   ListItemText,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 
 import type { DjangoPatient } from "../../../api/patients";
 
@@ -135,9 +137,16 @@ const PatientListPanel: React.FC<Props> = ({
                       </ListItemAvatar>
                       <ListItemText
                         primary={
-                          <Typography variant="subtitle2" noWrap>
-                            {p.fullName || "Без имени"}
-                          </Typography>
+                          <Stack direction="row" alignItems="center" spacing={1}>
+                            <Typography variant="subtitle2" noWrap>
+                              {p.fullName || "Без имени"}
+                            </Typography>
+                            {p.isBlacklisted && (
+                              <Tooltip title={p.blacklistReason || "Причина не указана"} arrow>
+                                <ReportProblemIcon color="error" sx={{ fontSize: 16 }} />
+                              </Tooltip>
+                            )}
+                          </Stack>
                         }
                         secondary={
                           <Typography variant="caption" color="text.secondary" noWrap>
