@@ -30,6 +30,8 @@ const exception = (over: Partial<ScheduleException> = {}): ScheduleException => 
   id: 100,
   employeeId: 10,
   employeeName: "Аббасова Айгерим",
+  branchId: null,
+  branchName: null,
   date: "2026-07-09",
   kind: "day_off",
   startTime: null,
