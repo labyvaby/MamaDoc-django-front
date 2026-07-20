@@ -2,10 +2,23 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { execSync } from "node:child_process";
 
 // Для корректного alias в ESM-конфиге Vite
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Номер версии в бургер-меню — количество коммитов этого репозитория на
+// момент сборки. Всегда актуально, руками не бампаем.
+const getFrontendCommitCount = (): number => {
+  try {
+    return Number(
+      execSync("git rev-list --count HEAD", { cwd: __dirname }).toString().trim(),
+    );
+  } catch {
+    return 0;
+  }
+};
 
 const rewriteDevCookie = (cookie: string): string =>
   cookie
@@ -19,6 +32,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    define: {
+      __APP_FRONTEND_COMMIT_COUNT__: JSON.stringify(getFrontendCommitCount()),
+    },
     resolve: {
       alias: {
         // Жёстко указываем одну копию React/ReactDOM, чтобы избежать "Invalid hook call"

@@ -13,6 +13,7 @@ import Brightness4Outlined from "@mui/icons-material/Brightness4Outlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import SettingsSystemDaydreamOutlined from "@mui/icons-material/SettingsSystemDaydreamOutlined";
 import { logout as djangoLogout } from "../../api";
+import { useAppVersion } from "../../api/appVersion";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import { ColorModeContext } from "../../contexts/color-mode";
@@ -29,6 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
 }) => {
   const { mode, setScheme } = React.useContext(ColorModeContext);
+  const appVersion = useAppVersion();
 
   const handleLogout = async () => {
     try {
@@ -106,7 +108,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           display="block"
           textAlign="center"
         >
-          Версия MamaDoc v0.1.0
+          Версия Aximo CRM {appVersion}
         </Typography>
       </DialogContent>
     </Dialog>

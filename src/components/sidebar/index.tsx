@@ -23,6 +23,7 @@ import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
 import appLogo from "../../assets/img/logo.png";
+import { useAppVersion } from "../../api/appVersion";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -979,6 +980,7 @@ const SidebarFooter: React.FC = () => {
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
+  const appVersion = useAppVersion();
 
   const handleLogoutClick = () => {
     setSettingsOpen(false); // Close settings if open (though they are different modals)
@@ -1027,14 +1029,14 @@ const SidebarFooter: React.FC = () => {
               textAlign="center"
               sx={{ fontSize: '0.65rem' }}
             >
-              v0.1
+              {appVersion}
             </Typography>
           </Stack>
         ) : (
           <>
             <Box>
               <Typography variant="caption" color="text.secondary" display="block">
-                MamaDoc v0.1.0
+                Aximo CRM {appVersion}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
                 © {new Date().getFullYear()}
