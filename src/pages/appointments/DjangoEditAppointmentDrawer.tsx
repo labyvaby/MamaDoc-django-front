@@ -73,8 +73,8 @@ type ServiceRow = {
   discountAmount: string;
   /**
    * По строке уже создано медзаключение (draft/completed): бэк не даёт удалить
-   * такую строку, поэтому её нельзя пересоздавать при смене услуги и нельзя
-   * убирать из списка.
+   * такую строку и сменить ей исполнителя; услугу менять можно, но только с
+   * сохранением id (без пересоздания) и явным unitPrice.
    */
   hasConclusion: boolean;
 };
@@ -805,7 +805,11 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               )}
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
-                                disabled={isWorkplaceNurse}
+                                // Смену исполнителя у строки с медзаключением бэк
+                                // отбивает 400-й «Нельзя сменить или убрать
+                                // исполнителя…» (проверено на живом API
+                                // 17.07.2026) — блокируем поле сразу.
+                                disabled={isWorkplaceNurse || row.hasConclusion}
                                 options={row.serviceId !== null ? availableEmployees : data.employees}
                                 loading={data.loading}
                                 filterOptions={employeeFilter}
@@ -823,10 +827,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     // услуга/исполнитель, и PATCH с id её не
                                     // пересчитывает — пересоздаём строку, чтобы
                                     // бэк взял актуальную цену новой пары.
-                                    // Строку с медзаключением бэк удалить не даст —
-                                    // id сохраняем, меняется только исполнитель.
-                                    ...((v?.id ?? null) !== row.employeeId &&
-                                    !row.hasConclusion
+                                    ...((v?.id ?? null) !== row.employeeId
                                       ? { lineId: null, unitPrice: "", discountAmount: "" }
                                       : {}),
                                   })
@@ -853,11 +854,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                 <Autocomplete<DjangoCatalogServiceWithEmployees>
                                   sx={{ flex: 1 }}
                                   // Смену услуги на строке с медзаключением бэк
-                                  // отбивает 400-й (проверено на живом API
-                                  // 16.07.2026, строка 13160) — блокируем поле
-                                  // сразу, а не ошибкой после «Сохранить».
-                                  // С правом appointments.edit_with_conclusion
-                                  // мягкая правка разрешена — поле активно.
+                                  // отбивает 400-й, если строку пересоздавать
+                                  // (проверено на живом API 16–17.07.2026);
+                                  // правкой in-place (id + явный unitPrice) бэк
+                                  // принимает. Доступно только по праву
+                                  // appointments.edit_with_conclusion — без
+                                  // права поле заблокировано сразу.
                                   disabled={row.hasConclusion && !canEditLocked}
                                   options={row.employeeId !== null ? availableServices : data.services}
                                   loading={data.loading}
@@ -878,11 +880,17 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       // без id бэк возьмёт актуальную цену услуги.
                                       // Но строку с медзаключением пересоздавать
                                       // нельзя — удаление каскадом снесёт заключение
-                                      // (OneToOne, on_delete=CASCADE). Сохраняем id:
-                                      // бэк обновит услугу in-place, заключение живо.
-                                      ...((v?.id ?? null) !== row.serviceId &&
-                                      !row.hasConclusion
-                                        ? { lineId: null, unitPrice: "", discountAmount: "" }
+                                      // (OneToOne, on_delete=CASCADE). Сохраняем id
+                                      // и шлём цену новой услуги явным unitPrice —
+                                      // без этого бэк тихо оставляет старую цену
+                                      // (id сохранён, но unitPrice не пересчитан);
+                                      // смену serviceId у такой строки бэк принимает
+                                      // (проверено на живом API 17.07.2026, строка
+                                      // 13160).
+                                      ...((v?.id ?? null) !== row.serviceId
+                                        ? row.hasConclusion
+                                          ? { unitPrice: v ? String(v.basePrice) : "", discountAmount: "" }
+                                          : { lineId: null, unitPrice: "", discountAmount: "" }
                                         : {}),
                                     })
                                   }
@@ -931,8 +939,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               {row.hasConclusion && (
                                 <Typography variant="caption" color="text.secondary">
                                   {canEditLocked
-                                    ? "По услуге есть медзаключение: можно изменить услугу или исполнителя (заключение сохранится), удалить строку нельзя"
-                                    : "По услуге создано медзаключение — изменить или удалить её нельзя"}
+                                    ? "По услуге есть медзаключение: можно изменить услугу (заключение сохранится), сменить исполнителя или удалить строку нельзя"
+                                    : "По услуге создано медзаключение — изменить услугу, сменить исполнителя или удалить строку нельзя"}
                                 </Typography>
                               )}
                               {incompatible && (
