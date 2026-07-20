@@ -224,6 +224,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
   
   const canView = useCan("payroll.view");
+  const canViewOwn = useCan("payroll.view_own");
   const canManage = useCan("payroll.manage");
   const canViewReports = useCan("reports.view");
   const canCreateExpense = useCan("finance.expense.manage");
@@ -244,6 +245,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
+  // payroll.view_own + активная карточка сотрудника — персональный режим
+  // (видны только свои цифры), не общий отчёт.
+  const canOwnView = canViewOwn && activeEmployee != null;
 
   const [date, setDate] = useState(() => dayjs().format("YYYY-MM-DD"));
   const parsed = dayjs(date);
@@ -274,7 +278,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
         },
         signal,
       ),
-    enabled: !permLoading && (canView || activeEmployee != null) && !needsOrg,
+    enabled: !permLoading && (canView || canOwnView) && !needsOrg,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -347,8 +351,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
     }
   };
 
-  // Authorization Guard: Either has view permission or has active employee ID to see own data
-  if (!permLoading && !canView && activeEmployee == null) {
+  // Authorization Guard: either the general view permission, or payroll.view_own
+  // with an active employee card to see own data.
+  if (!permLoading && !canView && !canOwnView) {
     return <AccessDenied />;
   }
 
