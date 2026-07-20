@@ -798,11 +798,9 @@ function App() {
                           path="salary-reports"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="payroll.view">
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoSalaryReportsPage />
-                                </Suspense>
-                              </RequirePermission>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoSalaryReportsPage />
+                              </Suspense>
                             ) : (
                               <LegacyRouteGuard title="Отчет по ЗП в разработке">
                                 <ProtectedRoute deniedRoles={[]}>

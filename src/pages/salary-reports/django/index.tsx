@@ -225,6 +225,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   
   const canView = useCan("payroll.view");
   const canManage = useCan("payroll.manage");
+  const canViewReports = useCan("reports.view");
   const canCreateExpense = useCan("finance.expense.manage");
   // Компактная шапка: на узких экранах кнопки «Расход»/«Надбавка» — только иконки.
   const compactHeader = useMediaQuery(theme.breakpoints.down("md"));
@@ -235,7 +236,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
     activeOrganization,
     activeBranch,
     memberships,
-    employeeId,
+    activeEmployee,
     isRegistrator: isRegistratorRole,
     loading: permLoading,
   } = usePermissions();
@@ -273,7 +274,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
         },
         signal,
       ),
-    enabled: !permLoading && (canView || employeeId != null) && !needsOrg,
+    enabled: !permLoading && (canView || activeEmployee != null) && !needsOrg,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -286,7 +287,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const activeMonthsQuery = useQuery({
     queryKey: djangoQueryKeys.reports.activeMonths(orgIdForMonths ?? null),
     queryFn: ({ signal }) => getActiveMonths({ organizationId: orgIdForMonths }, signal),
-    enabled: !permLoading && (canView || employeeId != null) && !needsOrg,
+    enabled: !permLoading && canViewReports && !needsOrg,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const activeMonths = useMemo(
@@ -347,7 +348,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   };
 
   // Authorization Guard: Either has view permission or has active employee ID to see own data
-  if (!permLoading && !canView && employeeId == null) {
+  if (!permLoading && !canView && activeEmployee == null) {
     return <AccessDenied />;
   }
 
@@ -467,8 +468,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
               <AppointmentsSummaryCards
                 dateFrom={dayjs(date).startOf("month").toISOString()}
                 dateTo={dayjs(date).endOf("month").toISOString()}
-                employeeId={canView ? undefined : (employeeId || undefined)}
+                employeeId={canView ? undefined : String(activeEmployee?.id)}
                 branchId={branchFilterId}
+                showBaseCards={canViewReports}
                 extraCards={[
                   {
                     title: "Аванс",

@@ -32,6 +32,8 @@ interface AppointmentsSummaryCardsProps {
     branchId?: number;
     appointments?: any[];
     extraCards?: ExtraCard[];
+    /** Не запрашивать и не показывать общую статистику приёмов. */
+    showBaseCards?: boolean;
 }
 
 export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> = ({
@@ -41,6 +43,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     branchId,
     appointments: providedAppointments,
     extraCards = [],
+    showBaseCards = true,
 }) => {
     const theme = useTheme();
     const { activeOrganization } = usePermissions();
@@ -66,7 +69,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
             if (error) throw error;
             return (data as any[])?.[0] ?? null;
         },
-        enabled: !providedAppointments,
+        enabled: !providedAppointments && showBaseCards,
         staleTime: Infinity,
     });
 
@@ -132,7 +135,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     // If RPC returned split data — show two separate cards instead of one combined
     const hasSplit = !providedAppointments && (IS_DJANGO_BACKEND ? ((rpcData as any)?.summary != null) : rpcData?.appt_total_count != null);
 
-    const baseCards = hasSplit ? [
+    const baseCards = !showBaseCards ? extraCards : hasSplit ? [
         {
             title: 'Оплачено приёмов',
             primaryValue: metrics.apptPaid.toString(),

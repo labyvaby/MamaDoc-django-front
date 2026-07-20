@@ -366,7 +366,7 @@ const SidebarSecondary: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   useWorkShift();
-  const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, loading: permissionsLoading } = usePermissions();
+  const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, activeEmployee, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const orgId = useApiOrgId();
@@ -418,7 +418,9 @@ const SidebarSecondary: React.FC = () => {
     sales: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.sales.view", "warehouse.view"]) : (isAdmin() || isRegistrator())),
     storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
     // УПРАВЛЕНИЕ
-    salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
+    // payroll.view открывает общий отчёт; сотрудник с активной карточкой может
+    // открыть ту же страницу в безопасном персональном режиме.
+    salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view") || activeEmployee != null) : true,
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
     load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
