@@ -24,6 +24,7 @@ import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import { useNotification } from "@refinedev/core";
+import dayjs from "dayjs";
 
 import {
   getAppointmentPayments,
@@ -43,6 +44,9 @@ import {
 } from "../../api/queryKeys";
 import PatientBalancePanel from "./PatientBalancePanel";
 import AppointmentRefundsPanel from "./AppointmentRefundsPanel";
+import CashDateConfirmDialog, {
+  type CashDateChoice,
+} from "./components/CashDateConfirmDialog";
 
 // ── Payment status display ─────────────────────────────────────────────────────
 
@@ -167,6 +171,10 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const [bonusStr, setBonusStr] = React.useState("0");
   const [note, setNote] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Дата кассы для card/insurance, когда дата приёма не сегодня (см. CashDateConfirmDialog).
+  const [cashDateChoice, setCashDateChoice] = React.useState<CashDateChoice>("today");
+  const [cashDateConfirmed, setCashDateConfirmed] = React.useState(false);
+  const [showCashDateDialog, setShowCashDateDialog] = React.useState(false);
 
   // Справочник страховых (для строки «Страховка»); только активные.
   const insurersQuery = useQuery({
@@ -192,6 +200,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setBonusStr("0");
       setNote("");
       setSaveError(null);
+      setCashDateChoice("today");
+      setCashDateConfirmed(false);
+      setShowCashDateDialog(false);
       prevAppointmentIdRef.current = null;
       paymentsTouchedRef.current = false;
       seededPaymentsForRef.current = null;
@@ -209,6 +220,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setBonusStr("0");
       setNote("");
       setSaveError(null);
+      setCashDateChoice("today");
+      setCashDateConfirmed(false);
+      setShowCashDateDialog(false);
       prevAppointmentIdRef.current = appointmentId;
       paymentsTouchedRef.current = false;
     }
@@ -250,7 +264,24 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setInsurerId(insurancePayment.insurerId ?? "");
       setPolicyNumber(insurancePayment.policyNumber ?? "");
     }
-  }, [summary, appointmentId]);
+    // Seed the cash-date choice from an existing card/insurance payment, so
+    // re-saving (e.g. editing the discount) doesn't silently reset a
+    // previously chosen "дата приёма" back to "сегодня" (replace-all semantics
+    // on the backend recreate these rows on every apply).
+    const dateSourcePayment = (summary.payments ?? []).find(
+      (p) => (p.method === "card" || p.method === "insurance") && p.cashDate,
+    );
+    if (dateSourcePayment && appointment?.scheduledAt) {
+      const isApptDate = dayjs(dateSourcePayment.cashDate).isSame(
+        dayjs(appointment.scheduledAt), "day",
+      );
+      setCashDateChoice(isApptDate ? "appointment" : "today");
+      setCashDateConfirmed(true);
+    } else {
+      setCashDateChoice("today");
+      setCashDateConfirmed(false);
+    }
+  }, [summary, appointmentId, appointment?.scheduledAt]);
 
   // Derived
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount);
@@ -270,6 +301,16 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const bonusExceeded = bonusUsed > availableBonuses + 0.001;
   // Страховка: сумма без выбранной компании не проходит.
   const insurerMissing = insuranceNum > 0 && !insurerId;
+
+  // Дата кассы: спрашиваем только если дата приёма не сегодня и есть card/insurance.
+  const todayIso = dayjs().format("YYYY-MM-DD");
+  const appointmentDateIso = appointment?.scheduledAt
+    ? dayjs(appointment.scheduledAt).format("YYYY-MM-DD")
+    : todayIso;
+  const isDifferentDay = appointment?.scheduledAt
+    ? !dayjs(appointment.scheduledAt).isSame(dayjs(), "day")
+    : false;
+  const needsDateChoice = isDifferentDay && (cardNum > 0 || insuranceNum > 0);
 
   const refundedTotal = parseDecimal(summary?.refundedTotal);
   const hasRefunds =
@@ -355,18 +396,31 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     },
   });
 
-  const handleSave = () => {
+  // Дата приёма не сегодня — датой кассы для card/insurance переопределяем,
+  // только когда пользователь явно выбрал/подтвердил (choice передаётся явно,
+  // чтобы не читать ещё не применившийся setState из CashDateConfirmDialog).
+  const submitPayment = (choice: CashDateChoice) => {
     if (!appointment) return;
     setSaveError(null);
+    const cashDate = needsDateChoice
+      ? (choice === "appointment" ? appointmentDateIso : todayIso)
+      : undefined;
     const payments: PaymentLineInput[] = [];
     if (cashNum > 0) payments.push({ method: "cash", amount: fmt(cashNum) });
-    if (cardNum > 0) payments.push({ method: "card", amount: fmt(cardNum) });
+    if (cardNum > 0) {
+      payments.push({
+        method: "card",
+        amount: fmt(cardNum),
+        ...(cashDate ? { cashDate } : {}),
+      });
+    }
     if (insuranceNum > 0 && insurerId) {
       payments.push({
         method: "insurance",
         amount: fmt(insuranceNum),
         insurerId: Number(insurerId),
         policyNumber: policyNumber.trim() || undefined,
+        ...(cashDate ? { cashDate } : {}),
       });
     }
     applyMutation.mutate({
@@ -376,6 +430,27 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       bonusAmount: bonusUsed > 0 ? fmt(bonusUsed) : undefined,
       note: note.trim() || undefined,
     });
+  };
+
+  const handleSave = () => {
+    if (needsDateChoice && !cashDateConfirmed) {
+      setShowCashDateDialog(true);
+      return;
+    }
+    submitPayment(cashDateChoice);
+  };
+
+  const handleCashDateChoose = (choice: CashDateChoice) => {
+    // If the dialog was gating a pending Save (opened because the choice was
+    // never confirmed), finish that save right away — same flow as
+    // OverlapConfirmDialog's resubmit-on-confirm. If it was opened via the
+    // inline "изменить" link on an already-confirmed choice, just update the
+    // state; the user submits explicitly via the Save button.
+    const wasPendingSave = !cashDateConfirmed;
+    setCashDateChoice(choice);
+    setCashDateConfirmed(true);
+    setShowCashDateDialog(false);
+    if (wasPendingSave) submitPayment(choice);
   };
 
   const handleSummaryUpdated = React.useCallback(
@@ -796,6 +871,31 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   )}
                 </Stack>
 
+                {/* Дата кассы для card/insurance — видно решение до сабмита. */}
+                {needsDateChoice && (
+                  <Stack direction="row" alignItems="center" justifyContent="space-between">
+                    <Typography variant="caption" color="text.secondary">
+                      Дата кассы:{" "}
+                      <strong>
+                        {cashDateConfirmed
+                          ? (cashDateChoice === "appointment"
+                            ? `дата приёма (${dayjs(appointmentDateIso).format("D MMMM")})`
+                            : `сегодня (${dayjs(todayIso).format("D MMMM")})`)
+                          : "не выбрана"}
+                      </strong>
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => setShowCashDateDialog(true)}
+                      sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
+                      disabled={isCancelled}
+                    >
+                      изменить
+                    </Button>
+                  </Stack>
+                )}
+
                 {/* Balance/bonus/insurance used display */}
                 {(balanceUsed > 0 || bonusUsed > 0 || insuranceNum > 0) && (
                   <Paper
@@ -921,6 +1021,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     {METHOD_LABELS[p.method] ?? p.method}
                     {p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""}
                     {p.method === "insurance" && p.policyNumber ? ` (${p.policyNumber})` : ""}
+                    {(p.method === "card" || p.method === "insurance") && p.cashDate
+                      ? ` · касса ${dayjs(p.cashDate).format("D MMM")}`
+                      : ""}
                   </Typography>
                   <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
                 </Stack>
@@ -977,6 +1080,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             : "Подтвердить оплату"}
         </Button>
       </Box>
+
+      <CashDateConfirmDialog
+        open={showCashDateDialog}
+        todayDate={todayIso}
+        appointmentDate={appointmentDateIso}
+        onChoose={handleCashDateChoose}
+        onCancel={() => setShowCashDateDialog(false)}
+      />
     </Drawer>
   );
 };

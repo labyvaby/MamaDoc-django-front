@@ -19,6 +19,8 @@ export interface AppointmentPayment {
   /** Total amount already refunded for this payment */
   refundedAmount?: string;
   createdAt: string;
+  /** Date this payment counts toward in the cashbox — may differ from createdAt for card/insurance */
+  cashDate: string;
   /** Insurance company id (only for method === "insurance") */
   insurerId?: number | null;
   /** Insurance company name (only for method === "insurance") */
@@ -66,6 +68,12 @@ export interface PaymentLineInput {
   insurerId?: number;
   /** Optional patient policy number (insurance only) */
   policyNumber?: string;
+  /**
+   * Cash register date — only for method === "card" | "insurance", and only
+   * one of two presets: today or the appointment's own date. Omit to default
+   * to today. Other methods must omit it (always dated today server-side).
+   */
+  cashDate?: string;
 }
 
 export interface ApplyPaymentPayload {
