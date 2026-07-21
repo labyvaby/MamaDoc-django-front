@@ -434,7 +434,7 @@ const SidebarSecondary: React.FC = () => {
     ),
   };
 
-  // Бейдж «Задачи»: есть новые задачи для меня/моей группы.
+  // Бейдж «Задачи»: счётчик + срочность цветом.
   // Тот же queryKey, что у сводки на доске задач, — кэш общий.
   const tasksSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.summary,
@@ -442,7 +442,12 @@ const SidebarSecondary: React.FC = () => {
     enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
-  const tasksBadge = (tasksSummaryQuery.data?.newForMe ?? 0) > 0;
+  // Число в бейдже: если есть просроченные — показываем их (срочно, красным),
+  // иначе — количество новых задач для меня/группы (нейтральный акцент).
+  const tasksOverdue = tasksSummaryQuery.data?.overdue ?? 0;
+  const tasksNewForMe = tasksSummaryQuery.data?.newForMe ?? 0;
+  const tasksBadgeCount = tasksOverdue > 0 ? tasksOverdue : tasksNewForMe;
+  const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
@@ -595,7 +600,8 @@ const SidebarSecondary: React.FC = () => {
             icon={<AssignmentOutlined />}
             label="Задачи"
             collapsed={siderCollapsed}
-            showBadge={tasksBadge}
+            badgeCount={tasksBadgeCount}
+            badgeColor={tasksBadgeColor}
           />
         )}
 
@@ -747,7 +753,10 @@ type SidebarMenuItemProps = {
   label: React.ReactNode;
   selected?: boolean;
   collapsed?: boolean;
-  showBadge?: boolean;
+  /** Число в бейдже пункта. 0/undefined — бейдж не показывается. */
+  badgeCount?: number;
+  /** Цвет бейджа: срочность (error — просрочено, primary — новые). */
+  badgeColor?: "error" | "primary" | "warning";
   /**
    * Child paths that belong to a *different* menu item and must not light
    * this one up. Used by a parent route (e.g. "/settings") so it stays
@@ -763,13 +772,16 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   label,
   selected,
   collapsed,
-  showBadge = false,
+  badgeCount = 0,
+  badgeColor = "error",
   excludePaths,
 }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const collapsedFinal = (collapsed ?? false) && !isMobile;
+  const hasBadge = badgeCount > 0;
+  const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);
   const matchesSelf =
     location.pathname === to || location.pathname.startsWith(to + "/");
   const matchesExcluded = (excludePaths ?? []).some(
@@ -784,6 +796,8 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         whiteSpace: "nowrap",
         opacity: collapsedFinal ? 0 : 1,
         width: collapsedFinal ? 0 : "auto",
+        flexGrow: collapsedFinal ? 0 : 1,
+        minWidth: 0,
         transition: (theme) => theme.transitions.create(["opacity", "width", "margin"], { duration: 200 }),
         ml: collapsedFinal ? 0 : 1,
         display: 'flex',
@@ -791,20 +805,31 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         gap: 1,
       }}
     >
-      <ListItemText primary={label} />
-      {/* Standalone Badge с variant="dot" имеет нулевой размер и точку за своими
-          границами (absolute + translate 50%) — её срезал overflow:hidden.
-          Поэтому в развёрнутом сайдбаре рисуем обычный кружок. */}
-      {showBadge && !collapsedFinal && (
+      <ListItemText primary={label} sx={{ my: 0 }} />
+      {/* Standalone Badge позиционируется absolute (translate 50%) и вылезает за
+          границы — его срезал бы overflow:hidden. Поэтому в развёрнутом сайдбаре
+          рисуем счётчик обычной пилюлей в потоке; цвет = срочность. */}
+      {hasBadge && !collapsedFinal && (
         <Box
           sx={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            bgcolor: 'error.main',
+            ml: 'auto',
+            minWidth: 18,
+            height: 18,
+            px: 0.5,
+            borderRadius: '9px',
+            bgcolor: `${badgeColor}.main`,
+            color: `${badgeColor}.contrastText`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            lineHeight: 1,
             flexShrink: 0,
           }}
-        />
+        >
+          {badgeLabel}
+        </Box>
       )}
     </Box>
   );
@@ -842,16 +867,17 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
       >
         {icon && (
           <ListItemIcon sx={{ minWidth: 36 }}>
-            {showBadge && collapsedFinal ? (
+            {hasBadge && collapsedFinal ? (
               <Badge
-                variant="dot"
-                color="error"
+                badgeContent={badgeLabel}
+                color={badgeColor}
                 sx={{
-                  '& .MuiBadge-dot': {
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                  }
+                  '& .MuiBadge-badge': {
+                    fontSize: '0.6rem',
+                    height: 16,
+                    minWidth: 16,
+                    fontWeight: 700,
+                  },
                 }}
               >
                 {icon}
