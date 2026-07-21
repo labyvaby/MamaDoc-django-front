@@ -382,6 +382,34 @@ export function rejectCleaningRecord(
 }
 
 /**
+ * Полное удаление записи об уборке (и её фото) — под правом cleaning.manage.
+ * Реализовано бэком 21.07.2026 (тикет backend_ticket_cleaning_record_cancel.md).
+ *
+ * Контракт:
+ *   • 204 No Content — успех, запись и фото удалены; для approved-записи
+ *     cleaningEarnings за месяц пересчитывается вживую (сотрудник её теряет);
+ *   • разрешено для ЛЮБОГО статуса (pending/approved/rejected);
+ *   • 409 Conflict — только если запись approved И её месяц заморожен в ЗП
+ *     (зеркалит approve); pending/rejected удаляются всегда, даже в замороженном
+ *     месяце (на ЗП не влияют).
+ * Отдельного статуса «отменена» нет — запись просто исчезает из списка и сводки.
+ */
+export function deleteCleaningRecord(
+  recordId: number,
+  organizationId?: number,
+): Promise<void> {
+  if (CLEANING_USE_MOCKS) {
+    const idx = mockRecords.findIndex((r) => r.id === recordId);
+    if (idx >= 0) mockRecords.splice(idx, 1);
+    return mockDelay(undefined);
+  }
+  return apiRequest<void>(
+    withOrg(`/cleaning/records/${recordId}/`, organizationId),
+    { method: "DELETE" },
+  );
+}
+
+/**
  * Месяцы, в которых есть хотя бы одна уборка (YYYY-MM) — для ленты месяцев:
  * пустые и будущие месяцы страница скрывает. Контракт — UPD 15.07.2026 в
  * тикете cleaning-модуля; форма ответа 1-в-1 с GET /reports/active-months/.
