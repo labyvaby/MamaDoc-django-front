@@ -4,10 +4,19 @@ import { apiRequest } from "./client";
 
 export type PatientGender = "male" | "female" | "unknown";
 
+export interface DjangoFamily {
+  id: number;
+  organizationId: number;
+  branch: { id: number; name: string } | null;
+  name: string;
+  memberCount: number;
+}
+
 export interface DjangoPatient {
   id: number;
   organizationId: number;
   branch: { id: number; name: string } | null;
+  family?: DjangoFamily | null;
   fullName: string;
   phone: string;
   secondaryPhone: string | null;
@@ -30,6 +39,7 @@ export interface DjangoPatient {
 export interface CreatePatientPayload {
   organizationId?: number | null;
   branchId?: number | null;
+  familyId?: number | null;
   fullName: string;
   phone: string;
   secondaryPhone?: string | null;
@@ -50,6 +60,32 @@ export type UpdatePatientPayload = Partial<Omit<CreatePatientPayload, "organizat
 
 export function getPatients(signal?: AbortSignal): Promise<DjangoPatient[]> {
   return apiRequest<DjangoPatient[]>("/patients/", { signal });
+}
+
+export function getPatientFamilies(
+  search = "",
+  signal?: AbortSignal,
+): Promise<DjangoFamily[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return apiRequest<DjangoFamily[]>(`/patients/families/${query}`, { signal });
+}
+
+export function createPatientFamily(payload: {
+  name: string;
+  organizationId?: number | null;
+  branchId?: number | null;
+}): Promise<DjangoFamily> {
+  return apiRequest<DjangoFamily>("/patients/families/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updatePatientFamily(id: number, name: string): Promise<DjangoFamily> {
+  return apiRequest<DjangoFamily>(`/patients/families/${id}/`, {
+    method: "PATCH",
+    body: { name },
+  });
 }
 
 /**

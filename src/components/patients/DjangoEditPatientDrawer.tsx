@@ -35,6 +35,8 @@ import {
   getPatient,
   type DjangoPatient,
 } from "../../api/patients";
+import PatientFamilyField from "./PatientFamilyField";
+import type { DjangoFamily } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
 import AddressAutocomplete from "./AddressAutocomplete";
@@ -65,6 +67,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [birth, setBirth] = React.useState("");
   const [address, setAddress] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [family, setFamily] = React.useState<DjangoFamily | null>(null);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
   const [touched, setTouched] = React.useState(false);
@@ -84,6 +87,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
     setBirth(patient.birthDate || "");
     setAddress(patient.address || "");
     setInn(patient.inn || "");
+    setFamily(patient.family || null);
     setIsBlacklisted(patient.isBlacklisted || false);
     setBlacklistReason(patient.blacklistReason || "");
     setTouched(false);
@@ -131,6 +135,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
         birthDate: birth || null,
         address: address.trim() || null,
         inn: inn.trim() || undefined,
+        familyId: family?.id ?? null,
         isBlacklisted: canManageBlacklist ? isBlacklisted : undefined,
         blacklistReason:
           canManageBlacklist && isBlacklisted ? blacklistReason.trim() : undefined,
@@ -353,6 +358,14 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                 helperText={`${inn.length}/14`}
               />
             </Stack>
+
+            {/* ── Чёрный список ── */}
+            <PatientFamilyField
+              value={family}
+              onChange={setFamily}
+              branchId={patient?.branch?.id}
+              disabled={busy}
+            />
 
             {/* ── Чёрный список ── */}
             {canManageBlacklist && (

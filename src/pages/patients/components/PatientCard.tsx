@@ -243,6 +243,18 @@ const PatientCard: React.FC<Props> = ({
                 </Box>
               </Stack>
 
+              {patient.family && (
+                <>
+                  <Divider />
+                  <Stack spacing={0.5}>
+                    <Typography variant="subtitle2" color="text.secondary">Семья</Typography>
+                    <Typography variant="body2">
+                      {patient.family.name} · {patient.family.memberCount} участника
+                    </Typography>
+                  </Stack>
+                </>
+              )}
+
               {/* Счёт пациента */}
               <Divider />
               <Stack spacing={1}>
