@@ -30,6 +30,7 @@ import {
   getVaccines,
   type CreateRecordPayload,
 } from "../../api/vaccinations";
+import { getProducts } from "../../api/warehouse";
 import { searchPatients, type DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
@@ -41,7 +42,7 @@ type RecordVaccinationDrawerProps = {
   onClose: () => void;
   /** Предвыбранный пациент (например, из карточки пациента). */
   initialPatient?: DjangoPatient | null;
-  /** Привязка к приёму (строка счёта появится в этом приёме). */
+  /** Привязка к осмотру врача (приёму): строка счёта появится в этом осмотре. */
   initialAppointmentId?: number | null;
 };
 
@@ -70,6 +71,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   const [injectionSite, setInjectionSite] = React.useState("left_arm");
   const [administeredById, setAdministeredById] = React.useState<number | "">("");
   const [unitPrice, setUnitPrice] = React.useState("");
+  // Цену подтягиваем со склада (price товара партии), но даём переопределить
+  // вручную. priceTouched = пользователь правил поле руками → не перетираем.
+  const [priceTouched, setPriceTouched] = React.useState(false);
   const [batchNumberManual, setBatchNumberManual] = React.useState("");
   const [expiresAtManual, setExpiresAtManual] = React.useState<Dayjs | null>(null);
   const [appointmentId, setAppointmentId] = React.useState(
@@ -88,6 +92,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     setInjectionSite("left_arm");
     setAdministeredById(meEmployeeId ?? "");
     setUnitPrice("");
+    setPriceTouched(false);
     setBatchNumberManual("");
     setExpiresAtManual(null);
     setAppointmentId(initialAppointmentId != null ? String(initialAppointmentId) : "");
@@ -159,6 +164,41 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
+
+  // Цены товаров со склада — чтобы подставить цену продажи по товару партии.
+  // Категорию НЕ фильтруем: партия может ссылаться на товар вне «Вакцин»
+  // (напр. шприц), и его цену тоже нужно подтянуть.
+  const productsQuery = useQuery({
+    queryKey: ["django", "warehouse", "products", "vaccination-price"],
+    queryFn: ({ signal }) => getProducts(signal, { organizationId: orgId }),
+    enabled: open && scenario === "ours",
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const priceByProductId = React.useMemo(() => {
+    const m = new Map<number, number>();
+    for (const p of productsQuery.data ?? []) m.set(p.id, p.price);
+    return m;
+  }, [productsQuery.data]);
+
+  // Цена товара выбранной партии (null — партия без склада / цена неизвестна).
+  const priceForBatch = React.useCallback(
+    (id: number | ""): number | null => {
+      if (id === "") return null;
+      const b = (batchesQuery.data ?? []).find((x) => x.id === id);
+      if (!b || b.productId == null) return null;
+      return priceByProductId.get(b.productId) ?? null;
+    },
+    [batchesQuery.data, priceByProductId],
+  );
+
+  // Реактивно подставляем цену со склада, когда выбрана партия и подгрузились
+  // цены товаров (без гонки «партия выбрана раньше, чем пришли цены»). Ручную
+  // правку (priceTouched) не перетираем.
+  React.useEffect(() => {
+    if (scenario !== "ours" || priceTouched || batchId === "") return;
+    const price = priceForBatch(batchId);
+    if (price != null) setUnitPrice(String(price));
+  }, [scenario, priceTouched, batchId, priceForBatch]);
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -271,6 +311,8 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
           onChange={(e) => {
             setVaccineId(e.target.value === "" ? "" : Number(e.target.value));
             setBatchId("");
+            setUnitPrice("");
+            setPriceTouched(false);
           }}
         >
           {(vaccinesQuery.data ?? []).map((v) => (
@@ -331,9 +373,16 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
             <TextField
               label="Цена, KGS"
               value={unitPrice}
-              onChange={(e) => setUnitPrice(e.target.value.replace(/[^\d.]/g, ""))}
+              onChange={(e) => {
+                setUnitPrice(e.target.value.replace(/[^\d.]/g, ""));
+                setPriceTouched(true);
+              }}
               fullWidth
-              helperText="Пусто — цена по умолчанию с бэка; строка появится в счёте приёма"
+              helperText={
+                priceTouched
+                  ? "Цена изменена вручную"
+                  : "Подтянута со склада — можно изменить; строка появится в счёте осмотра"
+              }
               InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
             />
           </>
@@ -393,13 +442,13 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
         </TextField>
 
         <TextField
-          label="ID приёма (необязательно)"
+          label="ID осмотра врача (необязательно)"
           value={appointmentId}
           onChange={(e) => setAppointmentId(e.target.value.replace(/[^\d]/g, ""))}
           fullWidth
           helperText={
             scenario === "ours"
-              ? "Указан — строка вакцины попадёт в счёт этого приёма"
+              ? "Указан — строка вакцины попадёт в счёт этого осмотра"
               : "Для внешней прививки необязателен"
           }
         />
