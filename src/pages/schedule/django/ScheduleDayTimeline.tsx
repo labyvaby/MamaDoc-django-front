@@ -36,10 +36,11 @@ const parseTimeToMinutes = (t: string): number => {
 const leftPx = (min: number) =>
   ((clamp(min, DAY_START_MIN, DAY_END_MIN) - DAY_START_MIN) / DAY_DURATION) * BODY_W;
 
+// Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00) —
+// минуты показываем всегда, чтобы подписи смен читались одинаково.
 const shortTime = (t: string) => {
   const [hh, mm] = t.split(":");
-  const h = String(parseInt(hh, 10));
-  return mm === "00" ? h : `${h}:${mm}`;
+  return `${parseInt(hh, 10)}:${mm}`;
 };
 
 // ── Props ────────────────────────────────────────────────────────────────────
