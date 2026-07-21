@@ -442,11 +442,18 @@ const SidebarSecondary: React.FC = () => {
     enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
-  // Число в бейдже: если есть просроченные — показываем их (срочно, красным),
-  // иначе — количество новых задач для меня/группы (нейтральный акцент).
-  const tasksOverdue = tasksSummaryQuery.data?.overdue ?? 0;
-  const tasksNewForMe = tasksSummaryQuery.data?.newForMe ?? 0;
-  const tasksBadgeCount = tasksOverdue > 0 ? tasksOverdue : tasksNewForMe;
+  // Число в бейдже: все открытые задачи филиала (new + inProgress +
+  // awaitingApproval — done/cancelled сюда не входят). Если среди них есть
+  // просроченные — красим бейдж красным (срочность), иначе нейтральный
+  // брендовый акцент. Считаем именно все открытые, а не «новые для меня»: у
+  // суперадмина/управленца нет группы категории, поэтому newForMe у него всегда
+  // 0 и бейдж иначе не загорался бы, хотя активные задачи в филиале есть.
+  const tasksSummary = tasksSummaryQuery.data;
+  const tasksOverdue = tasksSummary?.overdue ?? 0;
+  const tasksBadgeCount =
+    (tasksSummary?.new ?? 0) +
+    (tasksSummary?.inProgress ?? 0) +
+    (tasksSummary?.awaitingApproval ?? 0);
   const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
