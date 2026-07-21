@@ -299,13 +299,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
               <Box sx={{ py: 3, display: "flex", justifyContent: "center" }}>
                 <CircularProgress size={24} />
               </Box>
-            ) : dailyData.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
-                Нет данных за месяц
-              </Typography>
             ) : (
               <Stack spacing={1.5}>
-                {dailyData.map((day, idx) => (
+                {dailyData.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                    {parseFloat(row.cleaningEarnings || "0") > 0
+                      ? "Начислений по приёмам за месяц нет — заработок за подтверждённые уборки."
+                      : "Нет данных за месяц"}
+                  </Typography>
+                ) : (
+                  dailyData.map((day, idx) => (
                   <Box
                     key={idx}
                     sx={{
@@ -378,9 +381,11 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       )}
                     </Grid2>
                   </Box>
-                ))}
+                ))
+                )}
 
-                {/* Summary */}
+                {/* Summary — показываем при любых начислениях (в т.ч. только уборки) */}
+                {parseFloat(row.earnings || "0") > 0 && (
                 <Box
                   sx={{
                     mt: 1,
@@ -449,6 +454,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     />
                   )}
                 </Box>
+                )}
               </Stack>
             )}
           </Box>
@@ -595,12 +601,15 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                 <Box sx={{ py: 3, display: "flex", justifyContent: "center" }}>
                   <CircularProgress size={24} />
                 </Box>
-              ) : dailyData.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
-                  Начислений по дням за этот месяц нет.
-                </Typography>
               ) : (
                 <Stack spacing={2}>
+                  {dailyData.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                      {parseFloat(row.cleaningEarnings || "0") > 0
+                        ? "Начислений по приёмам за месяц нет — заработок за подтверждённые уборки."
+                        : "Начислений по дням за этот месяц нет."}
+                    </Typography>
+                  ) : (
                   <Table size="small" sx={{ "& .MuiTableCell-root": { py: 0.75 } }}>
                     <TableHead>
                       <TableRow>
@@ -664,8 +673,10 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       ))}
                     </TableBody>
                   </Table>
+                  )}
 
-                  {/* Summary Box */}
+                  {/* Summary Box — показываем при любых начислениях (в т.ч. только уборки, без дневных строк) */}
+                  {parseFloat(row.earnings || "0") > 0 && (
                   <Box
                     sx={{
                       ml: "auto",
@@ -700,6 +711,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       </Stack>
                     </Stack>
                   </Box>
+                  )}
                 </Stack>
               )}
             </Box>
