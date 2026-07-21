@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Alert,
   Box,
@@ -50,13 +50,13 @@ import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import { PeriodSettingsDialog } from "../../../features/payroll/components/PeriodSettingsDialog";
 import {
+  getPayrollActiveMonths,
   getPayrollReport,
   lockPeriod,
   recalculatePeriod,
   unlockPeriod,
   type PayrollRow,
 } from "../../../api/payroll";
-import { getActiveMonths } from "../../../api/reports";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -283,21 +283,39 @@ const DjangoSalaryReportsPage: React.FC = () => {
     placeholderData: keepPreviousData,
   });
 
-  // Месяцы, в которых есть приёмы, — пустые месяцы в навигации не показываем.
-  // organizationId шлём всегда: для суперюзера он обязателен, для обычного
-  // мульти-орг пользователя сужает месяцы до активной организации (иначе бэк
-  // собирал бы их по всем членствам сразу).
+  // Навигация строится по источникам расчёта ЗП, а не по всем записям на
+  // приём. Поэтому будущие неоплаченные записи и месяцы других филиалов сюда
+  // не попадают.
   const orgIdForMonths = activeOrganization?.id ?? undefined;
   const activeMonthsQuery = useQuery({
-    queryKey: djangoQueryKeys.reports.activeMonths(orgIdForMonths ?? null),
-    queryFn: ({ signal }) => getActiveMonths({ organizationId: orgIdForMonths }, signal),
-    enabled: !permLoading && canViewReports && !needsOrg,
+    queryKey: djangoQueryKeys.payroll.activeMonths({
+      orgId: orgIdForMonths ?? null,
+      branchId: branchFilterId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getPayrollActiveMonths(
+        { organizationId: orgIdForMonths, branchId: branchFilterId },
+        signal,
+      ),
+    enabled: !permLoading && (canView || canOwnView) && !needsOrg,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
+  const activeMonthKeys = activeMonthsQuery.data?.months ?? null;
   const activeMonths = useMemo(
-    () => (activeMonthsQuery.data ? new Set(activeMonthsQuery.data.months) : null),
-    [activeMonthsQuery.data],
+    () => (activeMonthKeys ? new Set(activeMonthKeys) : null),
+    [activeMonthKeys],
   );
+
+  // Смена организации/филиала может сделать выбранный месяц пустым. В этом
+  // случае сразу переходим к последнему месяцу с данными, чтобы пустой пункт
+  // не оставался единственным видимым элементом навигации.
+  useEffect(() => {
+    if (!activeMonthKeys?.length) return;
+    const currentKey = dayjs(date).format("YYYY-MM");
+    if (!activeMonthKeys.includes(currentKey)) {
+      setDate(`${activeMonthKeys[0]}-01`);
+    }
+  }, [activeMonthKeys, date]);
 
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
@@ -370,7 +388,15 @@ const DjangoSalaryReportsPage: React.FC = () => {
         title="Отчёт по зарплате"
         showTitle={false}
         showSearch={false}
-        dateNavigation={<MonthNavigation date={date} setDate={setDate} activeMonths={activeMonths} />}
+        dateNavigation={
+          activeMonthsQuery.isLoading || activeMonthKeys?.length === 0 ? null : (
+            <MonthNavigation
+              date={date}
+              setDate={setDate}
+              activeMonths={activeMonthsQuery.isError ? null : activeMonths}
+            />
+          )
+        }
         actions={
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             {report && (
@@ -471,8 +497,8 @@ const DjangoSalaryReportsPage: React.FC = () => {
           {!isRegistratorRole() && (
             <Box sx={{ my: 2 }}>
               <AppointmentsSummaryCards
-                dateFrom={dayjs(date).startOf("month").toISOString()}
-                dateTo={dayjs(date).endOf("month").toISOString()}
+                dateFrom={selectedMonth}
+                dateTo={dayjs(date).endOf("month").format("YYYY-MM-DD")}
                 employeeId={canView ? undefined : String(activeEmployee?.id)}
                 branchId={branchFilterId}
                 showBaseCards={canViewReports}

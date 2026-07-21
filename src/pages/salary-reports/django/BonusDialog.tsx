@@ -75,6 +75,9 @@ const BonusDialog: React.FC<Props> = ({
     queryClient.invalidateQueries({
       queryKey: ["django", "payroll", "report"],
     });
+    queryClient.invalidateQueries({
+      queryKey: ["django", "payroll", "active-months"],
+    });
   };
 
   const createMutation = useMutation({

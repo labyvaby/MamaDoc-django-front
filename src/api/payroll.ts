@@ -67,6 +67,11 @@ export interface PayrollReport {
   settings: any;
 }
 
+export interface PayrollActiveMonths {
+  /** Newest-first month keys that contain payroll activity. */
+  months: string[];
+}
+
 export interface ServiceRate {
   serviceId: number;
   serviceName: string;
@@ -142,6 +147,26 @@ export function getPayrollReport(
   if (params.branchId != null) q.set("branchId", String(params.branchId));
   const qs = q.toString();
   return apiRequest<PayrollReport>(`/payroll/report/${qs ? `?${qs}` : ""}`, { signal });
+}
+
+/** GET /api/payroll/active-months/ — months with actual payroll activity. */
+export function getPayrollActiveMonths(
+  params: {
+    organizationId?: number;
+    branchId?: number;
+  } = {},
+  signal?: AbortSignal,
+): Promise<PayrollActiveMonths> {
+  const q = new URLSearchParams();
+  if (params.organizationId != null) {
+    q.set("organizationId", String(params.organizationId));
+  }
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  const qs = q.toString();
+  return apiRequest<PayrollActiveMonths>(
+    `/payroll/active-months/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
 }
 
 /** POST /api/payroll/periods/lock/ — freeze the month into snapshots. */
