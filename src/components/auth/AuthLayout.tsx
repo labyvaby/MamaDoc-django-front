@@ -19,16 +19,16 @@ import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import FolderSharedOutlined from "@mui/icons-material/FolderSharedOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
-import logoWhite from "../../assets/img/logo_white.png";
+import AximoLogo from "./AximoLogo";
 
 type Props = {
   children: React.ReactNode;
 };
 
 const FEATURES: { icon: React.ReactNode; text: string }[] = [
-  { icon: <EventAvailableOutlined fontSize="small" />, text: "Онлайн-запись и расписание приёмов" },
-  { icon: <FolderSharedOutlined fontSize="small" />, text: "Электронные медкарты пациентов" },
-  { icon: <GroupsOutlined fontSize="small" />, text: "Единая система для всей клиники" },
+  { icon: <EventAvailableOutlined fontSize="small" />, text: "Задачи, встречи и рабочее расписание" },
+  { icon: <FolderSharedOutlined fontSize="small" />, text: "Все данные и документы в одном месте" },
+  { icon: <GroupsOutlined fontSize="small" />, text: "Единое пространство для вашей команды" },
 ];
 
 // Декоративный паттерн из медицинских крестиков на брендовой панели.
@@ -102,13 +102,13 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
       >
         <PatternLayer dots={MOBILE_PATTERN} />
         <Stack direction="row" alignItems="center" gap={1.25} sx={{ position: "relative" }}>
-          <Box component="img" src={logoWhite} alt="Мама Доктор" sx={{ height: 34, width: "auto", objectFit: "contain" }} />
+          <AximoLogo light compact />
         </Stack>
         <Typography variant="h5" sx={{ fontWeight: 600, mt: 1, lineHeight: 1.25 }}>
-          Забота о детях начинается здесь
+          Управляйте бизнесом с ясностью
         </Typography>
         <Typography variant="body2" sx={(theme) => ({ color: alpha(theme.palette.primary.contrastText, 0.85) })}>
-          Единая система записи, приёмов и медкарт клиники
+          CRM-платформа для процессов, клиентов и команды
         </Typography>
       </Box>
 
@@ -155,7 +155,7 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
         {/* Паттерн из медицинских крестиков */}
         <PatternLayer dots={PANEL_PATTERN} />
 
-        {/* Верх: бейдж-тип клиники */}
+        {/* Верх: нейтральное описание продукта */}
         <Box sx={{ position: "relative", display: "flex", justifyContent: "flex-end" }}>
           <Typography
             variant="caption"
@@ -168,18 +168,18 @@ const AuthLayout: React.FC<Props> = ({ children }) => {
               letterSpacing: 0.2,
             })}
           >
-            Детская клиника
+            CRM-платформа
           </Typography>
         </Box>
 
         {/* Центр: логотип + слоган */}
         <Stack spacing={2.5} sx={{ position: "relative", maxWidth: 420 }}>
-          <Box component="img" src={logoWhite} alt="Мама Доктор" sx={{ height: 48, width: "auto", objectFit: "contain", alignSelf: "flex-start" }} />
+          <AximoLogo light />
           <Typography variant="h3" sx={{ fontWeight: 600, lineHeight: 1.25 }}>
-            Забота о детях начинается здесь
+            Управляйте бизнесом с ясностью
           </Typography>
           <Typography variant="body1" sx={(theme) => ({ color: alpha(theme.palette.primary.contrastText, 0.85), lineHeight: 1.6 })}>
-            Единая система записи, приёмов и медицинских карт вашей клиники.
+            Единое пространство для задач, клиентов, команды и роста вашего бизнеса.
           </Typography>
         </Stack>
 

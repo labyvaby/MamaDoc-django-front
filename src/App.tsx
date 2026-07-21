@@ -1246,7 +1246,7 @@ function App() {
                     <UnsavedChangesNotifier />
                     <DocumentTitleHandler
                       handler={(options) => {
-                        const baseTitle = "Мама Доктор";
+                        const baseTitle = "Aximo";
                         if (options.resource) {
                           const resourceLabel = options.resource.meta?.label || options.resource.name;
                           if (resourceLabel) {

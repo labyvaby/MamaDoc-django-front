@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Box, Stack, Typography, CircularProgress, Alert, Button } from "@mui/material";
-import logo from "../../assets/img/logo.png";
+import AximoLogo from "../../components/auth/AximoLogo";
 import { supabase } from "../../utility/supabaseClient";
 
 function toFriendlyError(raw: string): string {
@@ -99,7 +99,7 @@ const SsoPage: React.FC = () => {
         }}
       >
         <Stack alignItems="center" spacing={2}>
-          <Box component="img" src={logo} alt="Мама Доктор" sx={{ height: 56, objectFit: "contain" }} />
+          <AximoLogo />
 
           {status === "loading" && (
             <>
