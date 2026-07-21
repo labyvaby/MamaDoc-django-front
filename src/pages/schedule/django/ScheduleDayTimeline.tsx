@@ -82,6 +82,54 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   const showNow = day.isSame(now, "day") && nowMin >= DAY_START_MIN && nowMin <= DAY_END_MIN;
   const nowLeft = showNow ? leftPx(nowMin) : 0;
 
+  // Вертикальные направляющие: часовые (сплошные, идут через шапку и строки —
+  // связывают полосу смены с меткой часа наверху) и получасовые (пунктир, слабее)
+  // для точной привязки смен, оканчивающихся на :30.
+  const { hourLines, halfLines } = React.useMemo(() => {
+    const hour: number[] = [];
+    const half: number[] = [];
+    for (let m = DAY_START_MIN + 30; m < DAY_END_MIN; m += 30) {
+      (m % 60 === 0 ? hour : half).push(leftPx(m));
+    }
+    return { hourLines: hour, halfLines: half };
+  }, []);
+
+  // Общая сетка направляющих (используется в шапке и в дорожке каждой строки).
+  const gridLines = (
+    <>
+      {halfLines.map((x) => (
+        <Box
+          key={`half-${x}`}
+          sx={{
+            position: "absolute",
+            left: x,
+            top: 0,
+            bottom: 0,
+            borderLeft: "1px dashed",
+            borderColor: "divider",
+            opacity: 0.3,
+            pointerEvents: "none",
+          }}
+        />
+      ))}
+      {hourLines.map((x) => (
+        <Box
+          key={`hour-${x}`}
+          sx={{
+            position: "absolute",
+            left: x,
+            top: 0,
+            bottom: 0,
+            width: "1px",
+            bgcolor: "divider",
+            opacity: 0.7,
+            pointerEvents: "none",
+          }}
+        />
+      ))}
+    </>
+  );
+
   if (groups.length === 0) {
     return (
       <Typography color="text.disabled" align="center" sx={{ py: 6 }}>
@@ -126,6 +174,22 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
           }}
         >
           <Box sx={{ position: "relative", height: "100%" }}>
+            {/* Часовые направляющие в шапке — визуально продолжаются в строках */}
+            {hourLines.map((x) => (
+              <Box
+                key={`head-${x}`}
+                sx={{
+                  position: "absolute",
+                  left: x,
+                  top: "55%",
+                  bottom: 0,
+                  width: "1px",
+                  bgcolor: "divider",
+                  opacity: 0.7,
+                  pointerEvents: "none",
+                }}
+              />
+            ))}
             {showNow && (
               <Box
                 sx={{
@@ -242,21 +306,8 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           borderColor: "divider",
                         }}
                       >
-                        {/* Часовые линии */}
-                        {HOURS.slice(1, -1).map((h, i) => (
-                          <Box
-                            key={h}
-                            sx={{
-                              position: "absolute",
-                              left: (i + 1) * HOUR_W,
-                              top: 0,
-                              bottom: 0,
-                              width: "1px",
-                              bgcolor: "divider",
-                              opacity: 0.4,
-                            }}
-                          />
-                        ))}
+                        {/* Часовые + получасовые направляющие */}
+                        {gridLines}
                         {showNow && (
                           <Box
                             sx={{
