@@ -276,6 +276,16 @@ const VaccinationsPage: React.FC = () => {
     return s.status === "planned" && d.diff(dayjs(), "day") <= 7;
   }).length;
 
+  // Живая подпись под заголовком: на «Кому пора» подсвечивает главное —
+  // сколько всего запланировано и сколько из них просрочено; на других
+  // вкладках — нейтральное описание раздела.
+  const heroSubtitle = React.useMemo(() => {
+    if (tab !== "due") return "Иммунопрофилактика и календарь прививок";
+    if (dueRows.length === 0) return "Иммунопрофилактика и календарь прививок";
+    const total = `${dueRows.length} ${pluralSlots(dueRows.length)}`;
+    return overdueCount > 0 ? `${total} · ${overdueCount} просрочено` : total;
+  }, [tab, dueRows.length, overdueCount]);
+
   const dueColumns = React.useMemo<GridColDef<VaccinationScheduleSlot>[]>(
     () => [
       {
@@ -624,8 +634,36 @@ const VaccinationsPage: React.FC = () => {
           pb: 2,
         }}
       >
+        {/* ── Hero: иконка-плашка + название раздела + живая подпись ── */}
+        <Stack direction="row" alignItems="center" gap={1.5} sx={{ mt: 2, mb: 0.5 }}>
+          <Box
+            sx={(t) => ({
+              width: 44,
+              height: 44,
+              borderRadius: "12px",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "primary.onSurface",
+              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
+              "& .MuiSvgIcon-root": { fontSize: 24 },
+            })}
+          >
+            <VaccinesOutlined />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: -0.2, lineHeight: 1.2 }}>
+              Прививки
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {heroSubtitle}
+            </Typography>
+          </Box>
+        </Stack>
+
         {/* ── Вкладки + сводка + кнопка ── */}
-        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" sx={{ mt: 2, mb: 1.5 }}>
+        <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" sx={{ mt: 1.5, mb: 1.5 }}>
           <Stack
             direction="row"
             sx={{
@@ -842,6 +880,15 @@ const VaccinationsPage: React.FC = () => {
     </Box>
   );
 };
+
+/** Склонение «запланирована/запланировано/запланированы» для подписи hero. */
+function pluralSlots(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "прививка запланирована";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "прививки запланированы";
+  return "прививок запланировано";
+}
 
 /** Обёртка для двухстрочной ячейки DataGrid: флекс на .MuiDataGrid-cell
  *  центрирует только одну строку — многострочную центрируем явно. */
