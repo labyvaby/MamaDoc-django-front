@@ -34,6 +34,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import MergeTypeIcon from "@mui/icons-material/MergeTypeOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVertOutlined";
+import CameraAltOutlined from "@mui/icons-material/CameraAltOutlined";
 
 import type { DjangoPatient } from "../../../api/patients";
 import type { PatientBalance } from "../../../api/patientBalance";
@@ -90,6 +91,7 @@ type Props = {
   onEdit?: () => void;
   onTopUp?: () => void;
   onMerge?: () => void;
+  onFace?: () => void;
   lastDateTime?: string;
   lastService?: string;
   lastComplaints?: string;
@@ -101,6 +103,7 @@ const PatientCard: React.FC<Props> = ({
   onEdit,
   onTopUp,
   onMerge,
+  onFace,
   lastDateTime,
   lastService,
   lastComplaints,
@@ -117,7 +120,7 @@ const PatientCard: React.FC<Props> = ({
                 <PersonOutlineOutlined color="primary" />
                 <Typography variant="h6">Карточка пациента</Typography>
               </Stack>
-              {patient && (onTopUp || onEdit || onMerge) && (
+              {patient && (onTopUp || onEdit || onMerge || onFace) && (
                 <>
                   <Stack direction="row" spacing={1} flexShrink={0} sx={{ display: { xs: "none", md: "flex" } }}>
                     {onTopUp && (
@@ -128,6 +131,11 @@ const PatientCard: React.FC<Props> = ({
                     {onMerge && (
                       <Button size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
                         Объединить
+                      </Button>
+                    )}
+                    {onFace && (
+                      <Button size="small" variant="outlined" color="info" onClick={onFace} startIcon={<CameraAltOutlined />}>
+                        Камера
                       </Button>
                     )}
                     {onEdit && (
@@ -164,6 +172,12 @@ const PatientCard: React.FC<Props> = ({
                         <MenuItem onClick={() => { setMenuAnchor(null); onMerge(); }}>
                           <ListItemIcon><MergeTypeIcon fontSize="small" color="warning" /></ListItemIcon>
                           <ListItemText>Объединить с дублем</ListItemText>
+                        </MenuItem>
+                      )}
+                      {onFace && (
+                        <MenuItem onClick={() => { setMenuAnchor(null); onFace(); }}>
+                          <ListItemIcon><CameraAltOutlined fontSize="small" color="info" /></ListItemIcon>
+                          <ListItemText>Камера</ListItemText>
                         </MenuItem>
                       )}
                     </Menu>

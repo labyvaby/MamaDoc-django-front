@@ -43,6 +43,7 @@ import AppointmentDetailsPanel from "../appointments/components/AppointmentDetai
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
+import FaceCaptureDrawer from "./components/FaceCaptureDrawer";
 
 
 // ── "В разработке" placeholder for Old conclusions tab ───────────────────────
@@ -95,6 +96,7 @@ const DjangoPatientsPage: React.FC = () => {
   const canView = isSuperAdmin() || hasPermission("patients.view");
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
   const canUpdate = isSuperAdmin() || hasPermission("patients.update");
+  const canManagePatients = isSuperAdmin() || hasPermission("patients.manage");
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
@@ -132,6 +134,7 @@ const DjangoPatientsPage: React.FC = () => {
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
   const [mergeOpen, setMergeOpen] = React.useState(false);
+  const [faceOpen, setFaceOpen] = React.useState(false);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [mobileTab, setMobileTab] = React.useState(0);
@@ -273,6 +276,7 @@ const DjangoPatientsPage: React.FC = () => {
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
   const handleMerge = () => { if (selected) setMergeOpen(true); };
+  const handleFace = () => { if (selected) setFaceOpen(true); };
 
   const handleMerged = () => {
     setMergeOpen(false);
@@ -311,6 +315,7 @@ const DjangoPatientsPage: React.FC = () => {
       onEdit={canUpdate ? handleEdit : undefined}
       onTopUp={canManageFinance ? () => setTopUpOpen(true) : undefined}
       onMerge={canUpdate ? handleMerge : undefined}
+      onFace={canUpdate ? handleFace : undefined}
     />
   );
 
@@ -469,6 +474,14 @@ const DjangoPatientsPage: React.FC = () => {
         patient={selected}
         onClose={() => setEditOpen(false)}
         onUpdated={handleUpdated}
+      />
+
+      <FaceCaptureDrawer
+        open={faceOpen}
+        onClose={() => setFaceOpen(false)}
+        patientId={selected?.id ?? null}
+        patientName={selected?.fullName ?? ""}
+        canForceCapture={canManagePatients}
       />
 
       {/* Top-up balance drawer */}
