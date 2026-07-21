@@ -143,7 +143,7 @@ export const Sidebar: React.FC = () => {
 
   const footer = (
     <>
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 0.5 }} />
       <SidebarFooter />
     </>
   );
@@ -1004,7 +1004,7 @@ const SidebarFooter: React.FC = () => {
   };
 
   return (
-    <Box px={1} py={1.5}>
+    <Box px={1} py={1}>
       <Stack
         direction={isCollapsed ? "column" : "row"}
         justifyContent={isCollapsed ? "center" : "space-between"}
