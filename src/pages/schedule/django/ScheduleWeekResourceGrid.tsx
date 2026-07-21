@@ -16,10 +16,10 @@ const DAY_COL_MIN_W = 96;
 const ROW_H = 44;
 const HEADER_H = 36;
 
+// Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00).
 const shortTime = (t: string) => {
   const [hh, mm] = t.split(":");
-  const h = String(parseInt(hh, 10));
-  return mm === "00" ? h : `${h}:${mm}`;
+  return `${parseInt(hh, 10)}:${mm}`;
 };
 
 export interface ScheduleWeekResourceGridProps {

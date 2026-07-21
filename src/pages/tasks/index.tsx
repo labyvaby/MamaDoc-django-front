@@ -396,7 +396,21 @@ const TasksPage: React.FC = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
     },
-    onError: (e) => setActionError(e instanceof Error ? e.message : "Не удалось выполнить действие"),
+    onError: (e) => {
+      const raw = e instanceof Error ? e.message : "";
+      // Частая причина отказа — грид показывал устаревший статус (задачу уже
+      // перевели в другой статус в другой вкладке/сессии или поллером). Бэк
+      // отвечает вроде «status: Завершить можно только задачу в работе».
+      // Подтягиваем актуальные данные, чтобы кнопки действий соответствовали
+      // реальному состоянию и повторный клик не бил в ту же ошибку.
+      const isStatusConflict = /status|в работе|статус/i.test(raw);
+      setActionError(
+        isStatusConflict
+          ? "Статус задачи изменился (возможно, её уже завершили). Список обновлён — проверьте доступные действия."
+          : raw || "Не удалось выполнить действие",
+      );
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
+    },
   });
 
   const runAction = (action: RowAction, taskId: number) => rowMutation.mutate({ action, taskId });

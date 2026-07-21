@@ -105,6 +105,13 @@ function parseQty(raw: string): number {
 // вторая запись почти наверняка дубль (отменённые/завершённые не мешают).
 const ACTIVE_APPT_STATUSES = new Set(["scheduled", "confirmed", "arrived", "in_progress"]);
 
+// Тумблер «Бронирование (без пациента)» скрыт: бэк требует patientId как
+// обязательный int на создании (и явный null, и отсутствие поля — 400,
+// проверено на живом API 20.07.2026, тестовый филиал) — фича гарантированно
+// не работает. Тикет MamaDoc/backend_ticket_booking_without_patient.md.
+// После деплоя — включить обратно, других правок не потребуется.
+const BOOKING_WITHOUT_PATIENT_ENABLED = false;
+
 // Поиск исполнителя по ФИО и специализации («гинеколог» находит врача).
 const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
   matchFrom: "any",
@@ -649,24 +656,26 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 </Button>
               </Stack>
 
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={isBooking}
-                    onChange={(e) => {
-                      setIsBooking(e.target.checked);
-                      if (e.target.checked) setSelectedPatient(null);
-                    }}
-                    color="primary"
-                    size="small"
-                  />
-                }
-                label={
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    Бронирование (без пациента)
-                  </Typography>
-                }
-              />
+              {BOOKING_WITHOUT_PATIENT_ENABLED && (
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={isBooking}
+                      onChange={(e) => {
+                        setIsBooking(e.target.checked);
+                        if (e.target.checked) setSelectedPatient(null);
+                      }}
+                      color="primary"
+                      size="small"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      Бронирование (без пациента)
+                    </Typography>
+                  }
+                />
+              )}
 
               {!isBooking && (
                 <Autocomplete<DjangoPatient>

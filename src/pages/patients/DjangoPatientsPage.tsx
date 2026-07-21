@@ -37,6 +37,7 @@ import { useNotification } from "@refinedev/core";
 import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
 import PatientHistoryPanel from "./components/PatientHistoryPanel";
+import PatientVaccinationsPanel from "./components/PatientVaccinationsPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
@@ -96,6 +97,8 @@ const DjangoPatientsPage: React.FC = () => {
   const canUpdate = isSuperAdmin() || hasPermission("patients.update");
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
+  const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
+  const canRecordVaccinations = isSuperAdmin() || hasPermission("vaccinations.record");
 
   const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
@@ -322,6 +325,10 @@ const DjangoPatientsPage: React.FC = () => {
     />
   );
 
+  const vaccinationsNode = (
+    <PatientVaccinationsPanel patient={selected} canRecord={canRecordVaccinations} />
+  );
+
   const listNode = (
     <PatientListPanel
       loading={loadingData}
@@ -380,11 +387,13 @@ const DjangoPatientsPage: React.FC = () => {
                   <Tab label="Карточка" />
                   <Tab label="История" />
                   <Tab label="Старые зак." />
+                  {canViewVaccinations && <Tab label="Прививки" />}
                 </Tabs>
                 <Box sx={{ flex: 1, minHeight: 0 }}>
                   {tabletTab === 0 && cardNode}
                   {tabletTab === 1 && historyNode}
                   {tabletTab === 2 && <OldConclusionsPlaceholder />}
+                  {tabletTab === 3 && canViewVaccinations && vaccinationsNode}
                 </Box>
               </>
             ) : (
@@ -407,9 +416,12 @@ const DjangoPatientsPage: React.FC = () => {
               <Tabs value={desktopRightTab} onChange={(_, v) => setDesktopRightTab(v)} sx={{ flexShrink: 0, borderBottom: 1, borderColor: "divider", mb: 1 }}>
                 <Tab label="История приёмов" />
                 <Tab label="Старые заключения" />
+                {canViewVaccinations && <Tab label="Прививки" />}
               </Tabs>
               <Box sx={{ flex: 1, minHeight: 0 }}>
-                {desktopRightTab === 0 ? historyNode : <OldConclusionsPlaceholder />}
+                {desktopRightTab === 0 && historyNode}
+                {desktopRightTab === 1 && <OldConclusionsPlaceholder />}
+                {desktopRightTab === 2 && canViewVaccinations && vaccinationsNode}
               </Box>
             </Box>
           </>
@@ -426,6 +438,7 @@ const DjangoPatientsPage: React.FC = () => {
               <Tab label="Карточка" />
               <Tab label="История" />
               <Tab label="Старые зак." />
+              {canViewVaccinations && <Tab label="Прививки" />}
             </Tabs>
           }
         >
@@ -433,6 +446,7 @@ const DjangoPatientsPage: React.FC = () => {
             {mobileTab === 0 && cardNode}
             {mobileTab === 1 && historyNode}
             {mobileTab === 2 && <OldConclusionsPlaceholder />}
+            {mobileTab === 3 && canViewVaccinations && vaccinationsNode}
           </Box>
         </AppBottomSheet>
       )}

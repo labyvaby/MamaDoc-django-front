@@ -56,11 +56,10 @@ dayjs.locale("ru");
 
 // ── Геометрия месячной ячейки — вынесена в monthTimeline.ts ──────────────────
 
-/** "09:00" → "9", "09:30" → "9:30", "13:00" → "13". */
+/** Единый формат «Ч:ММ» без ведущего нуля: "09:00" → "9:00", "09:30" → "9:30". */
 const shortTime = (t: string): string => {
   const [hh, mm] = t.split(":");
-  const h = String(parseInt(hh, 10));
-  return mm === "00" ? h : `${h}:${mm}`;
+  return `${parseInt(hh, 10)}:${mm}`;
 };
 
 const timeRange = (occ: DayOccurrence): string => `${shortTime(occ.startTime)}–${shortTime(occ.endTime)}`;

@@ -76,7 +76,6 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
 
   const {
     control,
-    register,
     handleSubmit,
     reset,
     setValue,
@@ -238,25 +237,38 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
           </Box>
         )}
 
-        <TextField
-          label="Название"
-          required
-          fullWidth
-          autoFocus
-          error={!!errors.title}
-          helperText={errors.title?.message}
-          {...register("title", {
+        <Controller
+          name="title"
+          control={control}
+          rules={{
             required: "Укажите название",
             maxLength: { value: 200, message: "Не более 200 символов" },
-          })}
+          }}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              label="Название"
+              required
+              fullWidth
+              autoFocus
+              error={!!errors.title}
+              helperText={errors.title?.message}
+            />
+          )}
         />
 
-        <TextField
-          label="Описание"
-          fullWidth
-          multiline
-          minRows={3}
-          {...register("description")}
+        <Controller
+          name="description"
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              label="Описание"
+              fullWidth
+              multiline
+              minRows={3}
+            />
+          )}
         />
 
         <Controller

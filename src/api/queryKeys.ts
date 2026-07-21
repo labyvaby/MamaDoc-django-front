@@ -182,6 +182,8 @@ export const djangoQueryKeys = {
       ["django", "cleaning", "summary", params] as const,
     activeMonths: (organizationId: number | null | undefined) =>
       ["django", "cleaning", "active-months", organizationId ?? null] as const,
+    employees: (organizationId: number | null | undefined) =>
+      ["django", "cleaning", "employees", organizationId ?? null] as const,
   },
 
   knowledge: {
@@ -194,6 +196,25 @@ export const djangoQueryKeys = {
       ["django", "knowledge", "article", articleId] as const,
     videos: (params: Record<string, unknown>) =>
       ["django", "knowledge", "videos", params] as const,
+  },
+
+  vaccinations: {
+    all: ["django", "vaccinations"] as const,
+    vaccines: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "vaccines", params] as const,
+    batches: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "batches", params] as const,
+    records: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records", params] as const,
+    record: (id: number) => ["django", "vaccinations", "records", id] as const,
+    // Дашборд «кому пора» (по всем пациентам филиала).
+    schedule: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "schedule", params] as const,
+    // Календарь и история одного пациента.
+    patientSchedule: (patientId: number) =>
+      ["django", "vaccinations", "patients", patientId, "schedule"] as const,
+    patientHistory: (patientId: number) =>
+      ["django", "vaccinations", "patients", patientId, "history"] as const,
   },
 
   staff: {

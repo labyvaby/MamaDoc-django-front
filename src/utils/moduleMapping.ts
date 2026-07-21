@@ -20,6 +20,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   documents: 'documents',
   cleaning: 'cleaning',
   knowledge: 'knowledge',
+  vaccinations: 'vaccinations',
 };
 
 /**

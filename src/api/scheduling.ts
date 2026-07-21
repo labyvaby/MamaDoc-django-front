@@ -54,6 +54,8 @@ export interface ScheduleException {
   id: number;
   employeeId: number;
   employeeName: string;
+  branchId: number | null;
+  branchName: string | null;
   date: string;
   kind: ScheduleExceptionKind;
   startTime: string | null;
@@ -68,6 +70,7 @@ export interface ScheduleExceptionWrite {
   startTime?: string | null;
   endTime?: string | null;
   comment?: string;
+  branchId?: number | null;
   organizationId?: number | null;
 }
 
@@ -133,12 +136,18 @@ export interface AvailabilitySummaryParams {
 // ── API ────────────────────────────────────────────────────────────────────────
 
 export function getScheduleRules(
-  params: { employeeId?: number; includeInactive?: boolean; organizationId?: number } = {},
+  params: {
+    employeeId?: number;
+    includeInactive?: boolean;
+    branchId?: number;
+    organizationId?: number;
+  } = {},
   signal?: AbortSignal,
 ): Promise<ScheduleRule[]> {
   const q = new URLSearchParams();
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
   if (params.includeInactive) q.set("includeInactive", "1");
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<ScheduleRule[]>(`/scheduling/rules/${qs ? `?${qs}` : ""}`, { signal });
@@ -167,6 +176,7 @@ export function getScheduleExceptions(
     employeeId?: number;
     dateFrom?: string;
     dateTo?: string;
+    branchId?: number;
     organizationId?: number;
   } = {},
   signal?: AbortSignal,
@@ -175,6 +185,7 @@ export function getScheduleExceptions(
   if (params.employeeId != null) q.set("employeeId", String(params.employeeId));
   if (params.dateFrom) q.set("dateFrom", params.dateFrom);
   if (params.dateTo) q.set("dateTo", params.dateTo);
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
   return apiRequest<ScheduleException[]>(`/scheduling/exceptions/${qs ? `?${qs}` : ""}`, {
