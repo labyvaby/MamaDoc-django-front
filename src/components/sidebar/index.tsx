@@ -28,6 +28,7 @@ import { useAppVersion } from "../../api/appVersion";
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
@@ -128,7 +129,7 @@ export const Sidebar: React.FC = () => {
     <>
       {isMobile && <MobileSidebarHeader />}
       {isDesktop && <DesktopSidebarHeader />}
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 0.5 }} />
       {IS_DJANGO_BACKEND && (
         <ActiveContextSwitcher
           onSwitched={() => {
@@ -143,7 +144,7 @@ export const Sidebar: React.FC = () => {
 
   const footer = (
     <>
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 0.5 }} />
       <SidebarFooter />
     </>
   );
@@ -409,6 +410,7 @@ const SidebarSecondary: React.FC = () => {
     // ОРГАНИЗАЦИЯ
     employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
     patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
+    vaccinations: IS_DJANGO_BACKEND && (isSuper || can("vaccinations.view")),
     allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
@@ -437,7 +439,7 @@ const SidebarSecondary: React.FC = () => {
     ),
   };
 
-  // Бейдж «Задачи»: есть новые задачи для меня/моей группы.
+  // Бейдж «Задачи»: счётчик + срочность цветом.
   // Тот же queryKey, что у сводки на доске задач, — кэш общий.
   const tasksSummaryQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.summary,
@@ -445,12 +447,24 @@ const SidebarSecondary: React.FC = () => {
     enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
-  const tasksBadge = (tasksSummaryQuery.data?.newForMe ?? 0) > 0;
+  // Число в бейдже: все открытые задачи филиала (new + inProgress +
+  // awaitingApproval — done/cancelled сюда не входят). Если среди них есть
+  // просроченные — красим бейдж красным (срочность), иначе нейтральный
+  // брендовый акцент. Считаем именно все открытые, а не «новые для меня»: у
+  // суперадмина/управленца нет группы категории, поэтому newForMe у него всегда
+  // 0 и бейдж иначе не загорался бы, хотя активные задачи в филиале есть.
+  const tasksSummary = tasksSummaryQuery.data;
+  const tasksOverdue = tasksSummary?.overdue ?? 0;
+  const tasksBadgeCount =
+    (tasksSummary?.new ?? 0) +
+    (tasksSummary?.inProgress ?? 0) +
+    (tasksSummary?.awaitingApproval ?? 0);
+  const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.diagnoses,
+    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.diagnoses,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -479,7 +493,7 @@ const SidebarSecondary: React.FC = () => {
     <>
       {/* ── Фильтр-вкладки (мобильный + раскрытый десктоп) ── */}
       {(!siderCollapsed || isMobile) && (
-        <Box sx={{ px: 1, pt: 1, pb: 0.5 }}>
+        <Box sx={{ px: 1, pt: 0.5, pb: 0.5 }}>
           {/* Кнопка "Все" — на всю ширину, меньше высотой */}
           <Box
             component="button"
@@ -490,8 +504,8 @@ const SidebarSecondary: React.FC = () => {
               justifyContent: "center",
               gap: 1,
               width: "100%",
-              mb: 1,
-              py: 1,
+              mb: 0.75,
+              py: 0.75,
               px: 2,
               border: "1px solid",
               borderRadius: 1,
@@ -519,8 +533,8 @@ const SidebarSecondary: React.FC = () => {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 0.75,
-                  py: 1.5,
+                  gap: 0.5,
+                  py: 1,
                   px: 1,
                   border: "1px solid",
                   borderRadius: 1,
@@ -532,7 +546,7 @@ const SidebarSecondary: React.FC = () => {
                   "&:hover": { borderColor: "primary.main", color: "primary.onSurface" },
                 }}
               >
-                <Icon sx={{ fontSize: 20 }} />
+                <Icon sx={{ fontSize: 18 }} />
                 <Typography variant="caption" fontWeight={500} sx={{ fontSize: "0.65rem", lineHeight: 1.2, textAlign: "center" }}>
                   {label}
                 </Typography>
@@ -598,7 +612,8 @@ const SidebarSecondary: React.FC = () => {
             icon={<AssignmentOutlined />}
             label="Задачи"
             collapsed={siderCollapsed}
-            showBadge={tasksBadge}
+            badgeCount={tasksBadgeCount}
+            badgeColor={tasksBadgeColor}
           />
         )}
 
@@ -619,7 +634,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Достижения (Django-mode only) */}
         {show("my-work") && can_.achievements && (
-          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Достижения" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Награды" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -639,6 +654,11 @@ const SidebarSecondary: React.FC = () => {
             label="Все пациенты"
             collapsed={siderCollapsed}
           />
+        )}
+
+        {/* Прививки */}
+        {show("org") && can_.vaccinations && (
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Прививки" collapsed={siderCollapsed} />
         )}
 
         {/* Все приемы */}
@@ -745,7 +765,10 @@ type SidebarMenuItemProps = {
   label: React.ReactNode;
   selected?: boolean;
   collapsed?: boolean;
-  showBadge?: boolean;
+  /** Число в бейдже пункта. 0/undefined — бейдж не показывается. */
+  badgeCount?: number;
+  /** Цвет бейджа: срочность (error — просрочено, primary — новые). */
+  badgeColor?: "error" | "primary" | "warning";
   /**
    * Child paths that belong to a *different* menu item and must not light
    * this one up. Used by a parent route (e.g. "/settings") so it stays
@@ -761,13 +784,16 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   label,
   selected,
   collapsed,
-  showBadge = false,
+  badgeCount = 0,
+  badgeColor = "error",
   excludePaths,
 }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const collapsedFinal = (collapsed ?? false) && !isMobile;
+  const hasBadge = badgeCount > 0;
+  const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);
   const matchesSelf =
     location.pathname === to || location.pathname.startsWith(to + "/");
   const matchesExcluded = (excludePaths ?? []).some(
@@ -782,6 +808,8 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         whiteSpace: "nowrap",
         opacity: collapsedFinal ? 0 : 1,
         width: collapsedFinal ? 0 : "auto",
+        flexGrow: collapsedFinal ? 0 : 1,
+        minWidth: 0,
         transition: (theme) => theme.transitions.create(["opacity", "width", "margin"], { duration: 200 }),
         ml: collapsedFinal ? 0 : 1,
         display: 'flex',
@@ -789,20 +817,31 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         gap: 1,
       }}
     >
-      <ListItemText primary={label} />
-      {/* Standalone Badge с variant="dot" имеет нулевой размер и точку за своими
-          границами (absolute + translate 50%) — её срезал overflow:hidden.
-          Поэтому в развёрнутом сайдбаре рисуем обычный кружок. */}
-      {showBadge && !collapsedFinal && (
+      <ListItemText primary={label} sx={{ my: 0 }} />
+      {/* Standalone Badge позиционируется absolute (translate 50%) и вылезает за
+          границы — его срезал бы overflow:hidden. Поэтому в развёрнутом сайдбаре
+          рисуем счётчик обычной пилюлей в потоке; цвет = срочность. */}
+      {hasBadge && !collapsedFinal && (
         <Box
           sx={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            bgcolor: 'error.main',
+            ml: 'auto',
+            minWidth: 18,
+            height: 18,
+            px: 0.5,
+            borderRadius: '9px',
+            bgcolor: `${badgeColor}.main`,
+            color: `${badgeColor}.contrastText`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            lineHeight: 1,
             flexShrink: 0,
           }}
-        />
+        >
+          {badgeLabel}
+        </Box>
       )}
     </Box>
   );
@@ -815,7 +854,8 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         selected={isActive}
         sx={{
           borderRadius: "10px",
-          my: 0.25,
+          my: 0,
+          py: 0.5,
           px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           '& .MuiListItemIcon-root': {
@@ -839,16 +879,17 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
       >
         {icon && (
           <ListItemIcon sx={{ minWidth: 36 }}>
-            {showBadge && collapsedFinal ? (
+            {hasBadge && collapsedFinal ? (
               <Badge
-                variant="dot"
-                color="error"
+                badgeContent={badgeLabel}
+                color={badgeColor}
                 sx={{
-                  '& .MuiBadge-dot': {
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                  }
+                  '& .MuiBadge-badge': {
+                    fontSize: '0.6rem',
+                    height: 16,
+                    minWidth: 16,
+                    fontWeight: 700,
+                  },
                 }}
               >
                 {icon}
@@ -1002,7 +1043,7 @@ const SidebarFooter: React.FC = () => {
   };
 
   return (
-    <Box px={1} py={1.5}>
+    <Box px={1} py={1}>
       <Stack
         direction={isCollapsed ? "column" : "row"}
         justifyContent={isCollapsed ? "center" : "space-between"}

@@ -299,13 +299,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
               <Box sx={{ py: 3, display: "flex", justifyContent: "center" }}>
                 <CircularProgress size={24} />
               </Box>
-            ) : dailyData.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
-                Нет данных за месяц
-              </Typography>
             ) : (
               <Stack spacing={1.5}>
-                {dailyData.map((day, idx) => (
+                {dailyData.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                    {parseFloat(row.cleaningEarnings || "0") > 0
+                      ? "Начислений по приёмам за месяц нет — заработок за подтверждённые уборки."
+                      : "Нет данных за месяц"}
+                  </Typography>
+                ) : (
+                  dailyData.map((day, idx) => (
                   <Box
                     key={idx}
                     sx={{
@@ -378,9 +381,11 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       )}
                     </Grid2>
                   </Box>
-                ))}
+                ))
+                )}
 
-                {/* Summary */}
+                {/* Summary — показываем при любых начислениях (в т.ч. только уборки) */}
+                {parseFloat(row.earnings || "0") > 0 && (
                 <Box
                   sx={{
                     mt: 1,
@@ -398,6 +403,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.earnings)}
                     </Typography>
                   </Stack>
+                  {parseFloat(row.cleaningEarnings || "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                        в т.ч. уборки
+                      </Typography>
+                      <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
+                        {formatKGS(row.cleaningEarnings as string)}
+                      </Typography>
+                    </Stack>
+                  )}
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
                       Авансы
@@ -439,6 +454,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     />
                   )}
                 </Box>
+                )}
               </Stack>
             )}
           </Box>
@@ -585,12 +601,15 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                 <Box sx={{ py: 3, display: "flex", justifyContent: "center" }}>
                   <CircularProgress size={24} />
                 </Box>
-              ) : dailyData.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
-                  Начислений по дням за этот месяц нет.
-                </Typography>
               ) : (
                 <Stack spacing={2}>
+                  {dailyData.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+                      {parseFloat(row.cleaningEarnings || "0") > 0
+                        ? "Начислений по приёмам за месяц нет — заработок за подтверждённые уборки."
+                        : "Начислений по дням за этот месяц нет."}
+                    </Typography>
+                  ) : (
                   <Table size="small" sx={{ "& .MuiTableCell-root": { py: 0.75 } }}>
                     <TableHead>
                       <TableRow>
@@ -654,8 +673,10 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       ))}
                     </TableBody>
                   </Table>
+                  )}
 
-                  {/* Summary Box */}
+                  {/* Summary Box — показываем при любых начислениях (в т.ч. только уборки, без дневных строк) */}
+                  {parseFloat(row.earnings || "0") > 0 && (
                   <Box
                     sx={{
                       ml: "auto",
@@ -671,6 +692,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         <Typography variant="body2" color="text.secondary">Начислено по дням:</Typography>
                         <Typography variant="body2" fontWeight={700}>{formatKGS(row.earnings)}</Typography>
                       </Stack>
+                      {parseFloat(row.cleaningEarnings || "0") > 0 && (
+                        <Stack direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
+                          <Typography variant="caption" color="text.secondary">в т.ч. уборки:</Typography>
+                          <Typography variant="caption" fontWeight={700}>
+                            {formatKGS(row.cleaningEarnings as string)}
+                          </Typography>
+                        </Stack>
+                      )}
                       <Stack direction="row" justifyContent="space-between">
                         <Typography variant="body2" color="text.secondary">Выплачено авансов:</Typography>
                         <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.advances)}</Typography>
@@ -682,6 +711,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       </Stack>
                     </Stack>
                   </Box>
+                  )}
                 </Stack>
               )}
             </Box>

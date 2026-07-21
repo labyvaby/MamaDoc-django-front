@@ -195,6 +195,7 @@ const SalaryContent: React.FC<{
       {num(row.appointmentPay) > 0 && <PayRow label="Приёмы (ставка)" value={num(row.appointmentPay)} />}
       {services > 0 && <PayRow label="Услуги (%)" value={services} />}
       {num(row.productPay) > 0 && <PayRow label="Товары в приёмах" value={num(row.productPay)} />}
+      {num(row.cleaningEarnings) > 0 && <PayRow label="Уборки" value={num(row.cleaningEarnings)} />}
       {num(row.bonus) > 0 && <PayRow label="Надбавка" value={num(row.bonus)} />}
       {num(row.advances) > 0 && <PayRow label="Аванс" value={num(row.advances)} negative />}
       <PayRow label="К выплате" value={num(row.netSalary)} total />

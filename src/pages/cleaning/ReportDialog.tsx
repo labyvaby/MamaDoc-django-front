@@ -18,15 +18,18 @@ import { useTheme } from "@mui/material/styles";
 import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import { useNotification } from "@refinedev/core";
+import { useQuery } from "@tanstack/react-query";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { getErrorMessage } from "../../api/client";
+import { djangoQueryKeys } from "../../api/queryKeys";
 import { compressImage } from "../../utility/imageCompression";
 import { formatKGS } from "../../utility/format";
 import {
   CLEANING_MAX_PHOTOS,
   CLEANING_PHOTO_MAX_SIZE_MB,
   createCleaningRecord,
+  getCleaningEmployees,
   type CleaningType,
 } from "../../api/cleaning";
 
@@ -34,6 +37,11 @@ interface ReportDialogProps {
   open: boolean;
   /** Активные типы уборки для выбора (уже отфильтрованы родителем). */
   activeTypes: CleaningType[];
+  /**
+   * Показывать выбор исполнителя (ручное назначение уборки на сотрудника).
+   * Только для cleaning.manage; без него запись создаётся на текущего юзера.
+   */
+  canAssign?: boolean;
   onClose: () => void;
   /** Успешная отправка — родитель инвалидирует списки. */
   onSuccess: () => void;
@@ -44,16 +52,31 @@ interface ReportDialogProps {
  * compressImage). Весь стейт фотоотчёта живёт здесь; blob-URL превью
  * освобождаются при открытии/закрытии, успешной отправке и размонтировании.
  */
-const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeTypes, onClose, onSuccess }) => {
+const ReportDialog: React.FC<ReportDialogProps> = ({
+  open,
+  activeTypes,
+  canAssign = false,
+  onClose,
+  onSuccess,
+}) => {
   const theme = useTheme();
   const { open: notify } = useNotification();
   const orgId = useApiOrgId();
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [typeId, setTypeId] = React.useState<number | "">("");
+  const [employeeId, setEmployeeId] = React.useState<number | "">("");
   const [photos, setPhotos] = React.useState<{ file: File; url: string }[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Список уборщиц — грузим только когда селектор нужен (canAssign) и открыт.
+  const employeesQuery = useQuery({
+    queryKey: djangoQueryKeys.cleaning.employees(orgId ?? null),
+    queryFn: ({ signal }) => getCleaningEmployees(orgId, signal),
+    enabled: open && canAssign,
+  });
+  const employees = employeesQuery.data ?? [];
 
   // Единая точка освобождения blob-URL превью.
   const clearPhotos = React.useCallback(() => {
@@ -76,6 +99,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeTypes, onClose,
   React.useEffect(() => {
     if (!open) return;
     setTypeId(activeTypes.length === 1 ? activeTypes[0].id : "");
+    setEmployeeId("");
     clearPhotos();
     setError(null);
     // activeTypes меняются только при рефетче типов — пересброс формы не нужен.
@@ -155,14 +179,21 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeTypes, onClose,
     });
   };
 
+  // При ручном назначении исполнитель обязателен: менеджер сам не уборщица,
+  // писать «на себя» ему нечего — запись должна быть привязана к сотруднику.
+  const canSubmit =
+    typeId !== "" && photos.length > 0 && (!canAssign || employeeId !== "");
+
   const handleSubmit = async () => {
     if (typeId === "" || photos.length === 0) return;
+    if (canAssign && employeeId === "") return;
     setBusy(true);
     setError(null);
     try {
       await createCleaningRecord({
         typeId,
         photos: photos.map((p) => p.file),
+        employeeId: canAssign && employeeId !== "" ? employeeId : undefined,
         organizationId: orgId,
       });
       notify?.({
@@ -185,6 +216,31 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeTypes, onClose,
       <DialogTitle>Отметить уборку</DialogTitle>
       <DialogContent onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
+          {canAssign && (
+            <TextField
+              select
+              label="Сотрудник (уборщица)"
+              size="small"
+              fullWidth
+              value={employeeId === "" ? "" : String(employeeId)}
+              onChange={(e) => setEmployeeId(Number(e.target.value))}
+              disabled={busy || employeesQuery.isLoading}
+              error={Boolean(employeesQuery.error)}
+              helperText={
+                employeesQuery.isError
+                  ? "Не удалось загрузить список — попробуйте позже"
+                  : employeesQuery.isSuccess && employees.length === 0
+                    ? "Нет сотрудников с правом на уборку и учётной записью"
+                    : "На кого записать уборку"
+              }
+            >
+              {employees.map((emp) => (
+                <MenuItem key={emp.id} value={String(emp.id)}>
+                  {emp.fullName}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           <TextField
             select
             label="Тип уборки"
@@ -277,7 +333,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({ open, activeTypes, onClose,
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || typeId === "" || photos.length === 0}
+          disabled={busy || !canSubmit}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Отправка…" : "Отправить"}

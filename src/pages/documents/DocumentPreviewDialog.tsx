@@ -19,11 +19,20 @@ import type { OrganizationDocument } from "../../api/documents";
 /** Типы, которые умеем показывать без скачивания. */
 const PREVIEW_IMAGE_EXT = new Set(["jpg", "jpeg", "png"]);
 
-const fileExt = (name: string): string => name.split(".").pop()?.toLowerCase() ?? "";
+/**
+ * Расширение из URL/имени файла: отбрасываем query/hash и берём последний
+ * сегмент пути. Отображаемое имя может быть без расширения — поэтому тип
+ * определяем по fileUrl реального файла.
+ */
+const fileExt = (source: string | null | undefined): string => {
+  if (!source) return "";
+  const base = source.split(/[?#]/)[0].split("/").pop() ?? "";
+  return base.includes(".") ? base.split(".").pop()!.toLowerCase() : "";
+};
 
 /** true — документ можно открыть в предпросмотре (PDF или изображение). */
-export const isPreviewable = (name: string): boolean => {
-  const ext = fileExt(name);
+export const isPreviewable = (source: string): boolean => {
+  const ext = fileExt(source);
   return ext === "pdf" || PREVIEW_IMAGE_EXT.has(ext);
 };
 
@@ -38,7 +47,7 @@ interface DocumentPreviewDialogProps {
  * как картинка. Прочие типы (doc/xls) браузер не рендерит — предлагаем скачать.
  */
 const DocumentPreviewDialog: React.FC<DocumentPreviewDialogProps> = ({ doc, onClose }) => {
-  const ext = doc ? fileExt(doc.name) : "";
+  const ext = doc ? fileExt(doc.fileUrl) : "";
 
   return (
     <Dialog open={doc !== null} onClose={onClose} maxWidth="md" fullWidth>
@@ -80,7 +89,7 @@ const DocumentPreviewDialog: React.FC<DocumentPreviewDialogProps> = ({ doc, onCl
                 }}
               />
             )}
-            {!isPreviewable(doc.name) && (
+            {!isPreviewable(doc.fileUrl) && (
               <Stack alignItems="center" gap={1.5} sx={{ py: 6, color: "text.secondary" }}>
                 <DescriptionOutlined sx={{ fontSize: 44 }} />
                 <Typography variant="body2">

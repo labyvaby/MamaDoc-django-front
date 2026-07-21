@@ -507,10 +507,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   }, []);
 
   // «Подтвердить»: пациент подтвердил визит по телефону, scheduled → confirmed
+  // allowOverlap: смена статуса не двигает слот, поэтому уже существующее
+  // пересечение не должно её блокировать (иначе бэк отдаёт 409 appointment_overlap
+  // и отменить/подтвердить дубль вообще нельзя).
   const handleConfirmVisit = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "confirmed" });
+        await updateAppointment(appt.id, { status: "confirmed", allowOverlap: true });
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -519,11 +522,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     [refresh, notify],
   );
 
-  // "Пациент здесь": scheduled → waiting
+  // "Пациент здесь": scheduled → waiting (allowOverlap — см. handleConfirmVisit)
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "arrived" });
+        await updateAppointment(appt.id, { status: "arrived", allowOverlap: true });
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -553,7 +556,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setConfirmBusy(true);
     try {
       if (confirm.mode === "cancel") {
-        await updateAppointment(confirm.appt.id, { status: "canceled" });
+        // allowOverlap — см. handleConfirmVisit: отмена дубля не должна упираться
+        // в проверку пересечений с приёмом, из-за которого её и отменяют.
+        await updateAppointment(confirm.appt.id, { status: "canceled", allowOverlap: true });
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));

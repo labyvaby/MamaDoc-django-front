@@ -49,7 +49,6 @@ import {
   createScheduleException,
   deleteScheduleException,
   type ScheduleRule,
-  type ScheduleException,
   type ScheduleExceptionKind,
 } from "../../../api/scheduling";
 import { parseBackendError } from "../../../api/appointments";
@@ -399,6 +398,8 @@ const ExceptionDrawer: React.FC<{
   open: boolean;
   onClose: () => void;
   organizationId?: number;
+  /** Активный филиал — новое исключение создаётся в нём, а не «общим». */
+  branchId?: number;
   onSaved: () => void;
   initialDate?: Dayjs | null;
   /** Тип, с которым открывается форма. «Добавить смену» → "extra". */
@@ -409,6 +410,7 @@ const ExceptionDrawer: React.FC<{
   open,
   onClose,
   organizationId,
+  branchId,
   onSaved,
   initialDate,
   initialKind = "day_off",
@@ -451,6 +453,7 @@ const ExceptionDrawer: React.FC<{
         endTime: kind === "extra" ? endTime : undefined,
         comment: comment.trim(),
         organizationId,
+        branchId,
       });
       onSaved();
       onClose();
@@ -621,16 +624,23 @@ const DjangoSchedulePage: React.FC = () => {
   const [selectedDay, setSelectedDay] = React.useState<Dayjs | null>(null);
   const [dayDrawerOpen, setDayDrawerOpen] = React.useState(false);
 
-  const rulesParams = { employeeId: employeeFilter?.id ?? null, orgId: orgId ?? null };
+  // Правила/исключения скоупятся по активному филиалу на сервере (branchId =
+  // этот филиал ИЛИ общие, branchId=null) — тикет
+  // MamaDoc/backend_ticket_scheduling_branch_scoping.md, подтверждено на живом
+  // API 20.07.2026. Суперадмин без активного филиала не фильтрует.
+  const branchId = activeBranch?.id ?? undefined;
+
+  const rulesParams = { employeeId: employeeFilter?.id ?? null, branchId: branchId ?? null, orgId: orgId ?? null };
   const rulesQuery = useQuery({
     queryKey: djangoQueryKeys.scheduling.rules(rulesParams),
     queryFn: ({ signal }) =>
-      getScheduleRules({ employeeId: employeeFilter?.id, organizationId: orgId }, signal),
+      getScheduleRules({ employeeId: employeeFilter?.id, branchId, organizationId: orgId }, signal),
   });
 
   const exceptionsParams = {
     employeeId: employeeFilter?.id ?? null,
     from: dayjs().format("YYYY-MM-DD"),
+    branchId: branchId ?? null,
     orgId: orgId ?? null,
   };
   const exceptionsQuery = useQuery({
@@ -640,6 +650,7 @@ const DjangoSchedulePage: React.FC = () => {
         {
           employeeId: employeeFilter?.id,
           dateFrom: dayjs().format("YYYY-MM-DD"),
+          branchId,
           organizationId: orgId,
         },
         signal,
@@ -655,15 +666,16 @@ const DjangoSchedulePage: React.FC = () => {
     dateTo: month.endOf("month").add(13, "day").format("YYYY-MM-DD"),
   };
   const monthExceptionsQuery = useQuery({
-    queryKey: djangoQueryKeys.scheduling.exceptions({ ...monthRange, orgId: orgId ?? null }),
+    queryKey: djangoQueryKeys.scheduling.exceptions({
+      ...monthRange,
+      branchId: branchId ?? null,
+      orgId: orgId ?? null,
+    }),
     queryFn: ({ signal }) =>
-      getScheduleExceptions({ ...monthRange, organizationId: orgId }, signal),
+      getScheduleExceptions({ ...monthRange, branchId, organizationId: orgId }, signal),
     enabled: tab === "calendar",
   });
 
-  // Сотрудники скоупятся по активному филиалу на сервере (getDjangoEmployees
-  // поддерживает branchId). Правила и исключения — клиентски, см. ниже.
-  const branchId = activeBranch?.id ?? undefined;
   const employeesQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, branchId ?? null],
     queryFn: ({ signal }) => getDjangoEmployees({ pageSize: 200, branchId }, signal),
@@ -686,36 +698,11 @@ const DjangoSchedulePage: React.FC = () => {
 
   const employees = React.useMemo(() => employeesQuery.data?.results ?? [], [employeesQuery.data]);
 
-  /**
-   * Скоуп по филиалу.
-   *
-   * Бэкенд не умеет фильтровать правила по branchId (нет query-параметра), а у
-   * исключений branchId нет вовсе — поэтому режем на клиенте:
-   *  - правило видно, если оно этого филиала или общее (branchId = null);
-   *  - исключение видно, если его сотрудник виден в этом филиале.
-   * Без активного филиала (суперадмин «все филиалы») не фильтруем.
-   *
-   * ⚠ Семантика branchId = null («общее правило») — предположение фронта,
-   * вынесено в тикет MamaDoc/backend_ticket_scheduling_branch_scoping.md.
-   */
-  const rules = React.useMemo(() => {
-    const all = rulesQuery.data ?? [];
-    if (branchId == null) return all;
-    return all.filter((r) => r.branchId == null || r.branchId === branchId);
-  }, [rulesQuery.data, branchId]);
-
-  const visibleEmployeeIds = React.useMemo(() => new Set(employees.map((e) => e.id)), [employees]);
-
-  const scopeExceptions = React.useCallback(
-    (list: ScheduleException[]) =>
-      branchId == null ? list : list.filter((e) => visibleEmployeeIds.has(e.employeeId)),
-    [branchId, visibleEmployeeIds],
-  );
-
-  const exceptions = exceptionsQuery.data ?? [];
+  const rules = React.useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
+  const exceptions = React.useMemo(() => exceptionsQuery.data ?? [], [exceptionsQuery.data]);
   const monthExceptions = React.useMemo(
-    () => scopeExceptions(monthExceptionsQuery.data ?? []),
-    [monthExceptionsQuery.data, scopeExceptions],
+    () => monthExceptionsQuery.data ?? [],
+    [monthExceptionsQuery.data],
   );
   const employeesById = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   // Пул цветов — сотрудники со сменами в отображаемом периоде (месяц + 2
@@ -767,6 +754,7 @@ const DjangoSchedulePage: React.FC = () => {
         date: selectedDay.format("YYYY-MM-DD"),
         kind: "day_off",
         organizationId: orgId,
+        branchId,
       });
       void queryClient.invalidateQueries({ queryKey: ["django", "scheduling"] });
       notify?.({ type: "success", message: "Выходной отмечен" });
@@ -1116,6 +1104,7 @@ const DjangoSchedulePage: React.FC = () => {
         open={exceptionDialog.open}
         onClose={closeExceptionDialog}
         organizationId={orgId}
+        branchId={branchId}
         onSaved={invalidate}
         initialDate={exceptionDialog.date}
         initialKind={exceptionDialog.kind}

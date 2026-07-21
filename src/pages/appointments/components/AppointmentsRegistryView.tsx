@@ -269,10 +269,12 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   ];
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+  // allowOverlap: смена статуса не двигает слот, поэтому уже существующее
+  // пересечение не должно её блокировать (иначе бэк отдаёт 409 appointment_overlap).
   const handleConfirmVisit = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "confirmed" });
+        await updateAppointment(appt.id, { status: "confirmed", allowOverlap: true });
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -284,7 +286,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "arrived" });
+        await updateAppointment(appt.id, { status: "arrived", allowOverlap: true });
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });

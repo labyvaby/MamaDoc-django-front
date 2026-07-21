@@ -8,18 +8,27 @@ import { mockDelay, paginate, withOrg } from "./mockUtils";
  * Знания общие на организацию, скоупа по филиалам нет. Статьи редактирует
  * только админ (knowledge.manage).
  *
- * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md — НЕ менять без
- * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
- * на моках (KNOWLEDGE_USE_MOCKS = true); после деплоя бэка выключить флаг и
- * вернуть can-гейты (сайдбар, App.tsx), как делали с tasks/achievements.
+ * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md +
+ * frontend-knowledge-guide.md. Бэкенд реализован и проверен на живом API
+ * (21.07.2026, орг. 1): категории — плоский массив {id,name,position,isActive},
+ * статьи — DRF-пагинация {results,count,next,previous}, поля camelCase (DMR),
+ * detail отдаёт content (HTML). Фильтры category/search подтверждены; неизвестные
+ * query-параметры бэк молча игнорирует (не 400). Гейты (RequireModule/сайдбар)
+ * возвращаются автоматически после выключения флага — см. useModuleGate.
  *
  * ⚠ content — HTML: санитизация на бэке (allowlist тегов; iframe разрешён
  * ТОЛЬКО с src на youtube-nocookie.com/youtube.com — см. UPD тикета), фронт
  * рендерит ответ бэка как доверенный. Картинки в статьях — v2 (открытый
  * вопрос тикета), кнопки вставки изображения в редакторе нет.
+ *
+ * ⚠ Открытый вопрос (не подтверждён на живом API — на проде нет черновиков):
+ * фильтр публикации шлём как isPublished (camelCase, консистентно с остальными
+ * DMR-полями/фильтрами модуля). Если бэк ждёт иное имя — черновики не
+ * отфильтруются молча (неизвестный параметр игнорируется). Проверить, когда
+ * появится хотя бы один неопубликованный черновик.
  */
 
-export const KNOWLEDGE_USE_MOCKS = true;
+export const KNOWLEDGE_USE_MOCKS = false;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -263,7 +272,7 @@ export function getKnowledgeArticles(
   const q = new URLSearchParams();
   if (filters.category != null) q.set("category", String(filters.category));
   if (filters.search) q.set("search", filters.search);
-  if (filters.isPublished != null) q.set("is_published", String(filters.isPublished));
+  if (filters.isPublished != null) q.set("isPublished", String(filters.isPublished));
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));

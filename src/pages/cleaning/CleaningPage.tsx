@@ -5,6 +5,10 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   MenuItem,
   Stack,
@@ -25,6 +29,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
@@ -42,11 +47,12 @@ import {
   cascadeContainer,
   cascadeItem,
 } from "../../components/ui";
-import { getErrorMessage } from "../../api/client";
+import { ApiError, getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   CLEANING_USE_MOCKS,
   approveCleaningRecord,
+  deleteCleaningRecord,
   getCleaningActiveMonths,
   getCleaningRecords,
   getCleaningSummary,
@@ -123,6 +129,9 @@ const CleaningPage: React.FC = () => {
   // требовать право автоматически (см. useModuleGate).
   const canReport = moduleGate("cleaning", ["cleaning.report"]);
   const canManage = moduleGate("cleaning", ["cleaning.manage"]);
+  // Форму «Отметить уборку» открывает и уборщица (на себя), и менеджер
+  // (с ручным назначением исполнителя). У менеджера может не быть cleaning.report.
+  const canCreate = canReport || canManage;
 
   const [tab, setTab] = React.useState<"records" | "summary">("records");
   const [month, setMonth] = React.useState<Dayjs>(dayjs().startOf("month"));
@@ -199,6 +208,33 @@ const CleaningPage: React.FC = () => {
   // ── Подтверждение ─────────────────────────────────────────────────────────
   const [reviewBusyId, setReviewBusyId] = React.useState<number | null>(null);
 
+  // ── Удаление записи ───────────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = React.useState<CleaningRecord | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deleteCleaningRecord(deleteTarget.id, orgId);
+      notify?.({ type: "success", message: "Запись удалена" });
+      setDeleteTarget(null);
+      invalidate();
+    } catch (err) {
+      // 409 — approved-запись в замороженном месяце ЗП (зеркалит approve):
+      // удаление изменило бы закрытый период, бэк не даёт до разморозки.
+      setDeleteError(
+        err instanceof ApiError && err.status === 409
+          ? "Месяц закрыт в зарплате — удалить подтверждённую уборку нельзя, пока бухгалтер не разморозит период."
+          : getErrorMessage(err),
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   // useCallback с orgId в зависимостях: колонки мемоизированы и без этого
   // захватывали бы orgId на момент первого рендера (stale closure).
   const handleApprove = React.useCallback(
@@ -209,7 +245,13 @@ const CleaningPage: React.FC = () => {
         notify?.({ type: "success", message: "Уборка подтверждена" });
         invalidate();
       } catch (err) {
-        notify?.({ type: "error", message: "Не удалось подтвердить", description: getErrorMessage(err) });
+        // 409 — месяц уже заморожен в ЗП (бухгалтер закрыл период): повтор без
+        // разморозки бессмыслен, показываем понятную причину (guide §3.4).
+        const description =
+          err instanceof ApiError && err.status === 409
+            ? "Месяц закрыт в зарплате — подтверждение недоступно, пока бухгалтер не разморозит период."
+            : getErrorMessage(err);
+        notify?.({ type: "error", message: "Не удалось подтвердить", description });
       } finally {
         setReviewBusyId(null);
       }
@@ -238,12 +280,14 @@ const CleaningPage: React.FC = () => {
             <Typography variant="body2" fontWeight={500} noWrap>
               {p.row.typeName}
             </Typography>
-            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.secondary" }}>
-              <StoreOutlined sx={{ fontSize: 14 }} />
-              <Typography variant="caption" noWrap>
-                {p.row.branchName}
-              </Typography>
-            </Stack>
+            {p.row.branchName && (
+              <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.secondary" }}>
+                <StoreOutlined sx={{ fontSize: 14 }} />
+                <Typography variant="caption" noWrap>
+                  {p.row.branchName}
+                </Typography>
+              </Stack>
+            )}
           </Stack>
         ),
       },
@@ -312,31 +356,52 @@ const CleaningPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: canManage ? 100 : 20,
+        width: canManage ? 132 : 20,
         sortable: false,
         align: "right",
         headerAlign: "right",
-        renderCell: (p) =>
-          canManage && p.row.status === "pending" ? (
+        renderCell: (p) => {
+          if (!canManage) return null;
+          return (
             <Stack direction="row" gap={0.25} alignItems="center" sx={{ height: "100%" }}>
               {reviewBusyId === p.row.id ? (
                 <CircularProgress size={18} />
               ) : (
                 <>
-                  <Tooltip title="Подтвердить">
-                    <IconButton size="small" color="success" onClick={() => handleApprove(p.row)}>
-                      <CheckOutlined fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Отклонить">
-                    <IconButton size="small" color="error" onClick={() => setRejectTarget(p.row)}>
-                      <CloseOutlined fontSize="small" />
+                  {p.row.status === "pending" && (
+                    <>
+                      <Tooltip title="Подтвердить">
+                        <IconButton
+                          size="small"
+                          color="success"
+                          onClick={() => handleApprove(p.row)}
+                        >
+                          <CheckOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Отклонить">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => setRejectTarget(p.row)}
+                        >
+                          <CloseOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  )}
+                  {/* Удаление — для любого статуса: исправление ошибочных
+                      подтверждений/дублей (тикет cleaning-record-cancel). */}
+                  <Tooltip title="Удалить запись">
+                    <IconButton size="small" onClick={() => setDeleteTarget(p.row)}>
+                      <DeleteOutlineOutlined fontSize="small" />
                     </IconButton>
                   </Tooltip>
                 </>
               )}
             </Stack>
-          ) : null,
+          );
+        },
       },
     ],
     [canManage, reviewBusyId, theme.palette.divider, handleApprove],
@@ -347,7 +412,7 @@ const CleaningPage: React.FC = () => {
       <PageHeader
         title="Уборка"
         showTitle={false}
-        onAdd={canReport ? () => setReportOpen(true) : undefined}
+        onAdd={canCreate ? () => setReportOpen(true) : undefined}
         addButtonText="Отметить уборку"
         addButtonIcon={<AddAPhotoOutlined />}
         dateNavigation={
@@ -494,12 +559,12 @@ const CleaningPage: React.FC = () => {
                     icon={<CleaningServicesOutlined />}
                     title="За этот месяц уборок нет"
                     description={
-                      canReport
+                      canCreate
                         ? "Отметьте уборку с фотоотчётом — администратор подтвердит её, и она попадёт в зарплату."
                         : "Здесь появятся записи с фотоотчётами, когда сотрудники начнут отмечать уборки."
                     }
                     action={
-                      canReport ? (
+                      canCreate ? (
                         <Button
                           variant="outlined"
                           startIcon={<AddAPhotoOutlined />}
@@ -539,6 +604,7 @@ const CleaningPage: React.FC = () => {
       <ReportDialog
         open={reportOpen}
         activeTypes={activeTypes}
+        canAssign={canManage}
         onClose={() => setReportOpen(false)}
         onSuccess={invalidate}
       />
@@ -555,6 +621,48 @@ const CleaningPage: React.FC = () => {
         onClose={() => setRejectTarget(null)}
         onSuccess={invalidate}
       />
+
+      {/* Удаление записи об уборке */}
+      <Dialog
+        open={deleteTarget !== null}
+        onClose={deleteBusy ? undefined : () => setDeleteTarget(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Удалить запись об уборке?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {deleteTarget?.typeName}
+            {deleteTarget?.employeeName ? ` · ${deleteTarget.employeeName}` : ""} будет
+            удалена вместе с фотоотчётом, без возможности восстановления.
+          </Typography>
+          {deleteTarget?.status === "approved" && (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>
+              Уборка подтверждена и учтена в зарплате — после удаления сумма за
+              этот месяц у сотрудника уменьшится.
+            </Alert>
+          )}
+          {deleteError && (
+            <Alert severity="error" sx={{ mt: 1.5 }}>
+              {deleteError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)} disabled={deleteBusy}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDelete}
+            disabled={deleteBusy}
+            startIcon={deleteBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {deleteBusy ? "Удаление…" : "Удалить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
