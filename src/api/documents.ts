@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
@@ -284,13 +284,22 @@ export function updateDocument(
   });
 }
 
-export function deleteDocument(documentId: number, organizationId?: number): Promise<void> {
+export async function deleteDocument(documentId: number, organizationId?: number): Promise<void> {
   if (DOCUMENTS_USE_MOCKS) {
     const idx = mockDocs.findIndex((d) => d.id === documentId);
     if (idx >= 0) mockDocs.splice(idx, 1);
     return mockDelay(undefined);
   }
-  return apiRequest<void>(withOrg(`/documents/${documentId}/`, organizationId), {
-    method: "DELETE",
-  });
+  try {
+    await apiRequest<void>(withOrg(`/documents/${documentId}/`, organizationId), {
+      method: "DELETE",
+    });
+  } catch (err) {
+    // Бэк удаляет запись из БД ДО файла в Storage: если Storage зависает, Nginx
+    // отвечает 503, но документ уже удалён (подтверждено бэком 21.07.2026).
+    // Трактуем 503 как успех — иначе пользователь видит ложную ошибку и жмёт
+    // «Удалить» повторно уже по отсутствующей записи.
+    if (err instanceof ApiError && err.status === 503) return;
+    throw err;
+  }
 }
