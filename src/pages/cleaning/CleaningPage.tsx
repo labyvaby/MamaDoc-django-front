@@ -42,7 +42,7 @@ import {
   cascadeContainer,
   cascadeItem,
 } from "../../components/ui";
-import { getErrorMessage } from "../../api/client";
+import { ApiError, getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   CLEANING_USE_MOCKS,
@@ -212,7 +212,13 @@ const CleaningPage: React.FC = () => {
         notify?.({ type: "success", message: "Уборка подтверждена" });
         invalidate();
       } catch (err) {
-        notify?.({ type: "error", message: "Не удалось подтвердить", description: getErrorMessage(err) });
+        // 409 — месяц уже заморожен в ЗП (бухгалтер закрыл период): повтор без
+        // разморозки бессмыслен, показываем понятную причину (guide §3.4).
+        const description =
+          err instanceof ApiError && err.status === 409
+            ? "Месяц закрыт в зарплате — подтверждение недоступно, пока бухгалтер не разморозит период."
+            : getErrorMessage(err);
+        notify?.({ type: "error", message: "Не удалось подтвердить", description });
       } finally {
         setReviewBusyId(null);
       }
@@ -241,12 +247,14 @@ const CleaningPage: React.FC = () => {
             <Typography variant="body2" fontWeight={500} noWrap>
               {p.row.typeName}
             </Typography>
-            <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.secondary" }}>
-              <StoreOutlined sx={{ fontSize: 14 }} />
-              <Typography variant="caption" noWrap>
-                {p.row.branchName}
-              </Typography>
-            </Stack>
+            {p.row.branchName && (
+              <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.secondary" }}>
+                <StoreOutlined sx={{ fontSize: 14 }} />
+                <Typography variant="caption" noWrap>
+                  {p.row.branchName}
+                </Typography>
+              </Stack>
+            )}
           </Stack>
         ),
       },

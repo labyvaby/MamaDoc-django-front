@@ -73,7 +73,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   // Список уборщиц — грузим только когда селектор нужен (canAssign) и открыт.
   const employeesQuery = useQuery({
     queryKey: djangoQueryKeys.cleaning.employees(orgId ?? null),
-    queryFn: ({ signal }) => getCleaningEmployees(signal),
+    queryFn: ({ signal }) => getCleaningEmployees(orgId, signal),
     enabled: open && canAssign,
   });
   const employees = employeesQuery.data ?? [];
@@ -230,7 +230,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
                 employeesQuery.isError
                   ? "Не удалось загрузить список — попробуйте позже"
                   : employeesQuery.isSuccess && employees.length === 0
-                    ? "Нет сотрудников с ролью «Уборщица»"
+                    ? "Нет сотрудников с правом на уборку и учётной записью"
                     : "На кого записать уборку"
               }
             >

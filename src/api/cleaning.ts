@@ -1,6 +1,5 @@
 import { apiRequest } from "./client";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
-import { getDjangoEmployees } from "./staff";
 
 /**
  * Модуль «Уборка» — учёт уборок с фотоотчётом и выплатой в ЗП.
@@ -8,15 +7,18 @@ import { getDjangoEmployees } from "./staff";
  * фото, админ подтверждает или отклоняет; в ЗП попадает только
  * подтверждённое (Σ ставка типа × количество).
  *
- * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_cleaning_module.md — НЕ менять без
- * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
- * на моках (CLEANING_USE_MOCKS = true); после деплоя бэка выключить флаг и
- * вернуть can-гейты (сайдбар, App.tsx, SettingsLayout), как делали с tasks.
+ * Контракт: frontend-cleaning-guide.md (бэк, 21.07.2026) — реализован полностью
+ * по тикету со всеми UPD-правками (15.07 и 20.07.2026). НЕ менять без
+ * согласования с бэкенд-командой.
+ * Интеграция сделана 21.07.2026: CLEANING_USE_MOCKS = false; гейты (роут
+ * RequireModule в App.tsx, пункт сайдбара, вкладка настроек) включаются
+ * автоматически через useModuleGate по этому флагу. Моки оставлены для
+ * локальной отладки.
  * UPD 15.07.2026: зоны уборки заменены на типы уборки со ставкой за тип
  * (единая ставка организации удалена) — отражено в тикете тем же UPD.
  */
 
-export const CLEANING_USE_MOCKS = true;
+export const CLEANING_USE_MOCKS = false;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,9 +42,9 @@ export interface CleaningRecord {
   id: number;
   typeId: number;
   typeName: string;
-  /** Филиал записи — активный филиал сотрудника на момент отметки. */
-  branchId: number;
-  branchName: string;
+  /** Филиал записи — активный филиал сотрудника на момент отметки; может быть null. */
+  branchId: number | null;
+  branchName: string | null;
   employeeId: number;
   employeeName: string;
   status: CleaningRecordStatus;
@@ -86,8 +88,8 @@ export interface CleaningSummaryRow {
   approvedCount: number;
   pendingCount: number;
   rejectedCount: number;
-  /** Σ по подтверждённым: ставка типа × количество, сом (считает бэк). */
-  amount: number;
+  /** Σ по подтверждённым, сом — decimal строкой ("2700.00"), считает бэк. */
+  amount: string;
 }
 
 // Валидации зеркалят тикет: бэк — источник правды, фронт проверяет до отправки.
@@ -191,21 +193,23 @@ export function getCleaningTypes(
 
 /**
  * Кандидаты-исполнители для ручного назначения уборки (селектор виден только
- * cleaning.manage). Уборщица = сотрудник с ролью `cleaner`, которой раздаётся
- * cleaning.report (см. тикет cleaning-модуля). Признака «есть право X» список
- * /staff/employees не отдаёт, поэтому фильтруем по role.code === "cleaner".
- * Если бэк заведёт выделенный /cleaning/employees/ (кандидаты по cleaning.report)
- * — переключить сюда, фильтр по роли убрать. См. «Открытые вопросы» тикета.
+ * cleaning.manage). Выделенный эндпоинт бэка /cleaning/employees/ (guide §3.7):
+ * возвращает только сотрудников, у кого реально есть право cleaning.report в
+ * этой организации (проверка по фактической роли, не по имени роли). Клиентский
+ * фильтр по role.code === "cleaner" больше не нужен. Сотрудники без учётной
+ * записи в список не попадают — им назначить уборку через это API нельзя.
  */
-export function getCleaningEmployees(signal?: AbortSignal): Promise<CleaningEmployee[]> {
+export function getCleaningEmployees(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<CleaningEmployee[]> {
   if (CLEANING_USE_MOCKS) {
     return mockDelay([...mockCleaners]);
   }
-  return getDjangoEmployees({ status: "active", pageSize: 200 }, signal).then((page) =>
-    page.results
-      .filter((e) => e.role?.code === "cleaner")
-      .map((e) => ({ id: e.id, fullName: e.fullName })),
-  );
+  return apiRequest<CleaningEmployee[]>(
+    withOrg("/cleaning/employees/", organizationId),
+    { signal },
+  ).then((items) => (Array.isArray(items) ? items : []));
 }
 
 export interface CleaningTypePayload {
@@ -405,7 +409,8 @@ export function getCleaningSummary(
   if (CLEANING_USE_MOCKS) {
     const rateOf = (typeId: number) =>
       Number(mockTypes.find((t) => t.id === typeId)?.rate) || 0;
-    const byEmployee = new Map<number, CleaningSummaryRow>();
+    // amount копим числом, на выходе приводим к decimal-строке (как отдаёт бэк).
+    const byEmployee = new Map<number, CleaningSummaryRow & { amountNum: number }>();
     for (const r of mockRecords) {
       if (!r.createdAt.startsWith(params.month)) continue;
       if (params.branch != null && r.branchId !== params.branch) continue;
@@ -417,19 +422,20 @@ export function getCleaningSummary(
           approvedCount: 0,
           pendingCount: 0,
           rejectedCount: 0,
-          amount: 0,
+          amount: "0.00",
+          amountNum: 0,
         };
         byEmployee.set(r.employeeId, row);
       }
       if (r.status === "approved") {
         row.approvedCount += 1;
-        row.amount += rateOf(r.typeId);
+        row.amountNum += rateOf(r.typeId);
       } else if (r.status === "pending") row.pendingCount += 1;
       else row.rejectedCount += 1;
     }
-    const rows = [...byEmployee.values()].sort((a, b) =>
-      a.employeeName.localeCompare(b.employeeName),
-    );
+    const rows: CleaningSummaryRow[] = [...byEmployee.values()]
+      .sort((a, b) => a.employeeName.localeCompare(b.employeeName))
+      .map(({ amountNum, ...row }) => ({ ...row, amount: amountNum.toFixed(2) }));
     return mockDelay(rows);
   }
   const q = new URLSearchParams({ month: params.month });

@@ -88,7 +88,7 @@ const SummaryTable: React.FC<SummaryTableProps> = ({ rows, loading, error }) => 
               <TableCell align="right">{row.pendingCount}</TableCell>
               <TableCell align="right">{row.rejectedCount}</TableCell>
               <TableCell align="right" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                <AnimatedAmount value={row.amount} />
+                <AnimatedAmount value={Number(row.amount) || 0} />
               </TableCell>
             </TableRow>
           ))}
