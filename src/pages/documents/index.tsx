@@ -71,13 +71,21 @@ const PAGE_SIZE = 20;
 
 const MotionBox = motion(Box);
 
-function getFileExt(name: string): string {
-  return name.split(".").pop()?.toLowerCase() ?? "";
+/**
+ * Расширение из имени файла ИЛИ из URL. Отображаемое имя (name) пользователь
+ * может задать без расширения («Устав организации») — тогда тип определяем по
+ * fileUrl реального файла. Из URL отбрасываем query/hash и берём последний
+ * сегмент пути.
+ */
+function getFileExt(source: string | null | undefined): string {
+  if (!source) return "";
+  const base = source.split(/[?#]/)[0].split("/").pop() ?? "";
+  return base.includes(".") ? base.split(".").pop()!.toLowerCase() : "";
 }
 
 /** Иконка по типу файла — чтобы список читался «как гугл-драйв». */
-function FileIcon({ name }: { name: string }) {
-  const ext = getFileExt(name);
+function FileIcon({ source }: { source: string }) {
+  const ext = getFileExt(source);
   if (ext === "pdf") return <PictureAsPdfOutlined fontSize="small" color="error" />;
   if (ext === "jpg" || ext === "jpeg" || ext === "png")
     return <ImageOutlined fontSize="small" color="success" />;
@@ -270,6 +278,7 @@ const DocumentsPage: React.FC = () => {
   // ── Изменение (имя + доступ по ролям) ─────────────────────────────────────
   const [editTarget, setEditTarget] = React.useState<OrganizationDocument | null>(null);
   const [editName, setEditName] = React.useState("");
+  const [editScope, setEditScope] = React.useState<Exclude<BranchScope, "all">>("shared");
   const [editRoles, setEditRoles] = React.useState<DocumentRoleOption[]>([]);
   const [editBusy, setEditBusy] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
@@ -277,6 +286,7 @@ const DocumentsPage: React.FC = () => {
   const openEdit = (doc: OrganizationDocument) => {
     setEditTarget(doc);
     setEditName(doc.name);
+    setEditScope(doc.branchId == null ? "shared" : String(doc.branchId));
     setEditRoles(
       doc.visibleRoleIds.map((id, i) => ({
         id,
@@ -293,7 +303,11 @@ const DocumentsPage: React.FC = () => {
     try {
       await updateDocument(
         editTarget.id,
-        { name: editName.trim(), visibleRoleIds: editRoles.map((r) => r.id) },
+        {
+          name: editName.trim(),
+          branchId: editScope === "shared" ? null : Number(editScope),
+          visibleRoleIds: editRoles.map((r) => r.id),
+        },
         orgId,
       );
       notify?.({ type: "success", message: "Документ обновлён" });
@@ -347,7 +361,7 @@ const DocumentsPage: React.FC = () => {
               "&:hover .doc-name": { textDecoration: "underline" },
             }}
           >
-            <FileIcon name={p.row.name} />
+            <FileIcon source={p.row.fileUrl} />
             <Typography
               variant="body2"
               className="doc-name"
@@ -661,7 +675,7 @@ const DocumentsPage: React.FC = () => {
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             {uploadFile && (
               <Stack direction="row" alignItems="center" gap={1} sx={{ color: "text.secondary" }}>
-                <FileIcon name={uploadFile.name} />
+                <FileIcon source={uploadFile.name} />
                 <Typography variant="body2" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                   {uploadFile.name} · {formatFileSize(uploadFile.size)}
                 </Typography>
@@ -754,6 +768,25 @@ const DocumentsPage: React.FC = () => {
                 }
               }}
             />
+            {branches.length > 0 && (
+              <TextField
+                select
+                label="Область"
+                size="small"
+                fullWidth
+                value={editScope}
+                onChange={(e) => setEditScope(e.target.value as Exclude<BranchScope, "all">)}
+                disabled={editBusy}
+                helperText="Общий документ виден во всех филиалах"
+              >
+                <MenuItem value="shared">Общий (вся организация)</MenuItem>
+                {branches.map((b) => (
+                  <MenuItem key={b.id} value={String(b.id)}>
+                    {b.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
             <Autocomplete<DocumentRoleOption, true>
               multiple
               size="small"

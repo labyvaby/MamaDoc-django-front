@@ -5,13 +5,25 @@ import { mockDelay, paginate, withOrg } from "./mockUtils";
  * Модуль «Документы организации» — плоское файловое хранилище уровня
  * организации (уставные документы, лицензии, договоры).
  *
- * Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_documents_module.md — НЕ менять без
- * согласования с бэкенд-командой. Бэкенд ещё не реализован — модуль работает
- * на моках (DOCUMENTS_USE_MOCKS = true); после деплоя бэка выключить флаг и
- * вернуть can-гейты (сайдбар, App.tsx), как делали с tasks/achievements.
+ * ⚠ Контракт живого бэка проверен E2E 21.07.2026 (localhost → newcrm.pediatr.kg).
+ * Присланный «frontend_integration_guide (Organization Documents)» НЕ совпал с
+ * задеплоенным API — не использовать его как источник правды. Реально бэк отдаёт:
+ *   • GET /documents/ — DRF-пагинацию {results,count,next,previous} (НЕ массив);
+ *     поддержаны query search / branch (id или "null" — только общие) /
+ *     page / pageSize / organizationId (последний обязателен суперпользователю);
+ *   • ПЛОСКИЕ camelCase-поля: fileUrl, fileSize, branchId, branchName,
+ *     visibleRoleIds, visibleRoleNames, uploadedByName, createdAt (без
+ *     contentType/updatedAt и без вложенных объектов из гайда);
+ *   • POST /documents/ — multipart, 201; PATCH — JSON, принимает name /
+ *     branchId (number → филиал, null → общий) / visibleRoleIds ([] — снять
+ *     ограничение); DELETE — 204.
+ *
+ * Флаг DOCUMENTS_USE_MOCKS выключен — работаем с живым бэком. Гейты
+ * (RequireModule в App.tsx, пункт сайдбара, вкладка настроек) начинают требовать
+ * права documents.* автоматически через useModuleGate (см. moduleMapping.ts).
  */
 
-export const DOCUMENTS_USE_MOCKS = true;
+export const DOCUMENTS_USE_MOCKS = false;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,8 +38,8 @@ export interface OrganizationDocument {
   branchId: number | null;
   branchName: string | null;
   /**
-   * Доступ по ролям (UPD 15.07.2026): пустой массив — виден всем сотрудникам
-   * с documents.view; непустой — только этим ролям + всем с documents.manage.
+   * Доступ по ролям: пустой массив — виден всем сотрудникам с documents.view;
+   * непустой — только этим ролям + всем с documents.manage.
    */
   visibleRoleIds: number[];
   visibleRoleNames: string[];
@@ -179,8 +191,7 @@ export function getDocuments(
 
 /**
  * Роли организации для селекта доступа. На живом бэке — GET /rbac/roles/
- * (эндпоинт уже существует); правка формы селекта не требует изменений тикета
- * documents.
+ * (эндпоинт уже существует).
  */
 export function getDocumentRoleOptions(
   organizationId?: number,
@@ -242,6 +253,8 @@ export function uploadDocument(payload: UploadDocumentPayload): Promise<Organiza
 
 export interface UpdateDocumentPayload {
   name?: string;
+  /** number — привязать к филиалу; null — сделать общим (не передавать — не менять). */
+  branchId?: number | null;
   /** Пустой массив снимает ограничение (документ снова виден всем). */
   visibleRoleIds?: number[];
 }
@@ -255,6 +268,10 @@ export function updateDocument(
     const doc = mockDocs.find((d) => d.id === documentId);
     if (!doc) return Promise.reject(new Error("Документ не найден (мок)"));
     if (payload.name !== undefined) doc.name = payload.name;
+    if (payload.branchId !== undefined) {
+      doc.branchId = payload.branchId;
+      doc.branchName = payload.branchId != null ? `Филиал #${payload.branchId}` : null;
+    }
     if (payload.visibleRoleIds !== undefined) {
       doc.visibleRoleIds = payload.visibleRoleIds;
       doc.visibleRoleNames = mockRoleNames(payload.visibleRoleIds);
