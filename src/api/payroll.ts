@@ -33,6 +33,12 @@ export interface PayrollRow {
    * May be absent on older backends — treat undefined as "0.00".
    */
   productPay?: string;
+  /**
+   * Заработок с подтверждённых уборок за месяц (Σ ставок типов). Включён в
+   * `earnings`/`netSalary` (контракт cleaning, guide §5). Отдельно дёргать не
+   * нужно. May be absent on older backends — treat undefined as "0.00".
+   */
+  cleaningEarnings?: string;
   earnings: string;
   advances: string;
   netSalary: string;

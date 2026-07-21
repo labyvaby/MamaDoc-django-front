@@ -398,6 +398,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.earnings)}
                     </Typography>
                   </Stack>
+                  {parseFloat(row.cleaningEarnings || "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                        в т.ч. уборки
+                      </Typography>
+                      <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
+                        {formatKGS(row.cleaningEarnings as string)}
+                      </Typography>
+                    </Stack>
+                  )}
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
                       Авансы
@@ -671,6 +681,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         <Typography variant="body2" color="text.secondary">Начислено по дням:</Typography>
                         <Typography variant="body2" fontWeight={700}>{formatKGS(row.earnings)}</Typography>
                       </Stack>
+                      {parseFloat(row.cleaningEarnings || "0") > 0 && (
+                        <Stack direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
+                          <Typography variant="caption" color="text.secondary">в т.ч. уборки:</Typography>
+                          <Typography variant="caption" fontWeight={700}>
+                            {formatKGS(row.cleaningEarnings as string)}
+                          </Typography>
+                        </Stack>
+                      )}
                       <Stack direction="row" justifyContent="space-between">
                         <Typography variant="body2" color="text.secondary">Выплачено авансов:</Typography>
                         <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.advances)}</Typography>
