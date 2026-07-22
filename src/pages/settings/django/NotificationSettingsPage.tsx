@@ -233,14 +233,14 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                     <Divider />
                     <CardContent>
                       <Stack spacing={2}>
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                           <TextField
                             select
                             size="small"
                             label="Канал"
                             value={rule.channel}
                             onChange={(e) => updateRule(index, { channel: e.target.value })}
-                            sx={{ width: { xs: "100%", sm: 180 } }}
+                            sx={{ width: { xs: "100%", md: 180 } }}
                           >
                             {Object.entries(CHANNEL_LABEL).map(([value, label]) => (
                               <MenuItem key={value} value={value}>{label}</MenuItem>
@@ -254,7 +254,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                             onChange={(e) =>
                               updateRule(index, { offsetMinutes: Math.max(0, Number(e.target.value) || 0) })
                             }
-                            sx={{ width: { xs: "100%", sm: 200 } }}
+                            sx={{ width: { xs: "100%", md: 200 } }}
                           />
                         </Stack>
 

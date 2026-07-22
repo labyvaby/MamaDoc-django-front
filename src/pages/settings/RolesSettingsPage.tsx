@@ -730,8 +730,8 @@ const RolesSettingsPage: React.FC = () => {
       <Stack spacing={2} sx={{ height: "100%" }}>
         {/* Header */}
         <Stack
-          direction={{ xs: "column", sm: "row" }}
-          alignItems={{ xs: "flex-start", sm: "center" }}
+          direction={{ xs: "column", md: "row" }}
+          alignItems={{ xs: "flex-start", md: "center" }}
           justifyContent="space-between"
           gap={1.5}
         >
@@ -750,7 +750,12 @@ const RolesSettingsPage: React.FC = () => {
             )}
           </Stack>
 
-          <Stack direction="row" gap={1} alignItems="center">
+          <Stack
+            direction="row"
+            gap={1}
+            alignItems="center"
+            sx={{ width: { xs: "100%", md: "auto" } }}
+          >
             <TextField
               size="small"
               placeholder="Поиск роли…"
@@ -763,7 +768,7 @@ const RolesSettingsPage: React.FC = () => {
                   </InputAdornment>
                 ),
               }}
-              sx={{ width: { xs: "100%", sm: 220 } }}
+              sx={{ flex: { xs: 1, md: "none" }, width: { md: 220 }, minWidth: 0 }}
             />
             <CanAccess permissions="rbac.roles.create">
               <AppButton
@@ -771,6 +776,7 @@ const RolesSettingsPage: React.FC = () => {
                 startIcon={<AddOutlined />}
                 onClick={handleOpenCreate}
                 disabled={loading}
+                sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
               >
                 Создать роль
               </AppButton>
