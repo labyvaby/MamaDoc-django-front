@@ -31,6 +31,7 @@ import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import { useNotification } from "@refinedev/core";
 import { CustomDatePicker } from "../ui";
 import dayjs from "dayjs";
+import { formatPatientAge } from "../../utility/age";
 import {
   composePhone,
   parsePhone,
@@ -322,9 +323,16 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
 
             {/* ── Дата рождения ── */}
             <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Дата рождения
-              </Typography>
+              <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Дата рождения
+                </Typography>
+                {formatPatientAge(birth) && (
+                  <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
+                    {formatPatientAge(birth)}
+                  </Typography>
+                )}
+              </Stack>
               <CustomDatePicker
                 value={birth ? dayjs(birth) : null}
                 onChange={(val) => setBirth(val ? val.format("YYYY-MM-DD") : "")}
