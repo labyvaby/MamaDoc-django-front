@@ -12,6 +12,8 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -34,6 +36,7 @@ import {
   deletePatientPhoto,
   getPatient,
   type DjangoPatient,
+  type PatientGender,
 } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
@@ -63,6 +66,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
   const [birth, setBirth] = React.useState("");
+  const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
@@ -82,6 +86,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
     const maxLen = getPhoneLocalMaxLength(parsed.countryCode);
     setPhone(parsed.local.replace(/[^\d]/g, "").slice(0, maxLen));
     setBirth(patient.birthDate || "");
+    setGender(patient.gender || "unknown");
     setAddress(patient.address || "");
     setInn(patient.inn || "");
     setIsBlacklisted(patient.isBlacklisted || false);
@@ -129,6 +134,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
         fullName: fioTrim,
         phone: fullPhone || undefined,
         birthDate: birth || null,
+        gender,
         address: address.trim() || null,
         inn: inn.trim() || undefined,
         isBlacklisted: canManageBlacklist ? isBlacklisted : undefined,
@@ -321,6 +327,24 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                   },
                 }}
               />
+            </Stack>
+
+            {/* ── Пол ── */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Пол
+              </Typography>
+              <ToggleButtonGroup
+                value={gender === "unknown" ? null : gender}
+                exclusive
+                onChange={(_, val) => setGender((val as PatientGender) ?? "unknown")}
+                disabled={busy}
+                fullWidth
+                size="small"
+              >
+                <ToggleButton value="male">Мальчик</ToggleButton>
+                <ToggleButton value="female">Девочка</ToggleButton>
+              </ToggleButtonGroup>
             </Stack>
 
             {/* ── Адрес ── */}

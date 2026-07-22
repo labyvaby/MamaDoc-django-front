@@ -16,6 +16,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import LocalPhoneOutlinedIcon from "@mui/icons-material/LocalPhoneOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import WcOutlinedIcon from "@mui/icons-material/WcOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import dayjs from "dayjs";
@@ -232,6 +233,18 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                   <Typography variant="body2" fontWeight={500}>
                     {dayjs(patient.birthDate).format("DD.MM.YYYY")}
                     {ageLabel(patient.birthDate) ? ` (${ageLabel(patient.birthDate)})` : ""}
+                  </Typography>
+                </Stack>
+              )}
+
+              {(patient.gender === "male" || patient.gender === "female") && (
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <WcOutlinedIcon fontSize="small" color="action" />
+                  <Typography variant="body2" color="text.secondary">
+                    Пол:
+                  </Typography>
+                  <Typography variant="body2" fontWeight={500}>
+                    {patient.gender === "male" ? "Мальчик" : "Девочка"}
                   </Typography>
                 </Stack>
               )}
