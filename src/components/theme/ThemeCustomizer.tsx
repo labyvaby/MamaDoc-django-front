@@ -40,14 +40,22 @@ import {
   DEFAULT_LIGHT_SURFACE,
   DEFAULT_DARK_SURFACE,
   DEFAULT_CARD_SKIN,
+  DEFAULT_UI_SCALE,
   type CardSkin,
   type SurfacePreset,
+  type UiScale,
 } from "../../theme";
 
 const SCHEME_OPTIONS: { value: ColorScheme; label: string; icon: React.ReactNode }[] = [
   { value: "light", label: "День", icon: <LightModeOutlined fontSize="small" /> },
   { value: "dark", label: "Ночь", icon: <DarkModeOutlined fontSize="small" /> },
   { value: "system", label: "Система", icon: <SettingsBrightnessOutlined fontSize="small" /> },
+];
+
+const SCALE_OPTIONS: { value: UiScale; label: string; letterSize: number }[] = [
+  { value: "compact", label: "Компактный", letterSize: 12 },
+  { value: "normal", label: "Обычный", letterSize: 15 },
+  { value: "large", label: "Крупный", letterSize: 18 },
 ];
 
 const SectionTitle: React.FC<{ children: React.ReactNode; first?: boolean }> = ({
@@ -242,6 +250,8 @@ const ThemeCustomizerContent: React.FC<{
     setDarkSurface,
     cardSkin,
     setCardSkin,
+    uiScale,
+    setUiScale,
     reset,
   } = React.useContext(ColorModeContext);
 
@@ -269,7 +279,8 @@ const ThemeCustomizerContent: React.FC<{
     primaryColor === DEFAULT_PRIMARY &&
     lightSurface === DEFAULT_LIGHT_SURFACE &&
     darkSurface === DEFAULT_DARK_SURFACE &&
-    cardSkin === DEFAULT_CARD_SKIN;
+    cardSkin === DEFAULT_CARD_SKIN &&
+    uiScale === DEFAULT_UI_SCALE;
 
   return (
     <Box sx={{ width: fullWidth ? "100%" : { xs: "calc(100vw - 32px)", sm: 320 }, maxWidth: fullWidth ? "100%" : 360 }}>
@@ -305,6 +316,30 @@ const ThemeCustomizerContent: React.FC<{
           {SCHEME_OPTIONS.map((o) => (
             <ToggleButton key={o.value} value={o.value} sx={{ flexDirection: "column", gap: 0.5, py: 1 }}>
               {o.icon}
+              <Typography variant="caption" fontWeight={600}>
+                {o.label}
+              </Typography>
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+
+        {/* Размер интерфейса */}
+        <SectionTitle>Размер интерфейса</SectionTitle>
+        <ToggleButtonGroup
+          value={uiScale}
+          exclusive
+          fullWidth
+          size="small"
+          onChange={(_, val) => val && setUiScale(val as UiScale)}
+        >
+          {SCALE_OPTIONS.map((o) => (
+            <ToggleButton key={o.value} value={o.value} sx={{ flexDirection: "column", gap: 0.25, py: 1 }}>
+              <Box
+                component="span"
+                sx={{ fontSize: o.letterSize, fontWeight: 700, lineHeight: 1 }}
+              >
+                А
+              </Box>
               <Typography variant="caption" fontWeight={600}>
                 {o.label}
               </Typography>

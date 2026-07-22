@@ -161,17 +161,29 @@ export const DEFAULT_DARK_SURFACE = "navy";
 export type CardSkin = "bordered" | "shadow";
 export const DEFAULT_CARD_SKIN: CardSkin = "bordered";
 
+/** Размер интерфейса — масштаб типографики. */
+export type UiScale = "compact" | "normal" | "large";
+export const DEFAULT_UI_SCALE: UiScale = "normal";
+/** Множитель базового кегля (MUI typography.fontSize = 14 по умолчанию). */
+export const UI_SCALE_FACTORS: Record<UiScale, number> = {
+  compact: 0.875, // 14px
+  normal: 1, // 16px
+  large: 1.15, // ~18.4px
+};
+
 export type ThemeCustomization = {
   primaryColor?: string;
   surface?: { default: string; paper: string };
   cardSkin?: CardSkin;
+  uiScale?: UiScale;
 };
 
 export function getAppTheme(
   mode: PaletteMode | string,
   custom: ThemeCustomization = {},
 ): Theme {
-  const { primaryColor, surface, cardSkin = DEFAULT_CARD_SKIN } = custom;
+  const { primaryColor, surface, cardSkin = DEFAULT_CARD_SKIN, uiScale = DEFAULT_UI_SCALE } = custom;
+  const fontScale = UI_SCALE_FACTORS[uiScale] ?? 1;
   const m = (mode === "dark" ? "dark" : "light") as PaletteMode;
   const base = m === "light" ? RefineThemes.Blue : RefineThemes.BlueDark;
 
@@ -364,6 +376,12 @@ export function getAppTheme(
           },
           ":root": {
             colorScheme: m,
+          },
+          // Размер интерфейса: корневой кегль <html> задаёт базу для всех rem,
+          // поэтому масштабирует весь текст MUI при рендере (варианты в rem).
+          // База браузера — 16px.
+          html: {
+            fontSize: `${16 * fontScale}px`,
           },
           // Единое фокус-кольцо для клавиатурной навигации: только :focus-visible,
           // чтобы не мешать кликам мышью. Цвет — из primary, работает в обеих темах.

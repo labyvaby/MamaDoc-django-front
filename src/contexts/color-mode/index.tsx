@@ -6,7 +6,9 @@ import {
   DEFAULT_LIGHT_SURFACE,
   DEFAULT_DARK_SURFACE,
   DEFAULT_CARD_SKIN,
+  DEFAULT_UI_SCALE,
   type CardSkin,
+  type UiScale,
 } from "../../theme";
 import React, {
   PropsWithChildren,
@@ -57,6 +59,9 @@ type ColorModeContextType = {
   /** Скин карточек. */
   cardSkin: CardSkin;
   setCardSkin: (skin: CardSkin) => void;
+  /** Размер интерфейса (масштаб типографики). */
+  uiScale: UiScale;
+  setUiScale: (scale: UiScale) => void;
   /** Сброс к значениям по умолчанию. */
   reset: () => void;
 };
@@ -94,6 +99,9 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   const [cardSkin, setCardSkinState] = useState<CardSkin>(
     (localStorage.getItem("cardSkin") as CardSkin) || DEFAULT_CARD_SKIN,
   );
+  const [uiScale, setUiScaleState] = useState<UiScale>(
+    (localStorage.getItem("uiScale") as UiScale) || DEFAULT_UI_SCALE,
+  );
   const [systemMode, setSystemMode] = useState<"light" | "dark">(getSystemMode());
 
   // Следим за системной темой, когда выбрана схема «системная».
@@ -109,6 +117,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   useEffect(() => { window.localStorage.setItem("lightSurface", lightSurface); }, [lightSurface]);
   useEffect(() => { window.localStorage.setItem("darkSurface", darkSurface); }, [darkSurface]);
   useEffect(() => { window.localStorage.setItem("cardSkin", cardSkin); }, [cardSkin]);
+  useEffect(() => { window.localStorage.setItem("uiScale", uiScale); }, [uiScale]);
 
   const mode: "light" | "dark" = scheme === "system" ? systemMode : scheme;
 
@@ -125,15 +134,18 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setDarkSurface: setDarkSurfaceState,
       cardSkin,
       setCardSkin: setCardSkinState,
+      uiScale,
+      setUiScale: setUiScaleState,
       reset: () => {
         setSchemeState("system");
         setPrimaryColorState(DEFAULT_PRIMARY);
         setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
         setDarkSurfaceState(DEFAULT_DARK_SURFACE);
         setCardSkinState(DEFAULT_CARD_SKIN);
+        setUiScaleState(DEFAULT_UI_SCALE);
       },
     }),
-    [scheme, mode, primaryColor, lightSurface, darkSurface, cardSkin],
+    [scheme, mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale],
   );
 
   const theme = useMemo(() => {
@@ -146,8 +158,9 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       primaryColor,
       surface: surface ? { default: surface.default, paper: surface.paper } : undefined,
       cardSkin,
+      uiScale,
     });
-  }, [mode, primaryColor, lightSurface, darkSurface, cardSkin]);
+  }, [mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale]);
 
   return (
     <ColorModeContext.Provider value={value}>
