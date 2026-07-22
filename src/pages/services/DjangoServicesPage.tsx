@@ -356,28 +356,28 @@ const DjangoServicesPage: React.FC = () => {
               direction="row"
               alignItems="center"
               gap={0.75}
-              sx={{ color: "text.secondary", minWidth: 0 }}
+              sx={{ color: "text.secondary", minWidth: 0, overflow: "hidden" }}
             >
-              <AccessTimeOutlinedIcon sx={{ fontSize: 15 }} />
-              <Typography variant="caption" sx={{ whiteSpace: "nowrap" }}>
+              <AccessTimeOutlinedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>
                 {formatDuration(s.durationMinutes)}
               </Typography>
               {SERVICE_CATEGORIES_ENABLED && s.category && (
                 <>
-                  <Box component="span" sx={{ color: "text.disabled" }}>
+                  <Box component="span" sx={{ color: "text.disabled", flexShrink: 0 }}>
                     ·
                   </Box>
-                  <Typography variant="caption" sx={{ whiteSpace: "nowrap" }}>
+                  <Typography variant="caption" sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>
                     {SERVICE_CATEGORY_LABELS[s.category]}
                   </Typography>
                 </>
               )}
               {s.branches.length > 0 && (
                 <>
-                  <Box component="span" sx={{ color: "text.disabled" }}>
+                  <Box component="span" sx={{ color: "text.disabled", flexShrink: 0 }}>
                     ·
                   </Box>
-                  <PlaceOutlinedIcon sx={{ fontSize: 15 }} />
+                  <PlaceOutlinedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
                   <Tooltip title={`${branchNames}${s.hasHiddenBranches ? ", …" : ""}`}>
                     <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
                       {branchNames}
