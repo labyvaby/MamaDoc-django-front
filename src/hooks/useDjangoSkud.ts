@@ -16,7 +16,7 @@ import {
 } from "../api/attendance";
 import { djangoQueryKeys } from "../api/queryKeys";
 import { useCan } from "./useCan";
-import { isIpInCidr } from "../utility/network";
+import { isIpInCidr, parseIpList } from "../utility/network";
 
 
 const IP_QUERY_KEY = ["common", "userIp"] as const;
@@ -65,13 +65,15 @@ export function useDjangoSkudActions(
 
   const envIp = import.meta.env.VITE_OFFICE_IP as string | undefined;
   // Разрешённые IP: Wi-Fi каждого филиала + общий IP организации (или env).
-  // Сотрудник может начать смену из любого филиала клиники.
+  // Каждое поле может содержать несколько IP/CIDR через запятую или с новой
+  // строки — сотрудник может начать смену из любого филиала клиники и с
+  // любого из настроенных для него адресов.
   const allowedIps = React.useMemo(() => {
-    const branchIps = (officeIpData?.branches ?? [])
-      .map((b) => b.officeIp)
-      .filter(Boolean);
-    const orgIp = officeIpData?.officeIp || envIp || "";
-    return orgIp ? [...branchIps, orgIp] : branchIps;
+    const branchIps = (officeIpData?.branches ?? []).flatMap((b) =>
+      parseIpList(b.officeIp),
+    );
+    const orgIps = parseIpList(officeIpData?.officeIp || envIp || "");
+    return [...branchIps, ...orgIps];
   }, [officeIpData, envIp]);
   // Пустая строка = ни одного IP не настроено (проверка отключена).
   const effectiveAllowedIp = allowedIps.join(", ");

@@ -1,4 +1,16 @@
 /**
+ * Splits a comma/newline-separated string of IPs/CIDRs into trimmed entries.
+ * Mirrors the backend's `parse_ip_list` (server/apps/attendance/models.py) so
+ * the same office-IP value parses identically on both sides.
+ */
+export function parseIpList(raw: string): string[] {
+  return raw
+    .split(/[,\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/**
  * Checks if a given IP address belongs to a CIDR network mask or matches an IP exactly.
  * Supports IPv4 addresses and CIDR subnets (e.g. 192.168.1.0/24).
  * Fallbacks to exact match for invalid/unsupported formats or IPv6.

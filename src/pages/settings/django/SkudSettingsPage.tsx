@@ -1,7 +1,9 @@
 import React from "react";
 import {
+  Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Stack,
   TextField,
@@ -16,7 +18,91 @@ import { useNotification } from "@refinedev/core";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { getOfficeIp, setOfficeIp } from "../../../api/attendance";
 import { djangoQueryKeys } from "../../../api/queryKeys";
+import { parseIpList } from "../../../utility/network";
 import { PageHeader, AppCard } from "../../../components/ui";
+
+/** Разбивает вставленный/введённый текст на отдельные IP и мержит с текущим списком. */
+function mergeIpText(current: string[], text: string): string[] {
+  const parts = parseIpList(text);
+  if (parts.length === 0) return current;
+  return Array.from(new Set([...current, ...parts]));
+}
+
+interface IpListFieldProps {
+  label: string;
+  helperText: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  disabled?: boolean;
+  loading?: boolean;
+}
+
+/**
+ * Мультизначное поле для IP/CIDR: можно вводить по одному (Enter/запятая)
+ * или вставить сразу список (через запятую или с новой строки) — он
+ * автоматически разложится на отдельные чипы.
+ */
+const IpListField: React.FC<IpListFieldProps> = ({
+  label,
+  helperText,
+  value,
+  onChange,
+  disabled,
+  loading,
+}) => {
+  const [inputValue, setInputValue] = React.useState("");
+
+  return (
+    <Autocomplete
+      multiple
+      freeSolo
+      options={[]}
+      value={value}
+      inputValue={inputValue}
+      disabled={disabled}
+      onChange={(_, newValue) => onChange(newValue as string[])}
+      onInputChange={(_, newInputValue, reason) => {
+        if (reason === "input" && /[,\n]/.test(newInputValue)) {
+          onChange(mergeIpText(value, newInputValue));
+          setInputValue("");
+          return;
+        }
+        setInputValue(newInputValue);
+      }}
+      renderTags={(tagValue, getTagProps) =>
+        tagValue.map((option, index) => {
+          const { key, ...tagProps } = getTagProps({ index });
+          return (
+            <Chip key={key} label={option} size="small" {...tagProps} />
+          );
+        })
+      }
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label={label}
+          placeholder="Например: 89.123.45.6 или 10.0.0.0/24"
+          helperText={helperText}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (/[,\n]/.test(text)) {
+              e.preventDefault();
+              onChange(mergeIpText(value, text));
+            }
+          }}
+          InputProps={{
+            ...params.InputProps,
+            endAdornment: loading ? (
+              <CircularProgress size={18} />
+            ) : (
+              params.InputProps.endAdornment
+            ),
+          }}
+        />
+      )}
+    />
+  );
+};
 
 const DjangoSkudSettingsPage: React.FC = () => {
   usePageTitle("Настройки СКУД");
@@ -29,8 +115,8 @@ const DjangoSkudSettingsPage: React.FC = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  const [ip, setIp] = React.useState("");
-  const [branchIps, setBranchIps] = React.useState<Record<number, string>>({});
+  const [ips, setIps] = React.useState<string[]>([]);
+  const [branchIps, setBranchIps] = React.useState<Record<number, string[]>>({});
   const [saving, setSaving] = React.useState(false);
   const loadedRef = React.useRef(false);
   const loading = query.isLoading;
@@ -39,10 +125,13 @@ const DjangoSkudSettingsPage: React.FC = () => {
 
   React.useEffect(() => {
     if (query.data && !loadedRef.current) {
-      setIp(query.data.officeIp ?? "");
+      setIps(parseIpList(query.data.officeIp ?? ""));
       setBranchIps(
         Object.fromEntries(
-          (query.data.branches ?? []).map((b) => [b.branchId, b.officeIp ?? ""]),
+          (query.data.branches ?? []).map((b) => [
+            b.branchId,
+            parseIpList(b.officeIp ?? ""),
+          ]),
         ),
       );
       loadedRef.current = true;
@@ -54,11 +143,12 @@ const DjangoSkudSettingsPage: React.FC = () => {
     setSaving(true);
     try {
       // Сохраняем только изменённые значения (общий IP + IP филиалов).
-      if (ip.trim() !== (query.data.officeIp ?? "")) {
-        await setOfficeIp(ip.trim());
+      const nextOrgIp = ips.join(", ");
+      if (nextOrgIp !== (query.data.officeIp ?? "")) {
+        await setOfficeIp(nextOrgIp);
       }
       for (const b of query.data.branches ?? []) {
-        const next = (branchIps[b.branchId] ?? "").trim();
+        const next = (branchIps[b.branchId] ?? []).join(", ");
         if (next !== (b.officeIp ?? "")) {
           await setOfficeIp(next, b.branchId);
         }
@@ -141,17 +231,13 @@ const DjangoSkudSettingsPage: React.FC = () => {
 
             <Box sx={{ p: 2.5 }}>
               <Box component="form" noValidate autoComplete="off">
-                <TextField
-                  fullWidth
+                <IpListField
                   label="Общий IP организации"
-                  placeholder="Например: 89.123.456.78"
-                  value={ip}
-                  onChange={(e) => setIp(e.target.value)}
+                  value={ips}
+                  onChange={setIps}
                   disabled={loading || saving}
-                  helperText="Запасной вариант: используется вместе с IP филиалов. Если ни один IP не заполнен — проверка отключена и смену можно начать откуда угодно."
-                  InputProps={{
-                    endAdornment: loading ? <CircularProgress size={18} /> : null,
-                  }}
+                  loading={loading}
+                  helperText="Запасной вариант: используется вместе с IP филиалов. Можно добавить несколько адресов — вставьте список через запятую или с новой строки. Если ничего не заполнено — проверка отключена и смену можно начать откуда угодно."
                 />
 
                 {branches.length > 0 && (
@@ -168,23 +254,25 @@ const DjangoSkudSettingsPage: React.FC = () => {
                       sx={{ mb: 2 }}
                     >
                       Сотрудник сможет начать смену, если его внешний IP
-                      совпадает с IP любого филиала или с общим IP организации.
+                      совпадает с любым из IP филиала или с общим IP
+                      организации. У филиала может быть несколько адресов
+                      (например, разные Wi-Fi роутеры) — добавляйте их по
+                      одному или вставьте списком.
                     </Typography>
                     <Stack spacing={2}>
                       {branches.map((b) => (
-                        <TextField
+                        <IpListField
                           key={b.branchId}
-                          fullWidth
                           label={b.branchName}
-                          placeholder="Например: 89.123.456.78"
-                          value={branchIps[b.branchId] ?? ""}
-                          onChange={(e) =>
+                          value={branchIps[b.branchId] ?? []}
+                          onChange={(next) =>
                             setBranchIps((prev) => ({
                               ...prev,
-                              [b.branchId]: e.target.value,
+                              [b.branchId]: next,
                             }))
                           }
                           disabled={loading || saving}
+                          helperText="Например, IP основного и резервного Wi-Fi роутера филиала."
                         />
                       ))}
                     </Stack>
