@@ -30,7 +30,7 @@ import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import { getStatusConfig, getStatusChipSx } from "../../config/appointmentStatuses";
 import { supabase } from "../../utility/supabaseClient";
 import { useClientSession } from "../../contexts/client-session-context";
-import logo from "../../assets/img/logo.png";
+import AximoLogo from "../../components/auth/AximoLogo";
 import dayjs from "dayjs";
 
 type Appointment = {
@@ -171,7 +171,7 @@ const ClientProfilePage: React.FC = () => {
 
       {/* Топбар */}
       <Box sx={{ px: 2, py: 1, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}>
-        <Box component="img" src={logo} alt="Мама Доктор" sx={{ height: 36, objectFit: "contain" }} />
+        <AximoLogo compact size={36} />
         <IconButton size="small" onClick={handleLogout} title="Выйти">
           <LogoutOutlined fontSize="small" />
         </IconButton>

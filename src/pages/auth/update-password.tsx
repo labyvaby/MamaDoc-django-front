@@ -12,10 +12,10 @@ import {
 } from "@mui/material";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import smallIcon from "../../assets/img/icon_2s.png";
 import { supabase } from "../../utility/supabaseClient";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
+import AximoLogo from "../../components/auth/AximoLogo";
 
 const UpdatePasswordPage: React.FC = () => {
     const navigate = useNavigate();
@@ -87,7 +87,7 @@ const UpdatePasswordPage: React.FC = () => {
             <AuthCard>
                 <Box sx={{ textAlign: "center", mb: 2 }}>
                     <Stack direction="row" justifyContent="center" alignItems="center" gap={1} mb={2}>
-                        <Box component="img" src={smallIcon} sx={{ height: 32 }} />
+                        <AximoLogo iconOnly size={32} />
                         <Typography variant="h5" fontWeight={600}>Новый пароль</Typography>
                     </Stack>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

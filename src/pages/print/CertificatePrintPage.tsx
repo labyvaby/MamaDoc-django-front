@@ -6,19 +6,21 @@ import dayjs from "dayjs";
 import { generateCertificatePDF } from "../../utility/pdfGenerator";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { loadDjangoPrintData } from "./djangoPrintData";
+import { usePermissions } from "../../hooks/usePermissions";
 
 export const CertificatePrintPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const [dataLoading, setDataLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+    const { activeOrganization } = usePermissions();
 
     useEffect(() => {
         if (!id) return;
-        fetchAndGenerate(id);
-    }, [id]);
+        fetchAndGenerate(id, activeOrganization?.name);
+    }, [id, activeOrganization?.name]);
 
-    const fetchAndGenerate = async (appointmentId: string) => {
+    const fetchAndGenerate = async (appointmentId: string, organizationName?: string) => {
         try {
             setDataLoading(true);
             setError(null);
@@ -35,6 +37,7 @@ export const CertificatePrintPage: React.FC = () => {
                     conclusion: d.conclusion?.conclusion ?? "",
                     doctorFio: d.doctorFio,
                     issueDate: dayjs().format("DD.MM.YYYY"),
+                    organizationName,
                 });
                 setPdfUrl(URL.createObjectURL(blob));
                 return;
@@ -128,6 +131,7 @@ export const CertificatePrintPage: React.FC = () => {
                 conclusion: conclusionText,
                 doctorFio: doctorName,
                 issueDate: dayjs().format("DD.MM.YYYY"),
+                organizationName,
             });
 
             const url = URL.createObjectURL(blob);

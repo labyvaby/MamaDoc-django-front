@@ -22,7 +22,7 @@ import {
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
-import appLogo from "../../assets/img/logo.png";
+import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
 
 
@@ -68,8 +68,8 @@ import { useMobileSidebar } from "./mobile-context";
 import { SettingsModal } from "./SettingsModal";
 import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
-import { useWorkShift } from "../../hooks/useWorkShift";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useWorkShift } from "../../hooks/useWorkShift";
 import { useSkudActions } from "../../hooks/useSkudActions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
@@ -264,38 +264,9 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   );
 };
 
-// Бренд в шапке сайдбара: логотип активного филиала (если загружен в
-// «Настройки → Филиалы»), иначе логотип организации, иначе — статичный логотип
-// приложения. Название рядом не дублируем — оно уже в ActiveContextSwitcher.
+// Название контекста уже есть в ActiveContextSwitcher; здесь остаётся только знак.
 const SidebarBrand: React.FC<{ height: number }> = ({ height }) => {
-  const { activeOrganization, activeBranch } = usePermissions();
-  const logoUrl = activeBranch?.logoUrl ?? activeOrganization?.logoUrl ?? null;
-  const logoAlt = activeBranch?.logoUrl
-    ? activeBranch.name
-    : activeOrganization?.name ?? "Организация";
-  const [broken, setBroken] = useState(false);
-
-  useEffect(() => {
-    setBroken(false);
-  }, [logoUrl]);
-
-  const useCustomLogo = !!logoUrl && !broken;
-
-  return (
-    <Box
-      component="img"
-      src={useCustomLogo ? logoUrl : appLogo}
-      alt={useCustomLogo ? logoAlt : "Мама Доктор"}
-      onError={useCustomLogo ? () => setBroken(true) : undefined}
-      sx={{
-        height,
-        width: "auto",
-        maxWidth: height * 6,
-        objectFit: "contain",
-        borderRadius: useCustomLogo ? 1 : 0,
-      }}
-    />
-  );
+  return <OrganizationBrand height={height} />;
 };
 
 // Mobile header with logo (< 768px - мобильные и планшеты)

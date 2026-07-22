@@ -22,6 +22,7 @@ export type CertificatePDFData = {
   conclusion: string;
   doctorFio: string;
   issueDate: string;
+  organizationName?: string;
 };
 
 const toPrintableString = (value: unknown) => String(value ?? "");
@@ -156,7 +157,9 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
     conclusion,
     doctorFio,
     issueDate,
+    organizationName,
   } = data;
+  const certificateOrganization = escapeHtml(organizationName || "Aximo CRM");
 
   const container = document.createElement("div");
 
@@ -208,7 +211,7 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
 
       <div style="margin-bottom: 10mm; font-size: 13pt;">
         В том, что ребенок был на амбулаторном лечении<br/>
-        в МЦ «Мама Доктор»
+        в ${certificateOrganization}
       </div>
 
       <div style="margin-bottom: 5mm;">
