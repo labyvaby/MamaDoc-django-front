@@ -93,12 +93,12 @@ type ProductRow = {
   unit: string;
 };
 
-// Редактирование товаров через PATCH: бэкенд пока молча игнорирует поле
-// ``products`` (проверено на живом API 15.07.2026, приём 12127 в тестовом
-// филиале) — тикет MamaDoc/backend_ticket_appointments_patch_products.md.
-// До реализации секция «Товары» работает только на чтение; после деплоя
-// бэка переключить в true — payload уже прокинут.
-const EDIT_APPOINTMENT_PRODUCTS_ENABLED = false;
+// Редактирование товаров через PATCH: бэкенд реализовал поле ``products``
+// (подтверждено 22.07.2026) — тикет MamaDoc/backend_ticket_appointments_patch_products.md.
+// Секция «Товары» теперь редактируемая, products уходят в PATCH.
+// ⚠ Рекомендуется финальный save-тест на приёме в тестовом филиале: убедиться,
+// что бэк применяет products и корректно списывает/возвращает остаток.
+const EDIT_APPOINTMENT_PRODUCTS_ENABLED = true;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
