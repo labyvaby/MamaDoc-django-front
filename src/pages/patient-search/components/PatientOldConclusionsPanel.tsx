@@ -3,19 +3,12 @@
  * Компонент отображает колонку с историей старых заключений.
  */
 import React from "react";
-import {
-    Box,
-    Card,
-    CardHeader,
-    CardContent,
-    Chip,
-    Divider,
-    Stack,
-    Typography,
-    List,
-    ListItemButton
-} from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
+import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
+import { AppCard, ListEmptyState, ListLoadingSkeleton } from "../../../components/ui";
+import { subtleBg } from "../../../theme/uiHelpers";
 import type { OldConclusion } from "../useOldConclusions";
 
 type Props = {
@@ -35,39 +28,43 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
 }) => {
     return (
         <Box sx={{ height: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <Card variant="outlined" sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-                <CardHeader
-                    title={
-                        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
-                            <Stack direction="row" alignItems="center" gap={1.25}>
-                                <FolderOpenOutlined color="primary" />
-                                <Typography variant="h6">Старые заключения</Typography>
-                            </Stack>
-                            <Chip size="small" label={data.length} />
+            <AppCard
+                variant="outlined"
+                header={
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2, pt: 2, pb: 1.5 }}>
+                        <Stack direction="row" alignItems="center" gap={1.25}>
+                            <FolderOpenOutlined color="primary" />
+                            <Typography variant="h6">Старые заключения</Typography>
                         </Stack>
-                    }
-                    sx={{ pb: 1 }}
-                />
-                <Divider />
-                <CardContent sx={{ p: 0, flex: 1, overflowY: "auto", minHeight: 0 }}>
+                        {selected && !loading && !errorMsg && data.length > 0 && (
+                            <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                                {data.length}
+                            </Typography>
+                        )}
+                    </Stack>
+                }
+                disableContentPadding
+                sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
+            >
+                <Box sx={{ borderTop: 1, borderColor: "divider", flex: 1, overflowY: "auto", minHeight: 0, p: 1 }}>
                     {!selected ? (
-                        <Typography sx={{ p: 2 }} variant="body2" color="text.secondary" align="center">
-                            Выберите пациента слева
-                        </Typography>
+                        <ListEmptyState
+                            icon={<FolderOpenOutlined />}
+                            title="Пациент не выбран"
+                            description="Выберите пациента слева, чтобы увидеть старые заключения"
+                        />
                     ) : loading ? (
-                        <Typography sx={{ p: 2 }} variant="body2" color="text.secondary" align="center">
-                            Загрузка…
-                        </Typography>
+                        <ListLoadingSkeleton rows={4} />
                     ) : errorMsg ? (
-                        <Typography sx={{ p: 2 }} variant="body2" color="error" align="center">
-                            Ошибка: {errorMsg}
-                        </Typography>
+                        <ListEmptyState icon={<ErrorOutlineOutlined />} title="Не удалось загрузить" description={errorMsg} />
                     ) : data.length === 0 ? (
-                        <Typography sx={{ p: 2 }} variant="body2" color="text.secondary" align="center">
-                            Нет старых заключений
-                        </Typography>
+                        <ListEmptyState
+                            icon={<FolderOpenOutlined />}
+                            title="Нет старых заключений"
+                            description="Архивных записей по этому пациенту не найдено"
+                        />
                     ) : (
-                        <List disablePadding sx={{ px: 1, py: 0.5 }}>
+                        <Stack spacing={0.75}>
                             {data.map((item) => {
                                 const dateStr = item.changed_at
                                     ? new Date(item.changed_at).toLocaleDateString("ru-RU", {
@@ -78,24 +75,33 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                     : "Дата неизвестна";
 
                                 return (
-                                    <ListItemButton
+                                    <Box
                                         key={item.id}
+                                        role="button"
+                                        tabIndex={0}
                                         onClick={() => onClick(item)}
-                                        sx={{
-                                            px: 2,
-                                            py: 1.25,
-                                            my: "5px",
-                                            border: "1px solid",
-                                            borderColor: "divider",
-                                            borderRadius: 1,
-                                            alignItems: "flex-start",
-                                            "&:hover": {
-                                                bgcolor: (theme) => theme.palette.action.hover,
-                                            },
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                onClick(item);
+                                            }
                                         }}
+                                        sx={(t) => ({
+                                            p: 1.5,
+                                            borderRadius: "10px",
+                                            border: 1,
+                                            borderColor: "divider",
+                                            bgcolor: subtleBg(t),
+                                            cursor: "pointer",
+                                            transition: "background-color .15s ease, border-color .15s ease",
+                                            "&:hover": {
+                                                bgcolor: subtleBg(t, true),
+                                                borderColor: alpha(t.palette.primary.main, 0.28),
+                                            },
+                                        })}
                                     >
-                                        <Stack direction="column" gap={0.5} sx={{ width: "100%" }}>
-                                            <Typography variant="subtitle2">
+                                        <Stack direction="column" gap={0.5}>
+                                            <Typography variant="subtitle2" fontWeight={600}>
                                                 {dateStr}
                                             </Typography>
                                             {(!!item.weight_kg || !!item.height_cm || !!item.temperature) && (
@@ -130,13 +136,13 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                                 </Typography>
                                             )}
                                         </Stack>
-                                    </ListItemButton>
+                                    </Box>
                                 );
                             })}
-                        </List>
+                        </Stack>
                     )}
-                </CardContent>
-            </Card>
+                </Box>
+            </AppCard>
         </Box>
     );
 };

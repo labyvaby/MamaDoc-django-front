@@ -3,20 +3,18 @@ import {
   Box,
   CircularProgress,
   Drawer,
-  Stack,
-  Tab,
-  Tabs,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
+import { motion } from "framer-motion";
 import ConstructionOutlined from "@mui/icons-material/ConstructionOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
 dayjs.locale("ru");
 
-import { PageHeader, AppBottomSheet } from "../../components/ui";
+import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -76,6 +74,10 @@ const OldConclusionsPlaceholder: React.FC = () => (
 );
 
 // ── Main page ────────────────────────────────────────────────────────────────
+
+const MotionBox = motion(Box);
+
+type RightTabKey = "card" | "history" | "old" | "vaccinations";
 
 const DjangoPatientsPage: React.FC = () => {
   usePageTitle("Все пациенты");
@@ -137,9 +139,9 @@ const DjangoPatientsPage: React.FC = () => {
   const [faceOpen, setFaceOpen] = React.useState(false);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [mobileTab, setMobileTab] = React.useState(0);
-  const [tabletTab, setTabletTab] = React.useState(0);
-  const [desktopRightTab, setDesktopRightTab] = React.useState(0);
+  const [mobileTab, setMobileTab] = React.useState<RightTabKey>("card");
+  const [tabletTab, setTabletTab] = React.useState<RightTabKey>("card");
+  const [desktopRightTab, setDesktopRightTab] = React.useState<RightTabKey>("history");
 
   // ── Load list (server-side search + infinite scroll) ─────────────────────────
   // The clinic can have tens of thousands of patients, so we NEVER pull the
@@ -264,10 +266,10 @@ const DjangoPatientsPage: React.FC = () => {
   // ── Handlers ──────────────────────────────────────────────────────────────────
   const handleSelect = (p: DjangoPatient) => {
     setSelected(p);
-    setDesktopRightTab(0);
-    setTabletTab(0);
+    setDesktopRightTab("history");
+    setTabletTab("card");
     if (isMobile) {
-      setMobileTab(0);
+      setMobileTab("card");
       setMobileOpen(true);
     }
   };
@@ -352,6 +354,21 @@ const DjangoPatientsPage: React.FC = () => {
     </Box>
   );
 
+  // Полный набор вкладок правой панели (планшет / мобильный: одна колонка на всё).
+  const fullTabDefs: { key: RightTabKey; label: string }[] = [
+    { key: "card", label: "Карточка" },
+    { key: "history", label: "История" },
+    { key: "old", label: "Старые зак." },
+    ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: "Прививки" }] : []),
+  ];
+
+  // Десктоп: карточка уже отдельной колонкой, правая колонка — только история/архив.
+  const rightTabDefs: { key: RightTabKey; label: string }[] = [
+    { key: "history", label: "История приёмов" },
+    { key: "old", label: "Старые заключения" },
+    ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: "Прививки" }] : []),
+  ];
+
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <PageHeader
@@ -366,7 +383,10 @@ const DjangoPatientsPage: React.FC = () => {
         loading={loadingData}
       />
 
-      <Box
+      <MotionBox
+        variants={cascadeContainer}
+        initial="hidden"
+        animate="show"
         sx={(t) => ({
           px: t.appLayout.page.paddingX,
           pb: 1,
@@ -379,59 +399,54 @@ const DjangoPatientsPage: React.FC = () => {
         })}
       >
         {/* Left: patient list */}
-        <Box sx={{ flex: isMobile ? "1 1 auto" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, height: "100%" }}>
+        <MotionBox variants={cascadeItem} sx={{ flex: isMobile ? "1 1 auto" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, height: "100%" }}>
           {listNode}
-        </Box>
+        </MotionBox>
 
         {/* Tablet (md–lg): single right column with tabs Карточка / История / Старые */}
         {isTablet && (
-          <Box sx={{ flex: "7 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+          <MotionBox variants={cascadeItem} sx={{ flex: "7 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
             {selected ? (
               <>
-                <Tabs value={tabletTab} onChange={(_, v) => setTabletTab(v)} variant="fullWidth" sx={{ flexShrink: 0, mb: 1 }}>
-                  <Tab label="Карточка" />
-                  <Tab label="История" />
-                  <Tab label="Старые зак." />
-                  {canViewVaccinations && <Tab label="Прививки" />}
-                </Tabs>
+                <Box sx={{ flexShrink: 0, mb: 1.5 }}>
+                  <SegmentedTabs layoutId="django-patients-tablet-tabs" tabs={fullTabDefs} value={tabletTab} onChange={setTabletTab} />
+                </Box>
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  {tabletTab === 0 && cardNode}
-                  {tabletTab === 1 && historyNode}
-                  {tabletTab === 2 && <OldConclusionsPlaceholder />}
-                  {tabletTab === 3 && canViewVaccinations && vaccinationsNode}
+                  {tabletTab === "card" && cardNode}
+                  {tabletTab === "history" && historyNode}
+                  {tabletTab === "old" && <OldConclusionsPlaceholder />}
+                  {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                 </Box>
               </>
             ) : (
               noSelection
             )}
-          </Box>
+          </MotionBox>
         )}
 
         {/* Desktop (>= lg): three columns — card + (history / old conclusions tabs) */}
         {isDesktop && (
           <>
-            <Box sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>
+            <MotionBox variants={cascadeItem} sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>
               {selected ? cardNode : (
                 <Box sx={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed", borderColor: "divider", borderRadius: 1, bgcolor: "background.paper" }}>
                   <Typography color="text.secondary">Карточка пациента</Typography>
                 </Box>
               )}
-            </Box>
-            <Box sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
-              <Tabs value={desktopRightTab} onChange={(_, v) => setDesktopRightTab(v)} sx={{ flexShrink: 0, borderBottom: 1, borderColor: "divider", mb: 1 }}>
-                <Tab label="История приёмов" />
-                <Tab label="Старые заключения" />
-                {canViewVaccinations && <Tab label="Прививки" />}
-              </Tabs>
-              <Box sx={{ flex: 1, minHeight: 0 }}>
-                {desktopRightTab === 0 && historyNode}
-                {desktopRightTab === 1 && <OldConclusionsPlaceholder />}
-                {desktopRightTab === 2 && canViewVaccinations && vaccinationsNode}
+            </MotionBox>
+            <MotionBox variants={cascadeItem} sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+              <Box sx={{ flexShrink: 0, mb: 1.5 }}>
+                <SegmentedTabs layoutId="django-patients-desktop-right-tabs" tabs={rightTabDefs} value={desktopRightTab} onChange={setDesktopRightTab} />
               </Box>
-            </Box>
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                {desktopRightTab === "history" && historyNode}
+                {desktopRightTab === "old" && <OldConclusionsPlaceholder />}
+                {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+              </Box>
+            </MotionBox>
           </>
         )}
-      </Box>
+      </MotionBox>
 
       {/* Mobile: details bottom sheet with tabs */}
       {isMobile && (
@@ -439,19 +454,16 @@ const DjangoPatientsPage: React.FC = () => {
           open={mobileOpen}
           onClose={() => setMobileOpen(false)}
           header={
-            <Tabs value={mobileTab} onChange={(_, v) => setMobileTab(v)} variant="fullWidth" sx={{ flexShrink: 0 }}>
-              <Tab label="Карточка" />
-              <Tab label="История" />
-              <Tab label="Старые зак." />
-              {canViewVaccinations && <Tab label="Прививки" />}
-            </Tabs>
+            <Box sx={{ px: 1.5, py: 1 }}>
+              <SegmentedTabs layoutId="django-patients-mobile-tabs" tabs={fullTabDefs} value={mobileTab} onChange={setMobileTab} />
+            </Box>
           }
         >
           <Box sx={{ p: 2 }}>
-            {mobileTab === 0 && cardNode}
-            {mobileTab === 1 && historyNode}
-            {mobileTab === 2 && <OldConclusionsPlaceholder />}
-            {mobileTab === 3 && canViewVaccinations && vaccinationsNode}
+            {mobileTab === "card" && cardNode}
+            {mobileTab === "history" && historyNode}
+            {mobileTab === "old" && <OldConclusionsPlaceholder />}
+            {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
           </Box>
         </AppBottomSheet>
       )}

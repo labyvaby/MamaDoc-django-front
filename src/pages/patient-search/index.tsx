@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { supabase } from "../../utility/supabaseClient";
-import { Box, Grid, Typography, Tabs, Tab, IconButton } from "@mui/material";
+import { Box, Grid, Typography, IconButton } from "@mui/material";
+import { motion } from "framer-motion";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 
-import { AppBottomSheet, PageHeader } from "../../components/ui";
+import { AppBottomSheet, PageHeader, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePatientSearchWithCache } from "./usePatientSearchWithCache";
 import { usePatientHistory } from "./usePatientHistory";
@@ -46,6 +47,8 @@ import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
  */
 
 // Вспомогательный компонент для загрузки полных данных приема перед открытием Drawer'а редактирования
+const MotionBox = motion(Box);
+
 const DoctorWorkDrawerWrapper: React.FC<{
   appointmentId: string;
   open: boolean;
@@ -189,7 +192,7 @@ export const PatientSearchPage: React.FC = () => {
   // Просмотр деталей из истории
   const [historyDetailId, setHistoryDetailId] = React.useState<string | null>(null);
   const [isConclusionVisible, setIsConclusionVisible] = React.useState(false);
-  const [historyTab, setHistoryTab] = React.useState(0);
+  const [historyTab, setHistoryTab] = React.useState<"visit" | "conclusion">("visit");
 
   // Просмотр деталей старых заключений
   const [oldConclusionDetail, setOldConclusionDetail] = React.useState<OldConclusion | null>(null);
@@ -207,25 +210,26 @@ export const PatientSearchPage: React.FC = () => {
 
   // Мобильный BottomSheet с вкладками (только телефон)
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState(0);
+  const [activeTab, setActiveTab] = React.useState<"card" | "history" | "old">("card");
 
   // Таб для планшетного режима (правая колонка: карточка / история)
-  const [tabletTab, setTabletTab] = React.useState(0);
+  const [tabletTab, setTabletTab] = React.useState<"card" | "history" | "old">("card");
 
   // Таб для десктопной правой колонки (История / Старые заключения)
-  const [desktopRightTab, setDesktopRightTab] = React.useState(0);
+  const [desktopRightTab, setDesktopRightTab] = React.useState<"history" | "old">("history");
 
   const handleSelectPatient = (p: Patient) => {
     setSelected(p);
-    setDesktopRightTab(0);
+    setDesktopRightTab("history");
     if (isMobile) {
-      setActiveTab(0);
+      setActiveTab("card");
       setMobileOpen(true);
     }
   };
 
   const tabs = [
     {
+      key: "card" as const,
       label: "Карточка",
       content: (
         <PatientCard
@@ -251,6 +255,7 @@ export const PatientSearchPage: React.FC = () => {
       ),
     },
     {
+      key: "history" as const,
       label: "История",
       content: (
         <PatientHistoryPanel
@@ -269,6 +274,7 @@ export const PatientSearchPage: React.FC = () => {
       ),
     },
     {
+      key: "old" as const,
       label: "Старые заключения",
       content: (
         <PatientOldConclusionsPanel
@@ -307,55 +313,131 @@ export const PatientSearchPage: React.FC = () => {
           overflow: "hidden"
         })}
       >
-        <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-          {/* Левая колонка: Список пациентов */}
-          <Grid
-            item
-            xs={12}
-            md={5}
-            lg={3}
-            sx={{
-              position: { md: "sticky" },
-              top: { md: (theme) => theme.spacing(8) },
-              alignSelf: { xs: "stretch", md: "flex-start", lg: "stretch" },
-              height: {
-                xs: "100%",
-                md: (theme) => theme.appLayout.viewportOffset.patientSearch.listTabletHeight,
-                lg: "100%",
-              },
-              overflow: "hidden",
-            }}
-          >
-            <Box sx={{ display: "flex", flexDirection: "column", height: 1, minHeight: 0 }}>
-              <PatientList
-                loading={loading}
-                errorMsg={errorMsg}
-                patients={patients}
-                selectedId={selected?.id ?? null}
-                onSelect={handleSelectPatient}
-                hasMore={hasMore}
-                loadMore={loadMore}
-              />
-            </Box>
-          </Grid>
+        <MotionBox
+          variants={cascadeContainer}
+          initial="hidden"
+          animate="show"
+          sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+        >
+          <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
+            {/* Левая колонка: Список пациентов */}
+            <Grid
+              item
+              xs={12}
+              md={5}
+              lg={3}
+              sx={{
+                position: { md: "sticky" },
+                top: { md: (theme) => theme.spacing(8) },
+                alignSelf: { xs: "stretch", md: "flex-start", lg: "stretch" },
+                height: {
+                  xs: "100%",
+                  md: (theme) => theme.appLayout.viewportOffset.patientSearch.listTabletHeight,
+                  lg: "100%",
+                },
+                overflow: "hidden",
+              }}
+            >
+              <MotionBox variants={cascadeItem} sx={{ display: "flex", flexDirection: "column", height: 1, minHeight: 0 }}>
+                <PatientList
+                  loading={loading}
+                  errorMsg={errorMsg}
+                  patients={patients}
+                  selectedId={selected?.id ?? null}
+                  onSelect={handleSelectPatient}
+                  hasMore={hasMore}
+                  loadMore={loadMore}
+                />
+              </MotionBox>
+            </Grid>
 
-          {/* ===== Планшет (md–lg): одна правая колонка с табами Карточка / История ===== */}
-          {isTablet && (
-            <Grid item md={7} sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-              {selected ? (
-                <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-                  <Tabs
-                    value={tabletTab}
-                    onChange={(_, v) => setTabletTab(v)}
-                    variant="fullWidth"
-                    sx={{ flexShrink: 0, mb: 1 }}
-                  >
-                    <Tab label="Карточка" />
-                    <Tab label="История" />
-                    <Tab label="Старые зак." />
-                  </Tabs>
-                  <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-                    {tabletTab === 0 && (
+            {/* ===== Планшет (md–lg): одна правая колонка с табами Карточка / История ===== */}
+            {isTablet && (
+              <Grid item md={7} sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <MotionBox variants={cascadeItem} sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                  {selected ? (
+                    <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                      <Box sx={{ flexShrink: 0, mb: 1.5 }}>
+                        <SegmentedTabs
+                          layoutId="patient-search-tablet-tabs"
+                          tabs={[
+                            { key: "card", label: "Карточка" },
+                            { key: "history", label: "История" },
+                            { key: "old", label: "Старые зак." },
+                          ]}
+                          value={tabletTab}
+                          onChange={setTabletTab}
+                        />
+                      </Box>
+                      <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+                        {tabletTab === "card" && (
+                          <PatientCard
+                            patient={{
+                              fio: selected.fio,
+                              phone: selected.phone,
+                              photo: selected.photo ?? undefined,
+                              birth_date: selected.birth_date ?? null,
+                              inn: selected.inn ?? null,
+                              is_blacklisted: selected.is_blacklisted ?? null,
+                              blacklist_reason: selected.blacklist_reason ?? null,
+                            }}
+                            lastDateTime={history[0]?.["Дата и время"]}
+                            lastService={history[0]?.["Услуга"]}
+                            lastComplaints={history[0]?.["Жалобы при обращении"]}
+                            lastWeight={vitals?.weight}
+                            lastHeight={vitals?.height}
+                            lastTemperature={vitals?.temperature}
+                            onEdit={canUpdatePatient ? () => setEditOpen(true) : undefined}
+                            onTopUp={canUpdatePatient ? () => setTopUpOpen(true) : undefined}
+                            balance={balance}
+                          />
+                        )}
+                        {tabletTab === "history" && (
+                          <PatientHistoryPanel
+                            selected={!!selected}
+                            loading={historyLoading}
+                            errorMsg={historyError}
+                            history={history}
+                            onClick={(row) => setHistoryDetailId(row.ID)}
+                          />
+                        )}
+                        {tabletTab === "old" && (
+                          <PatientOldConclusionsPanel
+                            selected={!!selected}
+                            loading={oldConclusionsLoading}
+                            errorMsg={oldConclusionsError}
+                            data={oldConclusions}
+                            onClick={(item) => setOldConclusionDetail(item)}
+                          />
+                        )}
+                      </Box>
+                    </Box>
+                  ) : (
+                    <Box
+                      sx={{
+                        px: 2,
+                        py: 4,
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Typography color="text.secondary">
+                        Выберите пациента слева
+                      </Typography>
+                    </Box>
+                  )}
+                </MotionBox>
+              </Grid>
+            )}
+
+            {/* ===== Десктоп (>= lg): три колонки — Карточка + История (с табом Старые закл. если есть) ===== */}
+            {isDesktop && (
+              <>
+                <Grid item lg={3.5} sx={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
+                  <MotionBox variants={cascadeItem} sx={{ flex: 1, minHeight: 0, height: "100%" }}>
+                    {selected ? (
                       <PatientCard
                         patient={{
                           fio: selected.fio,
@@ -376,115 +458,55 @@ export const PatientSearchPage: React.FC = () => {
                         onTopUp={canUpdatePatient ? () => setTopUpOpen(true) : undefined}
                         balance={balance}
                       />
-                    )}
-                    {tabletTab === 1 && (
-                      <PatientHistoryPanel
-                        selected={!!selected}
-                        loading={historyLoading}
-                        errorMsg={historyError}
-                        history={history}
-                        onClick={(row) => setHistoryDetailId(row.ID)}
-                      />
-                    )}
-                    {tabletTab === 2 && (
-                      <PatientOldConclusionsPanel
-                        selected={!!selected}
-                        loading={oldConclusionsLoading}
-                        errorMsg={oldConclusionsError}
-                        data={oldConclusions}
-                        onClick={(item) => setOldConclusionDetail(item)}
-                      />
-                    )}
-                  </Box>
-                </Box>
-              ) : (
-                <Box
-                  sx={{
-                    px: 2,
-                    py: 4,
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Typography color="text.secondary">
-                    Выберите пациента слева
-                  </Typography>
-                </Box>
-              )}
-            </Grid>
-          )}
-
-          {/* ===== Десктоп (>= lg): три колонки — Карточка + История (с табом Старые закл. если есть) ===== */}
-          {isDesktop && (
-            <>
-              <Grid item lg={3.5} sx={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
-                {selected ? (
-                  <PatientCard
-                    patient={{
-                      fio: selected.fio,
-                      phone: selected.phone,
-                      photo: selected.photo ?? undefined,
-                      birth_date: selected.birth_date ?? null,
-                      inn: selected.inn ?? null,
-                      is_blacklisted: selected.is_blacklisted ?? null,
-                      blacklist_reason: selected.blacklist_reason ?? null,
-                    }}
-                    lastDateTime={history[0]?.["Дата и время"]}
-                    lastService={history[0]?.["Услуга"]}
-                    lastComplaints={history[0]?.["Жалобы при обращении"]}
-                    lastWeight={vitals?.weight}
-                    lastHeight={vitals?.height}
-                    lastTemperature={vitals?.temperature}
-                    onEdit={canUpdatePatient ? () => setEditOpen(true) : undefined}
-                    onTopUp={canUpdatePatient ? () => setTopUpOpen(true) : undefined}
-                    balance={balance}
-                  />
-                ) : (
-                  <Box sx={{ px: 2, py: 4, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Typography color="text.secondary">Карточка пациента</Typography>
-                  </Box>
-                )}
-              </Grid>
-
-              {/* История + Старые заключения в одной колонке с табами */}
-              <Grid item lg={5.5} sx={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
-                <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-                  {!oldConclusionsLoading && oldConclusions.length > 0 && (
-                    <Tabs
-                      value={desktopRightTab}
-                      onChange={(_, v) => setDesktopRightTab(v)}
-                      sx={{ flexShrink: 0, borderBottom: 1, borderColor: "divider", mb: 1 }}
-                    >
-                      <Tab label="История приёмов" />
-                      <Tab label={`Старые заключения (${oldConclusions.length})`} />
-                    </Tabs>
-                  )}
-                  <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                    {desktopRightTab === 0 ? (
-                      <PatientHistoryPanel
-                        selected={!!selected}
-                        loading={historyLoading}
-                        errorMsg={historyError}
-                        history={history}
-                        onClick={(row) => setHistoryDetailId(row.ID)}
-                      />
                     ) : (
-                      <PatientOldConclusionsPanel
-                        selected={!!selected}
-                        loading={oldConclusionsLoading}
-                        errorMsg={oldConclusionsError}
-                        data={oldConclusions}
-                        onClick={(item) => setOldConclusionDetail(item)}
-                      />
+                      <Box sx={{ px: 2, py: 4, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Typography color="text.secondary">Карточка пациента</Typography>
+                      </Box>
                     )}
-                  </Box>
-                </Box>
-              </Grid>
-            </>
-          )}
-        </Grid>
+                  </MotionBox>
+                </Grid>
+
+                {/* История + Старые заключения в одной колонке с табами */}
+                <Grid item lg={5.5} sx={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
+                  <MotionBox variants={cascadeItem} sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+                    {!oldConclusionsLoading && oldConclusions.length > 0 && (
+                      <Box sx={{ flexShrink: 0, mb: 1.5 }}>
+                        <SegmentedTabs
+                          layoutId="patient-search-desktop-right-tabs"
+                          tabs={[
+                            { key: "history", label: "История приёмов" },
+                            { key: "old", label: "Старые заключения", badge: oldConclusions.length },
+                          ]}
+                          value={desktopRightTab}
+                          onChange={setDesktopRightTab}
+                        />
+                      </Box>
+                    )}
+                    <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                      {desktopRightTab === "history" ? (
+                        <PatientHistoryPanel
+                          selected={!!selected}
+                          loading={historyLoading}
+                          errorMsg={historyError}
+                          history={history}
+                          onClick={(row) => setHistoryDetailId(row.ID)}
+                        />
+                      ) : (
+                        <PatientOldConclusionsPanel
+                          selected={!!selected}
+                          loading={oldConclusionsLoading}
+                          errorMsg={oldConclusionsError}
+                          data={oldConclusions}
+                          onClick={(item) => setOldConclusionDetail(item)}
+                        />
+                      )}
+                    </Box>
+                  </MotionBox>
+                </Grid>
+              </>
+            )}
+          </Grid>
+        </MotionBox>
       </Box>
 
       {/* Drawer: Добавить пациента */}
@@ -555,20 +577,18 @@ export const PatientSearchPage: React.FC = () => {
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
         header={
-          <Tabs
-            value={activeTab}
-            onChange={(_, v) => setActiveTab(v)}
-            variant="fullWidth"
-            sx={{ flexShrink: 0 }}
-          >
-            {tabs.map((t) => (
-              <Tab key={t.label} label={t.label} />
-            ))}
-          </Tabs>
+          <Box sx={{ px: 1.5, py: 1 }}>
+            <SegmentedTabs
+              layoutId="patient-search-mobile-tabs"
+              tabs={tabs.map((t) => ({ key: t.key, label: t.label }))}
+              value={activeTab}
+              onChange={setActiveTab}
+            />
+          </Box>
         }
       >
         <Box sx={{ p: 2, px: 3 }}>
-          {tabs[activeTab].content}
+          {tabs.find((t) => t.key === activeTab)?.content}
         </Box>
       </AppBottomSheet>
 
@@ -595,7 +615,7 @@ export const PatientSearchPage: React.FC = () => {
         onClose={() => {
           setHistoryDetailId(null);
           setIsConclusionVisible(false);
-          setHistoryTab(0);
+          setHistoryTab("visit");
         }}
         PaperProps={{
           sx: {
@@ -624,7 +644,7 @@ export const PatientSearchPage: React.FC = () => {
             const closeDrawer = () => {
               setHistoryDetailId(null);
               setIsConclusionVisible(false);
-              setHistoryTab(0);
+              setHistoryTab("visit");
             };
 
             return (
@@ -642,14 +662,17 @@ export const PatientSearchPage: React.FC = () => {
                     flexShrink: 0,
                   }}>
                     {hasConclusionData && (
-                      <Tabs
-                        value={historyTab}
-                        onChange={(_, v) => setHistoryTab(v)}
-                        sx={{ flex: 1 }}
-                      >
-                        <Tab label="Прием" />
-                        <Tab label="Заключение" />
-                      </Tabs>
+                      <Box sx={{ flex: 1, py: 1 }}>
+                        <SegmentedTabs
+                          layoutId="patient-search-history-detail-tabs"
+                          tabs={[
+                            { key: "visit", label: "Прием" },
+                            { key: "conclusion", label: "Заключение" },
+                          ]}
+                          value={historyTab}
+                          onChange={setHistoryTab}
+                        />
+                      </Box>
                     )}
                     <IconButton onClick={closeDrawer} size="small" sx={{ ml: 1 }}>
                       <CloseOutlined />
@@ -665,7 +688,7 @@ export const PatientSearchPage: React.FC = () => {
                   overflow: "hidden"
                 }}>
                   {/* Details Section */}
-                  {(isDesktop || !hasConclusionData || historyTab === 0) && (
+                  {(isDesktop || !hasConclusionData || historyTab === "visit") && (
                     <Box sx={{
                       flex: (isConclusionVisible && isDesktop) ? "0 0 450px" : "1 1 auto",
                       height: "100%",
@@ -680,7 +703,7 @@ export const PatientSearchPage: React.FC = () => {
                         onClose={() => {
                           setHistoryDetailId(null);
                           setIsConclusionVisible(false);
-                          setHistoryTab(0);
+                          setHistoryTab("visit");
                         }}
                         hideCloseButton={!isDesktop}
                         hideActionsForDoctor={!canUpdatePatient}
@@ -688,7 +711,7 @@ export const PatientSearchPage: React.FC = () => {
                         onToggleConclusion={() => {
                           const next = !isConclusionVisible;
                           setIsConclusionVisible(next);
-                          if (!isDesktop && next) setHistoryTab(1);
+                          if (!isDesktop && next) setHistoryTab("conclusion");
                         }}
                         onUpdate={() => {
                           reloadHistory();
@@ -698,13 +721,13 @@ export const PatientSearchPage: React.FC = () => {
                   )}
 
                   {/* Conclusion Section */}
-                  {(isDesktop ? isConclusionVisible : (hasConclusionData && historyTab === 1)) && (
+                  {(isDesktop ? isConclusionVisible : (hasConclusionData && historyTab === "conclusion")) && (
                     <Box sx={{ flex: 1, height: "100%", overflow: "hidden" }}>
                       <DoctorConclusionPanel
                         appointmentId={historyDetailId}
                         onClose={() => {
                           setIsConclusionVisible(false);
-                          setHistoryTab(0);
+                          setHistoryTab("visit");
                         }}
                         hideCloseButton={!isDesktop}
                         onEditClick={() => setIsDoctorWorkOpen(true)}

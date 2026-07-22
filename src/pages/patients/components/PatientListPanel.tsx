@@ -2,36 +2,17 @@
  * PatientListPanel — левая колонка «Все пациенты» (Django mode).
  * Презентационный компонент: список пациентов с аватаром-инициалами,
  * ФИО, телефоном и подсветкой выбранного. Без Supabase / Refine.
- * Визуально повторяет оригинальный PatientList + PatientListRow.
  */
 import React from "react";
-import {
-  Avatar,
-  Box,
-  Card,
-  CardContent,
-  CardHeader,
-  Divider,
-  List,
-  ListItemAvatar,
-  ListItemButton,
-  ListItemText,
-  Stack,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
+import { Box, CircularProgress, Stack, Tooltip, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
+import PeopleOutlineOutlined from "@mui/icons-material/PeopleOutlineOutlined";
+import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import { AppCard, ListEmptyState, ListLoadingSkeleton, UserAvatar } from "../../../components/ui";
+import { subtleBg } from "../../../theme/uiHelpers";
 
 import type { DjangoPatient } from "../../../api/patients";
-
-function getInitials(fullName?: string): string {
-  if (!fullName) return "—";
-  const parts = String(fullName).trim().split(/\s+/);
-  const a = (parts[0] || "").charAt(0);
-  const b = (parts[1] || "").charAt(0);
-  return ((a + b) || a || "—").toUpperCase();
-}
 
 type Props = {
   loading: boolean;
@@ -64,23 +45,34 @@ const PatientListPanel: React.FC<Props> = ({
     [hasMore, loading, onLoadMore],
   );
 
+  const isInitialLoading = loading && patients.length === 0 && !error;
+
   return (
     <Box sx={{ height: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <Card variant="outlined" sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <CardHeader
-          title={
+      <AppCard
+        variant="outlined"
+        header={
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2, pt: 2, pb: 1.5 }}>
             <Stack direction="row" alignItems="center" gap={1.25}>
-              <PeopleOutlineIcon color="primary" />
+              <PeopleOutlineOutlined color="primary" />
               <Typography variant="h6">Пациенты</Typography>
             </Stack>
-          }
-          sx={{ pb: 1 }}
-        />
-        <Divider />
-        <CardContent
+            {patients.length > 0 && !error && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                {patients.length}{hasMore ? "+" : ""}
+              </Typography>
+            )}
+          </Stack>
+        }
+        disableContentPadding
+        sx={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
+      >
+        <Box
           onScroll={handleScroll}
           sx={{
-            p: 0,
+            p: 1,
+            borderTop: 1,
+            borderColor: "divider",
             overflowY: "auto",
             flex: 1,
             minHeight: 0,
@@ -90,89 +82,110 @@ const PatientListPanel: React.FC<Props> = ({
           }}
         >
           {error ? (
-            <Typography sx={{ p: 2 }} variant="body2" color="error" align="center">
-              Ошибка: {error}
-            </Typography>
+            <ListEmptyState icon={<ErrorOutlineOutlined />} title="Не удалось загрузить" description={error} />
+          ) : isInitialLoading ? (
+            <ListLoadingSkeleton rows={8} />
           ) : patients.length === 0 ? (
-            <Typography sx={{ p: 2 }} variant="body2" color="text.secondary" align="center">
-              {loading ? "Загрузка…" : "Нет пациентов"}
-            </Typography>
+            <ListEmptyState
+              icon={<PeopleOutlineOutlined />}
+              title="Пациенты не найдены"
+              description="Измените запрос или добавьте нового пациента"
+            />
           ) : (
-            <List disablePadding sx={{ px: 1, py: 0.5 }}>
-              {patients.map((p) => {
-                const active = selectedId === p.id;
-                return (
-                  <ListItemButton
-                    key={p.id}
-                    selected={active}
-                    onClick={() => onSelect(p)}
-                    sx={{
-                      px: 2,
-                      py: 1.25,
-                      my: "5px",
-                      border: "1px solid transparent",
-                      borderRadius: 1,
-                      "&:hover": { bgcolor: (theme) => theme.palette.action.hover },
-                      "&.Mui-selected": {
-                        borderColor: (theme) => theme.palette.primary.main,
-                        bgcolor: (theme) => theme.palette.action.selected,
-                        borderLeft: "3px solid",
-                        borderLeftColor: (theme) => theme.palette.primary.main,
-                      },
-                    }}
-                  >
-                    <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: 1 }}>
-                      <ListItemAvatar sx={{ minWidth: "auto" }}>
-                        <Avatar
-                          src={p.photoUrl ?? undefined}
-                          sx={{
-                            width: 28,
-                            height: 28,
-                            bgcolor: (theme) => theme.palette.primary.main,
-                            fontSize: 12,
-                          }}
-                        >
-                          {getInitials(p.fullName)}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" alignItems="center" spacing={1}>
-                            <Typography variant="subtitle2" noWrap>
-                              {p.fullName || "Без имени"}
-                            </Typography>
-                            {p.isBlacklisted && (
-                              <Tooltip title={p.blacklistReason || "Причина не указана"} arrow>
-                                <ReportProblemIcon color="error" sx={{ fontSize: 16 }} />
-                              </Tooltip>
-                            )}
-                          </Stack>
+            <>
+              <Stack spacing={0.5}>
+                {patients.map((p) => {
+                  const active = selectedId === p.id;
+                  return (
+                    <Box
+                      key={p.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onSelect(p)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelect(p);
                         }
-                        secondary={
-                          <Typography variant="caption" color="text.secondary" noWrap>
-                            {p.phone || "—"}
-                          </Typography>
-                        }
-                      />
-                    </Stack>
-                  </ListItemButton>
-                );
-              })}
-            </List>
+                      }}
+                      sx={(t) => ({
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1.25,
+                        p: 1.25,
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        border: 1,
+                        borderColor: active ? alpha(t.palette.primary.main, 0.4) : "transparent",
+                        bgcolor: active
+                          ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.09)
+                          : "transparent",
+                        transition: "background-color .15s ease, border-color .15s ease",
+                        "&:hover": {
+                          borderColor: active ? undefined : alpha(t.palette.primary.main, 0.24),
+                          bgcolor: active ? undefined : subtleBg(t),
+                        },
+                        "&:focus-visible": {
+                          outline: "none",
+                          borderColor: alpha(t.palette.primary.main, 0.5),
+                        },
+                      })}
+                    >
+                      <Box sx={{ position: "relative", flexShrink: 0 }}>
+                        <UserAvatar
+                          src={p.photoUrl}
+                          name={p.fullName}
+                          size={38}
+                          sx={{ borderRadius: "10px", fontSize: 13 }}
+                        />
+                        {p.isBlacklisted && (
+                          <Tooltip title={p.blacklistReason || "Причина не указана"} arrow>
+                            <Box
+                              sx={(t) => ({
+                                position: "absolute",
+                                right: -3,
+                                bottom: -3,
+                                width: 15,
+                                height: 15,
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: `2.5px solid ${t.palette.background.paper}`,
+                                bgcolor: t.palette.error.main,
+                              })}
+                            >
+                              <ReportProblemIcon sx={{ fontSize: 9, color: "common.white" }} />
+                            </Box>
+                          </Tooltip>
+                        )}
+                      </Box>
+
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                          {p.fullName || "Без имени"}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                          {p.phone || "—"}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Stack>
+
+              {patients.length > 0 && loading && (
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ py: 1.5 }}>
+                  <CircularProgress size={18} />
+                  <Typography variant="caption" color="text.secondary">
+                    Загрузка…
+                  </Typography>
+                </Stack>
+              )}
+            </>
           )}
-          {patients.length > 0 && loading && (
-            <Typography
-              sx={{ p: 1.5 }}
-              variant="caption"
-              color="text.secondary"
-              align="center"
-              display="block"
-            >
-              Загрузка…
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
+        </Box>
+      </AppCard>
     </Box>
   );
 };

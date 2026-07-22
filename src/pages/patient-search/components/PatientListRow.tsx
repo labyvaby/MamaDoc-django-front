@@ -5,16 +5,11 @@
  * Не содержит логики загрузки/фильтрации/пагинации — только отображение и клик.
  */
 import React from "react";
-import {
-  Avatar,
-  ListItemButton,
-  ListItemText,
-  Stack,
-  Typography,
-  ListItemAvatar,
-  Tooltip,
-} from "@mui/material";
+import { Box, Typography, Tooltip } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import { UserAvatar } from "../../../components/ui";
+import { subtleBg } from "../../../theme/uiHelpers";
 
 export type PatientListRowProps = {
   patient: {
@@ -28,77 +23,84 @@ export type PatientListRowProps = {
   onClick?: () => void;
 };
 
-function getInitials(fullName?: string): string {
-  if (!fullName) return "—";
-  const parts = String(fullName).trim().split(/\s+/);
-  const a = (parts[0] || "").charAt(0);
-  const b = (parts[1] || "").charAt(0);
-  const c = (parts[2] || "").charAt(0);
-  return (a + (b || c) || a || "—").toUpperCase();
-}
-
 const PatientListRow: React.FC<PatientListRowProps> = ({
   patient,
   selected = false,
   onClick,
 }) => {
   return (
-    <ListItemButton
-      selected={!!selected}
+    <Box
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      sx={{
-        px: 2,
-        py: 1.25,
-        my: "5px", // 10px между элементами (5px сверху и снизу)
-        border: "1px solid transparent",
-        borderRadius: 1,
-        "&:hover": {
-          bgcolor: (theme) => theme.palette.action.hover,
-        },
-        "&.Mui-selected": {
-          borderColor: (theme) => theme.palette.primary.main,
-          bgcolor: (theme) => theme.palette.action.selected,
-          borderLeft: "3px solid",
-          borderLeftColor: (theme) => theme.palette.primary.main,
-        },
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
       }}
+      sx={(t) => ({
+        display: "flex",
+        alignItems: "center",
+        gap: 1.25,
+        p: 1.25,
+        borderRadius: "10px",
+        cursor: "pointer",
+        border: 1,
+        borderColor: selected ? alpha(t.palette.primary.main, 0.4) : "transparent",
+        bgcolor: selected
+          ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.09)
+          : "transparent",
+        transition: "background-color .15s ease, border-color .15s ease",
+        "&:hover": {
+          borderColor: selected ? undefined : alpha(t.palette.primary.main, 0.24),
+          bgcolor: selected ? undefined : subtleBg(t),
+        },
+        "&:focus-visible": {
+          outline: "none",
+          borderColor: alpha(t.palette.primary.main, 0.5),
+        },
+      })}
     >
-      {/* Секция: аватар + текст */}
-      <Stack direction="row" alignItems="center" spacing={1.25} sx={{ width: 1 }}>
-        <ListItemAvatar>
-          <Avatar
-            src={patient.photo || undefined}
-            sx={{
-              width: 28,
-              height: 28,
-              bgcolor: (theme) => theme.palette.primary.main,
-              fontSize: 12,
-            }}
-          >
-            {getInitials(patient.fio)}
-          </Avatar>
-        </ListItemAvatar>
-        <ListItemText
-          primary={
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <Typography variant="subtitle2" noWrap>
-                {patient.fio || "Без имени"}
-              </Typography>
-              {patient.is_blacklisted && (
-                <Tooltip title={patient.blacklist_reason || "Причина не указана"} arrow>
-                  <ReportProblemIcon color="error" sx={{ fontSize: 16 }} />
-                </Tooltip>
-              )}
-            </Stack>
-          }
-          secondary={
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {patient.phone || "—"}
-            </Typography>
-          }
+      <Box sx={{ position: "relative", flexShrink: 0 }}>
+        <UserAvatar
+          src={patient.photo}
+          name={patient.fio}
+          size={38}
+          sx={{ borderRadius: "10px", fontSize: 13 }}
         />
-      </Stack>
-    </ListItemButton>
+        {patient.is_blacklisted && (
+          <Tooltip title={patient.blacklist_reason || "Причина не указана"} arrow>
+            <Box
+              sx={(t) => ({
+                position: "absolute",
+                right: -3,
+                bottom: -3,
+                width: 15,
+                height: 15,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `2.5px solid ${t.palette.background.paper}`,
+                bgcolor: t.palette.error.main,
+              })}
+            >
+              <ReportProblemIcon sx={{ fontSize: 9, color: "common.white" }} />
+            </Box>
+          </Tooltip>
+        )}
+      </Box>
+
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography variant="body2" fontWeight={600} noWrap>
+          {patient.fio || "Без имени"}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+          {patient.phone || "—"}
+        </Typography>
+      </Box>
+    </Box>
   );
 };
 
