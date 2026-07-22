@@ -143,12 +143,13 @@ const EmployeesPage: React.FC = () => {
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          minHeight: 0,
         })}
       >
         <Grid
           container
           spacing={2}
-          sx={{ flex: 1, minHeight: 0, height: 0, overflow: "hidden" }}
+          sx={{ flex: 1, minHeight: 0, height: "100%", overflow: "hidden" }}
         >
           {/* Левая колонна — список */}
           <Grid
@@ -159,25 +160,24 @@ const EmployeesPage: React.FC = () => {
               height: "100%",
               display: "flex",
               flexDirection: "column",
+              minHeight: 0,
               overflow: "hidden",
             }}
           >
-            <Box sx={{ height: "100%", overflowY: "auto", pr: 0.5 }}>
-              <EmployeeList
-                items={state.filtered}
-                onSelect={(e) => state.setDetailsOpen(e)}
-                onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
-                onDelete={canFire ? (e) => state.setDeleteOpen(e) : undefined}
-                listRef={listRef}
-                onScroll={state.loadMore}
-                loading={state.loading}
-                hasMore={state.hasMore}
-                loadingMore={state.loadingMore}
-                isGrouped
-                roles={roles}
-                selectedId={state.detailsOpen?.id ?? null}
-              />
-            </Box>
+            <EmployeeList
+              items={state.filtered}
+              onSelect={(e) => state.setDetailsOpen(e)}
+              onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
+              onDelete={canFire ? (e) => state.setDeleteOpen(e) : undefined}
+              listRef={listRef}
+              onScroll={state.loadMore}
+              loading={state.loading}
+              hasMore={state.hasMore}
+              loadingMore={state.loadingMore}
+              isGrouped
+              roles={roles}
+              selectedId={state.detailsOpen?.id ?? null}
+            />
           </Grid>
 
           {/* Правая колонна — карточка (скрыта на мобильных) */}

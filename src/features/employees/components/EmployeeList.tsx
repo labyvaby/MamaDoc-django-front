@@ -302,9 +302,21 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
   return (
     <Box
-      sx={{ height: { md: "100%" }, minHeight: 0, overflowY: { xs: "visible", md: "auto" }, pr: { md: 0.5 } }}
+      sx={{
+        height: "100%",
+        minHeight: 0,
+        overflowY: "auto",
+        pr: 0.5,
+        pb: 3,
+      }}
       ref={listRef as React.RefObject<HTMLDivElement>}
-      onScroll={onScroll}
+      onScroll={(e) => {
+        onScroll();
+        const el = e.currentTarget;
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+          onScroll();
+        }
+      }}
     >
       {items.length === 0 ? (
         <Typography sx={{ p: 2 }} color="text.secondary">

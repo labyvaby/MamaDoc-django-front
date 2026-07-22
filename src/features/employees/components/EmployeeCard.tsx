@@ -561,7 +561,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
         }
       />
       <Divider />
-      <CardContent sx={{ flex: 1, overflowY: "auto" }}>
+      <CardContent sx={{ flex: 1, overflowY: { xs: "visible", md: "auto" }, pb: 3, "&:last-child": { pb: 3 } }}>
         {emp ? (
           <Stack spacing={3}>
             {/* Hero: аватар-плашка + имя + ник + чипы */}
