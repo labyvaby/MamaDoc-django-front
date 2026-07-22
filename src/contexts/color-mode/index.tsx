@@ -16,6 +16,8 @@ import React, {
   useState,
 } from "react";
 
+import { usePermissions } from "../../hooks/usePermissions";
+
 export type ColorScheme = "light" | "dark" | "system";
 
 /**
@@ -71,6 +73,9 @@ const getSystemMode = (): "light" | "dark" =>
 export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   children,
 }) => {
+  const { activeOrganization } = usePermissions();
+  const themeConfig = activeOrganization?.themeConfig;
+
   // Миграция со старого ключа "colorMode" (light/dark) на "colorScheme".
   const storedScheme =
     (localStorage.getItem("colorScheme") as ColorScheme | null) ||
@@ -95,6 +100,34 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     (localStorage.getItem("cardSkin") as CardSkin) || DEFAULT_CARD_SKIN,
   );
   const [systemMode, setSystemMode] = useState<"light" | "dark">(getSystemMode());
+
+  // При получении или смене палитры организации от бэкенда применяем её.
+  useEffect(() => {
+    if (!themeConfig || typeof themeConfig !== "object") return;
+    if (themeConfig.primaryColor && typeof themeConfig.primaryColor === "string") {
+      setPrimaryColorState(themeConfig.primaryColor);
+    }
+    if (
+      themeConfig.colorScheme &&
+      (themeConfig.colorScheme === "light" ||
+        themeConfig.colorScheme === "dark" ||
+        themeConfig.colorScheme === "system")
+    ) {
+      setSchemeState(themeConfig.colorScheme as ColorScheme);
+    }
+    if (themeConfig.lightSurface && typeof themeConfig.lightSurface === "string") {
+      setLightSurfaceState(themeConfig.lightSurface);
+    }
+    if (themeConfig.darkSurface && typeof themeConfig.darkSurface === "string") {
+      setDarkSurfaceState(themeConfig.darkSurface);
+    }
+    if (
+      themeConfig.cardSkin &&
+      (themeConfig.cardSkin === "bordered" || themeConfig.cardSkin === "shadow")
+    ) {
+      setCardSkinState(themeConfig.cardSkin as CardSkin);
+    }
+  }, [themeConfig]);
 
   // Следим за системной темой, когда выбрана схема «системная».
   useEffect(() => {

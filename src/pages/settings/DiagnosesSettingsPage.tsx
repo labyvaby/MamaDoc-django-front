@@ -85,7 +85,10 @@ const DiagnosesSettingsPage: React.FC = () => {
     const q = search.trim().toLowerCase();
     if (!q) return all;
     return all.filter(
-      (d) => d.code.toLowerCase().includes(q) || d.title.toLowerCase().includes(q),
+      (d) =>
+        d.code.toLowerCase().includes(q) ||
+        d.title.toLowerCase().includes(q) ||
+        (d.displayName ?? "").toLowerCase().includes(q),
     );
   }, [all, search]);
 
@@ -258,7 +261,14 @@ const DiagnosesSettingsPage: React.FC = () => {
                     <TableCell sx={{ fontFamily: "monospace", fontWeight: 600 }}>
                       {d.code}
                     </TableCell>
-                    <TableCell>{d.title}</TableCell>
+                    <TableCell>
+                      {d.title}
+                      {d.displayName && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Для печати: {d.displayName}
+                        </Typography>
+                      )}
+                    </TableCell>
                     <TableCell align="center">
                       <Switch
                         size="small"

@@ -413,6 +413,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 id: d.id ? Number(d.id) : -1,
                 code: d.diagnosisCode ?? "",
                 title: d.title ?? "",
+                displayName: d.displayName ?? "",
                 isActive: true,
                 sortOrder: 0,
               }
@@ -602,6 +603,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         id: d.id > 0 ? String(d.id) : undefined,
         diagnosisCode: d.code,
         title: d.title,
+        displayName: d.displayName || undefined,
       })),
       photoUrls,
       weightKg: weightKg.trim() || null,
@@ -1118,7 +1120,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 setSelectedDiagnoses(
                   value.map((item) =>
                     typeof item === "string"
-                      ? { id: -1, code: "", title: item.trim(), isActive: true, sortOrder: 0 }
+                      ? { id: -1, code: "", title: item.trim(), displayName: "", isActive: true, sortOrder: 0 }
                       : item,
                   ).filter((item) => item.title !== ""),
                 )

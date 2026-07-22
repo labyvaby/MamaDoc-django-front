@@ -36,6 +36,7 @@ function extractErrorMessage(err: unknown): string {
 
 const CODE_MAX = 20;
 const TITLE_MAX = 500;
+const DISPLAY_NAME_MAX = 500;
 
 /** Target opening the drawer: a diagnosis to edit, or "new" to create one. */
 export type DiagnosisFormTarget = CatalogDiagnosis | "new" | null;
@@ -80,6 +81,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
 
   const [code, setCode] = React.useState("");
   const [title, setTitle] = React.useState("");
+  const [displayName, setDisplayName] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -97,10 +99,12 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
     if (editing) {
       setCode(editing.code);
       setTitle(editing.title);
+      setDisplayName(editing.displayName ?? "");
       setIsActive(editing.isActive);
     } else {
       setCode("");
       setTitle("");
+      setDisplayName("");
       setIsActive(true);
     }
     // Focus the first field shortly after the drawer transition starts.
@@ -110,13 +114,17 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
 
   const trimmedCode = code.trim();
   const trimmedTitle = title.trim();
+  // Defensive: older backend deploys may omit displayName entirely (field
+  // rollout in progress), so the raw string can transiently be undefined.
+  const trimmedDisplayName = (displayName ?? "").trim();
 
   // Dirty = differs from the original (or has any content when creating).
   const isDirty = isEdit
     ? trimmedCode !== editing!.code ||
       trimmedTitle !== editing!.title ||
+      trimmedDisplayName !== (editing!.displayName ?? "") ||
       isActive !== editing!.isActive
-    : Boolean(trimmedCode || trimmedTitle);
+    : Boolean(trimmedCode || trimmedTitle || trimmedDisplayName);
 
   const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
     isDirty,
@@ -139,12 +147,14 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
         saved = await updateDiagnosis(editing.id, {
           code: trimmedCode,
           title: trimmedTitle,
+          displayName: trimmedDisplayName,
           isActive,
         });
       } else {
         saved = await createDiagnosis({
           code: trimmedCode,
           title: trimmedTitle,
+          displayName: trimmedDisplayName,
           isActive,
         });
       }
@@ -272,6 +282,26 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
               error={Boolean(titleError)}
               helperText={titleError || " "}
               inputProps={{ maxLength: TITLE_MAX }}
+            />
+          </Stack>
+
+          {/* Название для печати */}
+          <Stack spacing={0.5}>
+            <FieldLabel counter={`${displayName.length}/${DISPLAY_NAME_MAX}`}>
+              Название для печати
+            </FieldLabel>
+            <TextField
+              size="small"
+              fullWidth
+              multiline
+              minRows={2}
+              maxRows={6}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              disabled={busy}
+              placeholder="Необязательно — например: Простуда"
+              helperText="Если заполнено, в PDF заключения пациент увидит это название вместо кода МКБ-10 и служебного названия."
+              inputProps={{ maxLength: DISPLAY_NAME_MAX }}
             />
           </Stack>
 

@@ -35,6 +35,8 @@ interface ProfigramInviteDialogProps {
 }
 
 import logoImg from "../../assets/icon/progigram_logo.jpg";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
+import { getProfigramTariffs, sendProfigramInvite } from "../../api/profigram";
 
 export const ProfigramInviteDialog: React.FC<ProfigramInviteDialogProps> = ({
     open,
@@ -71,23 +73,26 @@ export const ProfigramInviteDialog: React.FC<ProfigramInviteDialogProps> = ({
         setIsLoadingTariffs(true);
         setErrorMsg(null);
         try {
-            const { data, error } = await supabase.functions.invoke("profigram-tariffs", {
-                body: { phone_number: doctorPhone },
-            });
+            let loadedTariffs: Tariff[] = [];
+            if (IS_DJANGO_BACKEND) {
+                loadedTariffs = await getProfigramTariffs(doctorPhone);
+            } else {
+                const { data, error } = await supabase.functions.invoke("profigram-tariffs", {
+                    body: { phone_number: doctorPhone },
+                });
 
-            if (error) throw error;
+                if (error) throw error;
 
-            if (data && Array.isArray(data)) {
-                setTariffs(data);
-                if (data.length > 0) {
-                    setSelectedTariffId(data[0].id); // Select first by default
+                if (data && Array.isArray(data)) {
+                    loadedTariffs = data;
+                } else if (data && data.tariffs) {
+                    loadedTariffs = data.tariffs;
                 }
-            } else if (data && data.tariffs) {
-                // Adjusted based on potential response wrap
-                setTariffs(data.tariffs);
-                if (data.tariffs.length > 0) {
-                    setSelectedTariffId(data.tariffs[0].id);
-                }
+            }
+
+            setTariffs(loadedTariffs);
+            if (loadedTariffs.length > 0) {
+                setSelectedTariffId(loadedTariffs[0].id);
             }
         } catch (e: any) {
             console.error("Failed to fetch tariffs", e);
@@ -107,18 +112,29 @@ export const ProfigramInviteDialog: React.FC<ProfigramInviteDialogProps> = ({
         setErrorMsg(null);
 
         try {
-            const { error } = await supabase.functions.invoke("profigram-invite", {
-                body: {
-                    doctor_phone: doctorPhone,
-                    doctor_id: doctorId,
-                    patient_phone: patientPhone,
-                    patient_name: patientName,
-                    tariff_id: selectedTariffId,
-                    note: note.trim()
-                },
-            });
+            if (IS_DJANGO_BACKEND) {
+                await sendProfigramInvite({
+                    doctorPhone,
+                    doctorId,
+                    patientPhone,
+                    patientName,
+                    tariffId: selectedTariffId,
+                    note: note.trim(),
+                });
+            } else {
+                const { error } = await supabase.functions.invoke("profigram-invite", {
+                    body: {
+                        doctor_phone: doctorPhone,
+                        doctor_id: doctorId,
+                        patient_phone: patientPhone,
+                        patient_name: patientName,
+                        tariff_id: selectedTariffId,
+                        note: note.trim()
+                    },
+                });
 
-            if (error) throw error;
+                if (error) throw error;
+            }
 
             setIsSuccess(true);
             setTimeout(() => {
