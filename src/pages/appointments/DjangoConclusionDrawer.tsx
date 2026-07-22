@@ -1095,32 +1095,43 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             />
           </Stack>
 
-          {/* ── diagnosis (catalog multi-select) ── */}
+          {/* ── diagnosis (catalog multi-select + free text) ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Каталог диагнозов (МКБ-10)
+              Диагноз (МКБ-10)
             </Typography>
             <Autocomplete
               multiple
+              freeSolo
               disableCloseOnSelect
               options={catalog}
               value={selectedDiagnoses}
               loading={catalogLoading}
               disabled={readOnly}
               getOptionLabel={(o) =>
-                [o.code, o.title].filter(Boolean).join(" — ")
+                typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
               }
               isOptionEqualToValue={(o, v) =>
                 o.id === v.id || (o.code === v.code && o.code !== "")
               }
-              onChange={(_, value) => setSelectedDiagnoses(value)}
+              onChange={(_, value) =>
+                setSelectedDiagnoses(
+                  value.map((item) =>
+                    typeof item === "string"
+                      ? { id: -1, code: "", title: item.trim(), isActive: true, sortOrder: 0 }
+                      : item,
+                  ).filter((item) => item.title !== ""),
+                )
+              }
               filterSelectedOptions
               size="small"
               renderInput={(params) => (
                 <TextField
                   {...params}
                   placeholder={
-                    readOnly ? "—" : "Выберите диагнозы из каталога…"
+                    readOnly
+                      ? "—"
+                      : "Выберите из каталога или впишите диагноз и нажмите Enter…"
                   }
                 />
               )}
