@@ -208,19 +208,30 @@ const PatientCard: React.FC<Props> = ({
             {patient && (onTopUp || onEdit || onMerge) && (
             <>
               {/* Кнопки — на md+ */}
-              <Stack direction="row" spacing={1} flexShrink={0} sx={{ display: { xs: "none", md: "flex" } }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                flexWrap="wrap"
+                sx={{
+                  display: { xs: "none", md: "flex" },
+                  width: { md: "100%" },
+                  justifyContent: "flex-end",
+                  minWidth: 0,
+                }}
+              >
                 {onTopUp && (
-                  <AppButton size="small" variant="outlined" color="success" onClick={onTopUp} startIcon={<AccountBalanceWalletOutlined />}>
+                  <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="success" onClick={onTopUp} startIcon={<AccountBalanceWalletOutlined />}>
                     Пополнить
                   </AppButton>
                 )}
                 {onMerge && (
-                  <AppButton size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
+                  <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
                     Объединить
                   </AppButton>
                 )}
                 {onEdit && (
-                  <AppButton size="small" variant="contained" onClick={onEdit} startIcon={<EditOutlined />}>
+                  <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="contained" onClick={onEdit} startIcon={<EditOutlined />}>
                     Редактировать
                   </AppButton>
                 )}
