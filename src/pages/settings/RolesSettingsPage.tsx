@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Chip,
+  Collapse,
   Divider,
   Drawer,
   IconButton,
@@ -20,11 +21,10 @@ import {
   AddOutlined,
   CloseOutlined,
   EditOutlined,
-  KeyOutlined,
+  ExpandMoreOutlined,
   LockOutlined,
   SearchOutlined,
 } from "@mui/icons-material";
-import Autocomplete from "@mui/material/Autocomplete";
 import Checkbox from "@mui/material/Checkbox";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
@@ -71,12 +71,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 function categoryLabel(cat: string): string {
   return CATEGORY_LABELS[cat] ?? cat;
-}
-
-// ── Permission label helper ─────────────────────────────────────────────────
-
-function permissionLabel(p: RbacPermission): string {
-  return p.name ? `${p.name} (${p.code})` : p.code;
 }
 
 // ── Group permissions by category ───────────────────────────────────────────
@@ -144,6 +138,191 @@ function useSnack() {
   return { snack, show, hide };
 }
 
+// ── PermissionPicker: встроенный список прав по категориям ────────────────────
+
+interface PermissionPickerProps {
+  grouped: { category: string; label: string; items: RbacPermission[] }[];
+  selectedCodes: string[];
+  onChange: (codes: string[]) => void;
+  isModuleOff: (code: string) => boolean;
+  disabled?: boolean;
+}
+
+function PermissionPicker({
+  grouped,
+  selectedCodes,
+  onChange,
+  isModuleOff,
+  disabled,
+}: PermissionPickerProps) {
+  const [search, setSearch] = React.useState("");
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
+  const selectedSet = React.useMemo(() => new Set(selectedCodes), [selectedCodes]);
+
+  const q = search.trim().toLowerCase();
+  const filtered = React.useMemo(() => {
+    if (!q) return grouped;
+    return grouped
+      .map((g) => ({
+        ...g,
+        items: g.items.filter(
+          (p) =>
+            (p.name || "").toLowerCase().includes(q) ||
+            p.code.toLowerCase().includes(q),
+        ),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [grouped, q]);
+
+  const toggleCat = (cat: string) =>
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(cat)) n.delete(cat);
+      else n.add(cat);
+      return n;
+    });
+
+  const togglePerm = (code: string) => {
+    const n = new Set(selectedSet);
+    if (n.has(code)) n.delete(code);
+    else n.add(code);
+    onChange([...n]);
+  };
+
+  const toggleGroup = (items: RbacPermission[], allSelected: boolean) => {
+    const n = new Set(selectedSet);
+    if (allSelected) items.forEach((p) => n.delete(p.code));
+    else items.forEach((p) => n.add(p.code));
+    onChange([...n]);
+  };
+
+  return (
+    <Box>
+      <TextField
+        size="small"
+        fullWidth
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Поиск права по названию или коду…"
+        disabled={disabled}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchOutlined fontSize="small" />
+            </InputAdornment>
+          ),
+        }}
+        sx={{ mb: 1 }}
+      />
+
+      <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1.5, overflow: "hidden" }}>
+        {filtered.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+            Ничего не найдено
+          </Typography>
+        ) : (
+          filtered.map((g, gi) => {
+            const selectedInGroup = g.items.filter((p) => selectedSet.has(p.code)).length;
+            const allSelected = selectedInGroup === g.items.length && g.items.length > 0;
+            const someSelected = selectedInGroup > 0 && !allSelected;
+            const isOpen = q ? true : expanded.has(g.category);
+            return (
+              <Box key={g.category}>
+                {gi > 0 && <Divider />}
+                {/* Заголовок категории — чекбокс «выбрать все» + счётчик + разворот */}
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  sx={{ px: 1, py: 0.25, bgcolor: (t) => subtleBg(t), cursor: q ? "default" : "pointer" }}
+                  onClick={() => !q && toggleCat(g.category)}
+                >
+                  <Checkbox
+                    size="small"
+                    disabled={disabled}
+                    checked={allSelected}
+                    indeterminate={someSelected}
+                    icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                    checkedIcon={<CheckBoxIcon fontSize="small" />}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleGroup(g.items, allSelected)}
+                  />
+                  <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600 }}>
+                    {g.label}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                    {selectedInGroup}/{g.items.length}
+                  </Typography>
+                  {!q && (
+                    <ExpandMoreOutlined
+                      fontSize="small"
+                      sx={{
+                        color: "text.secondary",
+                        transition: "transform .15s ease",
+                        transform: isOpen ? "rotate(180deg)" : "none",
+                      }}
+                    />
+                  )}
+                </Stack>
+                {/* Права категории */}
+                <Collapse in={isOpen} unmountOnExit>
+                  <Box sx={{ py: 0.25 }}>
+                    {g.items.map((p) => {
+                      const checked = selectedSet.has(p.code);
+                      const off = isModuleOff(p.code);
+                      return (
+                        <Stack
+                          key={p.code}
+                          direction="row"
+                          alignItems="center"
+                          sx={{
+                            pl: 3,
+                            pr: 1,
+                            py: 0.25,
+                            cursor: disabled ? "default" : "pointer",
+                            "&:hover": { bgcolor: "action.hover" },
+                          }}
+                          onClick={() => !disabled && togglePerm(p.code)}
+                        >
+                          <Checkbox
+                            size="small"
+                            disabled={disabled}
+                            checked={checked}
+                            icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                            checkedIcon={<CheckBoxIcon fontSize="small" />}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => togglePerm(p.code)}
+                          />
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" lineHeight={1.3}>
+                              {p.name || p.code}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {p.code}
+                            </Typography>
+                          </Box>
+                          {off && (
+                            <Chip
+                              label="модуль отключён"
+                              size="small"
+                              color="warning"
+                              variant="outlined"
+                              sx={{ ml: 1, flexShrink: 0, height: 20, fontSize: "0.65rem" }}
+                            />
+                          )}
+                        </Stack>
+                      );
+                    })}
+                  </Box>
+                </Collapse>
+              </Box>
+            );
+          })
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 // ── RoleFormDrawer ──────────────────────────────────────────────────────────
 
 interface RoleFormDrawerProps {
@@ -201,12 +380,6 @@ function RoleFormDrawer({
       return moduleCode !== null && !(enabledModules ?? []).includes(moduleCode);
     },
     [enabledModules],
-  );
-
-  // Selected permission objects (for Autocomplete value)
-  const selectedPerms = React.useMemo(
-    () => permissions.filter((p) => selectedCodes.includes(p.code)),
-    [permissions, selectedCodes],
   );
 
   const canSubmit =
@@ -373,86 +546,12 @@ function RoleFormDrawer({
               </Box>
             )}
 
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              options={permissions}
-              value={selectedPerms}
-              groupBy={(option) => categoryLabel(option.category || option.code.split(".")[0] || "other")}
-              getOptionLabel={permissionLabel}
-              isOptionEqualToValue={(o, v) => o.code === v.code}
-              onChange={(_, newValue) => {
-                setSelectedCodes(newValue.map((p) => p.code));
-              }}
+            <PermissionPicker
+              grouped={grouped}
+              selectedCodes={selectedCodes}
+              onChange={setSelectedCodes}
+              isModuleOff={isModuleOff}
               disabled={busy}
-              renderOption={(props, option, { selected }) => {
-                const { key, ...rest } = props as React.LiHTMLAttributes<HTMLLIElement> & { key?: React.Key };
-                return (
-                  <li key={option.code} {...rest}>
-                    <Checkbox
-                      icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                      checkedIcon={<CheckBoxIcon fontSize="small" />}
-                      style={{ marginRight: 8 }}
-                      checked={selected}
-                      size="small"
-                    />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" lineHeight={1.3}>
-                        {option.name || option.code}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {option.code}
-                      </Typography>
-                    </Box>
-                    {isModuleOff(option.code) && (
-                      <Chip
-                        label="модуль отключён"
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                        sx={{ ml: 1, flexShrink: 0, height: 20, fontSize: "0.65rem" }}
-                      />
-                    )}
-                  </li>
-                );
-              }}
-              renderTags={(value, getTagProps) =>
-                value.map((option, index) => {
-                  const { key, ...tagProps } = getTagProps({ index });
-                  return (
-                    <Chip
-                      key={option.code}
-                      label={option.name || option.code}
-                      size="small"
-                      {...tagProps}
-                    />
-                  );
-                })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder={
-                    selectedCodes.length === 0
-                      ? "Выберите права из списка…"
-                      : ""
-                  }
-                  fullWidth
-                  size="small"
-                  InputProps={{
-                    ...params.InputProps,
-                    startAdornment: (
-                      <>
-                        <InputAdornment position="start">
-                          <KeyOutlined fontSize="small" color="action" />
-                        </InputAdornment>
-                        {params.InputProps.startAdornment}
-                      </>
-                    ),
-                  }}
-                />
-              )}
-              sx={{ "& .MuiAutocomplete-listbox": { maxHeight: 320 } }}
             />
             {selectedCodes.length > 0 && (
               <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
