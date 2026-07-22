@@ -22,7 +22,8 @@ import {
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
-import appLogo from "../../assets/img/logo.png";
+import OrganizationBrand from "../brand/OrganizationBrand";
+import { useAppVersion } from "../../api/appVersion";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -67,8 +68,8 @@ import { useMobileSidebar } from "./mobile-context";
 import { SettingsModal } from "./SettingsModal";
 import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
-import { useWorkShift } from "../../hooks/useWorkShift";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useWorkShift } from "../../hooks/useWorkShift";
 import { useSkudActions } from "../../hooks/useSkudActions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
@@ -263,38 +264,9 @@ const SidebarContainer: React.FC<React.PropsWithChildren<{ stickyTop?: React.Rea
   );
 };
 
-// Бренд в шапке сайдбара: логотип активного филиала (если загружен в
-// «Настройки → Филиалы»), иначе логотип организации, иначе — статичный логотип
-// приложения. Название рядом не дублируем — оно уже в ActiveContextSwitcher.
+// Название контекста уже есть в ActiveContextSwitcher; здесь остаётся только знак.
 const SidebarBrand: React.FC<{ height: number }> = ({ height }) => {
-  const { activeOrganization, activeBranch } = usePermissions();
-  const logoUrl = activeBranch?.logoUrl ?? activeOrganization?.logoUrl ?? null;
-  const logoAlt = activeBranch?.logoUrl
-    ? activeBranch.name
-    : activeOrganization?.name ?? "Организация";
-  const [broken, setBroken] = useState(false);
-
-  useEffect(() => {
-    setBroken(false);
-  }, [logoUrl]);
-
-  const useCustomLogo = !!logoUrl && !broken;
-
-  return (
-    <Box
-      component="img"
-      src={useCustomLogo ? logoUrl : appLogo}
-      alt={useCustomLogo ? logoAlt : "Мама Доктор"}
-      onError={useCustomLogo ? () => setBroken(true) : undefined}
-      sx={{
-        height,
-        width: "auto",
-        maxWidth: height * 6,
-        objectFit: "contain",
-        borderRadius: useCustomLogo ? 1 : 0,
-      }}
-    />
-  );
+  return <OrganizationBrand height={height} />;
 };
 
 // Mobile header with logo (< 768px - мобильные и планшеты)
@@ -367,7 +339,7 @@ const SidebarSecondary: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   useWorkShift();
-  const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, loading: permissionsLoading } = usePermissions();
+  const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, activeEmployee, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const orgId = useApiOrgId();
@@ -420,7 +392,11 @@ const SidebarSecondary: React.FC = () => {
     sales: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.sales.view", "warehouse.view"]) : (isAdmin() || isRegistrator())),
     storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
     // УПРАВЛЕНИЕ
-    salaryReports: IS_DJANGO_BACKEND ? (isSuper || can("payroll.view")) : true,
+    // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
+    // сотрудника — тот же экран в персональном режиме (только свои цифры).
+    salaryReports: IS_DJANGO_BACKEND
+      ? (isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null))
+      : true,
     reports: isSuper || isAdmin() || hasRole(["accountant"]),
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
     load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
@@ -1016,6 +992,7 @@ const SidebarFooter: React.FC = () => {
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
+  const appVersion = useAppVersion();
 
   const handleLogoutClick = () => {
     setSettingsOpen(false); // Close settings if open (though they are different modals)
@@ -1064,14 +1041,14 @@ const SidebarFooter: React.FC = () => {
               textAlign="center"
               sx={{ fontSize: '0.65rem' }}
             >
-              v0.1
+              {appVersion}
             </Typography>
           </Stack>
         ) : (
           <>
             <Box>
               <Typography variant="caption" color="text.secondary" display="block">
-                MamaDoc v0.1.0
+                Aximo CRM {appVersion}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
                 © {new Date().getFullYear()}

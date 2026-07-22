@@ -2,8 +2,8 @@ import React from "react";
 import {
   Alert,
   Box,
+  Button,
   Chip,
-  Collapse,
   Divider,
   Drawer,
   IconButton,
@@ -11,20 +11,25 @@ import {
   Paper,
   Skeleton,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
   alpha,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import {
   AdminPanelSettingsOutlined,
   AddOutlined,
   CloseOutlined,
   EditOutlined,
-  ExpandMoreOutlined,
+  KeyOutlined,
+  KeyboardArrowRightOutlined,
   LockOutlined,
   SearchOutlined,
 } from "@mui/icons-material";
+import Autocomplete from "@mui/material/Autocomplete";
 import Checkbox from "@mui/material/Checkbox";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
@@ -71,6 +76,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 function categoryLabel(cat: string): string {
   return CATEGORY_LABELS[cat] ?? cat;
+}
+
+// ── Permission label helper ─────────────────────────────────────────────────
+
+function permissionLabel(p: RbacPermission): string {
+  return p.name ? `${p.name} (${p.code})` : p.code;
 }
 
 // ── Group permissions by category ───────────────────────────────────────────
@@ -138,187 +149,236 @@ function useSnack() {
   return { snack, show, hide };
 }
 
-// ── PermissionPicker: встроенный список прав по категориям ────────────────────
+// ── MobilePermissionPicker ──────────────────────────────────────────────────
+// Тач-редактор прав для мобильной версии: аккордеон категорий с мастер-
+// переключателем, крупные тумблеры, поиск и липкая сводка — вместо десктопного
+// Autocomplete с грудой чипов, неудобного на телефоне.
 
-interface PermissionPickerProps {
+interface MobilePermissionPickerProps {
   grouped: { category: string; label: string; items: RbacPermission[] }[];
   selectedCodes: string[];
   onChange: (codes: string[]) => void;
   isModuleOff: (code: string) => boolean;
   disabled?: boolean;
+  totalCount: number;
+  /** Права роли на момент открытия — задают, какие категории раскрыты сразу. */
+  initialSelectedCodes: string[];
 }
 
-function PermissionPicker({
+function MobilePermissionPicker({
   grouped,
   selectedCodes,
   onChange,
   isModuleOff,
   disabled,
-}: PermissionPickerProps) {
+  totalCount,
+  initialSelectedCodes,
+}: MobilePermissionPickerProps) {
   const [search, setSearch] = React.useState("");
-  const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
-  const selectedSet = React.useMemo(() => new Set(selectedCodes), [selectedCodes]);
+  // По умолчанию раскрыты категории, где у роли уже есть права.
+  const [expanded, setExpanded] = React.useState<Set<string>>(() => {
+    const init = new Set(initialSelectedCodes);
+    return new Set(
+      grouped.filter((g) => g.items.some((p) => init.has(p.code))).map((g) => g.category),
+    );
+  });
 
+  const selected = React.useMemo(() => new Set(selectedCodes), [selectedCodes]);
   const q = search.trim().toLowerCase();
-  const filtered = React.useMemo(() => {
-    if (!q) return grouped;
-    return grouped
-      .map((g) => ({
-        ...g,
-        items: g.items.filter(
-          (p) =>
-            (p.name || "").toLowerCase().includes(q) ||
-            p.code.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((g) => g.items.length > 0);
-  }, [grouped, q]);
 
-  const toggleCat = (cat: string) =>
+  const togglePerm = (code: string) => {
+    if (disabled) return;
+    const next = new Set(selected);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    onChange([...next]);
+  };
+  const toggleCategory = (items: RbacPermission[]) => {
+    if (disabled) return;
+    const codes = items.map((p) => p.code);
+    const allOn = codes.every((c) => selected.has(c));
+    const next = new Set(selected);
+    codes.forEach((c) => (allOn ? next.delete(c) : next.add(c)));
+    onChange([...next]);
+  };
+  const toggleExpand = (cat: string) => {
     setExpanded((prev) => {
       const n = new Set(prev);
       if (n.has(cat)) n.delete(cat);
       else n.add(cat);
       return n;
     });
-
-  const togglePerm = (code: string) => {
-    const n = new Set(selectedSet);
-    if (n.has(code)) n.delete(code);
-    else n.add(code);
-    onChange([...n]);
   };
 
-  const toggleGroup = (items: RbacPermission[], allSelected: boolean) => {
-    const n = new Set(selectedSet);
-    if (allSelected) items.forEach((p) => n.delete(p.code));
-    else items.forEach((p) => n.add(p.code));
-    onChange([...n]);
-  };
+  const visibleGroups = grouped
+    .map((g) => ({
+      ...g,
+      matched: q
+        ? g.items.filter(
+            (p) =>
+              (p.name || "").toLowerCase().includes(q) ||
+              p.code.toLowerCase().includes(q) ||
+              g.label.toLowerCase().includes(q),
+          )
+        : g.items,
+    }))
+    .filter((g) => g.matched.length > 0);
 
   return (
     <Box>
-      <TextField
-        size="small"
-        fullWidth
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Поиск права по названию или коду…"
-        disabled={disabled}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchOutlined fontSize="small" />
-            </InputAdornment>
-          ),
-        }}
-        sx={{ mb: 1 }}
-      />
+      {/* Липкая сводка + поиск */}
+      <Box sx={{ position: "sticky", top: 0, zIndex: 2, bgcolor: "background.paper", pb: 1 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          gap={1.5}
+          sx={(t) => ({
+            px: 1.5,
+            py: 1,
+            mb: 1,
+            borderRadius: "12px",
+            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+          })}
+        >
+          <Typography
+            sx={{
+              fontSize: 22,
+              fontWeight: 700,
+              color: "primary.onSurface",
+              lineHeight: 1,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {selected.size}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            выбрано из {totalCount}
+            {selected.size ? "" : " · роль пока без прав"}
+          </Typography>
+          {selected.size > 0 && !disabled && (
+            <Button
+              size="small"
+              onClick={() => onChange([])}
+              sx={{ textTransform: "none", minWidth: 0, px: 1 }}
+            >
+              Очистить
+            </Button>
+          )}
+        </Stack>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Поиск права…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchOutlined fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
+        />
+      </Box>
 
-      <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1.5, overflow: "hidden" }}>
-        {filtered.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-            Ничего не найдено
+      <Stack spacing={1} sx={{ mt: 1 }}>
+        {visibleGroups.length === 0 ? (
+          <Typography variant="body2" color="text.disabled" sx={{ textAlign: "center", py: 3 }}>
+            Прав по запросу не найдено
           </Typography>
         ) : (
-          filtered.map((g, gi) => {
-            const selectedInGroup = g.items.filter((p) => selectedSet.has(p.code)).length;
-            const allSelected = selectedInGroup === g.items.length && g.items.length > 0;
-            const someSelected = selectedInGroup > 0 && !allSelected;
-            const isOpen = q ? true : expanded.has(g.category);
+          visibleGroups.map((g) => {
+            const selCount = g.items.filter((p) => selected.has(p.code)).length;
+            const allOn = selCount === g.items.length;
+            const open = expanded.has(g.category) || !!q;
             return (
-              <Box key={g.category}>
-                {gi > 0 && <Divider />}
-                {/* Заголовок категории — чекбокс «выбрать все» + счётчик + разворот */}
+              <Paper key={g.category} variant="outlined" sx={{ overflow: "hidden" }}>
                 <Stack
                   direction="row"
                   alignItems="center"
-                  sx={{ px: 1, py: 0.25, bgcolor: (t) => subtleBg(t), cursor: q ? "default" : "pointer" }}
-                  onClick={() => !q && toggleCat(g.category)}
+                  gap={1}
+                  sx={{ px: 1.5, py: 1.25, cursor: "pointer" }}
+                  onClick={() => toggleExpand(g.category)}
                 >
-                  <Checkbox
-                    size="small"
-                    disabled={disabled}
-                    checked={allSelected}
-                    indeterminate={someSelected}
-                    icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                    checkedIcon={<CheckBoxIcon fontSize="small" />}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() => toggleGroup(g.items, allSelected)}
+                  <KeyboardArrowRightOutlined
+                    sx={{
+                      color: open ? "primary.onSurface" : "text.disabled",
+                      transform: open ? "rotate(90deg)" : "none",
+                      transition: "transform .2s ease",
+                    }}
                   />
-                  <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600 }}>
-                    {g.label}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-                    {selectedInGroup}/{g.items.length}
-                  </Typography>
-                  {!q && (
-                    <ExpandMoreOutlined
-                      fontSize="small"
-                      sx={{
-                        color: "text.secondary",
-                        transition: "transform .15s ease",
-                        transform: isOpen ? "rotate(180deg)" : "none",
-                      }}
-                    />
-                  )}
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      {g.label}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: selCount ? "primary.onSurface" : "text.secondary" }}
+                    >
+                      {selCount} из {g.items.length}
+                    </Typography>
+                  </Box>
+                  <Switch
+                    size="small"
+                    checked={allOn}
+                    disabled={disabled}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleCategory(g.items)}
+                  />
                 </Stack>
-                {/* Права категории */}
-                <Collapse in={isOpen} unmountOnExit>
-                  <Box sx={{ py: 0.25 }}>
-                    {g.items.map((p) => {
-                      const checked = selectedSet.has(p.code);
+                {open && (
+                  <Box sx={{ borderTop: "1px solid", borderColor: "divider" }}>
+                    {g.matched.map((p, i) => {
                       const off = isModuleOff(p.code);
                       return (
                         <Stack
                           key={p.code}
                           direction="row"
                           alignItems="center"
+                          gap={1}
                           sx={{
-                            pl: 3,
-                            pr: 1,
-                            py: 0.25,
-                            cursor: disabled ? "default" : "pointer",
-                            "&:hover": { bgcolor: "action.hover" },
+                            px: 1.5,
+                            py: 1,
+                            borderTop: i > 0 ? "1px solid" : "none",
+                            borderColor: "divider",
                           }}
-                          onClick={() => !disabled && togglePerm(p.code)}
                         >
-                          <Checkbox
-                            size="small"
-                            disabled={disabled}
-                            checked={checked}
-                            icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                            checkedIcon={<CheckBoxIcon fontSize="small" />}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={() => togglePerm(p.code)}
-                          />
                           <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography variant="body2" lineHeight={1.3}>
+                            <Typography variant="body2" fontWeight={500} lineHeight={1.3}>
                               {p.name || p.code}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontFamily: "monospace" }}
+                            >
                               {p.code}
                             </Typography>
+                            {off && (
+                              <Typography
+                                variant="caption"
+                                sx={{ display: "block", color: "warning.main", fontWeight: 600, mt: 0.25 }}
+                              >
+                                не действует, пока модуль выключен
+                              </Typography>
+                            )}
                           </Box>
-                          {off && (
-                            <Chip
-                              label="модуль отключён"
-                              size="small"
-                              color="warning"
-                              variant="outlined"
-                              sx={{ ml: 1, flexShrink: 0, height: 20, fontSize: "0.65rem" }}
-                            />
-                          )}
+                          <Switch
+                            size="small"
+                            checked={selected.has(p.code)}
+                            disabled={disabled}
+                            onChange={() => togglePerm(p.code)}
+                          />
                         </Stack>
                       );
                     })}
                   </Box>
-                </Collapse>
-              </Box>
+                )}
+              </Paper>
             );
           })
         )}
-      </Box>
+      </Stack>
     </Box>
   );
 }
@@ -367,6 +427,11 @@ function RoleFormDrawer({
     }
   }, [open, mode, initial]);
 
+  const theme = useTheme();
+  // sm=360 в теме → down("sm") почти не срабатывает на реальных телефонах;
+  // берём md (768), чтобы тач-редактор прав включался на телефонах и мелких планшетах.
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
   const grouped = React.useMemo(() => groupPermissions(permissions), [permissions]);
 
@@ -380,6 +445,12 @@ function RoleFormDrawer({
       return moduleCode !== null && !(enabledModules ?? []).includes(moduleCode);
     },
     [enabledModules],
+  );
+
+  // Selected permission objects (for Autocomplete value)
+  const selectedPerms = React.useMemo(
+    () => permissions.filter((p) => selectedCodes.includes(p.code)),
+    [permissions, selectedCodes],
   );
 
   const canSubmit =
@@ -520,6 +591,18 @@ function RoleFormDrawer({
               модуль не включён. Пользователи с этой ролью увидят изменения
               после возврата на вкладку или перезагрузки страницы.
             </Typography>
+            {isMobile ? (
+              <MobilePermissionPicker
+                grouped={grouped}
+                selectedCodes={selectedCodes}
+                onChange={setSelectedCodes}
+                isModuleOff={isModuleOff}
+                disabled={busy}
+                totalCount={permissions.length}
+                initialSelectedCodes={initial?.permissions ?? []}
+              />
+            ) : (
+             <>
             {/* Quick overview by group */}
             {grouped.length > 0 && selectedCodes.length > 0 && (
               <Box mb={1.5}>
@@ -546,17 +629,93 @@ function RoleFormDrawer({
               </Box>
             )}
 
-            <PermissionPicker
-              grouped={grouped}
-              selectedCodes={selectedCodes}
-              onChange={setSelectedCodes}
-              isModuleOff={isModuleOff}
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              options={permissions}
+              value={selectedPerms}
+              groupBy={(option) => categoryLabel(option.category || option.code.split(".")[0] || "other")}
+              getOptionLabel={permissionLabel}
+              isOptionEqualToValue={(o, v) => o.code === v.code}
+              onChange={(_, newValue) => {
+                setSelectedCodes(newValue.map((p) => p.code));
+              }}
               disabled={busy}
+              renderOption={(props, option, { selected }) => {
+                const { key, ...rest } = props as React.LiHTMLAttributes<HTMLLIElement> & { key?: React.Key };
+                return (
+                  <li key={option.code} {...rest}>
+                    <Checkbox
+                      icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                      checkedIcon={<CheckBoxIcon fontSize="small" />}
+                      style={{ marginRight: 8 }}
+                      checked={selected}
+                      size="small"
+                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" lineHeight={1.3}>
+                        {option.name || option.code}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {option.code}
+                      </Typography>
+                    </Box>
+                    {isModuleOff(option.code) && (
+                      <Chip
+                        label="модуль отключён"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ ml: 1, flexShrink: 0, height: 20, fontSize: "0.65rem" }}
+                      />
+                    )}
+                  </li>
+                );
+              }}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => {
+                  const { key, ...tagProps } = getTagProps({ index });
+                  return (
+                    <Chip
+                      key={option.code}
+                      label={option.name || option.code}
+                      size="small"
+                      {...tagProps}
+                    />
+                  );
+                })
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={
+                    selectedCodes.length === 0
+                      ? "Выберите права из списка…"
+                      : ""
+                  }
+                  fullWidth
+                  size="small"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <InputAdornment position="start">
+                          <KeyOutlined fontSize="small" color="action" />
+                        </InputAdornment>
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              sx={{ "& .MuiAutocomplete-listbox": { maxHeight: 320 } }}
             />
             {selectedCodes.length > 0 && (
               <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
                 Выбрано: {selectedCodes.length} из {permissions.length}
               </Typography>
+            )}
+             </>
             )}
           </Box>
         </Stack>

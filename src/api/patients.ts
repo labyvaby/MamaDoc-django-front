@@ -4,10 +4,33 @@ import { apiRequest } from "./client";
 
 export type PatientGender = "male" | "female" | "unknown";
 
+export interface DjangoFamily {
+  id: number;
+  organizationId: number;
+  branch: { id: number; name: string } | null;
+  name: string;
+  memberCount: number;
+}
+
+export type FaceCaptureStatus = "pending" | "synced" | "sync_failed";
+
+export interface DjangoFaceCapture {
+  id: number;
+  faceId: number;
+  branch: { id: number; name: string } | null;
+  photoUrl: string | null;
+  patient: { id: number; fullName: string } | null;
+  status: FaceCaptureStatus;
+  syncError: string;
+  syncedAt: string | null;
+  createdAt: string;
+}
+
 export interface DjangoPatient {
   id: number;
   organizationId: number;
   branch: { id: number; name: string } | null;
+  family?: DjangoFamily | null;
   fullName: string;
   phone: string;
   secondaryPhone: string | null;
@@ -30,6 +53,7 @@ export interface DjangoPatient {
 export interface CreatePatientPayload {
   organizationId?: number | null;
   branchId?: number | null;
+  familyId?: number | null;
   fullName: string;
   phone: string;
   secondaryPhone?: string | null;
@@ -50,6 +74,68 @@ export type UpdatePatientPayload = Partial<Omit<CreatePatientPayload, "organizat
 
 export function getPatients(signal?: AbortSignal): Promise<DjangoPatient[]> {
   return apiRequest<DjangoPatient[]>("/patients/", { signal });
+}
+
+export function getPatientFamilies(
+  search = "",
+  signal?: AbortSignal,
+): Promise<DjangoFamily[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return apiRequest<DjangoFamily[]>(`/patients/families/${query}`, { signal });
+}
+
+export function createPatientFamily(payload: {
+  name: string;
+  organizationId?: number | null;
+  branchId?: number | null;
+}): Promise<DjangoFamily> {
+  return apiRequest<DjangoFamily>("/patients/families/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updatePatientFamily(id: number, name: string): Promise<DjangoFamily> {
+  return apiRequest<DjangoFamily>(`/patients/families/${id}/`, {
+    method: "PATCH",
+    body: { name },
+  });
+}
+
+export function getFaceCaptures(
+  status?: FaceCaptureStatus,
+  signal?: AbortSignal,
+): Promise<DjangoFaceCapture[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<DjangoFaceCapture[]>(`/patients/face/captures/${query}`, { signal });
+}
+
+export function assignFaceCapture(
+  captureId: number,
+  patientId: number,
+): Promise<DjangoFaceCapture> {
+  return apiRequest<DjangoFaceCapture>(`/patients/face/captures/${captureId}/assign/`, {
+    method: "POST",
+    body: { patientId },
+  });
+}
+
+export function syncFaceCapture(captureId: number): Promise<DjangoFaceCapture> {
+  return apiRequest<DjangoFaceCapture>(`/patients/face/captures/${captureId}/sync/`, {
+    method: "POST",
+  });
+}
+
+export function forceFaceCapture(): Promise<{
+  status: string;
+  message: string;
+  faceIds: number[];
+}> {
+  return apiRequest<{
+    status: string;
+    message: string;
+    faceIds: number[];
+  }>("/patients/face/force-capture/", { method: "POST" });
 }
 
 /**

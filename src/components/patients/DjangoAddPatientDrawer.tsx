@@ -47,6 +47,8 @@ import {
   type DjangoPatient,
   type PatientGender,
 } from "../../api/patients";
+import PatientFamilyField from "./PatientFamilyField";
+import type { DjangoFamily } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
 import AddressAutocomplete from "./AddressAutocomplete";
@@ -84,6 +86,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
   const [inn, setInn] = React.useState("");
+  const [family, setFamily] = React.useState<DjangoFamily | null>(null);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -114,6 +117,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       setGender("unknown");
       setAddress("");
       setInn("");
+      setFamily(null);
       setIsBlacklisted(false);
       setBlacklistReason("");
       setBusy(false);
@@ -174,6 +178,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
         birthDate: birth || null,
         gender,
         branchId: branchId ?? null,
+        familyId: family?.id ?? null,
         address: address.trim() || undefined,
         inn: inn.trim() || undefined,
         isBlacklisted: canManageBlacklist ? isBlacklisted : undefined,
@@ -395,6 +400,13 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 helperText={`${inn.length}/14`}
               />
             </Stack>
+
+            <PatientFamilyField
+              value={family}
+              onChange={setFamily}
+              branchId={branchId}
+              disabled={busy}
+            />
 
             {/* ── Чёрный список (role-gated) ── */}
             {canManageBlacklist && (

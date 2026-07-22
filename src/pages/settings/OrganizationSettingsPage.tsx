@@ -247,7 +247,11 @@ const OrganizationSettingsPage: React.FC = () => {
         {!loading && !loadError && org && (
           <>
             {/* Logo */}
-            <Stack direction="row" alignItems="center" gap={2}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              alignItems={{ xs: "flex-start", sm: "center" }}
+              gap={2}
+            >
               <Avatar
                 variant="rounded"
                 src={org.logoUrl ?? undefined}
@@ -263,8 +267,8 @@ const OrganizationSettingsPage: React.FC = () => {
               >
                 <BusinessOutlined />
               </Avatar>
-              <Box>
-                <Stack direction="row" gap={1}>
+              <Box sx={{ width: { xs: "100%", sm: "auto" } }}>
+                <Stack direction="row" gap={1} flexWrap="wrap">
                   <AppButton
                     size="small"
                     variant="outlined"
@@ -272,6 +276,7 @@ const OrganizationSettingsPage: React.FC = () => {
                     disabled={!canUpdate || logoBusy}
                     loading={logoBusy}
                     onClick={() => logoInputRef.current?.click()}
+                    sx={{ flex: { xs: "1 1 auto", sm: "0 0 auto" } }}
                   >
                     {org.logoUrl ? "Заменить логотип" : "Загрузить логотип"}
                   </AppButton>
@@ -438,6 +443,7 @@ const OrganizationSettingsPage: React.FC = () => {
                   onClick={handleSave}
                   disabled={!dirty || trimmedName === ""}
                   loading={busy}
+                  sx={{ width: { xs: "100%", sm: "auto" }, minHeight: { xs: 48, sm: 36 } }}
                 >
                   {busy ? "Сохранение…" : "Сохранить"}
                 </AppButton>

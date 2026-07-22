@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 48" role="img" aria-labelledby="title">
+  <title>Aximo CRM</title>
+  <g fill="none" stroke="#159c91" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="4" width="40" height="40" rx="11" fill="#159c91" fill-opacity=".14" stroke="none"/>
+    <path d="M11 34 22 12l11 22M15.4 26h13.2" stroke-width="3.2"/>
+    <path d="M6 21c4.5-7.5 12.2-10.7 20-8.5 5.3 1.5 9.6 5 12.5 10" stroke-width="1.6" opacity=".72"/>
+  </g>
+  <text x="55" y="32" fill="#159c91" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="800" letter-spacing="-1.1">Aximo CRM</text>
+</svg>

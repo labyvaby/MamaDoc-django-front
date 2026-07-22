@@ -29,6 +29,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import { useNotification } from "@refinedev/core";
@@ -701,9 +702,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         }}
                       >
                         <Stack sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" noWrap>
-                            {p.fullName || "Нет ФИО"}
-                          </Typography>
+                          <Stack direction="row" alignItems="center" spacing={1}>
+                            <Typography variant="body2" noWrap>
+                              {p.fullName || "Нет ФИО"}
+                            </Typography>
+                            {p.isBlacklisted && (
+                              <ReportProblemIcon color="error" sx={{ fontSize: 16 }} />
+                            )}
+                          </Stack>
                           {p.phone && (
                             <Typography variant="caption" color="text.secondary">
                               {p.phone}
@@ -725,6 +731,17 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     />
                   )}
                 />
+              )}
+
+              {!isBooking && selectedPatient?.isBlacklisted && (
+                <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Клиент находится в чёрном списке
+                  </Typography>
+                  <Typography variant="body2">
+                    Причина: {selectedPatient.blacklistReason || "не указана"}
+                  </Typography>
+                </Alert>
               )}
 
               {!isBooking && patientHasDebt && (

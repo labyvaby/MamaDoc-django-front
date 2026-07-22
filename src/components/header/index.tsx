@@ -7,7 +7,7 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import { usePermissions } from "../../hooks/usePermissions";
-import appIcon from "../../assets/img/icon_2.png";
+import OrganizationBrand from "../brand/OrganizationBrand";
 
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
@@ -179,18 +179,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
 
           {/* Компактный логотип (320px - 750px) */}
           <Box
-            component="img"
-            src={appIcon}
-            alt="Мама Доктор"
             sx={{
-              height: { xs: 24, sm: 28 },
-              width: "auto",
               display: { xs: "block", md: "none" },
               '@media (min-width: 750px)': {
                 display: "none",
               },
             }}
-          />
+          >
+            <OrganizationBrand height={28} compact />
+          </Box>
         </Stack>
 
         {/* Центр: Заголовок страницы */}

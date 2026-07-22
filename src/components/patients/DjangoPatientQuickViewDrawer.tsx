@@ -18,6 +18,7 @@ import LocalPhoneOutlinedIcon from "@mui/icons-material/LocalPhoneOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import WcOutlinedIcon from "@mui/icons-material/WcOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
@@ -243,6 +244,18 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                       {patient.address}
                     </Typography>
                   </Box>
+                </Stack>
+              )}
+
+              {patient.family && (
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <GroupOutlinedIcon fontSize="small" color="action" />
+                  <Typography variant="body2" color="text.secondary">
+                    Семья:
+                  </Typography>
+                  <Typography variant="body2" fontWeight={500}>
+                    {patient.family.name} ({patient.family.memberCount})
+                  </Typography>
                 </Stack>
               )}
             </Stack>

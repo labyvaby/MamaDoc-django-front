@@ -104,12 +104,31 @@ export interface Availability {
   employees: EmployeeAvailability[];
 }
 
+export interface SpecializationAvailabilitySummary {
+  specializationId: number;
+  employeeCount: number;
+  freeEmployeeCount: number;
+}
+
+export interface AvailabilitySummary {
+  date: string;
+  specializations: SpecializationAvailabilitySummary[];
+}
+
 export interface AvailabilityParams {
   employeeId?: number;
   specializationId?: number;
-  serviceId: number;
+  /** Опционально: задаёт длину окна. Без него бэкенд режет сетку по 30 мин. */
+  serviceId?: number;
   dateFrom?: string;
   dateTo?: string;
+  branchId?: number;
+  organizationId?: number;
+}
+
+export interface AvailabilitySummaryParams {
+  /** Дата для бейджей доступности; по умолчанию — сегодня. */
+  date?: string;
   branchId?: number;
   organizationId?: number;
 }
@@ -196,10 +215,26 @@ export function getAvailability(
   if (params.specializationId != null) {
     q.set("specializationId", String(params.specializationId));
   }
-  q.set("serviceId", String(params.serviceId));
+  if (params.serviceId != null) q.set("serviceId", String(params.serviceId));
   if (params.dateFrom) q.set("dateFrom", params.dateFrom);
   if (params.dateTo) q.set("dateTo", params.dateTo);
   if (params.branchId != null) q.set("branchId", String(params.branchId));
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   return apiRequest<Availability>(`/scheduling/availability/?${q.toString()}`, { signal });
+}
+
+/** Один агрегированный запрос для бейджей «свободны сегодня N/M». */
+export function getAvailabilitySummary(
+  params: AvailabilitySummaryParams = {},
+  signal?: AbortSignal,
+): Promise<AvailabilitySummary> {
+  const q = new URLSearchParams();
+  if (params.date) q.set("date", params.date);
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
+  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
+  const qs = q.toString();
+  return apiRequest<AvailabilitySummary>(
+    `/scheduling/availability/summary/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
 }

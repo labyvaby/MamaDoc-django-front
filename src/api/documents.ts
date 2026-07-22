@@ -148,7 +148,7 @@ const mockDocs: OrganizationDocument[] = [
     fileUrl: MOCK_FILE_URL,
     fileSize: 145_000,
     branchId: 2,
-    branchName: "Мама Доктор Плюс",
+    branchName: "Филиал 2",
     visibleRoleIds: [],
     visibleRoleNames: [],
     uploadedByName: "Шаршебаев Автандил",

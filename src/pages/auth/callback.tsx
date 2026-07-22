@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import { Box, Stack, Typography, CircularProgress, Alert, Button } from "@mui/material";
-import logo from "../../assets/img/logo.png";
+import AximoLogo from "../../components/auth/AximoLogo";
 import { supabase } from "../../utility/supabaseClient";
 import { useClientSession } from "../../contexts/client-session-context";
 import { ROLE_HOME_PAGES, type RoleName } from "../../types/rbac";
@@ -65,7 +65,7 @@ const AuthCallbackPage: React.FC = () => {
             : "/home";
 
           // Для сотрудников игнорируем next из внешних систем (Профиграм и др.)
-          // — они могут указывать на несуществующие маршруты МамаДоктор.
+          // — они могут указывать на несуществующие маршруты прежней системы.
           // Всегда редиректим на домашнюю страницу по роли.
           navigate(defaultNext, { replace: true });
         }
@@ -103,7 +103,7 @@ const AuthCallbackPage: React.FC = () => {
         }}
       >
         <Stack alignItems="center" spacing={2}>
-          <Box component="img" src={logo} alt="Мама Доктор" sx={{ height: 56, objectFit: "contain" }} />
+          <AximoLogo />
 
           {!errorMsg && (
             <>

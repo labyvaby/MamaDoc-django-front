@@ -4,12 +4,12 @@ export const DJANGO_DETAIL_STALE_TIME_MS = 60_000;
 export const DJANGO_POLL_INTERVAL_MS = 30_000;
 /**
  * Интервал лёгкого heartbeat-чека last-update (детекция изменений приёмов).
- * Псевдо-realtime без websocket: каждые 2.5с опрашиваем дешёвый last-update
+ * Псевдо-realtime без websocket: каждые 10с опрашиваем дешёвый last-update
  * (один SELECT MAX(updated_at)), а тяжёлый список рефетчим ТОЛЬКО когда
  * таймстамп сдвинулся. Плюс мгновенная проверка при возврате на вкладку
  * (см. useAppointmentsAutoSync). Поллинг идёт лишь на видимой вкладке.
  */
-export const DJANGO_HEARTBEAT_INTERVAL_MS = 2_500;
+export const DJANGO_HEARTBEAT_INTERVAL_MS = 10_000;
 /**
  * Интервал того же heartbeat-чека, когда живо WebSocket-соединение
  * `/ws/changes/` (см. useChangesSocket): обновления приходят по сокету
@@ -17,7 +17,7 @@ export const DJANGO_HEARTBEAT_INTERVAL_MS = 2_500;
  * сокета (wifi, сон ноутбука, прокси) — экран не «застынет» на устаревших
  * данных. Сокет отвалился → возвращаемся к частому интервалу выше.
  */
-export const DJANGO_REALTIME_FALLBACK_INTERVAL_MS = 25_000;
+export const DJANGO_REALTIME_FALLBACK_INTERVAL_MS = 60_000;
 
 export const djangoQueryKeys = {
   all: ["django"] as const,
@@ -98,6 +98,8 @@ export const djangoQueryKeys = {
   payroll: {
     report: (params: Record<string, unknown>) =>
       ["django", "payroll", "report", params] as const,
+    activeMonths: (params: Record<string, unknown>) =>
+      ["django", "payroll", "active-months", params] as const,
     rules: (employeeId: number) =>
       ["django", "payroll", employeeId, "rules"] as const,
     bonuses: (params: Record<string, unknown>) =>
@@ -236,6 +238,8 @@ export const djangoQueryKeys = {
       ["django", "scheduling", "exceptions", params] as const,
     availability: (params: Record<string, unknown>) =>
       ["django", "scheduling", "availability", params] as const,
+    availabilitySummary: (params: Record<string, unknown>) =>
+      ["django", "scheduling", "availability", "summary", params] as const,
     // Root key — инвалидация всех запросов свободных окон разом
     // (занятость меняется при любом изменении приёмов).
     availabilityAll: ["django", "scheduling", "availability"] as const,

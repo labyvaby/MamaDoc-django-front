@@ -804,11 +804,9 @@ function App() {
                           path="salary-reports"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="payroll.view">
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoSalaryReportsPage />
-                                </Suspense>
-                              </RequirePermission>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoSalaryReportsPage />
+                              </Suspense>
                             ) : (
                               <LegacyRouteGuard title="Отчет по ЗП в разработке">
                                 <ProtectedRoute deniedRoles={[]}>
@@ -1248,7 +1246,7 @@ function App() {
                     <UnsavedChangesNotifier />
                     <DocumentTitleHandler
                       handler={(options) => {
-                        const baseTitle = "Мама Доктор";
+                        const baseTitle = "Aximo";
                         if (options.resource) {
                           const resourceLabel = options.resource.meta?.label || options.resource.name;
                           if (resourceLabel) {

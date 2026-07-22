@@ -128,6 +128,9 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
     void queryClient.invalidateQueries({
       queryKey: ["django", "payroll", "report"],
     });
+    void queryClient.invalidateQueries({
+      queryKey: ["django", "payroll", "active-months"],
+    });
   };
 
   const createMutation = useMutation({

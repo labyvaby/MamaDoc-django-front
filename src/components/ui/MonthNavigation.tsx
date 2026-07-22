@@ -159,7 +159,8 @@ export const MonthNavigation: React.FC<MonthNavigationProps> = ({
             {(() => {
                 const today = dayjs().startOf('month').format('YYYY-MM');
                 const isCurrentMonth = selectedMonth === today;
-                if (isCurrentMonth) return null;
+                const currentMonthHasData = !activeMonths || activeMonths.has(today);
+                if (isCurrentMonth || !currentMonthHasData) return null;
 
                 return (
                     <IconButton

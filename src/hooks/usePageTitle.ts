@@ -6,11 +6,11 @@ export const usePageTitle = (title: string) => {
 
   useEffect(() => {
     setTitle(title);
-    document.title = `${title} | Мама Доктор`;
+    document.title = `${title} | Aximo`;
 
     return () => {
-      setTitle("Мама Доктор");
-      document.title = "Мама Доктор";
+      setTitle("Aximo");
+      document.title = "Aximo";
     };
   }, [title, setTitle]);
 };

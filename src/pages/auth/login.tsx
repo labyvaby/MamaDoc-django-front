@@ -19,7 +19,6 @@ import PhoneIphoneIcon from "@mui/icons-material/PhoneIphoneOutlined";
 import EmailIcon from "@mui/icons-material/EmailOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import smallIcon from "../../assets/img/icon_2s.png";
 import {
   login as djangoLogin,
   requestOtp as djangoRequestOtp,
@@ -32,6 +31,7 @@ import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
+import AximoLogo from "../../components/auth/AximoLogo";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import { PhoneCountryCodeSelect } from "../../components/ui";
 import {
@@ -566,8 +566,7 @@ const LoginPage: React.FC = () => {
             mb={3.5}
             sx={{ display: { xs: "none", md: "flex" } }}
           >
-            <Box component="img" src={smallIcon} sx={{ height: 34 }} />
-            <Typography variant="h6" fontWeight={700}>Мама Доктор</Typography>
+            <AximoLogo />
           </Stack>
 
           <Typography variant="h5" fontWeight={600} sx={{ mb: 0.5 }}>

@@ -21,6 +21,7 @@ type Options = {
  * подряд (например, оплата = update приёма + платёж) — рефетчим один раз.
  */
 const WS_EVENT_DEBOUNCE_MS = 200;
+const HEARTBEAT_ERROR_MAX_INTERVAL_MS = 60_000;
 
 /**
  * Синхронизация календаря приёмов: WebSocket как мгновенный триггер +
@@ -83,11 +84,20 @@ export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options)
     let cancelled = false;
     const controller = new AbortController();
 
+    let inFlight = false;
+    let consecutiveFailures = 0;
+
     const check = async () => {
       if (document.hidden) return; // вкладка не активна — не дёргаем сеть
+      // Не накладываем heartbeat-запросы друг на друга. При медленном/лежащем
+      // API старый setInterval мог создавать всё новые fetch до завершения
+      // предыдущих, превращая временный сбой в лавину 429/500.
+      if (inFlight) return;
+      inFlight = true;
       try {
         const latest = await getAppointmentsLastUpdate(branchId, controller.signal);
         if (cancelled) return;
+        consecutiveFailures = 0;
         // Первый успешный ответ — только запоминаем базу, без refetch.
         if (lastSeenRef.current === null) {
           lastSeenRef.current = latest;
@@ -99,8 +109,12 @@ export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options)
         }
       } catch (err) {
         if (!isAbortError(err)) {
-          // Heartbeat — best-effort; сетевые сбои игнорируем тихо.
+          // Heartbeat — best-effort. После ошибки увеличиваем задержку, чтобы
+          // недоступный сервер или rate limiter успели восстановиться.
+          consecutiveFailures += 1;
         }
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -135,11 +149,25 @@ export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options)
     // паузы (закрыт дровер) сравниваем с базой до паузы — так не теряются
     // изменения коллег, случившиеся пока дровер был открыт. Сброс базы
     // делается только при смене филиала (эффект выше).
-    void check();
-    const intervalMs = wsConnected
+    const baseIntervalMs = wsConnected
       ? DJANGO_REALTIME_FALLBACK_INTERVAL_MS
       : DJANGO_HEARTBEAT_INTERVAL_MS;
-    const id = window.setInterval(() => void check(), intervalMs);
+    let heartbeatTimer: number | undefined;
+    const scheduleNextCheck = () => {
+      if (cancelled) return;
+      const errorBackoff = Math.min(
+        baseIntervalMs * 2 ** Math.min(consecutiveFailures, 3),
+        HEARTBEAT_ERROR_MAX_INTERVAL_MS,
+      );
+      heartbeatTimer = window.setTimeout(async () => {
+        await check();
+        scheduleNextCheck();
+      }, errorBackoff);
+    };
+
+    // setTimeout запускается только после завершения предыдущего запроса: даже
+    // при зависшем API в каждой вкладке существует максимум один heartbeat.
+    void check().finally(scheduleNextCheck);
 
     // Мгновенная проверка при возврате на вкладку/окно — иначе обновление ждало
     // бы следующего тика интервала. Главный кейс: работа в двух окнах
@@ -156,7 +184,7 @@ export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options)
       controller.abort();
       wsEventRef.current = null;
       window.clearTimeout(wsDebounce);
-      window.clearInterval(id);
+      window.clearTimeout(heartbeatTimer);
       document.removeEventListener("visibilitychange", onFocus);
       window.removeEventListener("focus", onFocus);
     };

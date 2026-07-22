@@ -1,70 +1,45 @@
 import React from "react";
-import {
-  Alert,
-  Autocomplete,
-  Box,
-  Chip,
-  CircularProgress,
-  MenuItem,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
-import CoffeeOutlined from "@mui/icons-material/LocalCafeOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
+import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
+import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
 import { useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
-import { getSpecializations, getDjangoEmployees, type DjangoEmployeeListItem } from "../../api/staff";
-import { getServices, type Service } from "../../api/catalog";
-import { getAvailability, type EmployeeAvailability } from "../../api/scheduling";
+import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
+import {
+  getAvailability,
+  getAvailabilitySummary,
+  type EmployeeAvailability,
+} from "../../api/scheduling";
 import { parseBackendError } from "../../api/appointments";
-import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
-import { DateRangeField, type DateRange, type DateRangePreset } from "../../components/ui";
+import {
+  djangoQueryKeys,
+  DJANGO_REFERENCE_STALE_TIME_MS,
+  DJANGO_LIST_STALE_TIME_MS,
+} from "../../api/queryKeys";
+import { subtleBg } from "../../theme/uiHelpers";
 
 const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const MONTHS_GEN = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+const MONTHS_NOMINATIVE = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
 
-/** Бэкенд считает окна максимум на 62 дня. */
-const MAX_RANGE_DAYS = 62;
+/** На сколько дней вперёд регистратор ищет окна (влезает в лимит бэка 62). */
+const HORIZON_DAYS = 14;
 
 /** Индекс дня недели с понедельника (Пн=0 … Вс=6), без плагина isoWeek. */
 function mondayIndex(d: Dayjs): number {
   return (d.day() + 6) % 7;
 }
-
-/** Понедельник недели, содержащей *d* (начало дня). */
-function weekMonday(d: Dayjs): Dayjs {
-  return d.subtract(mondayIndex(d), "day").startOf("day");
-}
-
-/** Пресеты под запись наперёд (вместо «последних N дней» из отчётов). */
-const SLOT_RANGE_PRESETS: DateRangePreset[] = [
-  {
-    key: "thisWeek",
-    label: "Эта неделя",
-    range: () => [weekMonday(dayjs()), weekMonday(dayjs()).add(6, "day").endOf("day")],
-  },
-  {
-    key: "nextWeek",
-    label: "Следующая неделя",
-    range: () => [
-      weekMonday(dayjs()).add(7, "day"),
-      weekMonday(dayjs()).add(13, "day").endOf("day"),
-    ],
-  },
-  {
-    key: "twoWeeks",
-    label: "Ближайшие 2 недели",
-    range: () => [dayjs().startOf("day"), dayjs().add(13, "day").endOf("day")],
-  },
-  {
-    key: "month",
-    label: "Этот месяц",
-    range: () => [dayjs().startOf("month"), dayjs().endOf("month")],
-  },
-];
 
 function initials(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
@@ -72,209 +47,310 @@ function initials(name: string): string {
   return (p.length === 1 ? p[0].slice(0, 2) : p[0][0] + p[1][0]).toUpperCase();
 }
 
+/** Стабильный цвет аватара по имени (аналог stringToColor из оригинала). */
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return `hsl(${h} 52% 46%)`;
+}
+
+type DocStatus = "free" | "later" | "none";
+
+interface DocSummary {
+  todayFree: number;
+  nearest: { date: string; start: string } | null;
+  status: DocStatus;
+  /** Подпись под именем врача. */
+  label: string;
+  /** true, если у врача нет ни одного рабочего дня в горизонте. */
+  noSchedule: boolean;
+}
+
+function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
+  const today = emp.days.find((d) => d.date === todayIso);
+  const todayFree = today?.freeCount ?? 0;
+  const nearest = emp.nearestFree;
+  // «График не задан» — только если в горизонте нет ни рабочего дня, ни
+  // выходного/отпуска по исключению (иначе график есть, просто нет окон).
+  const noSchedule = !emp.days.some((d) => d.scheduled || d.dayOff);
+
+  if (nearest && nearest.date === todayIso) {
+    return { todayFree, nearest, status: "free", label: `Сегодня, ближайшее ${nearest.start}`, noSchedule };
+  }
+  if (nearest) {
+    const d = dayjs(nearest.date);
+    const isTomorrow = nearest.date === dayjs().add(1, "day").format("YYYY-MM-DD");
+    const rel = isTomorrow ? "завтра" : `${WEEKDAY_SHORT[mondayIndex(d)]} ${d.date()}`;
+    return { todayFree, nearest, status: "later", label: `Ближайшее ${rel}, ${nearest.start}`, noSchedule };
+  }
+  return {
+    todayFree,
+    nearest: null,
+    status: "none",
+    label: noSchedule ? "График не задан" : "Свободных окон нет",
+    noSchedule,
+  };
+}
+
+const STATUS_DOT: Record<DocStatus, "success.main" | "warning.main" | "text.disabled"> = {
+  free: "success.main",
+  later: "warning.main",
+  none: "text.disabled",
+};
+
 export interface FreeSlotsViewProps {
   branchId?: number;
   organizationId?: number;
-  /** Открыть создание приёма с предзаполнением врача, услуги и времени. */
-  onBook: (employeeId: number, isoDateTime: string, serviceId: number) => void;
+  /** Открыть создание приёма с предзаполнением врача и времени (услуга — в форме). */
+  onBook: (employeeId: number, isoDateTime: string) => void;
 }
 
 const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId, onBook }) => {
   const theme = useTheme();
 
-  const [specializationId, setSpecializationId] = React.useState<number | "">("");
-  const [employee, setEmployee] = React.useState<DjangoEmployeeListItem | null>(null);
-  const [serviceId, setServiceId] = React.useState<number | "">("");
-  const [empInput, setEmpInput] = React.useState("");
-  const [range, setRange] = React.useState<DateRange>(() => ({
-    from: weekMonday(dayjs()),
-    to: weekMonday(dayjs()).add(6, "day").endOf("day"),
-  }));
-  const [selectedEmpId, setSelectedEmpId] = React.useState<number | null>(null);
-  const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
+  const todayIso = React.useMemo(() => dayjs().format("YYYY-MM-DD"), []);
+  const dateFrom = todayIso;
+  const dateTo = React.useMemo(
+    () => dayjs().add(HORIZON_DAYS - 1, "day").format("YYYY-MM-DD"),
+    [],
+  );
 
-  // Справочники
+  const [specId, setSpecId] = React.useState<number | null>(null);
+  const [search, setSearch] = React.useState("");
+  const [selDocId, setSelDocId] = React.useState<number | null>(null);
+  const [selDay, setSelDay] = React.useState<string | null>(null);
+  const stripRef = React.useRef<HTMLDivElement>(null);
+
+  // Справочник специализаций — левый рельс.
   const specsQuery = useQuery({
-    queryKey: ["django", "scheduling", "specs"],
+    queryKey: ["django", "scheduling", "specs", organizationId ?? null],
     queryFn: ({ signal }) => getSpecializations(signal),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
-  const servicesQuery = useQuery({
-    queryKey: ["django", "scheduling", "services", branchId ?? null],
-    queryFn: ({ signal }) => getServices(branchId, signal),
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const empsQuery = useQuery({
-    queryKey: ["django", "scheduling", "slot-employees", empInput],
+  const specs: DjangoSpecialization[] = React.useMemo(
+    () => (specsQuery.data ?? []).filter((s) => s.isActive),
+    [specsQuery.data],
+  );
+
+  // Первую специализацию выбираем по умолчанию.
+  React.useEffect(() => {
+    if (specId == null && specs.length > 0) setSpecId(specs[0].id);
+  }, [specs, specId]);
+
+  // Бейджи всех специальностей приходят одной агрегированной сводкой, без N запросов.
+  const summaryQuery = useQuery({
+    queryKey: djangoQueryKeys.scheduling.availabilitySummary({
+      date: todayIso,
+      branchId: branchId ?? null,
+      organizationId: organizationId ?? null,
+    }),
     queryFn: ({ signal }) =>
-      getDjangoEmployees({ search: empInput || undefined, status: "active", pageSize: 20 }, signal),
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+      getAvailabilitySummary({ date: todayIso, branchId, organizationId }, signal),
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
+  const badgeBySpec = React.useMemo(() => {
+    const map = new Map<number, { free: number; total: number }>();
+    summaryQuery.data?.specializations.forEach((specialization) => {
+      map.set(specialization.specializationId, {
+        free: specialization.freeEmployeeCount,
+        total: specialization.employeeCount,
+      });
+    });
+    return map;
+  }, [summaryQuery.data]);
 
-  const dateFrom = range.from.format("YYYY-MM-DD");
-  const dateTo = range.to.format("YYYY-MM-DD");
-  const hasTarget = employee != null || specializationId !== "";
-  const canQuery = hasTarget && serviceId !== "";
-
+  // Полный диапазон окон выбранной специализации.
   const availQuery = useQuery({
     queryKey: djangoQueryKeys.scheduling.availability({
-      employeeId: employee?.id ?? null,
-      specializationId: employee ? null : (specializationId || null),
-      serviceId,
+      specializationId: specId,
       dateFrom,
       dateTo,
       branchId: branchId ?? null,
       organizationId: organizationId ?? null,
     }),
     queryFn: ({ signal }) =>
-      getAvailability(
-        {
-          employeeId: employee?.id,
-          specializationId: employee ? undefined : (specializationId || undefined),
-          serviceId: serviceId as number,
-          dateFrom,
-          dateTo,
-          branchId,
-          organizationId,
-        },
-        signal,
-      ),
-    enabled: canQuery,
+      getAvailability({ specializationId: specId!, dateFrom, dateTo, branchId, organizationId }, signal),
+    enabled: specId != null,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
-  const employees = React.useMemo(
-    () => availQuery.data?.employees ?? [],
-    [availQuery.data],
+  // Врачи специальности + сводка, отсортированные «лучшие сверху».
+  const docs = React.useMemo(() => {
+    const list = (availQuery.data?.employees ?? []).map((emp) => ({
+      emp,
+      sum: summarize(emp, todayIso),
+    }));
+    const q = search.trim().toLowerCase();
+    const filtered = q ? list.filter((x) => x.emp.fullName.toLowerCase().includes(q)) : list;
+    return filtered.sort((a, b) => {
+      const byToday = Number(b.sum.todayFree > 0) - Number(a.sum.todayFree > 0);
+      if (byToday) return byToday;
+      const an = a.sum.nearest ? dayjs(a.sum.nearest.date).valueOf() : Infinity;
+      const bn = b.sum.nearest ? dayjs(b.sum.nearest.date).valueOf() : Infinity;
+      if (an !== bn) return an - bn;
+      return a.emp.fullName.localeCompare(b.emp.fullName);
+    });
+  }, [availQuery.data, search, todayIso]);
+
+  // Врач по умолчанию — первый (лучший) в отсортированном списке.
+  React.useEffect(() => {
+    if (!docs.length) {
+      if (selDocId !== null) setSelDocId(null);
+      return;
+    }
+    if (!docs.some((x) => x.emp.employeeId === selDocId)) {
+      setSelDocId(docs[0].emp.employeeId);
+    }
+  }, [docs, selDocId]);
+
+  const selectedDoc = docs.find((x) => x.emp.employeeId === selDocId) ?? null;
+  // В навбаре оставляем только реальные смены. Выходные, отпуск и дни без
+  // расписания не должны выглядеть как даты, на которые можно записать пациента.
+  const selectableDays = React.useMemo(
+    () => selectedDoc?.emp.days.filter((day) => day.scheduled) ?? [],
+    [selectedDoc],
   );
 
-  // Выбор врача/дня по умолчанию после загрузки.
-  const selectedEmp: EmployeeAvailability | null =
-    employees.find((e) => e.employeeId === selectedEmpId) ?? employees[0] ?? null;
-
+  // День по умолчанию — ближайший с окнами у выбранного врача.
   React.useEffect(() => {
-    if (employees.length > 0 && !employees.some((e) => e.employeeId === selectedEmpId)) {
-      setSelectedEmpId(employees[0].employeeId);
+    if (!selectableDays.length) {
+      if (selDay !== null) setSelDay(null);
+      return;
     }
-  }, [employees, selectedEmpId]);
+    if (selDay && selectableDays.some((day) => day.date === selDay)) return;
+    const firstFree = selectableDays.find((day) => day.freeCount > 0);
+    setSelDay(firstFree?.date ?? selectableDays[0].date ?? null);
+  }, [selectableDays, selDay]);
 
-  React.useEffect(() => {
-    if (!selectedEmp) return;
-    if (selectedDate && selectedEmp.days.some((d) => d.date === selectedDate)) return;
-    const firstFree = selectedEmp.days.find((d) => d.freeCount > 0);
-    setSelectedDate(firstFree?.date ?? selectedEmp.days[0]?.date ?? null);
-  }, [selectedEmp, selectedDate]);
+  const selectedDay = selectableDays.find((day) => day.date === selDay) ?? null;
+  const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
+  const selectedMonthLabel = `${MONTHS_NOMINATIVE[selectedMonth.month()]} ${selectedMonth.year()}`;
 
-  const selectedDay = selectedEmp?.days.find((d) => d.date === selectedDate) ?? null;
+  const scrollStrip = (dir: -1 | 1) => {
+    stripRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
+  };
 
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", gap: 1.5 }}>
-      {/* Фильтры — карточка, как на «Нагрузке»/«Кассе» */}
+    <Box sx={{ height: "100%", minHeight: 0 }}>
       <Box
         sx={{
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: "14px",
-          bgcolor: "background.paper",
-          p: { xs: 1.5, sm: 2 },
-          flexShrink: 0,
+          height: "100%",
+          minHeight: 0,
+          display: "grid",
+          gap: 1.5,
+          gridTemplateColumns: { xs: "1fr", md: "204px 264px 1fr" },
+          gridAutoRows: { xs: "minmax(0, auto)", md: "100%" },
         }}
       >
-        <Stack
-          direction={{ xs: "column", md: "row" }}
-          spacing={1.5}
-          alignItems={{ xs: "stretch", md: "center" }}
-          useFlexGap
-          flexWrap="wrap"
+        {/* ── Рельс специальностей ── */}
+        <Box
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: "14px",
+            bgcolor: "background.paper",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+          }}
         >
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ fontWeight: 600, px: 2, pt: 1.5, pb: 1 }}
+          >
+            Специальности
+          </Typography>
+          {specsQuery.isLoading ? (
+            <Stack alignItems="center" py={3}>
+              <CircularProgress size={20} />
+            </Stack>
+          ) : specs.length === 0 ? (
+            <Typography variant="body2" color="text.disabled" sx={{ px: 2, pb: 2 }}>
+              Нет специальностей
+            </Typography>
+          ) : (
+            specs.map((s) => {
+              const active = s.id === specId;
+              const badge = badgeBySpec.get(s.id);
+              return (
+                <Box
+                  key={s.id}
+                  onClick={() => {
+                    setSpecId(s.id);
+                    setSelDocId(null);
+                    setSelDay(null);
+                  }}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.25,
+                    px: 1.75,
+                    py: 1.25,
+                    cursor: "pointer",
+                    borderLeft: "3px solid",
+                    borderColor: active ? "primary.main" : "transparent",
+                    bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                    transition: "background-color .13s ease",
+                    "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    fontWeight={active ? 600 : 500}
+                    sx={{ flex: 1, minWidth: 0 }}
+                    noWrap
+                  >
+                    {s.name}
+                  </Typography>
+                  {badge && (
+                    <Box
+                      sx={(t) => ({
+                        fontSize: "0.6875rem",
+                        fontWeight: 600,
+                        lineHeight: 1,
+                        px: 0.75,
+                        py: 0.5,
+                        borderRadius: "7px",
+                        color: badge.free ? "success.dark" : "text.disabled",
+                        bgcolor: badge.free
+                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                          : subtleBg(t, true),
+                        ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                      })}
+                      title="Свободны сегодня"
+                    >
+                      {badge.free}/{badge.total}
+                    </Box>
+                  )}
+                </Box>
+              );
+            })
+          )}
+        </Box>
+
+        {/* ── Средняя колонка: поиск + список врачей ── */}
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, minHeight: 0 }}>
           <TextField
-            select
             size="small"
-            label="Специализация"
-            value={specializationId}
+            fullWidth
+            value={search}
             onChange={(e) => {
-              setSpecializationId(e.target.value === "" ? "" : Number(e.target.value));
-              setEmployee(null);
-              setSelectedEmpId(null);
+              setSearch(e.target.value);
+              setSelDocId(null);
             }}
-            sx={{ minWidth: 180 }}
-          >
-            <MenuItem value="">Любая</MenuItem>
-            {(specsQuery.data ?? []).map((s) => (
-              <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-            ))}
-          </TextField>
-
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 220 }}
-            options={
-              employee && !(empsQuery.data?.results ?? []).some((o) => o.id === employee.id)
-                ? [employee, ...(empsQuery.data?.results ?? [])]
-                : empsQuery.data?.results ?? []
-            }
-            loading={empsQuery.isLoading}
-            value={employee}
-            getOptionLabel={(o) => o.fullName}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
-            onChange={(_, v) => {
-              setEmployee(v);
-              setSelectedEmpId(v?.id ?? null);
+            placeholder="Поиск врача…"
+            InputProps={{
+              startAdornment: (
+                <SearchOutlined sx={{ fontSize: 19, color: "text.disabled", mr: 1 }} />
+              ),
             }}
-            onInputChange={(_, v) => setEmpInput(v)}
-            renderInput={(params) => (
-              <TextField {...params} label="Врач" placeholder="Любой по специализации" />
-            )}
           />
-
-          {/* Длительность услуги задаёт длину окна */}
-          <TextField
-            select
-            size="small"
-            label="Услуга"
-            value={serviceId}
-            onChange={(e) => setServiceId(e.target.value === "" ? "" : Number(e.target.value))}
-            sx={{ minWidth: 200 }}
-          >
-            {(servicesQuery.data ?? []).filter((s: Service) => s.isActive).map((s) => (
-              <MenuItem key={s.id} value={s.id}>
-                {s.name} · {s.durationMinutes} мин
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <Box sx={{ flex: 1, display: { xs: "none", md: "block" } }} />
-
-          <DateRangeField
-            value={range}
-            onChange={(r) => {
-              const clampedTo =
-                r.to.diff(r.from, "day") >= MAX_RANGE_DAYS
-                  ? r.from.add(MAX_RANGE_DAYS - 1, "day").endOf("day")
-                  : r.to;
-              setRange({ from: r.from, to: clampedTo });
-              setSelectedDate(null);
-            }}
-            presets={SLOT_RANGE_PRESETS}
-            minWidth={210}
-          />
-        </Stack>
-      </Box>
-
-      {!canQuery ? (
-        <Alert severity="info">
-          Выберите специализацию или врача и услугу (её длительность задаёт длину окна),
-          чтобы увидеть свободные окна.
-        </Alert>
-      ) : availQuery.isError ? (
-        <Alert severity="error">{parseBackendError(availQuery.error)}</Alert>
-      ) : (
-        <Box sx={{ flex: 1, minHeight: 0, display: "flex", gap: 2 }}>
-          {/* Левая колонка — врачи */}
           <Box
             sx={{
-              width: 240,
-              flexShrink: 0,
+              flex: 1,
+              minHeight: 0,
               border: "1px solid",
               borderColor: "divider",
               borderRadius: "14px",
@@ -286,121 +362,298 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
               <Stack alignItems="center" py={4}>
                 <CircularProgress size={22} />
               </Stack>
-            ) : employees.length === 0 ? (
+            ) : availQuery.isError ? (
+              <Typography variant="body2" color="error" sx={{ p: 2 }}>
+                {parseBackendError(availQuery.error)}
+              </Typography>
+            ) : docs.length === 0 ? (
               <Typography variant="body2" color="text.disabled" sx={{ p: 2, textAlign: "center" }}>
-                Нет врачей
+                {search ? "Никого не нашли" : "Нет врачей"}
               </Typography>
             ) : (
-              employees.map((emp) => {
-                const active = emp.employeeId === selectedEmp?.employeeId;
+              docs.map(({ emp, sum }) => {
+                const active = emp.employeeId === selDocId;
                 return (
                   <Box
                     key={emp.employeeId}
-                    onClick={() => setSelectedEmpId(emp.employeeId)}
+                    onClick={() => {
+                      setSelDocId(emp.employeeId);
+                      setSelDay(null);
+                    }}
                     sx={{
                       display: "flex",
+                      alignItems: "center",
                       gap: 1.25,
-                      p: 1.25,
+                      px: 1.5,
+                      py: 1.25,
                       cursor: "pointer",
                       borderLeft: "3px solid",
                       borderColor: active ? "primary.main" : "transparent",
-                      bgcolor: active ? alpha(theme.palette.primary.main, 0.08) : "transparent",
-                      "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.05) },
+                      borderBottom: "1px solid",
+                      borderBottomColor: "divider",
+                      bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                      transition: "background-color .13s ease",
+                      "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
                     }}
                   >
-                    <Box
-                      sx={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: "10px",
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "0.75rem",
-                        fontWeight: 600,
-                        color: "primary.onSurface",
-                        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.18 : 0.1),
-                      }}
-                    >
-                      {initials(emp.fullName)}
+                    <Box sx={{ position: "relative", flexShrink: 0 }}>
+                      <Box
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#fff",
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          bgcolor: avatarColor(emp.fullName),
+                        }}
+                      >
+                        {initials(emp.fullName)}
+                      </Box>
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          right: -2,
+                          bottom: -2,
+                          width: 13,
+                          height: 13,
+                          borderRadius: "50%",
+                          border: "2.5px solid",
+                          borderColor: "background.paper",
+                          bgcolor: STATUS_DOT[sum.status],
+                        }}
+                      />
                     </Box>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" fontWeight={active ? 600 : 500} noWrap>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" fontWeight={600} noWrap>
                         {emp.fullName}
                       </Typography>
-                      {emp.nearestFree ? (
-                        <Typography variant="caption" color="success.main" noWrap>
-                          {dayjs(emp.nearestFree.date).format("DD.MM")} · {emp.nearestFree.start}
-                        </Typography>
-                      ) : (
-                        <Typography variant="caption" color="text.disabled">
-                          нет окон
-                        </Typography>
-                      )}
+                      <Typography
+                        variant="caption"
+                        noWrap
+                        sx={{
+                          display: "block",
+                          color:
+                            sum.status === "free"
+                              ? "success.main"
+                              : sum.status === "later"
+                                ? "warning.main"
+                                : "text.disabled",
+                        }}
+                      >
+                        {sum.label}
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={(t) => ({
+                        flexShrink: 0,
+                        fontSize: "0.6875rem",
+                        fontWeight: 600,
+                        minWidth: 22,
+                        textAlign: "center",
+                        px: 0.75,
+                        py: 0.5,
+                        borderRadius: "7px",
+                        color: sum.todayFree ? "success.dark" : "text.disabled",
+                        bgcolor: sum.todayFree
+                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                          : "transparent",
+                        ...(t.palette.mode === "dark" && sum.todayFree
+                          ? { color: t.palette.success.light }
+                          : {}),
+                      })}
+                      title="Окон сегодня"
+                    >
+                      {sum.todayFree || "—"}
                     </Box>
                   </Box>
                 );
               })
             )}
           </Box>
+        </Box>
 
-          {/* Правая колонка — неделя + таймлайн дня */}
-          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1.5, overflowY: "auto" }}>
-            {selectedEmp && (
-              <>
-                {/* Недельная полоса */}
-                <Stack direction="row" spacing={0.75} sx={{ overflowX: "auto", flexShrink: 0 }}>
-                  {selectedEmp.days.map((d) => {
+        {/* ── Правая колонка: окна выбранного врача ── */}
+        <Box
+          sx={{
+            minWidth: 0,
+            minHeight: 0,
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: "14px",
+            bgcolor: "background.paper",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          {!selectedDoc ? (
+            <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ flex: 1, p: 4 }}>
+              <PersonSearchOutlined sx={{ fontSize: 34, color: "text.disabled" }} />
+              <Typography variant="body2" color="text.disabled">
+                Выберите врача слева
+              </Typography>
+            </Stack>
+          ) : (
+            <>
+              {/* Шапка врача */}
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={1.5}
+                sx={{ px: 2, py: 1.5, borderBottom: "1px solid", borderColor: "divider", flexShrink: 0 }}
+              >
+                <Box
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: "11px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#fff",
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    bgcolor: avatarColor(selectedDoc.emp.fullName),
+                    flexShrink: 0,
+                  }}
+                >
+                  {initials(selectedDoc.emp.fullName)}
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="subtitle1" fontWeight={600} noWrap>
+                    {selectedDoc.emp.fullName}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {specs.find((s) => s.id === specId)?.name ?? ""}
+                  </Typography>
+                </Box>
+              </Stack>
+
+              {/* Навбар дней */}
+              <Box
+                sx={{
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: subtleBg(theme),
+                  flexShrink: 0,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", px: 2, pt: 1.25, fontWeight: 600 }}
+                >
+                  {selectedMonthLabel}
+                </Typography>
+                {selectableDays.length === 0 ? (
+                  <Typography variant="caption" color="text.disabled" sx={{ display: "block", px: 2, py: 1.25 }}>
+                    В расписании врача нет смен
+                  </Typography>
+                ) : (
+                  <Stack direction="row" alignItems="stretch">
+                    <Box
+                      onClick={() => scrollStrip(-1)}
+                      sx={{
+                        width: 36,
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        color: "text.secondary",
+                        "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
+                      }}
+                    >
+                      <KeyboardArrowLeftOutlined sx={{ fontSize: 20 }} />
+                    </Box>
+                    <Stack
+                      ref={stripRef}
+                      direction="row"
+                      spacing={0.75}
+                      sx={{ overflowX: "auto", py: 1.25, px: 1, flex: 1, "&::-webkit-scrollbar": { height: 5 } }}
+                    >
+                      {selectableDays.map((d) => {
                     const dj = dayjs(d.date);
-                    const active = d.date === selectedDate;
-                    const off = d.dayOff || !d.scheduled;
+                    const active = d.date === selDay;
+                    const isToday = d.date === todayIso;
                     return (
                       <Box
                         key={d.date}
-                        onClick={() => setSelectedDate(d.date)}
+                        onClick={() => setSelDay(d.date)}
                         sx={{
-                          flex: 1,
-                          minWidth: 62,
+                          flex: "0 0 auto",
+                          minWidth: 58,
                           textAlign: "center",
                           borderRadius: "10px",
                           border: "1px solid",
                           borderColor: active ? "primary.main" : "divider",
-                          bgcolor: active ? alpha(theme.palette.primary.main, 0.08) : "transparent",
-                          p: 0.75,
+                          bgcolor: active
+                            ? alpha(theme.palette.primary.main, 0.1)
+                            : "background.paper",
+                          px: 1,
+                          py: 0.75,
                           cursor: "pointer",
-                          opacity: off && d.freeCount === 0 ? 0.55 : 1,
+                          transition: "border-color .13s ease, background-color .13s ease",
+                          "&:hover": { borderColor: active ? "primary.main" : alpha(theme.palette.primary.main, 0.28) },
                         }}
                       >
-                        <Typography variant="caption" color="text.secondary" display="block">
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.65rem" }}>
                           {WEEKDAY_SHORT[mondayIndex(dj)]}
                         </Typography>
-                        <Typography variant="subtitle2" fontWeight={600}>
-                          {dj.format("D")}
+                        <Typography
+                          variant="subtitle2"
+                          fontWeight={600}
+                          sx={{ color: isToday ? "primary.onSurface" : "text.primary" }}
+                        >
+                          {dj.date()}
                         </Typography>
                         <Typography
                           variant="caption"
-                          display="block"
-                          color={
-                            d.dayOff || !d.scheduled
-                              ? "text.disabled"
-                              : d.freeCount > 0
-                                ? "success.main"
-                                : "text.disabled"
-                          }
+                          sx={{
+                            display: "block",
+                            fontSize: "0.65rem",
+                            color: d.freeCount > 0 ? "success.main" : "text.disabled",
+                            fontWeight: d.freeCount > 0 ? 600 : 400,
+                          }}
                         >
-                          {d.dayOff ? "выходной" : !d.scheduled ? "нет графика" : d.freeCount > 0 ? `${d.freeCount} окон` : "нет окон"}
+                          {d.freeCount > 0 ? String(d.freeCount) : "нет"}
                         </Typography>
                       </Box>
                     );
                   })}
-                </Stack>
+                    </Stack>
+                    <Box
+                      onClick={() => scrollStrip(1)}
+                      sx={{
+                        width: 36,
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        color: "text.secondary",
+                        "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
+                      }}
+                    >
+                      <KeyboardArrowRightOutlined sx={{ fontSize: 20 }} />
+                    </Box>
+                  </Stack>
+                )}
+              </Box>
 
-                {/* Таймлайн выбранного дня */}
-                {selectedDay && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
-                      {dayjs(selectedDay.date).format("dddd, D MMMM")}
+              {/* Таймлайн окон выбранного дня */}
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 2 }}>
+                {!selectedDay ? (
+                  <Alert severity="info" icon={false}>В расписании врача нет смен</Alert>
+                ) : (
+                  <>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+                      {WEEKDAY_SHORT[mondayIndex(dayjs(selectedDay.date))]}, {dayjs(selectedDay.date).date()}{" "}
+                      {MONTHS_GEN[dayjs(selectedDay.date).month()]}
                     </Typography>
                     {selectedDay.dayOff ? (
                       <Alert severity="info" icon={false}>Выходной день</Alert>
@@ -409,85 +662,95 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                     ) : selectedDay.slots.length === 0 ? (
                       <Alert severity="info" icon={false}>Нет окон</Alert>
                     ) : (
-                      <Stack spacing={0.5}>
-                        {selectedDay.slots.map((slot) => (
-                          <Stack
-                            key={slot.start}
-                            direction="row"
-                            alignItems="center"
-                            spacing={1.25}
-                            onClick={
-                              slot.free
-                                ? () =>
-                                    onBook(
-                                      selectedEmp.employeeId,
-                                      `${selectedDay.date}T${slot.start}`,
-                                      serviceId,
-                                    )
-                                : undefined
-                            }
-                            sx={{
-                              px: 1.25,
-                              py: 0.75,
-                              borderRadius: "10px",
-                              border: "1px solid",
-                              borderColor: slot.free ? alpha(theme.palette.success.main, 0.3) : "divider",
-                              bgcolor: slot.free
-                                ? alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.14 : 0.06)
-                                : "action.hover",
-                              cursor: slot.free ? "pointer" : "default",
-                              "&:hover": slot.free
-                                ? { borderColor: theme.palette.success.main }
-                                : undefined,
-                            }}
-                          >
-                            <Typography
-                              variant="body2"
-                              sx={{ fontFamily: "monospace", width: 48, color: slot.free ? "success.main" : "text.disabled" }}
+                      <Stack spacing={0.75}>
+                        {selectedDay.slots.map((slot) => {
+                          const busy = !slot.free && slot.appointmentId != null;
+                          const past = !slot.free && slot.appointmentId == null;
+                          return (
+                            <Stack
+                              key={slot.start}
+                              direction="row"
+                              alignItems="center"
+                              spacing={1.25}
+                              onClick={
+                                slot.free
+                                  ? () => onBook(selectedDoc.emp.employeeId, `${selectedDay.date}T${slot.start}`)
+                                  : undefined
+                              }
+                              sx={{
+                                px: 1.5,
+                                py: 1,
+                                borderRadius: "10px",
+                                border: "1px solid",
+                                borderStyle: past ? "dashed" : "solid",
+                                borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
+                                bgcolor: slot.free
+                                  ? alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.14 : 0.08)
+                                  : busy
+                                    ? subtleBg(theme)
+                                    : "transparent",
+                                cursor: slot.free ? "pointer" : "default",
+                                transition: "filter .13s ease",
+                                "&:hover": slot.free ? { filter: "brightness(1.04)" } : undefined,
+                              }}
                             >
-                              {slot.start}
-                            </Typography>
-                            {slot.free ? (
-                              <>
-                                <Typography variant="caption" color="success.main" sx={{ flex: 1 }}>
-                                  Свободно
-                                </Typography>
-                                <Chip
-                                  size="small"
-                                  icon={<AddOutlined sx={{ fontSize: 15 }} />}
-                                  label="Записать"
-                                  color="success"
-                                  variant="outlined"
-                                  sx={{ height: 24 }}
-                                />
-                              </>
-                            ) : (
-                              <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
-                                Занято{slot.patientName ? ` · ${slot.patientName}` : ""}
+                              <Typography
+                                sx={{
+                                  fontFamily: "monospace",
+                                  fontWeight: 600,
+                                  fontSize: "0.85rem",
+                                  width: 48,
+                                  color: slot.free ? "success.main" : "text.disabled",
+                                }}
+                              >
+                                {slot.start}
                               </Typography>
-                            )}
-                          </Stack>
-                        ))}
+                              {slot.free ? (
+                                <>
+                                  <Typography variant="caption" color="success.main" sx={{ flex: 1, fontWeight: 500 }}>
+                                    Свободно
+                                  </Typography>
+                                  <Stack
+                                    direction="row"
+                                    alignItems="center"
+                                    spacing={0.5}
+                                    sx={(t) => ({
+                                      px: 1.25,
+                                      height: 28,
+                                      borderRadius: "8px",
+                                      border: "1px solid",
+                                      borderColor: alpha(t.palette.success.main, 0.32),
+                                      color: "success.dark",
+                                      fontWeight: 600,
+                                      fontSize: "0.75rem",
+                                      ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
+                                    })}
+                                  >
+                                    <AddOutlined sx={{ fontSize: 15 }} />
+                                    Записать
+                                  </Stack>
+                                </>
+                              ) : busy ? (
+                                <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
+                                  Занято{slot.patientName ? ` · ${slot.patientName}` : ""}
+                                </Typography>
+                              ) : (
+                                <Typography variant="caption" color="text.disabled" sx={{ flex: 1 }}>
+                                  Время прошло
+                                </Typography>
+                              )}
+                            </Stack>
+                          );
+                        })}
                       </Stack>
                     )}
-                    {/* Легенда */}
-                    <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <HealthAndSafetyOutlined sx={{ fontSize: 14, color: "success.main" }} />
-                        <Typography variant="caption" color="text.disabled">свободно</Typography>
-                      </Stack>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <CoffeeOutlined sx={{ fontSize: 14, color: "text.disabled" }} />
-                        <Typography variant="caption" color="text.disabled">обед вырезан из сетки</Typography>
-                      </Stack>
-                    </Stack>
-                  </Box>
+                  </>
                 )}
-              </>
-            )}
-          </Box>
+              </Box>
+            </>
+          )}
         </Box>
-      )}
+      </Box>
     </Box>
   );
 };

@@ -11,7 +11,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import PhoneIphoneIcon from "@mui/icons-material/PhoneIphoneOutlined";
-import logo from "../../assets/img/logo.png";
+import AximoLogo from "../../components/auth/AximoLogo";
 import { supabase } from "../../utility/supabaseClient";
 import { PhoneCountryCodeSelect } from "../../components/ui";
 import {
@@ -107,7 +107,7 @@ const ClientLoginPage: React.FC = () => {
         }}
       >
         <Stack alignItems="center" spacing={1} mb={3}>
-          <Box component="img" src={logo} alt="Мама Доктор" sx={{ height: 56, objectFit: "contain" }} />
+          <AximoLogo size={56} />
           <Typography variant="body2" color="text.secondary" textAlign="center">
             Введите ваш номер телефона для входа в личный кабинет
           </Typography>

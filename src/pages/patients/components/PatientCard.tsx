@@ -6,6 +6,7 @@
 import React from "react";
 import {
   Alert,
+  AlertTitle,
   Avatar,
   Box,
   Button,
@@ -33,6 +34,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import MergeTypeIcon from "@mui/icons-material/MergeTypeOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVertOutlined";
+import CameraAltOutlined from "@mui/icons-material/CameraAltOutlined";
 
 import type { DjangoPatient } from "../../../api/patients";
 import type { PatientBalance } from "../../../api/patientBalance";
@@ -89,6 +91,7 @@ type Props = {
   onEdit?: () => void;
   onTopUp?: () => void;
   onMerge?: () => void;
+  onFace?: () => void;
   lastDateTime?: string;
   lastService?: string;
   lastComplaints?: string;
@@ -100,6 +103,7 @@ const PatientCard: React.FC<Props> = ({
   onEdit,
   onTopUp,
   onMerge,
+  onFace,
   lastDateTime,
   lastService,
   lastComplaints,
@@ -116,7 +120,7 @@ const PatientCard: React.FC<Props> = ({
                 <PersonOutlineOutlined color="primary" />
                 <Typography variant="h6">Карточка пациента</Typography>
               </Stack>
-              {patient && (onTopUp || onEdit || onMerge) && (
+              {patient && (onTopUp || onEdit || onMerge || onFace) && (
                 <>
                   <Stack direction="row" spacing={1} flexShrink={0} sx={{ display: { xs: "none", md: "flex" } }}>
                     {onTopUp && (
@@ -127,6 +131,11 @@ const PatientCard: React.FC<Props> = ({
                     {onMerge && (
                       <Button size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
                         Объединить
+                      </Button>
+                    )}
+                    {onFace && (
+                      <Button size="small" variant="outlined" color="info" onClick={onFace} startIcon={<CameraAltOutlined />}>
+                        Камера
                       </Button>
                     )}
                     {onEdit && (
@@ -165,6 +174,12 @@ const PatientCard: React.FC<Props> = ({
                           <ListItemText>Объединить с дублем</ListItemText>
                         </MenuItem>
                       )}
+                      {onFace && (
+                        <MenuItem onClick={() => { setMenuAnchor(null); onFace(); }}>
+                          <ListItemIcon><CameraAltOutlined fontSize="small" color="info" /></ListItemIcon>
+                          <ListItemText>Камера</ListItemText>
+                        </MenuItem>
+                      )}
                     </Menu>
                   </Box>
                 </>
@@ -177,6 +192,12 @@ const PatientCard: React.FC<Props> = ({
         <CardContent sx={{ p: 0, flex: 1, overflowY: "auto", minHeight: 0 }}>
           {patient ? (
             <Stack spacing={2} sx={{ p: 2 }}>
+              {patient.isBlacklisted && (
+                <Alert severity="error" variant="filled">
+                  <AlertTitle>В чёрном списке</AlertTitle>
+                  {patient.blacklistReason || "Причина не указана"}
+                </Alert>
+              )}
               <Stack direction="row" alignItems="center" spacing={2}>
                 <Avatar
                   src={patient.photoUrl ?? undefined}
@@ -235,6 +256,18 @@ const PatientCard: React.FC<Props> = ({
                   )}
                 </Box>
               </Stack>
+
+              {patient.family && (
+                <>
+                  <Divider />
+                  <Stack spacing={0.5}>
+                    <Typography variant="subtitle2" color="text.secondary">Семья</Typography>
+                    <Typography variant="body2">
+                      {patient.family.name} · {patient.family.memberCount} участника
+                    </Typography>
+                  </Stack>
+                </>
+              )}
 
               {/* Счёт пациента */}
               <Divider />
