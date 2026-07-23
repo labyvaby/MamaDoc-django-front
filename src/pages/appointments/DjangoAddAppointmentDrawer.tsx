@@ -110,7 +110,7 @@ const ACTIVE_APPT_STATUSES = new Set(["scheduled", "confirmed", "arrived", "in_p
 // проверено на живом API 20.07.2026, тестовый филиал) — фича гарантированно
 // не работает. Тикет MamaDoc/backend_ticket_booking_without_patient.md.
 // После деплоя — включить обратно, других правок не потребуется.
-const BOOKING_WITHOUT_PATIENT_ENABLED = false;
+const BOOKING_WITHOUT_PATIENT_ENABLED = true;
 
 // Поиск исполнителя по ФИО и специализации («гинеколог» находит врача).
 const employeeFilter = createFilterOptions<DjangoEmployeeWithServices>({
@@ -656,25 +656,58 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 </Button>
               </Stack>
 
+              {/* ── Кастомный Toggle бронирования (1-в-1 с оригиналом и редактированием) ── */}
               {BOOKING_WITHOUT_PATIENT_ENABLED && (
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={isBooking}
-                      onChange={(e) => {
-                        setIsBooking(e.target.checked);
-                        if (e.target.checked) setSelectedPatient(null);
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: isBooking ? "warning.lighter" : "action.hover",
+                    border: "1px solid",
+                    borderColor: isBooking ? "warning.light" : "divider",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    "&:hover": {
+                      bgcolor: isBooking ? "warning.lighter" : "action.selected",
+                    },
+                  }}
+                  onClick={() => {
+                    if (!isBooking) setSelectedPatient(null);
+                    setIsBooking(!isBooking);
+                    setTouched(true);
+                  }}
+                >
+                  <Stack direction="row" alignItems="center" justifyContent="space-between">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Бронирование (без пациента)
+                      </Typography>
+                    </Stack>
+                    <Box
+                      sx={{
+                        width: 36,
+                        height: 20,
+                        borderRadius: "999px",
+                        bgcolor: isBooking ? "primary.main" : "text.disabled",
+                        position: "relative",
+                        transition: "bgcolor 0.2s",
                       }}
-                      color="primary"
-                      size="small"
-                    />
-                  }
-                  label={
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      Бронирование (без пациента)
-                    </Typography>
-                  }
-                />
+                    >
+                      <Box
+                        sx={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: "50%",
+                          bgcolor: "common.white",
+                          position: "absolute",
+                          top: 3,
+                          left: isBooking ? 19 : 3,
+                          transition: "left 0.2s",
+                        }}
+                      />
+                    </Box>
+                  </Stack>
+                </Box>
               )}
 
               {!isBooking && (
