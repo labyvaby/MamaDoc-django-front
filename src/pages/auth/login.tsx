@@ -467,11 +467,11 @@ const LoginPage: React.FC = () => {
       try {
         const otp = (await (navigator.credentials as CredentialsContainer & {
           get(options: {
-            otp: { transform: string[] };
+            otp: { transport: string[] };
             signal: AbortSignal;
           }): Promise<{ code?: string } | null>;
         }).get({
-          otp: { transform: ["sms"] },
+          otp: { transport: ["sms"] },
           signal: controller.signal,
         })) as { code?: string } | null;
         const code = otp?.code?.replace(/\D/g, "").trim();
