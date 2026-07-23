@@ -426,6 +426,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         unit: r.unit,
         price: r.unitPrice,
         isInfusion: false,
+        isVaccine: false,
         description: "",
         comment: "",
         isForSale: true,

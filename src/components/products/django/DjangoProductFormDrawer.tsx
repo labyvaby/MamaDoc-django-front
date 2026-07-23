@@ -13,6 +13,7 @@ import {
     CardContent,
     Avatar,
     Paper,
+    Switch,
     ToggleButton,
     ToggleButtonGroup,
 } from "@mui/material";
@@ -64,6 +65,7 @@ type FormValues = {
     comment: string;
     isForSale: boolean;
     isInfusion: boolean;
+    isVaccine: boolean;
     price: number;
 };
 
@@ -76,6 +78,7 @@ const defaultValues: FormValues = {
     comment: "",
     isForSale: true,
     isInfusion: false,
+    isVaccine: false,
     price: 0,
 };
 
@@ -114,6 +117,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                         comment: product.comment,
                         isForSale: product.isForSale,
                         isInfusion: product.isInfusion,
+                        isVaccine: product.isVaccine,
                         price: product.price,
                     }
                     : defaultValues,
@@ -152,6 +156,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                 comment: values.comment.trim(),
                 isForSale: values.isForSale,
                 isInfusion: values.isInfusion,
+                isVaccine: values.isVaccine,
                 price: Number(values.price) || 0,
             };
 
@@ -368,6 +373,26 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                     Недоступно
                                 </ToggleButton>
                             </ToggleButtonGroup>
+                        </Paper>
+
+                        {/* Vaccine flag: источник истины «это вакцина». Включение
+                            авто-создаёт/активирует медкарточку в разделе «Прививки». */}
+                        <Paper
+                            elevation={0}
+                            variant="outlined"
+                            sx={{ p: 1.5, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2 }}
+                        >
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2">Вакцина</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Включение создаёт карточку вакцины в разделе «Прививки»
+                                    и позволяет заводить партии.
+                                </Typography>
+                            </Box>
+                            <Switch
+                                checked={values.isVaccine}
+                                onChange={(e) => setValues((s) => ({ ...s, isVaccine: e.target.checked }))}
+                            />
                         </Paper>
 
                         {/* Price */}
