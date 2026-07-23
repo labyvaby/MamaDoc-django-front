@@ -1,5 +1,6 @@
-import { apiRequest } from "./client";
+import { apiRequest, apiRequestWithHeaders } from "./client";
 import { parseBackendError } from "./appointments";
+
 
 export { parseBackendError };
 
@@ -134,17 +135,51 @@ export interface CatalogDiagnosis {
 export function getDiagnoses(
   search?: string,
   signal?: AbortSignal,
-  opts?: { includeInactive?: boolean },
+  opts?: { includeInactive?: boolean; limit?: number | "all" },
 ): Promise<CatalogDiagnosis[]> {
   const params = new URLSearchParams();
   if (search) params.set("search", search);
   if (opts?.includeInactive) params.set("includeInactive", "true");
+  if (opts?.limit) params.set("limit", String(opts.limit));
   const qs = params.toString();
   return apiRequest<CatalogDiagnosis[]>(
     `/medical/diagnoses/${qs ? `?${qs}` : ""}`,
     { signal },
   );
 }
+
+export interface DiagnosesPaginatedResult {
+  items: CatalogDiagnosis[];
+  totalCount: number;
+}
+
+export async function getDiagnosesPaginated(
+  search?: string,
+  signal?: AbortSignal,
+  opts?: { includeInactive?: boolean; offset?: number; limit?: number | "all" },
+): Promise<DiagnosesPaginatedResult> {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (opts?.includeInactive) params.set("includeInactive", "true");
+  if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+
+  const envelope = await apiRequestWithHeaders<CatalogDiagnosis[]>(
+    `/medical/diagnoses/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+
+  const rawCount = envelope.headers.get("X-Total-Count");
+  const totalCount = rawCount ? parseInt(rawCount, 10) : envelope.data.length;
+
+  return {
+    items: envelope.data,
+    totalCount: isNaN(totalCount) ? envelope.data.length : totalCount,
+  };
+}
+
+
 
 /** POST /api/medical/diagnoses/ — add a diagnosis to the catalog. */
 export function createDiagnosis(payload: {

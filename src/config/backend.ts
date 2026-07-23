@@ -1,4 +1,4 @@
-export const BACKEND_MODE =
-  import.meta.env.VITE_BACKEND_MODE === "django" ? "django" : "supabase";
+export const BACKEND_MODE = "django" as const;
 
-export const IS_DJANGO_BACKEND = BACKEND_MODE === "django";
+export const IS_DJANGO_BACKEND = true;
+

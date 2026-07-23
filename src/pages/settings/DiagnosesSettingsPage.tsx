@@ -27,7 +27,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -37,7 +37,7 @@ import {
   type DiagnosisFormTarget,
 } from "./DiagnosisFormDrawer";
 import {
-  getDiagnoses,
+  getDiagnosesPaginated,
   updateDiagnosis,
   deleteDiagnosis,
   type CatalogDiagnosis,
@@ -54,12 +54,15 @@ function extractErrorMessage(err: unknown): string {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50;
+
 const DiagnosesSettingsPage: React.FC = () => {
   usePageTitle("Диагнозы");
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
 
   const [search, setSearch] = React.useState("");
+  const [debouncedSearch, setDebouncedSearch] = React.useState("");
   const [formTarget, setFormTarget] = React.useState<DiagnosisFormTarget>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<CatalogDiagnosis | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
@@ -67,33 +70,63 @@ const DiagnosesSettingsPage: React.FC = () => {
   // IDs currently mid-toggle, to disable their switch and avoid double clicks.
   const [togglingIds, setTogglingIds] = React.useState<ReadonlySet<number>>(new Set());
 
-  const queryKey = ["django", "medical", "diagnoses", "settings"] as const;
-  const query = useQuery({
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const queryKey = ["django", "medical", "diagnoses", "infinite", debouncedSearch] as const;
+
+  const query = useInfiniteQuery({
     queryKey,
-    // includeInactive — в настройках показываем все, чтобы можно было включить.
-    queryFn: ({ signal }) => getDiagnoses(undefined, signal, { includeInactive: true }),
-    // Менеджер справочника должен быть свежим: после правок в одной вкладке
-    // (или фоновых seed-команд) нельзя показывать устаревшие строки с
-    // «висячими» id — иначе удаление уйдёт по уже несуществующему id.
+    queryFn: ({ pageParam = 0, signal }) =>
+      getDiagnosesPaginated(debouncedSearch || undefined, signal, {
+        includeInactive: true,
+        offset: pageParam,
+        limit: PAGE_SIZE,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loadedCount = allPages.reduce((acc, p) => acc + p.items.length, 0);
+      if (loadedCount < lastPage.totalCount && lastPage.items.length > 0) {
+        return loadedCount;
+      }
+      return undefined;
+    },
     staleTime: 0,
     refetchOnMount: "always",
   });
-  const all = query.data ?? [];
-  const activeCount = all.filter((d) => d.isActive).length;
 
-  const filtered = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter(
-      (d) =>
-        d.code.toLowerCase().includes(q) ||
-        d.title.toLowerCase().includes(q) ||
-        (d.displayName ?? "").toLowerCase().includes(q),
+  const allItems = React.useMemo(() => {
+    if (!query.data) return [];
+    return query.data.pages.flatMap((page) => page.items);
+  }, [query.data]);
+
+  const totalCount = query.data?.pages[0]?.totalCount ?? 0;
+  const loadedCount = allItems.length;
+
+  const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && query.hasNextPage && !query.isFetchingNextPage) {
+          query.fetchNextPage();
+        }
+      },
+      { threshold: 0.1 },
     );
-  }, [all, search]);
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
 
   // refetch (не просто invalidate) — гарантируем перезапрос свежего списка
-  // сразу после любой мутации, чтобы таблица не держала устаревшие id.
   const refresh = () => queryClient.refetchQueries({ queryKey });
 
   const handleToggleActive = async (d: CatalogDiagnosis) => {
@@ -121,9 +154,6 @@ const DiagnosesSettingsPage: React.FC = () => {
       setDeleteTarget(null);
       await refresh();
     } catch (err) {
-      // 404 means the row is already gone (e.g. deleted in another tab, or a
-      // stale list still shows it) — treat DELETE as idempotent: refresh and
-      // close instead of surfacing a confusing "not found" error.
       if (err instanceof ApiError && err.status === 404) {
         setDeleteTarget(null);
         await refresh();
@@ -150,8 +180,8 @@ const DiagnosesSettingsPage: React.FC = () => {
               Диагнозы (МКБ-10)
             </Typography>
             {!query.isLoading && (
-              <Tooltip title={`Активных: ${activeCount} из ${all.length}`}>
-                <Chip label={all.length} size="small" sx={{ height: 20 }} />
+              <Tooltip title={`Показано ${loadedCount} из ${totalCount}`}>
+                <Chip label={totalCount} size="small" sx={{ height: 20 }} />
               </Tooltip>
             )}
           </Stack>
@@ -169,7 +199,7 @@ const DiagnosesSettingsPage: React.FC = () => {
                   </InputAdornment>
                 ),
               }}
-              sx={{ width: { xs: "100%", sm: 240 } }}
+              sx={{ width: { xs: "100%", sm: 280 } }}
             />
             <Button
               variant="contained"
@@ -209,7 +239,7 @@ const DiagnosesSettingsPage: React.FC = () => {
           <Stack alignItems="center" py={6}>
             <CircularProgress />
           </Stack>
-        ) : all.length === 0 ? (
+        ) : loadedCount === 0 ? (
           <Box
             sx={{
               flex: 1,
@@ -226,18 +256,20 @@ const DiagnosesSettingsPage: React.FC = () => {
               gap: 1.5,
             }}
           >
-            <Typography variant="body2">Справочник диагнозов пуст.</Typography>
-            <Button
-              variant="outlined"
-              startIcon={<AddOutlined />}
-              onClick={() => setFormTarget("new")}
-            >
-              Добавить первый диагноз
-            </Button>
-          </Box>
-        ) : filtered.length === 0 ? (
-          <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
-            <Typography variant="body2">Ничего не найдено по запросу «{search}».</Typography>
+            {search ? (
+              <Typography variant="body2">Ничего не найдено по запросу «{search}».</Typography>
+            ) : (
+              <>
+                <Typography variant="body2">Справочник диагнозов пуст.</Typography>
+                <Button
+                  variant="outlined"
+                  startIcon={<AddOutlined />}
+                  onClick={() => setFormTarget("new")}
+                >
+                  Добавить первый диагноз
+                </Button>
+              </>
+            )}
           </Box>
         ) : (
           <TableContainer>
@@ -251,7 +283,7 @@ const DiagnosesSettingsPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filtered.map((d) => (
+                {allItems.map((d) => (
                   <TableRow
                     key={d.id}
                     hover
@@ -293,9 +325,44 @@ const DiagnosesSettingsPage: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+
+            {/* Infinite scroll sentinel & status footer */}
+            <Box
+              ref={sentinelRef}
+              sx={{
+                py: 2,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 1,
+              }}
+            >
+              {query.isFetchingNextPage ? (
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <CircularProgress size={20} />
+                  <Typography variant="caption" color="text.secondary">
+                    Загрузка следующих 50...
+                  </Typography>
+                </Stack>
+              ) : query.hasNextPage ? (
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => query.fetchNextPage()}
+                  sx={{ color: "text.secondary" }}
+                >
+                  Показать ещё ({loadedCount} из {totalCount})
+                </Button>
+              ) : (
+                <Typography variant="caption" color="text.secondary">
+                  Показаны все {totalCount} диагнозов
+                </Typography>
+              )}
+            </Box>
           </TableContainer>
         )}
       </Stack>
+
 
       {/* Create / edit drawer */}
       <DiagnosisFormDrawer

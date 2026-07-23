@@ -144,6 +144,57 @@ export async function apiRequest<T>(
   return payload as T;
 }
 
+export interface ApiEnvelope<T> {
+  data: T;
+  headers: Headers;
+}
+
+export async function apiRequestWithHeaders<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<ApiEnvelope<T>> {
+  const isFormData = options.formData !== undefined;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      credentials: "include",
+      ...options,
+      headers: isFormData
+        ? { ...options.headers }
+        : {
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
+      body: isFormData
+        ? options.formData
+        : options.body === undefined
+        ? undefined
+        : JSON.stringify(options.body),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    const message = err instanceof Error ? err.message : "Network error";
+    throw new ApiError(message, 0, null);
+  }
+
+  if (response.status === 204) {
+    return { data: undefined as T, headers: response.headers };
+  }
+
+  if (response.status === 401) {
+    window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
+  }
+
+  return { data: payload as T, headers: response.headers };
+}
+
+
 /** true для отменённых запросов (AbortController) — такие ошибки не показываем. */
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
