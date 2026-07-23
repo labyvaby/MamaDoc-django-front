@@ -59,6 +59,11 @@ import {
 import AppointmentListPanel from "./components/AppointmentListPanel";
 import AppointmentDetailsPanel from "./components/AppointmentDetailsPanel";
 import DjangoConclusionSlotsPanel from "./DjangoConclusionSlotsPanel";
+import RecordVaccinationDrawer from "../../components/vaccinations/RecordVaccinationDrawer";
+import BatchRecordVaccinationDrawer, {
+  type BatchDoseInput,
+} from "../../components/vaccinations/BatchRecordVaccinationDrawer";
+import { appointmentPatientToStub } from "./patientStub";
 import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
@@ -285,6 +290,30 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
+  // Ввод прививки из карточки приёма (регистратура): приём, для которого открыт дровер.
+  const [vaccineAppt, setVaccineAppt] = React.useState<DjangoAppointment | null>(null);
+  // Предзаполнение из прогноза календаря (клик «Ввести» на положенной дозе):
+  // вакцина + № дозы. null — общий ввод без прогноза.
+  const [vaccinePrefill, setVaccinePrefill] = React.useState<{ vaccineId: number; doseNumber: number } | null>(null);
+  // Стабильный stub пациента для дровера прививки: без мемо новый объект на каждый
+  // рендер (heartbeat autosync) сбрасывал бы форму (resetForm зависит от initialPatient).
+  const vaccinePatientStub = React.useMemo(
+    () =>
+      vaccineAppt?.patient
+        ? appointmentPatientToStub(vaccineAppt.patient, activeOrganization?.id ?? 0)
+        : null,
+    [vaccineAppt, activeOrganization?.id],
+  );
+  // Групповой ввод прививок (несколько положенных доз за один визит).
+  const [multiVaccineAppt, setMultiVaccineAppt] = React.useState<DjangoAppointment | null>(null);
+  const [multiVaccineDoses, setMultiVaccineDoses] = React.useState<BatchDoseInput[]>([]);
+  const multiVaccinePatientStub = React.useMemo(
+    () =>
+      multiVaccineAppt?.patient
+        ? appointmentPatientToStub(multiVaccineAppt.patient, activeOrganization?.id ?? 0)
+        : null,
+    [multiVaccineAppt, activeOrganization?.id],
+  );
   // Заключение открывается отдельной (третьей) колонкой — как в оригинале.
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
 
@@ -294,6 +323,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const canDelete = isSuperAdmin() || can("appointments.delete");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
+  // Регистратор может ввести прививку прямо из карточки приёма — если бэк выдал
+  // роли право vaccinations.record (иначе кнопка не показывается).
+  const canRecordVaccination = can("vaccinations.record");
 
   // confirm dialog for cancel / delete
   const [confirm, setConfirm] = React.useState<
@@ -506,14 +538,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setPaymentTarget(appt);
   }, []);
 
-  // «Подтвердить»: пациент подтвердил визит по телефону, scheduled → confirmed
-  // allowOverlap: смена статуса не двигает слот, поэтому уже существующее
-  // пересечение не должно её блокировать (иначе бэк отдаёт 409 appointment_overlap
-  // и отменить/подтвердить дубль вообще нельзя).
+  // «Подтвердить»: пациент подтвердил визит по телефону, scheduled → confirmed.
+  // Бэк с 23.07.2026 не запускает overlap-проверку на status-only PATCH, поэтому
+  // allowOverlap здесь больше не нужен (frontend-backend-tickets-2026-07-23.md, п.2).
   const handleConfirmVisit = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "confirmed", allowOverlap: true });
+        await updateAppointment(appt.id, { status: "confirmed" });
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -522,11 +553,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     [refresh, notify],
   );
 
-  // "Пациент здесь": scheduled → waiting (allowOverlap — см. handleConfirmVisit)
+  // "Пациент здесь": scheduled → arrived (status-only, overlap не проверяется).
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "arrived", allowOverlap: true });
+        await updateAppointment(appt.id, { status: "arrived" });
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
@@ -556,9 +587,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setConfirmBusy(true);
     try {
       if (confirm.mode === "cancel") {
-        // allowOverlap — см. handleConfirmVisit: отмена дубля не должна упираться
-        // в проверку пересечений с приёмом, из-за которого её и отменяют.
-        await updateAppointment(confirm.appt.id, { status: "canceled", allowOverlap: true });
+        // status-only PATCH: бэк не проверяет overlap, отмена дубля проходит.
+        await updateAppointment(confirm.appt.id, { status: "canceled" });
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
@@ -593,6 +623,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       canViewFinance={canViewFinance}
       canViewConclusions={canViewConclusions}
       canDelete={canDelete}
+      canRecordVaccination={canRecordVaccination}
       isConclusionVisible={conclusionOpen}
       onToggleConclusion={() => setConclusionOpen((v) => !v)}
       onEdit={handleEdit}
@@ -600,6 +631,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
       onStartAppointment={handleStartAppointment}
+      onRecordVaccination={(a, prefill) => {
+        setVaccineAppt(a);
+        setVaccinePrefill(prefill ?? null);
+      }}
+      onRecordVaccinationMulti={(a, doses) => {
+        setMultiVaccineAppt(a);
+        setMultiVaccineDoses(doses);
+      }}
       onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}
       onDelete={(a) => setConfirm({ mode: "delete", appt: a })}
       onClose={() => setSelectedAppt(null)}
@@ -891,6 +930,32 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         onClose={() => setPaymentTarget(null)}
         appointment={paymentTarget}
         onSaved={handlePaymentSaved}
+      />
+
+      {/* Ввод прививки из карточки приёма (регистратура): пациент и appointmentId
+          подставляются из выбранного приёма, строка вакцины уйдёт в его счёт. */}
+      <RecordVaccinationDrawer
+        open={vaccineAppt != null}
+        onClose={() => {
+          setVaccineAppt(null);
+          setVaccinePrefill(null);
+        }}
+        initialPatient={vaccinePatientStub}
+        initialAppointmentId={vaccineAppt?.id ?? null}
+        lockedScenario="ours"
+        initialVaccineId={vaccinePrefill?.vaccineId ?? null}
+        initialDoseNumber={vaccinePrefill?.doseNumber ?? null}
+      />
+
+      <BatchRecordVaccinationDrawer
+        open={multiVaccineAppt != null}
+        onClose={() => {
+          setMultiVaccineAppt(null);
+          setMultiVaccineDoses([]);
+        }}
+        patient={multiVaccinePatientStub}
+        appointmentId={multiVaccineAppt?.id ?? null}
+        doses={multiVaccineDoses}
       />
 
       {/* Confirm cancel / delete */}

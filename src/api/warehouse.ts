@@ -67,6 +67,13 @@ export type DjangoProduct = {
     /** Цена продажи, сом. */
     price: number;
     isInfusion: boolean;
+    /**
+     * Товар-вакцина. Источник истины для раздела «Прививки» с 23.07.2026
+     * (миграция warehouse.0005 проставила флаг товарам категории «Вакцины»,
+     * дальше — только boolean). Переключение в true авто-создаёт/активирует
+     * медкарточку вакцины на бэке.
+     */
+    isVaccine: boolean;
     description: string;
     comment: string;
     isForSale: boolean;
@@ -209,11 +216,18 @@ const mapProduct = (raw: RawProduct): DjangoProduct => ({
 
 export async function getProducts(
     signal?: AbortSignal,
-    opts: { includeInactive?: boolean; category?: string; organizationId?: number } = {},
+    opts: {
+        includeInactive?: boolean;
+        category?: string;
+        /** Только товары-вакцины (?isVaccine=true) — для пикеров раздела «Прививки». */
+        isVaccine?: boolean;
+        organizationId?: number;
+    } = {},
 ): Promise<DjangoProduct[]> {
     const q = new URLSearchParams();
     if (opts.includeInactive) q.set("includeInactive", "true");
     if (opts.category) q.set("category", opts.category);
+    if (opts.isVaccine != null) q.set("isVaccine", String(opts.isVaccine));
     if (opts.organizationId != null) q.set("organizationId", String(opts.organizationId));
     const qs = q.toString();
     const rows = await apiRequest<RawProduct[]>(
@@ -240,6 +254,8 @@ export type ProductWriteData = {
     comment?: string;
     isForSale?: boolean;
     isInfusion?: boolean;
+    /** Переключение в true авто-создаёт/активирует медкарточку вакцины на бэке. */
+    isVaccine?: boolean;
     price?: number;
 };
 

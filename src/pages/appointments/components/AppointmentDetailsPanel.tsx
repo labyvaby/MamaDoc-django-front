@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -34,6 +35,7 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DirectionsWalkOutlined from "@mui/icons-material/DirectionsWalkOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -42,7 +44,14 @@ dayjs.locale("ru");
 
 import type { DjangoAppointment } from "../../../api/appointments";
 import { getAppointmentPayments } from "../../../api/payments";
-import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
+import { getPatientSchedule } from "../../../api/vaccinations";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import {
+  djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
+  DJANGO_LIST_STALE_TIME_MS,
+} from "../../../api/queryKeys";
+import { scheduleDateInfo } from "../../vaccinations/meta";
 import { getStatusConfig, getStatusChipSx, normalizeDjangoStatus } from "../../../config/appointmentStatuses";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -62,6 +71,8 @@ interface AppointmentDetailsPanelProps {
   canViewFinance: boolean;
   canViewConclusions: boolean;
   canDelete?: boolean;
+  /** vaccinations.record — показывать «Ввести прививку» в карточке приёма. */
+  canRecordVaccination?: boolean;
   /** Открыта ли третья колонка с заключением (состояние страницы). */
   isConclusionVisible?: boolean;
   /** Переключить третью колонку с заключением. */
@@ -73,6 +84,19 @@ interface AppointmentDetailsPanelProps {
   onArrived?: (a: DjangoAppointment) => void;
   /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
   onStartAppointment?: (a: DjangoAppointment) => void;
+  /**
+   * Ввести прививку по этому приёму (регистратура). prefill — из прогноза
+   * календаря (положенная доза): подставит вакцину и № дозы в дровер.
+   */
+  onRecordVaccination?: (
+    a: DjangoAppointment,
+    prefill?: { vaccineId: number; doseNumber: number },
+  ) => void;
+  /** Групповой ввод нескольких положенных доз за один визит. */
+  onRecordVaccinationMulti?: (
+    a: DjangoAppointment,
+    doses: { vaccineId: number; vaccineName: string; doseNumber: number }[],
+  ) => void;
   onCancelAppt?: (a: DjangoAppointment) => void;
   onDelete?: (a: DjangoAppointment) => void;
   onClose?: () => void;
@@ -97,6 +121,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   canViewFinance,
   canViewConclusions,
   canDelete,
+  canRecordVaccination,
   isConclusionVisible = false,
   onToggleConclusion,
   onEdit,
@@ -104,11 +129,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onConfirmVisit,
   onArrived,
   onStartAppointment,
+  onRecordVaccination,
+  onRecordVaccinationMulti,
   onCancelAppt,
   onDelete,
   onClose,
 }) => {
   const theme = useTheme();
+  const orgId = useApiOrgId();
   const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
 
   // Кто создал/изменил приём: бэк отдаёт только auth-user id, имя — из
@@ -141,6 +169,40 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     enabled: canViewFinance || canManageFinance,
   });
+
+  // Прогноз календаря пациента: положенные (planned/overdue) дозы — чтобы ввести
+  // прививку в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
+  const patientId = appt.patient?.id ?? null;
+  const scheduleQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.patientSchedule(patientId ?? 0),
+    queryFn: ({ signal }) => getPatientSchedule(patientId!, orgId, signal),
+    enabled: canRecordVaccination && patientId != null,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const dueDoses = React.useMemo(
+    () =>
+      (scheduleQuery.data ?? [])
+        .filter((s) => s.status === "planned" || s.status === "overdue")
+        .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate)),
+    [scheduleQuery.data],
+  );
+  // Мульти-ввод: чекбоксы показываем при ≥2 положенных дозах, по умолчанию все
+  // выбраны (как в зрелых системах — снимаешь лишнее). Сброс при смене прогноза.
+  const multiDue = dueDoses.length >= 2;
+  const [selectedDoseIds, setSelectedDoseIds] = React.useState<Set<number>>(new Set());
+  React.useEffect(() => {
+    setSelectedDoseIds(new Set(dueDoses.map((d) => d.id)));
+  }, [dueDoses]);
+  const toggleDose = (id: number) =>
+    setSelectedDoseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const selectedDoseInputs = dueDoses
+    .filter((d) => selectedDoseIds.has(d.id))
+    .map((d) => ({ vaccineId: d.vaccineId, vaccineName: d.vaccineName, doseNumber: d.doseNumber }));
 
   const pay = payQuery.data;
   const isCancelled =
@@ -456,6 +518,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </Button>
                 )}
 
+                {/* Ввести прививку — регистратура (право vaccinations.record),
+                    только для приёма с пациентом и активного статуса. Пациент и
+                    appointmentId уйдут в дровер, строка вакцины — в счёт приёма. */}
+                {canRecordVaccination && onRecordVaccination && appt.patient && isAppointmentActive && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<VaccinesOutlined />}
+                    onClick={() => onRecordVaccination(appt)}
+                  >
+                    Ввести прививку
+                  </Button>
+                )}
+
                 {/* Заключение toggle — только если заключение реально есть.
                     Создание заключения врачом идёт отдельным потоком выше
                     (hasIncompleteServices); эта кнопка — лишь просмотр. */}
@@ -714,6 +791,93 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     Бронирование (без пациента)
                   </Typography>
                 </Paper>
+              </Box>
+            )}
+
+            {/* ── Прогноз календаря: положенные дозы (ввод в 1–2 клика) ── */}
+            {canRecordVaccination && appt.patient && dueDoses.length > 0 && isAppointmentActive && (
+              <Box>
+                <Stack direction="row" alignItems="center" gap={1} mb={0.75}>
+                  <VaccinesOutlined sx={{ fontSize: 18, color: "primary.onSurface" }} />
+                  <Typography variant="caption" color="text.secondary">
+                    Положено по календарю
+                  </Typography>
+                  <Box sx={{ flex: 1 }} />
+                  {multiDue && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={selectedDoseInputs.length === 0}
+                      startIcon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
+                      onClick={() => onRecordVaccinationMulti?.(appt, selectedDoseInputs)}
+                      sx={{ boxShadow: "none", textTransform: "none", borderRadius: "8px" }}
+                    >
+                      Ввести выбранные ({selectedDoseInputs.length})
+                    </Button>
+                  )}
+                </Stack>
+                <Stack spacing={1}>
+                  {dueDoses.map((slot) => {
+                    const info = scheduleDateInfo(slot.scheduledDate, slot.status);
+                    return (
+                      <Paper
+                        key={slot.id}
+                        variant="outlined"
+                        sx={{
+                          p: 1.25,
+                          pl: multiDue ? 1 : 1.75,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                          borderRadius: "10px",
+                          bgcolor: info.overdue
+                            ? alpha(theme.palette.error.main, 0.05)
+                            : "background.paper",
+                          borderColor: info.overdue
+                            ? alpha(theme.palette.error.main, 0.3)
+                            : "divider",
+                        }}
+                      >
+                        {multiDue && (
+                          <Checkbox
+                            size="small"
+                            checked={selectedDoseIds.has(slot.id)}
+                            onChange={() => toggleDose(slot.id)}
+                            sx={{ p: 0.5 }}
+                          />
+                        )}
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {slot.vaccineName} · доза {slot.doseNumber}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: info.overdue ? "error.main" : info.soon ? "warning.main" : "text.secondary",
+                              fontWeight: info.overdue || info.soon ? 600 : 400,
+                            }}
+                          >
+                            {info.text}
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          variant={multiDue ? "outlined" : "contained"}
+                          startIcon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
+                          onClick={() =>
+                            onRecordVaccination?.(appt, {
+                              vaccineId: slot.vaccineId,
+                              doseNumber: slot.doseNumber,
+                            })
+                          }
+                          sx={{ boxShadow: "none", textTransform: "none", flexShrink: 0, borderRadius: "8px" }}
+                        >
+                          Ввести
+                        </Button>
+                      </Paper>
+                    );
+                  })}
+                </Stack>
               </Box>
             )}
 

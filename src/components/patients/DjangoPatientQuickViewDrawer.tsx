@@ -16,10 +16,12 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import LocalPhoneOutlinedIcon from "@mui/icons-material/LocalPhoneOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import WcOutlinedIcon from "@mui/icons-material/WcOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import dayjs from "dayjs";
+import { formatPatientAge } from "../../utility/age";
 import "dayjs/locale/ru";
 
 import { getPatient, type DjangoPatient } from "../../api/patients";
@@ -45,25 +47,7 @@ function initials(name?: string | null): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function plural(n: number, forms: [string, string, string]): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return forms[2];
-  if (mod10 === 1) return forms[0];
-  if (mod10 >= 2 && mod10 <= 4) return forms[1];
-  return forms[2];
-}
 
-function ageLabel(birthDate: string | null): string {
-  if (!birthDate) return "";
-  const b = dayjs(birthDate);
-  if (!b.isValid()) return "";
-  const now = dayjs();
-  const years = now.diff(b, "year");
-  if (years >= 1) return `${years} ${plural(years, ["год", "года", "лет"])}`;
-  const months = now.diff(b, "month");
-  return `${months} ${plural(months, ["месяц", "месяца", "месяцев"])}`;
-}
 
 function doctorsLabel(appt: DjangoAppointment): string {
   const names = Array.from(
@@ -232,7 +216,19 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                   </Typography>
                   <Typography variant="body2" fontWeight={500}>
                     {dayjs(patient.birthDate).format("DD.MM.YYYY")}
-                    {ageLabel(patient.birthDate) ? ` (${ageLabel(patient.birthDate)})` : ""}
+                    {formatPatientAge(patient.birthDate) ? ` (${formatPatientAge(patient.birthDate)})` : ""}
+                  </Typography>
+                </Stack>
+              )}
+
+              {(patient.gender === "male" || patient.gender === "female") && (
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <WcOutlinedIcon fontSize="small" color="action" />
+                  <Typography variant="body2" color="text.secondary">
+                    Пол:
+                  </Typography>
+                  <Typography variant="body2" fontWeight={500}>
+                    {patient.gender === "male" ? "Мальчик" : "Девочка"}
                   </Typography>
                 </Stack>
               )}

@@ -291,7 +291,7 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
         px: 2,
         py: 1.5,
         display: "grid",
-        gridTemplateColumns: { xs: "1fr", sm: "1.2fr 0.8fr 1fr auto" },
+        gridTemplateColumns: { xs: "1fr", md: "1.2fr 0.8fr 1fr auto" },
         gap: 1,
         alignItems: "center",
         transition: "box-shadow 0.15s",
@@ -438,8 +438,8 @@ const MembershipsSettingsPage: React.FC = () => {
       <Stack spacing={2} sx={{ height: "100%" }}>
         {/* Header */}
         <Stack
-          direction={{ xs: "column", sm: "row" }}
-          alignItems={{ xs: "flex-start", sm: "center" }}
+          direction={{ xs: "column", md: "row" }}
+          alignItems={{ xs: "flex-start", md: "center" }}
           justifyContent="space-between"
           gap={1.5}
         >
@@ -465,7 +465,7 @@ const MembershipsSettingsPage: React.FC = () => {
                 </InputAdornment>
               ),
             }}
-            sx={{ width: { xs: "100%", sm: 240 } }}
+            sx={{ width: { xs: "100%", md: 240 } }}
           />
         </Stack>
 

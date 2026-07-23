@@ -27,6 +27,7 @@ import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import BedtimeOutlined from "@mui/icons-material/BedtimeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import InfoOutlined from "@mui/icons-material/InfoOutlined";
 
 import type { Service } from "../../../api/catalog";
 import type { DjangoProduct } from "../../../api/warehouse";
@@ -83,6 +84,8 @@ type Props = {
   onChange: (v: SalarySettingsValue) => void;
   services: Service[];
   loadingServices?: boolean;
+  /** Подсказка над «Ставками по услугам» (напр., у врача нет закреплённых услуг). */
+  servicesHint?: string;
   products?: DjangoProduct[];
   loadingProducts?: boolean;
   disabled?: boolean;
@@ -242,6 +245,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
   onChange,
   services,
   loadingServices = false,
+  servicesHint,
   products = [],
   loadingProducts = false,
   disabled = false,
@@ -412,6 +416,28 @@ const DjangoSalarySettings: React.FC<Props> = ({
           title="Ставки по услугам"
           subtitle="% и фикс за конкретные услуги"
         />
+
+        {servicesHint && (
+          <Box
+            sx={(t) => ({
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 1,
+              p: 1.5,
+              mb: 1.5,
+              fontSize: "0.8rem",
+              lineHeight: 1.4,
+              color: "text.secondary",
+              border: 1,
+              borderColor: "divider",
+              borderRadius: "12px",
+              bgcolor: subtleBg(t),
+            })}
+          >
+            <InfoOutlined sx={{ fontSize: 18, mt: "1px", color: "text.disabled", flexShrink: 0 }} />
+            <span>{servicesHint}</span>
+          </Box>
+        )}
 
         <Stack spacing={1.5}>
           {value.rules.length === 0 && (

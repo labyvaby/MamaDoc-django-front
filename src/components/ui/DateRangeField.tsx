@@ -249,18 +249,18 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
         transformOrigin={{ vertical: "top", horizontal: "left" }}
         slotProps={{ paper: { sx: { mt: 0.5, borderRadius: "14px", overflow: "hidden" } } }}
       >
-        <Stack direction={{ xs: "column", sm: "row" }}>
+        <Stack direction={{ xs: "column", md: "row" }}>
           {presets.length > 0 && (
             <Stack
               sx={{
                 p: 0.75,
-                minWidth: { sm: 160 },
-                borderRight: { sm: "1px solid" },
-                borderBottom: { xs: "1px solid", sm: "none" },
-                borderColor: { xs: "divider", sm: "divider" },
-                flexDirection: { xs: "row", sm: "column" },
-                flexWrap: { xs: "wrap", sm: "nowrap" },
-                gap: { xs: 0.5, sm: 0 },
+                minWidth: { md: 160 },
+                borderRight: { md: "1px solid" },
+                borderBottom: { xs: "1px solid", md: "none" },
+                borderColor: "divider",
+                flexDirection: { xs: "row", md: "column" },
+                flexWrap: { xs: "wrap", md: "nowrap" },
+                gap: { xs: 0.5, md: 0 },
               }}
             >
               {presets.map((p) => {
@@ -271,7 +271,7 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
                     size="small"
                     onClick={() => applyPreset(p)}
                     sx={{
-                      justifyContent: { xs: "center", sm: "flex-start" },
+                      justifyContent: { xs: "center", md: "flex-start" },
                       textTransform: "none",
                       fontWeight: selected ? 600 : 400,
                       color: selected ? "primary.onSurface" : "text.secondary",

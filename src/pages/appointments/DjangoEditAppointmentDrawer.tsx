@@ -94,12 +94,11 @@ type ProductRow = {
   unit: string;
 };
 
-// Редактирование товаров через PATCH: бэкенд пока молча игнорирует поле
-// ``products`` (проверено на живом API 15.07.2026, приём 12127 в тестовом
-// филиале) — тикет MamaDoc/backend_ticket_appointments_patch_products.md.
-// До реализации секция «Товары» работает только на чтение; после деплоя
-// бэка переключить в true — payload уже прокинут.
-const EDIT_APPOINTMENT_PRODUCTS_ENABLED = false;
+// Редактирование товаров через PATCH: бэкенд реализовал поле ``products``,
+// проверено на живом API 22.07.2026 (products применяются, остаток списывается) —
+// тикет MamaDoc/backend_ticket_appointments_patch_products.md.
+// Секция «Товары» редактируемая, products уходят в PATCH.
+const EDIT_APPOINTMENT_PRODUCTS_ENABLED = true;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -427,6 +426,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         unit: r.unit,
         price: r.unitPrice,
         isInfusion: false,
+        isVaccine: false,
         description: "",
         comment: "",
         isForSale: true,
