@@ -413,7 +413,7 @@ const SidebarSecondary: React.FC = () => {
   // Бейдж «Задачи»: счётчик + срочность цветом.
   // Тот же queryKey, что у сводки на доске задач, — кэш общий.
   const tasksSummaryQuery = useQuery({
-    queryKey: djangoQueryKeys.tasks.summary,
+    queryKey: djangoQueryKeys.tasks.summary(orgId),
     queryFn: ({ signal }) => getTasksSummary(orgId, signal),
     enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
