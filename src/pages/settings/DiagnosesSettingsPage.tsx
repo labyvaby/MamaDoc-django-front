@@ -278,6 +278,7 @@ const DiagnosesSettingsPage: React.FC = () => {
                 <TableRow>
                   <TableCell sx={{ width: 110 }}>Код</TableCell>
                   <TableCell>Название</TableCell>
+                  <TableCell>Название для печати</TableCell>
                   <TableCell sx={{ width: 110 }} align="center">Активен</TableCell>
                   <TableCell sx={{ width: 96 }} align="right">Действия</TableCell>
                 </TableRow>
@@ -295,12 +296,11 @@ const DiagnosesSettingsPage: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       {d.title}
-                      {d.displayName && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          Для печати: {d.displayName}
-                        </Typography>
-                      )}
                     </TableCell>
+                    <TableCell sx={{ color: d.displayName ? "text.primary" : "text.disabled" }}>
+                      {d.displayName || "—"}
+                    </TableCell>
+
                     <TableCell align="center">
                       <Switch
                         size="small"
