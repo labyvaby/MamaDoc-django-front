@@ -31,16 +31,43 @@ describe("extractErrorMessage", () => {
     const payload = { overlaps: [{ appointmentId: 1 }, { appointmentId: 2 }] };
     const msg = extractErrorMessage(payload, 409);
     expect(msg).not.toContain("[object Object]");
-    expect(msg).toBe("Ошибка сервера (409)");
+    expect(msg).toBe("Конфликт данных. Обновите страницу и попробуйте снова.");
   });
 
-  it("still formats a plain Django field dict with string arrays", () => {
+  it("translates a known technical field name to a Russian label", () => {
     const payload = { startsAt: ["Обязательное поле."] };
-    expect(extractErrorMessage(payload, 400)).toBe("startsAt: Обязательное поле.");
+    expect(extractErrorMessage(payload, 400)).toBe("Дата и время начала: Обязательное поле.");
+  });
+
+  it("maps snake_case + Id-suffixed keys through the same label", () => {
+    const payload = { patient_id: ["Не найден."] };
+    expect(extractErrorMessage(payload, 400)).toBe("Пациент: Не найден.");
+  });
+
+  it("drops the technical prefix for unknown fields", () => {
+    const payload = { someInternalFlag: ["Недопустимое значение."] };
+    expect(extractErrorMessage(payload, 400)).toBe("Недопустимое значение.");
+  });
+
+  it("drops the non_field_errors / __all__ wrapper prefix", () => {
+    expect(extractErrorMessage({ non_field_errors: ["Общая ошибка."] }, 400)).toBe("Общая ошибка.");
+    expect(extractErrorMessage({ errors: { __all__: ["Нельзя."] } }, 400)).toBe("Нельзя.");
   });
 
   it("prefers { error } over { message }", () => {
     const payload = { error: "Явная ошибка", message: "запасной текст" };
     expect(extractErrorMessage(payload, 400)).toBe("Явная ошибка");
+  });
+
+  it("gives a friendly text for a network failure (status 0)", () => {
+    expect(extractErrorMessage(null, 0)).toBe(
+      "Нет связи с сервером. Проверьте подключение к интернету и попробуйте снова.",
+    );
+  });
+
+  it("gives friendly fallbacks by status code when the body has no message", () => {
+    expect(extractErrorMessage(null, 403)).toBe("Недостаточно прав для этого действия.");
+    expect(extractErrorMessage(null, 404)).toBe("Запрашиваемые данные не найдены.");
+    expect(extractErrorMessage({}, 500)).toBe("Ошибка на сервере. Попробуйте позже.");
   });
 });
