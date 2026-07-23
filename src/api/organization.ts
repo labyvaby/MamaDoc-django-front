@@ -21,6 +21,7 @@ export interface DjangoOrganization {
    *  Контракт: MamaDoc/backend_ticket_organization_logo.md (реализовано бэком
    *  08.07.2026; в /auth/me и /auth/context поле относительное `/media/...`). */
   logoUrl: string | null;
+  themeConfig?: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +33,7 @@ export interface UpdateOrganizationPayload {
   status?: string;
   patientScope?: PatientScope;
   appointmentOverlapMode?: AppointmentOverlapMode;
+  themeConfig?: Record<string, any> | null;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -92,15 +94,16 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
  *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
 type DjangoOrganizationWire = Omit<
   DjangoOrganization,
-  "logoUrl" | "appointmentOverlapMode"
+  "logoUrl" | "appointmentOverlapMode" | "themeConfig"
 > &
-  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode">>;
+  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">>;
 
 function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization {
   return {
     ...raw,
     logoUrl: raw.logoUrl ?? null,
     appointmentOverlapMode: raw.appointmentOverlapMode ?? "forbid",
+    themeConfig: raw.themeConfig ?? null,
   };
 }
 

@@ -56,7 +56,10 @@ export const ConclusionPrintPage: React.FC = () => {
                 const diag = c?.diagnosisData ?? [];
                 const diagnosisStr = diag.length > 0
                     ? diag
-                        .map((x) => (x.diagnosisCode ? `${x.diagnosisCode} - ${x.title ?? ""}` : x.title ?? ""))
+                        .map((x) => {
+                            if (x.displayName?.trim()) return x.displayName.trim();
+                            return x.diagnosisCode ? `${x.diagnosisCode} - ${x.title ?? ""}` : x.title ?? "";
+                        })
                         .join("; ")
                     : "—";
                 setData({

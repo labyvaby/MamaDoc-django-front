@@ -44,6 +44,8 @@ export interface DiagnosisDataItem {
   id?: string;
   diagnosisCode?: string;
   title?: string;
+  /** Snapshot of the catalog entry's displayName at selection time (see CatalogDiagnosis). */
+  displayName?: string;
 }
 
 // ── Medical conclusion ─────────────────────────────────────────────────────────
@@ -115,6 +117,8 @@ export interface CatalogDiagnosis {
   id: number;
   code: string;
   title: string;
+  /** Optional patient-facing name; shown in the conclusion PDF instead of the code+title when set. */
+  displayName: string;
   isActive: boolean;
   sortOrder: number;
 }
@@ -146,6 +150,7 @@ export function getDiagnoses(
 export function createDiagnosis(payload: {
   code: string;
   title: string;
+  displayName?: string;
   isActive?: boolean;
   sortOrder?: number;
 }): Promise<CatalogDiagnosis> {
@@ -161,6 +166,7 @@ export function updateDiagnosis(
   payload: {
     code?: string;
     title?: string;
+    displayName?: string;
     isActive?: boolean;
     sortOrder?: number;
   },

@@ -10,19 +10,13 @@
 import React from 'react';
 import {
   Box,
-  Button,
-  Card,
-  CardHeader,
-  CardContent,
-  Divider,
   Stack,
-  TextField,
   Typography,
-  List,
-  InputAdornment,
   CircularProgress,
 } from '@mui/material';
-import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline';
+import PeopleOutlineOutlined from '@mui/icons-material/PeopleOutlineOutlined';
+import ErrorOutlineOutlined from '@mui/icons-material/ErrorOutlineOutlined';
+import { AppCard, ListEmptyState, ListLoadingSkeleton } from '../../../components/ui';
 import PatientListRow from './PatientListRow';
 
 export type PatientListItem = {
@@ -70,27 +64,33 @@ const PatientList: React.FC<Props> = ({
     }
   }, [hasMore, loading, loadMore]);
 
+  const isInitialLoading = loading && patients.length === 0 && !errorMsg;
+
   return (
-    <Box
-      sx={{ height: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
-    >
-      <Card
-        variant='outlined'
+    <Box sx={{ height: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <AppCard
+        variant="outlined"
+        header={
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2, pt: 2, pb: 1.5 }}>
+            <Stack direction="row" alignItems="center" gap={1.25}>
+              <PeopleOutlineOutlined color="primary" />
+              <Typography variant="h6">Пациенты</Typography>
+            </Stack>
+            {patients.length > 0 && !errorMsg && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                {patients.length}{hasMore ? "+" : ""}
+              </Typography>
+            )}
+          </Stack>
+        }
+        disableContentPadding
         sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
       >
-        <CardHeader
-          title={
-            <Stack direction="row" alignItems="center" gap={1.25}>
-              <PeopleOutlineIcon color="primary" />
-              <Typography variant='h6'>Пациенты</Typography>
-            </Stack>
-          }
-          sx={{ pb: 1 }}
-        />
-        <Divider />
-        <CardContent
+        <Box
           sx={{
-            p: 0,
+            p: 1,
+            borderTop: 1,
+            borderColor: 'divider',
             overflowY: 'auto',
             flex: 1,
             minHeight: 0,
@@ -102,16 +102,22 @@ const PatientList: React.FC<Props> = ({
           onScroll={handleScroll}
         >
           {errorMsg ? (
-            <Typography sx={{ p: 2 }} variant='body2' color='error' align="center">
-              Ошибка: {errorMsg}
-            </Typography>
+            <ListEmptyState
+              icon={<ErrorOutlineOutlined />}
+              title="Не удалось загрузить"
+              description={errorMsg}
+            />
+          ) : isInitialLoading ? (
+            <ListLoadingSkeleton rows={8} />
           ) : patients.length === 0 ? (
-            <Typography sx={{ p: 2 }} variant='body2' color='text.secondary' align="center">
-              {loading ? 'Загрузка…' : 'Нет пациентов'}
-            </Typography>
+            <ListEmptyState
+              icon={<PeopleOutlineOutlined />}
+              title="Пациенты не найдены"
+              description="Измените запрос или добавьте нового пациента"
+            />
           ) : (
             <>
-              <List disablePadding sx={{ px: 1, py: 0.5 }}>
+              <Stack spacing={0.5}>
                 {patients.map((p) => {
                   const active = selectedId === p.id;
                   return (
@@ -123,22 +129,20 @@ const PatientList: React.FC<Props> = ({
                     />
                   );
                 })}
-              </List>
+              </Stack>
 
-              <Box sx={{ px: 2, py: 1.25 }}>
-                {loading && (
-                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
-                    <CircularProgress size={20} />
-                    <Typography variant='caption' color='text.secondary'>
-                      Загрузка…
-                    </Typography>
-                  </Stack>
-                )}
-              </Box>
+              {loading && (
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ py: 1.5 }}>
+                  <CircularProgress size={18} />
+                  <Typography variant="caption" color="text.secondary">
+                    Загрузка…
+                  </Typography>
+                </Stack>
+              )}
             </>
           )}
-        </CardContent>
-      </Card>
+        </Box>
+      </AppCard>
     </Box>
   );
 };

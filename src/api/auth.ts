@@ -24,6 +24,8 @@ export type RbacOrganization = {
    *  /auth/me/ по тикету MamaDoc/backend_ticket_organization_logo.md;
    *  до этого поле отсутствует и UI показывает иконку-заглушку. */
   logoUrl?: string | null;
+  /** Цветовая палитра и тема организации */
+  themeConfig?: Record<string, any> | null;
 };
 
 export type RbacBranch = {

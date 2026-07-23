@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, CircularProgress, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -101,11 +101,12 @@ const STATUS_DOT: Record<DocStatus, "success.main" | "warning.main" | "text.disa
 export interface FreeSlotsViewProps {
   branchId?: number;
   organizationId?: number;
+  headerActions?: React.ReactNode;
   /** Открыть создание приёма с предзаполнением врача и времени (услуга — в форме). */
   onBook: (employeeId: number, isoDateTime: string) => void;
 }
 
-const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId, onBook }) => {
+const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId, headerActions, onBook }) => {
   const theme = useTheme();
 
   const todayIso = React.useMemo(() => dayjs().format("YYYY-MM-DD"), []);
@@ -132,10 +133,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
     [specsQuery.data],
   );
 
-  // Первую специализацию выбираем по умолчанию.
-  React.useEffect(() => {
-    if (specId == null && specs.length > 0) setSpecId(specs[0].id);
-  }, [specs, specId]);
+  // По умолчанию открываем вид «Все специалисты» (specId === null), а не
+  // какую-то конкретную специальность.
 
   // Бейджи всех специальностей приходят одной агрегированной сводкой, без N запросов.
   const summaryQuery = useQuery({
@@ -159,7 +158,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
     return map;
   }, [summaryQuery.data]);
 
-  // Полный диапазон окон выбранной специализации.
+  // Полный диапазон окон выбранной специализации, либо всех сотрудников
+  // (specId === null — вид «Все специалисты»).
   const availQuery = useQuery({
     queryKey: djangoQueryKeys.scheduling.availability({
       specializationId: specId,
@@ -169,8 +169,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
       organizationId: organizationId ?? null,
     }),
     queryFn: ({ signal }) =>
-      getAvailability({ specializationId: specId!, dateFrom, dateTo, branchId, organizationId }, signal),
-    enabled: specId != null,
+      getAvailability(
+        { specializationId: specId ?? undefined, dateFrom, dateTo, branchId, organizationId },
+        signal,
+      ),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
@@ -192,14 +194,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
     });
   }, [availQuery.data, search, todayIso]);
 
-  // Врач по умолчанию — первый (лучший) в отсортированном списке.
+  // Сбрасываем выбор врача только если выбранного врача больше нет в отфильтрованном списке.
   React.useEffect(() => {
-    if (!docs.length) {
-      if (selDocId !== null) setSelDocId(null);
-      return;
-    }
-    if (!docs.some((x) => x.emp.employeeId === selDocId)) {
-      setSelDocId(docs[0].emp.employeeId);
+    if (selDocId !== null && !docs.some((x) => x.emp.employeeId === selDocId)) {
+      setSelDocId(null);
     }
   }, [docs, selDocId]);
 
@@ -231,14 +229,132 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
   };
 
   return (
-    <Box sx={{ height: "100%", minHeight: 0 }}>
+    <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {/* ── Верхний навбар дат и кнопка переключения режимов ── */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={2}
+        sx={{ mb: 1, flexShrink: 0 }}
+      >
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+          <Typography variant="subtitle2" fontWeight={600} sx={{ flexShrink: 0, mr: 1, whiteSpace: "nowrap" }}>
+            {selectedMonthLabel}
+          </Typography>
+          {selectableDays.length === 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              {selectedDoc
+                ? "В расписании врача нет смен"
+                : specId
+                  ? `Сетка врачей специальности (${docs.length})`
+                  : `Сетка всех специалистов (${docs.length})`}
+            </Typography>
+          ) : (
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
+              <Box
+                onClick={() => scrollStrip(-1)}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "8px",
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "text.secondary",
+                  "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
+                }}
+              >
+                <KeyboardArrowLeftOutlined sx={{ fontSize: 18 }} />
+              </Box>
+              <Stack
+                ref={stripRef}
+                direction="row"
+                spacing={0.75}
+                sx={{ overflowX: "auto", py: 0.25, px: 0.5, flex: 1, "&::-webkit-scrollbar": { height: 4 } }}
+              >
+                {selectableDays.map((d) => {
+                  const dj = dayjs(d.date);
+                  const active = d.date === selDay;
+                  const isToday = d.date === todayIso;
+                  return (
+                    <Box
+                      key={d.date}
+                      onClick={() => setSelDay(d.date)}
+                      sx={{
+                        flex: "0 0 auto",
+                        minWidth: 54,
+                        textAlign: "center",
+                        borderRadius: "9px",
+                        border: "1px solid",
+                        borderColor: active ? "primary.main" : "divider",
+                        bgcolor: active
+                          ? alpha(theme.palette.primary.main, 0.1)
+                          : "background.paper",
+                        px: 0.75,
+                        py: 0.5,
+                        cursor: "pointer",
+                        transition: "border-color .13s ease, background-color .13s ease",
+                        "&:hover": { borderColor: active ? "primary.main" : alpha(theme.palette.primary.main, 0.28) },
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.625rem" }}>
+                        {WEEKDAY_SHORT[mondayIndex(dj)]}
+                      </Typography>
+                      <Typography
+                        variant="subtitle2"
+                        fontWeight={600}
+                        sx={{ fontSize: "0.8125rem", color: isToday ? "primary.onSurface" : "text.primary" }}
+                      >
+                        {dj.date()}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          fontSize: "0.625rem",
+                          color: d.freeCount > 0 ? "success.main" : "text.disabled",
+                          fontWeight: d.freeCount > 0 ? 600 : 400,
+                        }}
+                      >
+                        {d.freeCount > 0 ? String(d.freeCount) : "нет"}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Stack>
+              <Box
+                onClick={() => scrollStrip(1)}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "8px",
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "text.secondary",
+                  "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
+                }}
+              >
+                <KeyboardArrowRightOutlined sx={{ fontSize: 18 }} />
+              </Box>
+            </Stack>
+          )}
+        </Stack>
+        {headerActions}
+      </Stack>
+
       <Box
         sx={{
-          height: "100%",
+          flex: 1,
           minHeight: 0,
           display: "grid",
           gap: 1.5,
-          gridTemplateColumns: { xs: "1fr", md: "204px 264px 1fr" },
+          gridTemplateColumns: { xs: "1fr", md: "204px 1fr" },
           gridAutoRows: { xs: "minmax(0, auto)", md: "100%" },
         }}
       >
@@ -266,217 +382,132 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
             <Stack alignItems="center" py={3}>
               <CircularProgress size={20} />
             </Stack>
-          ) : specs.length === 0 ? (
-            <Typography variant="body2" color="text.disabled" sx={{ px: 2, pb: 2 }}>
-              Нет специальностей
-            </Typography>
           ) : (
-            specs.map((s) => {
-              const active = s.id === specId;
-              const badge = badgeBySpec.get(s.id);
-              return (
-                <Box
-                  key={s.id}
-                  onClick={() => {
-                    setSpecId(s.id);
-                    setSelDocId(null);
-                    setSelDay(null);
-                  }}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.25,
-                    px: 1.75,
-                    py: 1.25,
-                    cursor: "pointer",
-                    borderLeft: "3px solid",
-                    borderColor: active ? "primary.main" : "transparent",
-                    bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
-                    transition: "background-color .13s ease",
-                    "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    fontWeight={active ? 600 : 500}
-                    sx={{ flex: 1, minWidth: 0 }}
-                    noWrap
-                  >
-                    {s.name}
-                  </Typography>
-                  {badge && (
-                    <Box
-                      sx={(t) => ({
-                        fontSize: "0.6875rem",
-                        fontWeight: 600,
-                        lineHeight: 1,
-                        px: 0.75,
-                        py: 0.5,
-                        borderRadius: "7px",
-                        color: badge.free ? "success.dark" : "text.disabled",
-                        bgcolor: badge.free
-                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-                          : subtleBg(t, true),
-                        ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
-                      })}
-                      title="Свободны сегодня"
-                    >
-                      {badge.free}/{badge.total}
-                    </Box>
-                  )}
-                </Box>
-              );
-            })
-          )}
-        </Box>
-
-        {/* ── Средняя колонка: поиск + список врачей ── */}
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, minHeight: 0 }}>
-          <TextField
-            size="small"
-            fullWidth
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setSelDocId(null);
-            }}
-            placeholder="Поиск врача…"
-            InputProps={{
-              startAdornment: (
-                <SearchOutlined sx={{ fontSize: 19, color: "text.disabled", mr: 1 }} />
-              ),
-            }}
-          />
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: "14px",
-              bgcolor: "background.paper",
-              overflowY: "auto",
-            }}
-          >
-            {availQuery.isLoading ? (
-              <Stack alignItems="center" py={4}>
-                <CircularProgress size={22} />
-              </Stack>
-            ) : availQuery.isError ? (
-              <Typography variant="body2" color="error" sx={{ p: 2 }}>
-                {parseBackendError(availQuery.error)}
-              </Typography>
-            ) : docs.length === 0 ? (
-              <Typography variant="body2" color="text.disabled" sx={{ p: 2, textAlign: "center" }}>
-                {search ? "Никого не нашли" : "Нет врачей"}
-              </Typography>
-            ) : (
-              docs.map(({ emp, sum }) => {
-                const active = emp.employeeId === selDocId;
+            <>
+              {(() => {
+                const active = specId === null;
+                const overall = summaryQuery.data
+                  ? { free: summaryQuery.data.overallFreeEmployeeCount, total: summaryQuery.data.overallEmployeeCount }
+                  : undefined;
                 return (
                   <Box
-                    key={emp.employeeId}
                     onClick={() => {
-                      setSelDocId(emp.employeeId);
+                      setSpecId(null);
+                      setSelDocId(null);
                       setSelDay(null);
                     }}
                     sx={{
                       display: "flex",
                       alignItems: "center",
                       gap: 1.25,
-                      px: 1.5,
+                      px: 1.75,
                       py: 1.25,
                       cursor: "pointer",
                       borderLeft: "3px solid",
                       borderColor: active ? "primary.main" : "transparent",
-                      borderBottom: "1px solid",
-                      borderBottomColor: "divider",
                       bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
                       transition: "background-color .13s ease",
                       "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
                     }}
                   >
-                    <Box sx={{ position: "relative", flexShrink: 0 }}>
-                      <Box
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: "12px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#fff",
-                          fontSize: "0.8125rem",
-                          fontWeight: 600,
-                          bgcolor: avatarColor(emp.fullName),
-                        }}
-                      >
-                        {initials(emp.fullName)}
-                      </Box>
-                      <Box
-                        sx={{
-                          position: "absolute",
-                          right: -2,
-                          bottom: -2,
-                          width: 13,
-                          height: 13,
-                          borderRadius: "50%",
-                          border: "2.5px solid",
-                          borderColor: "background.paper",
-                          bgcolor: STATUS_DOT[sum.status],
-                        }}
-                      />
-                    </Box>
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {emp.fullName}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        noWrap
-                        sx={{
-                          display: "block",
-                          color:
-                            sum.status === "free"
-                              ? "success.main"
-                              : sum.status === "later"
-                                ? "warning.main"
-                                : "text.disabled",
-                        }}
-                      >
-                        {sum.label}
-                      </Typography>
-                    </Box>
-                    <Box
-                      sx={(t) => ({
-                        flexShrink: 0,
-                        fontSize: "0.6875rem",
-                        fontWeight: 600,
-                        minWidth: 22,
-                        textAlign: "center",
-                        px: 0.75,
-                        py: 0.5,
-                        borderRadius: "7px",
-                        color: sum.todayFree ? "success.dark" : "text.disabled",
-                        bgcolor: sum.todayFree
-                          ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-                          : "transparent",
-                        ...(t.palette.mode === "dark" && sum.todayFree
-                          ? { color: t.palette.success.light }
-                          : {}),
-                      })}
-                      title="Окон сегодня"
+                    <Typography
+                      variant="body2"
+                      fontWeight={active ? 600 : 500}
+                      sx={{ flex: 1, minWidth: 0 }}
+                      noWrap
                     >
-                      {sum.todayFree || "—"}
-                    </Box>
+                      Все специалисты
+                    </Typography>
+                    {overall && (
+                      <Box
+                        sx={(t) => ({
+                          fontSize: "0.6875rem",
+                          fontWeight: 600,
+                          lineHeight: 1,
+                          px: 0.75,
+                          py: 0.5,
+                          borderRadius: "7px",
+                          color: overall.free ? "success.dark" : "text.disabled",
+                          bgcolor: overall.free
+                            ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                            : subtleBg(t, true),
+                          ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
+                        })}
+                        title="Свободны сегодня"
+                      >
+                        {overall.free}/{overall.total}
+                      </Box>
+                    )}
                   </Box>
                 );
-              })
-            )}
-          </Box>
+              })()}
+              {specs.length === 0 ? (
+                <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
+                  Нет специальностей
+                </Typography>
+              ) : (
+                specs.map((s) => {
+                  const active = s.id === specId;
+                  const badge = badgeBySpec.get(s.id);
+                  return (
+                    <Box
+                      key={s.id}
+                      onClick={() => {
+                        setSpecId(s.id);
+                        setSelDocId(null);
+                        setSelDay(null);
+                      }}
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1.25,
+                        px: 1.75,
+                        py: 1.25,
+                        cursor: "pointer",
+                        borderLeft: "3px solid",
+                        borderColor: active ? "primary.main" : "transparent",
+                        bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                        transition: "background-color .13s ease",
+                        "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        fontWeight={active ? 600 : 500}
+                        sx={{ flex: 1, minWidth: 0 }}
+                        noWrap
+                      >
+                        {s.name}
+                      </Typography>
+                      {badge && (
+                        <Box
+                          sx={(t) => ({
+                            fontSize: "0.6875rem",
+                            fontWeight: 600,
+                            lineHeight: 1,
+                            px: 0.75,
+                            py: 0.5,
+                            borderRadius: "7px",
+                            color: badge.free ? "success.dark" : "text.disabled",
+                            bgcolor: badge.free
+                              ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                              : subtleBg(t, true),
+                            ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                          })}
+                          title="Свободны сегодня"
+                        >
+                          {badge.free}/{badge.total}
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })
+              )}
+            </>
+          )}
         </Box>
 
-        {/* ── Правая колонка: окна выбранного врача ── */}
+        {/* ── Правая колонка: сетка врачей / окна выбранного врача ── */}
         <Box
           sx={{
             minWidth: 0,
@@ -488,162 +519,233 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            p: selectedDoc ? 0 : 2,
           }}
         >
           {!selectedDoc ? (
-            <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ flex: 1, p: 4 }}>
-              <PersonSearchOutlined sx={{ fontSize: 34, color: "text.disabled" }} />
-              <Typography variant="body2" color="text.disabled">
-                Выберите врача слева
-              </Typography>
-            </Stack>
+            <Box sx={{ height: "100%", overflowY: "auto" }}>
+              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
+                <TextField
+                  size="small"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск врача…"
+                  sx={{ width: { xs: 200, sm: 260 } }}
+                  InputProps={{
+                    startAdornment: (
+                      <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
+                    ),
+                  }}
+                />
+                <Box>
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Сетка врачей {specId ? `(${specs.find((s) => s.id === specId)?.name})` : "(Все специалисты)"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Найдено: {docs.length}
+                  </Typography>
+                </Box>
+              </Stack>
+
+              {docs.length === 0 ? (
+                <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8 }}>
+                  <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
+                  <Typography variant="body2" color="text.disabled">
+                    {search ? "Врачи по вашему запросу не найдены" : "Врачи не найдены"}
+                  </Typography>
+                </Stack>
+              ) : (
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                    gap: 1.5,
+                    pb: 1,
+                  }}
+                >
+                  {docs.map(({ emp, sum }) => {
+                    const todayDay = emp.days.find((d) => d.date === todayIso);
+                    const freeSlots = (todayDay?.slots ?? []).filter((s) => s.free).slice(0, 3);
+                    const nearestSlot = sum.nearest;
+                    const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
+
+                    return (
+                      <Card
+                        key={emp.employeeId}
+                        variant="outlined"
+                        sx={(t) => ({
+                          p: 1.5,
+                          borderRadius: "12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 1.25,
+                          cursor: "pointer",
+                          transition: "all .13s ease",
+                          "&:hover": {
+                            borderColor: "primary.main",
+                            boxShadow: t.shadows[2],
+                            bgcolor: alpha(t.palette.primary.main, 0.02),
+                          },
+                        })}
+                        onClick={() => setSelDocId(emp.employeeId)}
+                      >
+                        <Stack direction="row" spacing={1.25} alignItems="center">
+                          <Box sx={{ position: "relative", flexShrink: 0 }}>
+                            <Box
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: "11px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#fff",
+                                fontSize: "0.8125rem",
+                                fontWeight: 600,
+                                bgcolor: avatarColor(emp.fullName),
+                              }}
+                            >
+                              {initials(emp.fullName)}
+                            </Box>
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                right: -2,
+                                bottom: -2,
+                                width: 12,
+                                height: 12,
+                                borderRadius: "50%",
+                                border: "2px solid",
+                                borderColor: "background.paper",
+                                bgcolor: STATUS_DOT[sum.status],
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography variant="body2" fontWeight={600} noWrap>
+                              {emp.fullName}
+                            </Typography>
+                            {specName && (
+                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                                {specName}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Stack>
+
+                        <Stack direction="row" alignItems="center" justifyContent="space-between">
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontWeight: 500,
+                              color:
+                                sum.status === "free"
+                                  ? "success.main"
+                                  : sum.status === "later"
+                                  ? "warning.main"
+                                  : "text.disabled",
+                            }}
+                          >
+                            {sum.label}
+                          </Typography>
+                          {sum.todayFree > 0 && (
+                            <Chip
+                              label={`${sum.todayFree} окон`}
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600 }}
+                            />
+                          )}
+                        </Stack>
+
+                        {freeSlots.length > 0 ? (
+                          <Stack direction="row" spacing={0.75} pt={0.25} flexWrap="wrap" useFlexGap>
+                            {freeSlots.map((slot) => (
+                              <Button
+                                key={slot.start}
+                                size="small"
+                                variant="outlined"
+                                color="success"
+                                startIcon={<AddOutlined sx={{ fontSize: 13 }} />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onBook(emp.employeeId, `${todayIso}T${slot.start}`);
+                                }}
+                                sx={{
+                                  py: 0.25,
+                                  px: 0.85,
+                                  minWidth: 0,
+                                  fontSize: "0.725rem",
+                                  fontWeight: 600,
+                                  textTransform: "none",
+                                  borderRadius: "7px",
+                                }}
+                              >
+                                {slot.start}
+                              </Button>
+                            ))}
+                          </Stack>
+                        ) : nearestSlot ? (
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
+                            Ближайшая запись: {dayjs(nearestSlot.date).format("DD.MM")} в {nearestSlot.start}
+                          </Typography>
+                        ) : null}
+                      </Card>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
           ) : (
             <>
               {/* Шапка врача */}
               <Stack
                 direction="row"
                 alignItems="center"
+                justifyContent="space-between"
                 spacing={1.5}
                 sx={{ px: 2, py: 1.5, borderBottom: "1px solid", borderColor: "divider", flexShrink: 0 }}
               >
-                <Box
-                  sx={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: "11px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#fff",
-                    fontSize: "0.8125rem",
-                    fontWeight: 600,
-                    bgcolor: avatarColor(selectedDoc.emp.fullName),
-                    flexShrink: 0,
-                  }}
-                >
-                  {initials(selectedDoc.emp.fullName)}
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="subtitle1" fontWeight={600} noWrap>
-                    {selectedDoc.emp.fullName}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {specs.find((s) => s.id === specId)?.name ?? ""}
-                  </Typography>
-                </Box>
-              </Stack>
+                <Stack direction="row" alignItems="center" spacing={1.5} sx={{ minWidth: 0 }}>
+                  <Box
+                    sx={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: "11px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#fff",
+                      fontSize: "0.8125rem",
+                      fontWeight: 600,
+                      bgcolor: avatarColor(selectedDoc.emp.fullName),
+                      flexShrink: 0,
+                    }}
+                  >
+                    {initials(selectedDoc.emp.fullName)}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="subtitle1" fontWeight={600} noWrap>
+                      {selectedDoc.emp.fullName}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {specId ? specs.find((s) => s.id === specId)?.name ?? "" : "Специалист"}
+                    </Typography>
+                  </Box>
+                </Stack>
 
-              {/* Навбар дней */}
-              <Box
-                sx={{
-                  borderBottom: "1px solid",
-                  borderColor: "divider",
-                  bgcolor: subtleBg(theme),
-                  flexShrink: 0,
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: "block", px: 2, pt: 1.25, fontWeight: 600 }}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="inherit"
+                  startIcon={<KeyboardArrowLeftOutlined sx={{ fontSize: 16 }} />}
+                  onClick={() => setSelDocId(null)}
+                  sx={{ textTransform: "none", fontSize: "0.75rem" }}
                 >
-                  {selectedMonthLabel}
-                </Typography>
-                {selectableDays.length === 0 ? (
-                  <Typography variant="caption" color="text.disabled" sx={{ display: "block", px: 2, py: 1.25 }}>
-                    В расписании врача нет смен
-                  </Typography>
-                ) : (
-                  <Stack direction="row" alignItems="stretch">
-                    <Box
-                      onClick={() => scrollStrip(-1)}
-                      sx={{
-                        width: 36,
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        color: "text.secondary",
-                        "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
-                      }}
-                    >
-                      <KeyboardArrowLeftOutlined sx={{ fontSize: 20 }} />
-                    </Box>
-                    <Stack
-                      ref={stripRef}
-                      direction="row"
-                      spacing={0.75}
-                      sx={{ overflowX: "auto", py: 1.25, px: 1, flex: 1, "&::-webkit-scrollbar": { height: 5 } }}
-                    >
-                      {selectableDays.map((d) => {
-                    const dj = dayjs(d.date);
-                    const active = d.date === selDay;
-                    const isToday = d.date === todayIso;
-                    return (
-                      <Box
-                        key={d.date}
-                        onClick={() => setSelDay(d.date)}
-                        sx={{
-                          flex: "0 0 auto",
-                          minWidth: 58,
-                          textAlign: "center",
-                          borderRadius: "10px",
-                          border: "1px solid",
-                          borderColor: active ? "primary.main" : "divider",
-                          bgcolor: active
-                            ? alpha(theme.palette.primary.main, 0.1)
-                            : "background.paper",
-                          px: 1,
-                          py: 0.75,
-                          cursor: "pointer",
-                          transition: "border-color .13s ease, background-color .13s ease",
-                          "&:hover": { borderColor: active ? "primary.main" : alpha(theme.palette.primary.main, 0.28) },
-                        }}
-                      >
-                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.65rem" }}>
-                          {WEEKDAY_SHORT[mondayIndex(dj)]}
-                        </Typography>
-                        <Typography
-                          variant="subtitle2"
-                          fontWeight={600}
-                          sx={{ color: isToday ? "primary.onSurface" : "text.primary" }}
-                        >
-                          {dj.date()}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            display: "block",
-                            fontSize: "0.65rem",
-                            color: d.freeCount > 0 ? "success.main" : "text.disabled",
-                            fontWeight: d.freeCount > 0 ? 600 : 400,
-                          }}
-                        >
-                          {d.freeCount > 0 ? String(d.freeCount) : "нет"}
-                        </Typography>
-                      </Box>
-                    );
-                  })}
-                    </Stack>
-                    <Box
-                      onClick={() => scrollStrip(1)}
-                      sx={{
-                        width: 36,
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        color: "text.secondary",
-                        "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
-                      }}
-                    >
-                      <KeyboardArrowRightOutlined sx={{ fontSize: 20 }} />
-                    </Box>
-                  </Stack>
-                )}
-              </Box>
+                  К сетке врачей
+                </Button>
+              </Stack>
 
               {/* Таймлайн окон выбранного дня */}
               <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 2 }}>

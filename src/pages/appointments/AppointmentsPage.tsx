@@ -658,57 +658,39 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       >
         {/* ── Top controls: like the original Регистратура ──
             «Добавить прием» (large, left) + horizontal date pills. */}
-        <PageHeader
-          title={pageTitle}
-          showTitle={false}
-          addButtonText={addButtonText}
-          onAdd={canCreate ? () => setCreateOpen(true) : undefined}
-          dateNavigation={
-            <DateNavigation date={dateStr} setDate={handleSetDate} dayCounts={dayCounts} />
-          }
-          loading={loading}
-          actions={
-            <Stack direction="row" spacing={1} alignItems="center">
-              {canCreate && (
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={viewMode}
-                  onChange={(_, v) => v && setViewMode(v)}
-                >
-                  <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
-                    <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                    Список
-                  </ToggleButton>
-                  <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
-                    <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                    Окна
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              )}
-              {/* ВРЕМЕННО СКРЫТО: чип «Только ночные»
-              {viewMode === "list" && (
-                <Chip
-                  label="Только ночные"
-                  size="small"
-                  color={nightOnly ? "primary" : "default"}
-                  variant={nightOnly ? "filled" : "outlined"}
-                  onClick={() => setNightOnly((v) => !v)}
-                />
-              )}
-              */}
-              {/* ВРЕМЕННО СКРЫТО: кнопка «Обновить»
-              <Tooltip title="Обновить">
-                <span>
-                  <IconButton size="small" onClick={() => { void refresh(); }}>
-                    <RefreshOutlined fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              */}
-            </Stack>
-          }
-        />
+        {viewMode === "list" && (
+          <PageHeader
+            title={pageTitle}
+            showTitle={false}
+            addButtonText={addButtonText}
+            onAdd={canCreate ? () => setCreateOpen(true) : undefined}
+            dateNavigation={
+              <DateNavigation date={dateStr} setDate={handleSetDate} dayCounts={dayCounts} />
+            }
+            loading={loading}
+            actions={
+              <Stack direction="row" spacing={1} alignItems="center">
+                {canCreate && (
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={viewMode}
+                    onChange={(_, v) => v && setViewMode(v)}
+                  >
+                    <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
+                      <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                      Список
+                    </ToggleButton>
+                    <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
+                      <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                      Окна
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                )}
+              </Stack>
+            }
+          />
+        )}
 
         {/* ── Error ── */}
         {error && (
@@ -735,6 +717,25 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             <FreeSlotsView
               branchId={branchId}
               organizationId={isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined}
+              headerActions={
+                canCreate && (
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={viewMode}
+                    onChange={(_, v) => v && setViewMode(v)}
+                  >
+                    <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
+                      <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                      Список
+                    </ToggleButton>
+                    <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
+                      <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                      Окна
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                )
+              }
               onBook={(employeeId, dateTime) => {
                 // Услугу регистратор выбирает уже в форме записи.
                 setSlotPrefill({ employeeId, dateTime, serviceId: null });

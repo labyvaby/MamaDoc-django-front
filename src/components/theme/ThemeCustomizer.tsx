@@ -45,6 +45,9 @@ import {
   type SurfacePreset,
   type UiScale,
 } from "../../theme";
+import { usePermissions } from "../../hooks/usePermissions";
+import { updateOrganization } from "../../api/organization";
+import { IS_DJANGO_BACKEND } from "../../config/backend";
 
 const SCHEME_OPTIONS: { value: ColorScheme; label: string; icon: React.ReactNode }[] = [
   { value: "light", label: "День", icon: <LightModeOutlined fontSize="small" /> },
@@ -255,6 +258,78 @@ const ThemeCustomizerContent: React.FC<{
     reset,
   } = React.useContext(ColorModeContext);
 
+  const { activeOrganization, isSuperAdmin, hasPermission, activeMembership } = usePermissions();
+  const canManageOrgTheme =
+    isSuperAdmin() ||
+    hasPermission("organization.update") ||
+    Boolean(activeMembership?.isOwner) ||
+    activeMembership?.role?.code === "manager";
+
+  const handleUpdate = React.useCallback(
+    (patch: {
+      colorScheme?: ColorScheme;
+      primaryColor?: string;
+      lightSurface?: string;
+      darkSurface?: string;
+      cardSkin?: CardSkin;
+    }) => {
+      const nextScheme = patch.colorScheme ?? scheme;
+      const nextPrimary = patch.primaryColor ?? primaryColor;
+      const nextLight = patch.lightSurface ?? lightSurface;
+      const nextDark = patch.darkSurface ?? darkSurface;
+      const nextCard = patch.cardSkin ?? cardSkin;
+
+      if (patch.colorScheme) setScheme(patch.colorScheme);
+      if (patch.primaryColor) setPrimaryColor(patch.primaryColor);
+      if (patch.lightSurface) setLightSurface(patch.lightSurface);
+      if (patch.darkSurface) setDarkSurface(patch.darkSurface);
+      if (patch.cardSkin) setCardSkin(patch.cardSkin);
+
+      if (canManageOrgTheme && activeOrganization?.id && IS_DJANGO_BACKEND) {
+        const newThemeConfig = {
+          colorScheme: nextScheme,
+          primaryColor: nextPrimary,
+          lightSurface: nextLight,
+          darkSurface: nextDark,
+          cardSkin: nextCard,
+        };
+        updateOrganization(activeOrganization.id, { themeConfig: newThemeConfig }).catch(
+          (err) => console.error("Failed to save organization theme config", err),
+        );
+      }
+    },
+    [
+      scheme,
+      primaryColor,
+      lightSurface,
+      darkSurface,
+      cardSkin,
+      setScheme,
+      setPrimaryColor,
+      setLightSurface,
+      setDarkSurface,
+      setCardSkin,
+      canManageOrgTheme,
+      activeOrganization?.id,
+    ],
+  );
+
+  const handleReset = React.useCallback(() => {
+    reset();
+    if (canManageOrgTheme && activeOrganization?.id && IS_DJANGO_BACKEND) {
+      const defaultThemeConfig = {
+        colorScheme: "system",
+        primaryColor: DEFAULT_PRIMARY,
+        lightSurface: DEFAULT_LIGHT_SURFACE,
+        darkSurface: DEFAULT_DARK_SURFACE,
+        cardSkin: DEFAULT_CARD_SKIN,
+      };
+      updateOrganization(activeOrganization.id, { themeConfig: defaultThemeConfig }).catch(
+        (err) => console.error("Failed to reset organization theme config", err),
+      );
+    }
+  }, [reset, canManageOrgTheme, activeOrganization?.id]);
+
   const [colorsOpen, setColorsOpen] = React.useState(false);
 
   // При раскрытии/сворачивании блока цветов высота меняется. Поповер
@@ -304,6 +379,11 @@ const ThemeCustomizerContent: React.FC<{
 
       {/* Всегда видимая часть — не скроллится */}
       <Box sx={{ px: 2, pt: 2, pb: 2 }}>
+        {canManageOrgTheme && (
+          <Typography variant="caption" color="primary" sx={{ display: "block", mb: 1, fontWeight: 600 }}>
+            Вы управляете палитрой организации
+          </Typography>
+        )}
         {/* Цветовая схема */}
         <SectionTitle first>Тема</SectionTitle>
         <ToggleButtonGroup
@@ -311,7 +391,7 @@ const ThemeCustomizerContent: React.FC<{
           exclusive
           fullWidth
           size="small"
-          onChange={(_, val) => val && setScheme(val as ColorScheme)}
+          onChange={(_, val) => val && handleUpdate({ colorScheme: val as ColorScheme })}
         >
           {SCHEME_OPTIONS.map((o) => (
             <ToggleButton key={o.value} value={o.value} sx={{ flexDirection: "column", gap: 0.5, py: 1 }}>
@@ -407,7 +487,7 @@ const ThemeCustomizerContent: React.FC<{
               exclusive
               fullWidth
               size="small"
-              onChange={(_, val) => val && setCardSkin(val as CardSkin)}
+              onChange={(_, val) => val && handleUpdate({ cardSkin: val as CardSkin })}
             >
               <ToggleButton value="bordered" sx={{ gap: 0.75, py: 1 }}>
                 <CropSquareOutlined fontSize="small" />
@@ -428,7 +508,7 @@ const ThemeCustomizerContent: React.FC<{
             <SwatchGrid
               items={PRIMARY_PRESETS.map((c) => ({ key: c.value, color: c.value, name: c.name }))}
               selected={primaryColor}
-              onSelect={setPrimaryColor}
+              onSelect={(col) => handleUpdate({ primaryColor: col })}
             />
 
             {/* Палитра фона — только для активного режима (день/ночь) */}
@@ -440,7 +520,7 @@ const ThemeCustomizerContent: React.FC<{
                   dark={false}
                   accent={primaryColor}
                   selected={lightSurface}
-                  onSelect={setLightSurface}
+                  onSelect={(k) => handleUpdate({ lightSurface: k })}
                 />
               </>
             ) : (
@@ -451,7 +531,7 @@ const ThemeCustomizerContent: React.FC<{
                   dark
                   accent={primaryColor}
                   selected={darkSurface}
-                  onSelect={setDarkSurface}
+                  onSelect={(k) => handleUpdate({ darkSurface: k })}
                 />
               </>
             )}
@@ -462,7 +542,7 @@ const ThemeCustomizerContent: React.FC<{
               color="inherit"
               size="small"
               startIcon={<RestartAltOutlined />}
-              onClick={reset}
+              onClick={handleReset}
               disabled={isDefault}
               sx={{ mt: 2.5 }}
             >

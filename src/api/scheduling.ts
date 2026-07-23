@@ -113,6 +113,8 @@ export interface SpecializationAvailabilitySummary {
 export interface AvailabilitySummary {
   date: string;
   specializations: SpecializationAvailabilitySummary[];
+  overallEmployeeCount: number;
+  overallFreeEmployeeCount: number;
 }
 
 export interface AvailabilityParams {

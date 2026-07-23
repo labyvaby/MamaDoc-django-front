@@ -6,15 +6,9 @@
  */
 import React from "react";
 import {
-  Card,
-  CardHeader,
-  CardContent,
-  Divider,
   Stack,
   Typography,
-  Avatar,
   Box,
-  Button,
   Link,
   Chip,
   Alert,
@@ -25,16 +19,23 @@ import {
   ListItemIcon,
   ListItemText,
 } from "@mui/material";
-import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
-import LocalPhoneOutlined from "@mui/icons-material/LocalPhoneOutlined";
+import { alpha } from "@mui/material/styles";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import MergeTypeIcon from "@mui/icons-material/MergeTypeOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVertOutlined";
-import { formatDateRu } from "../../../utility/format";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import MonitorWeightOutlined from "@mui/icons-material/MonitorWeightOutlined";
+import HeightOutlined from "@mui/icons-material/HeightOutlined";
+import ThermostatOutlined from "@mui/icons-material/ThermostatOutlined";
+import { formatDateRu } from "../../../utility/format";
+import { AppCard, AppButton, InfoTile, UserAvatar, ListEmptyState } from "../../../components/ui";
+import { subtleBg } from "../../../theme/uiHelpers";
 import type { PatientBalance } from "../usePatientBalance";
 
 export type PatientLite = {
@@ -99,6 +100,85 @@ function getDeclension(number: number, titles: [string, string, string]): string
   ];
 }
 
+/** Приглушённый бордюр-блок с подписью — единая «фактовая» плашка для секций
+ *  карточки (витальные показатели, счёт, последний приём). Держит один и тот
+ *  же плоский визуальный ритм, что и InfoTile, но с собственным заголовком. */
+const FactBlock: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({
+  icon,
+  title,
+  children,
+}) => (
+  <Box
+    sx={(t) => ({
+      borderRadius: "10px",
+      border: 1,
+      borderColor: "divider",
+      bgcolor: subtleBg(t),
+      p: 1.5,
+    })}
+  >
+    <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 1 }}>
+      <Box sx={{ color: "text.secondary", display: "flex", "& .MuiSvgIcon-root": { fontSize: 16 } }}>{icon}</Box>
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+        {title}
+      </Typography>
+    </Stack>
+    {children}
+  </Box>
+);
+
+/** Мини-плитка суммы (счёт / бонусы) — тот же язык, что InfoTile, но с
+ *  тоном success/warning вместо акцента primary, чтобы отличать «живые деньги»
+ *  от бонусных баллов на первый взгляд. */
+const AmountTile: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: "success" | "warning";
+}> = ({ icon, label, value, tone }) => (
+  <Box
+    sx={{
+      flex: 1,
+      minWidth: 110,
+      display: "flex",
+      alignItems: "center",
+      gap: 1,
+      p: 1,
+      borderRadius: "10px",
+      border: 1,
+      borderColor: "divider",
+      bgcolor: "background.paper",
+    }}
+  >
+    <Box
+      sx={(t) => {
+        const toneColor = tone === "success" ? t.palette.success : t.palette.warning;
+        return {
+          width: 32,
+          height: 32,
+          borderRadius: "8px",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: t.palette.mode === "dark" ? toneColor.light : toneColor.dark,
+          bgcolor: alpha(toneColor.main, t.palette.mode === "dark" ? 0.2 : 0.14),
+          "& .MuiSvgIcon-root": { fontSize: 17 },
+        };
+      }}
+    >
+      {icon}
+    </Box>
+    <Box sx={{ minWidth: 0 }}>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: "0.7rem", lineHeight: 1.2 }}>
+        {label}
+      </Typography>
+      <Typography variant="body2" fontWeight={700} noWrap>
+        {value}
+      </Typography>
+    </Box>
+  </Box>
+);
 
 const PatientCard: React.FC<Props> = ({
   patient,
@@ -117,292 +197,227 @@ const PatientCard: React.FC<Props> = ({
 
   return (
     <Box sx={{ height: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <Card
+      <AppCard
         variant="outlined"
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          // Unified design
-        }}
-      >
-        <CardHeader
-          title={
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
-              <Stack direction="row" alignItems="center" gap={1.25}>
-                <PersonOutlineOutlined color="primary" />
-                <Typography variant="h6">Карточка пациента</Typography>
-              </Stack>
-              {patient && (onTopUp || onEdit || onMerge) && (
-                <>
-                  {/* Кнопки — на md+ */}
-                  <Stack direction="row" spacing={1} flexShrink={0} sx={{ display: { xs: "none", md: "flex" } }}>
-                    {onTopUp && (
-                      <Button size="small" variant="outlined" color="success" onClick={onTopUp} startIcon={<AccountBalanceWalletOutlined />}>
-                        Пополнить
-                      </Button>
-                    )}
-                    {onMerge && (
-                      <Button size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
-                        Объединить
-                      </Button>
-                    )}
-                    {onEdit && (
-                      <Button size="small" variant="contained" onClick={onEdit} startIcon={<EditOutlined />}>
-                        Редактировать
-                      </Button>
-                    )}
-                  </Stack>
-
-                  {/* Меню — на xs/sm */}
-                  <Box sx={{ display: { xs: "flex", md: "none" } }}>
-                    <IconButton size="small" onClick={(e) => setMenuAnchor(e.currentTarget)}>
-                      <MoreVertIcon />
-                    </IconButton>
-                    <Menu
-                      anchorEl={menuAnchor}
-                      open={Boolean(menuAnchor)}
-                      onClose={() => setMenuAnchor(null)}
-                      anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                      transformOrigin={{ vertical: "top", horizontal: "right" }}
-                    >
-                      {onEdit && (
-                        <MenuItem onClick={() => { setMenuAnchor(null); onEdit(); }}>
-                          <ListItemIcon><EditOutlined fontSize="small" /></ListItemIcon>
-                          <ListItemText>Редактировать</ListItemText>
-                        </MenuItem>
-                      )}
-                      {onTopUp && (
-                        <MenuItem onClick={() => { setMenuAnchor(null); onTopUp(); }}>
-                          <ListItemIcon><AccountBalanceWalletOutlined fontSize="small" color="success" /></ListItemIcon>
-                          <ListItemText>Пополнить счёт</ListItemText>
-                        </MenuItem>
-                      )}
-                      {onMerge && (
-                        <MenuItem onClick={() => { setMenuAnchor(null); onMerge(); }}>
-                          <ListItemIcon><MergeTypeIcon fontSize="small" color="warning" /></ListItemIcon>
-                          <ListItemText>Объединить с дублем</ListItemText>
-                        </MenuItem>
-                      )}
-                    </Menu>
-                  </Box>
-                </>
-              )}
+        header={
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap" sx={{ px: 2, pt: 2, pb: 1.5 }}>
+            <Stack direction="row" alignItems="center" gap={1.25}>
+              <PersonOutlineOutlined color="primary" />
+              <Typography variant="h6">Карточка пациента</Typography>
             </Stack>
-          }
-          sx={{ pb: 1 }}
-        />
-        <Divider />
-        <CardContent sx={{ p: 0, flex: 1, overflowY: "auto", minHeight: 0 }}>
+            {patient && (onTopUp || onEdit || onMerge) && (
+            <>
+              {/* Кнопки — на md+ */}
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                flexWrap="wrap"
+                sx={{
+                  display: { xs: "none", md: "flex" },
+                  width: { md: "100%" },
+                  justifyContent: "flex-end",
+                  minWidth: 0,
+                }}
+              >
+                {onTopUp && (
+                  <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="success" onClick={onTopUp} startIcon={<AccountBalanceWalletOutlined />}>
+                    Пополнить
+                  </AppButton>
+                )}
+                {onMerge && (
+                  <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
+                    Объединить
+                  </AppButton>
+                )}
+                {onEdit && (
+                  <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="contained" onClick={onEdit} startIcon={<EditOutlined />}>
+                    Редактировать
+                  </AppButton>
+                )}
+              </Stack>
+
+              {/* Меню — на xs/sm */}
+              <Box sx={{ display: { xs: "flex", md: "none" } }}>
+                <IconButton size="small" onClick={(e) => setMenuAnchor(e.currentTarget)}>
+                  <MoreVertIcon />
+                </IconButton>
+                <Menu
+                  anchorEl={menuAnchor}
+                  open={Boolean(menuAnchor)}
+                  onClose={() => setMenuAnchor(null)}
+                  anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                  transformOrigin={{ vertical: "top", horizontal: "right" }}
+                >
+                  {onEdit && (
+                    <MenuItem onClick={() => { setMenuAnchor(null); onEdit(); }}>
+                      <ListItemIcon><EditOutlined fontSize="small" /></ListItemIcon>
+                      <ListItemText>Редактировать</ListItemText>
+                    </MenuItem>
+                  )}
+                  {onTopUp && (
+                    <MenuItem onClick={() => { setMenuAnchor(null); onTopUp(); }}>
+                      <ListItemIcon><AccountBalanceWalletOutlined fontSize="small" color="success" /></ListItemIcon>
+                      <ListItemText>Пополнить счёт</ListItemText>
+                    </MenuItem>
+                  )}
+                  {onMerge && (
+                    <MenuItem onClick={() => { setMenuAnchor(null); onMerge(); }}>
+                      <ListItemIcon><MergeTypeIcon fontSize="small" color="warning" /></ListItemIcon>
+                      <ListItemText>Объединить с дублем</ListItemText>
+                    </MenuItem>
+                  )}
+                </Menu>
+              </Box>
+            </>
+            )}
+          </Stack>
+        }
+        disableContentPadding
+        sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+      >
+        <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0, borderTop: 1, borderColor: "divider" }}>
           {patient ? (
-            <Stack spacing={2} sx={{ p: 2 }}>
+            <Stack spacing={1.5} sx={{ p: 2 }}>
               {patient.is_blacklisted && (
-                <Alert severity="error" variant="filled">
-                  <AlertTitle>В черном списке</AlertTitle>
+                <Alert severity="error" variant="outlined" sx={{ borderRadius: "10px" }}>
+                  <AlertTitle sx={{ fontWeight: 600 }}>В чёрном списке</AlertTitle>
                   {patient.blacklist_reason || "Причина не указана"}
                 </Alert>
               )}
+
+              {/* Идентификация: аватар-плашка + имя + звонок */}
               <Stack direction="row" alignItems="center" spacing={2}>
-                <Avatar
-                  src={patient.photo || undefined}
-                  sx={{ width: 64, height: 64 }}
-                />
-                <Box>
-                  <Typography variant="h6" sx={{ lineHeight: 1.2 }}>{patient.fio}</Typography>
+                <UserAvatar src={patient.photo} name={patient.fio} size={64} sx={{ borderRadius: "18px", flexShrink: 0 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
+                    {patient.fio}
+                  </Typography>
 
                   {patient.phone ? (
                     <Link
                       href={`tel:${patient.phone}`}
                       sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        color: 'text.secondary',
-                        textDecoration: 'none',
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.75,
+                        color: "text.secondary",
+                        textDecoration: "none",
                         mt: 0.5,
-                        '&:hover': {
-                          color: 'primary.onSurface',
-                        },
-                        '&:active': {
-                          color: 'primary.dark',
-                        },
+                        "&:hover": { color: "primary.onSurface" },
+                        "&:active": { color: "primary.dark" },
                       }}
                     >
-                      <PhoneInTalkOutlined
-                        fontSize="small"
-                        sx={{
-                          color: 'primary.onSurface',
-                        }}
-                      />
+                      <PhoneInTalkOutlined fontSize="small" sx={{ color: "primary.onSurface" }} />
                       <Typography variant="body2">{patient.phone}</Typography>
                     </Link>
                   ) : (
-                    <Stack direction="row" alignItems="center" gap={1} color="text.secondary" sx={{ mt: 0.5 }}>
-                      <LocalPhoneOutlined fontSize="small" />
-                      <Typography variant="body2">—</Typography>
-                    </Stack>
+                    <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5 }}>
+                      Телефон не указан
+                    </Typography>
                   )}
-
-                  <Stack direction="row" alignItems="center" gap={1} color="text.secondary" sx={{ mt: 0.5 }}>
-                    <BadgeOutlined fontSize="small" />
-                    <Typography variant="body2">ИНН: {patient.inn || "отсутствует"}</Typography>
-                  </Stack>
-
-                  {patient.birth_date && (
-                    <Stack direction="row" alignItems="center" gap={1} color="text.secondary" sx={{ mt: 0.5 }}>
-                      <CalendarMonthOutlined fontSize="small" />
-                      <Typography variant="body2">
-                        {formatDateRu(patient.birth_date)} {calculateAge(patient.birth_date)}
-                      </Typography>
-                    </Stack>
-                  )}
-
                 </Box>
               </Stack>
 
-              {/* Vitals Section */}
+              {/* Документы: ИНН + дата рождения */}
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1,
+                  gridTemplateColumns: patient.birth_date ? "1fr 1fr" : "1fr",
+                }}
+              >
+                <InfoTile icon={<BadgeOutlined />} label="ИНН" value={patient.inn ?? undefined} active={Boolean(patient.inn)} monospace />
+                {patient.birth_date && (
+                  <InfoTile
+                    icon={<CalendarMonthOutlined />}
+                    label="Дата рождения"
+                    value={`${formatDateRu(patient.birth_date)} ${calculateAge(patient.birth_date)}`}
+                  />
+                )}
+              </Box>
+
+              {/* Витальные показатели последнего приема */}
               {(lastWeight || lastHeight || lastTemperature) && (
-                <>
-                  <Divider sx={{ my: 2 }} />
-                  <Stack spacing={1}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Последние измерения
-                    </Typography>
-                    <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                      {lastHeight && (
-                        <Chip label={`Рост: ${lastHeight} см`} size="small" variant="outlined" />
-                      )}
-                      {lastWeight && (
-                        <Chip label={`Вес: ${lastWeight} кг`} size="small" variant="outlined" />
-                      )}
-                      {lastTemperature && (
-                        <Chip label={`Темп: ${lastTemperature} °C`} size="small" variant="outlined" color={lastTemperature > 37 ? "warning" : "default"} />
-                      )}
-                    </Stack>
-                  </Stack>
-                </>
-              )}
-
-              {/* Balance Section */}
-              {balance !== undefined && balance !== null && (
-                <>
-                  <Divider sx={{ my: 1 }} />
-                  <Stack spacing={1}>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                      <AccountBalanceWalletOutlined fontSize="small" color="action" />
-                      <Typography variant="subtitle2" color="text.secondary">
-                        Счёт пациента
-                      </Typography>
-                    </Stack>
-                    <Stack direction="row" spacing={1.5} flexWrap="wrap">
-                      <Box
-                        sx={{
-                          flex: 1,
-                          minWidth: 80,
-                          borderRadius: 1,
-                          border: "1px solid",
-                          borderColor: "divider",
-                          px: 1.5,
-                          py: 1,
-                          textAlign: "center",
-                        }}
-                      >
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          Баланс
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          fontWeight={600}
-                          color={balance.balance > 0 ? "success.main" : "text.primary"}
-                        >
-                          {balance.balance.toLocaleString("ru-RU")} сом
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          flex: 1,
-                          minWidth: 80,
-                          borderRadius: 1,
-                          border: "1px solid",
-                          borderColor: "divider",
-                          px: 1.5,
-                          py: 1,
-                          textAlign: "center",
-                        }}
-                      >
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          Бонусы
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          fontWeight={600}
-                          color={balance.bonuses > 0 ? "warning.main" : "text.primary"}
-                        >
-                          {balance.bonuses.toLocaleString("ru-RU")} сом
-                        </Typography>
-                      </Box>
-                    </Stack>
-                  </Stack>
-                </>
-              )}
-
-              {(lastDateTime || lastService || lastComplaints) && (
-                <>
-                  <Divider sx={{ my: 2 }} />
-                  <Stack spacing={1}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Последний прием
-                    </Typography>
-
-                    {lastDateTime && (
-                      <Stack direction="row" alignItems="center" gap={1} color="text.secondary">
-                        <CalendarMonthOutlined fontSize="small" />
-                        <Typography variant="body2">{lastDateTime}</Typography>
-                      </Stack>
+                <FactBlock icon={<MonitorWeightOutlined />} title="Последние измерения">
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    {lastHeight && (
+                      <Chip size="small" variant="outlined" icon={<HeightOutlined sx={{ fontSize: "16px !important" }} />} label={`${lastHeight} см`} />
                     )}
+                    {lastWeight && (
+                      <Chip size="small" variant="outlined" icon={<MonitorWeightOutlined sx={{ fontSize: "16px !important" }} />} label={`${lastWeight} кг`} />
+                    )}
+                    {lastTemperature && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={lastTemperature > 37 ? "warning" : "default"}
+                        icon={<ThermostatOutlined sx={{ fontSize: "16px !important" }} />}
+                        label={`${lastTemperature} °C`}
+                      />
+                    )}
+                  </Stack>
+                </FactBlock>
+              )}
 
+              {/* Счёт пациента */}
+              {balance !== undefined && balance !== null && (
+                <FactBlock icon={<AccountBalanceWalletOutlined />} title="Счёт пациента">
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <AmountTile
+                      icon={<AccountBalanceWalletOutlined />}
+                      label="Баланс"
+                      value={`${balance.balance.toLocaleString("ru-RU")} сом`}
+                      tone="success"
+                    />
+                    <AmountTile
+                      icon={<CardGiftcardOutlined />}
+                      label="Бонусы"
+                      value={`${balance.bonuses.toLocaleString("ru-RU")} сом`}
+                      tone="warning"
+                    />
+                  </Stack>
+                </FactBlock>
+              )}
+
+              {/* Последний прием */}
+              {(lastDateTime || lastService || lastComplaints) && (
+                <FactBlock icon={<EventAvailableOutlined />} title="Последний приём">
+                  <Stack spacing={0.5}>
+                    {lastDateTime && (
+                      <Typography variant="body2" fontWeight={600}>
+                        {lastDateTime}
+                      </Typography>
+                    )}
                     {lastService && (
                       <Typography variant="body2">
-                        <Typography
-                          component="span"
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ mr: 0.5 }}
-                        >
+                        <Typography component="span" variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
                           Услуга:
                         </Typography>
                         {lastService}
                       </Typography>
                     )}
-
                     {lastComplaints && (
                       <Typography variant="body2">
-                        <Typography
-                          component="span"
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ mr: 0.5 }}
-                        >
+                        <Typography component="span" variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
                           Жалобы:
                         </Typography>
                         {lastComplaints}
                       </Typography>
                     )}
                   </Stack>
-                </>
+                </FactBlock>
               )}
             </Stack>
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, opacity: 0.6 }}>
-              <PersonOutlineOutlined sx={{ fontSize: 48, mb: 1, color: 'text.secondary' }} />
-              <Typography variant="body1" color="text.secondary">
-                Выберите пациента из списка
-              </Typography>
-            </Box>
+            <ListEmptyState
+              icon={<PersonOutlineOutlined />}
+              title="Пациент не выбран"
+              description="Выберите пациента из списка слева, чтобы увидеть карточку"
+            />
           )}
-        </CardContent>
-      </Card>
+        </Box>
+      </AppCard>
     </Box>
   );
 };
