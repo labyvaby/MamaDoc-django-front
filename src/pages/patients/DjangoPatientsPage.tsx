@@ -100,7 +100,6 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
-  const canRecordVaccinations = isSuperAdmin() || hasPermission("vaccinations.record");
 
   const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
@@ -331,7 +330,7 @@ const DjangoPatientsPage: React.FC = () => {
   );
 
   const vaccinationsNode = (
-    <PatientVaccinationsPanel patient={selected} canRecord={canRecordVaccinations} />
+    <PatientVaccinationsPanel patient={selected} />
   );
 
   const listNode = (

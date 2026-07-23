@@ -30,7 +30,6 @@ import {
   getVaccines,
   type CreateRecordPayload,
 } from "../../api/vaccinations";
-import { getProducts } from "../../api/warehouse";
 import { searchPatients, type DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
@@ -44,6 +43,21 @@ type RecordVaccinationDrawerProps = {
   initialPatient?: DjangoPatient | null;
   /** Привязка к осмотру врача (приёму): строка счёта появится в этом осмотре. */
   initialAppointmentId?: number | null;
+  /**
+   * Заблокировать сценарий и скрыть переключатель:
+   * - "ours" — только «со склада» (регистратура, ввод по приёму);
+   * - "external" — только «внешняя» (модуль «Прививки» — исторические прививки).
+   * Не задан — доступны оба (переключатель показан).
+   */
+  lockedScenario?: Scenario;
+  /**
+   * Предзаполнение из прогноза календаря (положенная доза): вакцина, № дозы,
+   * место укола. Партия выбирается сама (FEFO). Позволяет ввести дозу в 1–2
+   * клика вместо пустой формы.
+   */
+  initialVaccineId?: number | null;
+  initialDoseNumber?: number | null;
+  initialInjectionSite?: string | null;
 };
 
 const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
@@ -51,6 +65,10 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   onClose,
   initialPatient = null,
   initialAppointmentId = null,
+  lockedScenario,
+  initialVaccineId = null,
+  initialDoseNumber = null,
+  initialInjectionSite = null,
 }) => {
   const queryClient = useQueryClient();
   const orgId = useApiOrgId();
@@ -59,13 +77,16 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   const meEmployeeId = (activeEmployee as { id?: number } | null | undefined)?.id ?? null;
 
   const [error, setError] = React.useState<string | null>(null);
-  const [scenario, setScenario] = React.useState<Scenario>("ours");
+  const [scenario, setScenario] = React.useState<Scenario>(lockedScenario ?? "ours");
 
   // ── Форма ──
   const [patient, setPatient] = React.useState<DjangoPatient | null>(initialPatient);
   const [patientSearch, setPatientSearch] = React.useState("");
-  const [vaccineId, setVaccineId] = React.useState<number | "">("");
+  const [vaccineId, setVaccineId] = React.useState<number | "">(initialVaccineId ?? "");
   const [batchId, setBatchId] = React.useState<number | "">("");
+  // Партию по умолчанию выбираем сами (FEFO). batchTouched = пользователь трогал
+  // выбор руками → авто-выбор больше не перетирает.
+  const [batchTouched, setBatchTouched] = React.useState(false);
   const [doseNumber, setDoseNumber] = React.useState("1");
   const [administeredAt, setAdministeredAt] = React.useState<Dayjs | null>(dayjs());
   const [injectionSite, setInjectionSite] = React.useState("left_arm");
@@ -82,14 +103,15 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   const [notes, setNotes] = React.useState("");
 
   const resetForm = React.useCallback(() => {
-    setScenario("ours");
+    setScenario(lockedScenario ?? "ours");
     setPatient(initialPatient);
     setPatientSearch("");
-    setVaccineId("");
+    setVaccineId(initialVaccineId ?? "");
     setBatchId("");
-    setDoseNumber("1");
+    setBatchTouched(false);
+    setDoseNumber(initialDoseNumber != null ? String(initialDoseNumber) : "1");
     setAdministeredAt(dayjs());
-    setInjectionSite("left_arm");
+    setInjectionSite(initialInjectionSite ?? "left_arm");
     setAdministeredById(meEmployeeId ?? "");
     setUnitPrice("");
     setPriceTouched(false);
@@ -98,7 +120,15 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     setAppointmentId(initialAppointmentId != null ? String(initialAppointmentId) : "");
     setNotes("");
     setError(null);
-  }, [initialPatient, initialAppointmentId, meEmployeeId]);
+  }, [
+    initialPatient,
+    initialAppointmentId,
+    meEmployeeId,
+    lockedScenario,
+    initialVaccineId,
+    initialDoseNumber,
+    initialInjectionSite,
+  ]);
 
   React.useEffect(() => {
     if (open) resetForm();
@@ -165,35 +195,36 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  // Цены товаров со склада — чтобы подставить цену продажи по товару партии.
-  // Категорию НЕ фильтруем: партия может ссылаться на товар вне «Вакцин»
-  // (напр. шприц), и его цену тоже нужно подтянуть.
-  const productsQuery = useQuery({
-    queryKey: ["django", "warehouse", "products", "vaccination-price"],
-    queryFn: ({ signal }) => getProducts(signal, { organizationId: orgId }),
-    enabled: open && scenario === "ours",
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const priceByProductId = React.useMemo(() => {
-    const m = new Map<number, number>();
-    for (const p of productsQuery.data ?? []) m.set(p.id, p.price);
-    return m;
-  }, [productsQuery.data]);
-
-  // Цена товара выбранной партии (null — партия без склада / цена неизвестна).
+  // Preview-цена: read-поле productPrice самой партии (с 23.07.2026 бэк отдаёт
+  // productName/productPrice в VaccineBatch). Отдельная загрузка всех товаров
+  // больше не нужна — окончательную цену бэк фиксирует при создании записи.
   const priceForBatch = React.useCallback(
     (id: number | ""): number | null => {
       if (id === "") return null;
       const b = (batchesQuery.data ?? []).find((x) => x.id === id);
-      if (!b || b.productId == null) return null;
-      return priceByProductId.get(b.productId) ?? null;
+      if (!b || b.productPrice == null) return null;
+      const n = parseFloat(b.productPrice);
+      return Number.isFinite(n) ? n : null;
     },
-    [batchesQuery.data, priceByProductId],
+    [batchesQuery.data],
   );
 
-  // Реактивно подставляем цену со склада, когда выбрана партия и подгрузились
-  // цены товаров (без гонки «партия выбрана раньше, чем пришли цены»). Ручную
-  // правку (priceTouched) не перетираем.
+  // FEFO-автовыбор партии: как только пришёл список партий выбранной вакцины,
+  // ставим годную партию с БЛИЖАЙШИМ сроком (remaining>0, не просрочена). Ручной
+  // выбор (batchTouched) не перетираем. Даёт «−1 клик» на каждый ввод.
+  React.useEffect(() => {
+    if (scenario !== "ours" || batchTouched || batchId !== "" || vaccineId === "") return;
+    const today = dayjs();
+    const valid = (batchesQuery.data ?? []).filter(
+      (b) => b.remaining > 0 && !dayjs(b.expiresAt).isBefore(today, "day"),
+    );
+    if (valid.length === 0) return;
+    const fefo = [...valid].sort((a, b) => a.expiresAt.localeCompare(b.expiresAt))[0];
+    setBatchId(fefo.id);
+  }, [scenario, batchTouched, batchId, vaccineId, batchesQuery.data]);
+
+  // Реактивно подставляем цену партии, когда она выбрана. Ручную правку
+  // (priceTouched) не перетираем.
   React.useEffect(() => {
     if (scenario !== "ours" || priceTouched || batchId === "") return;
     const price = priceForBatch(batchId);
@@ -215,7 +246,10 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       };
       if (scenario === "ours") {
         payload.batchId = batchId === "" ? undefined : (batchId as number);
-        payload.unitPrice = unitPrice.trim() === "" ? undefined : unitPrice.trim();
+        // Цену отправляем ТОЛЬКО при ручной правке (priceTouched) — иначе бэк сам
+        // фиксирует snapshot batch.product.price (гайд 23.07.2026, п.6). Префилл
+        // остаётся лишь preview, чтобы не переопределять цену устаревшим значением.
+        payload.unitPrice = priceTouched && unitPrice.trim() !== "" ? unitPrice.trim() : undefined;
       } else {
         payload.isExternal = true;
         payload.batchNumberManual = batchNumberManual.trim() || undefined;
@@ -254,7 +288,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     >
       <Box sx={{ display: "flex", alignItems: "center", px: 3, py: 2, borderBottom: 1, borderColor: "divider" }}>
         <Typography variant="h6" fontWeight={600} sx={{ flex: 1, letterSpacing: -0.15 }}>
-          Ввод прививки
+          {lockedScenario === "external" ? "Внешняя прививка" : "Ввод прививки"}
         </Typography>
         <IconButton size="small" onClick={onClose} aria-label="Закрыть" disabled={mutation.isPending}>
           <CloseOutlined fontSize="small" />
@@ -269,21 +303,23 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
           </Alert>
         )}
 
-        {/* ── Сценарий ── */}
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={scenario}
-          onChange={(_, v) => v && setScenario(v)}
-          fullWidth
-        >
-          <ToggleButton value="ours" sx={{ textTransform: "none" }}>
-            У нас (со склада)
-          </ToggleButton>
-          <ToggleButton value="external" sx={{ textTransform: "none" }}>
-            Внешняя (со слов)
-          </ToggleButton>
-        </ToggleButtonGroup>
+        {/* ── Сценарий (скрыт, если сценарий заблокирован снаружи) ── */}
+        {lockedScenario == null && (
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={scenario}
+            onChange={(_, v) => v && setScenario(v)}
+            fullWidth
+          >
+            <ToggleButton value="ours" sx={{ textTransform: "none" }}>
+              У нас (со склада)
+            </ToggleButton>
+            <ToggleButton value="external" sx={{ textTransform: "none" }}>
+              Внешняя (со слов)
+            </ToggleButton>
+          </ToggleButtonGroup>
+        )}
 
         {/* ── Пациент ── */}
         <Autocomplete<DjangoPatient>
@@ -311,6 +347,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
           onChange={(e) => {
             setVaccineId(e.target.value === "" ? "" : Number(e.target.value));
             setBatchId("");
+            setBatchTouched(false);
             setUnitPrice("");
             setPriceTouched(false);
           }}
@@ -352,14 +389,17 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
               required
               fullWidth
               value={batchId === "" ? "" : String(batchId)}
-              onChange={(e) => setBatchId(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) => {
+                setBatchId(e.target.value === "" ? "" : Number(e.target.value));
+                setBatchTouched(true);
+              }}
               disabled={vaccineId === ""}
               helperText={
                 vaccineId === ""
                   ? "Сначала выберите вакцину"
                   : (batchesQuery.data ?? []).length === 0
                   ? "Нет партий этой вакцины на складе филиала"
-                  : undefined
+                  : "Выбрана партия с ближайшим сроком (можно изменить)"
               }
             >
               {(batchesQuery.data ?? []).map((b) => (
