@@ -586,6 +586,36 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
   const elqrIsImage = elqrFile ? isImageFile(elqrFile) : isImageUrl(elqrPreview);
 
+  // «Врач» — по роли доступа (её видно в группировке списка) или по клиническому
+  // типу; поля независимы, поэтому учитываем оба.
+  const isDoctor =
+    record?._djangoRole?.code === "doctor" || clinicalRole === "doctor";
+
+  // Для врачей в правилах ЗП показываем только услуги, закреплённые за врачом
+  // (живой выбор из вкладки «Услуги»). Дополнительно оставляем услуги, уже
+  // упомянутые в правилах, — чтобы их имена/чипы отображались и правило можно
+  // было отредактировать, даже если услугу открепили. Ограничение применяем
+  // лишь когда привязки услуг реально загружены (есть право на их просмотр).
+  const salaryServices = React.useMemo(() => {
+    const restrictToAssigned =
+      isDoctor && (canViewServices || canManageServices);
+    if (!restrictToAssigned) return allServices;
+    const referencedIds = new Set(salary.rules.flatMap((r) => r.serviceIds));
+    const selectedIds = new Set(selectedServices.map((s) => s.id));
+    const extras = allServices.filter(
+      (s) => referencedIds.has(s.id) && !selectedIds.has(s.id),
+    );
+    return [...selectedServices, ...extras];
+  }, [isDoctor, canViewServices, canManageServices, allServices, selectedServices, salary.rules]);
+
+  // Подсказка врачу без закреплённых услуг: правила ЗП по услугам применять не к чему.
+  const salaryServicesHint =
+    isDoctor &&
+    (canViewServices || canManageServices) &&
+    selectedServices.length === 0
+      ? "У врача нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам."
+      : undefined;
+
   return (
     <DrawerBase
       open={open}
@@ -1054,7 +1084,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 <DjangoSalarySettings
                   value={salary}
                   onChange={setSalary}
-                  services={allServices}
+                  services={salaryServices}
+                  servicesHint={salaryServicesHint}
                   loadingServices={salaryLoading}
                   products={allProducts}
                   loadingProducts={productsLoading}
