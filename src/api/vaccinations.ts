@@ -21,19 +21,15 @@ import { apiRequest } from "./client";
 
 export const VACCINATIONS_USE_MOCKS = false;
 
-/**
- * Название складской категории, в которой лежат товары-вакцины.
- * Соглашение (проверено на проде 21.07.2026: категория так и называется
- * «Вакцины»). Используется для фильтрации пикеров товара — в вакцины
- * подставляем только товары этой категории.
- * ⚠ Открытый вопрос бэку: сделать признак «это вакцина» на самой категории/
- * товаре, а не завязываться на строковое имя (см. тикет vaccines↔склад).
- */
-export const VACCINE_PRODUCT_CATEGORY = "Вакцины";
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/** Справочник вакцин. */
+/**
+ * Справочник вакцин. Источник истины «это вакцина» с 23.07.2026 — флаг
+ * товара склада `isVaccine`; товары-вакцины тянем через
+ * getProducts({ isVaccine: true }). Карточка вакцины авто-создаётся бэком при
+ * переключении товара в isVaccine=true; в разделе прививок редактируем только
+ * медицинские поля (manufacturer/targetDisease/dosesRequired/... — см. гайд).
+ */
 export interface Vaccine {
   id: number;
   organizationId: number;
@@ -46,6 +42,13 @@ export interface Vaccine {
   recommendedAgeMonths: number | null;
   isActive: boolean;
   notes: string;
+  /** Связанный товар склада (может отсутствовать у старых карточек). */
+  productId: number | null;
+  productName: string | null;
+  /** Актуальная цена Product.price, строка-decimal; null — товара нет. */
+  price: string | null;
+  /** Остаток товара; строка-decimal. Можно сузить ?branchId= (см. getVaccines). */
+  stock: string;
 }
 
 export interface CreateVaccinePayload {
@@ -71,6 +74,9 @@ export interface VaccineBatch {
   vaccineName: string;
   /** Товар склада: без него ввод прививки НЕ спишет остаток и НЕ создаст строку счёта. */
   productId: number | null;
+  /** Read-поля товара (с 23.07.2026): имя и актуальная цена Product.price (строка-decimal). */
+  productName: string | null;
+  productPrice: string | null;
   batchNumber: string;
   expiresAt: string; // YYYY-MM-DD
   quantityInitial: number;
@@ -86,7 +92,11 @@ export interface VaccineBatch {
 export interface CreateBatchPayload {
   branchId: number;
   vaccineId: number;
-  /** Необязательно, но без него прививка молча окажется «бесплатной» (см. гайд). */
+  /**
+   * Необязательно: если у карточки вакцины уже есть товар, бэк подставит его
+   * автоматически (с 23.07.2026). Явный productId обязан указывать на товар
+   * с isVaccine=true и совпадать с товаром карточки.
+   */
   productId?: number | null;
   batchNumber: string;
   expiresAt: string;
@@ -205,6 +215,16 @@ export interface VaccinationScheduleSlot {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Поля шаблона нац. календаря (с 23.07.2026). Заполнены у слотов, достроенных
+   * из шаблона; null у вручную созданных/перенесённых. label — человекочитаемая
+   * подпись возраста («3 месяца»), пустая строка если нет.
+   */
+  templateId: number | null;
+  ageMonths: number | null;
+  dueWindowDays: number | null;
+  mandatory: boolean | null;
+  label: string;
   /** Для дашборда «кому пора» (все пациенты) — открытый вопрос бэку, UI терпит отсутствие. */
   patientName?: string;
   patientPhone?: string;
@@ -278,6 +298,10 @@ const mockVaccines: Vaccine[] = [
     recommendedAgeMonths: 2,
     isActive: true,
     notes: "",
+    productId: 42,
+    productName: "Превенар 13",
+    price: "2500.00",
+    stock: "17",
   },
   {
     id: mockVaccineSeq++,
@@ -290,6 +314,10 @@ const mockVaccines: Vaccine[] = [
     recommendedAgeMonths: 3,
     isActive: true,
     notes: "",
+    productId: 43,
+    productName: "Пентаксим",
+    price: "3200.00",
+    stock: "8",
   },
 ];
 
@@ -301,6 +329,8 @@ const mockBatches: VaccineBatch[] = [
     vaccineId: 1,
     vaccineName: "Превенар 13",
     productId: 42,
+    productName: "Превенар 13",
+    productPrice: "2500.00",
     batchNumber: "A12345",
     expiresAt: "2027-12-31",
     quantityInitial: 20,
@@ -329,6 +359,11 @@ const mockSlots: VaccinationScheduleSlot[] = [
     notes: "",
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    templateId: null,
+    ageMonths: null,
+    dueWindowDays: null,
+    mandatory: null,
+    label: "",
     patientName: "Асанов Тимур",
     patientPhone: "+996700111222",
   },
@@ -346,6 +381,11 @@ const mockSlots: VaccinationScheduleSlot[] = [
     notes: "",
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    templateId: null,
+    ageMonths: null,
+    dueWindowDays: null,
+    mandatory: null,
+    label: "",
     patientName: "Кадырова Амина",
     patientPhone: "+996700333444",
   },
@@ -354,7 +394,13 @@ const mockSlots: VaccinationScheduleSlot[] = [
 // ── API: справочник вакцин ─────────────────────────────────────────────────────
 
 export function getVaccines(
-  opts: { search?: string; includeInactive?: boolean; organizationId?: number } = {},
+  opts: {
+    search?: string;
+    includeInactive?: boolean;
+    /** Сузить поле stock карточки остатком конкретного филиала. */
+    branchId?: number;
+    organizationId?: number;
+  } = {},
   signal?: AbortSignal,
 ): Promise<Vaccine[]> {
   if (VACCINATIONS_USE_MOCKS) {
@@ -369,6 +415,7 @@ export function getVaccines(
   const q = new URLSearchParams();
   if (opts.search) q.set("search", opts.search);
   if (opts.includeInactive) q.set("includeInactive", "true");
+  if (opts.branchId != null) q.set("branchId", String(opts.branchId));
   const qs = q.toString();
   return apiRequest<{ results: Vaccine[] } | Vaccine[]>(
     withOrg(`/vaccinations/vaccines/${qs ? `?${qs}` : ""}`, opts.organizationId),
@@ -392,6 +439,10 @@ export function createVaccine(
       recommendedAgeMonths: payload.recommendedAgeMonths ?? null,
       isActive: true,
       notes: payload.notes ?? "",
+      productId: null,
+      productName: null,
+      price: null,
+      stock: "0",
     };
     mockVaccines.push(vaccine);
     return mockDelay(vaccine);
@@ -461,6 +512,8 @@ export function createBatch(
       vaccineId: payload.vaccineId,
       vaccineName: vaccine?.name ?? `Вакцина #${payload.vaccineId}`,
       productId: payload.productId ?? null,
+      productName: vaccine?.productName ?? null,
+      productPrice: vaccine?.price ?? null,
       batchNumber: payload.batchNumber,
       expiresAt: payload.expiresAt,
       quantityInitial: payload.quantityInitial,
@@ -709,6 +762,11 @@ export function createSchedule(
       notes: "",
       createdAt: nowIso(),
       updatedAt: nowIso(),
+      templateId: null,
+      ageMonths: null,
+      dueWindowDays: null,
+      mandatory: null,
+      label: "",
     };
     mockSlots.push(slot);
     return mockDelay(slot);
@@ -717,4 +775,123 @@ export function createSchedule(
     method: "POST",
     body: payload,
   });
+}
+
+// ── API: национальный календарь (шаблон организации) ────────────────────────────
+
+/**
+ * Строка шаблона нац. календаря (с 23.07.2026). Шаблон общий для организации,
+ * не для филиала. Уникальность строки — (organization, vaccine, doseNumber).
+ * ageMonths — точка в календарных месяцах от birthDate; dueWindowDays — окно
+ * до просрочки.
+ */
+export interface CalendarTemplateRow {
+  id: number;
+  organizationId: number;
+  vaccineId: number;
+  vaccineName: string;
+  doseNumber: number;
+  ageMonths: number;
+  dueWindowDays: number;
+  mandatory: boolean;
+  label: string;
+  isActive: boolean;
+}
+
+export interface CreateCalendarTemplatePayload {
+  vaccineId: number;
+  doseNumber: number;
+  ageMonths: number;
+  dueWindowDays: number;
+  mandatory?: boolean;
+  label?: string;
+  isActive?: boolean;
+}
+
+export type UpdateCalendarTemplatePayload = Partial<CreateCalendarTemplatePayload>;
+
+/** Права: чтение vaccinations.view. */
+export function getCalendarTemplate(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<CalendarTemplateRow[]> {
+  return apiRequest<{ results: CalendarTemplateRow[] } | CalendarTemplateRow[]>(
+    withOrg("/vaccinations/calendar-template/", organizationId),
+    { signal },
+  ).then(toList);
+}
+
+/** Права: запись vaccinations.manage. */
+export function createCalendarTemplate(
+  payload: CreateCalendarTemplatePayload,
+  organizationId?: number,
+): Promise<CalendarTemplateRow> {
+  return apiRequest<CalendarTemplateRow>(
+    withOrg("/vaccinations/calendar-template/", organizationId),
+    { method: "POST", body: payload },
+  );
+}
+
+export function updateCalendarTemplate(
+  templateId: number,
+  payload: UpdateCalendarTemplatePayload,
+  organizationId?: number,
+): Promise<CalendarTemplateRow> {
+  return apiRequest<CalendarTemplateRow>(
+    withOrg(`/vaccinations/calendar-template/${templateId}/`, organizationId),
+    { method: "PATCH", body: payload },
+  );
+}
+
+export function deleteCalendarTemplate(
+  templateId: number,
+  organizationId?: number,
+): Promise<void> {
+  return apiRequest<void>(
+    withOrg(`/vaccinations/calendar-template/${templateId}/`, organizationId),
+    { method: "DELETE" },
+  );
+}
+
+// ── API: месячный отчёт ─────────────────────────────────────────────────────────
+
+export interface MonthlyReportRow {
+  templateId: number;
+  vaccineId: number;
+  vaccineName: string;
+  doseNumber: number;
+  ageMonths: number;
+  /** Детям в выбранном месяце исполняется плановый возраст дозы. */
+  planned: number;
+  /** Есть любая неотменённая запись дозы (внутренняя или внешняя). */
+  done: number;
+  /** Подмножество done, выполненное вне клиники. */
+  externalDone: number;
+  /** Записи нет и завершилось dueWindowDays после плановой даты. */
+  overdue: number;
+}
+
+export interface MonthlyReport {
+  month: string; // YYYY-MM
+  branchId: number | null;
+  rows: MonthlyReportRow[];
+  totals: Omit<MonthlyReportRow, "templateId" | "vaccineId" | "vaccineName" | "doseNumber" | "ageMonths">;
+}
+
+/**
+ * Месячный отчёт по нац. календарю. month обязателен (YYYY-MM). branchId
+ * опционален: с ним — строго по пациентам филиала, без него — по доступному
+ * пользователю скоупу организации.
+ */
+export function getMonthlyReport(
+  opts: { month: string; branchId?: number; organizationId?: number },
+  signal?: AbortSignal,
+): Promise<MonthlyReport> {
+  const q = new URLSearchParams();
+  q.set("month", opts.month);
+  if (opts.branchId != null) q.set("branchId", String(opts.branchId));
+  return apiRequest<MonthlyReport>(
+    withOrg(`/vaccinations/monthly-report/?${q.toString()}`, opts.organizationId),
+    { signal },
+  );
 }

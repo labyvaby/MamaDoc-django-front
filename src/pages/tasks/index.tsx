@@ -376,14 +376,14 @@ const TasksPage: React.FC = () => {
   });
 
   const summaryQuery = useQuery({
-    queryKey: djangoQueryKeys.tasks.summary,
+    queryKey: djangoQueryKeys.tasks.summary(orgId),
     queryFn: ({ signal }) => getTasksSummary(orgId, signal),
     enabled: enabled && tab === "board",
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
   const myStatsQuery = useQuery({
-    queryKey: djangoQueryKeys.tasks.myStats,
+    queryKey: djangoQueryKeys.tasks.myStats(orgId),
     queryFn: ({ signal }) => getMyTaskStats(orgId, signal),
     enabled: enabled && tab === "mine",
     staleTime: DJANGO_LIST_STALE_TIME_MS,

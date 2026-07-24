@@ -3,25 +3,29 @@ import { Alert, Box, Divider, Skeleton, Stack, Typography } from "@mui/material"
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
-import AddOutlined from "@mui/icons-material/AddOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
 
 import { AppButton } from "../../../components/ui";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
-import { getPatientHistory, getPatientSchedule } from "../../../api/vaccinations";
+import {
+  getPatientHistory,
+  getPatientSchedule,
+  type VaccinationScheduleSlot,
+} from "../../../api/vaccinations";
 import type { DjangoPatient } from "../../../api/patients";
 import {
   RecordStatusChip,
   ScheduleStatusChip,
 } from "../../../components/vaccinations/VaccinationChips";
-import RecordVaccinationDrawer from "../../../components/vaccinations/RecordVaccinationDrawer";
+import { printVaccinationCertificate } from "../../../components/vaccinations/vaccinationCertificate";
 import { injectionSiteLabel, scheduleDateInfo } from "../../vaccinations/meta";
 
+// Карточка пациента — только просмотр календаря/истории прививок. Ввод
+// («со склада») делается из регистратуры по приёму, внешние — в модуле «Прививки».
 type PatientVaccinationsPanelProps = {
   patient: DjangoPatient | null;
-  /** vaccinations.record — показывать кнопку ввода. */
-  canRecord: boolean;
 };
 
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -30,10 +34,65 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </Typography>
 );
 
-const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ patient, canRecord }) => {
+type ScheduleGroup = {
+  key: string;
+  /** Подпись группы возраста («3 месяца»); для внекалендарных — «Вне календаря». */
+  title: string;
+  ageMonths: number | null;
+  slots: VaccinationScheduleSlot[];
+};
+
+/**
+ * Группировка слотов календаря по ageMonths (с 23.07.2026 слот несёт поля
+ * шаблона нац. календаря). Слоты без ageMonths — отдельной группой в конце.
+ */
+function groupSlotsByAge(slots: VaccinationScheduleSlot[]): ScheduleGroup[] {
+  const map = new Map<string, ScheduleGroup>();
+  for (const slot of slots) {
+    const key = slot.ageMonths == null ? "none" : String(slot.ageMonths);
+    let group = map.get(key);
+    if (!group) {
+      group = {
+        key,
+        title:
+          slot.ageMonths == null
+            ? "Вне календаря"
+            : slot.label || ageMonthsLabel(slot.ageMonths),
+        ageMonths: slot.ageMonths,
+        slots: [],
+      };
+      map.set(key, group);
+    }
+    group.slots.push(slot);
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.ageMonths == null) return 1;
+    if (b.ageMonths == null) return -1;
+    return a.ageMonths - b.ageMonths;
+  });
+}
+
+/** Человекочитаемая подпись возраста в месяцах, если бэк не прислал label. */
+function ageMonthsLabel(months: number): string {
+  if (months === 0) return "При рождении";
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return `${years} ${plural(years, "год", "года", "лет")}`;
+  }
+  return `${months} ${plural(months, "месяц", "месяца", "месяцев")}`;
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ patient }) => {
   const orgId = useApiOrgId();
   const patientId = patient?.id ?? null;
-  const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   const scheduleQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.patientSchedule(patientId ?? 0),
@@ -77,12 +136,18 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
   const loading = scheduleQuery.isLoading || historyQuery.isLoading;
   const error = scheduleQuery.error ?? historyQuery.error;
 
+  const hasVaccData = history.length > 0 || schedule.length > 0;
+
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {canRecord && (
+      {hasVaccData && (
         <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1.5, flexShrink: 0 }}>
-          <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => setDrawerOpen(true)}>
-            Ввести прививку
+          <AppButton
+            variant="outlined"
+            startIcon={<PrintOutlined />}
+            onClick={() => printVaccinationCertificate(patient, history, planned)}
+          >
+            Сертификат
           </AppButton>
         </Stack>
       )}
@@ -108,42 +173,56 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
                   Нет запланированных прививок.
                 </Typography>
               ) : (
-                <Stack spacing={1} sx={{ mt: 0.75 }}>
-                  {[...planned, ...other].map((slot) => {
-                    const info = scheduleDateInfo(slot.scheduledDate, slot.status);
-                    return (
-                      <Stack
-                        key={slot.id}
-                        direction="row"
-                        alignItems="center"
-                        gap={1.5}
-                        sx={{
-                          px: 1.5,
-                          py: 1,
-                          border: 1,
-                          borderColor: "divider",
-                          borderRadius: "10px",
-                          bgcolor: "background.paper",
-                        }}
+                <Stack spacing={2} sx={{ mt: 0.75 }}>
+                  {groupSlotsByAge([...planned, ...other]).map((group) => (
+                    <Box key={group.key}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontWeight: 600, display: "block", mb: 0.75, ml: 0.25 }}
                       >
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="body2" fontWeight={500} noWrap>
-                            {slot.vaccineName} · доза {slot.doseNumber}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              color: info.overdue ? "error.main" : info.soon ? "warning.main" : "text.secondary",
-                              fontWeight: info.overdue || info.soon ? 600 : 400,
-                            }}
-                          >
-                            {dayjs(slot.scheduledDate).format("DD.MM.YYYY")} · {info.text}
-                          </Typography>
-                        </Box>
-                        <ScheduleStatusChip status={slot.status} />
+                        {group.title}
+                        {group.slots.some((s) => s.mandatory) && " · обязательные"}
+                      </Typography>
+                      <Stack spacing={1}>
+                        {group.slots.map((slot) => {
+                          const info = scheduleDateInfo(slot.scheduledDate, slot.status);
+                          return (
+                            <Stack
+                              key={slot.id}
+                              direction="row"
+                              alignItems="center"
+                              gap={1.5}
+                              sx={{
+                                px: 1.5,
+                                py: 1,
+                                border: 1,
+                                borderColor: "divider",
+                                borderRadius: "10px",
+                                bgcolor: "background.paper",
+                              }}
+                            >
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight={500} noWrap>
+                                  {slot.vaccineName} · доза {slot.doseNumber}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    color: info.overdue ? "error.main" : info.soon ? "warning.main" : "text.secondary",
+                                    fontWeight: info.overdue || info.soon ? 600 : 400,
+                                  }}
+                                >
+                                  {dayjs(slot.scheduledDate).format("DD.MM.YYYY")} · {info.text}
+                                </Typography>
+                              </Box>
+                              <ScheduleStatusChip status={slot.status} />
+                            </Stack>
+                          );
+                        })}
                       </Stack>
-                    );
-                  })}
+                    </Box>
+                  ))}
                 </Stack>
               )}
             </Box>
@@ -200,12 +279,6 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
           <VaccinesOutlined sx={{ fontSize: 44, color: "text.disabled" }} />
         </Stack>
       )}
-
-      <RecordVaccinationDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        initialPatient={patient}
-      />
     </Box>
   );
 };

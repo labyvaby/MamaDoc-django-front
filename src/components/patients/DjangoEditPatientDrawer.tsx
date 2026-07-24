@@ -12,6 +12,8 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -19,6 +21,7 @@ import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import { useNotification } from "@refinedev/core";
 import { CustomDatePicker } from "../ui";
 import dayjs from "dayjs";
+import { formatPatientAge } from "../../utility/age";
 import {
   composePhone,
   parsePhone,
@@ -34,6 +37,7 @@ import {
   deletePatientPhoto,
   getPatient,
   type DjangoPatient,
+  type PatientGender,
 } from "../../api/patients";
 import PatientFamilyField from "./PatientFamilyField";
 import type { DjangoFamily } from "../../api/patients";
@@ -65,6 +69,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
   const [birth, setBirth] = React.useState("");
+  const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
   const [inn, setInn] = React.useState("");
   const [family, setFamily] = React.useState<DjangoFamily | null>(null);
@@ -85,6 +90,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
     const maxLen = getPhoneLocalMaxLength(parsed.countryCode);
     setPhone(parsed.local.replace(/[^\d]/g, "").slice(0, maxLen));
     setBirth(patient.birthDate || "");
+    setGender(patient.gender || "unknown");
     setAddress(patient.address || "");
     setInn(patient.inn || "");
     setFamily(patient.family || null);
@@ -133,6 +139,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
         fullName: fioTrim,
         phone: fullPhone || undefined,
         birthDate: birth || null,
+        gender,
         address: address.trim() || null,
         inn: inn.trim() || undefined,
         familyId: family?.id ?? null,
@@ -311,9 +318,16 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
 
             {/* ── Дата рождения ── */}
             <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Дата рождения
-              </Typography>
+              <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Дата рождения
+                </Typography>
+                {formatPatientAge(birth) && (
+                  <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
+                    {formatPatientAge(birth)}
+                  </Typography>
+                )}
+              </Stack>
               <CustomDatePicker
                 value={birth ? dayjs(birth) : null}
                 onChange={(val) => setBirth(val ? val.format("YYYY-MM-DD") : "")}
@@ -326,6 +340,24 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                   },
                 }}
               />
+            </Stack>
+
+            {/* ── Пол ── */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Пол
+              </Typography>
+              <ToggleButtonGroup
+                value={gender === "unknown" ? null : gender}
+                exclusive
+                onChange={(_, val) => setGender((val as PatientGender) ?? "unknown")}
+                disabled={busy}
+                fullWidth
+                size="small"
+              >
+                <ToggleButton value="male">Мальчик</ToggleButton>
+                <ToggleButton value="female">Девочка</ToggleButton>
+              </ToggleButtonGroup>
             </Stack>
 
             {/* ── Адрес ── */}

@@ -170,8 +170,8 @@ const DiagnosesSettingsPage: React.FC = () => {
       <Stack spacing={2} sx={{ height: "100%" }}>
         {/* Header */}
         <Stack
-          direction={{ xs: "column", sm: "row" }}
-          alignItems={{ xs: "flex-start", sm: "center" }}
+          direction={{ xs: "column", md: "row" }}
+          alignItems={{ xs: "flex-start", md: "center" }}
           justifyContent="space-between"
           gap={1.5}
         >
@@ -186,7 +186,12 @@ const DiagnosesSettingsPage: React.FC = () => {
             )}
           </Stack>
 
-          <Stack direction="row" gap={1} alignItems="center">
+          <Stack
+            direction="row"
+            gap={1}
+            alignItems="center"
+            sx={{ width: { xs: "100%", md: "auto" } }}
+          >
             <TextField
               size="small"
               placeholder="Поиск по коду или названию…"
@@ -199,12 +204,13 @@ const DiagnosesSettingsPage: React.FC = () => {
                   </InputAdornment>
                 ),
               }}
-              sx={{ width: { xs: "100%", sm: 280 } }}
+              sx={{ flex: { xs: 1, md: "none" }, width: { md: 240 }, minWidth: 0 }}
             />
             <Button
               variant="contained"
               startIcon={<AddOutlined />}
               onClick={() => setFormTarget("new")}
+              sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
             >
               Добавить
             </Button>

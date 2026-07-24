@@ -21,7 +21,6 @@ import {
   createBatch,
   getVaccines,
   updateBatch,
-  VACCINE_PRODUCT_CATEGORY,
   type CreateBatchPayload,
   type UpdateBatchPayload,
   type VaccineBatch,
@@ -61,11 +60,11 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  // Только товары категории «Вакцины» — партию нельзя завести на произвольный товар.
+  // Только товары-вакцины (isVaccine=true) — партию нельзя завести на произвольный товар.
   const productsQuery = useQuery({
-    queryKey: ["django", "warehouse", "products", "vaccination-batch-picker", VACCINE_PRODUCT_CATEGORY],
+    queryKey: ["django", "warehouse", "products", "vaccination-batch-picker", "isVaccine"],
     queryFn: ({ signal }) =>
-      getProducts(signal, { organizationId: orgId, category: VACCINE_PRODUCT_CATEGORY }),
+      getProducts(signal, { organizationId: orgId, isVaccine: true }),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });

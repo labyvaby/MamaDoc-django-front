@@ -148,8 +148,10 @@ export const djangoQueryKeys = {
     suggestions: ["django", "tasks", "automation-suggestions"] as const,
     notifications: ["django", "tasks", "notifications"] as const,
     templates: ["django", "tasks", "templates"] as const,
-    summary: ["django", "tasks", "summary"] as const,
-    myStats: ["django", "tasks", "my-stats"] as const,
+    summary: (orgId?: number) =>
+      ["django", "tasks", "summary", orgId ?? null] as const,
+    myStats: (orgId?: number) =>
+      ["django", "tasks", "my-stats", orgId ?? null] as const,
   },
 
   achievements: {
@@ -215,6 +217,12 @@ export const djangoQueryKeys = {
       ["django", "vaccinations", "patients", patientId, "schedule"] as const,
     patientHistory: (patientId: number) =>
       ["django", "vaccinations", "patients", patientId, "history"] as const,
+    // Шаблон нац. календаря (общий для организации).
+    calendarTemplate: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "calendar-template", params] as const,
+    // Месячный отчёт по календарю.
+    monthlyReport: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "monthly-report", params] as const,
   },
 
   staff: {

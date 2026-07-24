@@ -92,6 +92,9 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
   });
 
   const valid = name.trim() !== "";
+  // Имя карточки синхронизируется с товаром — при наличии productId правится
+  // через товар склада, не здесь (бэк перетрёт).
+  const nameLocked = vaccine?.productId != null;
 
   return (
     <Dialog open={open} onClose={mutation.isPending ? undefined : onClose} maxWidth="xs" fullWidth>
@@ -99,13 +102,27 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
+          {!vaccine && (
+            <Alert severity="info" sx={{ py: 0.5 }}>
+              Рекомендуемый способ завести вакцину — отметить товар склада флагом
+              «Вакцина»: карточка создастся автоматически, с ценой и остатком.
+            </Alert>
+          )}
+          {vaccine && vaccine.productId != null && (
+            <Alert severity="info" sx={{ py: 0.5 }}>
+              Товар: {vaccine.productName ?? `#${vaccine.productId}`}
+              {vaccine.price != null ? ` · ${vaccine.price} сом` : ""} · остаток {vaccine.stock}
+            </Alert>
+          )}
           <TextField
             label="Название *"
             size="small"
             fullWidth
-            autoFocus
+            autoFocus={!nameLocked}
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={nameLocked}
+            helperText={nameLocked ? "Синхронизируется с названием товара склада" : undefined}
           />
           <TextField
             label="Производитель"
