@@ -2,6 +2,7 @@ import React from "react";
 import {
   Box,
   CircularProgress,
+  Divider,
   Drawer,
   Typography,
   useMediaQuery,
@@ -17,6 +18,7 @@ dayjs.locale("ru");
 import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useCan } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
   searchPatients,
@@ -38,6 +40,7 @@ import PatientHistoryPanel from "./components/PatientHistoryPanel";
 import PatientVaccinationsPanel from "./components/PatientVaccinationsPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
+import DjangoConclusionSlotsPanel from "../appointments/DjangoConclusionSlotsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
@@ -102,6 +105,14 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
+  // Заключения приёма — тот же набор кодов, что на странице «Записи»
+  // (просмотр открывает любой из create/update/manage).
+  const canViewConclusions = useCan([
+    "medical.conclusions.view",
+    "medical.conclusions.create",
+    "medical.conclusions.update",
+    "medical.conclusions.manage",
+  ]);
 
   const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
@@ -134,6 +145,8 @@ const DjangoPatientsPage: React.FC = () => {
   const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
+  // Колонка заключения внутри дровера деталей приёма (как третья колонка на «Записях»).
+  const [conclusionOpen, setConclusionOpen] = React.useState(false);
   const [mergeOpen, setMergeOpen] = React.useState(false);
   const [faceOpen, setFaceOpen] = React.useState(false);
 
@@ -273,6 +286,11 @@ const DjangoPatientsPage: React.FC = () => {
     }
   };
 
+  const closeHistoryDetail = () => {
+    setHistoryDetail(null);
+    setConclusionOpen(false);
+  };
+
   const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
@@ -327,7 +345,10 @@ const DjangoPatientsPage: React.FC = () => {
       error={historyError}
       history={history}
       canViewFinance={canViewFinance}
-      onClick={(appt) => setHistoryDetail(appt)}
+      onClick={(appt) => {
+        setConclusionOpen(false);
+        setHistoryDetail(appt);
+      }}
     />
   );
 
@@ -505,24 +526,71 @@ const DjangoPatientsPage: React.FC = () => {
         onSuccess={(b) => setBalance(b)}
       />
 
-      {/* History detail viewer */}
+      {/* History detail viewer (+ колонка заключения по кнопке «Заключение») */}
       <Drawer
         anchor="right"
         open={!!historyDetail}
-        onClose={() => setHistoryDetail(null)}
-        PaperProps={{ sx: { width: { xs: "100%", sm: 520 } } }}
+        onClose={closeHistoryDetail}
+        PaperProps={{
+          sx: {
+            width: { xs: "100%", sm: conclusionOpen ? 1000 : 520 },
+            maxWidth: "100%",
+            overflow: "hidden",
+          },
+        }}
       >
         {historyDetail && (
-          <AppointmentDetailsPanel
-            appointment={historyDetail}
-            canUpdate={false}
-            canManageFinance={false}
-            canViewFinance={canViewFinance}
-            canViewConclusions={false}
-            onEdit={() => {}}
-            onPay={() => {}}
-            onClose={() => setHistoryDetail(null)}
-          />
+          <Box
+            sx={{
+              height: "100%",
+              minHeight: 0,
+              display: "flex",
+              flexDirection: isMobile ? "column" : "row",
+              overflow: "hidden",
+            }}
+          >
+            <Box
+              sx={{
+                flex: isMobile && conclusionOpen ? "0 0 50%" : 1,
+                minWidth: 0,
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
+              <AppointmentDetailsPanel
+                appointment={historyDetail}
+                canUpdate={false}
+                canManageFinance={false}
+                canViewFinance={canViewFinance}
+                canViewConclusions={canViewConclusions}
+                isConclusionVisible={conclusionOpen}
+                onToggleConclusion={() => setConclusionOpen((v) => !v)}
+                onEdit={() => {}}
+                onPay={() => {}}
+                onClose={closeHistoryDetail}
+              />
+            </Box>
+            {conclusionOpen && (
+              <>
+                <Divider orientation={isMobile ? "horizontal" : "vertical"} flexItem />
+                <Box
+                  sx={{
+                    flex: isMobile ? "1 1 50%" : "1 1 0",
+                    minWidth: 0,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                  }}
+                >
+                  <DjangoConclusionSlotsPanel
+                    appointmentId={historyDetail.id}
+                    onClose={() => setConclusionOpen(false)}
+                  />
+                </Box>
+              </>
+            )}
+          </Box>
         )}
       </Drawer>
 

@@ -36,6 +36,7 @@ import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeS
 import { CustomDatePicker } from "../../../components/ui";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 import {
   validateFullName,
   validatePhoneLocal,
@@ -174,6 +175,19 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
 
   const canSubmit = hasRequiredFields && !busy;
 
+  // Перевод фокуса в первое проблемное поле (ошибки показывает showError выше).
+  // Порядок ключей = порядок полей в форме.
+  const focus = useFormValidation({
+    fullName: errors.fullName || null,
+    phone: !hasLogin ? "Укажите телефон или email — нужен для входа" : errors.phone || null,
+    email: errors.email || null,
+    roleId: roleId === "" ? "Выберите роль" : null,
+    employeeBranches:
+      branches.length > 0 && employeeBranches.length === 0
+        ? "Выберите хотя бы один филиал работы"
+        : null,
+  });
+
   // Человекочитаемый список того, чего не хватает для сохранения.
   const missingReasons = React.useMemo<string[]>(() => {
     const r: string[] = [];
@@ -306,6 +320,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   // ── submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setSubmitAttempted(true);
+    focus.validate();
     if (!canSubmit) {
       setSubmitError(
         missingReasons.length > 0
@@ -523,6 +538,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               inputProps={{ maxLength: 255 }}
               error={Boolean(showError("fullName"))}
               helperText={showError("fullName")}
+              ref={focus.anchor("fullName")}
             />
           </Field>
           <Field label="Псевдоним">
@@ -568,6 +584,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
               placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
               disabled={busy}
               inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: getPhoneLocalMaxLength(phoneCountry) }}
+              ref={focus.anchor("phone")}
             />
           </Box>
         </Field>
@@ -583,6 +600,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             disabled={busy}
             error={Boolean(showError("email") && !isWarning("email"))}
             helperText={showError("email")}
+            ref={focus.anchor("email")}
             FormHelperTextProps={{
               sx: isWarning("email") ? { color: "warning.main" } : undefined,
             }}
@@ -768,6 +786,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 placeholder={loadingDeps ? "Загрузка…" : "Найти роль…"}
                 error={submitAttempted && roleId === ""}
                 helperText={submitAttempted && roleId === "" ? "Выберите роль" : ""}
+                ref={focus.anchor("roleId")}
               />
             )}
           />
@@ -792,7 +811,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 ))
               }
               renderInput={(params) => (
-                <TextField {...params} placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"} />
+                <TextField
+                  {...params}
+                  placeholder={loadingDeps ? "Загрузка…" : "Выберите филиалы"}
+                  ref={focus.anchor("employeeBranches")}
+                />
               )}
             />
           )}

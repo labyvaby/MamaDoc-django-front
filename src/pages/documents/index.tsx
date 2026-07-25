@@ -46,6 +46,7 @@ import { getErrorMessage as extractErrorMessage } from "../../api/client";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { formatDateRu } from "../../utility/format";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   ListEmptyState,
@@ -253,8 +254,14 @@ const DocumentsPage: React.FC = () => {
   // ── Предпросмотр ──────────────────────────────────────────────────────────
   const [previewDoc, setPreviewDoc] = React.useState<OrganizationDocument | null>(null);
 
+  // Имя документа: предзаполняется из файла, но пользователь может стереть.
+  const uploadForm = useFormValidation({
+    uploadName: uploadName.trim() ? null : "Введите название документа",
+  });
+
   const handleUpload = async () => {
     if (!uploadFile) return;
+    if (!uploadForm.validate()) return;
     setUploadBusy(true);
     setUploadError(null);
     try {
@@ -296,8 +303,13 @@ const DocumentsPage: React.FC = () => {
     setEditError(null);
   };
 
+  const editForm = useFormValidation({
+    editName: editName.trim() ? null : "Введите название документа",
+  });
+
   const handleEditSave = async () => {
-    if (!editTarget || !editName.trim()) return;
+    if (!editTarget) return;
+    if (!editForm.validate()) return;
     setEditBusy(true);
     setEditError(null);
     try {
@@ -688,6 +700,7 @@ const DocumentsPage: React.FC = () => {
               value={uploadName}
               onChange={(e) => setUploadName(e.target.value)}
               disabled={uploadBusy}
+              {...uploadForm.field("uploadName")}
             />
             <TextField
               select
@@ -735,7 +748,7 @@ const DocumentsPage: React.FC = () => {
           <Button
             variant="contained"
             onClick={handleUpload}
-            disabled={uploadBusy || !uploadName.trim()}
+            disabled={uploadBusy}
             startIcon={uploadBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             {uploadBusy ? "Загрузка…" : "Загрузить"}
@@ -767,6 +780,7 @@ const DocumentsPage: React.FC = () => {
                   void handleEditSave();
                 }
               }}
+              {...editForm.field("editName")}
             />
             {branches.length > 0 && (
               <TextField
@@ -816,7 +830,7 @@ const DocumentsPage: React.FC = () => {
           <Button
             variant="contained"
             onClick={handleEditSave}
-            disabled={editBusy || !editName.trim()}
+            disabled={editBusy}
             startIcon={editBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             Сохранить

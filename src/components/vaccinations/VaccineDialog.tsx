@@ -13,6 +13,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   createVaccine,
@@ -91,7 +92,9 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить вакцину"),
   });
 
-  const valid = name.trim() !== "";
+  const form = useFormValidation({
+    name: name.trim() ? null : "Введите название вакцины",
+  });
   // Имя карточки синхронизируется с товаром — при наличии productId правится
   // через товар склада, не здесь (бэк перетрёт).
   const nameLocked = vaccine?.productId != null;
@@ -122,7 +125,10 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={nameLocked}
-            helperText={nameLocked ? "Синхронизируется с названием товара склада" : undefined}
+            {...form.field(
+              "name",
+              nameLocked ? "Синхронизируется с названием товара склада" : undefined,
+            )}
           />
           <TextField
             label="Производитель"
@@ -186,7 +192,7 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
         <AppButton variant="outlined" onClick={onClose} disabled={mutation.isPending}>
           Отмена
         </AppButton>
-        <AppButton variant="contained" onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending}>
+        <AppButton variant="contained" onClick={() => { if (form.validate()) mutation.mutate(); }} disabled={mutation.isPending}>
           Сохранить
         </AppButton>
       </Stack>

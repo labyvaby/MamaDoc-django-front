@@ -244,10 +244,10 @@ const ProfilePage: React.FC = () => {
   if (IS_DJANGO_BACKEND && can("achievements.view")) {
     tabs.push({
       key: "achievements",
-      label: "Награды",
+      label: "Достижения",
       icon: <EmojiEventsOutlined fontSize="small" />,
       content: (
-        <AppCard variant="outlined" title="Награды">
+        <AppCard variant="outlined" title="Достижения">
           <AchievementsGrid />
         </AppCard>
       ),

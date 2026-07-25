@@ -24,6 +24,7 @@ import SettingsLayout from "./SettingsLayout";
 import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
 import { usePermissions, retryAuth } from "../../hooks/usePermissions";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
   getOrganization,
   updateOrganization,
@@ -144,8 +145,14 @@ const OrganizationSettingsPage: React.FC = () => {
   const overlapDirty = !!org && overlapMode !== org.appointmentOverlapMode;
   const dirty = nameDirty || scopeDirty || overlapDirty;
 
+  // Название обязательно: пустое поле блокирует сохранение и получает фокус.
+  const form = useFormValidation({
+    name: trimmedName ? null : "Название не может быть пустым",
+  });
+
   const handleSave = async () => {
     if (!org || !dirty) return;
+    if (!form.validate()) return;
     setBusy(true);
     setSaveError(null);
     setSaved(false);
@@ -332,6 +339,7 @@ const OrganizationSettingsPage: React.FC = () => {
                   ? "Название не может быть пустым"
                   : org.slug
               }
+              ref={form.anchor("name")}
               FormHelperTextProps={
                 trimmedName === ""
                   ? undefined
@@ -441,7 +449,7 @@ const OrganizationSettingsPage: React.FC = () => {
                 <AppButton
                   variant="contained"
                   onClick={handleSave}
-                  disabled={!dirty || trimmedName === ""}
+                  disabled={!dirty}
                   loading={busy}
                   sx={{ width: { xs: "100%", sm: "auto" }, minHeight: { xs: 48, sm: 36 } }}
                 >

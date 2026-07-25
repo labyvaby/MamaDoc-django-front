@@ -18,8 +18,17 @@ import { mockDelay, paginate, withOrg } from "./mockUtils";
  *
  * ⚠ content — HTML: санитизация на бэке (allowlist тегов; iframe разрешён
  * ТОЛЬКО с src на youtube-nocookie.com/youtube.com — см. UPD тикета), фронт
- * рендерит ответ бэка как доверенный. Картинки в статьях — v2 (открытый
- * вопрос тикета), кнопки вставки изображения в редакторе нет.
+ * рендерит ответ бэка как доверенный.
+ *
+ * Картинки в статьях (проверено на живом API 25.07.2026, орг. 1):
+ * `<img>` allowlist пропускает, но оставляет только атрибуты `src`, `alt`,
+ * `title` — `width/height/class/style` вырезаются (ресайз хранить негде,
+ * масштаб задаётся CSS), `data:`-URI из src вырезается (base64 не пройдёт),
+ * `<figure>/<figcaption>` вырезаются целиком (подпись остаётся сырым текстом,
+ * поэтому подпись храним в `alt`). Относительные src (`/media/...`) проходят.
+ * Эндпоинта загрузки файла нет (POST /knowledge/attachments/ → 404) — см.
+ * KNOWLEDGE_IMAGE_UPLOAD_ENABLED и тикет
+ * MamaDoc/backend_ticket_knowledge_images.md.
  *
  * ⚠ Открытый вопрос (не подтверждён на живом API — на проде нет черновиков):
  * фильтр публикации шлём как isPublished (camelCase, консистентно с остальными
@@ -50,6 +59,13 @@ export interface KnowledgeArticleListItem {
   isPublished: boolean;
   updatedAt: string;
   createdAt: string;
+  /**
+   * Обложка для ленты. Бэк такого поля пока не отдаёт (undefined) — тогда
+   * карточка догружает detail и берёт обложку из content (см. coverFromHtml).
+   * Как только поле появится (тикет backend_ticket_knowledge_images.md, п. 4),
+   * догрузка отключится сама: null = «обложки нет», а не «неизвестно».
+   */
+  coverUrl?: string | null;
 }
 
 export interface KnowledgeArticle extends KnowledgeArticleListItem {
@@ -103,6 +119,101 @@ export function parseYoutubeId(url: string): string | null {
 
 export const youtubeEmbedUrl = (videoId: string): string =>
   `https://www.youtube-nocookie.com/embed/${videoId}`;
+
+// ── Картинки в статьях ────────────────────────────────────────────────────────
+
+/**
+ * Загрузка картинки файлом. ⚠ Держим выключенной: эндпоинта на бэке нет
+ * (проверено 25.07.2026 — POST /knowledge/attachments/ отдаёт 404), тикет —
+ * MamaDoc/backend_ticket_knowledge_images.md. Вставка картинки по ссылке
+ * работает и без него: санитайзер пропускает `<img src>` с http(s).
+ * Включать после ответа бэка (форма ответа `{url}` — предположение фронта).
+ */
+export const KNOWLEDGE_IMAGE_UPLOAD_ENABLED = false;
+
+export interface KnowledgeAttachment {
+  /** Абсолютный или относительный URL загруженного файла. */
+  url: string;
+}
+
+export function uploadKnowledgeImage(
+  file: File,
+  organizationId?: number,
+): Promise<KnowledgeAttachment> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<KnowledgeAttachment>(
+    withOrg("/knowledge/attachments/", organizationId),
+    { method: "POST", formData },
+  );
+}
+
+// ── Обложка статьи ────────────────────────────────────────────────────────────
+
+/**
+ * Обложка статьи хранится внутри `content` — первой картинкой с `title="cover"`.
+ * Отдельного поля у бэка нет, а `title` — один из трёх атрибутов, которые
+ * санитайзер оставляет на `<img>` (`class/style/data-*` он вырезает), поэтому
+ * метка живёт именно в нём. В теле статьи обложка не показывается: редактор и
+ * страница статьи отрезают её через splitCover.
+ */
+const COVER_TITLE = "cover";
+
+const parseHtml = (html: string): Document | null =>
+  typeof DOMParser === "undefined" ? null : new DOMParser().parseFromString(html, "text/html");
+
+/**
+ * Отделяет обложку от тела статьи: `body` — content без картинки-обложки.
+ * Обложкой считается только явно помеченная картинка (первая картинка в тексте
+ * остаётся в тексте).
+ */
+export function splitCover(html: string): { coverUrl: string | null; body: string } {
+  const doc = parseHtml(html);
+  if (!doc) return { coverUrl: null, body: html };
+  const img = doc.body.querySelector(`img[title="${COVER_TITLE}"]`);
+  if (!img) return { coverUrl: null, body: html };
+  const coverUrl = img.getAttribute("src");
+  img.remove();
+  return { coverUrl: coverUrl || null, body: doc.body.innerHTML };
+}
+
+/** Возвращает content с обложкой в начале (или без неё, если url пустой). */
+export function withCover(html: string, coverUrl: string | null): string {
+  const { body } = splitCover(html);
+  if (!coverUrl) return body;
+  const src = coverUrl.replace(/"/g, "&quot;");
+  return `<img src="${src}" title="${COVER_TITLE}" alt="Обложка статьи">${body}`;
+}
+
+/**
+ * Обложка для карточки в ленте: явно помеченная картинка, а если её нет —
+ * первая картинка статьи (чтобы у старых статей обложка появилась сама).
+ */
+export function coverFromHtml(html: string): string | null {
+  const doc = parseHtml(html);
+  if (!doc) return null;
+  const img =
+    doc.body.querySelector(`img[title="${COVER_TITLE}"]`) ?? doc.body.querySelector("img");
+  return img?.getAttribute("src") || null;
+}
+
+/**
+ * Пропустит ли санитайзер бэка такой src: абсолютные http(s) и относительные
+ * (`/media/...`) — да, `data:`-URI — нет (вырезается молча, картинка исчезнет
+ * после сохранения). Поэтому base64 в редакторе не разрешаем.
+ */
+export function isSafeImageUrl(url: string): boolean {
+  const value = url.trim();
+  if (!value) return false;
+  if (value.startsWith("//")) return false;
+  if (value.startsWith("/")) return true;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 

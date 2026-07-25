@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
   createCalendarTemplate,
@@ -95,7 +96,13 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить строку календаря"),
   });
 
-  const valid = vaccineId !== "" && numOrNull(ageMonths) != null && numOrNull(dueWindowDays) != null;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    vaccineId: vaccineId !== "" ? null : "Выберите вакцину",
+    ageMonths: numOrNull(ageMonths) != null ? null : "Укажите возраст в месяцах",
+    dueWindowDays:
+      numOrNull(dueWindowDays) != null ? null : "Укажите окно до просрочки в днях",
+  });
 
   return (
     <Dialog open={open} onClose={mutation.isPending ? undefined : onClose} maxWidth="xs" fullWidth>
@@ -110,6 +117,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
             fullWidth
             value={vaccineId === "" ? "" : String(vaccineId)}
             onChange={(e) => setVaccineId(e.target.value === "" ? "" : Number(e.target.value))}
+            {...form.field("vaccineId")}
           >
             {(vaccinesQuery.data ?? []).map((v) => (
               <MenuItem key={v.id} value={String(v.id)}>
@@ -135,7 +143,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
               value={ageMonths}
               onChange={(e) => setAgeMonths(e.target.value.replace(/[^\d]/g, ""))}
               inputProps={{ inputMode: "numeric" }}
-              helperText="0 — при рождении"
+              {...form.field("ageMonths", "0 — при рождении")}
             />
           </Stack>
           <TextField
@@ -145,6 +153,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
             value={dueWindowDays}
             onChange={(e) => setDueWindowDays(e.target.value.replace(/[^\d]/g, ""))}
             inputProps={{ inputMode: "numeric" }}
+            {...form.field("dueWindowDays")}
           />
           <TextField
             label="Подпись"
@@ -169,7 +178,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
         <AppButton variant="outlined" onClick={onClose} disabled={mutation.isPending}>
           Отмена
         </AppButton>
-        <AppButton variant="contained" onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending}>
+        <AppButton variant="contained" onClick={() => { if (form.validate()) mutation.mutate(); }} disabled={mutation.isPending}>
           Сохранить
         </AppButton>
       </Stack>

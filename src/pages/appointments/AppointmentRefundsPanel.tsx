@@ -28,6 +28,7 @@ import {
 } from "../../api/payments";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
+import { useFormValidation } from "../../hooks/useFormValidation";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -135,11 +136,19 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
     },
   });
 
+  const amountValue = parseDecimal(amountStr);
+  const remaining = state?.remaining ?? 0;
+  const v = useFormValidation({
+    amount:
+      amountValue > 0 && amountValue <= remaining + 0.001
+        ? null
+        : `Укажите сумму от 0.01 до ${fmt(remaining)} с`,
+    reason: reason.trim() ? null : "Укажите причину возврата",
+  });
+
   if (!state) return null;
 
-  const amount = parseDecimal(amountStr);
-  const amountInvalid = amountStr !== "" && (amount <= 0 || amount > state.remaining + 0.001);
-  const canSubmit = amount > 0 && amount <= state.remaining + 0.001 && reason.trim().length > 0 && !refundMutation.isPending;
+  const amount = amountValue;
 
   const handleFullRefund = () => {
     setAmountStr(fmt(state.remaining));
@@ -147,7 +156,8 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
 
   const handleRequestConfirm = () => {
     setLocalError(null);
-    if (!canSubmit) return;
+    if (refundMutation.isPending) return;
+    if (!v.validate()) return;
     setConfirmOpen(true);
   };
 
@@ -204,12 +214,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
                 size="small"
                 value={amountStr}
                 onChange={(e) => { setLocalError(null); setAmountStr(e.target.value); }}
-                error={amountInvalid}
-                helperText={
-                  amountInvalid
-                    ? `От 0.01 до ${fmt(state.remaining)} с`
-                    : " "
-                }
+                {...v.field("amount", " ")}
                 InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
                 inputProps={{ inputMode: "decimal" }}
                 fullWidth
@@ -235,7 +240,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
               value={reason}
               onChange={(e) => { setLocalError(null); setReason(e.target.value); }}
               required
-              helperText={reason.trim().length === 0 ? "Обязательное поле" : " "}
+              {...v.field("reason", " ")}
               fullWidth
               disabled={refundMutation.isPending}
             />
@@ -256,7 +261,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             variant="contained"
             color="error"
             onClick={handleRequestConfirm}
-            disabled={!canSubmit}
+            disabled={refundMutation.isPending}
             startIcon={refundMutation.isPending ? <CircularProgress size={14} /> : undefined}
           >
             Оформить возврат

@@ -1,6 +1,10 @@
 import dayjs from "dayjs";
 
-import type { ScheduleStatus, VaccinationRecordStatus } from "../../api/vaccinations";
+import type {
+  BatchWriteOffReason,
+  ScheduleStatus,
+  VaccinationRecordStatus,
+} from "../../api/vaccinations";
 
 /** Палитра-тон MUI (null — нейтральный) — та же система, что в задачах. */
 export type ToneName = "warning" | "info" | "success" | "error" | null;
@@ -48,6 +52,37 @@ const INJECTION_SITE_LABELS = new Map(INJECTION_SITE_OPTIONS.map((o) => [o.value
 
 export function injectionSiteLabel(site: string): string {
   return site ? INJECTION_SITE_LABELS.get(site) ?? site : "—";
+}
+
+/**
+ * Причины списания доз партии. Slug'и — предложение фронта из тикета
+ * `MamaDoc/backend_ticket_vaccinations_batch_writeoff.md` (бэк набор пока не
+ * подтвердил): если он вернёт другие — правится только этот список.
+ */
+export const BATCH_WRITEOFF_REASON_OPTIONS: { value: BatchWriteOffReason; label: string }[] = [
+  { value: "expired", label: "Истёк срок годности" },
+  { value: "cold_chain", label: "Нарушение холодовой цепи" },
+  { value: "damaged", label: "Повреждена / брак" },
+  { value: "broken", label: "Разбита ампула" },
+  { value: "lost", label: "Утеря / недостача" },
+  { value: "other", label: "Другое" },
+];
+
+const BATCH_WRITEOFF_REASON_LABELS = new Map(
+  BATCH_WRITEOFF_REASON_OPTIONS.map((o) => [o.value, o.label]),
+);
+
+export function batchWriteOffReasonLabel(reason: BatchWriteOffReason): string {
+  return BATCH_WRITEOFF_REASON_LABELS.get(reason) ?? String(reason);
+}
+
+/** «1 доза» / «4 дозы» / «10 доз» — для подписей списаний и остатков. */
+export function pluralDoses(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} доза`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${n} дозы`;
+  return `${n} доз`;
 }
 
 // ── Человеческие сроки календаря ──────────────────────────────────────────────

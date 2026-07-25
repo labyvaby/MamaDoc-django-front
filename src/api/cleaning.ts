@@ -94,7 +94,7 @@ export interface CleaningSummaryRow {
 
 // Валидации зеркалят тикет: бэк — источник правды, фронт проверяет до отправки.
 export const CLEANING_MIN_PHOTOS = 1;
-export const CLEANING_MAX_PHOTOS = 5;
+export const CLEANING_MAX_PHOTOS = 15;
 export const CLEANING_PHOTO_MAX_SIZE_MB = 10;
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────

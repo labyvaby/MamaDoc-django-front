@@ -268,6 +268,7 @@ const KnowledgePage: React.FC = () => {
               <FeedCard
                 key={article.id}
                 article={article}
+                orgId={orgId}
                 onOpen={(id) => navigate(`/knowledge/${id}`)}
               />
             ))}

@@ -33,6 +33,7 @@ import {
   deleteKnowledgeArticle,
   getKnowledgeArticle,
   getKnowledgeCategories,
+  splitCover,
   updateKnowledgeArticle,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
@@ -93,15 +94,22 @@ const ArticleViewPage: React.FC = () => {
   });
   const article = articleQuery.data;
 
+  // Обложка — отдельным «героем» над заголовком, из тела статьи её вырезаем
+  // (в content она лежит первой картинкой title="cover" — см. api/knowledge.ts).
+  const { coverUrl, body } = React.useMemo(
+    () => splitCover(article?.content ?? ""),
+    [article],
+  );
+  // Битая ссылка на обложку — просто не показываем блок.
+  const [coverError, setCoverError] = React.useState(false);
+  React.useEffect(() => setCoverError(false), [coverUrl]);
+
   // Контент с якорями + оглавление и время чтения.
   const processed = React.useMemo(
-    () => (article ? processArticleHtml(article.content) : { html: "", toc: [] as TocItem[] }),
-    [article],
+    () => (article ? processArticleHtml(body) : { html: "", toc: [] as TocItem[] }),
+    [article, body],
   );
-  const readMin = React.useMemo(
-    () => (article ? readingTimeMin(article.content) : 0),
-    [article],
-  );
+  const readMin = React.useMemo(() => (article ? readingTimeMin(body) : 0), [article, body]);
   const showToc = processed.toc.length >= 2;
 
   // ── Прогресс чтения ───────────────────────────────────────────────────────
@@ -264,6 +272,22 @@ const ArticleViewPage: React.FC = () => {
           variant="outlined"
           sx={{ p: { xs: 2, md: 4 }, borderRadius: "14px", flex: 1, minWidth: 0 }}
         >
+          {coverUrl && !coverError && (
+            <Box
+              component="img"
+              src={coverUrl}
+              alt=""
+              onError={() => setCoverError(true)}
+              sx={{
+                display: "block",
+                width: "100%",
+                maxHeight: 320,
+                objectFit: "cover",
+                borderRadius: "10px",
+                mb: 2,
+              }}
+            />
+          )}
           <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 1 }}>
             {article.categoryName && (
               <Chip size="small" variant="outlined" label={article.categoryName} sx={{ borderRadius: "7px" }} />

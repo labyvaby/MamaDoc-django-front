@@ -23,6 +23,7 @@ import { useNotification } from "@refinedev/core";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { ConfirmDialog } from "../../components/ui";
 import {
   createKnowledgeCategory,
@@ -141,6 +142,15 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
     if (changed.length > 0) reorderMutation.mutate(changed);
   };
 
+  const form = useFormValidation({
+    newName: newName.trim() ? null : "Введите название раздела",
+  });
+
+  const handleCreate = () => {
+    if (!form.validate()) return;
+    createMutation.mutate(newName.trim());
+  };
+
   const busy =
     createMutation.isPending ||
     updateMutation.isPending ||
@@ -166,17 +176,18 @@ const CategoriesDialog: React.FC<CategoriesDialogProps> = ({ open, onClose }) =>
               onChange={(e) => setNewName(e.target.value)}
               disabled={busy}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && newName.trim()) {
+                if (e.key === "Enter") {
                   e.preventDefault();
-                  createMutation.mutate(newName.trim());
+                  handleCreate();
                 }
               }}
+              {...form.field("newName")}
             />
             <Button
               variant="outlined"
               startIcon={createMutation.isPending ? <CircularProgress size={14} /> : <AddOutlined />}
-              disabled={busy || !newName.trim()}
-              onClick={() => createMutation.mutate(newName.trim())}
+              disabled={busy}
+              onClick={handleCreate}
               sx={{ flexShrink: 0 }}
             >
               Добавить

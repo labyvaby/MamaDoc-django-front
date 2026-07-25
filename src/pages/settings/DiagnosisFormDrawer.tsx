@@ -20,6 +20,7 @@ import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import { useSnackbar } from "notistack";
 
 import { useCloseGuard } from "../../hooks/useCloseGuard";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
 import {
@@ -85,8 +86,6 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
   const [isActive, setIsActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  // Field-level validation, surfaced only after a submit attempt.
-  const [touched, setTouched] = React.useState(false);
 
   const codeRef = React.useRef<HTMLInputElement>(null);
 
@@ -95,7 +94,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
     if (!open) return;
     setError(null);
     setBusy(false);
-    setTouched(false);
+    form.reset();
     if (editing) {
       setCode(editing.code);
       setTitle(editing.title);
@@ -110,6 +109,8 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
     // Focus the first field shortly after the drawer transition starts.
     const t = setTimeout(() => codeRef.current?.focus(), 120);
     return () => clearTimeout(t);
+    // form.reset стабилен — эффект перезапускается только на открытии/смене цели.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
 
   const trimmedCode = code.trim();
@@ -132,13 +133,15 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
     onClose,
   });
 
-  const codeError = touched && !trimmedCode ? "Укажите код МКБ-10" : "";
-  const titleError = touched && !trimmedTitle ? "Укажите название диагноза" : "";
-  const canSubmit = !busy && Boolean(trimmedCode) && Boolean(trimmedTitle);
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    code: trimmedCode ? null : "Укажите код МКБ-10",
+    title: trimmedTitle ? null : "Укажите название диагноза",
+  });
 
   const handleSubmit = async () => {
-    setTouched(true);
-    if (!trimmedCode || !trimmedTitle) return;
+    if (busy) return;
+    if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
@@ -256,8 +259,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
               onKeyDown={handleCodeKeyDown}
               disabled={busy}
               placeholder="Например: A09"
-              error={Boolean(codeError)}
-              helperText={codeError || " "}
+              {...form.field("code", " ")}
               inputProps={{ maxLength: CODE_MAX, autoCapitalize: "characters" }}
               sx={{ "& input": { fontFamily: "monospace", fontWeight: 600 } }}
             />
@@ -279,8 +281,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
               }}
               disabled={busy}
               placeholder="Например: Острый гастроэнтерит неуточнённый"
-              error={Boolean(titleError)}
-              helperText={titleError || " "}
+              {...form.field("title", " ")}
               inputProps={{ maxLength: TITLE_MAX }}
             />
           </Stack>
@@ -362,7 +363,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={!canSubmit}
+            disabled={busy}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Создать"}

@@ -3,6 +3,7 @@ import {
   Alert,
   Autocomplete,
   Box,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
@@ -19,6 +20,8 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOff";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
+import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,7 +33,12 @@ import {
   updateEmployeeService,
   type EmployeeServiceAssignment,
 } from "../../../api/staff";
-import { getServices, type Service } from "../../../api/catalog";
+import {
+  getServices,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_CATEGORY_OPTIONS,
+  type Service,
+} from "../../../api/catalog";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 
@@ -47,14 +55,18 @@ export type EmployeeServicesDrawerProps = {
 };
 
 type FormState = {
-  serviceId: number | null;
+  /** Выбранные услуги — назначаются пачкой (у врача их бывает 30+). */
+  services: Service[];
   isActive: boolean;
 };
 
 const EMPTY_FORM: FormState = {
-  serviceId: null,
+  services: [],
   isActive: true,
 };
+
+/** Сколько POST-запросов держим в полёте одновременно (bulk-эндпоинта нет). */
+const ASSIGN_CHUNK_SIZE = 5;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,6 +74,26 @@ function priceLabel(val: string | null): string {
   if (!val) return "";
   const n = parseFloat(val);
   return isNaN(n) ? val : `${n.toFixed(2)} с`;
+}
+
+function categoryLabel(s: Service): string {
+  return s.category ? SERVICE_CATEGORY_LABELS[s.category] : "Без категории";
+}
+
+/** Порядок групп в списке: как в справочнике, «Без категории» — последней. */
+function categoryRank(s: Service): number {
+  const idx = s.category ? SERVICE_CATEGORY_OPTIONS.indexOf(s.category) : -1;
+  return idx === -1 ? SERVICE_CATEGORY_OPTIONS.length : idx;
+}
+
+/** «услуга / услуги / услуг» — для человеческих уведомлений. */
+function pluralServices(n: number): string {
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 14) return "услуг";
+  if (mod10 === 1) return "услуга";
+  if (mod10 >= 2 && mod10 <= 4) return "услуги";
+  return "услуг";
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -110,6 +142,8 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Прогресс пакетного назначения: сколько услуг из выбранных уже обработано.
+  const [savedCount, setSavedCount] = React.useState(0);
 
   // ── close drawer + clear state when tenant context changes ──────────────────
   React.useEffect(() => {
@@ -120,6 +154,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     setShowForm(false);
     setForm(EMPTY_FORM);
     setSaveError(null);
+    setSavedCount(0);
     setAssignments([]);
     setServices([]);
     setDataError(null);
@@ -166,6 +201,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
       setShowForm(false);
       setForm(EMPTY_FORM);
       setSaveError(null);
+      setSavedCount(0);
       setAssignments([]);
       setDataError(null);
     }
@@ -178,40 +214,94 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     setShowForm(true);
   };
 
+  // Bulk-эндпоинта у бэкенда нет — назначаем каждую услугу отдельным POST,
+  // партиями по ASSIGN_CHUNK_SIZE: 30 услуг не выстраиваются в 30 круговых
+  // задержек и при этом не заливают сервер разом. Ошибка по одной услуге не
+  // отменяет остальные — неудавшиеся остаются в пикере, чтобы повторить.
   const handleSave = async () => {
-    if (!form.serviceId) return;
+    if (form.services.length === 0) return;
     const capturedContextKey = currentContextKeyRef.current;
+    const picked = form.services;
     setSaveError(null);
+    setSavedCount(0);
     setSaving(true);
+
+    const created: EmployeeServiceAssignment[] = [];
+    const failed: { service: Service; message: string }[] = [];
+
     try {
-      const created = await assignEmployeeService(employeeId, {
-        // Услуга всегда назначается в активном филиале — backend в
-        // branch-specific режиме требует совпадения с ним, а в org-wide
-        // режиме (филиал не выбран) принимает null.
-        serviceId: form.serviceId,
-        branchId: activeBranchId ?? undefined,
-        isActive: form.isActive,
-        priceOverride: null,
-        durationOverrideMinutes: null,
-        notes: "",
-      });
-      if (capturedContextKey !== currentContextKeyRef.current) return;
-      // Upsert: backend may return an existing (reactivated) assignment, so
-      // replace it in place rather than appending a duplicate row.
-      setAssignments((prev) => {
-        const exists = prev.some((a) => a.id === created.id);
-        return exists ? prev.map((a) => (a.id === created.id ? created : a)) : [...prev, created];
-      });
-      notify?.({ type: "success", message: "Услуга назначена" });
-      setShowForm(false);
-      setForm(EMPTY_FORM);
-      invalidateAppointmentFormData();
-      onChanged?.(employeeId);
-    } catch (err: unknown) {
-      if (capturedContextKey !== currentContextKeyRef.current) return;
-      setSaveError(err instanceof Error ? err.message : "Ошибка сохранения");
+      for (let i = 0; i < picked.length; i += ASSIGN_CHUNK_SIZE) {
+        const chunk = picked.slice(i, i + ASSIGN_CHUNK_SIZE);
+        const results = await Promise.allSettled(
+          chunk.map((s) =>
+            assignEmployeeService(employeeId, {
+              // Услуга всегда назначается в активном филиале — backend в
+              // branch-specific режиме требует совпадения с ним, а в org-wide
+              // режиме (филиал не выбран) принимает null.
+              serviceId: s.id,
+              branchId: activeBranchId ?? undefined,
+              isActive: form.isActive,
+              priceOverride: null,
+              durationOverrideMinutes: null,
+              notes: "",
+            }),
+          ),
+        );
+        if (capturedContextKey !== currentContextKeyRef.current) return;
+        results.forEach((r, idx) => {
+          if (r.status === "fulfilled") {
+            created.push(r.value);
+          } else {
+            const reason = r.reason;
+            failed.push({
+              service: chunk[idx],
+              message: reason instanceof Error ? reason.message : "Ошибка сохранения",
+            });
+          }
+        });
+        setSavedCount(created.length + failed.length);
+      }
+
+      if (created.length > 0) {
+        // Upsert: backend may return an existing (reactivated) assignment, so
+        // replace it in place rather than appending a duplicate row.
+        setAssignments((prev) => {
+          const byId = new Map(prev.map((a) => [a.id, a]));
+          for (const a of created) byId.set(a.id, a);
+          return Array.from(byId.values());
+        });
+        notify?.({
+          type: "success",
+          message:
+            created.length === 1
+              ? "Услуга назначена"
+              : `Назначено ${created.length} ${pluralServices(created.length)}`,
+        });
+        invalidateAppointmentFormData();
+        onChanged?.(employeeId);
+      }
+
+      if (failed.length === 0) {
+        setShowForm(false);
+        setForm(EMPTY_FORM);
+        return;
+      }
+
+      // Оставляем в пикере только те услуги, которые не прошли.
+      setForm((f) => ({ ...f, services: failed.map((x) => x.service) }));
+      const details = failed
+        .slice(0, 3)
+        .map((x) => `${x.service.name} — ${x.message}`)
+        .join("; ");
+      const rest = failed.length > 3 ? ` и ещё ${failed.length - 3}` : "";
+      setSaveError(
+        `Не удалось назначить ${failed.length} ${pluralServices(failed.length)}: ${details}${rest}`,
+      );
     } finally {
-      setSaving(false);
+      if (capturedContextKey === currentContextKeyRef.current) {
+        setSaving(false);
+        setSavedCount(0);
+      }
     }
   };
 
@@ -237,10 +327,22 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
     }
   };
 
-  const selectedService = services.find((s) => s.id === form.serviceId) ?? null;
-  // Hide services that are already assigned from the picker.
-  const assignedServiceIds = new Set(assignments.map((a) => a.service.id));
-  const pickableServices = services.filter((s) => !assignedServiceIds.has(s.id));
+  // Hide services that are already assigned from the picker — кроме тех, что
+  // сейчас выбраны в форме (иначе MUI ругается на value вне options).
+  const assignedServiceIds = React.useMemo(
+    () => new Set(assignments.map((a) => a.service.id)),
+    [assignments],
+  );
+  const pickableServices = React.useMemo(() => {
+    const selected = new Set(form.services.map((s) => s.id));
+    return services
+      .filter((s) => !assignedServiceIds.has(s.id) || selected.has(s.id))
+      // groupBy в MUI не склеивает несмежные опции — сортируем по категории.
+      .sort(
+        (a, b) =>
+          categoryRank(a) - categoryRank(b) || a.name.localeCompare(b.name, "ru"),
+      );
+  }, [services, assignedServiceIds, form.services]);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -356,7 +458,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                 }}
               >
                 <Typography variant="subtitle2" fontWeight={600} mb={1.5}>
-                  Назначить услугу
+                  Назначить услуги
                 </Typography>
 
                 {saveError && (
@@ -366,32 +468,85 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                 )}
 
                 <Stack spacing={2}>
-                  {/* service — picked from the active branch's existing services */}
+                  {/* services — picked from the active branch's existing services */}
                   <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                      Услуга *
-                    </Typography>
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                        Услуги *
+                        {form.services.length > 0 && ` — выбрано ${form.services.length}`}
+                      </Typography>
+                      {canEdit && pickableServices.length > 0 && (
+                        <Stack direction="row" spacing={0.5}>
+                          <AppButton
+                            size="small"
+                            disabled={saving || form.services.length === pickableServices.length}
+                            onClick={() =>
+                              setForm((f) => ({ ...f, services: pickableServices }))
+                            }
+                          >
+                            Выбрать все
+                          </AppButton>
+                          <AppButton
+                            size="small"
+                            disabled={saving || form.services.length === 0}
+                            onClick={() => setForm((f) => ({ ...f, services: [] }))}
+                          >
+                            Снять
+                          </AppButton>
+                        </Stack>
+                      )}
+                    </Stack>
                     <Autocomplete
+                      multiple
+                      disableCloseOnSelect
+                      limitTags={6}
                       options={pickableServices}
-                      value={selectedService}
+                      value={form.services}
+                      groupBy={categoryLabel}
                       getOptionLabel={(s) => s.name}
                       isOptionEqualToValue={(a, b) => a.id === b.id}
-                      onChange={(_, val) =>
-                        setForm((f) => ({ ...f, serviceId: val?.id ?? null }))
-                      }
-                      disabled={!canEdit}
+                      onChange={(_, val) => setForm((f) => ({ ...f, services: val }))}
+                      disabled={!canEdit || saving}
                       noOptionsText="Нет доступных услуг в филиале"
+                      renderOption={(props, option, { selected }) => (
+                        <li {...props} key={option.id}>
+                          <Checkbox
+                            icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                            checkedIcon={<CheckBoxIcon fontSize="small" />}
+                            style={{ marginRight: 8 }}
+                            checked={selected}
+                          />
+                          {option.name}
+                        </li>
+                      )}
+                      renderTags={(value, getTagProps) =>
+                        value.map((option, index) => (
+                          <Chip
+                            {...getTagProps({ index })}
+                            key={option.id}
+                            label={option.name}
+                            size="small"
+                          />
+                        ))
+                      }
                       renderInput={(params) => (
                         <TextField
                           {...params}
-                          placeholder="Выберите услугу"
+                          placeholder={
+                            form.services.length === 0 ? "Выберите услуги" : undefined
+                          }
                           size="small"
                         />
                       )}
                     />
                   </Stack>
 
-                  {/* isActive */}
+                  {/* isActive — применяется ко всем выбранным услугам */}
                   <FormControlLabel
                     control={
                       <Switch
@@ -399,13 +554,13 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                         onChange={(e) =>
                           setForm((f) => ({ ...f, isActive: e.target.checked }))
                         }
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         size="small"
                       />
                     }
                     label={
                       <Typography variant="body2">
-                        {form.isActive ? "Активна" : "Неактивна"}
+                        {form.isActive ? "Активны" : "Неактивны"}
                       </Typography>
                     }
                   />
@@ -426,13 +581,17 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                       <AppButton
                         variant="contained"
                         onClick={handleSave}
-                        disabled={saving || !form.serviceId}
+                        disabled={saving || form.services.length === 0}
                       >
                         {saving ? (
                           <Stack direction="row" alignItems="center" spacing={1}>
                             <CircularProgress size={16} />
-                            <span>Сохранение…</span>
+                            <span>
+                              Сохранение… {savedCount} / {form.services.length}
+                            </span>
                           </Stack>
+                        ) : form.services.length > 1 ? (
+                          `Добавить (${form.services.length})`
                         ) : (
                           "Добавить"
                         )}
@@ -451,7 +610,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
                 onClick={handleAddClick}
                 fullWidth
               >
-                Добавить услугу
+                Добавить услуги
               </AppButton>
             )}
           </>

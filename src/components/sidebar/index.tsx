@@ -60,7 +60,11 @@ import { useQuery } from "@tanstack/react-query";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
 import { useModuleGate } from "../../hooks/useModuleGate";
-import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
+import {
+  djangoQueryKeys,
+  DJANGO_LIST_STALE_TIME_MS,
+  DJANGO_POLL_INTERVAL_MS,
+} from "../../api/queryKeys";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
@@ -417,6 +421,12 @@ const SidebarSecondary: React.FC = () => {
     queryFn: ({ signal }) => getTasksSummary(orgId, signal),
     enabled: can_.tasks && !permissionsLoading,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
+    // Бейдж живёт в сайдбаре на всех страницах, а задачи закрывают несколько
+    // человек параллельно: без поллинга и рефетча по возврату на вкладку цифра
+    // «замерзала» до перезагрузки страницы, когда изменение пришло не из этой
+    // сессии (коллега закрыл задачу, поллер бэка создал повторяющуюся).
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
   });
   // Число в бейдже: все открытые задачи филиала (new + inProgress +
   // awaitingApproval — done/cancelled сюда не входят). Если среди них есть
@@ -605,7 +615,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Достижения (Django-mode only) */}
         {show("my-work") && can_.achievements && (
-          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Награды" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/achievements" icon={<EmojiEventsOutlined />} label="Мои достижения" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════

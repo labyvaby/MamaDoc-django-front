@@ -54,6 +54,7 @@ import {
 import { parseBackendError } from "../../../api/appointments";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
 import ScheduleCalendar from "./ScheduleCalendar";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 import ScheduleDayDrawer from "./ScheduleDayDrawer";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { useEmployeeColorMap } from "./employeeColors";
@@ -163,16 +164,25 @@ const RuleFormDrawer: React.FC<{
       prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b),
     );
 
-  const canSubmit =
-    (isEdit || employee != null) &&
-    weekdays.length > 0 &&
-    startTime < endTime &&
-    dateFrom.isValid() &&
-    dateTo.isValid() &&
-    !dateFrom.isAfter(dateTo) &&
-    (!hasLunch || lunchStart < lunchEnd);
+  // Порядок ключей = порядок полей: в первое проблемное уйдёт фокус.
+  const form = useFormValidation({
+    employee: isEdit || employee ? null : "Выберите сотрудника",
+    period:
+      !dateFrom.isValid() || !dateTo.isValid()
+        ? "Укажите период действия"
+        : dateFrom.isAfter(dateTo)
+          ? "Начало периода позже его конца"
+          : null,
+    weekdays: weekdays.length > 0 ? null : "Выберите хотя бы один день недели",
+    hours: startTime < endTime ? null : "Начало смены должно быть раньше конца",
+    lunch:
+      !hasLunch || lunchStart < lunchEnd
+        ? null
+        : "Начало обеда должно быть раньше его конца",
+  });
 
   const handleSubmit = async () => {
+    if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
@@ -243,14 +253,19 @@ const RuleFormDrawer: React.FC<{
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Сотрудник *
             </Typography>
-            <EmployeePicker value={employee} onChange={setEmployee} disabled={busy || isEdit} />
+            <Box ref={form.anchor("employee")}>
+              <EmployeePicker value={employee} onChange={setEmployee} disabled={busy || isEdit} />
+            </Box>
+            {form.errorOf("employee") && (
+              <Typography variant="caption" color="error">{form.errorOf("employee")}</Typography>
+            )}
           </Stack>
 
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Период действия
             </Typography>
-            <Stack direction="row" spacing={1}>
+            <Stack ref={form.anchor("period")} direction="row" spacing={1}>
               <CustomDatePicker
                 value={dateFrom}
                 onChange={(v) => v && setDateFrom(v)}
@@ -268,7 +283,7 @@ const RuleFormDrawer: React.FC<{
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Дни недели *
             </Typography>
-            <Stack direction="row" gap={0.5} flexWrap="wrap">
+            <Stack ref={form.anchor("weekdays")} direction="row" gap={0.5} flexWrap="wrap">
               {WEEKDAY_LABELS.map((label, d) => {
                 const active = weekdays.includes(d);
                 return (
@@ -306,6 +321,9 @@ const RuleFormDrawer: React.FC<{
                 onChange={(e) => setStartTime(e.target.value)}
                 sx={{ flex: 1 }}
                 disabled={busy}
+                error={Boolean(form.errorOf("hours"))}
+                helperText={form.errorOf("hours")}
+                ref={form.anchor("hours")}
               />
               <Typography color="text.secondary">—</Typography>
               <TextField
@@ -381,7 +399,7 @@ const RuleFormDrawer: React.FC<{
           fullWidth
           variant="contained"
           size="large"
-          disabled={!canSubmit || busy}
+          disabled={busy}
           onClick={handleSubmit}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
@@ -438,10 +456,18 @@ const ExceptionDrawer: React.FC<{
     }
   }, [open, initialDate, initialKind]);
 
-  const canSubmit =
-    employee != null && date.isValid() && (kind !== "extra" || startTime < endTime);
+  // Порядок ключей = порядок полей: в первое проблемное уйдёт фокус.
+  const form = useFormValidation({
+    employee: employee ? null : "Выберите сотрудника",
+    date: date.isValid() ? null : "Укажите дату",
+    hours:
+      kind !== "extra" || startTime < endTime
+        ? null
+        : "Начало смены должно быть раньше конца",
+  });
 
   const handleSubmit = async () => {
+    if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
@@ -499,7 +525,12 @@ const ExceptionDrawer: React.FC<{
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Сотрудник *
             </Typography>
-            <EmployeePicker value={employee} onChange={setEmployee} disabled={busy} />
+            <Box ref={form.anchor("employee")}>
+              <EmployeePicker value={employee} onChange={setEmployee} disabled={busy} />
+            </Box>
+            {form.errorOf("employee") && (
+              <Typography variant="caption" color="error">{form.errorOf("employee")}</Typography>
+            )}
           </Stack>
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
@@ -508,7 +539,15 @@ const ExceptionDrawer: React.FC<{
             <CustomDatePicker
               value={date}
               onChange={(v) => v && setDate(v)}
-              slotProps={{ textField: { size: "small", fullWidth: true } }}
+              slotProps={{
+                textField: {
+                  size: "small",
+                  fullWidth: true,
+                  error: Boolean(form.errorOf("date")),
+                  helperText: form.errorOf("date") ?? undefined,
+                  ref: form.anchor("date"),
+                },
+              }}
             />
           </Stack>
           <Stack spacing={0.5}>
@@ -540,6 +579,9 @@ const ExceptionDrawer: React.FC<{
                   onChange={(e) => setStartTime(e.target.value)}
                   sx={{ flex: 1 }}
                   disabled={busy}
+                  error={Boolean(form.errorOf("hours"))}
+                  helperText={form.errorOf("hours")}
+                  ref={form.anchor("hours")}
                 />
                 <Typography color="text.secondary">—</Typography>
                 <TextField
@@ -577,7 +619,7 @@ const ExceptionDrawer: React.FC<{
           variant="contained"
           size="large"
           onClick={handleSubmit}
-          disabled={!canSubmit || busy}
+          disabled={busy}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : "Добавить"}

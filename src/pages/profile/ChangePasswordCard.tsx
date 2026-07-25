@@ -13,6 +13,7 @@ import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import { AppCard } from "../../components/ui";
 import { AppButton } from "../../components/ui/AppButton";
 import { changePassword } from "../../api/auth";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { ApiError } from "../../api/client";
 
 const MIN_LENGTH = 8;
@@ -43,7 +44,11 @@ const ChangePasswordCard: React.FC = () => {
 
   const mismatch = confirm.length > 0 && next !== confirm;
   const tooShort = next.length > 0 && next.length < MIN_LENGTH;
-  const canSubmit = !busy && next.length >= MIN_LENGTH && next === confirm;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    next: next.length >= MIN_LENGTH ? null : `Минимум ${MIN_LENGTH} символов`,
+    confirm: next === confirm ? null : "Пароли не совпадают",
+  });
 
   const reset = () => {
     setNext("");
@@ -52,7 +57,8 @@ const ChangePasswordCard: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (busy) return;
+    if (!form.validate()) return;
     setBusy(true);
     setError(null);
     setSuccess(false);
@@ -91,10 +97,13 @@ const ChangePasswordCard: React.FC = () => {
             size="small"
             autoComplete="new-password"
             disabled={busy}
-            error={tooShort}
+            error={tooShort || Boolean(form.errorOf("next"))}
             helperText={
-              tooShort ? `Минимум ${MIN_LENGTH} символов` : "Минимум 8 символов"
+              tooShort || form.errorOf("next")
+                ? `Минимум ${MIN_LENGTH} символов`
+                : "Минимум 8 символов"
             }
+            ref={form.anchor("next")}
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
@@ -124,15 +133,16 @@ const ChangePasswordCard: React.FC = () => {
             size="small"
             autoComplete="new-password"
             disabled={busy}
-            error={mismatch}
-            helperText={mismatch ? "Пароли не совпадают" : " "}
+            error={mismatch || Boolean(form.errorOf("confirm"))}
+            helperText={mismatch || form.errorOf("confirm") ? "Пароли не совпадают" : " "}
+            ref={form.anchor("confirm")}
           />
 
           <Box>
             <AppButton
               type="submit"
               variant="contained"
-              disabled={!canSubmit}
+              disabled={busy}
               loading={busy}
             >
               {busy ? "Сохранение…" : "Изменить пароль"}

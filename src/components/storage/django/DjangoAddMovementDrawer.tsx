@@ -20,6 +20,7 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import { DjangoStockItem, DjangoStockMovement } from "../../../api/warehouse";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 
 const noSpinnersSx = {
     "& input[type=number]": { MozAppearance: "textfield" },
@@ -110,13 +111,25 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     // пустое поле суммы трактуем как 0. Для списания сумма обязательна.
     const isReceipt = mode === "in" || !!editingMovement;
 
+    // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+    const amountRaw = isReceipt && amount.trim() === "" ? 0 : parseFloat(amount);
+    const form = useFormValidation({
+        product:
+            product || selectedProduct || editingMovement ? null : "Выберите товар",
+        warehouse:
+            !showWarehouseSelect || selectedWarehouse ? null : "Выберите склад",
+        quantity: parseFloat(quantity) > 0 ? null : "Укажите количество больше нуля",
+        amount: !isNaN(amountRaw) && (isReceipt ? amountRaw >= 0 : amountRaw > 0)
+            ? null
+            : isReceipt
+              ? "Сумма не может быть отрицательной"
+              : "Укажите сумму списания",
+    });
+
     const handleSubmit = async () => {
+        if (!form.validate()) return;
         const qty = parseFloat(quantity);
         const amt = isReceipt && amount.trim() === "" ? 0 : parseFloat(amount);
-        if (isNaN(qty) || qty <= 0) return;
-        if (isNaN(amt) || (isReceipt ? amt < 0 : amt <= 0)) return;
-        if (!product && !selectedProduct && !editingMovement) return;
-        if (showWarehouseSelect && !selectedWarehouse) return;
 
         try {
             setLoading(true);
@@ -238,7 +251,14 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                             {option.isNew ? `Создать товар «${option.label}»` : option.label}
                                         </li>
                                     )}
-                                    renderInput={(params) => <TextField {...params} placeholder="Поиск товара..." size="small" />}
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            placeholder="Поиск товара..."
+                                            size="small"
+                                            {...form.field("product")}
+                                        />
+                                    )}
                                     noOptionsText="Товар не найден"
                                 />
                             )}
@@ -257,7 +277,12 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                     onChange={(_, v) => setSelectedWarehouse(v)}
                                     isOptionEqualToValue={(o, v) => o.id === v.id}
                                     renderInput={(params) => (
-                                        <TextField {...params} placeholder="Выберите склад..." size="small" />
+                                        <TextField
+                                            {...params}
+                                            placeholder="Выберите склад..."
+                                            size="small"
+                                            {...form.field("warehouse")}
+                                        />
                                     )}
                                     noOptionsText="Нет складов"
                                 />
@@ -296,6 +321,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                             inputProps={{ style: { textAlign: "center" }, min: 0 }}
                                             sx={{ flex: 1, ...noSpinnersSx }}
                                             InputProps={{ disableUnderline: true }}
+                                            ref={form.anchor("quantity")}
                                         />
                                         <Button
                                             size="small"
@@ -305,6 +331,11 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                             +
                                         </Button>
                                     </Stack>
+                                    {form.errorOf("quantity") && (
+                                        <Typography variant="caption" color="error" sx={{ mt: 0.5, display: "block" }}>
+                                            {form.errorOf("quantity")}
+                                        </Typography>
+                                    )}
                                 </Box>
 
                                 {/* Сумма */}
@@ -327,6 +358,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                             ),
                                         }}
                                         sx={{ ...noSpinnersSx }}
+                                        {...form.field("amount")}
                                     />
                                 </Box>
                             </Stack>
@@ -428,7 +460,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                     fullWidth
                     size="large"
                     color={accentColor}
-                    disabled={loading || !isValid}
+                    disabled={loading}
                     onClick={handleSubmit}
                 >
                     {loading ? <CircularProgress size={24} color="inherit" /> : editingMovement ? "Сохранить" : "Подтвердить"}

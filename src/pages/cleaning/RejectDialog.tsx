@@ -15,6 +15,7 @@ import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { getErrorMessage } from "../../api/client";
 import { rejectCleaningRecord, type CleaningRecord } from "../../api/cleaning";
 
@@ -35,16 +36,23 @@ const RejectDialog: React.FC<RejectDialogProps> = ({ record, onClose, onSuccess 
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  const v = useFormValidation({
+    reason: reason.trim() ? null : "Укажите причину отклонения",
+  });
+
   // Сброс формы при каждом открытии.
   React.useEffect(() => {
     if (record !== null) {
       setReason("");
+      v.reset();
       setError(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record]);
 
   const handleSubmit = async () => {
-    if (!record || !reason.trim()) return;
+    if (!record) return;
+    if (!v.validate()) return;
     setBusy(true);
     setError(null);
     try {
@@ -84,7 +92,7 @@ const RejectDialog: React.FC<RejectDialogProps> = ({ record, onClose, onSuccess 
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={busy}
-            helperText="Причина обязательна — сотрудник увидит её у записи"
+            {...v.field("reason", "Причина обязательна — сотрудник увидит её у записи")}
           />
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
@@ -97,7 +105,7 @@ const RejectDialog: React.FC<RejectDialogProps> = ({ record, onClose, onSuccess 
           variant="contained"
           color="error"
           onClick={handleSubmit}
-          disabled={busy || !reason.trim()}
+          disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Отклонение…" : "Отклонить"}

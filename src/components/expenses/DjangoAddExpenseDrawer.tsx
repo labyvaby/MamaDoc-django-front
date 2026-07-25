@@ -39,6 +39,7 @@ import {
 } from "../../api/expenses";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../api/staff";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { useFormValidation } from "../../hooks/useFormValidation";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -214,23 +215,10 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setError(null);
+    if (!form.validate()) return;
     const trimmedName = name.trim();
-    if (!trimmedName) { setError("Название обязательно"); return; }
-    if (!categoryId) { setError("Выберите категорию"); return; }
     const cash = parseFloat(cashAmount.replace(",", ".")) || 0;
     const card = parseFloat(cardAmount.replace(",", ".")) || 0;
-    if (cash <= 0 && card <= 0) {
-      setError("Укажите хотя бы одну ненулевую сумму (наличные или карта)");
-      return;
-    }
-    if (needsEmployee && !employeeValue) {
-      setError("Выберите сотрудника для данной категории");
-      return;
-    }
-    if (!expenseDate || !expenseDate.isValid()) {
-      setError("Укажите корректную дату");
-      return;
-    }
 
     setBusy(true);
     try {
@@ -241,7 +229,8 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
         name: trimmedName,
         cashAmount: cash > 0 ? cash.toFixed(2) : undefined,
         cardAmount: card > 0 ? card.toFixed(2) : undefined,
-        expenseDate: expenseDate.format("YYYY-MM-DD"),
+        // Непустая корректная дата гарантирована form.validate() выше.
+        expenseDate: expenseDate!.format("YYYY-MM-DD"),
         description: description.trim() || undefined,
         employeeId: employeeValue?.id ?? null,
       });
@@ -273,9 +262,18 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   const cashVal = parseFloat(cashAmount.replace(",", ".")) || 0;
   const cardVal = parseFloat(cardAmount.replace(",", ".")) || 0;
   const total = cashVal + cardVal;
-  const canSubmit = Boolean(
-    name.trim() && categoryId && (cashVal > 0 || cardVal > 0) && (!needsEmployee || employeeValue),
-  );
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    expenseDate:
+      expenseDate && expenseDate.isValid() ? null : "Укажите корректную дату",
+    name: name.trim() ? null : "Введите название расхода",
+    categoryId: categoryId ? null : "Выберите категорию",
+    employee: !needsEmployee || employeeValue ? null : "Выберите сотрудника для этой категории",
+    cashAmount:
+      cashVal > 0 || cardVal > 0
+        ? null
+        : "Укажите сумму — наличными или картой",
+  });
 
   const drawerContent = (
     <>
@@ -361,7 +359,15 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               value={expenseDate}
               onChange={(v) => setExpenseDate(v)}
               disabled={busy}
-              slotProps={{ textField: { size: "small", fullWidth: true } }}
+              slotProps={{
+                textField: {
+                  size: "small",
+                  fullWidth: true,
+                  error: Boolean(form.errorOf("expenseDate")),
+                  helperText: form.errorOf("expenseDate") ?? undefined,
+                  ref: form.anchor("expenseDate"),
+                },
+              }}
             />
           </Stack>
 
@@ -378,6 +384,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               onChange={(e) => { setError(null); setName(e.target.value); }}
               disabled={busy}
               inputProps={{ maxLength: 500 }}
+              {...form.field("name")}
             />
           </Stack>
 
@@ -398,6 +405,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               }}
               SelectProps={{ displayEmpty: true }}
               disabled={busy || categoriesQuery.isLoading}
+              {...form.field("categoryId")}
             >
               <MenuItem value="">
                 <Typography variant="body2" color="text.secondary">
@@ -466,6 +474,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                     {...params}
                     size="small"
                     placeholder="Введите имя сотрудника..."
+                    {...form.field("employee")}
                     InputProps={{
                       ...params.InputProps,
                       endAdornment: (
@@ -511,6 +520,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                   }}
                   disabled={busy}
                   placeholder="0.00"
+                  {...form.field("cashAmount")}
                 />
               </Stack>
 
@@ -579,7 +589,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={busy || !canSubmit}
+            disabled={busy}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             {busy ? "Сохранение…" : "Сохранить"}

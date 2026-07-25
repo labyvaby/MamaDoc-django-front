@@ -17,6 +17,7 @@ import { useParams } from "react-router";
 
 import { getRateContext, postRate, type RateContext } from "../../api/reviews";
 import { ApiError } from "../../api/client";
+import { useFormValidation } from "../../hooks/useFormValidation";
 
 const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
   <Box
@@ -85,8 +86,13 @@ const PublicRatePage: React.FC = () => {
     }
   };
 
+  const v = useFormValidation({
+    comment: comment.trim() ? null : "Напишите, что можно улучшить",
+  });
+
   const submitComment = async () => {
     if (submitting) return;
+    if (!v.validate()) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -208,13 +214,14 @@ const PublicRatePage: React.FC = () => {
           onChange={(e) => setComment(e.target.value)}
           disabled={submitting}
           sx={{ mb: 2 }}
+          {...v.field("comment")}
         />
         <Button
           fullWidth
           variant="contained"
           size="large"
           onClick={submitComment}
-          disabled={submitting || !comment.trim()}
+          disabled={submitting}
           startIcon={submitting ? <CircularProgress size={18} /> : undefined}
         >
           Отправить

@@ -46,7 +46,8 @@ export interface Task {
   assigneeId: number | null;
   assigneeName: string | null;
   priority: TaskPriority;
-  dueDate: string | null; // YYYY-MM-DD
+  /** `YYYY-MM-DD` либо ISO-datetime, когда срок задан с временем (см. meta.parseDue). */
+  dueDate: string | null;
   status: TaskStatus;
   source: TaskSource;
   approvedById: number | null;
@@ -363,8 +364,11 @@ export function getTasks(
       list = list.filter((t) => t.title.toLowerCase().includes(s));
     }
     // Диапазоны включительны; задачи без due_date под due-фильтр не попадают.
-    if (filters.dueFrom) list = list.filter((t) => t.dueDate != null && t.dueDate >= filters.dueFrom!);
-    if (filters.dueTo) list = list.filter((t) => t.dueDate != null && t.dueDate <= filters.dueTo!);
+    // Срез до YYYY-MM-DD: срок может быть datetime, тогда «<= dueTo» по строке
+    // отрезал бы задачи с временем в последний день диапазона.
+    const dueDay = (t: Task) => t.dueDate?.slice(0, 10) ?? null;
+    if (filters.dueFrom) list = list.filter((t) => (dueDay(t) ?? "") >= filters.dueFrom! && t.dueDate != null);
+    if (filters.dueTo) list = list.filter((t) => t.dueDate != null && dueDay(t)! <= filters.dueTo!);
     if (filters.createdFrom) list = list.filter((t) => t.createdAt.slice(0, 10) >= filters.createdFrom!);
     if (filters.createdTo) list = list.filter((t) => t.createdAt.slice(0, 10) <= filters.createdTo!);
     if (filters.ordering === "created") {

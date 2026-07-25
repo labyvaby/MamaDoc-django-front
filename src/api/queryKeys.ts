@@ -206,6 +206,9 @@ export const djangoQueryKeys = {
       ["django", "vaccinations", "vaccines", params] as const,
     batches: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "batches", params] as const,
+    // История списаний одной партии (порча/срок).
+    batchWriteOffs: (batchId: number) =>
+      ["django", "vaccinations", "batches", batchId, "write-offs"] as const,
     records: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "records", params] as const,
     record: (id: number) => ["django", "vaccinations", "records", id] as const,

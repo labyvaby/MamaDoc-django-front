@@ -20,6 +20,7 @@ import {
   type CashboxShiftSummary,
 } from "../../../../api/cashboxShifts";
 import { djangoQueryKeys } from "../../../../api/queryKeys";
+import { useFormValidation } from "../../../../hooks/useFormValidation";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -84,11 +85,16 @@ const ShiftCloseDialog: React.FC<Props> = ({
     },
   });
 
+  // Фактическая сумма обязательна: без неё смену не закрыть.
+  const form = useFormValidation({
+    actualCash:
+      actualCash !== "" && !isNaN(actualNum) && actualNum >= 0
+        ? null
+        : "Укажите фактическую сумму ≥ 0",
+  });
+
   const handleSubmit = () => {
-    if (isNaN(actualNum) || actualCash === "" || actualNum < 0) {
-      setCashError("Укажите фактическую сумму ≥ 0");
-      return;
-    }
+    if (!form.validate()) return;
     setCashError(null);
     setServerError(null);
     mutation.mutate();
@@ -165,8 +171,13 @@ const ShiftCloseDialog: React.FC<Props> = ({
               setActualCash(e.target.value);
               setCashError(null);
             }}
-            error={!!cashError}
-            helperText={cashError ?? "Пересчитайте наличные и введите сумму"}
+            error={Boolean(cashError) || Boolean(form.errorOf("actualCash"))}
+            helperText={
+              cashError ??
+              form.errorOf("actualCash") ??
+              "Пересчитайте наличные и введите сумму"
+            }
+            ref={form.anchor("actualCash")}
             disabled={mutation.isPending}
           />
 
@@ -220,7 +231,7 @@ const ShiftCloseDialog: React.FC<Props> = ({
           size="small"
           color="error"
           onClick={handleSubmit}
-          disabled={mutation.isPending || actualCash === ""}
+          disabled={mutation.isPending}
           startIcon={mutation.isPending ? <CircularProgress size={14} /> : undefined}
         >
           Закрыть смену

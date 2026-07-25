@@ -15,11 +15,11 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AttachFileOutlined from "@mui/icons-material/AttachFileOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import { Controller, useForm } from "react-hook-form";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import dayjs, { type Dayjs } from "dayjs";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { AppButton, CustomDatePicker } from "../ui";
+import { AppButton } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
+import DueDateField, { type DueValue } from "./DueDateField";
 import {
   createTask,
   getTaskCategories,
@@ -33,15 +33,18 @@ import {
   djangoQueryKeys,
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../api/queryKeys";
-import { guessCategoryId, TASK_PRIORITY_OPTIONS } from "../../pages/tasks/meta";
+import { guessCategoryId, serializeDue, TASK_PRIORITY_OPTIONS } from "../../pages/tasks/meta";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useInvalidateTasks } from "../../hooks/useInvalidateTasks";
+import { useFormValidation } from "../../hooks/useFormValidation";
 
 type FormValues = {
   title: string;
   description: string;
   categoryId: number | "";
   assigneeId: number | "";
-  dueDate: Dayjs | null;
+  /** Дата + необязательное время (см. DueDateField / serializeDue). */
+  due: DueValue;
   priority: TaskPriority | "";
 };
 
@@ -60,7 +63,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   canManage,
   initialFile = null,
 }) => {
-  const queryClient = useQueryClient();
+  const invalidateTasks = useInvalidateTasks();
   const orgId = useApiOrgId();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [file, setFile] = React.useState<File | null>(null);
@@ -87,10 +90,23 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       description: "",
       categoryId: "",
       assigneeId: "",
-      dueDate: null,
+      due: { date: null, time: null },
       priority: "",
     },
   });
+
+  // Валидацию ведёт react-hook-form; хук нужен только чтобы увести фокус
+  // в первое незаполненное поле — у Controller ref не доходит до инпута.
+  const focus = useFormValidation({
+    title: errors.title?.message ?? null,
+    categoryId: errors.categoryId?.message ?? null,
+  });
+
+  /** Порядок = порядок полей в форме: фокус уходит в первое проблемное. */
+  const focusFirstInvalid = (invalid: typeof errors) => {
+    const first = (["title", "categoryId"] as const).find((k) => invalid[k]);
+    if (first) focus.focusField(first);
+  };
 
   const categoriesQuery = useQuery({
     queryKey: djangoQueryKeys.tasks.categories,
@@ -145,7 +161,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
           description: values.description.trim() || undefined,
           categoryId: values.categoryId as number,
           assigneeId: values.assigneeId === "" ? undefined : (values.assigneeId as number),
-          dueDate: values.dueDate ? values.dueDate.format("YYYY-MM-DD") : undefined,
+          dueDate: serializeDue(values.due.date, values.due.time) ?? undefined,
           priority: canManage && values.priority !== "" ? values.priority : undefined,
         },
         orgId,
@@ -154,7 +170,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       return task;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
+      invalidateTasks();
       handleClose();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось создать заявку"),
@@ -194,7 +210,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
 
       <Box
         component="form"
-        onSubmit={handleSubmit((v) => mutation.mutate(v))}
+        onSubmit={handleSubmit((v) => mutation.mutate(v), focusFirstInvalid)}
         sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5, display: "flex", flexDirection: "column", gap: 2 }}
       >
         {error && <Alert severity="error">{error}</Alert>}
@@ -253,6 +269,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
               autoFocus
               error={!!errors.title}
               helperText={errors.title?.message}
+              ref={focus.anchor("title")}
             />
           )}
         />
@@ -282,6 +299,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
               required
               fullWidth
               error={!!errors.categoryId}
+              ref={focus.anchor("categoryId")}
               helperText={
                 errors.categoryId?.message ??
                 (autoCategory ? "Категория подставлена автоматически — проверьте" : undefined)
@@ -325,17 +343,10 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
         />
 
         <Controller
-          name="dueDate"
+          name="due"
           control={control}
           render={({ field }) => (
-            <CustomDatePicker
-              label="Желаемый срок"
-              value={field.value}
-              onChange={field.onChange}
-              format="DD.MM.YYYY"
-              minDate={dayjs()}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
+            <DueDateField label="Желаемый срок" value={field.value} onChange={field.onChange} />
           )}
         />
 
@@ -395,7 +406,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
           variant="contained"
           sx={{ flex: 1 }}
           disabled={isSubmitting || mutation.isPending}
-          onClick={handleSubmit((v) => mutation.mutate(v))}
+          onClick={handleSubmit((v) => mutation.mutate(v), focusFirstInvalid)}
         >
           Создать заявку
         </AppButton>

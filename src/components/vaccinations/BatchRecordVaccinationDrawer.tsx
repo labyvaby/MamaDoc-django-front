@@ -16,6 +16,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { AppButton, CustomDatePicker } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { createRecord, getBatches, type VaccineBatch } from "../../api/vaccinations";
@@ -134,11 +135,23 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, batchId } : r)));
   const removeRow = (idx: number) => setRows((prev) => prev.filter((_, i) => i !== idx));
 
-  const allHaveBatch = rows.length > 0 && rows.every((r) => r.batchId !== "");
-  const canSave = branchId != null && patient != null && allHaveBatch && !busy;
+  // По строке на дозу: у каждой должна быть выбрана партия.
+  const schema: Record<string, string | null> = {
+    rows: rows.length > 0 ? null : "Добавьте хотя бы одну дозу",
+  };
+  rows.forEach((r, idx) => {
+    schema[`batch-${idx}`] =
+      r.batchId !== ""
+        ? null
+        : (batchesByVaccine.get(r.vaccineId) ?? []).length === 0
+          ? `${r.vaccineName}: нет партий на складе — уберите строку`
+          : `${r.vaccineName}: выберите партию`;
+  });
+  const form = useFormValidation(schema);
 
   const submit = async () => {
-    if (!patient || branchId == null) return;
+    if (!patient || branchId == null || busy) return;
+    if (!form.validate()) return;
     setBusy(true);
     setError(null);
     const iso = (administeredAt ?? dayjs()).toISOString();
@@ -286,6 +299,7 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
                     fullWidth
                     value={r.batchId === "" ? "" : String(r.batchId)}
                     onChange={(e) => setRowBatch(idx, e.target.value === "" ? "" : Number(e.target.value))}
+                    {...form.field(`batch-${idx}`)}
                   >
                     {list.map((b) => (
                       <MenuItem key={b.id} value={String(b.id)}>
@@ -298,7 +312,11 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
             );
           })}
           {rows.length === 0 && (
-            <Typography variant="body2" color="text.disabled">
+            <Typography
+              ref={form.anchor("rows")}
+              variant="body2"
+              color={form.errorOf("rows") ? "error.main" : "text.disabled"}
+            >
               Нет доз для ввода
             </Typography>
           )}
@@ -309,7 +327,12 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
         <AppButton variant="outlined" onClick={onClose} sx={{ flex: 1 }} disabled={busy}>
           Отмена
         </AppButton>
-        <AppButton variant="contained" sx={{ flex: 1 }} disabled={!canSave} onClick={submit}>
+        <AppButton
+          variant="contained"
+          sx={{ flex: 1 }}
+          disabled={busy || branchId == null || patient == null}
+          onClick={submit}
+        >
           Сохранить{rows.length ? ` (${rows.length})` : ""}
         </AppButton>
       </Box>

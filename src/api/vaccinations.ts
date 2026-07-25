@@ -21,6 +21,15 @@ import { apiRequest } from "./client";
 
 export const VACCINATIONS_USE_MOCKS = false;
 
+/**
+ * Списание доз партии (порча / истёк срок / холодовая цепь).
+ * Эндпоинта `POST /vaccinations/batches/<id>/write-off/` в гайде нет — тикет
+ * `MamaDoc/backend_ticket_vaccinations_batch_writeoff.md`. Пока флаг выключен,
+ * кнопка «Списать» и колонка «списано» скрыты; вся логика уже на месте и
+ * включается одним значением, когда бэк ответит.
+ */
+export const VACCINATION_BATCH_WRITEOFF_ENABLED = false;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /**
@@ -87,6 +96,12 @@ export interface VaccineBatch {
   receivedAt: string; // YYYY-MM-DD
   supplier: string;
   notes: string;
+  /**
+   * Всего списано доз по партии (порча/срок). Поле запрошено тикетом
+   * `backend_ticket_vaccinations_batch_writeoff.md` — до его реализации в
+   * ответах отсутствует, поэтому необязательное (UI трактует undefined как 0).
+   */
+  writtenOff?: number;
 }
 
 export interface CreateBatchPayload {
@@ -108,6 +123,41 @@ export interface CreateBatchPayload {
 }
 
 export type UpdateBatchPayload = Partial<Omit<CreateBatchPayload, "vaccineId">>;
+
+/**
+ * Причина списания доз. Набор slug'ов — предложение фронта (тикет
+ * `backend_ticket_vaccinations_batch_writeoff.md`, п. 2.1), бэк его пока не
+ * подтвердил; тип терпим к строке, подписи — в `pages/vaccinations/meta.tsx`.
+ */
+export type BatchWriteOffReason =
+  | "expired"
+  | "cold_chain"
+  | "damaged"
+  | "broken"
+  | "lost"
+  | "other"
+  | string;
+
+export interface WriteOffBatchPayload {
+  /** Целое > 0, не больше remaining. */
+  quantity: number;
+  reason: BatchWriteOffReason;
+  /** YYYY-MM-DD; без него бэк ставит сегодня. */
+  occurredAt?: string;
+  notes?: string;
+}
+
+/** Строка истории списаний партии. */
+export interface BatchWriteOff {
+  id: number;
+  batchId: number;
+  quantity: number;
+  reason: BatchWriteOffReason;
+  occurredAt: string; // YYYY-MM-DD
+  notes: string;
+  createdByName: string;
+  createdAt: string;
+}
 
 /**
  * Место укола. Гайд фиксирует только "left_arm" — остальные значения
@@ -285,6 +335,7 @@ let mockVaccineSeq = 1;
 let mockBatchSeq = 100;
 let mockRecordSeq = 1000;
 let mockSlotSeq = 5000;
+let mockWriteOffSeq = 700;
 
 const mockVaccines: Vaccine[] = [
   {
@@ -339,8 +390,11 @@ const mockBatches: VaccineBatch[] = [
     receivedAt: "2026-01-10",
     supplier: "Фармимпекс",
     notes: "",
+    writtenOff: 0,
   },
 ];
+
+const mockWriteOffs: BatchWriteOff[] = [];
 
 const mockRecords: VaccinationRecord[] = [];
 
@@ -522,6 +576,7 @@ export function createBatch(
       receivedAt: payload.receivedAt ?? today(),
       supplier: payload.supplier ?? "",
       notes: payload.notes ?? "",
+      writtenOff: 0,
     };
     mockBatches.push(batch);
     return mockDelay(batch);
@@ -547,6 +602,63 @@ export function updateBatch(
     method: "PATCH",
     body: payload,
   });
+}
+
+/**
+ * Списать дозы партии (порча, истёк срок, холодовая цепь). Право
+ * `vaccinations.manage`. Ответ — обновлённая партия (remaining уже уменьшен,
+ * writtenOff увеличен). Ошибка «списываем больше остатка» приходит текстом от
+ * бэка и показывается пользователем как есть.
+ *
+ * ⚠ Эндпоинт запрошен тикетом, но бэком пока НЕ реализован — вызывать только
+ * под флагом VACCINATION_BATCH_WRITEOFF_ENABLED.
+ */
+export function writeOffBatch(
+  batchId: number,
+  payload: WriteOffBatchPayload,
+  organizationId?: number,
+): Promise<VaccineBatch> {
+  if (VACCINATIONS_USE_MOCKS) {
+    const b = mockBatches.find((x) => x.id === batchId);
+    if (!b) return Promise.reject(new Error("Партия не найдена"));
+    if (payload.quantity > b.remaining) {
+      return Promise.reject(
+        new Error(`Нельзя списать ${payload.quantity} доз: в партии осталось ${b.remaining}`),
+      );
+    }
+    b.remaining -= payload.quantity;
+    b.writtenOff = (b.writtenOff ?? 0) + payload.quantity;
+    mockWriteOffs.push({
+      id: mockWriteOffSeq++,
+      batchId,
+      quantity: payload.quantity,
+      reason: payload.reason,
+      occurredAt: payload.occurredAt ?? today(),
+      notes: payload.notes ?? "",
+      createdByName: "Тестовый пользователь",
+      createdAt: nowIso(),
+    });
+    return mockDelay(b);
+  }
+  return apiRequest<VaccineBatch>(
+    withOrg(`/vaccinations/batches/${batchId}/write-off/`, organizationId),
+    { method: "POST", body: payload },
+  );
+}
+
+/** История списаний партии (право `vaccinations.view`). */
+export function getBatchWriteOffs(
+  batchId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<BatchWriteOff[]> {
+  if (VACCINATIONS_USE_MOCKS) {
+    return mockDelay(mockWriteOffs.filter((w) => w.batchId === batchId));
+  }
+  return apiRequest<{ results: BatchWriteOff[] } | BatchWriteOff[]>(
+    withOrg(`/vaccinations/batches/${batchId}/write-offs/`, organizationId),
+    { signal },
+  ).then(toList);
 }
 
 // ── API: записи о прививках ────────────────────────────────────────────────────

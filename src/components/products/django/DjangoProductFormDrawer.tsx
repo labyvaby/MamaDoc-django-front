@@ -27,6 +27,7 @@ import {
     uploadProductImage,
 } from "../../../api/warehouse";
 import { ApiError } from "../../../api/client";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 import { AppCard } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
 
@@ -102,7 +103,9 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     const [photoFile, setPhotoFile] = React.useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
     const [busy, setBusy] = React.useState(false);
-    const [touched, setTouched] = React.useState(false);
+    const form = useFormValidation({
+        name: values.name.trim() ? null : "Введите название товара",
+    });
 
     React.useEffect(() => {
         if (open) {
@@ -125,7 +128,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
             setPhotoFile(null);
             setPreviewUrl(null);
             setBusy(false);
-            setTouched(false);
+            form.reset();
         } else if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
@@ -139,11 +142,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     };
 
     const handleSubmit = async () => {
-        setTouched(true);
-        if (!values.name.trim()) {
-            notify?.({ type: "error", message: "Название товара обязательно" });
-            return;
-        }
+        if (!form.validate()) return;
 
         setBusy(true);
         try {
@@ -285,8 +284,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 value={values.name}
                                 onChange={(e) => setValues((s) => ({ ...s, name: e.target.value }))}
                                 fullWidth
-                                error={touched && !values.name.trim()}
-                                helperText={touched && !values.name.trim() ? "Обязательное поле" : ""}
+                                {...form.field("name")}
                             />
                         </Stack>
 
@@ -440,7 +438,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                         <Button
                             variant="contained"
                             onClick={handleSubmit}
-                            disabled={busy || !values.name.trim()}
+                            disabled={busy}
                         >
                             {busy ? (
                                 <Stack direction="row" alignItems="center" spacing={1}>

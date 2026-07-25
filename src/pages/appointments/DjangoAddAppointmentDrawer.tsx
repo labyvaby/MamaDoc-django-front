@@ -41,6 +41,7 @@ import { formatKGS } from "../../utility/format";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
   createAppointment,
   getAppointments,
@@ -190,7 +191,6 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [productsLoading, setProductsLoading] = React.useState(false);
   const [complaints, setComplaints] = React.useState("");
   const [adminComment, setAdminComment] = React.useState("");
-  const [touched, setTouched] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
@@ -218,7 +218,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       setProductRows([]);
       setComplaints("");
       setAdminComment("");
-      setTouched(false);
+      form.reset();
       setSaving(false);
       setSaveError(null);
       setConfirmCloseOpen(false);
@@ -376,13 +376,22 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     const p = products.find((x) => x.id === r.productId);
     return p ? parseQty(r.quantity) > p.stock : false;
   });
-  const isValid =
-    !!scheduledAt &&
-    (isBooking || !!selectedPatient) &&
-    (!isBooking || !!adminComment.trim()) &&
-    validRows.length > 0 &&
-    incompatibleRows.length === 0 &&
-    overstockedRows.length === 0;
+  // Порядок ключей = порядок полей в форме: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    scheduledAt: scheduledAt ? null : "Выберите дату и время",
+    patient: isBooking || selectedPatient ? null : "Выберите пациента",
+    services:
+      validRows.length === 0
+        ? "Добавьте хотя бы одну услугу с исполнителем"
+        : incompatibleRows.length > 0
+          ? "Исполнитель не оказывает выбранную услугу"
+          : null,
+    products:
+      overstockedRows.length > 0 ? "Количество товара больше остатка на складе" : null,
+    adminComment:
+      isBooking && !adminComment.trim() ? "Опишите бронь в комментарии" : null,
+  });
+  const touched = form.attempted;
 
   // ── totals (services + goods share one bill) ───────────────────────────────
   const totalCost = React.useMemo(() => {
@@ -402,11 +411,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     // Guard от повторного входа: кнопка блокируется через state с задержкой
     // на ре-рендер, быстрый двойной клик успел бы отправить два POST.
     if (saving) return;
-    setTouched(true);
     // Без активного филиала бэкенд отклонит запрос (branchId обязателен) —
     // не даём отправить форму, предупреждение уже показано сверху.
     if (!activeBranch) return;
-    if (!isValid) return;
+    // Показывает ошибки и уводит фокус в первое незаполненное поле.
+    if (!form.validate()) return;
     // У пациента уже есть активная запись на это время — создание только
     // через явное подтверждение (диалог вызовет performSave сам).
     if (duplicateAppointments.length > 0) {
@@ -586,8 +595,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                       InputProps: {
                         sx: { fontSize: "1.1rem", fontWeight: 500 },
                       },
-                      error: touched && !scheduledAt,
-                      helperText: touched && !scheduledAt ? "Выберите дату и время" : "",
+                      error: Boolean(form.errorOf("scheduledAt")),
+                      helperText: form.errorOf("scheduledAt") ?? "",
+                      ref: form.anchor("scheduledAt"),
                     },
                   }}
                 />
@@ -673,7 +683,6 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                   onClick={() => {
                     if (!isBooking) setSelectedPatient(null);
                     setIsBooking(!isBooking);
-                    setTouched(true);
                   }}
                 >
                   <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -756,10 +765,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                       {...params}
                       placeholder="Поиск по ФИО или телефону"
                       fullWidth
-                      error={touched && !isBooking && !selectedPatient}
-                      helperText={
-                        touched && !isBooking && !selectedPatient ? "Выберите пациента" : ""
-                      }
+                      error={Boolean(form.errorOf("patient"))}
+                      helperText={form.errorOf("patient") ?? ""}
+                      ref={form.anchor("patient")}
                     />
                   )}
                 />
@@ -813,7 +821,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             {/* ── 3. Услуги (показывается только если выбран пациент или бронирование) ── */}
             {(selectedPatient || isBooking) && (
               <>
-                <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
+                <Card
+                  ref={form.anchor("services")}
+                  variant="outlined"
+                  sx={{ bgcolor: "background.paper" }}
+                >
                   <CardContent sx={{ p: 2 }}>
                     <Stack spacing={2}>
                       <Stack
@@ -1032,9 +1044,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         + Добавить услугу
                       </Button>
 
-                      {touched && validRows.length === 0 && (
+                      {form.errorOf("services") && (
                         <Alert severity="error" sx={{ py: 0 }}>
-                          Добавьте хотя бы одну услугу с исполнителем
+                          {form.errorOf("services")}
                         </Alert>
                       )}
 
@@ -1077,7 +1089,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 </Card>
 
                 {/* ── 3b. Товары (необязательно) ── */}
-                <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
+                <Card
+                  ref={form.anchor("products")}
+                  variant="outlined"
+                  sx={{ bgcolor: "background.paper" }}
+                >
                   <CardContent sx={{ p: 2 }}>
                     <Stack spacing={2}>
                       <Stack
@@ -1262,12 +1278,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     placeholder={
                       isBooking ? "Причина бронирования (обязательно)" : "Необязательно"
                     }
-                    error={touched && isBooking && !adminComment.trim()}
-                    helperText={
-                      touched && isBooking && !adminComment.trim()
-                        ? "Обязательное поле для бронирования"
-                        : ""
-                    }
+                    {...form.field("adminComment")}
                   />
                 </Stack>
               </>
@@ -1293,7 +1304,6 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             <Button
               variant="contained"
               disabled={saving || data.loading || !activeBranch}
-              onMouseEnter={() => { if (!touched) setTouched(true); }}
               onClick={handleSave}
               startIcon={
                 saving ? <CircularProgress size={16} color="inherit" /> : undefined

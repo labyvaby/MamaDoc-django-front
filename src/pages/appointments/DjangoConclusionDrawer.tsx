@@ -49,6 +49,8 @@ import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
+import { useFormValidation } from "../../hooks/useFormValidation";
+
 import {
   upsertConclusion,
   updateConclusion,
@@ -313,7 +315,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [internalComment, setInternalComment] = React.useState("");
   const [status, setStatus] = React.useState<ConclusionStatus>("draft");
 
-  const [touched, setTouched] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
@@ -364,7 +365,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         internalComment: "",
         status: "draft",
       });
-      setTouched(false);
+      vitals.reset();
+      completion.reset();
       setSaving(false);
       setSaveError(null);
       hydratedRef.current = false;
@@ -574,22 +576,21 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   };
 
   // ── validation ────────────────────────────────────────────────────────────
-  const vitalsError = touched ? validateVitals(weightKg, heightCm, temperature) : null;
-  const completedWithoutText =
-    touched && status === "completed" && !conclusionText.trim();
-
-  const isValid =
-    !vitalsError && !completedWithoutText;
+  // Черновик требует только корректных витальных показателей, «Завершить» —
+  // ещё и текста заключения: поэтому две независимые проверки.
+  const vitals = useFormValidation({
+    vitals: validateVitals(weightKg, heightCm, temperature),
+  });
+  const completion = useFormValidation({
+    conclusionText: conclusionText.trim()
+      ? null
+      : "Заполните заключение перед завершением",
+  });
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSave = async (targetStatus: ConclusionStatus) => {
-    setTouched(true);
-    const vErr = validateVitals(weightKg, heightCm, temperature);
-    if (vErr) { setSaveError(vErr); return; }
-    if (targetStatus === "completed" && !conclusionText.trim()) {
-      setSaveError("Заполните поле «Заключение» перед завершением");
-      return;
-    }
+    if (!vitals.validate()) return;
+    if (targetStatus === "completed" && !completion.validate()) return;
 
     setSaveError(null);
     setSaving(true);
@@ -992,7 +993,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {!readOnly && (
           <>
           {/* ── vitals (степперы как в оригинале) ── */}
-          <Paper variant="outlined" sx={{ p: 1.5 }}>
+          <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
             <Stack direction="row" spacing={1.5}>
               <VitalStepper
                 label="Рост"
@@ -1025,9 +1026,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 disabled={readOnly}
               />
             </Stack>
-            {vitalsError && (
+            {vitals.errorOf("vitals") && (
               <Alert severity="error" sx={{ py: 0, mt: 1 }}>
-                {vitalsError}
+                {vitals.errorOf("vitals")}
               </Alert>
             )}
           </Paper>
@@ -1176,12 +1177,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               fullWidth
               size="small"
               placeholder={readOnly ? "—" : "Текст заключения"}
-              error={!!completedWithoutText}
-              helperText={
-                completedWithoutText
-                  ? "Заполните заключение для завершения"
-                  : ""
-              }
+              {...completion.field("conclusionText", "")}
             />
           </Stack>
 
@@ -1352,7 +1348,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             <>
               <Button
                 variant="outlined"
-                disabled={saving || !isValid}
+                disabled={saving}
                 onClick={() => handleSave("draft")}
                 startIcon={
                   saving ? (
@@ -1365,7 +1361,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               <Button
                 variant="contained"
                 color="success"
-                disabled={saving || !conclusionText.trim()}
+                disabled={saving}
                 onClick={() => handleSave("completed")}
                 startIcon={
                   saving ? (

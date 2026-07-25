@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   ButtonBase,
+  Chip,
   Fab,
   IconButton,
   MenuItem,
@@ -17,7 +18,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { alpha, useTheme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -35,7 +36,12 @@ import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
+import PriorityHighOutlined from "@mui/icons-material/PriorityHighOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
+import SwapVertOutlined from "@mui/icons-material/SwapVertOutlined";
+import TableRowsOutlined from "@mui/icons-material/TableRowsOutlined";
+import TodayOutlined from "@mui/icons-material/TodayOutlined";
+import ViewKanbanOutlined from "@mui/icons-material/ViewKanbanOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
 import {
@@ -53,6 +59,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useInvalidateTasks } from "../../hooks/useInvalidateTasks";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { subtleBg } from "../../theme/uiHelpers";
 import {
@@ -77,16 +84,32 @@ import { TaskPriorityChip, TaskStatusChip } from "../../components/tasks/TaskChi
 import CreateTaskDrawer from "../../components/tasks/CreateTaskDrawer";
 import TaskDetailDrawer from "../../components/tasks/TaskDetailDrawer";
 import TaskNotificationsBell from "../../components/tasks/TaskNotificationsBell";
-import { dueInfo, TASK_PRIORITY_OPTIONS, TASK_STATUS_OPTIONS } from "./meta";
+import {
+  dueInfo,
+  formatDateTime,
+  relativeTime,
+  TASK_PRIORITY_OPTIONS,
+  TASK_STATUS_OPTIONS,
+  TASKS_REFRESH_MS,
+} from "./meta";
+import TaskBoard from "./TaskBoard";
 
 const PAGE_SIZE = 20;
 
 type TasksTab = "board" | "mine" | "my-requests";
+type TasksView = "board" | "table";
+/** Быстрые пресеты по сроку поверх произвольного периода. */
+type QuickDue = "" | "overdue" | "today" | "week";
 
 const TABS: { id: TasksTab; label: string; icon: React.ElementType }[] = [
   { id: "board", label: "Доска", icon: DashboardOutlined },
   { id: "mine", label: "Мои задачи", icon: PersonOutlined },
   { id: "my-requests", label: "Мои заявки", icon: SendOutlined },
+];
+
+const VIEWS: { id: TasksView; label: string; icon: React.ElementType }[] = [
+  { id: "board", label: "Канбан по статусам", icon: ViewKanbanOutlined },
+  { id: "table", label: "Таблица", icon: TableRowsOutlined },
 ];
 
 /** Неделя с понедельника независимо от глобальной локали dayjs. */
@@ -112,25 +135,35 @@ type RowAction = {
   fn: (taskId: number, organizationId?: number) => Promise<Task>;
 };
 
-/** Компактная плитка сводки (по образцу StatTile из «Броней»). */
+/** Компактная плитка сводки (по образцу StatTile из «Броней»); кликом фильтрует. */
 const StatTile: React.FC<{
   icon: React.ReactNode;
   label: string;
   value: React.ReactNode;
   tone?: "error" | "success";
-}> = ({ icon, label, value, tone }) => (
+  onClick?: () => void;
+  active?: boolean;
+}> = ({ icon, label, value, tone, onClick, active }) => (
   <Stack
     direction="row"
     alignItems="center"
     gap={1.25}
+    component={onClick ? ButtonBase : "div"}
+    {...(onClick ? { onClick, focusRipple: true } : {})}
     sx={(t) => ({
       px: 1.5,
       py: 1,
       borderRadius: "10px",
       border: 1,
-      borderColor: "divider",
-      bgcolor: subtleBg(t),
+      borderColor: active ? alpha(t.palette.primary.main, 0.5) : "divider",
+      bgcolor: active ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.14 : 0.07) : subtleBg(t),
       minWidth: 130,
+      textAlign: "left",
+      transition: "border-color .15s ease, background-color .15s ease",
+      ...(onClick && {
+        cursor: "pointer",
+        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35) },
+      }),
     })}
   >
     <Box
@@ -163,6 +196,48 @@ const StatTile: React.FC<{
     </Box>
   </Stack>
 );
+
+/** Чип быстрого фильтра: включается/выключается кликом. */
+const FilterChip: React.FC<{
+  label: string;
+  icon?: React.ReactElement;
+  active: boolean;
+  onClick: () => void;
+  tone?: "error";
+  tooltip?: string;
+}> = ({ label, icon, active, onClick, tone, tooltip }) => {
+  const chip = (
+    <Chip
+      icon={icon}
+      label={label}
+      size="small"
+      clickable
+      onClick={onClick}
+      sx={(t) => {
+        const accent = tone === "error" ? t.palette.error : t.palette.primary;
+        const activeColor = t.palette.mode === "dark" ? accent.light : accent.dark;
+        return {
+          height: 30,
+          borderRadius: "9px",
+          fontWeight: 500,
+          border: 1,
+          borderColor: active ? alpha(accent.main, 0.45) : "divider",
+          color: active ? activeColor : "text.secondary",
+          bgcolor: active ? alpha(accent.main, t.palette.mode === "dark" ? 0.18 : 0.1) : "transparent",
+          "& .MuiChip-icon": { color: "inherit", ml: 0.75 },
+          "&:hover": {
+            bgcolor: active
+              ? alpha(accent.main, t.palette.mode === "dark" ? 0.24 : 0.14)
+              : subtleBg(t, true),
+            borderColor: alpha(accent.main, 0.35),
+            color: active ? activeColor : "text.primary",
+          },
+        };
+      }}
+    />
+  );
+  return tooltip ? <Tooltip title={tooltip}>{chip}</Tooltip> : chip;
+};
 
 /** Мобильная карточка со свайпами: вправо — взять, влево — исполнить. */
 const SwipeableTaskCard: React.FC<{
@@ -269,17 +344,22 @@ const SwipeableTaskCard: React.FC<{
               {task.categoryName}
               {task.assigneeName ? ` · ${task.assigneeName}` : " · не назначена"}
             </Typography>
-            {due && (
-              <Typography
-                variant="caption"
-                sx={{
-                  color: due.overdue ? "error.main" : due.today ? "warning.main" : "text.secondary",
-                  fontWeight: due.overdue || due.today ? 600 : 400,
-                }}
-              >
-                {due.text}
+            <Stack direction="row" gap={0.75} alignItems="baseline" flexWrap="wrap">
+              {due && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : "text.secondary",
+                    fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
+                  }}
+                >
+                  {due.text}
+                </Typography>
+              )}
+              <Typography variant="caption" color="text.disabled">
+                {relativeTime(task.createdAt)}
               </Typography>
-            )}
+            </Stack>
           </Box>
           <Stack alignItems="flex-end" gap={0.5} sx={{ flexShrink: 0 }}>
             <TaskStatusChip status={task.status} />
@@ -298,7 +378,7 @@ const TasksPage: React.FC = () => {
   const { can, loading: permLoading } = useCanChecker();
   const { activeEmployee } = usePermissions();
   const orgId = useApiOrgId();
-  const queryClient = useQueryClient();
+  const invalidateTasks = useInvalidateTasks();
 
   const canList = can("tasks.list");
   const canCreate = can("tasks.create");
@@ -313,12 +393,19 @@ const TasksPage: React.FC = () => {
     const saved = sessionStorage.getItem("tasks-tab");
     return (saved as TasksTab) ?? "board";
   });
+  /** Вид доски: канбан по статусам или таблица (на мобиле всегда список). */
+  const [view, setView] = React.useState<TasksView>(
+    () => (sessionStorage.getItem("tasks-view") as TasksView) ?? "board",
+  );
   const [status, setStatus] = React.useState<TaskStatus | "">("");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
   const [priority, setPriority] = React.useState<TaskPriority | "">("");
+  /** Быстрый фильтр по сроку: перекрывает произвольный период. */
+  const [quickDue, setQuickDue] = React.useState<QuickDue>("");
   /** Опциональные период-фильтры: null — выключен (задачи без срока не скрываются). */
   const [dueRange, setDueRange] = React.useState<DateRange | null>(null);
   const [createdRange, setCreatedRange] = React.useState<DateRange | null>(null);
+  const [ordering, setOrdering] = React.useState<"smart" | "created">("smart");
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(0);
@@ -333,6 +420,25 @@ const TasksPage: React.FC = () => {
     sessionStorage.setItem("tasks-tab", t);
   };
 
+  const handleViewChange = (v: TasksView) => {
+    setView(v);
+    sessionStorage.setItem("tasks-view", v);
+    // На канбане статус задаёт колонка — держать его ещё и в фильтрах незачем.
+    if (v === "board") setStatus("");
+  };
+
+  /** Быстрый фильтр по сроку — переключатель: повторный клик снимает. */
+  const toggleQuickDue = (q: QuickDue) => {
+    setQuickDue((prev) => (prev === q ? "" : q));
+    setDueRange(null);
+  };
+
+  /** Клик по плитке сводки фильтрует список по этому статусу. */
+  const toggleStatus = (s: TaskStatus) => {
+    setStatus((prev) => (prev === s ? "" : s));
+    if (quickDue === "overdue") setQuickDue("");
+  };
+
   React.useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 400);
     return () => clearTimeout(t);
@@ -340,7 +446,25 @@ const TasksPage: React.FC = () => {
 
   React.useEffect(() => {
     setPage(0);
-  }, [tab, status, categoryId, priority, search, dueRange, createdRange]);
+  }, [tab, status, categoryId, priority, search, dueRange, createdRange, quickDue, ordering]);
+
+  /** Быстрый пресет разворачивается в те же dueFrom/dueTo, что и период. */
+  const quickDueRange = React.useMemo((): { from?: string; to?: string } => {
+    const fmt = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
+    switch (quickDue) {
+      // Просрочка = срок раньше сегодняшнего дня. Серверного `overdue` в
+      // контракте нет, поэтому в выборку попадают и закрытые задачи со старым
+      // сроком — их видно по статусу (запрошен параметр, см. тикет due_time).
+      case "overdue":
+        return { to: fmt(dayjs().subtract(1, "day")) };
+      case "today":
+        return { from: fmt(dayjs()), to: fmt(dayjs()) };
+      case "week":
+        return { from: fmt(startOfRuWeek()), to: fmt(startOfRuWeek().endOf("week")) };
+      default:
+        return {};
+    }
+  }, [quickDue]);
 
   const filters: TasksFilters = {
     status: status === "" ? undefined : status,
@@ -349,23 +473,30 @@ const TasksPage: React.FC = () => {
     assignee: tab === "mine" ? "me" : undefined,
     author: tab === "my-requests" ? "me" : undefined,
     search: search || undefined,
-    dueFrom: dueRange ? dueRange.from.format("YYYY-MM-DD") : undefined,
-    dueTo: dueRange ? dueRange.to.format("YYYY-MM-DD") : undefined,
+    dueFrom: quickDue ? quickDueRange.from : dueRange ? dueRange.from.format("YYYY-MM-DD") : undefined,
+    dueTo: quickDue ? quickDueRange.to : dueRange ? dueRange.to.format("YYYY-MM-DD") : undefined,
     // Дата подачи имеет смысл только для «Моих заявок».
     createdFrom: tab === "my-requests" && createdRange ? createdRange.from.format("YYYY-MM-DD") : undefined,
     createdTo: tab === "my-requests" && createdRange ? createdRange.to.format("YYYY-MM-DD") : undefined,
-    ordering: "smart",
+    ordering,
     organizationId: orgId,
   };
+
+  /** Канбан сам грузит колонки по статусам — общий список ему не нужен. */
+  const boardMode = tab === "board" && view === "board" && !isMobile;
 
   const enabled = !permLoading && canList;
 
   const query = useQuery({
     queryKey: djangoQueryKeys.tasks.list({ ...filters, tab, page: page + 1 }),
     queryFn: ({ signal }) => getTasks({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal),
-    enabled,
+    enabled: enabled && !boardMode,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
+    // Задачи разбирают несколько человек одновременно — держим список живым,
+    // иначе кнопки действий бьют в уже изменившийся статус.
+    refetchInterval: TASKS_REFRESH_MS,
+    refetchOnWindowFocus: true,
   });
 
   const categoriesQuery = useQuery({
@@ -380,6 +511,7 @@ const TasksPage: React.FC = () => {
     queryFn: ({ signal }) => getTasksSummary(orgId, signal),
     enabled: enabled && tab === "board",
     staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: TASKS_REFRESH_MS,
   });
 
   const myStatsQuery = useQuery({
@@ -393,9 +525,7 @@ const TasksPage: React.FC = () => {
   const rowMutation = useMutation({
     mutationFn: ({ action, taskId }: { action: RowAction; taskId: number }) =>
       action.fn(taskId, orgId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
-    },
+    onSuccess: invalidateTasks,
     onError: (e) => {
       const raw = e instanceof Error ? e.message : "";
       // Частая причина отказа — грид показывал устаревший статус (задачу уже
@@ -409,7 +539,7 @@ const TasksPage: React.FC = () => {
           ? "Статус задачи изменился (возможно, её уже завершили). Список обновлён — проверьте доступные действия."
           : raw || "Не удалось выполнить действие",
       );
-      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
+      invalidateTasks();
     },
   });
 
@@ -458,13 +588,20 @@ const TasksPage: React.FC = () => {
   );
 
   const hasActiveFilters =
-    status !== "" || categoryId !== "" || priority !== "" || search !== "" || dueRange != null || createdRange != null;
+    status !== "" ||
+    categoryId !== "" ||
+    priority !== "" ||
+    search !== "" ||
+    quickDue !== "" ||
+    dueRange != null ||
+    createdRange != null;
 
   const handleResetFilters = () => {
     setStatus("");
     setCategoryId("");
     setPriority("");
     setSearchInput("");
+    setQuickDue("");
     setDueRange(null);
     setCreatedRange(null);
   };
@@ -482,9 +619,11 @@ const TasksPage: React.FC = () => {
             <Typography variant="body2" fontWeight={500} noWrap>
               {row.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.categoryName}
-            </Typography>
+            <Tooltip title={`Создана ${formatDateTime(row.createdAt)}`} placement="bottom-start">
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {row.categoryName} · {relativeTime(row.createdAt)}
+              </Typography>
+            </Tooltip>
           </Box>
         ),
       },
@@ -510,15 +649,17 @@ const TasksPage: React.FC = () => {
             );
           }
           return (
-            <Typography
-              variant="body2"
-              sx={{
-                color: due.overdue ? "error.main" : due.today ? "warning.main" : undefined,
-                fontWeight: due.overdue || due.today ? 600 : 400,
-              }}
-            >
-              {due.text}
-            </Typography>
+            <Tooltip title={`Срок: ${due.exact}`}>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : undefined,
+                  fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
+                }}
+              >
+                {due.text}
+              </Typography>
+            </Tooltip>
           );
         },
       },
@@ -689,13 +830,38 @@ const TasksPage: React.FC = () => {
           {/* ── Сводка: доска — по группе, мои — личный счётчик ── */}
           {tab === "board" && summary && !isMobile && (
             <Stack direction="row" gap={1} flexWrap="wrap">
-              <StatTile icon={<FiberNewOutlined />} label="Новые" value={summary.new} />
-              <StatTile icon={<HourglassEmptyOutlined />} label="В работе" value={summary.inProgress} />
+              <StatTile
+                icon={<FiberNewOutlined />}
+                label="Новые"
+                value={summary.new}
+                onClick={boardMode ? undefined : () => toggleStatus("new")}
+                active={status === "new"}
+              />
+              <StatTile
+                icon={<HourglassEmptyOutlined />}
+                label="В работе"
+                value={summary.inProgress}
+                onClick={boardMode ? undefined : () => toggleStatus("in_progress")}
+                active={status === "in_progress"}
+              />
               {canManage && summary.awaitingApproval > 0 && (
-                <StatTile icon={<DoneAllOutlined />} label="Ждут подтверждения" value={summary.awaitingApproval} />
+                <StatTile
+                  icon={<DoneAllOutlined />}
+                  label="Ждут подтверждения"
+                  value={summary.awaitingApproval}
+                  onClick={boardMode ? undefined : () => toggleStatus("awaiting_approval")}
+                  active={status === "awaiting_approval"}
+                />
               )}
               {summary.overdue > 0 && (
-                <StatTile icon={<WarningAmberOutlined />} label="Просрочено" value={summary.overdue} tone="error" />
+                <StatTile
+                  icon={<WarningAmberOutlined />}
+                  label="Просрочено"
+                  value={summary.overdue}
+                  tone="error"
+                  onClick={() => toggleQuickDue("overdue")}
+                  active={quickDue === "overdue"}
+                />
               )}
             </Stack>
           )}
@@ -708,6 +874,34 @@ const TasksPage: React.FC = () => {
             />
           )}
 
+          {/* Вид доски: канбан ↔ таблица */}
+          {tab === "board" && !isMobile && (
+            <Stack
+              direction="row"
+              sx={{ p: 0.4, gap: 0.25, border: 1, borderColor: "divider", borderRadius: "10px" }}
+            >
+              {VIEWS.map(({ id, label, icon: Icon }) => (
+                <Tooltip key={id} title={label}>
+                  <IconButton
+                    size="small"
+                    aria-label={label}
+                    onClick={() => handleViewChange(id)}
+                    sx={(t) => ({
+                      borderRadius: "7px",
+                      color: view === id ? "primary.onSurface" : "text.secondary",
+                      bgcolor:
+                        view === id
+                          ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1)
+                          : "transparent",
+                    })}
+                  >
+                    <Icon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+              ))}
+            </Stack>
+          )}
+
           <TaskNotificationsBell onOpenTask={(taskId) => setSelectedId(taskId)} />
 
           {canCreate && !isMobile && (
@@ -717,23 +911,98 @@ const TasksPage: React.FC = () => {
           )}
         </Stack>
 
+        {/* ── Быстрые фильтры ── */}
+        <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" sx={{ mb: 1.25 }}>
+          <FilterChip
+            label="Просрочено"
+            icon={<WarningAmberOutlined sx={{ fontSize: 15 }} />}
+            tone="error"
+            active={quickDue === "overdue"}
+            onClick={() => toggleQuickDue("overdue")}
+            tooltip="Срок раньше сегодняшнего дня"
+          />
+          <FilterChip
+            label="На сегодня"
+            icon={<TodayOutlined sx={{ fontSize: 15 }} />}
+            active={quickDue === "today"}
+            onClick={() => toggleQuickDue("today")}
+          />
+          <FilterChip
+            label="Эта неделя"
+            icon={<CalendarMonthOutlined sx={{ fontSize: 15 }} />}
+            active={quickDue === "week"}
+            onClick={() => toggleQuickDue("week")}
+          />
+          <FilterChip
+            label="Срочные"
+            icon={<PriorityHighOutlined sx={{ fontSize: 15 }} />}
+            tone="error"
+            active={priority === "urgent"}
+            onClick={() => setPriority((p) => (p === "urgent" ? "" : "urgent"))}
+          />
+          {!boardMode && (
+            <FilterChip
+              label="В работе"
+              icon={<PlayArrowOutlined sx={{ fontSize: 15 }} />}
+              active={status === "in_progress"}
+              onClick={() => toggleStatus("in_progress")}
+              tooltip="Только задачи в работе"
+            />
+          )}
+
+          <Box sx={{ flex: 1 }} />
+
+          {/* Сортировка: серверный ordering (smart | created) */}
+          <Tooltip
+            title={
+              ordering === "smart"
+                ? "Сначала просроченные и срочные, затем по сроку"
+                : "Сначала недавно созданные"
+            }
+          >
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<SwapVertOutlined sx={{ fontSize: 17 }} />}
+              onClick={() => setOrdering((o) => (o === "smart" ? "created" : "smart"))}
+              sx={(t) => ({
+                textTransform: "none",
+                borderRadius: "10px",
+                color: "text.secondary",
+                borderColor: "divider",
+                flexShrink: 0,
+                "&:hover": {
+                  color: "text.primary",
+                  bgcolor: subtleBg(t, true),
+                  borderColor: alpha(t.palette.primary.main, 0.35),
+                },
+              })}
+            >
+              {ordering === "smart" ? "Умная сортировка" : "Сначала новые"}
+            </Button>
+          </Tooltip>
+        </Stack>
+
         {/* ── Фильтры ── */}
         <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center" sx={{ mb: 1.5 }}>
-          <TextField
-            select
-            size="small"
-            label="Статус"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as TaskStatus | "")}
-            sx={{ minWidth: 170 }}
-          >
-            <MenuItem value="">Все статусы</MenuItem>
-            {TASK_STATUS_OPTIONS.map((o) => (
-              <MenuItem key={o.value} value={o.value}>
-                {o.label}
-              </MenuItem>
-            ))}
-          </TextField>
+          {/* На канбане статус — это колонка, отдельный селект только запутывает. */}
+          {!boardMode && (
+            <TextField
+              select
+              size="small"
+              label="Статус"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as TaskStatus | "")}
+              sx={{ minWidth: 170 }}
+            >
+              <MenuItem value="">Все статусы</MenuItem>
+              {TASK_STATUS_OPTIONS.map((o) => (
+                <MenuItem key={o.value} value={o.value}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
 
           <TextField
             select
@@ -871,6 +1140,17 @@ const TasksPage: React.FC = () => {
           <Alert severity="error">
             {query.error instanceof Error ? query.error.message : "Ошибка загрузки"}
           </Alert>
+        ) : boardMode ? (
+          <TaskBoard
+            filters={filters}
+            orgId={orgId}
+            enabled={enabled}
+            onOpenTask={setSelectedId}
+            onError={setActionError}
+            canManage={canManage}
+            canUpdate={canUpdate}
+            meEmployeeId={meEmployeeId}
+          />
         ) : isMobile ? (
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pb: 10 }}>
             {query.isLoading ? (
@@ -883,12 +1163,22 @@ const TasksPage: React.FC = () => {
               <Stack alignItems="center" sx={{ py: 6, opacity: 0.75 }}>
                 <AssignmentOutlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  Задач не найдено
+                  {tab === "mine"
+                    ? "У вас нет назначенных задач"
+                    : tab === "my-requests"
+                    ? "Вы ещё не подавали заявок"
+                    : "Задач не найдено"}
                 </Typography>
-                {hasActiveFilters && (
+                {hasActiveFilters ? (
                   <Button size="small" onClick={handleResetFilters} sx={{ textTransform: "none" }}>
                     Сбросить фильтры
                   </Button>
+                ) : (
+                  canCreate && (
+                    <Button size="small" onClick={() => setCreateOpen(true)} sx={{ textTransform: "none" }}>
+                      Подать первую заявку
+                    </Button>
+                  )
                 )}
               </Stack>
             ) : (
