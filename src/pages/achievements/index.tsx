@@ -505,7 +505,7 @@ const OrgAchievementRow: React.FC<{
  * достижения клиники с кольцами прогресса.
  */
 const AchievementsPage: React.FC = () => {
-  usePageTitle("Награды");
+  usePageTitle("Мои достижения");
   const orgId = useApiOrgId();
 
   const definitionsQuery = useQuery({
@@ -583,7 +583,7 @@ const AchievementsPage: React.FC = () => {
       })}
     >
       {/* Заголовок уже показан в глобальной шапке через usePageTitle — в контенте не дублируем */}
-      <PageHeader title="Награды" showTitle={false} />
+      <PageHeader title="Мои достижения" showTitle={false} />
 
       <Box
         sx={(t) => ({

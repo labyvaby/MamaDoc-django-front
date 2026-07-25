@@ -10,9 +10,11 @@ import {
   Divider,
   Drawer,
   IconButton,
+  MenuItem,
   Skeleton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -27,10 +29,12 @@ import CancelOutlined from "@mui/icons-material/CancelOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import ThumbUpOutlined from "@mui/icons-material/ThumbUpOutlined";
 import dayjs from "dayjs";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Controller, useForm } from "react-hook-form";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { AppButton, UserAvatar } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -40,18 +44,37 @@ import {
   cancelTask,
   completeTask,
   getTask,
+  getTaskCategories,
   pauseTask,
   rejectTask,
   takeTask,
   thankTask,
+  updateTask,
   type Task,
   type TaskDetail,
+  type TaskPriority,
   type TaskStatus,
+  type UpdateTaskPayload,
 } from "../../api/tasks";
-import { djangoQueryKeys } from "../../api/queryKeys";
+import { getDjangoEmployees } from "../../api/staff";
+import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
-import { TASK_SOURCE_META, TASK_STATUS_META } from "../../pages/tasks/meta";
+import { useInvalidateTasks } from "../../hooks/useInvalidateTasks";
+import {
+  dueInfo,
+  formatDateTime,
+  formatDue,
+  formatDuration,
+  parseDue,
+  relativeTime,
+  serializeDue,
+  TASK_PRIORITY_OPTIONS,
+  TASK_SOURCE_META,
+  TASK_STATUS_META,
+} from "../../pages/tasks/meta";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { TaskPriorityChip, TaskStatusChip } from "./TaskChips";
+import DueDateField, { type DueValue } from "./DueDateField";
 
 type ReasonAction = "pause" | "reject" | "cancel" | null;
 
@@ -62,11 +85,14 @@ const REASON_TITLES: Record<Exclude<ReasonAction, null>, string> = {
 };
 
 /** Плитка-поле «иконка → лейбл → значение» по гайду стиля (§5.2). */
-const FieldTile: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({
-  icon,
-  label,
-  value,
-}) => (
+const FieldTile: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  /** Подпись под значением (например, «просрочено на 3 ч»). */
+  hint?: React.ReactNode;
+  hintColor?: string;
+}> = ({ icon, label, value, hint, hintColor }) => (
   <Box
     sx={(t) => ({
       display: "flex",
@@ -102,6 +128,11 @@ const FieldTile: React.FC<{ icon: React.ReactNode; label: string; value: React.R
       <Typography variant="body2" fontWeight={600} noWrap>
         {value || "—"}
       </Typography>
+      {hint && (
+        <Typography variant="caption" noWrap display="block" sx={{ color: hintColor ?? "text.secondary" }}>
+          {hint}
+        </Typography>
+      )}
     </Box>
   </Box>
 );
@@ -155,9 +186,35 @@ function buildTrackerSteps(task: TaskDetail): TrackerStep[] {
   ];
 }
 
+/** Подпись-таймер под трекером: сколько задача ждёт / в работе / за сколько сделана. */
+function trackerTiming(task: TaskDetail): string | null {
+  const log = task.statusLog;
+  const firstTake = log.find((l) => l.toStatus === "in_progress");
+  const doneEntry = log.find((l) => l.toStatus === "done");
+  switch (task.status) {
+    case "new":
+      return `Ожидает исполнителя ${formatDuration(task.createdAt)}`;
+    case "in_progress":
+      return firstTake ? `В работе ${formatDuration(firstTake.createdAt)}` : null;
+    case "paused": {
+      const pause = [...log].reverse().find((l) => l.toStatus === "paused");
+      return pause ? `На паузе ${formatDuration(pause.createdAt)}` : null;
+    }
+    case "awaiting_approval": {
+      const sent = [...log].reverse().find((l) => l.toStatus === "awaiting_approval");
+      return sent ? `Ждёт подтверждения ${formatDuration(sent.createdAt)}` : null;
+    }
+    case "done":
+      return doneEntry ? `Исполнена за ${formatDuration(task.createdAt, doneEntry.createdAt)}` : null;
+    default:
+      return null;
+  }
+}
+
 const StatusTracker: React.FC<{ task: TaskDetail }> = ({ task }) => {
   const steps = buildTrackerSteps(task);
   const cancelled = task.status === "cancelled";
+  const timing = trackerTiming(task);
   return (
     <Box
       sx={(t) => ({
@@ -236,13 +293,32 @@ const StatusTracker: React.FC<{ task: TaskDetail }> = ({ task }) => {
           );
         })}
       </Stack>
-      {cancelled && (
+      {cancelled ? (
         <Typography variant="caption" color="error.main" sx={{ display: "block", textAlign: "center", mt: 0.75 }}>
           Задача отменена
         </Typography>
+      ) : (
+        timing && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", textAlign: "center", mt: 0.75 }}
+          >
+            {timing}
+          </Typography>
+        )
       )}
     </Box>
   );
+};
+
+type EditFormValues = {
+  title: string;
+  description: string;
+  categoryId: number | "";
+  assigneeId: number | "";
+  due: DueValue;
+  priority: TaskPriority;
 };
 
 type TaskDetailDrawerProps = {
@@ -263,12 +339,12 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   canUpdate,
   meEmployeeId,
 }) => {
-  const queryClient = useQueryClient();
   const orgId = useApiOrgId();
   const [commentText, setCommentText] = React.useState("");
   const [reasonAction, setReasonAction] = React.useState<ReasonAction>(null);
   const [reasonText, setReasonText] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState(false);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.tasks.detail(taskId ?? 0),
@@ -278,14 +354,84 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
 
   const task = query.data;
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: djangoQueryKeys.tasks.all });
+  // ── Редактирование ──────────────────────────────────────────────────────────
+  const { control, handleSubmit, reset } = useForm<EditFormValues>({
+    defaultValues: {
+      title: "",
+      description: "",
+      categoryId: "",
+      assigneeId: "",
+      due: { date: null, time: null },
+      priority: "normal",
+    },
+  });
+
+  const categoriesQuery = useQuery({
+    queryKey: djangoQueryKeys.tasks.categories,
+    queryFn: ({ signal }) => getTaskCategories(orgId, signal),
+    enabled: editing,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+
+  const employeesQuery = useQuery({
+    queryKey: [...djangoQueryKeys.reference.employees, "tasks-assignee"],
+    queryFn: ({ signal }) => getDjangoEmployees({ status: "active", pageSize: 200 }, signal),
+    enabled: editing && canManage,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+
+  const startEditing = () => {
+    if (!task) return;
+    reset({
+      title: task.title,
+      description: task.description ?? "",
+      categoryId: task.categoryId,
+      assigneeId: task.assigneeId ?? "",
+      due: parseDue(task.dueDate),
+      priority: task.priority,
+    });
+    setError(null);
+    setEditing(true);
   };
+
+  // Смена задачи не должна оставлять открытым чужой режим правки.
+  React.useEffect(() => {
+    setEditing(false);
+  }, [taskId]);
+
+  const invalidate = useInvalidateTasks();
 
   const actionMutation = useMutation({
     mutationFn: (fn: () => Promise<Task>) => fn(),
     onSuccess: invalidate,
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось выполнить действие"),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (v: EditFormValues) => {
+      const due = serializeDue(v.due.date, v.due.time);
+      const payload: UpdateTaskPayload = {
+        title: v.title.trim(),
+        description: v.description.trim(),
+        categoryId: v.categoryId === "" ? undefined : (v.categoryId as number),
+      };
+      // Tri-state бэка: очистка полей — только явными флагами, null не очищает.
+      if (due == null) payload.clearDueDate = true;
+      else payload.dueDate = due;
+      // Исполнителя переназначает только tasks.manage — автор не должен снимать
+      // человека, уже взявшего задачу в работу.
+      if (canManage) {
+        if (v.assigneeId === "") payload.clearAssignee = true;
+        else payload.assigneeId = v.assigneeId as number;
+        payload.priority = v.priority;
+      }
+      return updateTask(taskId!, payload, orgId);
+    },
+    onSuccess: () => {
+      setEditing(false);
+      invalidate();
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить изменения"),
   });
 
   const commentMutation = useMutation({
@@ -297,13 +443,19 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось добавить комментарий"),
   });
 
+  const reasonForm = useFormValidation({
+    reason: reasonText.trim() ? null : "Укажите причину",
+  });
+
   const closeReasonDialog = () => {
     setReasonAction(null);
     setReasonText("");
+    reasonForm.reset();
   };
 
   const submitReason = () => {
-    if (taskId == null || !reasonAction || !reasonText.trim()) return;
+    if (taskId == null || !reasonAction) return;
+    if (!reasonForm.validate()) return;
     const id = taskId;
     const payload = { reason: reasonText.trim() };
     const fn =
@@ -320,6 +472,9 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   const isMine = task != null && task.assigneeId != null && task.assigneeId === meEmployeeId;
   const isAuthor = task != null && task.authorId === meEmployeeId;
   const status: TaskStatus | undefined = task?.status;
+  const closed = status === "done" || status === "cancelled";
+  /** Править может автор своей открытой заявки и держатель tasks.manage. */
+  const canEdit = task != null && !closed && (canManage || isAuthor);
 
   const actions: { key: string; label: string; icon: React.ReactNode; primary?: boolean; onClick: () => void }[] = [];
   if (task && taskId != null && status) {
@@ -394,9 +549,12 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   const handleClose = () => {
     setError(null);
     setCommentText("");
+    setEditing(false);
     closeReasonDialog();
     onClose();
   };
+
+  const due = task ? dueInfo(task.dueDate, task.status) : null;
 
   return (
     <Drawer
@@ -419,10 +577,10 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
             <Skeleton width="70%" height={28} />
           ) : (
             <Typography variant="h6" fontWeight={600} sx={{ letterSpacing: -0.15, lineHeight: 1.3 }}>
-              {task?.title}
+              {editing ? "Редактирование задачи" : task?.title}
             </Typography>
           )}
-          {task && (
+          {task && !editing && (
             <Stack direction="row" gap={0.75} sx={{ mt: 1 }} flexWrap="wrap">
               <TaskStatusChip status={task.status} />
               <TaskPriorityChip priority={task.priority} />
@@ -444,6 +602,13 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
             </Stack>
           )}
         </Box>
+        {canEdit && !editing && (
+          <Tooltip title="Изменить задачу">
+            <IconButton size="small" onClick={startEditing} aria-label="Изменить задачу">
+              <EditOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
         <IconButton size="small" onClick={handleClose} aria-label="Закрыть">
           <CloseOutlined fontSize="small" />
         </IconButton>
@@ -465,7 +630,118 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
           </Stack>
         )}
 
-        {task && (
+        {task && editing && (
+          <Stack gap={2} component="form" onSubmit={handleSubmit((v) => saveMutation.mutate(v))}>
+            <Controller
+              name="title"
+              control={control}
+              rules={{ required: "Укажите название", maxLength: { value: 200, message: "Не более 200 символов" } }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  {...field}
+                  label="Название"
+                  required
+                  fullWidth
+                  autoFocus
+                  error={!!fieldState.error}
+                  helperText={fieldState.error?.message}
+                />
+              )}
+            />
+
+            <Controller
+              name="description"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} label="Описание" fullWidth multiline minRows={3} />
+              )}
+            />
+
+            <Controller
+              name="categoryId"
+              control={control}
+              rules={{ required: "Выберите категорию" }}
+              render={({ field, fieldState }) => (
+                <TextField
+                  select
+                  label="Категория"
+                  required
+                  fullWidth
+                  error={!!fieldState.error}
+                  helperText={fieldState.error?.message}
+                  value={field.value === "" ? "" : String(field.value)}
+                  onChange={(e) => field.onChange(e.target.value === "" ? "" : Number(e.target.value))}
+                >
+                  {(categoriesQuery.data ?? []).map((c) => (
+                    <MenuItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
+
+            {canManage && (
+              <Controller
+                name="assigneeId"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    select
+                    label="Исполнитель"
+                    fullWidth
+                    value={field.value === "" ? "" : String(field.value)}
+                    onChange={(e) => field.onChange(e.target.value === "" ? "" : Number(e.target.value))}
+                    helperText="Пусто — задачу возьмёт любой из группы категории"
+                  >
+                    <MenuItem value="">Не назначен</MenuItem>
+                    {(employeesQuery.data?.results ?? []).map((e) => (
+                      <MenuItem key={e.id} value={String(e.id)}>
+                        {e.fullName}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+              />
+            )}
+
+            <Controller
+              name="due"
+              control={control}
+              render={({ field }) => <DueDateField value={field.value} onChange={field.onChange} />}
+            />
+
+            {canManage && (
+              <Controller
+                name="priority"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    select
+                    label="Приоритет"
+                    fullWidth
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value as TaskPriority)}
+                  >
+                    {TASK_PRIORITY_OPTIONS.map((o) => (
+                      <MenuItem key={o.value} value={o.value}>
+                        {o.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+              />
+            )}
+
+            {!canManage && (
+              <Typography variant="caption" color="text.secondary">
+                Исполнителя и приоритет меняет ответственный за задачи.
+              </Typography>
+            )}
+          </Stack>
+        )}
+
+        {task && !editing && (
           <>
             <StatusTracker task={task} />
 
@@ -481,14 +757,30 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
               <FieldTile
                 icon={<EventOutlined />}
                 label="Срок"
-                value={task.dueDate ? dayjs(task.dueDate).format("DD.MM.YYYY") : ""}
+                value={task.dueDate ? formatDue(task.dueDate) : ""}
+                hint={due?.text}
+                hintColor={due?.overdue ? "error.main" : due?.today || due?.soon ? "warning.main" : undefined}
               />
               <FieldTile icon={<PersonOutlined />} label="Автор" value={task.authorName} />
             </Box>
 
-            <Typography variant="caption" color="text.secondary">
-              {TASK_SOURCE_META[task.source].label} · создана {dayjs(task.createdAt).format("DD.MM.YYYY HH:mm")}
-            </Typography>
+            <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
+              <Typography variant="caption" color="text.secondary">
+                {TASK_SOURCE_META[task.source].label}
+              </Typography>
+              <Tooltip title={formatDateTime(task.createdAt)}>
+                <Typography variant="caption" color="text.secondary">
+                  · создана {relativeTime(task.createdAt)}
+                </Typography>
+              </Tooltip>
+              {task.updatedAt && !dayjs(task.updatedAt).isSame(dayjs(task.createdAt), "minute") && (
+                <Tooltip title={formatDateTime(task.updatedAt)}>
+                  <Typography variant="caption" color="text.secondary">
+                    · изменена {relativeTime(task.updatedAt)}
+                  </Typography>
+                </Tooltip>
+              )}
+            </Stack>
 
             {/* ── Фото ── */}
             {task.attachments.length > 0 && (
@@ -627,7 +919,22 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
       </Box>
 
       {/* ── Действия ── */}
-      {actions.length > 0 && (
+      {editing ? (
+        <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: "divider", display: "flex", gap: 1.5 }}>
+          <AppButton variant="outlined" sx={{ flex: 1 }} onClick={() => setEditing(false)}>
+            Отмена
+          </AppButton>
+          <AppButton
+            variant="contained"
+            sx={{ flex: 1 }}
+            disabled={saveMutation.isPending}
+            onClick={handleSubmit((v) => saveMutation.mutate(v))}
+          >
+            Сохранить
+          </AppButton>
+        </Box>
+      ) : (
+        actions.length > 0 && (
         <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: "divider", display: "flex", gap: 1, flexWrap: "wrap" }}>
           {actions.map((a) => (
             <AppButton
@@ -642,6 +949,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
             </AppButton>
           ))}
         </Box>
+        )
       )}
 
       {/* ── Диалог причины ── */}
@@ -658,13 +966,14 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
             value={reasonText}
             onChange={(e) => setReasonText(e.target.value)}
             sx={{ mt: 1 }}
+            {...reasonForm.field("reason")}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <AppButton variant="outlined" onClick={closeReasonDialog}>
             Отмена
           </AppButton>
-          <AppButton variant="contained" disabled={!reasonText.trim()} onClick={submitReason}>
+          <AppButton variant="contained" onClick={submitReason}>
             Подтвердить
           </AppButton>
         </DialogActions>

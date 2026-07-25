@@ -97,6 +97,8 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
+const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
+const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
@@ -469,7 +471,7 @@ function App() {
                       {
                         name: "achievements",
                         list: "/achievements",
-                        meta: { label: "Награды" }
+                        meta: { label: "Мои достижения" }
                       },
                       {
                         name: "all-procedures",
@@ -1194,6 +1196,24 @@ function App() {
                         element={
                           <Suspense fallback={<LinearProgress />}>
                             <PublicRatePage />
+                          </Suspense>
+                        }
+                      />
+                      {/* Публичная онлайн-запись (/book/*) — вне RequireAuth,
+                          питается публичным /api/v1 (см. src/api/publicBooking.ts). */}
+                      <Route
+                        path="book"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <PublicBookDoctorsPage />
+                          </Suspense>
+                        }
+                      />
+                      <Route
+                        path="book/doctor/:idOrSlug"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <PublicBookDoctorPage />
                           </Suspense>
                         }
                       />

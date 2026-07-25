@@ -10,6 +10,7 @@ import { alpha } from "@mui/material/styles";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -50,6 +51,20 @@ function doctorsLabel(appt: DjangoAppointment): string {
   if (names.length === 0) return "—";
   if (names.length === 1) return names[0];
   return `${names.length} исполнит.`;
+}
+
+/**
+ * Есть ли по приёму заключение: бэк не отдаёт hasMedicalConclusion, но шлёт по
+ * каждой строке услуги conclusionState/conclusionId (та же логика, что в
+ * AppointmentDetailsPanel).
+ */
+function hasConclusion(appt: DjangoAppointment): boolean {
+  return appt.services.some(
+    (sl) =>
+      sl.conclusionId != null ||
+      sl.conclusionState === "draft" ||
+      sl.conclusionState === "completed",
+  );
 }
 
 function servicesLabel(appt: DjangoAppointment): string | null {
@@ -182,6 +197,16 @@ const PatientHistoryPanel: React.FC<Props> = ({
                           </Typography>
                         )}
                         <Chip label={statusCfg.label} icon={statusCfg.icon} size="small" sx={statusChipSx} />
+                        {hasConclusion(h) && (
+                          <Chip
+                            label="Заключение"
+                            icon={<DescriptionOutlined />}
+                            size="small"
+                            color="info"
+                            variant="outlined"
+                            sx={{ height: 20, fontSize: "0.65rem", "& .MuiChip-icon": { fontSize: 14 } }}
+                          />
+                        )}
                         {canViewFinance && h.paymentStatus && (
                           <Chip
                             label={PAYMENT_STATUS_LABELS[h.paymentStatus] ?? h.paymentStatus}

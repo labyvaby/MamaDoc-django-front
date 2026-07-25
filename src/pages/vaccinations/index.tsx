@@ -15,6 +15,7 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -34,6 +35,7 @@ import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 
@@ -58,6 +60,7 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
+  VACCINATION_BATCH_WRITEOFF_ENABLED,
   getCalendarTemplate,
   getMonthlyReport,
   getRecords,
@@ -76,6 +79,7 @@ import { RecordStatusChip, ScheduleStatusChip } from "../../components/vaccinati
 import RecordVaccinationDrawer from "../../components/vaccinations/RecordVaccinationDrawer";
 import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
+import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
 import { injectionSiteLabel, scheduleDateInfo } from "./meta";
 
@@ -214,6 +218,8 @@ const VaccinationsPage: React.FC = () => {
     open: false,
     batch: null,
   });
+  // Списание доз партии (порча/срок) — отдельное действие, не правка прихода.
+  const [writeOffBatchTarget, setWriteOffBatchTarget] = React.useState<VaccineBatch | null>(null);
   const [calendarDialog, setCalendarDialog] = React.useState<{ open: boolean; row: CalendarTemplateRow | null }>({
     open: false,
     row: null,
@@ -614,9 +620,16 @@ const VaccinationsPage: React.FC = () => {
         width: 130,
         sortable: false,
         renderCell: ({ row }) => (
-          <Typography variant="body2">
-            {row.remaining} / {row.quantityInitial}
-          </Typography>
+          <Box sx={twoLineCellSx}>
+            <Typography variant="body2">
+              {row.remaining} / {row.quantityInitial}
+            </Typography>
+            {VACCINATION_BATCH_WRITEOFF_ENABLED && Boolean(row.writtenOff) && (
+              <Typography variant="caption" color="error.main" noWrap>
+                списано {row.writtenOff}
+              </Typography>
+            )}
+          </Box>
         ),
       },
       {
@@ -647,16 +660,35 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: 60,
+        width: VACCINATION_BATCH_WRITEOFF_ENABLED ? 96 : 60,
         sortable: false,
         renderCell: ({ row }) => (
-          <IconButton
-            size="small"
-            aria-label="Изменить партию"
-            onClick={() => setBatchDialog({ open: true, batch: row })}
-          >
-            <EditOutlined fontSize="small" />
-          </IconButton>
+          <Stack direction="row" gap={0.25}>
+            <IconButton
+              size="small"
+              aria-label="Изменить партию"
+              onClick={() => setBatchDialog({ open: true, batch: row })}
+            >
+              <EditOutlined fontSize="small" />
+            </IconButton>
+            {VACCINATION_BATCH_WRITEOFF_ENABLED && (
+              <Tooltip
+                title={row.remaining > 0 ? "Списать дозы (порча, истёк срок)" : "Нечего списывать"}
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="Списать дозы партии"
+                    disabled={row.remaining <= 0}
+                    onClick={() => setWriteOffBatchTarget(row)}
+                    sx={{ color: dayjs(row.expiresAt).isBefore(dayjs(), "day") ? "error.main" : undefined }}
+                  >
+                    <DeleteSweepOutlined fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+          </Stack>
         ),
       },
     ],
@@ -1206,6 +1238,12 @@ const VaccinationsPage: React.FC = () => {
         open={batchDialog.open}
         batch={batchDialog.batch}
         onClose={() => setBatchDialog({ open: false, batch: null })}
+      />
+
+      <BatchWriteOffDialog
+        open={writeOffBatchTarget != null}
+        batch={writeOffBatchTarget}
+        onClose={() => setWriteOffBatchTarget(null)}
       />
 
       <CalendarTemplateDialog

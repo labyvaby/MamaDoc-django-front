@@ -15,6 +15,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { AppButton, CustomDatePicker } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
@@ -127,11 +128,21 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить партию"),
   });
 
-  const valid =
-    (isEdit || (branchId != null && vaccineId !== "")) &&
-    batchNumber.trim() !== "" &&
-    expiresAt != null &&
-    Number(quantityInitial) > 0;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    vaccineId: isEdit || vaccineId !== "" ? null : "Выберите вакцину",
+    batchNumber: batchNumber.trim() ? null : "Укажите номер партии",
+    expiresAt: expiresAt ? null : "Укажите срок годности",
+    quantityInitial:
+      Number(quantityInitial) > 0 ? null : "Укажите количество доз больше нуля",
+  });
+
+  const handleSubmit = () => {
+    // Филиал не поле формы — предупреждение о нём показано выше.
+    if (!isEdit && branchId == null) return;
+    if (!form.validate()) return;
+    mutation.mutate();
+  };
 
   return (
     <Dialog open={open} onClose={mutation.isPending ? undefined : onClose} maxWidth="xs" fullWidth>
@@ -153,6 +164,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
               fullWidth
               value={vaccineId === "" ? "" : String(vaccineId)}
               onChange={(e) => setVaccineId(e.target.value === "" ? "" : Number(e.target.value))}
+              {...form.field("vaccineId")}
             >
               {(vaccinesQuery.data ?? []).map((v) => (
                 <MenuItem key={v.id} value={String(v.id)}>
@@ -186,6 +198,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
             fullWidth
             value={batchNumber}
             onChange={(e) => setBatchNumber(e.target.value)}
+            {...form.field("batchNumber")}
           />
           <Stack direction="row" spacing={2}>
             <CustomDatePicker
@@ -193,7 +206,15 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
               value={expiresAt}
               onChange={(v) => setExpiresAt(v as Dayjs | null)}
               format="DD.MM.YYYY"
-              slotProps={{ textField: { size: "small", fullWidth: true } }}
+              slotProps={{
+                textField: {
+                  size: "small",
+                  fullWidth: true,
+                  error: Boolean(form.errorOf("expiresAt")),
+                  helperText: form.errorOf("expiresAt") ?? undefined,
+                  ref: form.anchor("expiresAt"),
+                },
+              }}
             />
             <TextField
               label="Кол-во доз *"
@@ -202,6 +223,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
               value={quantityInitial}
               onChange={(e) => setQuantityInitial(e.target.value.replace(/[^\d]/g, ""))}
               inputProps={{ inputMode: "numeric" }}
+              {...form.field("quantityInitial")}
             />
           </Stack>
           <Stack direction="row" spacing={2}>
@@ -245,7 +267,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
         <AppButton variant="outlined" onClick={onClose} disabled={mutation.isPending}>
           Отмена
         </AppButton>
-        <AppButton variant="contained" onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending}>
+        <AppButton variant="contained" onClick={handleSubmit} disabled={mutation.isPending}>
           Сохранить
         </AppButton>
       </Stack>

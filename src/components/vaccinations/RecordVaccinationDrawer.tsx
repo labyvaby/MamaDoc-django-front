@@ -20,6 +20,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { AppButton, CustomDatePicker } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
   djangoQueryKeys,
   DJANGO_REFERENCE_STALE_TIME_MS,
@@ -265,12 +266,20 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить прививку"),
   });
 
-  const canSubmit =
-    branchId != null &&
-    patient != null &&
-    vaccineId !== "" &&
-    (scenario === "external" || batchId !== "") &&
-    !mutation.isPending;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    patient: patient ? null : "Выберите пациента",
+    vaccineId: vaccineId !== "" ? null : "Выберите вакцину",
+    batchId:
+      scenario === "external" || batchId !== "" ? null : "Выберите партию вакцины",
+  });
+
+  const handleSubmit = () => {
+    // Филиал не поле формы — без него ввод недоступен, предупреждение уже сверху.
+    if (branchId == null || mutation.isPending) return;
+    if (!form.validate()) return;
+    mutation.mutate();
+  };
 
   return (
     <Drawer
@@ -333,7 +342,13 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
           getOptionLabel={(p) => `${p.fullName} — ${p.phone}`}
           isOptionEqualToValue={(a, b) => a.id === b.id}
           renderInput={(params) => (
-            <TextField {...params} label="Пациент" required placeholder="ФИО или телефон" />
+            <TextField
+              {...params}
+              label="Пациент"
+              required
+              placeholder="ФИО или телефон"
+              {...form.field("patient")}
+            />
           )}
         />
 
@@ -351,6 +366,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
             setUnitPrice("");
             setPriceTouched(false);
           }}
+          {...form.field("vaccineId")}
         >
           {(vaccinesQuery.data ?? []).map((v) => (
             <MenuItem key={v.id} value={String(v.id)}>
@@ -394,13 +410,14 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                 setBatchTouched(true);
               }}
               disabled={vaccineId === ""}
-              helperText={
+              {...form.field(
+                "batchId",
                 vaccineId === ""
                   ? "Сначала выберите вакцину"
                   : (batchesQuery.data ?? []).length === 0
-                  ? "Нет партий этой вакцины на складе филиала"
-                  : "Выбрана партия с ближайшим сроком (можно изменить)"
-              }
+                    ? "Нет партий этой вакцины на складе филиала"
+                    : "Выбрана партия с ближайшим сроком (можно изменить)",
+              )}
             >
               {(batchesQuery.data ?? []).map((b) => (
                 <MenuItem key={b.id} value={String(b.id)} disabled={b.remaining <= 0}>
@@ -510,8 +527,8 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
         <AppButton
           variant="contained"
           sx={{ flex: 1 }}
-          disabled={!canSubmit}
-          onClick={() => mutation.mutate()}
+          disabled={branchId == null || mutation.isPending}
+          onClick={handleSubmit}
         >
           Сохранить
         </AppButton>

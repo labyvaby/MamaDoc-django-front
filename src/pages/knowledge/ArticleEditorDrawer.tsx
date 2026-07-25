@@ -23,6 +23,7 @@ import { useTheme, alpha } from "@mui/material/styles";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Youtube from "@tiptap/extension-youtube";
+import Image from "@tiptap/extension-image";
 
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import UndoOutlined from "@mui/icons-material/UndoOutlined";
@@ -38,14 +39,27 @@ import CodeOutlined from "@mui/icons-material/CodeOutlined";
 import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 import SmartDisplayOutlined from "@mui/icons-material/SmartDisplayOutlined";
+import ImageOutlined from "@mui/icons-material/ImageOutlined";
 
+import { getErrorMessage } from "../../api/client";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
+  KNOWLEDGE_IMAGE_UPLOAD_ENABLED,
+  isSafeImageUrl,
   parseYoutubeId,
+  splitCover,
+  uploadKnowledgeImage,
+  withCover,
   youtubeEmbedUrl,
   type KnowledgeArticle,
   type KnowledgeArticlePayload,
   type KnowledgeCategory,
 } from "../../api/knowledge";
+
+/** Отбирает из FileList только картинки (paste/drop приносят и текст, и файлы). */
+const imageFiles = (list: FileList | null | undefined): File[] =>
+  Array.from(list ?? []).filter((f) => f.type.startsWith("image/"));
 
 interface ArticleEditorDrawerProps {
   open: boolean;
@@ -61,9 +75,13 @@ interface ArticleEditorDrawerProps {
 /**
  * Редактор статьи базы знаний: заголовок, раздел, публикация и rich-text
  * (TipTap StarterKit + YouTube-эмбеды: видео вставляются прямо в статью,
- * отдельной сущности «видеоурок» нет — UPD заказчика 15.07.2026). Кнопки
- * вставки изображений нет намеренно — эндпоинт загрузки картинок в v1 не
- * согласован (открытый вопрос тикета knowledge).
+ * отдельной сущности «видеоурок» нет — UPD заказчика 15.07.2026).
+ *
+ * Картинки: вставка по ссылке работает (санитайзер бэка пропускает `<img src>`
+ * с http(s), см. api/knowledge.ts). Загрузка файлом (кнопка «Загрузить», вставка
+ * из буфера, drag&drop) закрыта флагом KNOWLEDGE_IMAGE_UPLOAD_ENABLED — на бэке
+ * эндпоинта ещё нет; при выключенном флаге файл не вставляется (base64 бэк
+ * молча вырежет), вместо этого показываем подсказку про ссылку.
  */
 const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   open,
@@ -75,10 +93,21 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   onSubmit,
 }) => {
   const theme = useTheme();
+  const orgId = useApiOrgId();
 
   const [title, setTitle] = React.useState("");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
   const [isPublished, setIsPublished] = React.useState(false);
+  /** Обложка живёт в content отдельной картинкой — см. splitCover/withCover. */
+  const [coverUrl, setCoverUrl] = React.useState("");
+  /** Превью обложки не загрузилось (битая ссылка) — предупреждаем, но не блокируем. */
+  const [coverBroken, setCoverBroken] = React.useState(false);
+  const coverValid = coverUrl.trim() === "" || isSafeImageUrl(coverUrl);
+  const coverPreview = coverValid && !coverBroken ? coverUrl.trim() || null : null;
+
+  // Актуальный обработчик файлов для editorProps: useEditor создаёт editorProps
+  // один раз, поэтому колбэк дёргаем через ref (иначе замкнём устаревший стейт).
+  const filesHandlerRef = React.useRef<(files: File[]) => void>(() => {});
 
   const editor = useEditor({
     extensions: [
@@ -86,10 +115,29 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
       // nocookie — единый домен эмбедов (youtube-nocookie.com), как в
       // youtubeEmbedUrl; его же ждёт allowlist санитизации на бэке.
       Youtube.configure({ nocookie: true, width: 640, height: 360 }),
+      // allowBase64: false — data:-URI бэк вырезает из src при сохранении,
+      // картинка исчезла бы после первого же сохранения статьи.
+      Image.configure({ inline: false, allowBase64: false }),
     ],
     content: "",
     editorProps: {
       attributes: { class: "tiptap-editor" },
+      // Вставка/перетаскивание файлов картинок — через наш загрузчик, иначе
+      // ProseMirror вставит имя файла текстом.
+      handlePaste: (_view, event) => {
+        const files = imageFiles(event.clipboardData?.files);
+        if (!files.length) return false;
+        event.preventDefault();
+        filesHandlerRef.current(files);
+        return true;
+      },
+      handleDrop: (_view, event) => {
+        const files = imageFiles((event as DragEvent).dataTransfer?.files);
+        if (!files.length) return false;
+        event.preventDefault();
+        filesHandlerRef.current(files);
+        return true;
+      },
     },
   });
 
@@ -104,7 +152,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         return {
           bold: false, italic: false, underline: false, strike: false,
           h2: false, h3: false, bulletList: false, orderedList: false,
-          blockquote: false, codeBlock: false, link: false,
+          blockquote: false, codeBlock: false, link: false, image: false,
           canUndo: false, canRedo: false, isEmpty: true,
         };
       }
@@ -120,6 +168,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         blockquote: e.isActive("blockquote"),
         codeBlock: e.isActive("codeBlock"),
         link: e.isActive("link"),
+        image: e.isActive("image"),
         canUndo: e.can().undo(),
         canRedo: e.can().redo(),
         // Для валидации «Сохранить»: без isEmpty селектор не меняется при
@@ -134,7 +183,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     setTitle(article?.title ?? "");
     setCategoryId(article?.categoryId ?? "");
     setIsPublished(article?.isPublished ?? false);
-    editor.commands.setContent(article?.content ?? "");
+    setUploadHint(false);
+    // Обложку показываем отдельным полем, поэтому в редактор идёт тело без неё.
+    const { coverUrl: cover, body } = splitCover(article?.content ?? "");
+    setCoverUrl(cover ?? "");
+    setCoverBroken(false);
+    editor.commands.setContent(body);
   }, [open, article, editor]);
 
   // ── Ссылки ────────────────────────────────────────────────────────────────
@@ -171,15 +225,82 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     setVideoUrl("");
   };
 
+  // ── Картинки ──────────────────────────────────────────────────────────────
+  const [imageOpen, setImageOpen] = React.useState(false);
+  const [imageUrl, setImageUrl] = React.useState("");
+  const [imageAlt, setImageAlt] = React.useState("");
+  const [imageBusy, setImageBusy] = React.useState(false);
+  const [imageError, setImageError] = React.useState<string | null>(null);
+  /** Показываем, когда пользователь принёс файл, а загрузка ещё не включена. */
+  const [uploadHint, setUploadHint] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const imageUrlValid = isSafeImageUrl(imageUrl);
+
+  const openImageDialog = () => {
+    setImageUrl("");
+    setImageAlt("");
+    setImageError(null);
+    setImageOpen(true);
+  };
+
+  const insertImage = (src: string, alt: string) => {
+    if (!editor) return;
+    // Подпись храним в alt: <figure>/<figcaption> санитайзер бэка вырезает.
+    editor
+      .chain()
+      .focus()
+      .setImage(alt.trim() ? { src, alt: alt.trim() } : { src })
+      .run();
+  };
+
+  const applyImageUrl = () => {
+    if (!imageUrlValid) return;
+    insertImage(imageUrl.trim(), imageAlt);
+    setImageOpen(false);
+  };
+
+  const uploadImageFile = async (file: File) => {
+    if (!KNOWLEDGE_IMAGE_UPLOAD_ENABLED) {
+      setUploadHint(true);
+      return;
+    }
+    setImageBusy(true);
+    setImageError(null);
+    try {
+      const { url } = await uploadKnowledgeImage(file, orgId);
+      insertImage(url, imageAlt || file.name);
+      setImageOpen(false);
+    } catch (err) {
+      setImageError(getErrorMessage(err));
+      setImageOpen(true);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  // Свежий обработчик для editorProps (paste/drop) — см. filesHandlerRef;
+  // без deps: editorProps создаются один раз, а функция замыкает стейт рендера.
+  React.useEffect(() => {
+    filesHandlerRef.current = (files) => {
+      void uploadImageFile(files[0]);
+    };
+  });
+
   // ── Сохранение ────────────────────────────────────────────────────────────
   const hasContent = !(editorState?.isEmpty ?? true);
-  const valid = title.trim().length > 0 && hasContent;
+  const form = useFormValidation({
+    title: title.trim() ? null : "Введите заголовок статьи",
+    cover: coverValid ? null : "Нужна ссылка http(s) — файл с компьютера так не вставить",
+    content: hasContent ? null : "Напишите текст статьи",
+  });
 
   const handleSubmit = () => {
-    if (!editor || !valid) return;
+    if (!editor) return;
+    if (!form.validate()) return;
     onSubmit({
       title: title.trim(),
-      content: editor.getHTML(),
+      // Обложка хранится внутри content первой картинкой title="cover".
+      content: withCover(editor.getHTML(), coverUrl.trim() || null),
       categoryId: categoryId === "" ? null : categoryId,
       isPublished,
     });
@@ -238,6 +359,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             disabled={busy}
+            {...form.field("title")}
           />
           <Stack direction="row" gap={2} alignItems="center">
             <TextField
@@ -268,6 +390,69 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 disabled={busy}
               />
             </Stack>
+          </Stack>
+
+          {/* Обложка — картинка на карточке статьи в ленте */}
+          <Stack direction="row" gap={1.5} alignItems="flex-start">
+            <Box
+              sx={{
+                width: 96,
+                height: 54,
+                flexShrink: 0,
+                borderRadius: 1.5,
+                border: `1px solid ${theme.palette.divider}`,
+                bgcolor: "action.hover",
+                overflow: "hidden",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {coverPreview ? (
+                <Box
+                  component="img"
+                  src={coverPreview}
+                  alt=""
+                  onError={() => setCoverBroken(true)}
+                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                <ImageOutlined fontSize="small" sx={{ color: "text.disabled" }} />
+              )}
+            </Box>
+            <TextField
+              label="Обложка (ссылка на картинку)"
+              size="small"
+              fullWidth
+              placeholder="https://…/photo.jpg"
+              value={coverUrl}
+              onChange={(e) => {
+                setCoverUrl(e.target.value);
+                setCoverBroken(false);
+              }}
+              disabled={busy}
+              {...form.field(
+                "cover",
+                coverBroken
+                  ? "Картинка не загрузилась — проверьте ссылку"
+                  : "Необязательно: показывается на карточке статьи в ленте",
+              )}
+              InputProps={{
+                endAdornment: coverUrl ? (
+                  <IconButton
+                    size="small"
+                    edge="end"
+                    onClick={() => {
+                      setCoverUrl("");
+                      setCoverBroken(false);
+                    }}
+                    disabled={busy}
+                  >
+                    <CloseOutlined fontSize="small" />
+                  </IconButton>
+                ) : undefined,
+              }}
+            />
           </Stack>
 
           {/* Тулбар */}
@@ -302,17 +487,21 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             {tb("Убрать ссылку", <LinkOffOutlined fontSize="small" />, false, () => editor?.chain().focus().unsetLink().run(), !editorState?.link)}
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             {tb("Видео (YouTube)", <SmartDisplayOutlined fontSize="small" />, false, () => { setVideoUrl(""); setVideoOpen(true); })}
+            {tb("Изображение", <ImageOutlined fontSize="small" />, editorState?.image ?? false, openImageDialog)}
           </Stack>
 
           {/* Контент */}
           <Box
+            ref={form.anchor("content")}
             onClick={() => editor?.chain().focus().run()}
             sx={{
               flex: 1,
               minHeight: 280,
               cursor: "text",
               borderRadius: 1.5,
-              border: `1px solid ${theme.palette.divider}`,
+              border: `1px solid ${
+                form.errorOf("content") ? theme.palette.error.main : theme.palette.divider
+              }`,
               "&:focus-within": {
                 borderColor: "primary.main",
                 boxShadow: `0 0 0 1px ${theme.palette.primary.main}`,
@@ -340,6 +529,18 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 overflowX: "auto",
               },
               "& .tiptap-editor a": { color: theme.palette.primary.main },
+              "& .tiptap-editor img": {
+                display: "block",
+                maxWidth: "100%",
+                height: "auto",
+                borderRadius: 8,
+                margin: theme.spacing(1, 0),
+              },
+              // Выделенная картинка (клик по ней) — рамка вместо системного outline.
+              "& .tiptap-editor img.ProseMirror-selectednode": {
+                outline: `2px solid ${theme.palette.primary.main}`,
+                outlineOffset: 2,
+              },
               "& .tiptap-editor div[data-youtube-video]": {
                 margin: theme.spacing(1, 0),
                 "& iframe": {
@@ -357,6 +558,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             <EditorContent editor={editor} />
           </Box>
 
+          {uploadHint && (
+            <Alert severity="info" onClose={() => setUploadHint(false)}>
+              Загрузка картинок файлом пока недоступна — вставьте ссылку на
+              изображение кнопкой «Изображение» в панели.
+            </Alert>
+          )}
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
 
@@ -368,7 +575,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={busy || !valid}
+            disabled={busy}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             {busy ? "Сохранение…" : "Сохранить"}
@@ -434,6 +641,82 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         <DialogActions>
           <Button onClick={() => setVideoOpen(false)}>Отмена</Button>
           <Button variant="contained" onClick={applyVideo} disabled={!videoId}>
+            Вставить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Диалог вставки картинки */}
+      <Dialog open={imageOpen} onClose={() => setImageOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Изображение</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <TextField
+              size="small"
+              fullWidth
+              autoFocus
+              label="Ссылка на картинку"
+              placeholder="https://…/photo.jpg"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              disabled={imageBusy}
+              error={imageUrl.trim() !== "" && !imageUrlValid}
+              helperText={
+                imageUrl.trim() !== "" && !imageUrlValid
+                  ? "Нужна ссылка http(s) — файл с компьютера так не вставить"
+                  : "Картинка должна быть доступна по ссылке (она не копируется на сервер)"
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  applyImageUrl();
+                }
+              }}
+            />
+            <TextField
+              size="small"
+              fullWidth
+              label="Описание (необязательно)"
+              value={imageAlt}
+              onChange={(e) => setImageAlt(e.target.value)}
+              disabled={imageBusy}
+              helperText="Показывается, если картинка не загрузилась"
+            />
+            {KNOWLEDGE_IMAGE_UPLOAD_ENABLED && (
+              <>
+                <Button
+                  variant="outlined"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={imageBusy}
+                  startIcon={imageBusy ? <CircularProgress size={16} /> : <ImageOutlined />}
+                >
+                  {imageBusy ? "Загрузка…" : "Загрузить файл"}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = ""; // повторный выбор того же файла
+                    if (file) void uploadImageFile(file);
+                  }}
+                />
+              </>
+            )}
+            {imageError && <Alert severity="error">{imageError}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImageOpen(false)} disabled={imageBusy}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={applyImageUrl}
+            disabled={!imageUrlValid || imageBusy}
+          >
             Вставить
           </Button>
         </DialogActions>
