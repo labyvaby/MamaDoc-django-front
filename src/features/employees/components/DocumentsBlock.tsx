@@ -24,6 +24,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { AppButton } from "../../../components/ui";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 import {
   getEmployeeDocuments,
   uploadEmployeeDocument,
@@ -137,8 +138,13 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
     setRenameValue(doc.title);
   };
 
+  const form = useFormValidation({
+    renameValue: renameValue.trim() ? null : "Введите название документа",
+  });
+
   const handleRename = async () => {
-    if (!renameDoc || !renameValue.trim()) return;
+    if (!renameDoc) return;
+    if (!form.validate()) return;
     setRenaming(true);
     try {
       const updated = await renameEmployeeDocument(employeeId, renameDoc.id, renameValue.trim());
@@ -374,6 +380,7 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
             placeholder="Название документа"
             disabled={renaming}
             sx={{ mt: 1 }}
+            {...form.field("renameValue")}
           />
         </DialogContent>
         <DialogActions>
@@ -383,7 +390,7 @@ const DocumentsBlock: React.FC<DocumentsBlockProps> = ({
           <AppButton
             variant="contained"
             onClick={handleRename}
-            disabled={renaming || !renameValue.trim()}
+            disabled={renaming}
           >
             {renaming ? (
               <Stack direction="row" alignItems="center" spacing={1}>

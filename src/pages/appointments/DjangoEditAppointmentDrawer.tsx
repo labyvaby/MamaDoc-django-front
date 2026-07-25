@@ -35,6 +35,7 @@ import { roundDateTimeLocalToStep } from "../../utility/time";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
   updateAppointment,
   parseBackendError,
@@ -252,6 +253,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       setDoctorComplaints("");
       setAdminComment("");
       setTouched(false);
+      form.reset();
       setSaving(false);
       setSaveError(null);
       return;
@@ -391,11 +393,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const incompatibleRows = validRows.filter(
     (r) => !data.canEmployeeProvideService(r.employeeId, r.serviceId),
   );
-  const isValid =
-    !!scheduledAt &&
-    (isBooking || !!selectedPatient) &&
-    validRows.length > 0 &&
-    incompatibleRows.length === 0;
+  // Порядок ключей = порядок полей в форме: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    scheduledAt: scheduledAt ? null : "Выберите дату и время",
+    patient: isBooking || selectedPatient ? null : "Выберите пациента",
+    services:
+      validRows.length === 0
+        ? "Добавьте хотя бы одну услугу с исполнителем"
+        : incompatibleRows.length > 0
+          ? "Исполнитель не оказывает выбранную услугу"
+          : null,
+    adminComment:
+      isBooking && !adminComment.trim() ? "Опишите бронь в комментарии" : null,
+  });
 
   // ── total ────────────────────────────────────────────────────────────────
   const servicesTotal = React.useMemo(() =>
@@ -441,8 +451,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
 
   // ── submit ───────────────────────────────────────────────────────────────
   const handleSave = () => {
-    setTouched(true);
-    if (!isValid || !appointment) return;
+    if (!appointment) return;
+    // Показывает ошибки и уводит фокус в первое незаполненное поле.
+    if (!form.validate()) return;
     void performSave();
   };
 
@@ -608,8 +619,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                             fontWeight: 500,
                           },
                         },
-                        error: touched && !scheduledAt,
-                        helperText: touched && !scheduledAt ? "Выберите дату и время" : "",
+                        error: Boolean(form.errorOf("scheduledAt")),
+                        helperText: form.errorOf("scheduledAt") ?? "",
+                        ref: form.anchor("scheduledAt"),
                       },
                     }}
                   />
@@ -712,10 +724,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                       {...params}
                       placeholder="Поиск по ФИО или телефону"
                       fullWidth
-                      error={touched && !isBooking && !selectedPatient}
-                      helperText={
-                        touched && !isBooking && !selectedPatient ? "Выберите пациента" : ""
-                      }
+                      error={Boolean(form.errorOf("patient"))}
+                      helperText={form.errorOf("patient") ?? ""}
+                      ref={form.anchor("patient")}
                     />
                   )}
                 />
@@ -786,7 +797,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
               {/* ── Услуги + Товары (показывается если выбран пациент или бронирование) ── */}
               {(selectedPatient || isBooking) && (
                 <>
-                  <AppCard variant="outlined" sx={{ bgcolor: "background.paper" }} disableContentPadding>
+                  <Box ref={form.anchor("services")}>
+                    <AppCard
+                      variant="outlined"
+                      sx={{ bgcolor: "background.paper" }}
+                      disableContentPadding
+                    >
                     <CardContent sx={{ p: 2 }}>
                       <Stack spacing={2}>
                         {/* ── Заголовок Услуги ── */}
@@ -856,8 +872,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     placeholder="Исполнитель"
                                     size="small"
                                     fullWidth
-                                    error={touched && !row.employeeId}
-                                    helperText={touched && !row.employeeId ? "Выберите исполнителя" : ""}
+                                    error={form.attempted && !row.employeeId}
+                                    helperText={form.attempted && !row.employeeId ? "Выберите исполнителя" : ""}
                                   />
                                 )}
                               />
@@ -918,8 +934,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       placeholder="Услуга"
                                       size="small"
                                       fullWidth
-                                      error={touched && !row.serviceId}
-                                      helperText={touched && !row.serviceId ? "Выберите услугу" : ""}
+                                      error={form.attempted && !row.serviceId}
+                                      helperText={form.attempted && !row.serviceId ? "Выберите услугу" : ""}
                                     />
                                   )}
                                 />
@@ -1190,12 +1206,11 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                         </Stack>
                       </Stack>
                     </CardContent>
-                  </AppCard>
+                    </AppCard>
+                  </Box>
 
-                  {touched && validRows.length === 0 && (
-                    <Alert severity="error">
-                      Добавьте хотя бы одну услугу с исполнителем
-                    </Alert>
+                  {form.errorOf("services") && (
+                    <Alert severity="error">{form.errorOf("services")}</Alert>
                   )}
 
                   {/* ── Текстовые поля ── */}
@@ -1226,12 +1241,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                     fullWidth
                     multiline
                     minRows={2}
-                    error={touched && isBooking && !adminComment.trim()}
-                    helperText={
-                      touched && isBooking && !adminComment.trim()
-                        ? "Обязательное поле для бронирования"
-                        : ""
-                    }
+                    {...form.field("adminComment")}
                   />
                 </>
               )}
@@ -1254,7 +1264,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
             <Button
               variant="contained"
               disabled={saving || data.loading}
-              onMouseEnter={() => { if (!touched) setTouched(true); }}
               onClick={handleSave}
             >
               {saving ? (

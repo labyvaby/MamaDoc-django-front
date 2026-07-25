@@ -26,6 +26,7 @@ import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import { useSnackbar } from "notistack";
 
 import { useCloseGuard } from "../../hooks/useCloseGuard";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
 import { retryAuth } from "../../hooks/usePermissions";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
@@ -137,7 +138,6 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   const [isActive, setIsActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [touched, setTouched] = React.useState(false);
 
   // Логотип живёт отдельно от формы: загрузка/удаление уходят на бэк сразу
   // (PUT/DELETE .../logo/), поэтому в isDirty/handleSubmit не участвуют.
@@ -152,7 +152,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     if (!open) return;
     setError(null);
     setBusy(false);
-    setTouched(false);
+    form.reset();
     setLogoUrl(editing?.logoUrl ?? null);
     setLogoBusy(false);
     setLogoError(null);
@@ -177,6 +177,8 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     }
     const t = setTimeout(() => nameRef.current?.focus(), 120);
     return () => clearTimeout(t);
+    // form.reset стабилен — эффект перезапускается только на открытии/смене цели.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
 
   const trimmedName = name.trim();
@@ -205,8 +207,16 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     onClose,
   });
 
-  const nameError = touched && !trimmedName ? "Укажите название филиала" : "";
-  const canSubmit = !busy && Boolean(trimmedName) && invalidMapLinks.length === 0;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const schema: Record<string, string | null> = {
+    name: trimmedName ? null : "Укажите название филиала",
+  };
+  MAP_LINKS.forEach(({ key, label }) => {
+    schema[`map-${key}`] = invalidMapLinks.includes(key)
+      ? `${label}: ссылка должна начинаться с http:// или https://`
+      : null;
+  });
+  const form = useFormValidation(schema);
 
   const setPhoneAt = (index: number, value: string) => {
     setPhones((prev) => prev.map((p, i) => (i === index ? value : p)));
@@ -224,8 +234,8 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   };
 
   const handleSubmit = async () => {
-    setTouched(true);
-    if (!trimmedName || invalidMapLinks.length > 0) return;
+    if (busy) return;
+    if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
@@ -463,8 +473,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
               onKeyDown={handleNameKeyDown}
               disabled={busy}
               placeholder="Например: Центральный филиал"
-              error={Boolean(nameError)}
-              helperText={nameError || " "}
+              {...form.field("name", " ")}
               inputProps={{ maxLength: NAME_MAX }}
             />
           </Stack>
@@ -541,12 +550,13 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                   onChange={(e) => setMapLink(key, e.target.value)}
                   disabled={busy}
                   placeholder={placeholder}
-                  error={touched && invalidMapLinks.includes(key)}
+                  error={Boolean(form.errorOf(`map-${key}`))}
                   helperText={
-                    touched && invalidMapLinks.includes(key)
+                    form.errorOf(`map-${key}`)
                       ? "Ссылка должна начинаться с http:// или https://"
                       : undefined
                   }
+                  ref={form.anchor(`map-${key}`)}
                   inputProps={{ inputMode: "url" }}
                 />
               ))}
@@ -633,7 +643,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={!canSubmit}
+            disabled={busy}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
             {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Создать"}

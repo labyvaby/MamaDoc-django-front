@@ -21,6 +21,7 @@ import {
   type CashboxShift,
 } from "../../../../api/cashboxShifts";
 import { djangoQueryKeys } from "../../../../api/queryKeys";
+import { useFormValidation } from "../../../../hooks/useFormValidation";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -82,16 +83,17 @@ const ShiftOpenDialog: React.FC<Props> = ({
     },
   });
 
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    branchId: branchId === "" ? "Выберите филиал" : null,
+    openingCash:
+      !isNaN(parseFloat(openingCash)) && parseFloat(openingCash) >= 0
+        ? null
+        : "Начальная сумма должна быть ≥ 0",
+  });
+
   const handleSubmit = () => {
-    if (branchId === "") {
-      setServerError("Выберите филиал");
-      return;
-    }
-    const amt = parseFloat(openingCash);
-    if (isNaN(amt) || amt < 0) {
-      setCashError("Начальная сумма должна быть ≥ 0");
-      return;
-    }
+    if (!form.validate()) return;
     setCashError(null);
     setServerError(null);
     mutation.mutate();
@@ -109,13 +111,14 @@ const ShiftOpenDialog: React.FC<Props> = ({
         <Stack spacing={2} sx={{ mt: 1 }}>
           {serverError && <Alert severity="error" sx={{ py: 0.5 }}>{serverError}</Alert>}
 
-          <FormControl size="small" fullWidth required>
+          <FormControl size="small" fullWidth required error={Boolean(form.errorOf("branchId"))}>
             <InputLabel>Филиал *</InputLabel>
             <Select
               value={branchId}
               label="Филиал *"
               onChange={(e) => setBranchId(e.target.value as number | "")}
               disabled={mutation.isPending}
+              ref={form.anchor("branchId")}
             >
               {branches.map((b) => (
                 <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>
@@ -134,8 +137,13 @@ const ShiftOpenDialog: React.FC<Props> = ({
               setOpeningCash(e.target.value);
               setCashError(null);
             }}
-            error={!!cashError}
-            helperText={cashError ?? "Наличные в кассе на момент открытия"}
+            error={Boolean(cashError) || Boolean(form.errorOf("openingCash"))}
+            helperText={
+              cashError ??
+              form.errorOf("openingCash") ??
+              "Наличные в кассе на момент открытия"
+            }
+            ref={form.anchor("openingCash")}
             disabled={mutation.isPending}
           />
         </Stack>
@@ -149,7 +157,7 @@ const ShiftOpenDialog: React.FC<Props> = ({
           size="small"
           color="success"
           onClick={handleSubmit}
-          disabled={mutation.isPending || branchId === ""}
+          disabled={mutation.isPending}
           startIcon={mutation.isPending ? <CircularProgress size={14} /> : undefined}
         >
           Открыть

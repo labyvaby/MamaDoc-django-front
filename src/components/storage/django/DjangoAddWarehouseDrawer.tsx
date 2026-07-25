@@ -33,6 +33,7 @@ import {
 } from "../../../api/warehouse";
 import { getBranches, DjangoBranch } from "../../../api/organization";
 import { ApiError } from "../../../api/client";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 
 type DrawerMode = "create" | "link";
 
@@ -59,7 +60,6 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
     const [isPrimary, setIsPrimary] = useState(false);
     const [isSales, setIsSales] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [touched, setTouched] = useState(false);
 
     // org-wide режим: выбор филиала для нового склада
     const [branches, setBranches] = useState<DjangoBranch[]>([]);
@@ -72,6 +72,14 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
 
     const isOrgWide = activeBranchId === null;
 
+    // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+    const form = useFormValidation({
+        branch:
+            isOrgWide && !editItem && !selectedBranch ? "Выберите филиал склада" : null,
+        name: name.trim() ? null : "Введите название склада",
+        address: address.trim() ? null : "Укажите адрес склада",
+    });
+
     useEffect(() => {
         if (open) {
             setMode("create");
@@ -80,7 +88,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
             setIsPrimary(editItem?.isPrimary || false);
             setIsSales(editItem?.isSales || false);
             setLoading(false);
-            setTouched(false);
+            form.reset();
             setSelectedLinkId(null);
             setSelectedBranch(null);
         }
@@ -110,9 +118,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
     }, [open, mode, editItem, notify]);
 
     const handleSubmitCreate = async () => {
-        setTouched(true);
-        if (!name.trim() || !address.trim()) return;
-        if (isOrgWide && !editItem && !selectedBranch) return;
+        if (!form.validate()) return;
 
         try {
             setLoading(true);
@@ -157,8 +163,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
         }
     };
 
-    const createDisabled =
-        !name.trim() || !address.trim() || loading || (isOrgWide && !editItem && !selectedBranch);
+    const createDisabled = loading;
 
     return (
         <Drawer
@@ -208,8 +213,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                                     <TextField
                                         {...params}
                                         label="Филиал *"
-                                        error={touched && !selectedBranch}
-                                        helperText={touched && !selectedBranch ? "Выберите филиал склада" : ""}
+                                        {...form.field("branch")}
                                     />
                                 )}
                                 noOptionsText="Нет филиалов"
@@ -222,8 +226,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                             fullWidth
                             required
                             autoFocus
-                            error={touched && !name.trim()}
-                            helperText={touched && !name.trim() ? "Обязательное поле" : ""}
+                            {...form.field("name")}
                         />
                         <TextField
                             label="Адрес *"
@@ -234,8 +237,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                             placeholder="г. Бишкек, ул..."
                             multiline
                             rows={2}
-                            error={touched && !address.trim()}
-                            helperText={touched && !address.trim() ? "Обязательное поле" : ""}
+                            {...form.field("address")}
                         />
                         <FormControlLabel
                             control={

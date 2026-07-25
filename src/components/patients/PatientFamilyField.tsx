@@ -15,6 +15,7 @@ import {
   getPatientFamilies,
   type DjangoFamily,
 } from "../../api/patients";
+import { useFormValidation } from "../../hooks/useFormValidation";
 
 type Props = {
   value: DjangoFamily | null;
@@ -47,9 +48,13 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
     if (value && !options.some((item) => item.id === value.id)) setOptions((prev) => [value, ...prev]);
   }, [value, options]);
 
+  const v = useFormValidation({
+    name: name.trim() ? null : "Введите название семьи",
+  });
+
   const handleCreate = async () => {
+    if (!v.validate()) return;
     const trimmed = name.trim();
-    if (!trimmed) return;
     try {
       const family = await createPatientFamily({ name: trimmed, branchId: branchId ?? null });
       setOptions((prev) => [family, ...prev]);
@@ -85,11 +90,21 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Новая семья</DialogTitle>
         <DialogContent>
-          <TextField autoFocus fullWidth label="Название семьи" value={name} onChange={(e) => { setName(e.target.value); setCreateError(null); }} error={Boolean(createError)} helperText={createError ?? undefined} sx={{ mt: 1 }} />
+          <TextField
+            autoFocus
+            fullWidth
+            label="Название семьи"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setCreateError(null); }}
+            sx={{ mt: 1 }}
+            ref={v.anchor("name")}
+            error={Boolean(createError) || Boolean(v.errorOf("name"))}
+            helperText={createError ?? v.errorOf("name") ?? undefined}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Отмена</Button>
-          <Button variant="contained" onClick={() => void handleCreate()} disabled={!name.trim()}>Создать</Button>
+          <Button variant="contained" onClick={() => void handleCreate()}>Создать</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -29,6 +29,7 @@ import {
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -157,8 +158,12 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
   });
 
   const amountNum = parseFloat(amount.replace(",", ".")) || 0;
-  const canSubmit =
-    employee != null && amountNum > 0 && reason.trim().length > 0;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    employee: employee ? null : "Выберите сотрудника",
+    amount: amountNum > 0 ? null : "Укажите сумму больше нуля",
+    reason: reason.trim() ? null : "Укажите причину надбавки",
+  });
   const busy = createMutation.isPending || deleteMutation.isPending;
 
   const monthLabel = dayjs(`${year}-${String(month).padStart(2, "0")}-01`)
@@ -167,7 +172,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
 
   const handleSubmit = () => {
     setError(null);
-    if (!canSubmit) return;
+    if (!form.validate()) return;
     createMutation.mutate();
   };
 
@@ -252,6 +257,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                   {...params}
                   size="small"
                   placeholder="Введите имя сотрудника..."
+                  {...form.field("employee")}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -286,6 +292,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                 endAdornment: <InputAdornment position="end">с</InputAdornment>,
               }}
               disabled={busy}
+              {...form.field("amount")}
             />
           </Stack>
 
@@ -307,6 +314,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
               placeholder="Например: переработка в праздники"
               disabled={busy}
               inputProps={{ maxLength: 255 }}
+              {...form.field("reason")}
             />
           </Stack>
 
@@ -397,7 +405,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
           fullWidth
           variant="contained"
           size="large"
-          disabled={!canSubmit || busy}
+          disabled={busy}
           onClick={handleSubmit}
           startIcon={
             createMutation.isPending ? (

@@ -41,6 +41,7 @@ import {
 } from "../../utility/phone";
 import { PhoneCountryCodeSelect } from "../ui";
 import { useCan } from "../../hooks/useCan";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
   createPatient,
   uploadPatientPhoto,
@@ -157,17 +158,25 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
     };
   }, [phone, phoneCountryCode, open]);
 
+  // ── валидация ─────────────────────────────────────────────────────────────
+  const v = useFormValidation({
+    fio: fio.trim() ? null : "Введите ФИО пациента",
+    blacklistReason:
+      canManageBlacklist && isBlacklisted && !blacklistReason.trim()
+        ? "Укажите причину добавления в чёрный список"
+        : null,
+  });
+
+  // Каждое открытие дровера — форма снова «не отправлялась».
+  React.useEffect(() => {
+    if (open) v.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (!v.validate()) return;
     const fioTrim = fio.trim();
-    if (!fioTrim) {
-      notify?.({ type: "error", message: "Введите ФИО пациента" });
-      return;
-    }
-    if (isBlacklisted && !blacklistReason.trim()) {
-      notify?.({ type: "error", message: "Укажите причину добавления в чёрный список" });
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -287,6 +296,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 autoFocus
                 placeholder="Введите ФИО пациента"
                 disabled={busy}
+                {...v.field("fio")}
               />
             </Stack>
 
@@ -440,12 +450,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     placeholder="Укажите причину"
                     disabled={busy}
                     required={isBlacklisted}
-                    error={isBlacklisted && !blacklistReason.trim()}
-                    helperText={
-                      isBlacklisted && !blacklistReason.trim()
-                        ? "Обязательно для чёрного списка"
-                        : undefined
-                    }
+                    {...v.field("blacklistReason")}
                   />
                 </Collapse>
               </Stack>
@@ -486,7 +491,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             <Button
               variant="contained"
               onClick={handleSubmit}
-              disabled={busy || !fio.trim()}
+              disabled={busy}
             >
               {busy ? (
                 <Stack direction="row" alignItems="center" spacing={1}>

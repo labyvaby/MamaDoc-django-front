@@ -50,6 +50,7 @@ import {
 } from "../../api/rbac";
 import { ApiError } from "../../api/client";
 import { usePermissions, retryAuth } from "../../hooks/usePermissions";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { getModuleCodeForPermission } from "../../utils/moduleMapping";
 
 // ── Category label mapping ──────────────────────────────────────────────────
@@ -453,11 +454,15 @@ function RoleFormDrawer({
     [permissions, selectedCodes],
   );
 
-  const canSubmit =
-    !busy && name.trim().length > 0 && code.trim().length > 0;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    name: name.trim() ? null : "Введите название роли",
+    code: code.trim() ? null : "Введите код роли",
+  });
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (busy) return;
+    if (!form.validate()) return;
     setError(null);
     setBusy(true);
     try {
@@ -544,6 +549,7 @@ function RoleFormDrawer({
             inputProps={{ maxLength: 120 }}
             InputLabelProps={{ shrink: true }}
             placeholder="Например: Врач-педиатр"
+            {...form.field("name")}
           />
 
           <TextField
@@ -562,11 +568,12 @@ function RoleFormDrawer({
             inputProps={{ maxLength: 80 }}
             InputLabelProps={{ shrink: true }}
             placeholder="Например: pediatrician"
-            helperText={
+            {...form.field(
+              "code",
               mode === "edit"
                 ? "Код роли нельзя изменить после создания"
-                : "Только латиница, цифры, дефис и подчёркивание"
-            }
+                : "Только латиница, цифры, дефис и подчёркивание",
+            )}
           />
 
           <TextField
@@ -736,7 +743,7 @@ function RoleFormDrawer({
         <AppButton
           variant="contained"
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={busy}
           loading={busy}
         >
           {busy ? "Сохранение…" : mode === "create" ? "Создать" : "Сохранить"}

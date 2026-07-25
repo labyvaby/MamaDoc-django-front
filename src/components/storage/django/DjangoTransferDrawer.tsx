@@ -20,6 +20,7 @@ import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import { DjangoStockItem } from "../../../api/warehouse";
 import type { MovementWarehouseOption } from "./DjangoAddMovementDrawer";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 
 const noSpinnersSx = {
     "& input[type=number]": { MozAppearance: "textfield" },
@@ -73,8 +74,20 @@ export const DjangoTransferDrawer: React.FC<DjangoTransferDrawerProps> = ({
     const overStock = qtyNum > available;
     const isValid = qtyNum > 0 && !overStock && !!toWarehouse && !!item;
 
+    // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+    const form = useFormValidation({
+        toWarehouse: toWarehouse ? null : "Выберите склад назначения",
+        quantity:
+            qtyNum <= 0
+                ? "Укажите количество больше нуля"
+                : overStock
+                  ? `Больше, чем доступно (${available} ${item?.productUnit || "шт"})`
+                  : null,
+    });
+
     const handleSubmit = async () => {
-        if (!isValid || !toWarehouse) return;
+        if (!item) return;
+        if (!form.validate() || !toWarehouse) return;
         try {
             setLoading(true);
             await onConfirm(toWarehouse.id, qtyNum, comment.trim() || undefined);
@@ -169,7 +182,12 @@ export const DjangoTransferDrawer: React.FC<DjangoTransferDrawerProps> = ({
                                 onChange={(_, v) => setToWarehouse(v)}
                                 isOptionEqualToValue={(o, v) => o.id === v.id}
                                 renderInput={(params) => (
-                                    <TextField {...params} placeholder="Выберите склад..." size="small" />
+                                    <TextField
+                                        {...params}
+                                        placeholder="Выберите склад..."
+                                        size="small"
+                                        {...form.field("toWarehouse")}
+                                    />
                                 )}
                                 noOptionsText="Нет других складов"
                             />
@@ -204,6 +222,7 @@ export const DjangoTransferDrawer: React.FC<DjangoTransferDrawerProps> = ({
                                     inputProps={{ style: { textAlign: "center" }, min: 0, max: available }}
                                     sx={{ flex: 1, ...noSpinnersSx }}
                                     InputProps={{ disableUnderline: true }}
+                                    ref={form.anchor("quantity")}
                                 />
                                 <Button
                                     size="small"
@@ -216,9 +235,11 @@ export const DjangoTransferDrawer: React.FC<DjangoTransferDrawerProps> = ({
                                     +
                                 </Button>
                             </Stack>
-                            {overStock && (
+                            {(overStock || form.errorOf("quantity")) && (
                                 <Typography variant="caption" color="error.main" sx={{ mt: 0.5, display: "block" }}>
-                                    Больше, чем доступно ({available} {item?.productUnit || "шт"})
+                                    {overStock
+                                        ? `Больше, чем доступно (${available} ${item?.productUnit || "шт"})`
+                                        : form.errorOf("quantity")}
                                 </Typography>
                             )}
                         </Box>
@@ -263,7 +284,7 @@ export const DjangoTransferDrawer: React.FC<DjangoTransferDrawerProps> = ({
                     variant="contained"
                     fullWidth
                     size="large"
-                    disabled={loading || !isValid}
+                    disabled={loading || !item}
                     onClick={handleSubmit}
                     startIcon={!loading ? <SwapHorizOutlined /> : undefined}
                 >

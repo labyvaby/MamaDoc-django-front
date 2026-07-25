@@ -62,6 +62,7 @@ import {
 } from "../../api/tasks";
 import { getProducts, getWarehouses, type DjangoProduct } from "../../api/warehouse";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { TASK_PRIORITY_META, TASK_PRIORITY_OPTIONS } from "../tasks/meta";
 
 // ── Справочники ────────────────────────────────────────────────────────────────
@@ -123,10 +124,14 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
     }
   }, [open, category]);
 
-  const valid = name.trim().length >= 2 && roles.length > 0;
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    name: name.trim().length >= 2 ? null : "Название — минимум 2 символа",
+    roles: roles.length > 0 ? null : "Выберите хотя бы одну группу-исполнителя",
+  });
 
   const handleSubmit = async () => {
-    if (!valid) return;
+    if (!form.validate()) return;
     setBusy(true);
     setError(null);
     try {
@@ -173,6 +178,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
             onChange={(e) => setName(e.target.value)}
             disabled={busy}
             inputProps={{ maxLength: 200 }}
+            {...form.field("name")}
           />
           <TextField
             select
@@ -195,7 +201,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
                 </Box>
               ),
             }}
-            helperText="Заявки категории увидят сотрудники с этими ролями"
+            {...form.field("roles", "Заявки категории увидят сотрудники с этими ролями")}
           >
             {ROLE_OPTIONS.map((r) => (
               <MenuItem key={r.value} value={r.value}>
@@ -228,7 +234,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || !valid}
+          disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : category ? "Сохранить" : "Добавить"}
@@ -273,10 +279,14 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
     }
   }, [open]);
 
-  const valid = title.trim().length >= 2 && categoryId !== "";
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    title: title.trim().length >= 2 ? null : "Название — минимум 2 символа",
+    categoryId: categoryId !== "" ? null : "Выберите категорию",
+  });
 
   const handleSubmit = async () => {
-    if (!valid) return;
+    if (!form.validate()) return;
     setBusy(true);
     setError(null);
     try {
@@ -315,6 +325,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
             onChange={(e) => setTitle(e.target.value)}
             disabled={busy}
             inputProps={{ maxLength: 200 }}
+            {...form.field("title")}
           />
           <TextField
             label="Описание"
@@ -334,6 +345,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
             disabled={busy}
             value={categoryId === "" ? "" : String(categoryId)}
             onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
+            {...form.field("categoryId")}
           >
             {categories
               .filter((c) => c.isActive)
@@ -420,7 +432,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || !valid}
+          disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : "Создать"}
@@ -485,11 +497,17 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
   }, [open, rule]);
 
   const normalized = normalizeThreshold(threshold);
-  const valid =
-    normalized != null && categoryId !== "" && (rule != null || (product != null && warehouseId !== ""));
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    product: rule != null || product != null ? null : "Выберите товар",
+    warehouseId: rule != null || warehouseId !== "" ? null : "Выберите склад",
+    threshold:
+      normalized != null ? null : "Число больше нуля, до 2 знаков после точки",
+    categoryId: categoryId !== "" ? null : "Выберите категорию заявки",
+  });
 
   const handleSubmit = async () => {
-    if (!valid || normalized == null) return;
+    if (!form.validate() || normalized == null) return;
     setBusy(true);
     setError(null);
     try {
@@ -549,7 +567,13 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
                 disabled={busy}
                 noOptionsText="Товары не найдены"
                 renderInput={(params) => (
-                  <TextField {...params} label="Товар *" size="small" autoFocus />
+                  <TextField
+                    {...params}
+                    label="Товар *"
+                    size="small"
+                    autoFocus
+                    {...form.field("product")}
+                  />
                 )}
               />
               <TextField
@@ -560,6 +584,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
                 disabled={busy || warehousesQuery.isLoading}
                 value={warehouseId === "" ? "" : String(warehouseId)}
                 onChange={(e) => setWarehouseId(e.target.value === "" ? "" : Number(e.target.value))}
+                {...form.field("warehouseId")}
               >
                 {(warehousesQuery.data ?? []).map((w) => (
                   <MenuItem key={w.id} value={String(w.id)}>
@@ -577,9 +602,10 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
             inputProps={{ inputMode: "decimal" }}
-            error={threshold.trim() !== "" && normalized == null}
+            ref={form.anchor("threshold")}
+            error={(threshold.trim() !== "" || form.attempted) && normalized == null}
             helperText={
-              threshold.trim() !== "" && normalized == null
+              (threshold.trim() !== "" || form.attempted) && normalized == null
                 ? "Число больше нуля, до 2 знаков после точки"
                 : product?.unit
                 ? `Единица: ${product.unit}. Остаток ниже порога — автозадача на пополнение`
@@ -594,7 +620,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
             disabled={busy}
             value={categoryId === "" ? "" : String(categoryId)}
             onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
-            helperText="Группа этой категории получит автозадачу"
+            {...form.field("categoryId", "Группа этой категории получит автозадачу")}
           >
             {categories
               .filter((c) => c.isActive)
@@ -619,7 +645,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || !valid}
+          disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Сохранение…" : rule ? "Сохранить" : "Добавить"}

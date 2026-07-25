@@ -31,6 +31,7 @@ import {
 } from "../../utility/phone";
 import { PhoneCountryCodeSelect } from "../ui";
 import { useCan } from "../../hooks/useCan";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import {
   updatePatient,
   uploadPatientPhoto,
@@ -75,9 +76,16 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [family, setFamily] = React.useState<DjangoFamily | null>(null);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
-  const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const v = useFormValidation({
+    fio: fio.trim() ? null : "Введите ФИО пациента",
+    blacklistReason:
+      canManageBlacklist && isBlacklisted && !blacklistReason.trim()
+        ? "Укажите причину добавления в чёрный список"
+        : null,
+  });
 
   React.useEffect(() => {
     if (!open || !patient) return;
@@ -96,8 +104,10 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
     setFamily(patient.family || null);
     setIsBlacklisted(patient.isBlacklisted || false);
     setBlacklistReason(patient.blacklistReason || "");
-    setTouched(false);
+    v.reset();
     setError(null);
+    // v.reset стабилен — в зависимостях только открытие/смена пациента.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, patient]);
 
   const handlePickPhoto = React.useCallback((f: File | null) => {
@@ -119,16 +129,8 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   };
 
   const handleSubmit = async () => {
-    setTouched(true);
+    if (!v.validate()) return;
     const fioTrim = fio.trim();
-    if (!fioTrim) {
-      notify?.({ type: "error", message: "Введите ФИО пациента" });
-      return;
-    }
-    if (isBlacklisted && !blacklistReason.trim()) {
-      notify?.({ type: "error", message: "Укажите причину добавления в чёрный список" });
-      return;
-    }
     if (!patient) return;
 
     setBusy(true);
@@ -275,8 +277,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                 autoFocus
                 placeholder="Введите ФИО пациента"
                 disabled={busy}
-                error={touched && !fio.trim()}
-                helperText={touched && !fio.trim() ? "Обязательное поле" : undefined}
+                {...v.field("fio")}
               />
             </Stack>
 
@@ -437,12 +438,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                     placeholder="Опишите причину..."
                     disabled={busy}
                     required={isBlacklisted}
-                    error={isBlacklisted && !blacklistReason.trim()}
-                    helperText={
-                      isBlacklisted && !blacklistReason.trim()
-                        ? "Обязательное поле"
-                        : undefined
-                    }
+                    {...v.field("blacklistReason")}
                   />
                 </Collapse>
               </Stack>
@@ -461,7 +457,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             <Button
               variant="contained"
               onClick={handleSubmit}
-              disabled={busy || !fio.trim()}
+              disabled={busy}
             >
               {busy ? (
                 <Stack direction="row" alignItems="center" spacing={1}>

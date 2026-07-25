@@ -21,10 +21,10 @@ import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useFormValidation } from "../../hooks/useFormValidation";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { compressImage } from "../../utility/imageCompression";
-import { formatKGS } from "../../utility/format";
 import {
   CLEANING_MAX_PHOTOS,
   CLEANING_PHOTO_MAX_SIZE_MB,
@@ -101,6 +101,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
     setTypeId(activeTypes.length === 1 ? activeTypes[0].id : "");
     setEmployeeId("");
     clearPhotos();
+    v.reset();
     setError(null);
     // activeTypes меняются только при рефетче типов — пересброс формы не нужен.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,17 +182,22 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
 
   // При ручном назначении исполнитель обязателен: менеджер сам не уборщица,
   // писать «на себя» ему нечего — запись должна быть привязана к сотруднику.
-  const canSubmit =
-    typeId !== "" && photos.length > 0 && (!canAssign || employeeId !== "");
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const v = useFormValidation({
+    employeeId:
+      !canAssign || employeeId !== "" ? null : "Выберите сотрудника",
+    typeId: typeId !== "" ? null : "Выберите тип уборки",
+    photos: photos.length > 0 ? null : "Приложите хотя бы одно фото",
+  });
 
   const handleSubmit = async () => {
-    if (typeId === "" || photos.length === 0) return;
-    if (canAssign && employeeId === "") return;
+    if (!v.validate()) return;
     setBusy(true);
     setError(null);
     try {
       await createCleaningRecord({
-        typeId,
+        // Тип выбран — гарантировано v.validate() выше.
+        typeId: typeId as number,
         photos: photos.map((p) => p.file),
         employeeId: canAssign && employeeId !== "" ? employeeId : undefined,
         organizationId: orgId,
@@ -225,14 +231,15 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
               value={employeeId === "" ? "" : String(employeeId)}
               onChange={(e) => setEmployeeId(Number(e.target.value))}
               disabled={busy || employeesQuery.isLoading}
-              error={Boolean(employeesQuery.error)}
-              helperText={
+              {...v.field(
+                "employeeId",
                 employeesQuery.isError
                   ? "Не удалось загрузить список — попробуйте позже"
                   : employeesQuery.isSuccess && employees.length === 0
                     ? "Нет сотрудников с правом на уборку и учётной записью"
-                    : "На кого записать уборку"
-              }
+                    : "На кого записать уборку",
+              )}
+              error={Boolean(employeesQuery.error) || Boolean(v.errorOf("employeeId"))}
             >
               {employees.map((emp) => (
                 <MenuItem key={emp.id} value={String(emp.id)}>
@@ -249,16 +256,17 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
             value={typeId === "" ? "" : String(typeId)}
             onChange={(e) => setTypeId(Number(e.target.value))}
             disabled={busy}
+            {...v.field("typeId")}
           >
             {activeTypes.map((t) => (
               <MenuItem key={t.id} value={String(t.id)}>
-                {t.name} · {formatKGS(t.rate)}
+                {t.name}
               </MenuItem>
             ))}
           </TextField>
 
           {/* Фото */}
-          <Stack direction="row" gap={1} flexWrap="wrap">
+          <Stack ref={v.anchor("photos")} direction="row" gap={1} flexWrap="wrap">
             {photos.map((photo, i) => (
               <Box key={photo.url} sx={{ position: "relative" }}>
                 <Box
@@ -311,7 +319,10 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
               </Button>
             )}
           </Stack>
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            color={v.errorOf("photos") ? "error" : "text.secondary"}
+          >
             От 1 до {CLEANING_MAX_PHOTOS} фото — фотоотчёт обязателен, по нему администратор
             подтверждает уборку. Можно перетащить файлы сюда или вставить из буфера (Ctrl+V).
           </Typography>
@@ -333,7 +344,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy || !canSubmit}
+          disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {busy ? "Отправка…" : "Отправить"}

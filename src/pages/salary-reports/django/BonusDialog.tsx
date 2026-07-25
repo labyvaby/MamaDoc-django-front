@@ -28,6 +28,7 @@ import {
 } from "../../../api/payroll";
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
+import { useFormValidation } from "../../../hooks/useFormValidation";
 
 interface Props {
   open: boolean;
@@ -108,16 +109,17 @@ const BonusDialog: React.FC<Props> = ({
     onClose();
   };
 
+  // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
+  const form = useFormValidation({
+    amount:
+      Number.isFinite(Number(amount)) && Number(amount) > 0
+        ? null
+        : "Введите сумму больше нуля",
+    reason: reason.trim() ? null : "Укажите причину надбавки",
+  });
+
   const handleAdd = () => {
-    const num = Number(amount);
-    if (!Number.isFinite(num) || num <= 0) {
-      setError("Введите сумму больше нуля");
-      return;
-    }
-    if (!reason.trim()) {
-      setError("Укажите причину надбавки");
-      return;
-    }
+    if (!form.validate()) return;
     setError(null);
     createMutation.mutate();
   };
@@ -218,6 +220,7 @@ const BonusDialog: React.FC<Props> = ({
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={busy}
                 inputProps={{ min: 0, step: 100 }}
+                {...form.field("amount")}
               />
               <TextField
                 label="Причина"
@@ -228,13 +231,14 @@ const BonusDialog: React.FC<Props> = ({
                 disabled={busy}
                 placeholder="Напр.: мыл полы"
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                {...form.field("reason")}
               />
               <Button
                 variant="outlined"
                 size="small"
                 startIcon={createMutation.isPending ? <CircularProgress size={14} /> : <AddIcon />}
                 onClick={handleAdd}
-                disabled={busy || !amount.trim() || !reason.trim()}
+                disabled={busy}
               >
                 Добавить надбавку
               </Button>
