@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { Scope, scopeParams } from "./scope";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -72,8 +73,15 @@ export type UpdatePatientPayload = Partial<Omit<CreatePatientPayload, "organizat
 
 // ── API functions ──────────────────────────────────────────────────────────
 
-export function getPatients(signal?: AbortSignal): Promise<DjangoPatient[]> {
-  return apiRequest<DjangoPatient[]>("/patients/", { signal });
+export function getPatients(
+  scope: Scope = {},
+  params?: { search?: string },
+  signal?: AbortSignal,
+): Promise<DjangoPatient[]> {
+  const query = scopeParams(scope);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return apiRequest<DjangoPatient[]>(`/patients/${qs ? `?${qs}` : ""}`, { signal });
 }
 
 export function getPatientFamilies(
@@ -138,17 +146,34 @@ export function forceFaceCapture(): Promise<{
   }>("/patients/face/force-capture/", { method: "POST" });
 }
 
-/**
- * Серверный поиск пациентов (по ФИО или телефону) с лимитом.
- * Для автокомплитов — не тянет всю базу на клиент.
- */
 export function searchPatients(
-  search: string,
-  limit = 10,
-  signal?: AbortSignal,
-  offset = 0,
+  scopeOrSearch?: Scope | string,
+  limitOrSearch?: number | string,
+  signalOrLimit?: AbortSignal | number,
+  offsetOrSignal?: number | AbortSignal,
+  offsetVal?: number,
 ): Promise<DjangoPatient[]> {
-  const q = new URLSearchParams();
+  let scope: Scope = {};
+  let search = "";
+  let limit = 10;
+  let signal: AbortSignal | undefined;
+  let offset = 0;
+
+  if (typeof scopeOrSearch === "string") {
+    // Legacy call signature: searchPatients(search, limit, signal, offset)
+    search = scopeOrSearch;
+    limit = typeof limitOrSearch === "number" ? limitOrSearch : 10;
+    signal = signalOrLimit as AbortSignal | undefined;
+    offset = typeof offsetOrSignal === "number" ? offsetOrSignal : 0;
+  } else {
+    scope = scopeOrSearch ?? {};
+    search = typeof limitOrSearch === "string" ? limitOrSearch : "";
+    limit = typeof signalOrLimit === "number" ? signalOrLimit : 10;
+    signal = offsetOrSignal as AbortSignal | undefined;
+    offset = offsetVal ?? 0;
+  }
+
+  const q = scopeParams(scope);
   if (search) q.set("search", search);
   q.set("limit", String(limit));
   if (offset) q.set("offset", String(offset));

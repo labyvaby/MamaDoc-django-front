@@ -93,11 +93,23 @@ function normalizeService(service: Service): Service {
   };
 }
 
-// ── API functions ──────────────────────────────────────────────────────────
+import { Scope, scopeParams } from "./scope";
 
-export function getServices(branchId?: number | null, signal?: AbortSignal): Promise<Service[]> {
-  const params = branchId != null ? `?branchId=${branchId}` : "";
-  return apiRequest<Service[]>(`/catalog/services/${params}`, { signal }).then((services) =>
+export function getServices(
+  scopeOrBranchId?: Scope | number | null,
+  params?: { category?: ServiceCategory | null; search?: string },
+  signal?: AbortSignal,
+): Promise<Service[]> {
+  let query: URLSearchParams;
+  if (typeof scopeOrBranchId === "number" || scopeOrBranchId === null) {
+    query = scopeParams(scopeOrBranchId != null ? { branchId: scopeOrBranchId } : {});
+  } else {
+    query = scopeParams(scopeOrBranchId ?? {});
+  }
+  if (params?.category) query.set("category", params.category);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return apiRequest<Service[]>(`/catalog/services/${qs ? `?${qs}` : ""}`, { signal }).then((services) =>
     (Array.isArray(services) ? services : []).map(normalizeService),
   );
 }
