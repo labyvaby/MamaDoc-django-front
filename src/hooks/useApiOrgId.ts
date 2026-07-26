@@ -1,17 +1,12 @@
-import { usePermissions } from "./usePermissions";
+import { useActiveScope } from "./useActiveScope";
 
 /**
  * organizationId для API-запросов орг-скоупных модулей (tasks, achievements...).
  *
- * Бэк выводит организацию из membership сессии, но суперпользователю (и
- * мультиорг-аккаунту) требуется явный query-параметр organizationId — иначе
- * 400 «Суперпользователю необходимо указать organizationId» (см. паттерн
- * orgRequired на страницах expenses/cashbox/reports).
+ * Тонкая обёртка вокруг useActiveScope().organizationId для обратной совместимости.
  */
 export function useApiOrgId(): number | undefined {
-  const { isSuperAdmin, memberships, activeOrganization } = usePermissions();
-  const orgRequired = isSuperAdmin() || (memberships ?? []).length > 1;
-  return orgRequired ? activeOrganization?.id ?? undefined : undefined;
+  return useActiveScope().organizationId;
 }
 
 export default useApiOrgId;
