@@ -32,6 +32,9 @@ export interface AppLayoutConfig {
       desktopCollapsed: number; // px
       mobile: number; // px
     };
+    // Плотность пунктов меню — задаётся кастомайзером (sidebarDensity)
+    itemPaddingY: number; // spacing-юниты — вертикальный padding пункта
+    itemGap: number; // spacing-юниты — зазор между соседними пунктами
   };
   fullPage: {
     minHeight: string; // базовая высота полноэкранных контейнеров (например, "100vh")
@@ -171,19 +174,41 @@ export const UI_SCALE_FACTORS: Record<UiScale, number> = {
   large: 1.15, // ~18.4px
 };
 
+/** Плотность сайдбара — расстояние между пунктами меню. */
+export type SidebarDensity = "compact" | "normal" | "spacious";
+export const DEFAULT_SIDEBAR_DENSITY: SidebarDensity = "normal";
+/** Вертикальный padding пункта и зазор между пунктами (spacing-юниты MUI). */
+export const SIDEBAR_DENSITY_TOKENS: Record<
+  SidebarDensity,
+  { itemPaddingY: number; itemGap: number }
+> = {
+  compact: { itemPaddingY: 0.25, itemGap: 0 },
+  normal: { itemPaddingY: 0.5, itemGap: 0 },
+  spacious: { itemPaddingY: 0.75, itemGap: 0.5 },
+};
+
 export type ThemeCustomization = {
   primaryColor?: string;
   surface?: { default: string; paper: string };
   cardSkin?: CardSkin;
   uiScale?: UiScale;
+  sidebarDensity?: SidebarDensity;
 };
 
 export function getAppTheme(
   mode: PaletteMode | string,
   custom: ThemeCustomization = {},
 ): Theme {
-  const { primaryColor, surface, cardSkin = DEFAULT_CARD_SKIN, uiScale = DEFAULT_UI_SCALE } = custom;
+  const {
+    primaryColor,
+    surface,
+    cardSkin = DEFAULT_CARD_SKIN,
+    uiScale = DEFAULT_UI_SCALE,
+    sidebarDensity = DEFAULT_SIDEBAR_DENSITY,
+  } = custom;
   const fontScale = UI_SCALE_FACTORS[uiScale] ?? 1;
+  const densityTokens =
+    SIDEBAR_DENSITY_TOKENS[sidebarDensity] ?? SIDEBAR_DENSITY_TOKENS[DEFAULT_SIDEBAR_DENSITY];
   const m = (mode === "dark" ? "dark" : "light") as PaletteMode;
   const base = m === "light" ? RefineThemes.Blue : RefineThemes.BlueDark;
 
@@ -205,6 +230,8 @@ export function getAppTheme(
         desktopCollapsed: 64,
         mobile: 260,
       },
+      itemPaddingY: densityTokens.itemPaddingY,
+      itemGap: densityTokens.itemGap,
     },
     fullPage: {
       minHeight: "100vh",

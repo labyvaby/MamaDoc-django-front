@@ -7,8 +7,10 @@ import {
   DEFAULT_DARK_SURFACE,
   DEFAULT_CARD_SKIN,
   DEFAULT_UI_SCALE,
+  DEFAULT_SIDEBAR_DENSITY,
   type CardSkin,
   type UiScale,
+  type SidebarDensity,
 } from "../../theme";
 import React, {
   PropsWithChildren,
@@ -64,6 +66,9 @@ type ColorModeContextType = {
   /** Размер интерфейса (масштаб типографики). */
   uiScale: UiScale;
   setUiScale: (scale: UiScale) => void;
+  /** Плотность сайдбара (расстояние между пунктами меню). */
+  sidebarDensity: SidebarDensity;
+  setSidebarDensity: (density: SidebarDensity) => void;
   /** Сброс к значениям по умолчанию. */
   reset: () => void;
 };
@@ -107,6 +112,9 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   const [uiScale, setUiScaleState] = useState<UiScale>(
     (localStorage.getItem("uiScale") as UiScale) || DEFAULT_UI_SCALE,
   );
+  const [sidebarDensity, setSidebarDensityState] = useState<SidebarDensity>(
+    (localStorage.getItem("sidebarDensity") as SidebarDensity) || DEFAULT_SIDEBAR_DENSITY,
+  );
   const [systemMode, setSystemMode] = useState<"light" | "dark">(getSystemMode());
 
   // При получении или смене палитры организации от бэкенда применяем её.
@@ -135,6 +143,22 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     ) {
       setCardSkinState(themeConfig.cardSkin as CardSkin);
     }
+    if (
+      themeConfig.uiScale &&
+      (themeConfig.uiScale === "compact" ||
+        themeConfig.uiScale === "normal" ||
+        themeConfig.uiScale === "large")
+    ) {
+      setUiScaleState(themeConfig.uiScale as UiScale);
+    }
+    if (
+      themeConfig.sidebarDensity &&
+      (themeConfig.sidebarDensity === "compact" ||
+        themeConfig.sidebarDensity === "normal" ||
+        themeConfig.sidebarDensity === "spacious")
+    ) {
+      setSidebarDensityState(themeConfig.sidebarDensity as SidebarDensity);
+    }
   }, [themeConfig]);
 
   // Следим за системной темой, когда выбрана схема «системная».
@@ -151,6 +175,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   useEffect(() => { window.localStorage.setItem("darkSurface", darkSurface); }, [darkSurface]);
   useEffect(() => { window.localStorage.setItem("cardSkin", cardSkin); }, [cardSkin]);
   useEffect(() => { window.localStorage.setItem("uiScale", uiScale); }, [uiScale]);
+  useEffect(() => { window.localStorage.setItem("sidebarDensity", sidebarDensity); }, [sidebarDensity]);
 
   const mode: "light" | "dark" = scheme === "system" ? systemMode : scheme;
 
@@ -169,6 +194,8 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setCardSkin: setCardSkinState,
       uiScale,
       setUiScale: setUiScaleState,
+      sidebarDensity,
+      setSidebarDensity: setSidebarDensityState,
       reset: () => {
         setSchemeState("system");
         setPrimaryColorState(DEFAULT_PRIMARY);
@@ -176,9 +203,10 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
         setDarkSurfaceState(DEFAULT_DARK_SURFACE);
         setCardSkinState(DEFAULT_CARD_SKIN);
         setUiScaleState(DEFAULT_UI_SCALE);
+        setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
       },
     }),
-    [scheme, mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale],
+    [scheme, mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale, sidebarDensity],
   );
 
   const theme = useMemo(() => {
@@ -192,8 +220,9 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       surface: surface ? { default: surface.default, paper: surface.paper } : undefined,
       cardSkin,
       uiScale,
+      sidebarDensity,
     });
-  }, [mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale]);
+  }, [mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale, sidebarDensity]);
 
   return (
     <ColorModeContext.Provider value={value}>

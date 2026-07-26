@@ -27,6 +27,9 @@ import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import ColorLensOutlined from "@mui/icons-material/ColorLensOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import PaletteOutlined from "@mui/icons-material/PaletteOutlined";
+import DensitySmallOutlined from "@mui/icons-material/DensitySmallOutlined";
+import DensityMediumOutlined from "@mui/icons-material/DensityMediumOutlined";
+import DensityLargeOutlined from "@mui/icons-material/DensityLargeOutlined";
 
 import {
   ColorModeContext,
@@ -41,9 +44,11 @@ import {
   DEFAULT_DARK_SURFACE,
   DEFAULT_CARD_SKIN,
   DEFAULT_UI_SCALE,
+  DEFAULT_SIDEBAR_DENSITY,
   type CardSkin,
   type SurfacePreset,
   type UiScale,
+  type SidebarDensity,
 } from "../../theme";
 import { usePermissions } from "../../hooks/usePermissions";
 import { updateOrganization } from "../../api/organization";
@@ -59,6 +64,12 @@ const SCALE_OPTIONS: { value: UiScale; label: string; letterSize: number }[] = [
   { value: "compact", label: "Компактный", letterSize: 12 },
   { value: "normal", label: "Обычный", letterSize: 15 },
   { value: "large", label: "Крупный", letterSize: 18 },
+];
+
+const DENSITY_OPTIONS: { value: SidebarDensity; label: string; icon: React.ReactNode }[] = [
+  { value: "compact", label: "Плотно", icon: <DensitySmallOutlined fontSize="small" /> },
+  { value: "normal", label: "Обычно", icon: <DensityMediumOutlined fontSize="small" /> },
+  { value: "spacious", label: "Просторно", icon: <DensityLargeOutlined fontSize="small" /> },
 ];
 
 const SectionTitle: React.FC<{ children: React.ReactNode; first?: boolean }> = ({
@@ -255,6 +266,8 @@ const ThemeCustomizerContent: React.FC<{
     setCardSkin,
     uiScale,
     setUiScale,
+    sidebarDensity,
+    setSidebarDensity,
     reset,
   } = React.useContext(ColorModeContext);
 
@@ -272,18 +285,24 @@ const ThemeCustomizerContent: React.FC<{
       lightSurface?: string;
       darkSurface?: string;
       cardSkin?: CardSkin;
+      uiScale?: UiScale;
+      sidebarDensity?: SidebarDensity;
     }) => {
       const nextScheme = patch.colorScheme ?? scheme;
       const nextPrimary = patch.primaryColor ?? primaryColor;
       const nextLight = patch.lightSurface ?? lightSurface;
       const nextDark = patch.darkSurface ?? darkSurface;
       const nextCard = patch.cardSkin ?? cardSkin;
+      const nextScale = patch.uiScale ?? uiScale;
+      const nextDensity = patch.sidebarDensity ?? sidebarDensity;
 
       if (patch.colorScheme) setScheme(patch.colorScheme);
       if (patch.primaryColor) setPrimaryColor(patch.primaryColor);
       if (patch.lightSurface) setLightSurface(patch.lightSurface);
       if (patch.darkSurface) setDarkSurface(patch.darkSurface);
       if (patch.cardSkin) setCardSkin(patch.cardSkin);
+      if (patch.uiScale) setUiScale(patch.uiScale);
+      if (patch.sidebarDensity) setSidebarDensity(patch.sidebarDensity);
 
       if (canManageOrgTheme && activeOrganization?.id && IS_DJANGO_BACKEND) {
         const newThemeConfig = {
@@ -292,6 +311,8 @@ const ThemeCustomizerContent: React.FC<{
           lightSurface: nextLight,
           darkSurface: nextDark,
           cardSkin: nextCard,
+          uiScale: nextScale,
+          sidebarDensity: nextDensity,
         };
         updateOrganization(activeOrganization.id, { themeConfig: newThemeConfig }).catch(
           (err) => console.error("Failed to save organization theme config", err),
@@ -304,11 +325,15 @@ const ThemeCustomizerContent: React.FC<{
       lightSurface,
       darkSurface,
       cardSkin,
+      uiScale,
+      sidebarDensity,
       setScheme,
       setPrimaryColor,
       setLightSurface,
       setDarkSurface,
       setCardSkin,
+      setUiScale,
+      setSidebarDensity,
       canManageOrgTheme,
       activeOrganization?.id,
     ],
@@ -323,6 +348,8 @@ const ThemeCustomizerContent: React.FC<{
         lightSurface: DEFAULT_LIGHT_SURFACE,
         darkSurface: DEFAULT_DARK_SURFACE,
         cardSkin: DEFAULT_CARD_SKIN,
+        uiScale: DEFAULT_UI_SCALE,
+        sidebarDensity: DEFAULT_SIDEBAR_DENSITY,
       };
       updateOrganization(activeOrganization.id, { themeConfig: defaultThemeConfig }).catch(
         (err) => console.error("Failed to reset organization theme config", err),
@@ -331,6 +358,19 @@ const ThemeCustomizerContent: React.FC<{
   }, [reset, canManageOrgTheme, activeOrganization?.id]);
 
   const [colorsOpen, setColorsOpen] = React.useState(false);
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+
+  // При раскрытии блока цветов подматываем тело вниз, чтобы палитра и кнопка
+  // «Сбросить» оказались в зоне видимости на невысоких экранах.
+  React.useEffect(() => {
+    if (!colorsOpen) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const id = window.setTimeout(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }, 240);
+    return () => window.clearTimeout(id);
+  }, [colorsOpen]);
 
   // При раскрытии/сворачивании блока цветов высота меняется. Поповер
   // позиционируется по нижнему краю (transformOrigin: bottom), поэтому
@@ -355,15 +395,26 @@ const ThemeCustomizerContent: React.FC<{
     lightSurface === DEFAULT_LIGHT_SURFACE &&
     darkSurface === DEFAULT_DARK_SURFACE &&
     cardSkin === DEFAULT_CARD_SKIN &&
-    uiScale === DEFAULT_UI_SCALE;
+    uiScale === DEFAULT_UI_SCALE &&
+    sidebarDensity === DEFAULT_SIDEBAR_DENSITY;
 
   return (
-    <Box sx={{ width: fullWidth ? "100%" : { xs: "calc(100vw - 32px)", sm: 320 }, maxWidth: fullWidth ? "100%" : 360 }}>
+    <Box
+      sx={{
+        width: fullWidth ? "100%" : { xs: "calc(100vw - 32px)", sm: 320 },
+        maxWidth: fullWidth ? "100%" : 360,
+        display: "flex",
+        flexDirection: "column",
+        // Ограничиваем высоту всего кастомайзера по вьюпорту, чтобы на низких
+        // экранах он не вылезал за поповер/лист. Тело ниже шапки скроллится.
+        maxHeight: fullWidth ? "calc(90dvh - 28px)" : "min(620px, calc(100dvh - 32px))",
+      }}
+    >
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        sx={{ px: 2, py: 1.5 }}
+        sx={{ px: 2, py: 1.5, flexShrink: 0 }}
       >
         <Stack direction="row" alignItems="center" spacing={1}>
           <PaletteOutlined fontSize="small" color="primary" />
@@ -375,9 +426,12 @@ const ThemeCustomizerContent: React.FC<{
           <CloseOutlined fontSize="small" />
         </IconButton>
       </Stack>
-      <Divider />
+      <Divider sx={{ flexShrink: 0 }} />
 
-      {/* Всегда видимая часть — не скроллится */}
+      {/* Прокручиваемое тело — всё, кроме шапки. Единый скролл вместо
+          отдельного скролла только у блока цветов. */}
+      <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+      {/* Всегда видимая часть */}
       <Box sx={{ px: 2, pt: 2, pb: 2 }}>
         {canManageOrgTheme && (
           <Typography variant="caption" color="primary" sx={{ display: "block", mb: 1, fontWeight: 600 }}>
@@ -410,7 +464,7 @@ const ThemeCustomizerContent: React.FC<{
           exclusive
           fullWidth
           size="small"
-          onChange={(_, val) => val && setUiScale(val as UiScale)}
+          onChange={(_, val) => val && handleUpdate({ uiScale: val as UiScale })}
         >
           {SCALE_OPTIONS.map((o) => (
             <ToggleButton key={o.value} value={o.value} sx={{ flexDirection: "column", gap: 0.25, py: 1 }}>
@@ -420,6 +474,25 @@ const ThemeCustomizerContent: React.FC<{
               >
                 А
               </Box>
+              <Typography variant="caption" fontWeight={600}>
+                {o.label}
+              </Typography>
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+
+        {/* Плотность бокового меню */}
+        <SectionTitle>Плотность меню</SectionTitle>
+        <ToggleButtonGroup
+          value={sidebarDensity}
+          exclusive
+          fullWidth
+          size="small"
+          onChange={(_, val) => val && handleUpdate({ sidebarDensity: val as SidebarDensity })}
+        >
+          {DENSITY_OPTIONS.map((o) => (
+            <ToggleButton key={o.value} value={o.value} sx={{ flexDirection: "column", gap: 0.5, py: 1 }}>
+              {o.icon}
               <Typography variant="caption" fontWeight={600}>
                 {o.label}
               </Typography>
@@ -462,20 +535,29 @@ const ThemeCustomizerContent: React.FC<{
             }}
           />
         </Box>
+
+        {/* Сброс — всегда доступен, вне скрытого блока цветов */}
+        <Button
+          fullWidth
+          variant="outlined"
+          color="inherit"
+          size="small"
+          startIcon={<RestartAltOutlined />}
+          onClick={handleReset}
+          disabled={isDefault}
+          sx={{ mt: 2 }}
+        >
+          Сбросить
+        </Button>
       </Box>
 
-      {/* Раскрываемый блок цветов — со скроллом только при необходимости */}
+      {/* Раскрываемый блок цветов — прокрутка обеспечивается общим телом выше */}
       <Collapse in={colorsOpen} unmountOnExit>
         <Box
           sx={{
             px: 2,
             pb: 2,
             pt: 0,
-            // Резервируем место под шапку и зазор; скролл включается только
-            // если блок реально не помещается. В нижнем листе (fullWidth)
-            // ориентируемся на высоту листа (90dvh), на десктопе — на экран.
-            maxHeight: fullWidth ? "calc(90dvh - 240px)" : "calc(100dvh - 270px)",
-            overflowY: "auto",
           }}
         >
           <Box>
@@ -535,22 +617,10 @@ const ThemeCustomizerContent: React.FC<{
                 />
               </>
             )}
-
-            <Button
-              fullWidth
-              variant="outlined"
-              color="inherit"
-              size="small"
-              startIcon={<RestartAltOutlined />}
-              onClick={handleReset}
-              disabled={isDefault}
-              sx={{ mt: 2.5 }}
-            >
-              Сбросить
-            </Button>
           </Box>
         </Box>
       </Collapse>
+      </Box>
     </Box>
   );
 };
