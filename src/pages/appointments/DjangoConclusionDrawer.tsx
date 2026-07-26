@@ -300,6 +300,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [catalog, setCatalog] = React.useState<CatalogDiagnosis[]>([]);
   const [catalogLoading, setCatalogLoading] = React.useState(false);
   const [catalogError, setCatalogError] = React.useState(false);
+  // Текст, введённый в поле диагноза — уходит на сервер как search (debounce).
+  const [diagInput, setDiagInput] = React.useState("");
   const [photoUrls, setPhotoUrls] = React.useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
   const [previewPhoto, setPreviewPhoto] = React.useState<string | null>(null);
@@ -506,21 +508,38 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     };
   }, [serviceLineId]);
 
-  // ── load diagnosis catalog when drawer opens ──────────────────────────────
+  // ── load diagnosis catalog when drawer opens / search changes ─────────────
+  // Каталог МКБ-10 большой (тысячи записей); тянуть его целиком и фильтровать на
+  // клиенте нельзя — бэкенд отдаёт лишь часть, и диагнозы за её пределами «не
+  // находятся». Ищем на сервере по введённому тексту (search), с debounce.
   React.useEffect(() => {
     if (!open) return;
     const ctrl = new AbortController();
+    const term = diagInput.trim();
     setCatalogLoading(true);
     setCatalogError(false);
-    getDiagnoses(undefined, ctrl.signal)
-      .then((items) => setCatalog(items))
-      .catch(() => {
-        // Каталог недоступен — поле остаётся рабочим, но молчать нельзя:
-        // пустой список выглядит как «поиск не работает».
-        if (!ctrl.signal.aborted) setCatalogError(true);
-      })
-      .finally(() => setCatalogLoading(false));
-    return () => ctrl.abort();
+    const timer = window.setTimeout(() => {
+      getDiagnoses(term || undefined, ctrl.signal)
+        .then((items) => setCatalog(items))
+        .catch(() => {
+          // Каталог недоступен — поле остаётся рабочим, но молчать нельзя:
+          // пустой список выглядит как «поиск не работает».
+          if (!ctrl.signal.aborted) setCatalogError(true);
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setCatalogLoading(false);
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [open, diagInput]);
+
+  // Сбрасываем поисковый ввод при закрытии, чтобы при повторном открытии не
+  // тянуть каталог по устаревшему запросу.
+  React.useEffect(() => {
+    if (!open) setDiagInput("");
   }, [open]);
 
   // ── load conclusion templates when drawer opens ───────────────────────────
@@ -1111,6 +1130,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               value={selectedDiagnoses}
               loading={catalogLoading}
               disabled={readOnly}
+              // Поиск идёт на сервере (см. эффект загрузки каталога), поэтому
+              // клиентскую фильтрацию отключаем — иначе список схлопнулся бы до
+              // уже загруженной страницы.
+              filterOptions={(opts) => opts}
+              onInputChange={(_, val, reason) => {
+                if (reason === "input") setDiagInput(val);
+              }}
+              noOptionsText={
+                diagInput.trim()
+                  ? "Ничего не найдено"
+                  : "Начните вводить код или название…"
+              }
               getOptionLabel={(o) =>
                 typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
               }
