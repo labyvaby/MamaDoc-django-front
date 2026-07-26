@@ -30,6 +30,7 @@ import "dayjs/locale/ru";
 dayjs.locale("ru");
 
 import { useNotification } from "@refinedev/core";
+import { useAppointmentsList } from "../../../api/hooks/useAppointmentsQuery";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { useCanChecker } from "../../../hooks/useCan";
@@ -126,37 +127,22 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   // здесь, чтобы счётчик в тулбаре учитывал выбранного сотрудника.
   const [doctorFilter, setDoctorFilter] = React.useState<string | null>(null);
 
-  // При смене периода лента строится заново — сбрасываем выбор (панель в
-  // неуправляемом режиме делает то же самое при смене даты).
-  React.useEffect(() => {
-    setDoctorFilter(null);
-  }, [filters.year, filters.month]);
-
   // ── Data ───────────────────────────────────────────────────────────────────
-  const [history, setHistory] = React.useState<DjangoAppointment[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const dateFrom = filters.month
+    ? dayjs(filters.month).startOf("month").format("YYYY-MM-DD")
+    : `${filters.year}-01-01`;
+  const dateTo = filters.month
+    ? dayjs(filters.month).endOf("month").format("YYYY-MM-DD")
+    : `${filters.year}-12-31`;
 
-  const fetchData = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      const dateFrom = filters.month
-        ? dayjs(filters.month).startOf("month").format("YYYY-MM-DD")
-        : `${filters.year}-01-01`;
-      const dateTo = filters.month
-        ? dayjs(filters.month).endOf("month").format("YYYY-MM-DD")
-        : `${filters.year}-12-31`;
+  const { data: rawAppointments = [], isLoading: loading, refetch: fetchData } = useAppointmentsList({
+    dateFrom,
+    dateTo,
+  });
 
-      const data = await getAppointments({ dateFrom, dateTo });
-      const sorted = [...data].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
-      setHistory(sorted);
-    } catch (e) {
-      console.error(`${pageTitle} fetch error:`, e);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters.year, filters.month, pageTitle]);
-
-  React.useEffect(() => { fetchData(); }, [fetchData]);
+  const history = React.useMemo(() => {
+    return [...rawAppointments].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
+  }, [rawAppointments]);
 
   // ── Selection / details ────────────────────────────────────────────────────
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
