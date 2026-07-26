@@ -32,6 +32,7 @@ dayjs.locale("ru");
 
 import { useCanChecker, useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import DjangoAddAppointmentDrawer from "./DjangoAddAppointmentDrawer";
 import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
 import FreeSlotsView from "./FreeSlotsView";
@@ -77,6 +78,7 @@ function useHomeDashboard(params: {
   date: Dayjs;
   search: string;
   branchId?: number;
+  organizationId?: number;
   employeeId?: number | "me";
   /** Навбар-счётчики отдельно от списка: "me" для врача/медсестры. */
   countsEmployeeId?: number | "me";
@@ -98,17 +100,23 @@ function useHomeDashboard(params: {
       dateTo: base.endOf("month").add(7, "day").format("YYYY-MM-DD"),
       search: params.search || undefined,
       branchId: params.branchId,
+      organizationId: params.organizationId,
       employeeId: params.employeeId,
       countsEmployeeId: params.countsEmployeeId,
       clinicalRole: params.clinicalRole,
       nightOnly: params.nightOnly || undefined,
     };
-  }, [dateKey, monthKey, params.search, params.branchId, params.employeeId, params.countsEmployeeId, params.clinicalRole, params.nightOnly]);
+  }, [dateKey, monthKey, params.search, params.branchId, params.organizationId, params.employeeId, params.countsEmployeeId, params.clinicalRole, params.nightOnly]);
 
   const queryKey = djangoQueryKeys.appointments.home(queryParams);
   const query = useQuery({
     queryKey,
-    queryFn: ({ signal }) => getHomeDashboard(queryParams, signal),
+    queryFn: ({ signal }) =>
+      getHomeDashboard(
+        { organizationId: params.organizationId, branchId: params.branchId },
+        queryParams,
+        signal,
+      ),
     // Увеличиваем staleTime до 5 минут. Любое изменение в клинике спровоцирует
     // инвалидацию кэша через useAppointmentsAutoSync, а до тех пор данные верны.
     staleTime: 5 * 60 * 1000, 
@@ -121,6 +129,7 @@ function useHomeDashboard(params: {
         prevParams &&
         prevParams.date === queryParams.date &&
         prevParams.branchId === queryParams.branchId &&
+        prevParams.organizationId === queryParams.organizationId &&
         prevParams.employeeId === queryParams.employeeId &&
         prevParams.clinicalRole === queryParams.clinicalRole
       ) {
@@ -339,6 +348,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     "medical.conclusions.manage",
   ]);
 
+  const activeScope = useActiveScope();
   const branchId = activeBranch?.id ?? undefined;
 
   // Клиницист в своём кабинете (врач в кабинете врача / медсестра в процедурном)
@@ -368,6 +378,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     date,
     search,
     branchId,
+    organizationId: activeScope.organizationId,
     employeeId: scopedEmployeeId,
     countsEmployeeId: countsScopeToMe ? "me" : undefined,
     // Привилегированный кабинет: список и счётчики сужены по клинической роли

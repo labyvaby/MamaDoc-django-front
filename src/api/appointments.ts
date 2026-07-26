@@ -552,7 +552,7 @@ export interface HomeDashboard {
  * three (list + day-counts + last-update). The backend returns dayCounts as a
  * list [{date, count}]; we fold it into a date→count map (like getDayCounts).
  */
-export function getHomeDashboard(params: {
+export function getHomeDashboard(scope: Scope = {}, params: {
   date?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -574,7 +574,11 @@ export function getHomeDashboard(params: {
   patientId?: number;
   nightOnly?: boolean;
 }, signal?: AbortSignal): Promise<HomeDashboard> {
-  const query = new URLSearchParams();
+  // Скоуп (organizationId + branchId) из активной сессии — иначе мультиорг-
+  // аккаунт/суперадмин без явного organizationId получал приёмы всех орг
+  // (см. backend_ticket_appointments_org_isolation). branchId ниже в params
+  // дублирует scope.branchId тем же значением — безвредно.
+  const query = scopeParams(scope);
   if (params.date) query.set("date", params.date);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
