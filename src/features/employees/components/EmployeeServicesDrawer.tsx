@@ -173,7 +173,7 @@ const EmployeeServicesDrawer: React.FC<EmployeeServicesDrawerProps> = ({
       // include inactive so a previously deactivated assignment is visible
       // (and can be reactivated) instead of silently re-appearing in the picker.
       getEmployeeServices(employeeId, controller.signal, { includeInactive: true }),
-      getServices(activeBranchId, controller.signal),
+      getServices(activeBranchId, undefined, controller.signal),
     ])
       .then(([a, s]) => {
         if (controller.signal.aborted) return;

@@ -35,6 +35,7 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useServicesList } from "../../api/hooks/useServicesQuery";
 import {
   getServices,
   deleteService,
@@ -82,10 +83,22 @@ const DjangoServicesPage: React.FC = () => {
   // Бампается после редактирования — панель деталей перечитывает услугу
   const [detailsRefreshToken, setDetailsRefreshToken] = React.useState(0);
 
-  // Данные
-  const [loading, setLoading] = React.useState(false);
+  // Данные через React Query
+  const {
+    data: allServices = [],
+    isLoading: loading,
+    error,
+    refetch: loadAll,
+  } = useServicesList();
+
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
-  const [allServices, setAllServices] = React.useState<Service[]>([]);
+  React.useEffect(() => {
+    if (error) {
+      setErrorMsg(error instanceof Error ? error.message : String(error));
+    } else {
+      setErrorMsg(null);
+    }
+  }, [error]);
 
   // Инфинит-скролл
   const [visibleCount, setVisibleCount] = React.useState(BATCH_SIZE);
@@ -110,62 +123,8 @@ const DjangoServicesPage: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
 
-  const orgId = activeOrganization?.id ?? null;
-  const membershipId = activeMembership?.id ?? null;
-  const activeBranchId = activeBranch?.id ?? null;
-
-  // Unique key per tenant context — changes trigger a reload with stale-data clear
-  const contextKey = `${orgId ?? "null"}_${membershipId ?? "null"}_${activeBranchId ?? "null"}`;
-
-  // Monotone sequence counter: each load gets an id; only the latest may commit
-  const loadSeqRef = React.useRef(0);
-  const abortCtrlRef = React.useRef<AbortController | null>(null);
-  // Ref updated synchronously on every render so async callbacks can compare
-  // against the current context key rather than a stale closure value.
-  const currentContextKeyRef = React.useRef<string>(contextKey);
-  currentContextKeyRef.current = contextKey;
-
-  // Single loader: aborts previous request, guards against stale write
-  const loadAll = React.useCallback(
-    async (capturedContextKey: string) => {
-      abortCtrlRef.current?.abort();
-      const ctrl = new AbortController();
-      abortCtrlRef.current = ctrl;
-      const seq = ++loadSeqRef.current;
-
-      setLoading(true);
-      setErrorMsg(null);
-      // Clear stale data immediately so old org's data is never shown
-      setAllServices([]);
-
-      try {
-        const svcs = await getServices(activeBranchId, ctrl.signal);
-        // Discard result if a newer load started or context changed since request started
-        if (seq !== loadSeqRef.current) return;
-        if (capturedContextKey !== currentContextKeyRef.current) return;
-        setAllServices(svcs);
-      } catch (e) {
-        if (e instanceof Error && e.name === "AbortError") return;
-        if (seq !== loadSeqRef.current) return;
-        if (capturedContextKey !== currentContextKeyRef.current) return;
-        setErrorMsg(e instanceof Error ? e.message : String(e));
-      } finally {
-        // Only clear loading for the current request, not a superseded one
-        if (
-          seq === loadSeqRef.current
-          && !ctrl.signal.aborted
-          && capturedContextKey === currentContextKeyRef.current
-        ) {
-          setLoading(false);
-        }
-      }
-    },
-    [activeBranchId, contextKey],
-  );
-
-  // Single effect — fires whenever tenant context changes
+  // Reset UI state
   React.useEffect(() => {
-    // Immediately close stale drawers and clear UI state
     setDetailsOpen(false);
     setSelectedServiceId(null);
     setEditOpen(false);
@@ -178,13 +137,7 @@ const DjangoServicesPage: React.FC = () => {
     setBranchFilter("all");
     setCategoryFilter("all");
     setSortKey("name");
-
-    void loadAll(contextKey);
-
-    return () => {
-      abortCtrlRef.current?.abort();
-    };
-  }, [contextKey, loadAll]);
+  }, []);
 
   // Список филиалов для дропдауна — уникальные филиалы из загруженных услуг
   const branchOptions = React.useMemo<BranchRef[]>(() => {
@@ -296,7 +249,7 @@ const DjangoServicesPage: React.FC = () => {
         setSelectedServiceId(null);
         setDetailsOpen(false);
       }
-      void loadAll(contextKey);
+      void loadAll();
       notify?.({ type: "success", message: "Услуга удалена" });
     } catch (e) {
       notify?.({ type: "error", message: e instanceof Error ? e.message : "Не удалось удалить услугу" });
@@ -686,7 +639,7 @@ const DjangoServicesPage: React.FC = () => {
         onClose={() => setAddOpen(false)}
         onCreated={() => {
           setAddOpen(false);
-          void loadAll(contextKey);
+          void loadAll();
         }}
       />
 
@@ -703,7 +656,7 @@ const DjangoServicesPage: React.FC = () => {
             setEditOpen(false);
             setEditingRec(null);
             setDetailsRefreshToken((t) => t + 1);
-            void loadAll(contextKey);
+            void loadAll();
           }}
         />
       )}

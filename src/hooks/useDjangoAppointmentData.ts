@@ -70,7 +70,7 @@ export function useDjangoAppointmentData(
       // staff.view and were getting 403 on opening the form.
       const [rawProviders, rawServices, rawAssignments] = await Promise.all([
         getServiceProviders({ branchId: branchId ?? undefined }, signal),
-        getServices(branchId ?? null, signal),
+        getServices(branchId ?? null, undefined, signal),
         getServiceAssignments(branchId ?? undefined, signal),
       ]);
       return { rawProviders, rawServices, rawAssignments };

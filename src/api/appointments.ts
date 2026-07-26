@@ -492,27 +492,33 @@ export interface ServiceProvider {
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
-export function getAppointments(params?: {
-  /** Filter by exact date YYYY-MM-DD. */
-  date?: string;
-  /** Filter by date range start YYYY-MM-DD. */
-  dateFrom?: string;
-  /** Filter by date range end YYYY-MM-DD. */
-  dateTo?: string;
-  /** Filter by appointment status. */
-  status?: string;
-  /** Full-text search (patient name / phone). */
-  search?: string;
-  /** Filter by branch id. */
-  branchId?: number;
-  /** Filter by employee id, or "me" for the signed-in doctor's own appointments. */
-  employeeId?: number | "me";
-  /** Filter by patient id. */
-  patientId?: number;
-  /** When true, only night appointments (?nightOnly=true). */
-  nightOnly?: boolean;
-}, signal?: AbortSignal): Promise<DjangoAppointment[]> {
-  const query = new URLSearchParams();
+import { Scope, scopeParams } from "./scope";
+
+export function getAppointments(
+  scope: Scope = {},
+  params?: {
+    /** Filter by exact date YYYY-MM-DD. */
+    date?: string;
+    /** Filter by date range start YYYY-MM-DD. */
+    dateFrom?: string;
+    /** Filter by date range end YYYY-MM-DD. */
+    dateTo?: string;
+    /** Filter by appointment status. */
+    status?: string;
+    /** Full-text search (patient name / phone). */
+    search?: string;
+    /** Filter by branch id. */
+    branchId?: number;
+    /** Filter by employee id, or "me" for the signed-in doctor's own appointments. */
+    employeeId?: number | "me";
+    /** Filter by patient id. */
+    patientId?: number;
+    /** When true, only night appointments (?nightOnly=true). */
+    nightOnly?: boolean;
+  },
+  signal?: AbortSignal,
+): Promise<DjangoAppointment[]> {
+  const query = scopeParams(scope);
   if (params?.date) query.set("date", params.date);
   if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params?.dateTo) query.set("dateTo", params.dateTo);

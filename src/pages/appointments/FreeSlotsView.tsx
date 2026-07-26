@@ -14,6 +14,8 @@ import {
   getAvailability,
   getAvailabilitySummary,
   type EmployeeAvailability,
+  type AvailabilityDay,
+  type AvailabilitySlot,
 } from "../../api/scheduling";
 import { parseBackendError } from "../../api/appointments";
 import {
@@ -31,6 +33,10 @@ const MONTHS_GEN = [
 const MONTHS_NOMINATIVE = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+const MONTHS_SHORT = [
+  "янв.", "фев.", "мар.", "апр.", "мая", "июн.",
+  "июл.", "авг.", "сен.", "окт.", "ноя.", "дек.",
 ];
 
 /** На сколько дней вперёд регистратор ищет окна (влезает в лимит бэка 62). */
@@ -178,10 +184,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
 
   // Врачи специальности + сводка, отсортированные «лучшие сверху».
   const docs = React.useMemo(() => {
-    const list = (availQuery.data?.employees ?? []).map((emp) => ({
-      emp,
-      sum: summarize(emp, todayIso),
-    }));
+    const list = (availQuery.data?.employees ?? [])
+      .filter((emp) => emp.days.some((d) => d.scheduled))
+      .map((emp) => ({
+        emp,
+        sum: summarize(emp, todayIso),
+      }));
     const q = search.trim().toLowerCase();
     const filtered = q ? list.filter((x) => x.emp.fullName.toLowerCase().includes(q)) : list;
     return filtered.sort((a, b) => {
@@ -204,21 +212,33 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
   const selectedDoc = docs.find((x) => x.emp.employeeId === selDocId) ?? null;
   // В навбаре оставляем только реальные смены. Выходные, отпуск и дни без
   // расписания не должны выглядеть как даты, на которые можно записать пациента.
-  const selectableDays = React.useMemo(
-    () => selectedDoc?.emp.days.filter((day) => day.scheduled) ?? [],
-    [selectedDoc],
-  );
-
-  // День по умолчанию — ближайший с окнами у выбранного врача.
-  React.useEffect(() => {
-    if (!selectableDays.length) {
-      if (selDay !== null) setSelDay(null);
-      return;
+  const selectableDays = React.useMemo(() => {
+    if (selectedDoc) {
+      return selectedDoc.emp.days.filter((day) => day.scheduled);
     }
+    const map = new Map<string, AvailabilityDay>();
+    for (const { emp } of docs) {
+      for (const d of emp.days) {
+        if (d.scheduled) {
+          const existing = map.get(d.date);
+          if (!existing) {
+            map.set(d.date, { ...d });
+          } else {
+            existing.freeCount += d.freeCount;
+          }
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [selectedDoc, docs]);
+
+  // День по умолчанию — ближайший с окнами.
+  React.useEffect(() => {
+    if (!selectableDays.length) return;
     if (selDay && selectableDays.some((day) => day.date === selDay)) return;
     const firstFree = selectableDays.find((day) => day.freeCount > 0);
-    setSelDay(firstFree?.date ?? selectableDays[0].date ?? null);
-  }, [selectableDays, selDay]);
+    setSelDay(firstFree?.date ?? selectableDays[0].date ?? todayIso);
+  }, [selectableDays, selDay, todayIso]);
 
   const selectedDay = selectableDays.find((day) => day.date === selDay) ?? null;
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
@@ -244,11 +264,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
           </Typography>
           {selectableDays.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-              {selectedDoc
-                ? "В расписании врача нет смен"
-                : specId
-                  ? `Сетка врачей специальности (${docs.length})`
-                  : `Сетка всех специалистов (${docs.length})`}
+              В расписании врачей нет смен
             </Typography>
           ) : (
             <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
@@ -285,7 +301,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                       onClick={() => setSelDay(d.date)}
                       sx={{
                         flex: "0 0 auto",
-                        minWidth: 54,
+                        minWidth: 60,
                         textAlign: "center",
                         borderRadius: "9px",
                         border: "1px solid",
@@ -306,9 +322,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                       <Typography
                         variant="subtitle2"
                         fontWeight={600}
-                        sx={{ fontSize: "0.8125rem", color: isToday ? "primary.onSurface" : "text.primary" }}
+                        sx={{ fontSize: "0.775rem", color: isToday ? "primary.onSurface" : "text.primary", whiteSpace: "nowrap" }}
                       >
-                        {dj.date()}
+                        {dj.date()} {MONTHS_SHORT[dj.month()]}
                       </Typography>
                       <Typography
                         variant="caption"
@@ -390,72 +406,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                   ? { free: summaryQuery.data.overallFreeEmployeeCount, total: summaryQuery.data.overallEmployeeCount }
                   : undefined;
                 return (
-                  <Box
-                    onClick={() => {
-                      setSpecId(null);
-                      setSelDocId(null);
-                      setSelDay(null);
-                    }}
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1.25,
-                      px: 1.75,
-                      py: 1.25,
-                      cursor: "pointer",
-                      borderLeft: "3px solid",
-                      borderColor: active ? "primary.main" : "transparent",
-                      bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
-                      transition: "background-color .13s ease",
-                      "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      fontWeight={active ? 600 : 500}
-                      sx={{ flex: 1, minWidth: 0 }}
-                      noWrap
-                    >
-                      Все специалисты
-                    </Typography>
-                    {overall && (
-                      <Box
-                        sx={(t) => ({
-                          fontSize: "0.6875rem",
-                          fontWeight: 600,
-                          lineHeight: 1,
-                          px: 0.75,
-                          py: 0.5,
-                          borderRadius: "7px",
-                          color: overall.free ? "success.dark" : "text.disabled",
-                          bgcolor: overall.free
-                            ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-                            : subtleBg(t, true),
-                          ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
-                        })}
-                        title="Свободны сегодня"
-                      >
-                        {overall.free}/{overall.total}
-                      </Box>
-                    )}
-                  </Box>
-                );
-              })()}
-              {specs.length === 0 ? (
-                <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
-                  Нет специальностей
-                </Typography>
-              ) : (
-                specs.map((s) => {
-                  const active = s.id === specId;
-                  const badge = badgeBySpec.get(s.id);
-                  return (
+                  <React.Fragment>
                     <Box
-                      key={s.id}
                       onClick={() => {
-                        setSpecId(s.id);
-                        setSelDocId(null);
-                        setSelDay(null);
+                        if (specId !== null) {
+                          setSpecId(null);
+                          setSelDocId(null);
+                          setSelDay(null);
+                        } else if (selDocId !== null) {
+                          setSelDocId(null);
+                        }
                       }}
                       sx={{
                         display: "flex",
@@ -477,9 +437,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                         sx={{ flex: 1, minWidth: 0 }}
                         noWrap
                       >
-                        {s.name}
+                        Все специалисты
                       </Typography>
-                      {badge && (
+                      {overall && (
                         <Box
                           sx={(t) => ({
                             fontSize: "0.6875rem",
@@ -488,18 +448,186 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                             px: 0.75,
                             py: 0.5,
                             borderRadius: "7px",
-                            color: badge.free ? "success.dark" : "text.disabled",
-                            bgcolor: badge.free
+                            color: overall.free ? "success.dark" : "text.disabled",
+                            bgcolor: overall.free
                               ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
                               : subtleBg(t, true),
-                            ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                            ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
                           })}
                           title="Свободны сегодня"
                         >
-                          {badge.free}/{badge.total}
+                          {overall.free}/{overall.total}
                         </Box>
                       )}
                     </Box>
+
+                    {active && docs.length > 0 && (
+                      <Stack spacing={0.25} sx={{ py: 0.5, px: 1, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
+                        {docs.map(({ emp, sum }) => {
+                          const isDocActive = selDocId === emp.employeeId;
+                          return (
+                            <Stack
+                              key={emp.employeeId}
+                              direction="row"
+                              alignItems="center"
+                              spacing={1}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelDocId(isDocActive ? null : emp.employeeId);
+                              }}
+                              sx={(t) => ({
+                                py: 0.75,
+                                px: 1.25,
+                                borderRadius: "8px",
+                                cursor: "pointer",
+                                bgcolor: isDocActive ? "primary.main" : "transparent",
+                                color: isDocActive ? "primary.contrastText" : "text.primary",
+                                transition: "all .13s ease",
+                                "&:hover": {
+                                  bgcolor: isDocActive ? "primary.main" : alpha(t.palette.primary.main, 0.08),
+                                },
+                              })}
+                            >
+                              <Box
+                                sx={{
+                                  width: 7,
+                                  height: 7,
+                                  borderRadius: "50%",
+                                  bgcolor: isDocActive ? "primary.contrastText" : STATUS_DOT[sum.status],
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <Typography
+                                variant="caption"
+                                fontWeight={isDocActive ? 700 : 500}
+                                noWrap
+                                sx={{ flex: 1, minWidth: 0, fontSize: "0.775rem" }}
+                              >
+                                {emp.fullName}
+                              </Typography>
+                            </Stack>
+                          );
+                        })}
+                      </Stack>
+                    )}
+                  </React.Fragment>
+                );
+              })()}
+              {specs.length === 0 ? (
+                <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
+                  Нет специальностей
+                </Typography>
+              ) : (
+                specs.map((s) => {
+                  const active = s.id === specId;
+                  const badge = badgeBySpec.get(s.id);
+                  return (
+                    <React.Fragment key={s.id}>
+                      <Box
+                        onClick={() => {
+                          if (specId !== s.id) {
+                            setSpecId(s.id);
+                            setSelDocId(null);
+                            setSelDay(null);
+                          } else if (selDocId !== null) {
+                            setSelDocId(null);
+                          }
+                        }}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.25,
+                          px: 1.75,
+                          py: 1.25,
+                          cursor: "pointer",
+                          borderLeft: "3px solid",
+                          borderColor: active ? "primary.main" : "transparent",
+                          bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                          transition: "background-color .13s ease",
+                          "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          fontWeight={active ? 600 : 500}
+                          sx={{ flex: 1, minWidth: 0 }}
+                          noWrap
+                        >
+                          {s.name}
+                        </Typography>
+                        {badge && (
+                          <Box
+                            sx={(t) => ({
+                              fontSize: "0.6875rem",
+                              fontWeight: 600,
+                              lineHeight: 1,
+                              px: 0.75,
+                              py: 0.5,
+                              borderRadius: "7px",
+                              color: badge.free ? "success.dark" : "text.disabled",
+                              bgcolor: badge.free
+                                ? alpha(t.palette.success.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+                                : subtleBg(t, true),
+                              ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
+                            })}
+                            title="Свободны сегодня"
+                          >
+                            {badge.free}/{badge.total}
+                          </Box>
+                        )}
+                      </Box>
+
+                      {/* Список сотрудников выбранной специальности */}
+                      {active && docs.length > 0 && (
+                        <Stack spacing={0.25} sx={{ py: 0.5, px: 1, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
+                          {docs.map(({ emp, sum }) => {
+                            const isDocActive = selDocId === emp.employeeId;
+                            return (
+                              <Stack
+                                key={emp.employeeId}
+                                direction="row"
+                                alignItems="center"
+                                spacing={1}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelDocId(isDocActive ? null : emp.employeeId);
+                                }}
+                                sx={(t) => ({
+                                  py: 0.75,
+                                  px: 1.25,
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  bgcolor: isDocActive ? "primary.main" : "transparent",
+                                  color: isDocActive ? "primary.contrastText" : "text.primary",
+                                  transition: "all .13s ease",
+                                  "&:hover": {
+                                    bgcolor: isDocActive ? "primary.main" : alpha(t.palette.primary.main, 0.08),
+                                  },
+                                })}
+                              >
+                                <Box
+                                  sx={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: "50%",
+                                    bgcolor: isDocActive ? "primary.contrastText" : STATUS_DOT[sum.status],
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <Typography
+                                  variant="caption"
+                                  fontWeight={isDocActive ? 700 : 500}
+                                  noWrap
+                                  sx={{ flex: 1, minWidth: 0, fontSize: "0.775rem" }}
+                                >
+                                  {emp.fullName}
+                                </Typography>
+                              </Stack>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -519,12 +647,24 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
-            p: selectedDoc ? 0 : 2,
+            p: 0,
           }}
         >
           {!selectedDoc ? (
-            <Box sx={{ height: "100%", overflowY: "auto" }}>
-              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
+            <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={2}
+                sx={{
+                  px: 2,
+                  py: 1.25,
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                  flexShrink: 0,
+                  bgcolor: "background.paper",
+                }}
+              >
                 <TextField
                   size="small"
                   value={search}
@@ -542,161 +682,245 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                     Сетка врачей {specId ? `(${specs.find((s) => s.id === specId)?.name})` : "(Все специалисты)"}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Найдено: {docs.length}
+                    Найдено врачей: {docs.length}
                   </Typography>
                 </Box>
               </Stack>
 
-              {docs.length === 0 ? (
-                <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8 }}>
-                  <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
-                  <Typography variant="body2" color="text.disabled">
-                    {search ? "Врачи по вашему запросу не найдены" : "Врачи не найдены"}
-                  </Typography>
-                </Stack>
-              ) : (
-                <Box
-                  sx={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-                    gap: 1.5,
-                    pb: 1,
-                  }}
-                >
-                  {docs.map(({ emp, sum }) => {
-                    const todayDay = emp.days.find((d) => d.date === todayIso);
-                    const freeSlots = (todayDay?.slots ?? []).filter((s) => s.free).slice(0, 3);
-                    const nearestSlot = sum.nearest;
-                    const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
+              {(() => {
+                const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
+                const activeDocsOnDay = docs.filter(({ emp }) => {
+                  const d = emp.days.find((x) => x.date === activeDayDate);
+                  return d && d.scheduled && !d.dayOff;
+                });
+
+                if (docs.length === 0) {
+                  return (
+                    <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
+                      <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
+                      <Typography variant="body2" color="text.disabled">
+                        {search ? "Врачи по вашему запросу не найдены" : "Врачи не найдены"}
+                      </Typography>
+                    </Stack>
+                  );
+                }
+
+                if (activeDocsOnDay.length === 0) {
+                  return (
+                    <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
+                      <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
+                      <Typography variant="body2" color="text.disabled">
+                        На эту дату у врачей нет рабочих смен
+                      </Typography>
+                    </Stack>
+                  );
+                }
+
+                return (
+                  <Box
+                    sx={{
+                      flex: 1,
+                      minHeight: 0,
+                      display: "flex",
+                      flexDirection: "row",
+                      overflowX: "auto",
+                      "&::-webkit-scrollbar": { height: 6 },
+                    }}
+                  >
+                    {activeDocsOnDay.map(({ emp, sum }) => {
+                      const docDay = emp.days.find((d) => d.date === activeDayDate)!;
+                      const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
 
                     return (
-                      <Card
+                      <Box
                         key={emp.employeeId}
-                        variant="outlined"
-                        sx={(t) => ({
-                          p: 1.5,
-                          borderRadius: "12px",
+                        sx={{
+                          flex: "0 0 360px",
+                          minWidth: 320,
+                          height: "100%",
                           display: "flex",
                           flexDirection: "column",
-                          gap: 1.25,
-                          cursor: "pointer",
-                          transition: "all .13s ease",
-                          "&:hover": {
-                            borderColor: "primary.main",
-                            boxShadow: t.shadows[2],
-                            bgcolor: alpha(t.palette.primary.main, 0.02),
+                          borderRight: "1px solid",
+                          borderColor: "divider",
+                          "&:last-of-type": {
+                            borderRight: "none",
                           },
-                        })}
-                        onClick={() => setSelDocId(emp.employeeId)}
+                        }}
                       >
-                        <Stack direction="row" spacing={1.25} alignItems="center">
-                          <Box sx={{ position: "relative", flexShrink: 0 }}>
-                            <Box
-                              sx={{
-                                width: 40,
-                                height: 40,
-                                borderRadius: "11px",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#fff",
-                                fontSize: "0.8125rem",
-                                fontWeight: 600,
-                                bgcolor: avatarColor(emp.fullName),
-                              }}
-                            >
-                              {initials(emp.fullName)}
+                        {/* Шапка врача в колонке */}
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          justifyContent="space-between"
+                          spacing={1.5}
+                          onClick={() => setSelDocId(emp.employeeId)}
+                          sx={(t) => ({
+                            px: 2,
+                            py: 1.5,
+                            borderBottom: "1px solid",
+                            borderColor: "divider",
+                            bgcolor: subtleBg(t),
+                            cursor: "pointer",
+                            transition: "background-color .13s ease",
+                            "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.06) },
+                          })}
+                        >
+                          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+                            <Box sx={{ position: "relative", flexShrink: 0 }}>
+                              <Box
+                                sx={{
+                                  width: 38,
+                                  height: 38,
+                                  borderRadius: "11px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "#fff",
+                                  fontSize: "0.8125rem",
+                                  fontWeight: 600,
+                                  bgcolor: avatarColor(emp.fullName),
+                                }}
+                              >
+                                {initials(emp.fullName)}
+                              </Box>
+                              <Box
+                                sx={{
+                                  position: "absolute",
+                                  right: -2,
+                                  bottom: -2,
+                                  width: 12,
+                                  height: 12,
+                                  borderRadius: "50%",
+                                  border: "2px solid",
+                                  borderColor: "background.paper",
+                                  bgcolor: STATUS_DOT[sum.status],
+                                }}
+                              />
                             </Box>
-                            <Box
-                              sx={{
-                                position: "absolute",
-                                right: -2,
-                                bottom: -2,
-                                width: 12,
-                                height: 12,
-                                borderRadius: "50%",
-                                border: "2px solid",
-                                borderColor: "background.paper",
-                                bgcolor: STATUS_DOT[sum.status],
-                              }}
-                            />
-                          </Box>
-                          <Box sx={{ minWidth: 0, flex: 1 }}>
-                            <Typography variant="body2" fontWeight={600} noWrap>
-                              {emp.fullName}
-                            </Typography>
-                            {specName && (
-                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-                                {specName}
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" fontWeight={600} noWrap>
+                                {emp.fullName}
                               </Typography>
-                            )}
-                          </Box>
-                        </Stack>
-
-                        <Stack direction="row" alignItems="center" justifyContent="space-between">
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontWeight: 500,
-                              color:
-                                sum.status === "free"
-                                  ? "success.main"
-                                  : sum.status === "later"
-                                  ? "warning.main"
-                                  : "text.disabled",
-                            }}
-                          >
-                            {sum.label}
-                          </Typography>
-                          {sum.todayFree > 0 && (
+                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                                {specName ?? "Специалист"}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                          {docDay && docDay.scheduled && (
                             <Chip
-                              label={`${sum.todayFree} окон`}
+                              label={docDay.freeCount > 0 ? `${docDay.freeCount} окон` : "нет окон"}
                               size="small"
-                              color="success"
-                              variant="outlined"
-                              sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600 }}
+                              color={docDay.freeCount > 0 ? "success" : "default"}
+                              variant={docDay.freeCount > 0 ? "outlined" : "filled"}
+                              sx={{ height: 22, fontSize: "0.6875rem", fontWeight: 600, flexShrink: 0 }}
                             />
                           )}
                         </Stack>
 
-                        {freeSlots.length > 0 ? (
-                          <Stack direction="row" spacing={0.75} pt={0.25} flexWrap="wrap" useFlexGap>
-                            {freeSlots.map((slot) => (
-                              <Button
-                                key={slot.start}
-                                size="small"
-                                variant="outlined"
-                                color="success"
-                                startIcon={<AddOutlined sx={{ fontSize: 13 }} />}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onBook(emp.employeeId, `${todayIso}T${slot.start}`);
-                                }}
-                                sx={{
-                                  py: 0.25,
-                                  px: 0.85,
-                                  minWidth: 0,
-                                  fontSize: "0.725rem",
-                                  fontWeight: 600,
-                                  textTransform: "none",
-                                  borderRadius: "7px",
-                                }}
-                              >
-                                {slot.start}
-                              </Button>
-                            ))}
-                          </Stack>
-                        ) : nearestSlot ? (
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
-                            Ближайшая запись: {dayjs(nearestSlot.date).format("DD.MM")} в {nearestSlot.start}
+                        {/* Таймлайн окон за день */}
+                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 2 }}>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25, fontWeight: 500 }}>
+                            {WEEKDAY_SHORT[mondayIndex(dayjs(activeDayDate))]},{" "}
+                            {dayjs(activeDayDate).date()} {MONTHS_GEN[dayjs(activeDayDate).month()]}
                           </Typography>
-                        ) : null}
-                      </Card>
+
+                          {!docDay || !docDay.scheduled ? (
+                            <Alert severity="info" icon={false}>Нет рабочего графика на этот день</Alert>
+                          ) : docDay.dayOff ? (
+                            <Alert severity="info" icon={false}>Выходной день</Alert>
+                          ) : docDay.slots.length === 0 ? (
+                            <Alert severity="info" icon={false}>Нет доступных окон</Alert>
+                          ) : (
+                            <Stack spacing={0.75}>
+                              {docDay.slots.map((slot: AvailabilitySlot) => {
+                                const busy = !slot.free && slot.appointmentId != null;
+                                const past = !slot.free && slot.appointmentId == null;
+                                return (
+                                  <Stack
+                                    key={slot.start}
+                                    direction="row"
+                                    alignItems="center"
+                                    spacing={1.25}
+                                    onClick={
+                                      slot.free
+                                        ? () => onBook(emp.employeeId, `${docDay.date}T${slot.start}`)
+                                        : undefined
+                                    }
+                                    sx={{
+                                      px: 1.5,
+                                      py: 1,
+                                      borderRadius: "10px",
+                                      border: "1px solid",
+                                      borderStyle: past ? "dashed" : "solid",
+                                      borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
+                                      bgcolor: slot.free
+                                        ? alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.14 : 0.08)
+                                        : busy
+                                          ? subtleBg(theme)
+                                          : "transparent",
+                                      cursor: slot.free ? "pointer" : "default",
+                                      transition: "filter .13s ease",
+                                      "&:hover": slot.free ? { filter: "brightness(1.04)" } : undefined,
+                                    }}
+                                  >
+                                    <Typography
+                                      sx={{
+                                        fontFamily: "monospace",
+                                        fontWeight: 600,
+                                        fontSize: "0.85rem",
+                                        width: 48,
+                                        color: slot.free ? "success.main" : "text.disabled",
+                                      }}
+                                    >
+                                      {slot.start}
+                                    </Typography>
+                                    {slot.free ? (
+                                      <>
+                                        <Typography variant="caption" color="success.main" sx={{ flex: 1, fontWeight: 500 }}>
+                                          Свободно
+                                        </Typography>
+                                        <Stack
+                                          direction="row"
+                                          alignItems="center"
+                                          spacing={0.5}
+                                          sx={(t) => ({
+                                            px: 1.25,
+                                            height: 28,
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: alpha(t.palette.success.main, 0.32),
+                                            color: "success.dark",
+                                            fontWeight: 600,
+                                            fontSize: "0.75rem",
+                                            ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
+                                          })}
+                                        >
+                                          <AddOutlined sx={{ fontSize: 15 }} />
+                                          Записать
+                                        </Stack>
+                                      </>
+                                    ) : busy ? (
+                                      <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
+                                        Занято{slot.patientName ? ` · ${slot.patientName}` : ""}
+                                      </Typography>
+                                    ) : (
+                                      <Typography variant="caption" color="text.disabled" sx={{ flex: 1 }}>
+                                        Время прошло
+                                      </Typography>
+                                    )}
+                                  </Stack>
+                                );
+                              })}
+                            </Stack>
+                          )}
+                        </Box>
+                      </Box>
                     );
                   })}
                 </Box>
-              )}
-            </Box>
+              );
+            })()}
+          </Box>
           ) : (
             <>
               {/* Шапка врача */}

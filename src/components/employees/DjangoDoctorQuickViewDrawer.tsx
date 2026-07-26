@@ -25,6 +25,7 @@ import {
 } from "../../api/staff";
 import { getServices, type Service } from "../../api/catalog";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
+import { ORG_WIDE } from "../../api/scope";
 import { getStatusConfig, normalizeDjangoStatus } from "../../config/appointmentStatuses";
 
 dayjs.locale("ru");
@@ -86,8 +87,8 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
     Promise.all([
       getDjangoEmployee(doctorId, ctrl.signal).catch(() => null),
       getEmployeeServices(doctorId, ctrl.signal).catch(() => [] as EmployeeServiceAssignment[]),
-      getServices(null, ctrl.signal).catch(() => [] as Service[]),
-      getAppointments({ employeeId: doctorId }, ctrl.signal).catch(() => [] as DjangoAppointment[]),
+      getServices(ORG_WIDE, undefined, ctrl.signal).catch(() => [] as Service[]),
+      getAppointments(ORG_WIDE, { employeeId: doctorId }, ctrl.signal).catch(() => [] as DjangoAppointment[]),
     ])
       .then(([emp, svc, catalog, appts]) => {
         if (!active) return;

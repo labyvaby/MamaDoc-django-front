@@ -19,6 +19,7 @@ import { useNotification } from "@refinedev/core";
 
 import { useCan } from "../../../hooks/useCan";
 import { getServices, type Service } from "../../../api/catalog";
+import { ORG_WIDE } from "../../../api/scope";
 import {
   getEmployeeRule,
   putEmployeeRule,
@@ -70,7 +71,7 @@ const DjangoSalaryRulesDrawer: React.FC<Props> = ({
     setError(null);
     Promise.all([
       getEmployeeRule(employeeId, controller.signal),
-      getServices(null, controller.signal),
+      getServices(ORG_WIDE, undefined, controller.signal),
     ])
       .then(([rule, svcList]: [EmployeeRule, Service[]]) => {
         if (controller.signal.aborted) return;

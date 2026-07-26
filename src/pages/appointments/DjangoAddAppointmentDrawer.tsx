@@ -49,6 +49,7 @@ import {
   parseOverlapConflict,
   type AppointmentOverlapConflict,
 } from "../../api/appointments";
+import { ORG_WIDE } from "../../api/scope";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
@@ -347,7 +348,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       patientId: selectedPatient?.id ?? 0,
     }),
     queryFn: ({ signal }) =>
-      getAppointments({ patientId: selectedPatient!.id }, signal),
+      getAppointments(ORG_WIDE, { patientId: selectedPatient!.id }, signal),
     enabled: open && !!selectedPatient && !isBooking,
     // Короткий staleTime: запись могли только что создать в соседнем окне.
     staleTime: 15_000,

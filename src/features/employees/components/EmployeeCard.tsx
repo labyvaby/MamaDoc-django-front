@@ -60,6 +60,7 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
 import { getServices } from "../../../api/catalog";
+import { ORG_WIDE } from "../../../api/scope";
 import {
   getAchievementDefinitions,
   getEmployeeAchievements,
@@ -350,7 +351,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   // Каталог услуг — для картинок/цен в списке услуг сотрудника (Django).
   const catalogQuery = useQuery({
     queryKey: ["django", "catalog", "services", "card-images"],
-    queryFn: ({ signal }) => getServices(null, signal),
+    queryFn: ({ signal }) => getServices(ORG_WIDE, undefined, signal),
     enabled: IS_DJANGO_BACKEND,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,

@@ -38,6 +38,7 @@ import {
 } from "../../../api/staff";
 import { getBranches } from "../../../api/organization";
 import { getServices, type Service } from "../../../api/catalog";
+import { ORG_WIDE } from "../../../api/scope";
 import { getProducts, type DjangoProduct } from "../../../api/warehouse";
 import {
   getEmployeeRule,
@@ -344,7 +345,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
     const needServices = canViewServices || canManageServices || canViewPayroll;
     const servicesPromise: Promise<Service[]> = needServices
-      ? getServices(null, ctrl.signal)
+      ? getServices(ORG_WIDE, undefined, ctrl.signal)
       : Promise.resolve([]);
 
     if (canViewServices || canManageServices) {

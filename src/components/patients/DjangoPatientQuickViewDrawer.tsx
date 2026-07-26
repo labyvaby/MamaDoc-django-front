@@ -26,6 +26,7 @@ import "dayjs/locale/ru";
 
 import { getPatient, type DjangoPatient } from "../../api/patients";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
+import { ORG_WIDE } from "../../api/scope";
 import {
   getStatusConfig,
   getStatusChipSx,
@@ -92,7 +93,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
       });
 
     setRecentLoading(true);
-    getAppointments({ patientId })
+    getAppointments(ORG_WIDE, { patientId })
       .then((rows) => {
         if (!active) return;
         const sorted = [...rows].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));

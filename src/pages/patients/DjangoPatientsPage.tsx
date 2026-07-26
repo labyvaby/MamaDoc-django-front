@@ -17,6 +17,7 @@ dayjs.locale("ru");
 
 import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -155,6 +156,8 @@ const DjangoPatientsPage: React.FC = () => {
   const [tabletTab, setTabletTab] = React.useState<RightTabKey>("card");
   const [desktopRightTab, setDesktopRightTab] = React.useState<RightTabKey>("history");
 
+  const scope = useActiveScope();
+
   // ── Load list (server-side search + infinite scroll) ─────────────────────────
   // The clinic can have tens of thousands of patients, so we NEVER pull the
   // whole table to the client. The server filters by the search term and pages
@@ -171,6 +174,7 @@ const DjangoPatientsPage: React.FC = () => {
       setError(null);
       try {
         const data = await searchPatients(
+          scope,
           query.trim(),
           PER_PAGE,
           ctrl.signal,
@@ -187,7 +191,7 @@ const DjangoPatientsPage: React.FC = () => {
         inFlightRef.current = false;
       }
     },
-    [],
+    [scope],
   );
 
   // Reload from the top whenever the (debounced) search term changes.
@@ -244,7 +248,7 @@ const DjangoPatientsPage: React.FC = () => {
         .catch(() => { /* ignore (abort / 404) */ });
     }
 
-    getAppointments({ patientId: pid }, ctrl.signal)
+    getAppointments(scope, { patientId: pid }, ctrl.signal)
       .then((rows) => {
         const sorted = [...rows].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
         setHistory(sorted);
