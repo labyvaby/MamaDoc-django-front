@@ -775,6 +775,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                                 </>
                               )}
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Часы</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Зарплата</TableCell>
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
                               <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
                               {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}

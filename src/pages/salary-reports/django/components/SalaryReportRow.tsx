@@ -97,8 +97,30 @@ export const COLUMNS_ADMIN: ColumnConfig = {
   statusCancelled: false,
   statusDiscount: false,
   bonuses: false,
-  percent: false,
+  // Начисленное показываем и здесь: иначе у санитарок/администраторов видны
+  // только аванс и «К выплате», и минус в остатке ничем не объяснён.
+  percent: true,
 };
+
+/**
+ * Из чего сложилось «Начислено» за месяц. Показываем только ненулевые части:
+ * состав зависит от роли (у врача — процент/фикс по услугам, у регистратора —
+ * почасовая и заработок за распределённые приёмы, у санитарки — уборки).
+ */
+function earningsBreakdown(row: PayrollRow): { label: string; value: string }[] {
+  const parts: [string, string | undefined][] = [
+    ["Процент по услугам", row.servicePercentPay],
+    ["Фикс по услугам", row.serviceFixedPay],
+    ["За приёмы", row.appointmentPay],
+    ["Товары", row.productPay],
+    ["Почасовая", row.hourlyPay],
+    ["Уборки", row.cleaningEarnings],
+    ["Надбавка", row.bonus],
+  ];
+  return parts
+    .filter(([, v]) => parseFloat(v || "0") > 0)
+    .map(([label, v]) => ({ label, value: v as string }));
+}
 
 interface SalaryReportRowProps {
   row: PayrollRow;
@@ -136,6 +158,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
 
   const totalHours = parseFloat(row.dayHours || "0") + parseFloat(row.nightHours || "0");
   const hasHours = parseFloat(row.dayHours || "0") > 0 || parseFloat(row.nightHours || "0") > 0;
+  const breakdown = earningsBreakdown(row);
 
   // payable — есть остаток к выплате; paid — начислено, но авансы всё покрыли; none — начислений нет.
   const netPayable = Math.round(parseFloat(row.netSalary || "0"));
@@ -280,6 +303,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             )}
             <Grid2 size={4}>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
+                Начислено
+              </Typography>
+              <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700}>
+                {formatKGS(row.earnings)}
+              </Typography>
+            </Grid2>
+            <Grid2 size={4}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
                 Аванс
               </Typography>
               <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700} color="error.main">
@@ -403,16 +434,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.earnings)}
                     </Typography>
                   </Stack>
-                  {parseFloat(row.cleaningEarnings || "0") > 0 && (
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
+                  {breakdown.map((p) => (
+                    <Stack key={p.label} direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
                       <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
-                        в т.ч. уборки
+                        в т.ч. {p.label.toLowerCase()}
                       </Typography>
                       <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
-                        {formatKGS(row.cleaningEarnings as string)}
+                        {formatKGS(p.value)}
                       </Typography>
                     </Stack>
-                  )}
+                  ))}
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
                       Авансы
@@ -535,8 +566,31 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
           </TableCell>
         )}
 
+        {/* «Зарплата» = всё начисленное за месяц: у врача это процент/фикс по
+            услугам, у регистратора — почасовая + заработок за распределённые
+            приёмы. Раньше здесь стоял только servicePercentPay, из-за чего у
+            регистраторов колонка всегда была 0. */}
         {cols.percent && (
-          <TableCell align="right">{formatKGS(row.servicePercentPay)}</TableCell>
+          <TableCell align="right">
+            {breakdown.length > 0 ? (
+              <Tooltip
+                title={
+                  <Box>
+                    {breakdown.map((p) => (
+                      <Stack key={p.label} direction="row" spacing={2} justifyContent="space-between">
+                        <span>{p.label}</span>
+                        <span>{formatKGS(p.value)}</span>
+                      </Stack>
+                    ))}
+                  </Box>
+                }
+              >
+                <span>{formatKGS(row.earnings)}</span>
+              </Tooltip>
+            ) : (
+              formatKGS(row.earnings)
+            )}
+          </TableCell>
         )}
 
         <TableCell align="right" sx={{ color: "error.main", fontWeight: 700 }}>
@@ -689,17 +743,18 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   >
                     <Stack spacing={1}>
                       <Stack direction="row" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">Начислено по дням:</Typography>
+                        <Typography variant="body2" color="text.secondary">Начислено за месяц:</Typography>
                         <Typography variant="body2" fontWeight={700}>{formatKGS(row.earnings)}</Typography>
                       </Stack>
-                      {parseFloat(row.cleaningEarnings || "0") > 0 && (
-                        <Stack direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
-                          <Typography variant="caption" color="text.secondary">в т.ч. уборки:</Typography>
-                          <Typography variant="caption" fontWeight={700}>
-                            {formatKGS(row.cleaningEarnings as string)}
-                          </Typography>
+                      {/* Часть начислений (за распределённые приёмы, уборки,
+                          надбавки) считается за месяц целиком и по дням не
+                          раскладывается — поэтому показываем состав. */}
+                      {breakdown.map((p) => (
+                        <Stack key={p.label} direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
+                          <Typography variant="caption" color="text.secondary">в т.ч. {p.label.toLowerCase()}:</Typography>
+                          <Typography variant="caption" fontWeight={700}>{formatKGS(p.value)}</Typography>
                         </Stack>
-                      )}
+                      ))}
                       <Stack direction="row" justifyContent="space-between">
                         <Typography variant="body2" color="text.secondary">Выплачено авансов:</Typography>
                         <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.advances)}</Typography>
