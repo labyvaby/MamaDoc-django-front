@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import { ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import { createFilterOptions } from "@mui/material/Autocomplete";
 import Grid from "@mui/material/Grid";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -34,6 +35,8 @@ import { formatKGS } from "../../utility/format";
 import { roundDateTimeLocalToStep } from "../../utility/time";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { orgWide } from "../../api/scope";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -56,6 +59,8 @@ import type {
   DjangoCatalogServiceWithEmployees,
 } from "../../hooks/useDjangoAppointmentData";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
+import ServiceRowShell from "../../components/appointments/ServiceRowShell";
+import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -166,6 +171,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   onSaved,
 }) => {
   const { t } = useT("appointments");
+  const theme = useTheme();
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const canUpdate = useCan("appointments.update");
@@ -180,6 +186,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     isNurse,
     isAdmin,
   } = usePermissions();
+  const orgId = useApiOrgId();
 
   // Процедурный кабинет: настоящая медсестра (не админ) не может переназначить
   // исполнителя — поле фиксируется её employee id (как в форме создания).
@@ -344,7 +351,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (!open || !EDIT_APPOINTMENT_PRODUCTS_ENABLED) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
-    getProducts(ctrl.signal)
+    getProducts(ctrl.signal, { organizationId: orgId })
       .then((list) => {
         if (ctrl.signal.aborted) return;
         // Только товары на продажу и с остатком.
@@ -357,7 +364,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         if (!ctrl.signal.aborted) setProductsLoading(false);
       });
     return () => ctrl.abort();
-  }, [open]);
+  }, [open, orgId]);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
@@ -365,7 +372,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (!open) return;
     const ctrl = new AbortController();
     const id = setTimeout(() => {
-      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+      // Только орг-скоуп: филиалом не сужаем (пациент может быть из соседнего).
+      searchPatients(orgWide(orgId), patientSearch.trim(), 30, ctrl.signal)
         .then((rows) => {
           if (!ctrl.signal.aborted) setPatientOptions(rows);
         })
@@ -377,7 +385,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       clearTimeout(id);
       ctrl.abort();
     };
-  }, [open, patientSearch]);
+  }, [open, patientSearch, orgId]);
 
   // Keep the appointment's patient visible even if not in the search page.
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {
@@ -387,6 +395,17 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     }
     return [selectedPatient, ...patientOptions];
   }, [patientOptions, selectedPatient]);
+
+  // Цвет специалиста — общий для всех его строк: по форме видно, какие услуги
+  // относятся к одному исполнителю.
+  const employeeAccents = React.useMemo(
+    () =>
+      buildEmployeeAccentMap(
+        serviceRows.map((r) => r.employeeId),
+        theme.palette.mode,
+      ),
+    [serviceRows, theme.palette.mode],
+  );
 
   // ── validation ───────────────────────────────────────────────────────────
   const validRows = serviceRows.filter(
@@ -836,12 +855,58 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                             !data.canEmployeeProvideService(row.employeeId, row.serviceId);
 
                           return (
-                            <Stack key={index} spacing={1}>
-                              {index === 0 && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {t("addDrawer.specialistColumn")}
-                                </Typography>
-                              )}
+                            <ServiceRowShell
+                              key={index}
+                              index={index}
+                              accentColor={
+                                row.employeeId !== null
+                                  ? (employeeAccents.get(row.employeeId) ?? null)
+                                  : null
+                              }
+                              employeeName={selectedEmployee?.fullName ?? null}
+                              continuesEmployee={
+                                index > 0 &&
+                                row.employeeId !== null &&
+                                serviceRows[index - 1].employeeId === row.employeeId
+                              }
+                              hasError={incompatible}
+                              deleteButton={
+                                serviceRows.length > 1 ? (
+                                  <Tooltip
+                                    title={
+                                      row.hasConclusion
+                                        ? t("editDrawer.cannotDeleteHasConclusion")
+                                        : t("editDrawer.deleteService")
+                                    }
+                                  >
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        disabled={row.hasConclusion}
+                                        onClick={() =>
+                                          setServiceRows((prev) =>
+                                            prev.filter((_, i) => i !== index),
+                                          )
+                                        }
+                                        sx={{ p: 0.25 }}
+                                      >
+                                        <DeleteOutlined fontSize="small" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                ) : undefined
+                              }
+                              employeeHint={
+                                row.serviceId !== null && !data.loading ? (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {t("serviceRow.filteredSpecialists", {
+                                      count: availableEmployees.length,
+                                    })}
+                                  </Typography>
+                                ) : undefined
+                              }
+                              employeeField={
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
                                 // Смену исполнителя у строки с медзаключением бэк
@@ -884,14 +949,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   />
                                 )}
                               />
-                              {index === 0 && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {t("addDrawer.serviceNameColumn")}
-                                </Typography>
-                              )}
-                              <Stack direction="row" spacing={1} alignItems="flex-start">
+                              }
+                              serviceField={
                                 <Autocomplete<DjangoCatalogServiceWithEmployees>
-                                  sx={{ flex: 1 }}
+                                  fullWidth
                                   // Смену услуги на строке с медзаключением бэк
                                   // отбивает 400-й, если строку пересоздавать
                                   // (проверено на живом API 16–17.07.2026);
@@ -948,35 +1009,15 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     />
                                   )}
                                 />
-                                {serviceRows.length > 1 && (
-                                  <Tooltip
-                                    title={
-                                      row.hasConclusion
-                                        ? t("editDrawer.cannotDeleteHasConclusion")
-                                        : t("editDrawer.deleteService")
-                                    }
-                                  >
-                                    <span>
-                                      <IconButton
-                                        size="small"
-                                        color="error"
-                                        disabled={row.hasConclusion}
-                                        onClick={() =>
-                                          setServiceRows((prev) => prev.filter((_, i) => i !== index))
-                                        }
-                                        sx={{
-                                          mt: 0.5,
-                                          border: "1px solid",
-                                          borderColor: row.hasConclusion ? "divider" : "error.main",
-                                          "&:hover": { backgroundColor: "error.lighter" },
-                                        }}
-                                      >
-                                        <DeleteOutlined fontSize="small" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                )}
-                              </Stack>
+                              }
+                            >
+                              {row.employeeId !== null && !data.loading && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {t("serviceRow.filteredServices", {
+                                    count: availableServices.length,
+                                  })}
+                                </Typography>
+                              )}
                               {row.hasConclusion && (
                                 <Typography variant="caption" color="text.secondary">
                                   {canEditLocked
@@ -989,7 +1030,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   {t("editDrawer.specialistMismatch")}
                                 </Alert>
                               )}
-                            </Stack>
+                            </ServiceRowShell>
                           );
                         })}
 

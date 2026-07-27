@@ -25,7 +25,8 @@ import {
 } from "../../api/staff";
 import { getServices, type Service } from "../../api/catalog";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
-import { ORG_WIDE } from "../../api/scope";
+import { orgWide } from "../../api/scope";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
 
 dayjs.locale("ru");
@@ -70,6 +71,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
   const [priceById, setPriceById] = React.useState<Map<number, string>>(new Map());
   const [appointments, setAppointments] = React.useState<DjangoAppointment[]>([]);
+  const orgId = useApiOrgId();
 
   React.useEffect(() => {
     if (!doctorId || !open) {
@@ -87,8 +89,8 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
     Promise.all([
       getDjangoEmployee(doctorId, ctrl.signal).catch(() => null),
       getEmployeeServices(doctorId, ctrl.signal).catch(() => [] as EmployeeServiceAssignment[]),
-      getServices(ORG_WIDE, undefined, ctrl.signal).catch(() => [] as Service[]),
-      getAppointments(ORG_WIDE, { employeeId: doctorId }, ctrl.signal).catch(() => [] as DjangoAppointment[]),
+      getServices(orgWide(orgId), undefined, ctrl.signal).catch(() => [] as Service[]),
+      getAppointments(orgWide(orgId), { employeeId: doctorId }, ctrl.signal).catch(() => [] as DjangoAppointment[]),
     ])
       .then(([emp, svc, catalog, appts]) => {
         if (!active) return;
@@ -108,7 +110,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
       active = false;
       ctrl.abort();
     };
-  }, [doctorId, open]);
+  }, [doctorId, open, orgId]);
 
   const name = employee?.fullName ?? fallbackName ?? "";
   const photoUrl = employee?.photoUrl ?? fallbackPhotoUrl ?? null;

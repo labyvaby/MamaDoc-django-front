@@ -33,6 +33,8 @@ import {
   type DjangoPatient,
 } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
+import { orgWide } from "../../api/scope";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useT } from "../../i18n/VerticalProvider";
 
 type Props = {
@@ -51,6 +53,7 @@ const MergePatientDrawer: React.FC<Props> = ({
 }) => {
   const { t } = useT("patients");
   const { open: notify } = useNotification();
+  const orgId = useApiOrgId();
 
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<DjangoPatient[]>([]);
@@ -85,7 +88,12 @@ const MergePatientDrawer: React.FC<Props> = ({
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const data = await searchPatients(searchQuery.trim(), 10, ctrl.signal);
+        const data = await searchPatients(
+          orgWide(orgId),
+          searchQuery.trim(),
+          10,
+          ctrl.signal,
+        );
         // Исключаем самого initialPatient из результатов
         setSearchResults(data.filter((p) => p.id !== initialPatient?.id));
       } catch {
@@ -98,7 +106,7 @@ const MergePatientDrawer: React.FC<Props> = ({
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [searchQuery, initialPatient?.id]);
+  }, [searchQuery, initialPatient?.id, orgId]);
 
   const canMerge = Boolean(
     initialPatient && selectedDuplicate && primaryId != null,

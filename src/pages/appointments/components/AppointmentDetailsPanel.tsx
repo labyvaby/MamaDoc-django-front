@@ -53,6 +53,9 @@ import {
 } from "../../../api/queryKeys";
 import { scheduleDateInfo } from "../../vaccinations/meta";
 import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
+import ServiceEmployeeGroups, {
+  type ServiceEmployeeGroup,
+} from "../../../components/appointments/ServiceEmployeeGroups";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
@@ -335,17 +338,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     };
   }, [appt, payStatus, paidTotal, cashPaid, cardPaid, balancePaid, bonusesPaid, insurancePaid]);
 
-  // Services grouped by employee
-  const servicesByEmployee = React.useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        employeeName: string;
-        employeeId: number | null;
-        employeePhotoUrl: string | null;
-        services: typeof appt.services;
-      }
-    >();
+  // Services grouped by employee — исполнитель и его услуги одной группой
+  const servicesByEmployee = React.useMemo<ServiceEmployeeGroup[]>(() => {
+    const map = new Map<string, ServiceEmployeeGroup & { rawTotal: number }>();
     for (const sl of appt.services) {
       const key = sl.employee ? String(sl.employee.id) : "__no_doc__";
       if (!map.has(key)) {
@@ -353,12 +348,29 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           employeeId: sl.employee?.id ?? null,
           employeeName: sl.employee?.fullName ?? t("details.noSpecialist"),
           employeePhotoUrl: sl.employee?.photoUrl ?? null,
-          services: [],
+          lines: [],
+          total: null,
+          rawTotal: 0,
         });
       }
-      map.get(key)!.services.push(sl);
+      const group = map.get(key)!;
+      const lineAmount = Number(sl.price) > 0 ? sl.price : (sl.service?.basePrice ?? sl.price);
+      group.lines.push({
+        lineId: sl.id,
+        serviceId: sl.service?.id ?? null,
+        name: sl.service?.name ?? "—",
+        imageUrl: sl.service?.imageUrl ?? null,
+        quantity: sl.quantity,
+        amount: som(lineAmount),
+      });
+      group.rawTotal += Number(lineAmount) || 0;
     }
-    return Array.from(map.values());
+    // Итог по исполнителю показываем только когда услуг больше одной —
+    // при единственной услуге он дублировал бы её цену.
+    return Array.from(map.values()).map(({ rawTotal, ...group }) => ({
+      ...group,
+      total: group.lines.length > 1 ? som(rawTotal) : null,
+    }));
   }, [appt.services]);
 
   const paymentBlock = (withBalanceBonuses: boolean) => {
@@ -917,119 +929,19 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </Typography>
                 </Paper>
               ) : (
-                <Stack spacing={2}>
-                  {servicesByEmployee.map((group) => (
-                    <Box key={group.employeeId ?? "__no_doc__"}>
-                      {/* Doctor header */}
-                      <Paper
-                        variant="outlined"
-                        onClick={
-                          group.employeeId
-                            ? () => {
-                                setSelectedDoctorId(group.employeeId);
-                                setSelectedDoctorName(group.employeeName);
-                                setSelectedDoctorPhotoUrl(group.employeePhotoUrl);
-                                setDoctorDrawerOpen(true);
-                              }
-                            : undefined
-                        }
-                        sx={{
-                          p: 1.5,
-                          mb: 1,
-                          display: "flex",
-                          alignItems: "center",
-                          bgcolor: alpha(theme.palette.primary.main, 0.04),
-                          borderColor: alpha(theme.palette.primary.main, 0.1),
-                          borderRadius: "10px",
-                          cursor: group.employeeId ? "pointer" : "default",
-                          transition: "all 0.2s",
-                          "&:hover": {
-                            bgcolor: alpha(theme.palette.primary.main, 0.08),
-                            borderColor: "primary.main",
-                          },
-                        }}
-                      >
-                        <Avatar
-                          src={group.employeePhotoUrl ?? undefined}
-                          sx={{
-                            width: 32,
-                            height: 32,
-                            mr: 1.5,
-                            bgcolor: group.employeeId ? "primary.main" : "action.selected",
-                            fontSize: "0.875rem",
-                            fontWeight: 700,
-                            color: group.employeeId ? "primary.contrastText" : "text.secondary",
-                          }}
-                        >
-                          {group.employeeId ? initials(group.employeeName) : "?"}
-                        </Avatar>
-                        <Typography variant="subtitle2" fontWeight={700}>
-                          {group.employeeName}
-                        </Typography>
-                      </Paper>
-
-                      {/* Service items */}
-                      <Stack spacing={1} sx={{ pl: 2 }}>
-                        {group.services.map((sl) => (
-                          <Paper
-                            key={sl.id}
-                            variant="outlined"
-                            onClick={
-                              sl.service?.id
-                                ? () => {
-                                    setSelectedServiceId(sl.service!.id);
-                                    setServiceDrawerOpen(true);
-                                  }
-                                : undefined
-                            }
-                            sx={{
-                              p: 1.5,
-                              pl: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 2,
-                              bgcolor: "background.paper",
-                              borderRadius: "10px",
-                              cursor: sl.service?.id ? "pointer" : "default",
-                              transition: "all 0.2s",
-                              "&:hover": {
-                                borderColor: "primary.main",
-                                bgcolor: alpha(theme.palette.primary.main, 0.02),
-                              },
-                            }}
-                          >
-                            <Avatar
-                              variant="rounded"
-                              src={sl.service?.imageUrl ?? undefined}
-                              sx={{
-                                width: 40,
-                                height: 40,
-                                bgcolor: "action.selected",
-                                color: "text.secondary",
-                                flexShrink: 0,
-                              }}
-                            >
-                              <MedicalServicesOutlined fontSize="small" />
-                            </Avatar>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography variant="body2" fontWeight={600} noWrap>
-                                {sl.service?.name ?? "—"}
-                              </Typography>
-                              {sl.quantity > 1 && (
-                                <Typography variant="caption" color="text.secondary">
-                                  × {sl.quantity}
-                                </Typography>
-                              )}
-                            </Box>
-                            <Typography variant="body2" fontWeight={700} sx={{ flexShrink: 0 }}>
-                              {som(Number(sl.price) > 0 ? sl.price : (sl.service?.basePrice ?? sl.price))}
-                            </Typography>
-                          </Paper>
-                        ))}
-                      </Stack>
-                    </Box>
-                  ))}
-                </Stack>
+                <ServiceEmployeeGroups
+                  groups={servicesByEmployee}
+                  onEmployeeClick={(group) => {
+                    setSelectedDoctorId(group.employeeId);
+                    setSelectedDoctorName(group.employeeName);
+                    setSelectedDoctorPhotoUrl(group.employeePhotoUrl);
+                    setDoctorDrawerOpen(true);
+                  }}
+                  onServiceClick={(serviceId) => {
+                    setSelectedServiceId(serviceId);
+                    setServiceDrawerOpen(true);
+                  }}
+                />
               )}
             </Box>
 

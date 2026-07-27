@@ -397,24 +397,36 @@ export async function getProductPriceHistory(
 export async function getStock(
     warehouseId?: number,
     signal?: AbortSignal,
+    /** Явный орг-контекст для суперпользователя/мультиорг (как в getWarehouses). */
+    organizationId?: number,
 ): Promise<DjangoStockItem[]> {
-    const qs = warehouseId !== undefined ? `?warehouseId=${warehouseId}` : "";
-    const rows = await apiRequest<RawStockItem[]>(`/warehouse/stock/${qs}`, {
-        signal,
-    });
+    const q = new URLSearchParams();
+    if (warehouseId !== undefined) q.set("warehouseId", String(warehouseId));
+    if (organizationId != null) q.set("organizationId", String(organizationId));
+    const qs = q.toString();
+    const rows = await apiRequest<RawStockItem[]>(
+        `/warehouse/stock/${qs ? `?${qs}` : ""}`,
+        { signal },
+    );
     return rows.map(mapStockItem);
 }
 
 // ── Movements ───────────────────────────────────────────────────────────────
 
 export async function getStockMovements(
-    filters: { productId?: number; warehouseId?: number; limit?: number } = {},
+    filters: {
+        productId?: number;
+        warehouseId?: number;
+        limit?: number;
+        organizationId?: number;
+    } = {},
     signal?: AbortSignal,
 ): Promise<DjangoStockMovement[]> {
     const q = new URLSearchParams();
     if (filters.productId !== undefined) q.set("productId", String(filters.productId));
     if (filters.warehouseId !== undefined) q.set("warehouseId", String(filters.warehouseId));
     if (filters.limit !== undefined) q.set("limit", String(filters.limit));
+    if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
     const qs = q.toString();
     const rows = await apiRequest<RawMovement[]>(
         `/warehouse/movements/${qs ? `?${qs}` : ""}`,

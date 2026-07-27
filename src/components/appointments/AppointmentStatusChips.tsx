@@ -15,14 +15,25 @@
  *   • «Оплачено» только картой → синий чип (безнал), метка та же;
  *   • статус приёма 100% скидки бэк оставляет неоплаченным, а чек закрывает
  *     (paymentStatus=discounted без оплат) → отдельный чип «Скидка 100%»;
+ *   • при частичной оплате рядом чип с остатком («Долг 500 сом») — сумма
+ *     остатка и есть операционный вопрос регистратуры;
  *   • статус-чип прячем, когда состояние уже понятно по другим меткам:
  *     завершён, оплачен/частично/скидка, есть заключение;
- *   • но если по правилам выше не осталось ни одного чипа, статус всё же
+ *   • но «Отменено»/«Неявка» не прячем никогда — оплаченный отменённый приём
+ *     иначе выглядел как обычное «Оплачено»;
+ *   • если по правилам выше не осталось ни одного чипа, статус всё же
  *     показываем — иначе строка вообще без статуса (так было у «Завершено»
  *     без оплаты).
+ *
+ * Просроченный статус: бэк не закрывает приёмы (на проде 0 completed из 477 за
+ * три недели, 199 приёмов остались in_progress спустя час+ после окончания).
+ * Такой чип приглушаем и объясняем тултипом, иначе «На приёме» на вчерашнем
+ * визите читается как «пациент в кабинете».
+ *
+ * Правила видимости — в statusChipState.ts (чистая функция + тесты).
  */
 import React from "react";
-import { Chip, Stack } from "@mui/material";
+import { Chip, Stack, Tooltip } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
@@ -30,21 +41,17 @@ import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWall
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 
-import type { DjangoAppointment } from "../../api/appointments";
 import {
   getStatusConfig,
   getStatusChipSx,
   getStatusLabel,
 } from "../../config/appointmentStatuses";
 import { useT } from "../../i18n/VerticalProvider";
+import { formatKGS } from "../../utility/format";
+import { getStatusChipState } from "./statusChipState";
+import type { AppointmentStatusSource } from "./statusChipState";
 
-/** Приёму нужны только эти поля — чтобы компонент принимал и укороченные
- *  формы приёма из карточек-дроверов, а не только полный DjangoAppointment. */
-export type AppointmentStatusSource = Pick<DjangoAppointment, "status"> &
-  Partial<Pick<
-    DjangoAppointment,
-    "paymentStatus" | "paidTotal" | "paymentMethods" | "services"
-  >>;
+export type { AppointmentStatusSource };
 
 export interface AppointmentStatusChipsProps {
   appointment: AppointmentStatusSource;
@@ -59,16 +66,6 @@ export interface AppointmentStatusChipsProps {
   alwaysShowStatus?: boolean;
 }
 
-/** Есть ли по приёму заключение — бэк не отдаёт hasMedicalConclusion, выводим
- *  из строк услуг (та же логика, что в AppointmentListPanel и истории). */
-const hasConclusionOf = (appt: AppointmentStatusSource): boolean =>
-  (appt.services ?? []).some(
-    (sl) =>
-      sl.conclusionId != null ||
-      sl.conclusionState === "draft" ||
-      sl.conclusionState === "completed",
-  );
-
 const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   appointment: appt,
   chipHeight,
@@ -78,45 +75,36 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
 }) => {
   const { t } = useT("appointments");
   const methods = appt.paymentMethods ?? [];
-  const hasPaid = Number(appt.paidTotal ?? 0) > 0;
-  const isCardOnly = methods.length === 1 && methods[0] === "card";
 
-  // Стиль чипа подбираем по коду статуса, а не по метке: метка зависит от
-  // вертикали бизнеса и ключом быть не может.
-  const paymentStyleStatus =
-    appt.paymentStatus === "paid" && isCardOnly
-      ? "paid_cashless"
-      : appt.paymentStatus === "paid"
-      ? "paid"
-      : appt.paymentStatus === "partial"
-      ? "partially_paid"
-      : appt.status;
-
-  // 100% скидка: оплат нет (paidTotal=0), но чек закрыт — иначе приём выглядел
-  // бы неоплаченным.
-  const isDiscounted = appt.paymentStatus === "discounted" && !hasPaid;
-
-  const hideStatusChip =
-    appt.status === "completed" ||
-    appt.paymentStatus === "paid" ||
-    appt.paymentStatus === "partial" ||
-    isDiscounted ||
-    hasConclusionOf(appt);
-
-  const showPayChip = hasPaid;
-  // Ни одного чипа по правилам выше — показываем статус, чтобы не потерять его.
-  const showStatusChip =
-    alwaysShowStatus || !hideStatusChip || (!showPayChip && !isDiscounted);
+  const {
+    showStatusChip,
+    showPayChip,
+    showDiscountChip,
+    debtAmount,
+    isOverdue,
+    paymentStyleStatus,
+  } = getStatusChipState(appt, { alwaysShowStatus });
 
   const statusCfg = getStatusConfig(appt.status);
 
   /** Стиль чипа + опциональная компактная высота.
    *  getStatusChipSx возвращает функцию от темы — её нельзя расплющить спредом
    *  (в паре мест так делали, и цвета чипа молча терялись), поэтому вызываем. */
-  const chipSx = (statusCode: string): SxProps<Theme> => (theme: Theme) => ({
-    ...(getStatusChipSx(statusCode) as (t: Theme) => Record<string, unknown>)(theme),
-    ...(chipHeight != null ? { height: chipHeight } : {}),
-  });
+  const chipSx = (statusCode: string, extra?: Record<string, unknown>): SxProps<Theme> =>
+    (theme: Theme) => ({
+      ...(getStatusChipSx(statusCode) as (t: Theme) => Record<string, unknown>)(theme),
+      ...(chipHeight != null ? { height: chipHeight } : {}),
+      ...extra,
+    });
+
+  const statusChip = (
+    <Chip
+      label={statusCfg.label}
+      icon={statusCfg.icon}
+      size="small"
+      sx={chipSx(appt.status, isOverdue ? { opacity: 0.6 } : undefined)}
+    />
+  );
 
   return (
     <Stack
@@ -125,14 +113,15 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       gap={direction === "row" ? 1 : 0.5}
       flexWrap={direction === "row" ? "wrap" : undefined}
     >
-      {showStatusChip && (
-        <Chip
-          label={statusCfg.label}
-          icon={statusCfg.icon}
-          size="small"
-          sx={chipSx(appt.status)}
-        />
-      )}
+      {showStatusChip &&
+        (isOverdue ? (
+          <Tooltip title={t("chips.overdue")}>
+            {/* span: Chip со sx-функцией не пробрасывает ref тултипу */}
+            <span>{statusChip}</span>
+          </Tooltip>
+        ) : (
+          statusChip
+        ))}
 
       {showPayChip && (
         <Chip
@@ -162,7 +151,16 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
         />
       )}
 
-      {isDiscounted && (
+      {/* Остаток при частичной оплате — главный операционный вопрос кассы. */}
+      {debtAmount != null && (
+        <Chip
+          label={t("chips.debt", { amount: formatKGS(debtAmount) })}
+          size="small"
+          sx={chipSx("debt")}
+        />
+      )}
+
+      {showDiscountChip && (
         <Chip
           label={t("list.fullDiscount")}
           size="small"

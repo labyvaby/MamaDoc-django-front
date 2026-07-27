@@ -19,6 +19,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { AppButton, CustomDatePicker } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { orgWide } from "../../api/scope";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -143,7 +144,8 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     const ctrl = new AbortController();
     const id = setTimeout(() => {
       setPatientsLoading(true);
-      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+      // Только орг-скоуп: филиалом не сужаем (пациент может быть из соседнего).
+      searchPatients(orgWide(orgId), patientSearch.trim(), 30, ctrl.signal)
         .then((rows) => {
           if (!ctrl.signal.aborted) setPatientOptions(rows);
         })
@@ -156,7 +158,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       clearTimeout(id);
       ctrl.abort();
     };
-  }, [open, patientSearch]);
+  }, [open, patientSearch, orgId]);
 
   const patientChoices = React.useMemo<DjangoPatient[]>(() => {
     if (!patient) return patientOptions;

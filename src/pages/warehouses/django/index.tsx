@@ -26,6 +26,7 @@ import { useNotification } from "@refinedev/core";
 import { PageHeader } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
@@ -69,6 +70,9 @@ const DjangoWarehousesPage: React.FC = () => {
     const canView = useCan("warehouse.view");
     const canManage = useCan("warehouse.manage");
     const { activeBranch, loading: permLoading } = usePermissions();
+    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту: иначе склады
+    // и товары приходят из организации, определённой бэком по сессии.
+    const orgId = useApiOrgId();
     const activeBranchId = activeBranch?.id ?? null;
 
     // Data State
@@ -111,7 +115,10 @@ const DjangoWarehousesPage: React.FC = () => {
         if (!canView) return;
         try {
             setLoadingWarehouses(true);
-            const [ws, prods] = await Promise.all([getWarehouses(), getProducts()]);
+            const [ws, prods] = await Promise.all([
+                getWarehouses(undefined, orgId),
+                getProducts(undefined, { organizationId: orgId }),
+            ]);
             setWarehouses(ws);
             setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
             setProductPrices(new Map(prods.map((p) => [p.id, p.price || 0])));
@@ -126,7 +133,7 @@ const DjangoWarehousesPage: React.FC = () => {
         } finally {
             setLoadingWarehouses(false);
         }
-    }, [notify, canView]);
+    }, [notify, canView, orgId]);
 
     React.useEffect(() => {
         if (!permLoading && canView) loadInitialData();
@@ -144,7 +151,7 @@ const DjangoWarehousesPage: React.FC = () => {
         stockAbortRef.current = controller;
         try {
             setLoadingStock(true);
-            const data = await getStock(selectedWarehouseId, controller.signal);
+            const data = await getStock(selectedWarehouseId, controller.signal, orgId);
             setStock(data);
             return data;
         } catch (e) {
@@ -155,7 +162,7 @@ const DjangoWarehousesPage: React.FC = () => {
         } finally {
             if (stockAbortRef.current === controller) setLoadingStock(false);
         }
-    }, [selectedWarehouseId, notify]);
+    }, [selectedWarehouseId, notify, orgId]);
 
     React.useEffect(() => {
         fetchStock();
@@ -301,7 +308,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 setMovements(moves);
             }
             if (newProductName) {
-                getProducts()
+                getProducts(undefined, { organizationId: orgId })
                     .then((prods) => setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name }))))
                     .catch(() => undefined);
             }

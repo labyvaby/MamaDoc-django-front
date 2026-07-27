@@ -38,6 +38,7 @@ import { subtleBg } from "../../../theme";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch";
@@ -89,6 +90,8 @@ const DjangoProductsPage: React.FC = () => {
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const { loading: permLoading } = usePermissions();
+  // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
+  const orgId = useApiOrgId();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
   const canManage = useCan("warehouse.manage");
 
@@ -124,7 +127,7 @@ const DjangoProductsPage: React.FC = () => {
     productsAbortRef.current = controller;
     try {
       setLoading(true);
-      const data = await getProducts(controller.signal);
+      const data = await getProducts(controller.signal, { organizationId: orgId });
       setProducts(data);
       // Обновим выбранный товар свежими данными.
       setSelectedProduct((prev) =>
@@ -137,7 +140,7 @@ const DjangoProductsPage: React.FC = () => {
     } finally {
       if (productsAbortRef.current === controller) setLoading(false);
     }
-  }, [notify]);
+  }, [notify, orgId]);
 
   const fetchCategories = React.useCallback(async () => {
     try {

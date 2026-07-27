@@ -27,7 +27,9 @@ import { DjangoSale, SaleWriteData, createSale, updateSale } from "../../../api/
 import { searchPatients, DjangoPatient } from "../../../api/patients";
 import { getBranches, DjangoBranch } from "../../../api/organization";
 import { ApiError, isAbortError } from "../../../api/client";
+import { orgWide } from "../../../api/scope";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { DiscountInput } from "../../ui";
 
 // CSS to hide spin buttons
@@ -74,6 +76,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
 }) => {
     const { open: notify } = useNotification();
     const { activeBranch } = usePermissions();
+    const orgId = useApiOrgId();
     const isEdit = !!sale;
     const [loading, setLoading] = useState(false);
     const [touched, setTouched] = useState(false);
@@ -115,7 +118,9 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
         const timer = setTimeout(async () => {
             try {
                 setPatientsLoading(true);
+                // Только орг-скоуп: филиалом не сужаем (пациент может быть из соседнего).
                 const rows: DjangoPatient[] = await searchPatients(
+                    orgWide(orgId),
                     query.length >= 2 ? query : "",
                     10,
                     controller.signal,
@@ -137,7 +142,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             clearTimeout(timer);
             controller.abort();
         };
-    }, [open, patientInput]);
+    }, [open, patientInput, orgId]);
 
     // Филиалы — только когда нужен явный выбор (org-wide создание).
     useEffect(() => {

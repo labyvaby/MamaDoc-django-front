@@ -11,7 +11,12 @@
     "partially_paid": "Частично оплачено",
     "paid_cashless": "Оплачено",
     "discounted": "Со скидкой",
-    "free": "Бесплатно"
+    "free": "Бесплатно",
+    "debt": "Долг"
+  },
+  "chips": {
+    "debt": "Долг {{amount}}",
+    "overdue": "Время {{visit.gen}} прошло — статус не обновляли"
   },
   "paymentStatus": {
     "unpaid": "Не оплачен",
@@ -62,6 +67,7 @@
   },
   "filters": {
     "all": "Все",
+    "allStatuses": "Все статусы",
     "button": "Фильтры"
   },
   "list": {
@@ -126,6 +132,12 @@
     "cancelTitle": "Отменить {{record.acc}}?",
     "cancelText": "{{record.nom, capitalize}} будет переведена в статус «Отменено». Она не удалится из истории.",
     "cancelSubmit": "Подтвердить отмену"
+  },
+  "serviceRow": {
+    "pickSpecialist": "Выберите {{specialist.acc}}",
+    "sameSpecialist": "{{specialist.nom, capitalize}} из строки выше",
+    "filteredServices": "Показано {{count}} — фильтр по {{specialist.dat}}",
+    "filteredSpecialists": "Показано {{count}} — фильтр по {{service.dat}}"
   },
   "addDrawer": {
     "title": "Добавить {{visit.acc}}",

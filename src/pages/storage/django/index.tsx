@@ -9,6 +9,7 @@ import { useNotification } from "@refinedev/core";
 import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
@@ -43,6 +44,8 @@ const DjangoStoragePage: React.FC = () => {
     const canView = useCan("warehouse.view");
     const canManage = useCan("warehouse.manage");
     const { loading: permLoading, activeBranch } = usePermissions();
+    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
+    const orgId = useApiOrgId();
 
     // State
     const [warehouses, setWarehouses] = React.useState<DjangoWarehouse[]>([]);
@@ -75,7 +78,7 @@ const DjangoStoragePage: React.FC = () => {
         inventoryAbortRef.current = controller;
         try {
             setLoading(true);
-            const data = await getStock(undefined, controller.signal);
+            const data = await getStock(undefined, controller.signal, orgId);
             setStock(data);
             return data;
         } catch (e) {
@@ -86,28 +89,28 @@ const DjangoStoragePage: React.FC = () => {
         } finally {
             if (inventoryAbortRef.current === controller) setLoading(false);
         }
-    }, [notify]);
+    }, [notify, orgId]);
 
     // Fetch Products for dropdown
     const fetchProductsForSelector = React.useCallback(async () => {
         try {
-            const prods = await getProducts();
+            const prods = await getProducts(undefined, { organizationId: orgId });
             setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
         } catch (e) {
             if (isAbortError(e)) return;
             console.error("Failed to load products for selector", e);
         }
-    }, []);
+    }, [orgId]);
 
     // Видимые склады — для выбора склада при приходе нового товара.
     const fetchWarehouses = React.useCallback(async () => {
         try {
-            setWarehouses(await getWarehouses());
+            setWarehouses(await getWarehouses(undefined, orgId));
         } catch (e) {
             if (isAbortError(e)) return;
             console.error("Failed to load warehouses", e);
         }
-    }, []);
+    }, [orgId]);
 
     React.useEffect(() => {
         if (!permLoading && canView) {
