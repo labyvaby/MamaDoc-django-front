@@ -38,7 +38,8 @@ import {
 } from "../../../api/staff";
 import { getBranches } from "../../../api/organization";
 import { getServices, type Service } from "../../../api/catalog";
-import { ORG_WIDE } from "../../../api/scope";
+import { orgWide } from "../../../api/scope";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { getProducts, type DjangoProduct } from "../../../api/warehouse";
 import {
   getEmployeeRule,
@@ -164,6 +165,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
   // ── Операционные филиалы (карточка видна в каждом из набора) ──────────────
   const { activeBranch } = usePermissions();
+  const orgId = useApiOrgId();
   // Набор меняется только из режима «все филиалы» — бэкенд в филиальном
   // контексте отклонит запрос.
   const branchScoped = activeBranch != null;
@@ -345,7 +347,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
     const needServices = canViewServices || canManageServices || canViewPayroll;
     const servicesPromise: Promise<Service[]> = needServices
-      ? getServices(ORG_WIDE, undefined, ctrl.signal)
+      ? getServices(orgWide(orgId), undefined, ctrl.signal)
       : Promise.resolve([]);
 
     if (canViewServices || canManageServices) {
@@ -383,7 +385,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     if (canViewPayroll) {
       // Товары для правил «Товары в приёмах» (при отсутствии права — пусто).
       setProductsLoading(true);
-      getProducts(ctrl.signal)
+      getProducts(ctrl.signal, { organizationId: orgId })
         .then((list) => {
           if (!ctrl.signal.aborted)
             setAllProducts(list.filter((p) => p.isActive !== false));

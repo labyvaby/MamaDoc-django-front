@@ -35,6 +35,8 @@ import { formatKGS } from "../../utility/format";
 import { roundDateTimeLocalToStep } from "../../utility/time";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { orgWide } from "../../api/scope";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -184,6 +186,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     isNurse,
     isAdmin,
   } = usePermissions();
+  const orgId = useApiOrgId();
 
   // Процедурный кабинет: настоящая медсестра (не админ) не может переназначить
   // исполнителя — поле фиксируется её employee id (как в форме создания).
@@ -348,7 +351,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (!open || !EDIT_APPOINTMENT_PRODUCTS_ENABLED) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
-    getProducts(ctrl.signal)
+    getProducts(ctrl.signal, { organizationId: orgId })
       .then((list) => {
         if (ctrl.signal.aborted) return;
         // Только товары на продажу и с остатком.
@@ -361,7 +364,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         if (!ctrl.signal.aborted) setProductsLoading(false);
       });
     return () => ctrl.abort();
-  }, [open]);
+  }, [open, orgId]);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
@@ -369,7 +372,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (!open) return;
     const ctrl = new AbortController();
     const id = setTimeout(() => {
-      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+      // Только орг-скоуп: филиалом не сужаем (пациент может быть из соседнего).
+      searchPatients(orgWide(orgId), patientSearch.trim(), 30, ctrl.signal)
         .then((rows) => {
           if (!ctrl.signal.aborted) setPatientOptions(rows);
         })
@@ -381,7 +385,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       clearTimeout(id);
       ctrl.abort();
     };
-  }, [open, patientSearch]);
+  }, [open, patientSearch, orgId]);
 
   // Keep the appointment's patient visible even if not in the search page.
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {

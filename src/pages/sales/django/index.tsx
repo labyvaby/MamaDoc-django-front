@@ -18,6 +18,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch";
@@ -87,6 +88,8 @@ const DjangoSalesPage: React.FC = () => {
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const { open: notify } = useNotification();
     const { loading: permLoading } = usePermissions();
+    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
+    const orgId = useApiOrgId();
     const canView = useCan(["warehouse.sales.view", "warehouse.view"]);
     const canManageSales = useCan("warehouse.sales.manage");
 
@@ -271,7 +274,7 @@ const DjangoSalesPage: React.FC = () => {
     const [availableProducts, setAvailableProducts] = useState<SaleProductOption[]>([]);
     const fetchProducts = useCallback(async () => {
         try {
-            const prods = await getProducts();
+            const prods = await getProducts(undefined, { organizationId: orgId });
             setAvailableProducts(prods.map((p) => ({
                 id: p.id,
                 label: p.name,
@@ -281,7 +284,7 @@ const DjangoSalesPage: React.FC = () => {
                 isActive: p.isForSale,
             })));
         } catch (e) { console.error(e); }
-    }, []);
+    }, [orgId]);
 
     useEffect(() => {
         if (!permLoading && canView) fetchProducts();

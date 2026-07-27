@@ -51,7 +51,8 @@ import {
   parseOverlapConflict,
   type AppointmentOverlapConflict,
 } from "../../api/appointments";
-import { ORG_WIDE } from "../../api/scope";
+import { orgWide } from "../../api/scope";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
@@ -169,6 +170,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     isNurse,
     isAdmin,
   } = usePermissions();
+  // Орг-скоуп для запросов: суперпользователю/мультиорг-аккаунту передаём явно,
+  // иначе пикеры и проверка дублей смотрят не в ту организацию.
+  const orgId = useApiOrgId();
 
   // Процедурный кабинет: настоящая медсестра (не админ) создаёт процедуры
   // только на себя — поле исполнителя фиксируется её employee id. Без
@@ -281,7 +285,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     if (!open) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
-    getProducts(ctrl.signal)
+    getProducts(ctrl.signal, { organizationId: orgId })
       .then((list) => {
         if (ctrl.signal.aborted) return;
         // Only goods that can be sold and are currently in stock.
@@ -294,7 +298,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         if (!ctrl.signal.aborted) setProductsLoading(false);
       });
     return () => ctrl.abort();
-  }, [open, activeBranch?.id]);
+  }, [open, activeBranch?.id, orgId]);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   // The clinic can have tens of thousands of patients, so the autocomplete
@@ -307,7 +311,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     const ctrl = new AbortController();
     const id = setTimeout(() => {
       setPatientsLoading(true);
-      searchPatients(patientSearch.trim(), 30, ctrl.signal)
+      // Филиалом не сужаем: пациента, записанного в соседнем филиале, всё равно
+      // нужно найти. Ограничиваем только организацией.
+      searchPatients(orgWide(orgId), patientSearch.trim(), 30, ctrl.signal)
         .then((rows) => {
           if (!ctrl.signal.aborted) setPatientOptions(rows);
         })
@@ -322,7 +328,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       clearTimeout(id);
       ctrl.abort();
     };
-  }, [open, patientSearch]);
+  }, [open, patientSearch, orgId]);
 
   // Always include the already-selected patient so it stays visible/selectable.
   const filteredPatients = React.useMemo<DjangoPatient[]>(() => {
@@ -352,9 +358,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const patientApptsQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.list({
       patientId: selectedPatient?.id ?? 0,
+      organizationId: orgId,
     }),
     queryFn: ({ signal }) =>
-      getAppointments(ORG_WIDE, { patientId: selectedPatient!.id }, signal),
+      getAppointments(orgWide(orgId), { patientId: selectedPatient!.id }, signal),
     enabled: open && !!selectedPatient && !isBooking,
     // Короткий staleTime: запись могли только что создать в соседнем окне.
     staleTime: 15_000,

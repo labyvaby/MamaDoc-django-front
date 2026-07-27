@@ -26,7 +26,8 @@ import "dayjs/locale/ru";
 
 import { getPatient, type DjangoPatient } from "../../api/patients";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
-import { ORG_WIDE } from "../../api/scope";
+import { orgWide } from "../../api/scope";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
 
 dayjs.locale("ru");
@@ -68,6 +69,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
   const [patient, setPatient] = React.useState<DjangoPatient | null>(null);
   const [recent, setRecent] = React.useState<DjangoAppointment[]>([]);
   const [recentLoading, setRecentLoading] = React.useState(false);
+  const orgId = useApiOrgId();
 
   React.useEffect(() => {
     if (!patientId || !open) {
@@ -89,7 +91,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
       });
 
     setRecentLoading(true);
-    getAppointments(ORG_WIDE, { patientId })
+    getAppointments(orgWide(orgId), { patientId })
       .then((rows) => {
         if (!active) return;
         const sorted = [...rows].sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
@@ -105,7 +107,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
     return () => {
       active = false;
     };
-  }, [patientId, open]);
+  }, [patientId, open, orgId]);
 
   return (
     <Drawer

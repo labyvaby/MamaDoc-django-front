@@ -170,14 +170,22 @@ export function useDjangoAppointmentData(
 /**
  * Fetches service-providers for a specific serviceId.
  * Only fires when serviceId is non-null and drawerOpen is true.
+ *
+ * branchId обязателен: без него эндпоинт отдаёт исполнителей всех филиалов
+ * организации, и они попадают в пикер (батч-режим выше его передаёт).
  */
 export function useServiceProvidersForService(
   serviceId: number | null,
   drawerOpen: boolean,
+  branchId: number | null,
 ): { providers: ServiceProvider[]; loading: boolean } {
   const q = useQuery({
-    queryKey: [...djangoQueryKeys.appointments.serviceProviders(), serviceId],
-    queryFn: ({ signal }) => getServiceProviders({ serviceId: serviceId! }, signal),
+    queryKey: [...djangoQueryKeys.appointments.serviceProviders(), serviceId, branchId],
+    queryFn: ({ signal }) =>
+      getServiceProviders(
+        { serviceId: serviceId!, branchId: branchId ?? undefined },
+        signal,
+      ),
     enabled: drawerOpen && serviceId !== null,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,

@@ -36,6 +36,7 @@ import {
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import { formatKGS } from "../../utility/format";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
 
 // Поиск товара по названию, штрихкоду и цене (как в форме приёма).
@@ -68,6 +69,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const { activeMembership, activeBranch } = usePermissions();
+  const orgId = useApiOrgId();
 
   const availableBranches: RbacBranch[] = React.useMemo(
     () => activeMembership?.branches ?? [],
@@ -94,7 +96,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     if (!open || !SERVICE_RELATED_PRODUCT_ENABLED) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
-    getProducts(ctrl.signal)
+    getProducts(ctrl.signal, { organizationId: orgId })
       .then((list) => {
         if (ctrl.signal.aborted) return;
         setProducts(list.filter((p) => p.isActive));
@@ -104,7 +106,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         if (!ctrl.signal.aborted) setProductsLoading(false);
       });
     return () => ctrl.abort();
-  }, [open]);
+  }, [open, orgId]);
 
   // Pre-select activeBranch when drawer opens (not all branches).
   React.useEffect(() => {
