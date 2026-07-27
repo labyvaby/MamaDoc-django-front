@@ -5,9 +5,19 @@ import {
   Button,
   Chip,
   Card,
+  MenuItem,
   Skeleton,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
@@ -15,6 +25,7 @@ import { useNavigate } from "react-router";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import PostAddOutlined from "@mui/icons-material/PostAddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useModuleGate } from "../../hooks/useModuleGate";
@@ -33,22 +44,35 @@ import {
   createKnowledgeArticle,
   getKnowledgeArticles,
   getKnowledgeCategories,
+  groupArticleFeed,
+  type KnowledgeArticleListItem,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
 import CategoriesDialog from "./CategoriesDialog";
 import FeedCard from "./FeedCard";
+import SeriesCard from "./SeriesCard";
+import { useReadArticles } from "./useReadArticles";
 
 /**
- * Статьи и видеоуроки показываются одной лентой (пожелание заказчика),
- * поэтому статьи запрашиваем без серверной пагинации — одним куском.
- * При росте базы до сотен материалов вернём пагинацию/инфинит-скролл.
+ * Размер страницы ленты. Крупный намеренно: части одной серии схлопываются в
+ * общую карточку только среди загруженных статей (см. groupArticleFeed), и
+ * чем меньше страница, тем чаще серия покажется неполной до дозагрузки.
  */
-const ARTICLES_PAGE_SIZE = 100;
+const ARTICLES_PAGE_SIZE = 60;
+
+/** Сортировка — клиентская: серверного ordering у бэка не подтверждено. */
+type SortKey = "recent" | "oldest" | "title";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "recent", label: "Сначала новые" },
+  { value: "oldest", label: "Сначала старые" },
+  { value: "title", label: "По алфавиту" },
+];
 
 const MotionBox = motion(Box);
 
-/** Сетка карточек — общая для секций «Статьи» и «Видеоуроки». */
+/** Сетка карточек ленты. */
 const feedGridSx = {
   display: "grid",
   gridTemplateColumns: {
@@ -72,6 +96,16 @@ const FeedCardSkeleton: React.FC = () => (
   </Card>
 );
 
+const sortArticles = (
+  articles: KnowledgeArticleListItem[],
+  sort: SortKey,
+): KnowledgeArticleListItem[] => {
+  const list = [...articles];
+  if (sort === "title") return list.sort((a, b) => a.title.localeCompare(b.title, "ru"));
+  const dir = sort === "oldest" ? 1 : -1;
+  return list.sort((a, b) => dir * a.updatedAt.localeCompare(b.updatedAt));
+};
+
 const KnowledgePage: React.FC = () => {
   usePageTitle("База знаний");
   const navigate = useNavigate();
@@ -79,6 +113,7 @@ const KnowledgePage: React.FC = () => {
   const queryClient = useQueryClient();
   const orgId = useApiOrgId();
   const { moduleGate } = useModuleGate();
+  const { isRead } = useReadArticles();
 
   // Доступ к странице гейтит RequireModule (App.tsx); здесь — право на действия.
   // В демо-режиме открыто всем, после выключения KNOWLEDGE_USE_MOCKS начнёт
@@ -87,6 +122,7 @@ const KnowledgePage: React.FC = () => {
 
   const [categoryFilter, setCategoryFilter] = React.useState<number | "all">("all");
   const [search, setSearch] = React.useState("");
+  const [sort, setSort] = React.useState<SortKey>("recent");
   const debouncedSearch = useDebouncedValue(search.trim());
 
   const invalidate = () =>
@@ -97,36 +133,97 @@ const KnowledgePage: React.FC = () => {
     queryKey: djangoQueryKeys.knowledge.categories({ includeInactive: false, orgId: orgId ?? null }),
     queryFn: ({ signal }) => getKnowledgeCategories({ organizationId: orgId }, signal),
   });
-  const categories = categoriesQuery.data ?? [];
+  const categories = React.useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
 
-  const articlesQuery = useQuery({
+  // Без manage бэк и так отдаёт только published — дублируем для моков.
+  const publishedFilter = canManage ? undefined : true;
+
+  const articlesQuery = useInfiniteQuery({
     queryKey: djangoQueryKeys.knowledge.articles({
       category: categoryFilter,
       search: debouncedSearch,
       orgId: orgId ?? null,
     }),
-    queryFn: ({ signal }) =>
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) =>
       getKnowledgeArticles(
         {
           category: categoryFilter === "all" ? undefined : categoryFilter,
           search: debouncedSearch || undefined,
-          // Без manage бэк и так отдаёт только published — дублируем для моков.
-          isPublished: canManage ? undefined : true,
-          page: 1,
+          isPublished: publishedFilter,
+          page: pageParam,
           pageSize: ARTICLES_PAGE_SIZE,
           organizationId: orgId,
         },
         signal,
       ),
+    // next — абсолютный URL следующей страницы; номер считаем сами, чтобы
+    // не разбирать чужой querystring.
+    getNextPageParam: (last, pages) => (last.next ? pages.length + 1 : undefined),
     placeholderData: keepPreviousData,
   });
 
-  // Лента — только статьи; видео живут внутри статей (YouTube-эмбед в
-  // контенте, UPD заказчика 15.07.2026 — отдельная сущность «видеоурок»
-  // удалена).
-  const articles = articlesQuery.data?.results ?? [];
+  const articles = React.useMemo(
+    () => articlesQuery.data?.pages.flatMap((p) => p.results) ?? [],
+    [articlesQuery.data],
+  );
+  const total = articlesQuery.data?.pages[0]?.count ?? 0;
+  const allLoaded = !articlesQuery.hasNextPage;
+
+  /**
+   * Счётчики у чипов разделов. Бэк агрегата не отдаёт, но `count` в ответе
+   * списка — это общее число по фильтру, поэтому берём его запросом на одну
+   * запись. Отдельные запросы, чтобы счётчик был верным и при пагинации:
+   * считать по загруженным статьям значило бы показывать «12» там, где 40.
+   */
+  const countQueries = useQueries({
+    queries: categories.map((category) => ({
+      queryKey: djangoQueryKeys.knowledge.articles({
+        countOf: category.id,
+        search: debouncedSearch,
+        orgId: orgId ?? null,
+      }),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        getKnowledgeArticles(
+          {
+            category: category.id,
+            search: debouncedSearch || undefined,
+            isPublished: publishedFilter,
+            page: 1,
+            pageSize: 1,
+            organizationId: orgId,
+          },
+          signal,
+        ),
+      select: (r: { count: number }) => r.count,
+      placeholderData: keepPreviousData,
+    })),
+  });
+  // Без useMemo: countQueries — новый массив на каждый рендер, мемоизация по
+  // нему всё равно не сработала бы, а построение Map из горстки разделов дешевле.
+  const categoryCounts = new Map(
+    categories.map((c, i) => [c.id, countQueries[i]?.data as number | undefined] as const),
+  );
+
+  /**
+   * Лента: сортировка, затем схлопывание серий. При активном поиске серии не
+   * схлопываем — человек ищет конкретную часть, и прятать её внутрь карточки
+   * серии значило бы «ничего не найдено» на глазах у найденного.
+   */
+  const feed = React.useMemo(() => {
+    const sorted = sortArticles(articles, sort);
+    if (debouncedSearch) {
+      return sorted.map((article) => ({
+        kind: "article" as const,
+        key: `a${article.id}`,
+        article,
+      }));
+    }
+    return groupArticleFeed(sorted);
+  }, [articles, sort, debouncedSearch]);
+
   const feedLoading = articlesQuery.isLoading;
-  const feedEmpty = articles.length === 0;
+  const feedEmpty = feed.length === 0;
 
   // ── Новая статья (редактирование — на странице статьи) ───────────────────
   const [editorOpen, setEditorOpen] = React.useState(false);
@@ -149,6 +246,15 @@ const KnowledgePage: React.FC = () => {
   };
 
   const [categoriesOpen, setCategoriesOpen] = React.useState(false);
+
+  // Имена серий для подсказки в редакторе — только из уже загруженных статей.
+  const knownSeries = React.useMemo(() => {
+    const names = new Map<string, string>();
+    for (const item of groupArticleFeed(articles)) {
+      if (item.kind === "series") names.set(item.series.key, item.series.name);
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b, "ru"));
+  }, [articles]);
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -191,7 +297,7 @@ const KnowledgePage: React.FC = () => {
           pb: 1.5,
         })}
       >
-        {/* Фильтр по разделам */}
+        {/* Фильтр по разделам + сортировка */}
         <MotionBox
           variants={cascadeItem}
           sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}
@@ -200,37 +306,56 @@ const KnowledgePage: React.FC = () => {
             <>
               <Chip
                 size="small"
-                label="Все"
+                label={total > 0 ? `Все · ${total}` : "Все"}
                 color={categoryFilter === "all" ? "primary" : undefined}
                 variant={categoryFilter === "all" ? "filled" : "outlined"}
                 onClick={() => setCategoryFilter("all")}
                 sx={{ borderRadius: "7px" }}
               />
-              {categories.map((c) => (
-                <Chip
-                  key={c.id}
-                  size="small"
-                  label={c.name}
-                  color={categoryFilter === c.id ? "primary" : undefined}
-                  variant={categoryFilter === c.id ? "filled" : "outlined"}
-                  onClick={() => setCategoryFilter(c.id)}
-                  sx={{ borderRadius: "7px" }}
-                />
-              ))}
+              {categories.map((c) => {
+                const count = categoryCounts.get(c.id);
+                return (
+                  <Chip
+                    key={c.id}
+                    size="small"
+                    label={count === undefined ? c.name : `${c.name} · ${count}`}
+                    color={categoryFilter === c.id ? "primary" : undefined}
+                    variant={categoryFilter === c.id ? "filled" : "outlined"}
+                    onClick={() => setCategoryFilter(c.id)}
+                    sx={{ borderRadius: "7px" }}
+                  />
+                );
+              })}
             </>
           )}
-          {KNOWLEDGE_USE_MOCKS && (
-            <Chip
+
+          <Stack direction="row" alignItems="center" gap={0.75} sx={{ ml: "auto" }}>
+            {KNOWLEDGE_USE_MOCKS && (
+              <Chip
+                size="small"
+                color="warning"
+                variant="outlined"
+                label="Демо-данные"
+                sx={{ borderRadius: "7px" }}
+              />
+            )}
+            <TextField
+              select
               size="small"
-              color="warning"
-              variant="outlined"
-              label="Демо-данные"
-              sx={{ borderRadius: "7px", ml: "auto" }}
-            />
-          )}
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              sx={{ minWidth: 168, "& .MuiInputBase-root": { borderRadius: "7px" } }}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <MenuItem key={o.value} value={o.value}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
         </MotionBox>
 
-        {/* Лента статей (видео — внутри статей) */}
+        {/* Лента материалов (видео — внутри статей) */}
         <MotionBox variants={cascadeItem} sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
           {articlesQuery.isError && (
             <Alert severity="error" sx={{ mb: 1.5 }}>
@@ -245,7 +370,7 @@ const KnowledgePage: React.FC = () => {
                 debouncedSearch
                   ? "Попробуйте изменить запрос или снять фильтр по разделу."
                   : canManage
-                  ? "Соберите здесь инструкции для команды — в статьи можно вставлять видео с YouTube."
+                  ? "Соберите здесь инструкции для команды — в статьи можно вставлять картинки и видео с YouTube, а длинный материал разбить на части."
                   : "Здесь появятся инструкции вашей организации."
               }
               action={
@@ -264,15 +389,46 @@ const KnowledgePage: React.FC = () => {
           <Box sx={feedGridSx}>
             {feedLoading &&
               Array.from({ length: 8 }).map((_, i) => <FeedCardSkeleton key={`s_${i}`} />)}
-            {articles.map((article) => (
-              <FeedCard
-                key={article.id}
-                article={article}
-                orgId={orgId}
-                onOpen={(id) => navigate(`/knowledge/${id}`)}
-              />
-            ))}
+            {feed.map((item) =>
+              item.kind === "series" ? (
+                <SeriesCard
+                  key={item.key}
+                  series={item.series}
+                  orgId={orgId}
+                  isRead={isRead}
+                  highlight={debouncedSearch}
+                  onOpen={(id) => navigate(`/knowledge/${id}`)}
+                />
+              ) : (
+                <FeedCard
+                  key={item.key}
+                  article={item.article}
+                  orgId={orgId}
+                  read={isRead(item.article.id)}
+                  highlight={debouncedSearch}
+                  onOpen={(id) => navigate(`/knowledge/${id}`)}
+                />
+              ),
+            )}
           </Box>
+
+          {/* Дозагрузка: раньше лента молча обрезалась на сотне материалов */}
+          {!feedLoading && !allLoaded && (
+            <Stack alignItems="center" gap={0.5} sx={{ py: 2 }}>
+              <Button
+                variant="outlined"
+                startIcon={<ExpandMoreOutlined />}
+                onClick={() => void articlesQuery.fetchNextPage()}
+                disabled={articlesQuery.isFetchingNextPage}
+              >
+                {articlesQuery.isFetchingNextPage ? "Загрузка…" : "Показать ещё"}
+              </Button>
+              <Typography variant="caption" color="text.secondary">
+                Показано {articles.length} из {total}
+                {sort !== "recent" && " · сортировка применяется к загруженным"}
+              </Typography>
+            </Stack>
+          )}
         </MotionBox>
       </MotionBox>
 
@@ -281,6 +437,7 @@ const KnowledgePage: React.FC = () => {
         open={editorOpen}
         article={null}
         categories={categories}
+        knownSeries={knownSeries}
         busy={editorBusy}
         error={editorError}
         onClose={() => setEditorOpen(false)}

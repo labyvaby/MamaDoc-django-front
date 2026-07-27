@@ -32,12 +32,18 @@ import { ConfirmDialog } from "../../components/ui";
 import {
   deleteKnowledgeArticle,
   getKnowledgeArticle,
+  getKnowledgeArticles,
   getKnowledgeCategories,
+  groupArticleFeed,
+  partLabel,
   splitCover,
   updateKnowledgeArticle,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
+import { SeriesFooterNav, SeriesHeader } from "./SeriesNav";
+import { useArticleSeries } from "./useArticleSeries";
+import { useReadArticles } from "./useReadArticles";
 
 interface TocItem {
   id: string;
@@ -94,6 +100,11 @@ const ArticleViewPage: React.FC = () => {
   });
   const article = articleQuery.data;
 
+  // ── Серия: соседние части ─────────────────────────────────────────────────
+  const series = useArticleSeries(article, orgId);
+  const { isRead, markRead } = useReadArticles();
+  const openPart = (id: number) => navigate(`/knowledge/${id}`);
+
   // Обложка — отдельным «героем» над заголовком, из тела статьи её вырезаем
   // (в content она лежит первой картинкой title="cover" — см. api/knowledge.ts).
   const { coverUrl, body } = React.useMemo(
@@ -142,12 +153,36 @@ const ArticleViewPage: React.FC = () => {
     };
   }, [article]);
 
+  // Дочитал — отмечаем прочитанной. Порог, а не факт открытия: иначе часть
+  // засчиталась бы за прочитанную от случайного клика, и «продолжить с части N»
+  // отправляло бы не туда. Короткая статья без прокрутки даёт progress = 1 сразу.
+  React.useEffect(() => {
+    if (article && progress >= 0.9) markRead(article.id);
+  }, [article, progress, markRead]);
+
   // Разделы — для селекта в редакторе (ключ совпадает с лентой — из кэша).
   const categoriesQuery = useQuery({
     queryKey: djangoQueryKeys.knowledge.categories({ includeInactive: false, orgId: orgId ?? null }),
     queryFn: ({ signal }) => getKnowledgeCategories({ organizationId: orgId }, signal),
     enabled: canManage,
   });
+
+  // Имена существующих серий — для подсказки в редакторе (чтобы новая часть
+  // попала в ту же серию, а не завела вторую с опечаткой в названии).
+  const seriesNamesQuery = useQuery({
+    queryKey: djangoQueryKeys.knowledge.articles({ seriesNames: true, orgId: orgId ?? null }),
+    queryFn: ({ signal }) =>
+      getKnowledgeArticles({ page: 1, pageSize: 100, organizationId: orgId }, signal),
+    enabled: canManage,
+    staleTime: 5 * 60 * 1000,
+  });
+  const knownSeries = React.useMemo(() => {
+    const names = new Map<string, string>();
+    for (const item of groupArticleFeed(seriesNamesQuery.data?.results ?? [])) {
+      if (item.kind === "series") names.set(item.series.key, item.series.name);
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b, "ru"));
+  }, [seriesNamesQuery.data]);
 
   // ── Редактирование ────────────────────────────────────────────────────────
   const [editorOpen, setEditorOpen] = React.useState(false);
@@ -229,8 +264,18 @@ const ArticleViewPage: React.FC = () => {
           >
             База знаний
           </Link>
+          {series.ref && series.index >= 0 && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              noWrap
+              sx={{ maxWidth: { xs: 120, sm: 240 } }}
+            >
+              {series.ref.name}
+            </Typography>
+          )}
           <Typography variant="body2" color="text.primary" noWrap sx={{ maxWidth: { xs: 160, sm: 360 } }}>
-            {article?.title ?? "…"}
+            {series.index >= 0 ? partLabel(series.parts[series.index]) : article?.title ?? "…"}
           </Typography>
         </Breadcrumbs>
         {canManage && article && (
@@ -267,10 +312,20 @@ const ArticleViewPage: React.FC = () => {
       )}
       {article && (
         <Stack direction="row" gap={2.5} alignItems="flex-start">
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+        {series.index >= 0 && series.ref && (
+          <SeriesHeader
+            name={series.ref.name}
+            parts={series.parts}
+            index={series.index}
+            isRead={isRead}
+            onOpen={openPart}
+          />
+        )}
         <Paper
           ref={articleRef}
           variant="outlined"
-          sx={{ p: { xs: 2, md: 4 }, borderRadius: "14px", flex: 1, minWidth: 0 }}
+          sx={{ p: { xs: 2, md: 4 }, borderRadius: "14px" }}
         >
           {coverUrl && !coverError && (
             <Box
@@ -295,9 +350,19 @@ const ArticleViewPage: React.FC = () => {
             {!article.isPublished && (
               <Chip size="small" color="warning" variant="outlined" label="Черновик" sx={{ borderRadius: "7px" }} />
             )}
+            {series.index >= 0 && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Часть ${series.parts[series.index].partNumber} из ${series.parts.length}`}
+                sx={{ borderRadius: "7px" }}
+              />
+            )}
           </Stack>
+          {/* Внутри серии имя серии уже показано в плашке над статьёй —
+              в заголовке оставляем подзаголовок части, чтобы не дублировать. */}
           <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
-            {article.title}
+            {series.index >= 0 ? partLabel(series.parts[series.index]) : article.title}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {article.authorName ?? "—"} · обновлено {formatDateRu(article.updatedAt)} · ~{readMin}{" "}
@@ -348,7 +413,11 @@ const ArticleViewPage: React.FC = () => {
               "& h2, & h3": { scrollMarginTop: 16 },
             }}
           />
+          {(series.prev || series.next) && (
+            <SeriesFooterNav prev={series.prev} next={series.next} onOpen={openPart} />
+          )}
         </Paper>
+        </Box>
 
         {/* Оглавление (десктоп) */}
         {showToc && (
@@ -407,6 +476,7 @@ const ArticleViewPage: React.FC = () => {
         open={editorOpen}
         article={article ?? null}
         categories={categoriesQuery.data ?? []}
+        knownSeries={knownSeries}
         busy={editorBusy}
         error={editorError}
         onClose={() => setEditorOpen(false)}
