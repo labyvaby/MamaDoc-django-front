@@ -35,65 +35,62 @@ import {
   type AppointmentOverlapMode,
 } from "../../api/organization";
 import { ApiError } from "../../api/client";
-
-// ── Error parsing (same shape as RolesSettingsPage) ──────────────────────────
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
-      const e = (err.payload as Record<string, unknown>).error;
-      if (typeof e === "string") return e;
-      if (typeof e === "object" && e !== null && "message" in e) {
-        return String((e as Record<string, unknown>).message);
-      }
-    }
-    return err.message;
-  }
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
-}
-
-// ── Patient-scope option descriptions ────────────────────────────────────────
-
-const PATIENT_SCOPE_OPTIONS: {
-  value: PatientScope;
-  label: string;
-  hint: string;
-}[] = [
-  {
-    value: "shared",
-    label: "Общая база на все филиалы",
-    hint: "Все филиалы видят одних и тех же пациентов. Переключение филиала не фильтрует список.",
-  },
-  {
-    value: "per_branch",
-    label: "Отдельная база у каждого филиала",
-    hint: "У каждого филиала своя база пациентов. Список фильтруется по выбранному филиалу.",
-  },
-];
-
-// ── Overlap-mode option descriptions ─────────────────────────────────────────
-
-const OVERLAP_MODE_OPTIONS: {
-  value: AppointmentOverlapMode;
-  label: string;
-  hint: string;
-}[] = [
-  {
-    value: "forbid",
-    label: "Запрещать пересечение",
-    hint: "Если приём пересекается с другим приёмом сотрудника, сохранить нельзя.",
-  },
-  {
-    value: "warn",
-    label: "Разрешать после подтверждения",
-    hint: "Система покажет предупреждение со списком пересечений и позволит сохранить после подтверждения. Свободные окна считаются без изменений.",
-  },
-];
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const OrganizationSettingsPage: React.FC = () => {
+  const { t } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
+        const e = (err.payload as Record<string, unknown>).error;
+        if (typeof e === "string") return e;
+        if (typeof e === "object" && e !== null && "message" in e) {
+          return String((e as Record<string, unknown>).message);
+        }
+      }
+      return err.message;
+    }
+    if (err instanceof Error) return err.message;
+    return t("organization.unknownError");
+  }
+
+  const PATIENT_SCOPE_OPTIONS: {
+    value: PatientScope;
+    label: string;
+    hint: string;
+  }[] = [
+    {
+      value: "shared",
+      label: t("organization.patientScope.shared.label"),
+      hint: t("organization.patientScope.shared.hint"),
+    },
+    {
+      value: "per_branch",
+      label: t("organization.patientScope.perBranch.label"),
+      hint: t("organization.patientScope.perBranch.hint"),
+    },
+  ];
+
+  const OVERLAP_MODE_OPTIONS: {
+    value: AppointmentOverlapMode;
+    label: string;
+    hint: string;
+  }[] = [
+    {
+      value: "forbid",
+      label: t("organization.overlapMode.forbid.label"),
+      hint: t("organization.overlapMode.forbid.hint"),
+    },
+    {
+      value: "warn",
+      label: t("organization.overlapMode.warn.label"),
+      hint: t("organization.overlapMode.warn.hint"),
+    },
+  ];
+
   const { activeOrganization, isSuperAdmin, hasPermission } = usePermissions();
   const canUpdate = isSuperAdmin() || hasPermission("organization.update");
 
@@ -117,7 +114,7 @@ const OrganizationSettingsPage: React.FC = () => {
   const load = React.useCallback(async () => {
     if (orgId == null) {
       setLoading(false);
-      setLoadError("Активная организация не выбрана.");
+      setLoadError(t("organization.noOrgSelected"));
       return;
     }
     setLoading(true);
@@ -147,7 +144,7 @@ const OrganizationSettingsPage: React.FC = () => {
 
   // Название обязательно: пустое поле блокирует сохранение и получает фокус.
   const form = useFormValidation({
-    name: trimmedName ? null : "Название не может быть пустым",
+    name: trimmedName ? null : t("organization.nameRequired"),
   });
 
   const handleSave = async () => {
@@ -185,11 +182,11 @@ const OrganizationSettingsPage: React.FC = () => {
     e.target.value = "";
     if (!file || !org) return;
     if (!file.type.startsWith("image/")) {
-      setLogoError("Можно загрузить только изображение (PNG, JPG, SVG, WebP).");
+      setLogoError(t("organization.logoTypeError"));
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setLogoError("Файл слишком большой — максимум 5 МБ.");
+      setLogoError(t("organization.logoSizeError"));
       return;
     }
     setLogoBusy(true);
@@ -227,7 +224,7 @@ const OrganizationSettingsPage: React.FC = () => {
         <Stack direction="row" alignItems="center" gap={1}>
           <BusinessOutlined color="action" />
           <Typography variant="h6" fontWeight={600}>
-            Организация
+            {t("organization.title")}
           </Typography>
         </Stack>
 
@@ -243,7 +240,7 @@ const OrganizationSettingsPage: React.FC = () => {
             severity="error"
             action={
               <AppButton size="small" color="inherit" onClick={load}>
-                Повторить
+                {t("common:actions.retry")}
               </AppButton>
             }
           >
@@ -285,7 +282,7 @@ const OrganizationSettingsPage: React.FC = () => {
                     onClick={() => logoInputRef.current?.click()}
                     sx={{ flex: { xs: "1 1 auto", sm: "0 0 auto" } }}
                   >
-                    {org.logoUrl ? "Заменить логотип" : "Загрузить логотип"}
+                    {org.logoUrl ? t("organization.logoReplace") : t("organization.logoUpload")}
                   </AppButton>
                   {org.logoUrl && (
                     <AppButton
@@ -295,7 +292,7 @@ const OrganizationSettingsPage: React.FC = () => {
                       disabled={!canUpdate || logoBusy}
                       onClick={handleLogoDelete}
                     >
-                      Удалить
+                      {t("common:actions.delete")}
                     </AppButton>
                   )}
                 </Stack>
@@ -304,7 +301,7 @@ const OrganizationSettingsPage: React.FC = () => {
                   color="text.secondary"
                   sx={{ display: "block", mt: 0.5 }}
                 >
-                  PNG, JPG, SVG или WebP, до 5 МБ.
+                  {t("organization.logoHint")}
                 </Typography>
               </Box>
               <input
@@ -324,7 +321,7 @@ const OrganizationSettingsPage: React.FC = () => {
 
             {/* Name */}
             <TextField
-              label="Название организации"
+              label={t("organization.nameLabel")}
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
@@ -336,7 +333,7 @@ const OrganizationSettingsPage: React.FC = () => {
               error={trimmedName === ""}
               helperText={
                 trimmedName === ""
-                  ? "Название не может быть пустым"
+                  ? t("organization.nameRequired")
                   : org.slug
               }
               ref={form.anchor("name")}
@@ -351,11 +348,10 @@ const OrganizationSettingsPage: React.FC = () => {
             <FormControl disabled={!canUpdate || busy}>
               <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                 <GroupsOutlined fontSize="small" color="action" />
-                <FormLabel sx={{ fontWeight: 600 }}>База пациентов</FormLabel>
+                <FormLabel sx={{ fontWeight: 600 }}>{t("organization.patientScope.sectionTitle")}</FormLabel>
               </Stack>
               <Typography variant="caption" color="text.secondary" mb={1}>
-                Определяет, видят ли филиалы общий список пациентов или
-                у каждого филиала своя база.
+                {t("organization.patientScope.sectionHint")}
               </Typography>
               <RadioGroup
                 value={scope}
@@ -390,12 +386,11 @@ const OrganizationSettingsPage: React.FC = () => {
               <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                 <LayersOutlined fontSize="small" color="action" />
                 <FormLabel sx={{ fontWeight: 600 }}>
-                  Пересечение приёмов
+                  {t("organization.overlapMode.sectionTitle")}
                 </FormLabel>
               </Stack>
               <Typography variant="caption" color="text.secondary" mb={1}>
-                Как поступать, когда новый приём пересекается по времени
-                с другим приёмом сотрудника.
+                {t("organization.overlapMode.sectionHint")}
               </Typography>
               <RadioGroup
                 value={overlapMode}
@@ -427,7 +422,7 @@ const OrganizationSettingsPage: React.FC = () => {
 
             {!canUpdate && (
               <Chip
-                label="Только просмотр — нет прав на изменение"
+                label={t("organization.viewOnlyChip")}
                 size="small"
                 variant="outlined"
               />
@@ -440,7 +435,7 @@ const OrganizationSettingsPage: React.FC = () => {
             )}
             {saved && !dirty && (
               <Alert severity="success" onClose={() => setSaved(false)}>
-                Настройки сохранены.
+                {t("organization.saveSuccess")}
               </Alert>
             )}
 
@@ -453,7 +448,7 @@ const OrganizationSettingsPage: React.FC = () => {
                   loading={busy}
                   sx={{ width: { xs: "100%", sm: "auto" }, minHeight: { xs: 48, sm: 36 } }}
                 >
-                  {busy ? "Сохранение…" : "Сохранить"}
+                  {busy ? t("common:state.saving") : t("common:actions.save")}
                 </AppButton>
               </Box>
             </CanAccess>

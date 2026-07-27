@@ -42,12 +42,7 @@ import {
   type DjangoBranch,
 } from "../../api/organization";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) return extractApiError(err.payload, err.status);
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
-}
+import { useT } from "../../i18n/VerticalProvider";
 
 /** Пары «подпись — ссылка» картографических сервисов филиала (без пустых). */
 function mapLinksOf(b: DjangoBranch): { label: string; url: string }[] {
@@ -59,8 +54,15 @@ function mapLinksOf(b: DjangoBranch): { label: string; url: string }[] {
 }
 
 const BranchesSettingsPage: React.FC = () => {
-  usePageTitle("Филиалы");
+  const { t } = useT("settings");
+  usePageTitle(t("branches.title"));
   const queryClient = useQueryClient();
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) return extractApiError(err.payload, err.status);
+    if (err instanceof Error) return err.message;
+    return t("branches.unknownError");
+  }
   const { enqueueSnackbar } = useSnackbar();
   const { activeOrganization } = usePermissions();
   const { can } = useCanChecker();
@@ -115,7 +117,7 @@ const BranchesSettingsPage: React.FC = () => {
     setDeleteBusy(true);
     try {
       await deleteBranch(deleteTarget.id);
-      enqueueSnackbar("Филиал отключён", { variant: "success" });
+      enqueueSnackbar(t("branches.disableSuccess"), { variant: "success" });
       setDeleteTarget(null);
       await refresh();
     } catch (err) {
@@ -144,10 +146,10 @@ const BranchesSettingsPage: React.FC = () => {
           <Stack direction="row" alignItems="center" gap={1}>
             <StoreOutlined color="action" />
             <Typography variant="h6" fontWeight={600}>
-              Филиалы
+              {t("branches.title")}
             </Typography>
             {!query.isLoading && (
-              <Tooltip title={`Активных: ${activeCount} из ${all.length}`}>
+              <Tooltip title={t("branches.activeOfTotal", { active: activeCount, total: all.length })}>
                 <Chip label={all.length} size="small" sx={{ height: 20 }} />
               </Tooltip>
             )}
@@ -161,7 +163,7 @@ const BranchesSettingsPage: React.FC = () => {
           >
             <TextField
               size="small"
-              placeholder="Поиск по названию, адресу…"
+              placeholder={t("branches.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               InputProps={{
@@ -180,15 +182,14 @@ const BranchesSettingsPage: React.FC = () => {
                 onClick={() => setFormTarget("new")}
                 sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
               >
-                Добавить
+                {t("branches.addButton")}
               </Button>
             )}
           </Stack>
         </Stack>
 
         <Typography variant="body2" color="text.secondary">
-          Точки обслуживания организации. Филиал используется при записи на приём,
-          продажах и в кассе.
+          {t("branches.description")}
         </Typography>
 
         {query.error && (
@@ -196,7 +197,7 @@ const BranchesSettingsPage: React.FC = () => {
             severity="error"
             action={
               <Button size="small" color="inherit" onClick={() => refresh()}>
-                Повторить
+                {t("common:actions.retry")}
               </Button>
             }
           >
@@ -231,32 +232,32 @@ const BranchesSettingsPage: React.FC = () => {
               gap: 1.5,
             }}
           >
-            <Typography variant="body2">Филиалов пока нет.</Typography>
+            <Typography variant="body2">{t("branches.empty")}</Typography>
             {canCreate && (
               <Button
                 variant="outlined"
                 startIcon={<AddOutlined />}
                 onClick={() => setFormTarget("new")}
               >
-                Добавить первый филиал
+                {t("branches.addFirst")}
               </Button>
             )}
           </Box>
         ) : filtered.length === 0 ? (
           <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
-            <Typography variant="body2">Ничего не найдено по запросу «{search}».</Typography>
+            <Typography variant="body2">{t("branches.emptySearch", { query: search })}</Typography>
           </Box>
         ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Название</TableCell>
-                  <TableCell>Адрес</TableCell>
-                  <TableCell sx={{ width: 170 }}>Телефоны</TableCell>
-                  <TableCell sx={{ width: 200 }}>Карты</TableCell>
-                  <TableCell sx={{ width: 110 }} align="center">Статус</TableCell>
-                  <TableCell sx={{ width: 96 }} align="right">Действия</TableCell>
+                  <TableCell>{t("branches.columns.name")}</TableCell>
+                  <TableCell>{t("branches.columns.address")}</TableCell>
+                  <TableCell sx={{ width: 170 }}>{t("branches.columns.phones")}</TableCell>
+                  <TableCell sx={{ width: 200 }}>{t("branches.columns.maps")}</TableCell>
+                  <TableCell sx={{ width: 110 }} align="center">{t("branches.columns.status")}</TableCell>
+                  <TableCell sx={{ width: 96 }} align="right">{t("branches.columns.actions")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -317,7 +318,7 @@ const BranchesSettingsPage: React.FC = () => {
                     <TableCell align="center">
                       <Chip
                         size="small"
-                        label={b.isActive ? "Работает" : "Отключён"}
+                        label={b.isActive ? t("branches.status.active") : t("branches.status.inactive")}
                         color={b.isActive ? "success" : "default"}
                         variant={b.isActive ? "filled" : "outlined"}
                         sx={{ height: 22 }}
@@ -325,14 +326,14 @@ const BranchesSettingsPage: React.FC = () => {
                     </TableCell>
                     <TableCell align="right">
                       {canUpdate && (
-                        <Tooltip title="Редактировать">
+                        <Tooltip title={t("branches.tooltips.edit")}>
                           <IconButton size="small" onClick={() => setFormTarget(b)}>
                             <EditOutlined fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       )}
                       {canDelete && b.isActive && (
-                        <Tooltip title="Отключить">
+                        <Tooltip title={t("branches.tooltips.disable")}>
                           <IconButton
                             size="small"
                             color="error"
@@ -364,20 +365,18 @@ const BranchesSettingsPage: React.FC = () => {
         open={deleteTarget !== null}
         onClose={deleteBusy ? undefined : () => setDeleteTarget(null)}
       >
-        <DialogTitle>Отключить филиал?</DialogTitle>
+        <DialogTitle>{t("branches.disableConfirmTitle")}</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            «{deleteTarget?.name}» будет деактивирован и скрыт из выбора.
-            Связанные данные (приёмы, продажи) сохраняются, филиал можно снова
-            включить через редактирование.
+            {t("branches.disableConfirmBody", { name: deleteTarget?.name })}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteTarget(null)} disabled={deleteBusy}>
-            Отмена
+            {t("common:actions.cancel")}
           </Button>
           <Button color="error" variant="contained" onClick={handleDelete} disabled={deleteBusy}>
-            {deleteBusy ? "Отключение…" : "Отключить"}
+            {deleteBusy ? t("branches.disabling") : t("branches.disableButton")}
           </Button>
         </DialogActions>
       </Dialog>

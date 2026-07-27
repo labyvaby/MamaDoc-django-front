@@ -33,6 +33,7 @@ import { useCanChecker } from "../../hooks/useCan";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { useT } from "../../i18n/VerticalProvider";
 
 /**
  * Permission codes that gate each tab.  Kept in sync with the
@@ -56,106 +57,97 @@ export const SETTINGS_TAB_PERMISSIONS = {
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
 
 /**
- * Group labels for the mobile hub (hub-and-spoke navigation).  Order
+ * Group keys for the mobile hub (hub-and-spoke navigation).  Order
  * here is the order the groups appear on the /settings hub screen.
+ * Display labels live in locales/ru/settings.json (layout.groups.*) —
+ * these are stable lookup keys, not user-facing text.
  */
 export const SETTINGS_GROUPS = [
-  "Клиника",
-  "Доступы",
-  "Справочники",
-  "Операционные",
+  "clinic",
+  "access",
+  "catalogs",
+  "operations",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
 
 type TabDef = {
   key: SettingsTabKey;
-  label: string;
   to: string;
   icon: React.ReactElement;
   group: SettingsGroup;
   tone?: "primary" | "success";
 };
 
-const TABS: TabDef[] = [
+/** Labels come from t(`layout.tabs.${key}`) — see useVisibleSettingsTabs. */
+const TAB_DEFS: TabDef[] = [
   {
     key: "organization",
-    label: "Организация",
     to: "/settings/organization",
     icon: <BusinessOutlined fontSize="small" />,
-    group: "Клиника",
+    group: "clinic",
   },
   {
     key: "branches",
-    label: "Филиалы",
     to: "/settings/branches",
     icon: <StoreOutlined fontSize="small" />,
-    group: "Клиника",
+    group: "clinic",
   },
   {
     key: "roles",
-    label: "Роли",
     to: "/settings/roles",
     icon: <AdminPanelSettingsOutlined fontSize="small" />,
-    group: "Доступы",
+    group: "access",
     tone: "success",
   },
   {
     key: "memberships",
-    label: "Сотрудники и доступы",
     to: "/settings/memberships",
     icon: <GroupsOutlined fontSize="small" />,
-    group: "Доступы",
+    group: "access",
     tone: "success",
   },
   {
     key: "specializations",
-    label: "Специализации",
     to: "/settings/specializations",
     icon: <WorkOutlined fontSize="small" />,
-    group: "Справочники",
+    group: "catalogs",
   },
   {
     key: "banks",
-    label: "Банки",
     to: "/settings/banks",
     icon: <AccountBalanceOutlined fontSize="small" />,
-    group: "Справочники",
+    group: "catalogs",
   },
   {
     key: "insurers",
-    label: "Страховые",
     to: "/settings/insurers",
     icon: <HealthAndSafetyOutlined fontSize="small" />,
-    group: "Справочники",
+    group: "catalogs",
   },
   {
     key: "expenseCategories",
-    label: "Категории расходов",
     to: "/settings/expense-categories",
     icon: <ReceiptLongOutlined fontSize="small" />,
-    group: "Справочники",
+    group: "catalogs",
   },
   {
     key: "diagnoses",
-    label: "Диагнозы",
     to: "/settings/diagnoses",
     icon: <LocalHospitalOutlined fontSize="small" />,
-    group: "Справочники",
+    group: "catalogs",
   },
   {
     key: "tasks",
-    label: "Задачи",
     to: "/settings/tasks",
     icon: <AssignmentOutlined fontSize="small" />,
-    group: "Операционные",
+    group: "operations",
   },
   {
     key: "cleaning",
-    label: "Уборка",
     to: "/settings/cleaning",
     icon: <CleaningServicesOutlined fontSize="small" />,
-    group: "Операционные",
+    group: "operations",
   },
 ];
 
@@ -168,7 +160,7 @@ const TABS: TabDef[] = [
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
-  return TABS.filter((tab) =>
+  return TAB_DEFS.filter((tab) =>
     // Уборка на моках: гейт единый с роутом и сайдбаром (см. useModuleGate).
     tab.key === "cleaning"
       ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
@@ -184,6 +176,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
 export const SettingsHub: React.FC = () => {
   const visibleTabs = useVisibleSettingsTabs();
   const { activeOrganization } = usePermissions();
+  const { t } = useT("settings");
 
   return (
     <Box
@@ -213,18 +206,18 @@ export const SettingsHub: React.FC = () => {
             letterSpacing: "-0.6px",
           }}
         >
-          Настройки
+          {t("layout.title")}
         </Typography>
         <Typography
           color="text.secondary"
           sx={{ mt: 0.25, fontSize: 13.5, lineHeight: 1.35 }}
         >
-          {activeOrganization?.name ?? "Организация не выбрана"}
+          {activeOrganization?.name ?? t("layout.noOrgSelected")}
         </Typography>
       </Box>
       <Stack spacing={0}>
         {SETTINGS_GROUPS.map((group) => {
-          const groupTabs = visibleTabs.filter((t) => t.group === group);
+          const groupTabs = visibleTabs.filter((tab) => tab.group === group);
           if (groupTabs.length === 0) return null;
           return (
             <Box key={group}>
@@ -241,7 +234,7 @@ export const SettingsHub: React.FC = () => {
                   letterSpacing: "0.04em",
                 }}
               >
-                {group}
+                {t(`layout.groups.${group}`)}
               </Typography>
               <Paper
                 variant="outlined"
@@ -257,7 +250,7 @@ export const SettingsHub: React.FC = () => {
                     key={tab.key}
                     component={RouterLink}
                     to={tab.to}
-                    sx={(t) => ({
+                    sx={(theme) => ({
                       display: "flex",
                       alignItems: "center",
                       gap: 1.625,
@@ -267,13 +260,13 @@ export const SettingsHub: React.FC = () => {
                       textDecoration: "none",
                       color: "text.primary",
                       borderBottom:
-                        i < groupTabs.length - 1 ? `1px solid ${t.palette.divider}` : "none",
+                        i < groupTabs.length - 1 ? `1px solid ${theme.palette.divider}` : "none",
                       transition: "background-color .13s ease",
-                      "&:active": { bgcolor: t.palette.action.selected },
+                      "&:active": { bgcolor: theme.palette.action.selected },
                     })}
                   >
                     <Box
-                      sx={(t) => ({
+                      sx={(theme) => ({
                         width: 34,
                         height: 34,
                         borderRadius: "9px",
@@ -282,13 +275,13 @@ export const SettingsHub: React.FC = () => {
                         placeItems: "center",
                         color:
                           tab.tone === "success"
-                            ? t.palette.success.main
-                            : t.palette.primary.main,
+                            ? theme.palette.success.main
+                            : theme.palette.primary.main,
                         bgcolor: alpha(
                           tab.tone === "success"
-                            ? t.palette.success.main
-                            : t.palette.primary.main,
-                          t.palette.mode === "dark" ? 0.17 : 0.1,
+                            ? theme.palette.success.main
+                            : theme.palette.primary.main,
+                          theme.palette.mode === "dark" ? 0.17 : 0.1,
                         ),
                         "& .MuiSvgIcon-root": { fontSize: 19 },
                       })}
@@ -307,7 +300,7 @@ export const SettingsHub: React.FC = () => {
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {tab.label}
+                      {t(`layout.tabs.${tab.key}`)}
                     </Typography>
                     {tab.key === "organization" && activeOrganization?.name ? (
                       <Typography
@@ -355,6 +348,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const visibleTabs = useVisibleSettingsTabs();
   const location = useLocation();
+  const { t } = useT("settings");
 
   React.useEffect(() => {
     if (!isMobile) return;
@@ -371,7 +365,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
     return (
       <>
         <GlobalStyles
-          styles={(t) => ({
+          styles={(theme) => ({
             ".mamadoc-settings-mobile .MuiDialog-container": {
               alignItems: "flex-end",
             },
@@ -381,7 +375,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
               maxHeight: "92dvh !important",
               margin: "0 !important",
               borderRadius: "22px 22px 0 0 !important",
-              bgcolor: t.palette.background.paper,
+              bgcolor: theme.palette.background.paper,
               "&::before": {
                 content: '""',
                 width: 38,
@@ -390,7 +384,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
                 alignSelf: "center",
                 mt: 1,
                 borderRadius: "3px",
-                bgcolor: t.palette.divider,
+                bgcolor: theme.palette.divider,
               },
             },
             ".mamadoc-settings-mobile .MuiDialogTitle-root": {
@@ -453,12 +447,12 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
                 "& .MuiButton-startIcon": { mr: 0.25 },
               }}
             >
-              Настройки
+              {t("layout.title")}
             </Button>
           </Box>
           <Box
             className="settings-mobile-content"
-            sx={(t) => ({
+            sx={(theme) => ({
               flex: 1,
               minHeight: 0,
               overflowY: "auto",
@@ -504,9 +498,9 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
               },
               "& .MuiFormControl-root:not(.MuiTextField-root)": {
                 p: 1.75,
-                border: `1px solid ${t.palette.divider}`,
+                border: `1px solid ${theme.palette.divider}`,
                 borderRadius: "16px",
-                bgcolor: t.palette.background.paper,
+                bgcolor: theme.palette.background.paper,
               },
               "& .MuiButton-root:not(.MuiIconButton-root)": {
                 borderRadius: "12px",
@@ -540,9 +534,9 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
                 columnGap: 1,
                 alignItems: "center",
                 p: 1.75,
-                border: `1px solid ${t.palette.divider}`,
+                border: `1px solid ${theme.palette.divider}`,
                 borderRadius: "16px",
-                bgcolor: t.palette.background.paper,
+                bgcolor: theme.palette.background.paper,
                 overflow: "hidden",
               },
               "& .MuiTableCell-root": {
@@ -612,7 +606,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
           justifyContent="space-between"
         >
           <Typography variant="h5" fontWeight={600}>
-            Настройки
+            {t("layout.title")}
           </Typography>
         </Stack>
 
@@ -630,7 +624,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
               value={activeIndex}
               orientation="vertical"
               variant="standard"
-              aria-label="Разделы настроек"
+              aria-label={t("layout.tabsAriaLabel")}
               sx={{
                 borderRight: 0,
                 "& .MuiTab-root": {
@@ -649,7 +643,7 @@ export const SettingsLayout: React.FC<React.PropsWithChildren> = ({
                   to={tab.to}
                   icon={tab.icon}
                   iconPosition="start"
-                  label={tab.label}
+                  label={t(`layout.tabs.${tab.key}`)}
                 />
               ))}
             </Tabs>

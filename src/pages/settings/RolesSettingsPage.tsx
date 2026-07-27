@@ -52,31 +52,23 @@ import { ApiError } from "../../api/client";
 import { usePermissions, retryAuth } from "../../hooks/usePermissions";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { getModuleCodeForPermission } from "../../utils/moduleMapping";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Category label mapping ──────────────────────────────────────────────────
+// Ключи CATEGORY_LABELS фиксированы бэкендом; отображаемые подписи берутся из
+// settings.json (roles.categories) через categoryLabel(cat, t), поэтому сама
+// функция принимает t и не может жить на уровне модуля.
 
-const CATEGORY_LABELS: Record<string, string> = {
-  appointments: "Приёмы",
-  patients: "Пациенты",
-  staff: "Сотрудники",
-  catalog: "Услуги",
-  content: "Контент",
-  organization: "Организация",
-  branches: "Филиалы",
-  rbac: "Доступы и роли",
-  roles: "Роли",
-  users: "Пользователи",
-  finance: "Финансы",
-  warehouse: "Склад",
-  reports: "Отчёты",
-  attendance: "СКУД",
-  schedule: "Расписание",
-  services: "Услуги",
-  expenses: "Расходы",
-};
+const CATEGORY_KEYS = [
+  "appointments", "patients", "staff", "catalog", "content", "organization",
+  "branches", "rbac", "roles", "users", "finance", "warehouse", "reports",
+  "attendance", "schedule", "services", "expenses",
+] as const;
 
-function categoryLabel(cat: string): string {
-  return CATEGORY_LABELS[cat] ?? cat;
+function categoryLabel(cat: string, t: (key: string) => string): string {
+  return (CATEGORY_KEYS as readonly string[]).includes(cat)
+    ? t(`roles.categories.${cat}`)
+    : cat;
 }
 
 // ── Permission label helper ─────────────────────────────────────────────────
@@ -89,6 +81,7 @@ function permissionLabel(p: RbacPermission): string {
 
 function groupPermissions(
   permissions: RbacPermission[],
+  t: (key: string) => string,
 ): { category: string; label: string; items: RbacPermission[] }[] {
   const map = new Map<string, RbacPermission[]>();
   for (const p of permissions) {
@@ -98,30 +91,9 @@ function groupPermissions(
   }
   return Array.from(map.entries()).map(([cat, items]) => ({
     category: cat,
-    label: categoryLabel(cat),
+    label: categoryLabel(cat, t),
     items,
   }));
-}
-
-// ── Error parsing ───────────────────────────────────────────────────────────
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (
-      err.payload &&
-      typeof err.payload === "object" &&
-      "error" in err.payload
-    ) {
-      const e = (err.payload as Record<string, unknown>).error;
-      if (typeof e === "string") return e;
-      if (typeof e === "object" && e !== null && "message" in e) {
-        return String((e as Record<string, unknown>).message);
-      }
-    }
-    return err.message;
-  }
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
 }
 
 // ── Snackbar ────────────────────────────────────────────────────────────────
@@ -175,6 +147,7 @@ function MobilePermissionPicker({
   totalCount,
   initialSelectedCodes,
 }: MobilePermissionPickerProps) {
+  const { t } = useT("settings");
   const [search, setSearch] = React.useState("");
   // По умолчанию раскрыты категории, где у роли уже есть права.
   const [expanded, setExpanded] = React.useState<Set<string>>(() => {
@@ -233,12 +206,12 @@ function MobilePermissionPicker({
           direction="row"
           alignItems="center"
           gap={1.5}
-          sx={(t) => ({
+          sx={(theme) => ({
             px: 1.5,
             py: 1,
             mb: 1,
             borderRadius: "12px",
-            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.16 : 0.1),
           })}
         >
           <Typography
@@ -253,8 +226,8 @@ function MobilePermissionPicker({
             {selected.size}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-            выбрано из {totalCount}
-            {selected.size ? "" : " · роль пока без прав"}
+            {t("roles.mobilePicker.selectedOfTotal", { total: totalCount })}
+            {selected.size ? "" : t("roles.mobilePicker.noPermissionsHint")}
           </Typography>
           {selected.size > 0 && !disabled && (
             <Button
@@ -262,14 +235,14 @@ function MobilePermissionPicker({
               onClick={() => onChange([])}
               sx={{ textTransform: "none", minWidth: 0, px: 1 }}
             >
-              Очистить
+              {t("roles.mobilePicker.clearButton")}
             </Button>
           )}
         </Stack>
         <TextField
           fullWidth
           size="small"
-          placeholder="Поиск права…"
+          placeholder={t("roles.mobilePicker.searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           InputProps={{
@@ -285,7 +258,7 @@ function MobilePermissionPicker({
       <Stack spacing={1} sx={{ mt: 1 }}>
         {visibleGroups.length === 0 ? (
           <Typography variant="body2" color="text.disabled" sx={{ textAlign: "center", py: 3 }}>
-            Прав по запросу не найдено
+            {t("roles.mobilePicker.noResults")}
           </Typography>
         ) : (
           visibleGroups.map((g) => {
@@ -316,7 +289,7 @@ function MobilePermissionPicker({
                       variant="caption"
                       sx={{ color: selCount ? "primary.onSurface" : "text.secondary" }}
                     >
-                      {selCount} из {g.items.length}
+                      {t("roles.mobilePicker.ofCount", { selected: selCount, total: g.items.length })}
                     </Typography>
                   </Box>
                   <Switch
@@ -360,7 +333,7 @@ function MobilePermissionPicker({
                                 variant="caption"
                                 sx={{ display: "block", color: "warning.main", fontWeight: 600, mt: 0.25 }}
                               >
-                                не действует, пока модуль выключен
+                                {t("roles.mobilePicker.moduleOffHint")}
                               </Typography>
                             )}
                           </Box>
@@ -403,6 +376,23 @@ function RoleFormDrawer({
   onClose,
   onSaved,
 }: RoleFormDrawerProps) {
+  const { t } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
+        const e = (err.payload as Record<string, unknown>).error;
+        if (typeof e === "string") return e;
+        if (typeof e === "object" && e !== null && "message" in e) {
+          return String((e as Record<string, unknown>).message);
+        }
+      }
+      return err.message;
+    }
+    if (err instanceof Error) return err.message;
+    return t("roles.unknownError");
+  }
+
   const [name, setName] = React.useState("");
   const [code, setCode] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -434,7 +424,7 @@ function RoleFormDrawer({
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const isSystemRole = mode === "edit" && !!initial?.isSystem;
-  const grouped = React.useMemo(() => groupPermissions(permissions), [permissions]);
+  const grouped = React.useMemo(() => groupPermissions(permissions, t), [permissions, t]);
 
   // Право работает только при включённом модуле организации: canAccess
   // проверяет и право, и модуль. Помечаем права выключенных модулей,
@@ -456,8 +446,8 @@ function RoleFormDrawer({
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    name: name.trim() ? null : "Введите название роли",
-    code: code.trim() ? null : "Введите код роли",
+    name: name.trim() ? null : t("roles.form.nameRequired"),
+    code: code.trim() ? null : t("roles.form.codeRequired"),
   });
 
   const handleSubmit = async () => {
@@ -492,7 +482,7 @@ function RoleFormDrawer({
     }
   };
 
-  const title = mode === "create" ? "Создать роль" : "Редактировать роль";
+  const title = mode === "create" ? t("roles.form.createTitle") : t("roles.form.editTitle");
 
   return (
     <Drawer
@@ -518,7 +508,7 @@ function RoleFormDrawer({
         <Typography variant="h6" fontWeight={600}>
           {title}
         </Typography>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+        <IconButton onClick={busy ? undefined : onClose} aria-label={t("common:actions.close")}>
           <CloseOutlined />
         </IconButton>
       </Stack>
@@ -529,7 +519,7 @@ function RoleFormDrawer({
         <Stack spacing={2.5}>
           {isSystemRole && (
             <Alert severity="warning" icon={<LockOutlined fontSize="small" />}>
-              Системная роль — сохранить изменения может только суперпользователь.
+              {t("roles.form.systemWarning")}
             </Alert>
           )}
 
@@ -540,7 +530,7 @@ function RoleFormDrawer({
           )}
 
           <TextField
-            label="Название"
+            label={t("roles.form.nameLabel")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -548,12 +538,12 @@ function RoleFormDrawer({
             disabled={busy}
             inputProps={{ maxLength: 120 }}
             InputLabelProps={{ shrink: true }}
-            placeholder="Например: Врач-педиатр"
+            placeholder={t("roles.form.namePlaceholder")}
             {...form.field("name")}
           />
 
           <TextField
-            label="Код"
+            label={t("roles.form.codeLabel")}
             value={code}
             onChange={(e) =>
               setCode(
@@ -567,17 +557,17 @@ function RoleFormDrawer({
             disabled={busy || mode === "edit"}
             inputProps={{ maxLength: 80 }}
             InputLabelProps={{ shrink: true }}
-            placeholder="Например: pediatrician"
+            placeholder={t("roles.form.codePlaceholder")}
             {...form.field(
               "code",
               mode === "edit"
-                ? "Код роли нельзя изменить после создания"
-                : "Только латиница, цифры, дефис и подчёркивание",
+                ? t("roles.form.codeLocked")
+                : t("roles.form.codeHint"),
             )}
           />
 
           <TextField
-            label="Описание"
+            label={t("roles.form.descriptionLabel")}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             fullWidth
@@ -585,18 +575,15 @@ function RoleFormDrawer({
             multiline
             minRows={2}
             inputProps={{ maxLength: 500 }}
-            placeholder="Краткое описание роли (необязательно)"
+            placeholder={t("roles.form.descriptionPlaceholder")}
           />
 
           <Box>
             <Typography variant="subtitle2" fontWeight={600} mb={1}>
-              Права доступа
+              {t("roles.form.permissionsTitle")}
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
-              Выберите разрешения, которые будут назначены этой роли. Права из
-              отключённых модулей организации помечены и не действуют, пока
-              модуль не включён. Пользователи с этой ролью увидят изменения
-              после возврата на вкладку или перезагрузки страницы.
+              {t("roles.form.permissionsHint")}
             </Typography>
             {isMobile ? (
               <MobilePermissionPicker
@@ -614,7 +601,7 @@ function RoleFormDrawer({
             {grouped.length > 0 && selectedCodes.length > 0 && (
               <Box mb={1.5}>
                 <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" mb={0.5}>
-                  По категориям:
+                  {t("roles.form.byCategoryLabel")}
                 </Typography>
                 <Stack direction="row" flexWrap="wrap" gap={0.5}>
                   {grouped.map((g) => {
@@ -641,7 +628,7 @@ function RoleFormDrawer({
               disableCloseOnSelect
               options={permissions}
               value={selectedPerms}
-              groupBy={(option) => categoryLabel(option.category || option.code.split(".")[0] || "other")}
+              groupBy={(option) => categoryLabel(option.category || option.code.split(".")[0] || "other", t)}
               getOptionLabel={permissionLabel}
               isOptionEqualToValue={(o, v) => o.code === v.code}
               onChange={(_, newValue) => {
@@ -669,7 +656,7 @@ function RoleFormDrawer({
                     </Box>
                     {isModuleOff(option.code) && (
                       <Chip
-                        label="модуль отключён"
+                        label={t("roles.form.moduleOffChip")}
                         size="small"
                         color="warning"
                         variant="outlined"
@@ -697,7 +684,7 @@ function RoleFormDrawer({
                   {...params}
                   placeholder={
                     selectedCodes.length === 0
-                      ? "Выберите права из списка…"
+                      ? t("roles.form.permissionsPlaceholder")
                       : ""
                   }
                   fullWidth
@@ -719,7 +706,7 @@ function RoleFormDrawer({
             />
             {selectedCodes.length > 0 && (
               <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
-                Выбрано: {selectedCodes.length} из {permissions.length}
+                {t("roles.form.selectedOfTotal", { selected: selectedCodes.length, total: permissions.length })}
               </Typography>
             )}
              </>
@@ -738,7 +725,7 @@ function RoleFormDrawer({
         gap={1.5}
       >
         <AppButton onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </AppButton>
         <AppButton
           variant="contained"
@@ -746,7 +733,7 @@ function RoleFormDrawer({
           disabled={busy}
           loading={busy}
         >
-          {busy ? "Сохранение…" : mode === "create" ? "Создать" : "Сохранить"}
+          {busy ? t("common:state.saving") : mode === "create" ? t("common:actions.create") : t("common:actions.save")}
         </AppButton>
       </Box>
     </Drawer>
@@ -763,6 +750,7 @@ interface RoleRowProps {
 }
 
 function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
+  const { t } = useT("settings");
   // Build a quick lookup to resolve permission names
   const permMap = React.useMemo(() => {
     const m = new Map<string, string>();
@@ -773,7 +761,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
   return (
     <Paper
       variant="outlined"
-      sx={(t) => ({
+      sx={(theme) => ({
         px: 2,
         py: 1.5,
         display: "grid",
@@ -782,8 +770,8 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
         alignItems: "center",
         transition: "background-color .15s ease, border-color .15s ease, color .15s ease",
         "&:hover": {
-          bgcolor: subtleBg(t, true),
-          borderColor: alpha(t.palette.primary.main, 0.28),
+          bgcolor: subtleBg(theme, true),
+          borderColor: alpha(theme.palette.primary.main, 0.28),
         },
       })}
     >
@@ -795,7 +783,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
           </Typography>
           {role.isSystem && (
             <Chip
-              label="Системная"
+              label={t("roles.row.systemChip")}
               size="small"
               color="default"
               icon={<LockOutlined />}
@@ -827,7 +815,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
       <Box>
         {role.permissions.length === 0 ? (
           <Typography variant="caption" color="text.disabled" fontStyle="italic">
-            Нет прав
+            {t("roles.row.noPermissions")}
           </Typography>
         ) : (
           <Stack direction="row" flexWrap="wrap" gap={0.5}>
@@ -861,7 +849,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
           </Stack>
         )}
         <Typography variant="caption" color="text.secondary" display="block" mt={0.25}>
-          {role.permissions.length} {role.permissions.length === 1 ? "право" : role.permissions.length < 5 ? "права" : "прав"}
+          {t("roles.row.permCount", { count: role.permissions.length })}
         </Typography>
       </Box>
 
@@ -871,8 +859,8 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
           <Tooltip
             title={
               role.isSystem
-                ? "Редактировать системную роль (доступно суперпользователю)"
-                : "Редактировать"
+                ? t("roles.row.editSystemTooltip")
+                : t("roles.row.editTooltip")
             }
             placement="top"
           >
@@ -880,7 +868,7 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
               <IconButton
                 size="small"
                 onClick={onEdit}
-                aria-label="Редактировать роль"
+                aria-label={t("roles.row.editAria")}
               >
                 <EditOutlined fontSize="small" />
               </IconButton>
@@ -895,6 +883,23 @@ function RoleRow({ role, allPermissions, onEdit, canEdit }: RoleRowProps) {
 // ── RolesSettingsPage ───────────────────────────────────────────────────────
 
 const RolesSettingsPage: React.FC = () => {
+  const { t } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
+        const e = (err.payload as Record<string, unknown>).error;
+        if (typeof e === "string") return e;
+        if (typeof e === "object" && e !== null && "message" in e) {
+          return String((e as Record<string, unknown>).message);
+        }
+      }
+      return err.message;
+    }
+    if (err instanceof Error) return err.message;
+    return t("roles.unknownError");
+  }
+
   const { activeOrganization, isSuperAdmin } = usePermissions();
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
@@ -959,7 +964,7 @@ const RolesSettingsPage: React.FC = () => {
     retryAuth();
     showSnack(
       "success",
-      drawerMode === "create" ? "Роль создана" : "Роль обновлена",
+      drawerMode === "create" ? t("roles.createdSnack") : t("roles.updatedSnack"),
     );
   };
 
@@ -1003,7 +1008,7 @@ const RolesSettingsPage: React.FC = () => {
           <Stack direction="row" alignItems="center" gap={1}>
             <AdminPanelSettingsOutlined color="action" />
             <Typography variant="h6" fontWeight={600}>
-              Роли
+              {t("roles.title")}
             </Typography>
             {!loading && (
               <Chip
@@ -1023,7 +1028,7 @@ const RolesSettingsPage: React.FC = () => {
           >
             <TextField
               size="small"
-              placeholder="Поиск роли…"
+              placeholder={t("roles.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               InputProps={{
@@ -1043,7 +1048,7 @@ const RolesSettingsPage: React.FC = () => {
                 disabled={loading}
                 sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
               >
-                Создать роль
+                {t("roles.createButton")}
               </AppButton>
             </CanAccess>
           </Stack>
@@ -1055,7 +1060,7 @@ const RolesSettingsPage: React.FC = () => {
             severity="error"
             action={
               <AppButton size="small" color="inherit" onClick={loadData}>
-                Повторить
+                {t("common:actions.retry")}
               </AppButton>
             }
           >
@@ -1103,14 +1108,14 @@ const RolesSettingsPage: React.FC = () => {
             }}
           >
             <AdminPanelSettingsOutlined sx={{ fontSize: 40, color: "text.disabled" }} />
-            <Typography variant="body2">Нет ролей для отображения.</Typography>
+            <Typography variant="body2">{t("roles.emptyTitle")}</Typography>
             <CanAccess permissions="rbac.roles.create">
               <AppButton
                 variant="outlined"
                 startIcon={<AddOutlined />}
                 onClick={handleOpenCreate}
               >
-                Создать первую роль
+                {t("roles.createFirst")}
               </AppButton>
             </CanAccess>
           </Box>
@@ -1120,7 +1125,7 @@ const RolesSettingsPage: React.FC = () => {
         {!loading && orgRoles.length > 0 && filtered.length === 0 && (
           <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
             <Typography variant="body2">
-              Ничего не найдено по запросу «{search}».
+              {t("roles.emptySearch", { query: search })}
             </Typography>
           </Box>
         )}
@@ -1129,7 +1134,7 @@ const RolesSettingsPage: React.FC = () => {
         {!loading && customRoles.length > 0 && (
           <Box>
             <Typography variant="caption" color="text.secondary" mb={1} display="block">
-              Роли организации
+              {t("roles.orgRolesSection")}
             </Typography>
             <Stack spacing={1}>
               {customRoles.map((role) => (
@@ -1161,7 +1166,7 @@ const RolesSettingsPage: React.FC = () => {
         {!loading && systemRoles.length > 0 && (
           <Box>
             <Typography variant="caption" color="text.secondary" mb={1} display="block">
-              Системные роли
+              {t("roles.systemRolesSection")}
             </Typography>
             <Stack spacing={1}>
               {/* Бэкенд разрешает менять системные роли только Django-суперпользователю

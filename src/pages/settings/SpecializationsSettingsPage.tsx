@@ -40,6 +40,7 @@ import {
 import { parseBackendError } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Диалог создания / переименования ─────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const SpecializationDialog: React.FC<EditDialogProps> = ({
   organizationId,
   onSaved,
 }) => {
+  const { t } = useT("settings");
   const isEdit = specialization !== null;
   const [name, setName] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -75,7 +77,7 @@ const SpecializationDialog: React.FC<EditDialogProps> = ({
   const handleSubmit = async () => {
     const trimmed = name.trim();
     if (trimmed.length < 2) {
-      setError("Название должно содержать минимум 2 символа");
+      setError(t("specializations.dialog.nameTooShort"));
       return;
     }
     setBusy(true);
@@ -101,11 +103,11 @@ const SpecializationDialog: React.FC<EditDialogProps> = ({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{isEdit ? "Переименовать специализацию" : "Добавить специализацию"}</DialogTitle>
+      <DialogTitle>{isEdit ? t("specializations.dialog.editTitle") : t("specializations.dialog.createTitle")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название специализации *"
+            label={t("specializations.dialog.nameLabel")}
             size="small"
             fullWidth
             autoFocus
@@ -123,7 +125,7 @@ const SpecializationDialog: React.FC<EditDialogProps> = ({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -131,7 +133,7 @@ const SpecializationDialog: React.FC<EditDialogProps> = ({
           disabled={busy || name.trim().length < 2}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить"}
+          {busy ? t("common:state.saving") : isEdit ? t("common:actions.save") : t("common:actions.add")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -141,7 +143,8 @@ const SpecializationDialog: React.FC<EditDialogProps> = ({
 // ── Главный компонент ────────────────────────────────────────────────────────
 
 const SpecializationsSettingsPage: React.FC = () => {
-  usePageTitle("Специализации");
+  const { t } = useT("settings");
+  usePageTitle(t("specializations.title"));
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
   const canManage = useCan("staff.specializations.manage");
   const queryClient = useQueryClient();
@@ -206,10 +209,10 @@ const SpecializationsSettingsPage: React.FC = () => {
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Специализации
+              {t("specializations.title")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Специализации назначаются врачам в карточке сотрудника.
+              {t("specializations.description")}
             </Typography>
           </Box>
           {canManage && (
@@ -220,7 +223,7 @@ const SpecializationsSettingsPage: React.FC = () => {
               onClick={openCreate}
               disabled={needsOrg || permLoading}
             >
-              Добавить специализацию
+              {t("specializations.addButton")}
             </Button>
           )}
         </Stack>
@@ -228,7 +231,7 @@ const SpecializationsSettingsPage: React.FC = () => {
         {/* Требуется выбор организации */}
         {needsOrg && (
           <Alert severity="info">
-            Выберите организацию в контексте, чтобы управлять специализациями.
+            {t("specializations.needsOrg")}
           </Alert>
         )}
 
@@ -254,7 +257,7 @@ const SpecializationsSettingsPage: React.FC = () => {
         {!specsQuery.isLoading && !needsOrg && specializations.length === 0 && !specsQuery.error && (
           <Box sx={{ py: 6, textAlign: "center" }}>
             <Typography variant="body2" color="text.disabled">
-              Специализаций пока нет
+              {t("specializations.empty")}
             </Typography>
           </Box>
         )}
@@ -265,9 +268,9 @@ const SpecializationsSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Статус</TableCell>
-                  {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">Действия</TableCell>}
+                  <TableCell sx={{ fontWeight: 600 }}>{t("specializations.columns.name")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("specializations.columns.status")}</TableCell>
+                  {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">{t("specializations.columns.actions")}</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -276,7 +279,7 @@ const SpecializationsSettingsPage: React.FC = () => {
                     <TableCell>{spec.name}</TableCell>
                     <TableCell>
                       <Chip
-                        label={spec.isActive ? "Активна" : "Неактивна"}
+                        label={spec.isActive ? t("specializations.status.active") : t("specializations.status.inactive")}
                         size="small"
                         color={spec.isActive ? "success" : "default"}
                         variant="outlined"
@@ -284,7 +287,7 @@ const SpecializationsSettingsPage: React.FC = () => {
                     </TableCell>
                     {canManage && (
                       <TableCell align="right">
-                        <Tooltip title="Переименовать">
+                        <Tooltip title={t("specializations.tooltips.rename")}>
                           <span>
                             <IconButton
                               size="small"
@@ -295,7 +298,7 @@ const SpecializationsSettingsPage: React.FC = () => {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={spec.isActive ? "Деактивировать" : "Активировать"}>
+                        <Tooltip title={spec.isActive ? t("specializations.tooltips.deactivate") : t("specializations.tooltips.activate")}>
                           <span>
                             <IconButton
                               size="small"

@@ -28,12 +28,8 @@ import {
   updateDiagnosis,
   type CatalogDiagnosis,
 } from "../../api/medical";
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) return extractApiError(err.payload, err.status);
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
-}
+import { useT } from "../../i18n/VerticalProvider";
+import { agree } from "../../i18n/formatters";
 
 const CODE_MAX = 20;
 const TITLE_MAX = 500;
@@ -74,6 +70,13 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
 }) => {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
+  const { t, term } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) return extractApiError(err.payload, err.status);
+    if (err instanceof Error) return err.message;
+    return t("diagnosisForm.unknownError");
+  }
 
   const open = target !== null;
   const editing: CatalogDiagnosis | null =
@@ -135,8 +138,8 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    code: trimmedCode ? null : "Укажите код МКБ-10",
-    title: trimmedTitle ? null : "Укажите название диагноза",
+    code: trimmedCode ? null : t("diagnosisForm.codeRequired"),
+    title: trimmedTitle ? null : t("diagnosisForm.titleRequired"),
   });
 
   const handleSubmit = async () => {
@@ -163,7 +166,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
       }
       onSaved(saved);
       enqueueSnackbar(
-        isEdit ? "Диагноз обновлён" : "Диагноз добавлен в справочник",
+        isEdit ? t("diagnosisForm.updated") : t("diagnosisForm.created"),
         { variant: "success" },
       );
       onClose();
@@ -213,7 +216,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
           </Box>
           <Box>
             <Typography variant="h6" fontWeight={600} lineHeight={1.2}>
-              {isEdit ? "Редактирование диагноза" : "Новый диагноз"}
+              {isEdit ? t("diagnosisForm.editTitle") : t("diagnosisForm.createTitle")}
             </Typography>
             {isEdit && (
               <Typography variant="caption" color="text.secondary">
@@ -224,7 +227,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
         </Stack>
         <IconButton
           onClick={busy ? undefined : guardedClose}
-          aria-label="Закрыть"
+          aria-label={t("common:actions.close")}
           edge="end"
         >
           <CloseOutlined />
@@ -245,7 +248,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
         <Stack spacing={2.5}>
           {/* Код МКБ-10 */}
           <Stack spacing={0.5}>
-            <FieldLabel counter={`${code.length}/${CODE_MAX}`}>Код МКБ-10 *</FieldLabel>
+            <FieldLabel counter={`${code.length}/${CODE_MAX}`}>{t("diagnosisForm.codeLabel")}</FieldLabel>
             <TextField
               inputRef={codeRef}
               size="small"
@@ -258,7 +261,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
               }}
               onKeyDown={handleCodeKeyDown}
               disabled={busy}
-              placeholder="Например: A09"
+              placeholder={t("diagnosisForm.codePlaceholder")}
               {...form.field("code", " ")}
               inputProps={{ maxLength: CODE_MAX, autoCapitalize: "characters" }}
               sx={{ "& input": { fontFamily: "monospace", fontWeight: 600 } }}
@@ -267,7 +270,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
 
           {/* Название */}
           <Stack spacing={0.5}>
-            <FieldLabel counter={`${title.length}/${TITLE_MAX}`}>Название *</FieldLabel>
+            <FieldLabel counter={`${title.length}/${TITLE_MAX}`}>{t("diagnosisForm.titleLabel")}</FieldLabel>
             <TextField
               size="small"
               fullWidth
@@ -280,7 +283,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
                 setTitle(e.target.value);
               }}
               disabled={busy}
-              placeholder="Например: Острый гастроэнтерит неуточнённый"
+              placeholder={t("diagnosisForm.titlePlaceholder")}
               {...form.field("title", " ")}
               inputProps={{ maxLength: TITLE_MAX }}
             />
@@ -289,7 +292,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
           {/* Название для печати */}
           <Stack spacing={0.5}>
             <FieldLabel counter={`${displayName.length}/${DISPLAY_NAME_MAX}`}>
-              Название для печати
+              {t("diagnosisForm.displayNameLabel")}
             </FieldLabel>
             <TextField
               size="small"
@@ -300,8 +303,8 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               disabled={busy}
-              placeholder="Необязательно — например: Простуда"
-              helperText="Если заполнено, в PDF заключения пациент увидит это название вместо кода МКБ-10 и служебного названия."
+              placeholder={t("diagnosisForm.displayNamePlaceholder")}
+              helperText={t("diagnosisForm.displayNameHelper")}
               inputProps={{ maxLength: DISPLAY_NAME_MAX }}
             />
           </Stack>
@@ -329,11 +332,15 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
                 <Box>
                   <Stack direction="row" alignItems="center" gap={1}>
                     <Typography variant="body2" fontWeight={600}>
-                      Активен
+                      {t("diagnosisForm.activeToggleLabel")}
                     </Typography>
                     <Chip
                       size="small"
-                      label={isActive ? "Доступен" : "Скрыт"}
+                      label={
+                        isActive
+                          ? agree(term.diagnosis.gender, ["Доступен", "Доступна", "Доступно"])
+                          : agree(term.diagnosis.gender, ["Скрыт", "Скрыта", "Скрыто"])
+                      }
                       color={isActive ? "success" : "default"}
                       variant={isActive ? "filled" : "outlined"}
                       sx={{ height: 20 }}
@@ -341,8 +348,8 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
                     {isActive
-                      ? "Диагноз отображается врачам при заполнении заключения."
-                      : "Диагноз скрыт из выбора, но уже выданные заключения сохранят его."}
+                      ? t("diagnosisForm.captionActive")
+                      : t("diagnosisForm.captionHidden")}
                   </Typography>
                 </Box>
               }
@@ -358,7 +365,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
       <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
         <Stack direction="row" spacing={1.5} justifyContent="flex-end">
           <Button variant="outlined" onClick={guardedClose} disabled={busy}>
-            Отмена
+            {t("common:actions.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -366,7 +373,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
             disabled={busy}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
-            {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Создать"}
+            {busy ? t("common:state.saving") : isEdit ? t("common:actions.save") : t("common:actions.create")}
           </Button>
         </Stack>
       </Box>
@@ -393,7 +400,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
 
       <CloseGuardDialog
         open={confirmOpen}
-        title={isEdit ? "редактирование диагноза" : "новый диагноз"}
+        title={isEdit ? t("diagnosisForm.editTitleLower") : t("diagnosisForm.createTitleLower")}
         onConfirm={confirmClose}
         onCancel={cancelClose}
       />

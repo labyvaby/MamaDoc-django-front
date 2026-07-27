@@ -44,6 +44,7 @@ import {
   type CleaningType,
   type CleaningTypePayload,
 } from "../../api/cleaning";
+import { useT } from "../../i18n/VerticalProvider";
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -61,6 +62,7 @@ interface TypeDialogProps {
 }
 
 const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClose, onSubmit }) => {
+  const { t } = useT("settings");
   const [name, setName] = React.useState("");
   const [rate, setRate] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
@@ -79,21 +81,21 @@ const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClos
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{type ? "Изменить тип уборки" : "Новый тип уборки"}</DialogTitle>
+      <DialogTitle>{type ? t("cleaning.types.dialog.editTitle") : t("cleaning.types.dialog.createTitle")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <TextField
-            label="Название"
+            label={t("cleaning.types.dialog.nameLabel")}
             size="small"
             fullWidth
             autoFocus
-            placeholder="Например: Генеральная уборка"
+            placeholder={t("cleaning.types.dialog.namePlaceholder")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={busy}
           />
           <TextField
-            label="Ставка"
+            label={t("cleaning.types.dialog.rateLabel")}
             size="small"
             fullWidth
             placeholder="150"
@@ -106,18 +108,18 @@ const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClos
             error={touched && !rateValid}
             helperText={
               touched && !rateValid
-                ? "Число, максимум 2 знака после точки"
-                : "За одну подтверждённую уборку этого типа"
+                ? t("cleaning.types.dialog.rateHelperInvalid")
+                : t("cleaning.types.dialog.rateHelperHint")
             }
             InputProps={{
-              endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+              endAdornment: <InputAdornment position="end">{t("common:currency.long")}</InputAdornment>,
             }}
           />
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Box>
-              <Typography variant="body2">Активен</Typography>
+              <Typography variant="body2">{t("cleaning.types.dialog.activeLabel")}</Typography>
               <Typography variant="caption" color="text.secondary">
-                Неактивный тип нельзя выбрать при отметке уборки
+                {t("cleaning.types.dialog.activeCaption")}
               </Typography>
             </Box>
             <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} disabled={busy} />
@@ -127,7 +129,7 @@ const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClos
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -135,7 +137,7 @@ const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClos
           onClick={() => onSubmit({ name: name.trim(), rate: rate.trim(), isActive })}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          Сохранить
+          {t("common:actions.save")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -145,7 +147,8 @@ const TypeDialog: React.FC<TypeDialogProps> = ({ open, type, busy, error, onClos
 // ── Страница ──────────────────────────────────────────────────────────────────
 
 const CleaningSettingsPage: React.FC = () => {
-  usePageTitle("Настройки · Уборка");
+  const { t } = useT("settings");
+  usePageTitle(t("cleaning.pageTitle"));
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const orgId = useApiOrgId();
@@ -171,11 +174,11 @@ const CleaningSettingsPage: React.FC = () => {
         ? updateCleaningType(typeEditing.id, values, orgId)
         : createCleaningType(values, orgId),
     onSuccess: () => {
-      notify?.({ type: "success", message: typeEditing ? "Тип обновлён" : "Тип создан" });
+      notify?.({ type: "success", message: typeEditing ? t("cleaning.types.updated") : t("cleaning.types.created") });
       setTypeDialogOpen(false);
       invalidate();
     },
-    onError: (e) => setTypeError(errMsg(e, "Не удалось сохранить тип уборки")),
+    onError: (e) => setTypeError(errMsg(e, t("cleaning.types.saveError"))),
   });
 
   const typeToggleMutation = useMutation({
@@ -183,18 +186,18 @@ const CleaningSettingsPage: React.FC = () => {
       updateCleaningType(type.id, { isActive: !type.isActive }, orgId),
     onSuccess: () => invalidate(),
     onError: (e) =>
-      notify?.({ type: "error", message: "Не удалось изменить тип", description: errMsg(e, "") }),
+      notify?.({ type: "error", message: t("cleaning.types.toggleError"), description: errMsg(e, "") }),
   });
 
   const typeDeleteMutation = useMutation({
     mutationFn: (type: CleaningType) => deleteCleaningType(type.id, orgId),
     onSuccess: () => {
-      notify?.({ type: "success", message: "Тип удалён" });
+      notify?.({ type: "success", message: t("cleaning.types.deleteSuccess") });
       setTypeDeleting(null);
       invalidate();
     },
     onError: (e) =>
-      notify?.({ type: "error", message: "Не удалось удалить тип", description: errMsg(e, "") }),
+      notify?.({ type: "error", message: t("cleaning.types.deleteError"), description: errMsg(e, "") }),
   });
 
   return (
@@ -202,10 +205,10 @@ const CleaningSettingsPage: React.FC = () => {
       <Stack spacing={3}>
         <Stack direction="row" alignItems="center" gap={1}>
           <Typography variant="h6" fontWeight={600}>
-            Уборка
+            {t("cleaning.title")}
           </Typography>
           {CLEANING_USE_MOCKS && (
-            <Chip size="small" color="warning" variant="outlined" label="Демо-данные" />
+            <Chip size="small" color="warning" variant="outlined" label={t("cleaning.demoDataChip")} />
           )}
         </Stack>
 
@@ -213,10 +216,9 @@ const CleaningSettingsPage: React.FC = () => {
         <Stack spacing={1.5}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Box>
-              <Typography variant="subtitle2">Типы уборки</Typography>
+              <Typography variant="subtitle2">{t("cleaning.types.sectionTitle")}</Typography>
               <Typography variant="body2" color="text.secondary">
-                Уборщица выбирает тип при отметке. В ЗП попадает сумма ставок типов по
-                подтверждённым уборкам за месяц.
+                {t("cleaning.types.sectionDescription")}
               </Typography>
             </Box>
             <Button
@@ -229,13 +231,13 @@ const CleaningSettingsPage: React.FC = () => {
                 setTypeDialogOpen(true);
               }}
             >
-              Добавить
+              {t("cleaning.types.addButton")}
             </Button>
           </Stack>
 
           {typesQuery.isError && (
             <Alert severity="error">
-              {errMsg(typesQuery.error, "Не удалось загрузить типы уборки")}
+              {errMsg(typesQuery.error, t("cleaning.types.loadError"))}
             </Alert>
           )}
 
@@ -243,9 +245,9 @@ const CleaningSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Название</TableCell>
-                  <TableCell align="right">Ставка</TableCell>
-                  <TableCell align="center">Активен</TableCell>
+                  <TableCell>{t("cleaning.types.columns.name")}</TableCell>
+                  <TableCell align="right">{t("cleaning.types.columns.rate")}</TableCell>
+                  <TableCell align="center">{t("cleaning.types.columns.active")}</TableCell>
                   <TableCell align="right" />
                 </TableRow>
               </TableHead>
@@ -260,7 +262,7 @@ const CleaningSettingsPage: React.FC = () => {
                 {!typesQuery.isLoading && types.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} align="center" sx={{ py: 3, color: "text.secondary" }}>
-                      Типов пока нет — добавьте первый
+                      {t("cleaning.types.empty")}
                     </TableCell>
                   </TableRow>
                 )}
@@ -279,7 +281,7 @@ const CleaningSettingsPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Изменить">
+                      <Tooltip title={t("cleaning.types.tooltips.edit")}>
                         <IconButton
                           size="small"
                           onClick={() => {
@@ -291,7 +293,7 @@ const CleaningSettingsPage: React.FC = () => {
                           <EditOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="Удалить">
+                      <Tooltip title={t("cleaning.types.tooltips.delete")}>
                         <IconButton size="small" color="error" onClick={() => setTypeDeleting(type)}>
                           <DeleteOutlined fontSize="small" />
                         </IconButton>
@@ -316,9 +318,9 @@ const CleaningSettingsPage: React.FC = () => {
 
       <ConfirmDialog
         open={typeDeleting !== null}
-        title="Удалить тип уборки?"
-        message={`Тип «${typeDeleting?.name ?? ""}» будет удалён. История уборок по нему сохранится.`}
-        confirmText="Удалить"
+        title={t("cleaning.types.deleteConfirmTitle")}
+        message={t("cleaning.types.deleteConfirmBody", { name: typeDeleting?.name ?? "" })}
+        confirmText={t("common:actions.delete")}
         variant="error"
         loading={typeDeleteMutation.isPending}
         onConfirm={() => typeDeleting && typeDeleteMutation.mutate(typeDeleting)}

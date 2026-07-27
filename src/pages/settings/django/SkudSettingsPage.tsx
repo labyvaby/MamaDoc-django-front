@@ -20,6 +20,7 @@ import { getOfficeIp, setOfficeIp } from "../../../api/attendance";
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { parseIpList } from "../../../utility/network";
 import { PageHeader, AppCard } from "../../../components/ui";
+import { useT } from "../../../i18n/VerticalProvider";
 
 /** Разбивает вставленный/введённый текст на отдельные IP и мержит с текущим списком. */
 function mergeIpText(current: string[], text: string): string[] {
@@ -31,6 +32,7 @@ function mergeIpText(current: string[], text: string): string[] {
 interface IpListFieldProps {
   label: string;
   helperText: string;
+  placeholder: string;
   value: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
@@ -45,6 +47,7 @@ interface IpListFieldProps {
 const IpListField: React.FC<IpListFieldProps> = ({
   label,
   helperText,
+  placeholder,
   value,
   onChange,
   disabled,
@@ -81,7 +84,7 @@ const IpListField: React.FC<IpListFieldProps> = ({
         <TextField
           {...params}
           label={label}
-          placeholder="Например: 89.123.45.6 или 10.0.0.0/24"
+          placeholder={placeholder}
           helperText={helperText}
           onPaste={(e) => {
             const text = e.clipboardData.getData("text");
@@ -105,7 +108,8 @@ const IpListField: React.FC<IpListFieldProps> = ({
 };
 
 const DjangoSkudSettingsPage: React.FC = () => {
-  usePageTitle("Настройки СКУД");
+  const { t } = useT("settings");
+  usePageTitle(t("skud.pageTitle"));
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
 
@@ -156,11 +160,11 @@ const DjangoSkudSettingsPage: React.FC = () => {
       await queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.attendance.officeIp,
       });
-      notify?.({ type: "success", message: "Настройки успешно сохранены" });
+      notify?.({ type: "success", message: t("skud.saveSuccess") });
     } catch (e) {
       notify?.({
         type: "error",
-        message: e instanceof Error ? e.message : "Ошибка при сохранении настроек",
+        message: e instanceof Error ? e.message : t("skud.saveError"),
       });
     } finally {
       setSaving(false);
@@ -169,10 +173,10 @@ const DjangoSkudSettingsPage: React.FC = () => {
 
   return (
     <Box
-      sx={(t) => ({
+      sx={(theme) => ({
         height: {
-          xs: `calc(100dvh - ${t.appLayout.header.height.mobile}px)`,
-          md: `calc(100dvh - ${t.appLayout.header.height.desktop}px)`,
+          xs: `calc(100dvh - ${theme.appLayout.header.height.mobile}px)`,
+          md: `calc(100dvh - ${theme.appLayout.header.height.desktop}px)`,
         },
         display: "flex",
         flexDirection: "column",
@@ -180,12 +184,12 @@ const DjangoSkudSettingsPage: React.FC = () => {
         overflow: "hidden",
       })}
     >
-      <PageHeader title="Настройки СКУД" showTitle={false} />
+      <PageHeader title={t("skud.pageTitle")} showTitle={false} />
 
       <Box
-        sx={(t) => ({
-          px: t.appLayout.page.paddingX,
-          pb: t.appLayout.page.paddingY,
+        sx={(theme) => ({
+          px: theme.appLayout.page.paddingX,
+          pb: theme.appLayout.page.paddingY,
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
@@ -214,17 +218,17 @@ const DjangoSkudSettingsPage: React.FC = () => {
                   alignItems: "center",
                   justifyContent: "center",
                   color: "primary.onSurface",
-                  bgcolor: (t) => alpha(t.palette.primary.main, 0.1),
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                 }}
               >
                 <RouterOutlinedIcon />
               </Box>
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  Конфигурация интеграции
+                  {t("skud.cardTitle")}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Параметры подключения к системе контроля доступа
+                  {t("skud.cardSubtitle")}
                 </Typography>
               </Box>
             </Stack>
@@ -232,12 +236,13 @@ const DjangoSkudSettingsPage: React.FC = () => {
             <Box sx={{ p: 2.5 }}>
               <Box component="form" noValidate autoComplete="off">
                 <IpListField
-                  label="Общий IP организации"
+                  label={t("skud.orgIpLabel")}
+                  placeholder={t("skud.ipPlaceholder")}
                   value={ips}
                   onChange={setIps}
                   disabled={loading || saving}
                   loading={loading}
-                  helperText="Запасной вариант: используется вместе с IP филиалов. Можно добавить несколько адресов — вставьте список через запятую или с новой строки. Если ничего не заполнено — проверка отключена и смену можно начать откуда угодно."
+                  helperText={t("skud.orgIpHelper")}
                 />
 
                 {branches.length > 0 && (
@@ -246,24 +251,21 @@ const DjangoSkudSettingsPage: React.FC = () => {
                       variant="subtitle2"
                       sx={{ mt: 3, mb: 0.5, fontWeight: 700 }}
                     >
-                      Wi-Fi IP по филиалам
+                      {t("skud.branchIpsTitle")}
                     </Typography>
                     <Typography
                       variant="body2"
                       color="text.secondary"
                       sx={{ mb: 2 }}
                     >
-                      Сотрудник сможет начать смену, если его внешний IP
-                      совпадает с любым из IP филиала или с общим IP
-                      организации. У филиала может быть несколько адресов
-                      (например, разные Wi-Fi роутеры) — добавляйте их по
-                      одному или вставьте списком.
+                      {t("skud.branchIpsDescription")}
                     </Typography>
                     <Stack spacing={2}>
                       {branches.map((b) => (
                         <IpListField
                           key={b.branchId}
                           label={b.branchName}
+                          placeholder={t("skud.ipPlaceholder")}
                           value={branchIps[b.branchId] ?? []}
                           onChange={(next) =>
                             setBranchIps((prev) => ({
@@ -272,7 +274,7 @@ const DjangoSkudSettingsPage: React.FC = () => {
                             }))
                           }
                           disabled={loading || saving}
-                          helperText="Например, IP основного и резервного Wi-Fi роутера филиала."
+                          helperText={t("skud.branchIpHelper")}
                         />
                       ))}
                     </Stack>
@@ -291,9 +293,9 @@ const DjangoSkudSettingsPage: React.FC = () => {
                     }
                     onClick={handleSave}
                     disabled={loading || saving}
-                    sx={(t) => ({ minHeight: t.appLayout.controls.buttonHeight })}
+                    sx={(theme) => ({ minHeight: theme.appLayout.controls.buttonHeight })}
                   >
-                    {saving ? "Сохранение..." : "Сохранить"}
+                    {saving ? t("common:state.saving") : t("common:actions.save")}
                   </Button>
                 </Box>
               </Box>

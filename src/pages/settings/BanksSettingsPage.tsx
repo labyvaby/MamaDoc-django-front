@@ -40,6 +40,7 @@ import {
 import { parseBackendError } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Диалог создания / редактирования ─────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const BankDialog: React.FC<EditDialogProps> = ({
   organizationId,
   onSaved,
 }) => {
+  const { t } = useT("settings");
   const isEdit = bank !== null;
   const [name, setName] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -76,7 +78,7 @@ const BankDialog: React.FC<EditDialogProps> = ({
 
   const handleSubmit = async () => {
     if (!nameValid) {
-      setError("Название должно содержать минимум 2 символа");
+      setError(t("banks.dialog.nameTooShort"));
       return;
     }
     setBusy(true);
@@ -98,11 +100,11 @@ const BankDialog: React.FC<EditDialogProps> = ({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{isEdit ? "Редактировать банк" : "Добавить банк"}</DialogTitle>
+      <DialogTitle>{isEdit ? t("banks.dialog.editTitle") : t("banks.dialog.createTitle")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название банка *"
+            label={t("banks.dialog.nameLabel")}
             size="small"
             fullWidth
             autoFocus
@@ -119,7 +121,7 @@ const BankDialog: React.FC<EditDialogProps> = ({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -127,7 +129,7 @@ const BankDialog: React.FC<EditDialogProps> = ({
           disabled={busy || !nameValid}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить"}
+          {busy ? t("common:state.saving") : isEdit ? t("common:actions.save") : t("common:actions.add")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -137,7 +139,8 @@ const BankDialog: React.FC<EditDialogProps> = ({
 // ── Главный компонент ────────────────────────────────────────────────────────
 
 const BanksSettingsPage: React.FC = () => {
-  usePageTitle("Банки");
+  const { t } = useT("settings");
+  usePageTitle(t("banks.title"));
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
   const canManage = useCan("staff.private.manage");
   const queryClient = useQueryClient();
@@ -201,10 +204,10 @@ const BanksSettingsPage: React.FC = () => {
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Банки
+              {t("banks.title")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Справочник банков. Используется при выборе банка в карточке сотрудника.
+              {t("banks.description")}
             </Typography>
           </Box>
           {canManage && (
@@ -215,14 +218,14 @@ const BanksSettingsPage: React.FC = () => {
               onClick={openCreate}
               disabled={needsOrg || permLoading}
             >
-              Добавить банк
+              {t("banks.addButton")}
             </Button>
           )}
         </Stack>
 
         {needsOrg && (
           <Alert severity="info">
-            Выберите организацию в контексте, чтобы управлять справочником банков.
+            {t("banks.needsOrg")}
           </Alert>
         )}
 
@@ -245,7 +248,7 @@ const BanksSettingsPage: React.FC = () => {
         {!banksQuery.isLoading && !needsOrg && banks.length === 0 && !banksQuery.error && (
           <Box sx={{ py: 6, textAlign: "center" }}>
             <Typography variant="body2" color="text.disabled">
-              Банков пока нет
+              {t("banks.empty")}
             </Typography>
           </Box>
         )}
@@ -255,9 +258,9 @@ const BanksSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Статус</TableCell>
-                  {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">Действия</TableCell>}
+                  <TableCell sx={{ fontWeight: 600 }}>{t("banks.columns.name")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("banks.columns.status")}</TableCell>
+                  {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">{t("banks.columns.actions")}</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -266,7 +269,7 @@ const BanksSettingsPage: React.FC = () => {
                     <TableCell>{bank.name}</TableCell>
                     <TableCell>
                       <Chip
-                        label={bank.isActive ? "Активен" : "Неактивен"}
+                        label={bank.isActive ? t("banks.status.active") : t("banks.status.inactive")}
                         size="small"
                         color={bank.isActive ? "success" : "default"}
                         variant="outlined"
@@ -274,7 +277,7 @@ const BanksSettingsPage: React.FC = () => {
                     </TableCell>
                     {canManage && (
                       <TableCell align="right">
-                        <Tooltip title="Редактировать">
+                        <Tooltip title={t("banks.tooltips.edit")}>
                           <span>
                             <IconButton
                               size="small"
@@ -285,7 +288,7 @@ const BanksSettingsPage: React.FC = () => {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={bank.isActive ? "Деактивировать" : "Активировать"}>
+                        <Tooltip title={bank.isActive ? t("banks.tooltips.deactivate") : t("banks.tooltips.activate")}>
                           <span>
                             <IconButton
                               size="small"

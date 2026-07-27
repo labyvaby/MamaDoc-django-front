@@ -37,12 +37,7 @@ import {
   deleteBranchLogo,
   type DjangoBranch,
 } from "../../api/organization";
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) return extractApiError(err.payload, err.status);
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
-}
+import { useT } from "../../i18n/VerticalProvider";
 
 const NAME_MAX = 255;
 const PHONE_MAX = 50;
@@ -123,6 +118,13 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 }) => {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) return extractApiError(err.payload, err.status);
+    if (err instanceof Error) return err.message;
+    return t("branchForm.unknownError");
+  }
 
   const open = target !== null;
   const editing: DjangoBranch | null =
@@ -209,11 +211,11 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const schema: Record<string, string | null> = {
-    name: trimmedName ? null : "Укажите название филиала",
+    name: trimmedName ? null : t("branchForm.nameRequired"),
   };
   MAP_LINKS.forEach(({ key, label }) => {
     schema[`map-${key}`] = invalidMapLinks.includes(key)
-      ? `${label}: ссылка должна начинаться с http:// или https://`
+      ? t("branchForm.mapLinkInvalid", { label })
       : null;
   });
   const form = useFormValidation(schema);
@@ -265,7 +267,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
         });
       }
       onSaved(saved);
-      enqueueSnackbar(isEdit ? "Филиал обновлён" : "Филиал создан", {
+      enqueueSnackbar(isEdit ? t("branchForm.updated") : t("branchForm.created"), {
         variant: "success",
       });
       onClose();
@@ -289,11 +291,11 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     e.target.value = "";
     if (!file || !editing) return;
     if (!file.type.startsWith("image/")) {
-      setLogoError("Можно загрузить только изображение (PNG, JPG, SVG, WebP).");
+      setLogoError(t("branchForm.logoTypeError"));
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setLogoError("Файл слишком большой — максимум 5 МБ.");
+      setLogoError(t("branchForm.logoSizeError"));
       return;
     }
     setLogoBusy(true);
@@ -358,7 +360,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
           </Box>
           <Box>
             <Typography variant="h6" fontWeight={600} lineHeight={1.2}>
-              {isEdit ? "Редактирование филиала" : "Новый филиал"}
+              {isEdit ? t("branchForm.editTitle") : t("branchForm.createTitle")}
             </Typography>
             {isEdit && (
               <Typography variant="caption" color="text.secondary">
@@ -369,7 +371,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
         </Stack>
         <IconButton
           onClick={busy ? undefined : guardedClose}
-          aria-label="Закрыть"
+          aria-label={t("common:actions.close")}
           edge="end"
         >
           <CloseOutlined />
@@ -392,7 +394,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
               новому филиалу сначала нужен id. */}
           {isEdit && (
             <Stack spacing={0.5}>
-              <FieldLabel>Логотип</FieldLabel>
+              <FieldLabel>{t("branchForm.logoLabel")}</FieldLabel>
               <Stack direction="row" alignItems="center" gap={2}>
                 <Avatar
                   variant="rounded"
@@ -424,7 +426,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                       disabled={logoBusy || busy}
                       onClick={() => logoInputRef.current?.click()}
                     >
-                      {logoUrl ? "Заменить" : "Загрузить"}
+                      {logoUrl ? t("branchForm.logoReplace") : t("branchForm.logoUpload")}
                     </Button>
                     {logoUrl && (
                       <Button
@@ -434,7 +436,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                         disabled={logoBusy || busy}
                         onClick={handleLogoDelete}
                       >
-                        Удалить
+                        {t("common:actions.delete")}
                       </Button>
                     )}
                   </Stack>
@@ -443,7 +445,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                     color="text.secondary"
                     sx={{ display: "block", mt: 0.5 }}
                   >
-                    PNG, JPG, SVG или WebP, до 5 МБ.
+                    {t("branchForm.logoHint")}
                   </Typography>
                 </Box>
                 <input
@@ -460,7 +462,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 
           {/* Название */}
           <Stack spacing={0.5}>
-            <FieldLabel counter={`${name.length}/${NAME_MAX}`}>Название *</FieldLabel>
+            <FieldLabel counter={`${name.length}/${NAME_MAX}`}>{t("branchForm.nameLabel")}</FieldLabel>
             <TextField
               inputRef={nameRef}
               size="small"
@@ -472,7 +474,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
               }}
               onKeyDown={handleNameKeyDown}
               disabled={busy}
-              placeholder="Например: Центральный филиал"
+              placeholder={t("branchForm.namePlaceholder")}
               {...form.field("name", " ")}
               inputProps={{ maxLength: NAME_MAX }}
             />
@@ -480,7 +482,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 
           {/* Адрес */}
           <Stack spacing={0.5}>
-            <FieldLabel>Адрес</FieldLabel>
+            <FieldLabel>{t("branchForm.addressLabel")}</FieldLabel>
             <TextField
               size="small"
               fullWidth
@@ -490,13 +492,13 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               disabled={busy}
-              placeholder="Город, улица, дом"
+              placeholder={t("branchForm.addressPlaceholder")}
             />
           </Stack>
 
           {/* Телефоны */}
           <Stack spacing={0.5}>
-            <FieldLabel>Телефоны</FieldLabel>
+            <FieldLabel>{t("branchForm.phonesLabel")}</FieldLabel>
             <Stack spacing={1}>
               {phones.map((p, index) => (
                 <Stack key={index} direction="row" spacing={1} alignItems="center">
@@ -506,7 +508,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                     value={p}
                     onChange={(e) => setPhoneAt(index, e.target.value)}
                     disabled={busy}
-                    placeholder="+996 700 000 000"
+                    placeholder={t("branchForm.phonePlaceholder")}
                     inputProps={{ inputMode: "tel", maxLength: PHONE_MAX }}
                   />
                   {(phones.length > 1 || p.trim()) && (
@@ -514,7 +516,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                       size="small"
                       onClick={() => removePhoneAt(index)}
                       disabled={busy}
-                      aria-label="Удалить телефон"
+                      aria-label={t("branchForm.removePhoneAria")}
                     >
                       <DeleteOutlineOutlined fontSize="small" />
                     </IconButton>
@@ -528,7 +530,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                 disabled={busy}
                 sx={{ alignSelf: "flex-start" }}
               >
-                Добавить номер
+                {t("branchForm.addPhone")}
               </Button>
             </Stack>
           </Stack>
@@ -537,7 +539,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
           <Stack spacing={0.5}>
             <Stack direction="row" alignItems="center" gap={0.75}>
               <MapOutlined fontSize="small" sx={{ color: "text.secondary" }} />
-              <FieldLabel>Ссылки на карты</FieldLabel>
+              <FieldLabel>{t("branchForm.mapLinksLabel")}</FieldLabel>
             </Stack>
             <Stack spacing={1.25}>
               {MAP_LINKS.map(({ key, label, placeholder }) => (
@@ -553,7 +555,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                   error={Boolean(form.errorOf(`map-${key}`))}
                   helperText={
                     form.errorOf(`map-${key}`)
-                      ? "Ссылка должна начинаться с http:// или https://"
+                      ? t("branchForm.mapLinkInvalidShort")
                       : undefined
                   }
                   ref={form.anchor(`map-${key}`)}
@@ -565,7 +567,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 
           {/* Часовой пояс */}
           <Stack spacing={0.5}>
-            <FieldLabel>Часовой пояс</FieldLabel>
+            <FieldLabel>{t("branchForm.timezoneLabel")}</FieldLabel>
             <TextField
               select
               size="small"
@@ -609,11 +611,11 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                 <Box>
                   <Stack direction="row" alignItems="center" gap={1}>
                     <Typography variant="body2" fontWeight={600}>
-                      Активен
+                      {t("branchForm.activeLabel")}
                     </Typography>
                     <Chip
                       size="small"
-                      label={isActive ? "Работает" : "Отключён"}
+                      label={isActive ? t("branchForm.activeStatus") : t("branchForm.inactiveStatus")}
                       color={isActive ? "success" : "default"}
                       variant={isActive ? "filled" : "outlined"}
                       sx={{ height: 20 }}
@@ -621,8 +623,8 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
                     {isActive
-                      ? "Филиал доступен для записи, продаж и выбора в интерфейсе."
-                      : "Филиал скрыт из выбора; существующие данные сохраняются."}
+                      ? t("branchForm.activeCaption")
+                      : t("branchForm.inactiveCaption")}
                   </Typography>
                 </Box>
               }
@@ -638,7 +640,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
       <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
         <Stack direction="row" spacing={1.5} justifyContent="flex-end">
           <Button variant="outlined" onClick={guardedClose} disabled={busy}>
-            Отмена
+            {t("common:actions.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -646,7 +648,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
             disabled={busy}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
-            {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Создать"}
+            {busy ? t("common:state.saving") : isEdit ? t("common:actions.save") : t("common:actions.create")}
           </Button>
         </Stack>
       </Box>
@@ -673,7 +675,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
 
       <CloseGuardDialog
         open={confirmOpen}
-        title={isEdit ? "редактирование филиала" : "новый филиал"}
+        title={isEdit ? t("branchForm.editTitleLower") : t("branchForm.createTitleLower")}
         onConfirm={confirmClose}
         onCancel={cancelClose}
       />

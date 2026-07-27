@@ -40,6 +40,7 @@ import {
 import { parseBackendError } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Диалог создания / редактирования ─────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
   organizationId,
   onSaved,
 }) => {
+  const { t } = useT("settings");
   const isEdit = insurer !== null;
   const [name, setName] = React.useState("");
   const [contractNumber, setContractNumber] = React.useState("");
@@ -80,7 +82,7 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
 
   const handleSubmit = async () => {
     if (!nameValid) {
-      setError("Название должно содержать минимум 2 символа");
+      setError(t("insurers.dialog.nameTooShort"));
       return;
     }
     setBusy(true);
@@ -112,12 +114,12 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
       <DialogTitle>
-        {isEdit ? "Редактировать страховую" : "Добавить страховую компанию"}
+        {isEdit ? t("insurers.dialog.editTitle") : t("insurers.dialog.createTitle")}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название компании *"
+            label={t("insurers.dialog.nameLabel")}
             size="small"
             fullWidth
             autoFocus
@@ -130,7 +132,7 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
             inputProps={{ maxLength: 128 }}
           />
           <TextField
-            label="Номер договора"
+            label={t("insurers.dialog.contractLabel")}
             size="small"
             fullWidth
             value={contractNumber}
@@ -140,10 +142,10 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
             }}
             disabled={busy}
             inputProps={{ maxLength: 64 }}
-            helperText="Договор клиники со страховой (необязательно)"
+            helperText={t("insurers.dialog.contractHelper")}
           />
           <TextField
-            label="Телефон"
+            label={t("insurers.dialog.phoneLabel")}
             size="small"
             fullWidth
             value={phone}
@@ -159,7 +161,7 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -167,7 +169,7 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
           disabled={busy || !nameValid}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : isEdit ? "Сохранить" : "Добавить"}
+          {busy ? t("common:state.saving") : isEdit ? t("common:actions.save") : t("common:actions.add")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -177,7 +179,8 @@ const InsurerDialog: React.FC<EditDialogProps> = ({
 // ── Главный компонент ────────────────────────────────────────────────────────
 
 const InsurersSettingsPage: React.FC = () => {
-  usePageTitle("Страховые компании");
+  const { t } = useT("settings");
+  usePageTitle(t("insurers.title"));
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
   const canManage = useCan("finance.manage");
   const queryClient = useQueryClient();
@@ -241,10 +244,10 @@ const InsurersSettingsPage: React.FC = () => {
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Страховые компании
+              {t("insurers.title")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Справочник страховых. Используется при оплате приёма способом «страховка».
+              {t("insurers.description")}
             </Typography>
           </Box>
           {canManage && (
@@ -255,14 +258,14 @@ const InsurersSettingsPage: React.FC = () => {
               onClick={openCreate}
               disabled={needsOrg || permLoading}
             >
-              Добавить страховую
+              {t("insurers.addButton")}
             </Button>
           )}
         </Stack>
 
         {needsOrg && (
           <Alert severity="info">
-            Выберите организацию в контексте, чтобы управлять справочником страховых.
+            {t("insurers.needsOrg")}
           </Alert>
         )}
 
@@ -285,7 +288,7 @@ const InsurersSettingsPage: React.FC = () => {
         {!insurersQuery.isLoading && !needsOrg && insurers.length === 0 && !insurersQuery.error && (
           <Box sx={{ py: 6, textAlign: "center" }}>
             <Typography variant="body2" color="text.disabled">
-              Страховых компаний пока нет
+              {t("insurers.empty")}
             </Typography>
           </Box>
         )}
@@ -295,11 +298,11 @@ const InsurersSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Договор</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Телефон</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Статус</TableCell>
-                  {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">Действия</TableCell>}
+                  <TableCell sx={{ fontWeight: 600 }}>{t("insurers.columns.name")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("insurers.columns.contract")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("insurers.columns.phone")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("insurers.columns.status")}</TableCell>
+                  {canManage && <TableCell sx={{ fontWeight: 600 }} align="right">{t("insurers.columns.actions")}</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -312,7 +315,7 @@ const InsurersSettingsPage: React.FC = () => {
                     <TableCell>{insurer.phone || "—"}</TableCell>
                     <TableCell>
                       <Chip
-                        label={insurer.isActive ? "Активна" : "Скрыта"}
+                        label={insurer.isActive ? t("insurers.status.active") : t("insurers.status.hidden")}
                         size="small"
                         color={insurer.isActive ? "success" : "default"}
                         variant="outlined"
@@ -320,7 +323,7 @@ const InsurersSettingsPage: React.FC = () => {
                     </TableCell>
                     {canManage && (
                       <TableCell align="right">
-                        <Tooltip title="Редактировать">
+                        <Tooltip title={t("insurers.tooltips.edit")}>
                           <span>
                             <IconButton
                               size="small"
@@ -331,7 +334,7 @@ const InsurersSettingsPage: React.FC = () => {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={insurer.isActive ? "Скрыть из выбора" : "Активировать"}>
+                        <Tooltip title={insurer.isActive ? t("insurers.tooltips.hide") : t("insurers.tooltips.activate")}>
                           <span>
                             <IconButton
                               size="small"
