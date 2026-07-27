@@ -123,13 +123,10 @@ export const youtubeEmbedUrl = (videoId: string): string =>
 // ── Картинки в статьях ────────────────────────────────────────────────────────
 
 /**
- * Загрузка картинки файлом. ⚠ Держим выключенной: эндпоинта на бэке нет
- * (проверено 25.07.2026 — POST /knowledge/attachments/ отдаёт 404), тикет —
- * MamaDoc/backend_ticket_knowledge_images.md. Вставка картинки по ссылке
- * работает и без него: санитайзер пропускает `<img src>` с http(s).
- * Включать после ответа бэка (форма ответа `{url}` — предположение фронта).
+ * Загрузка картинки файлом. Бэк закрыл тикет MamaDoc/backend_ticket_knowledge_images.md;
+ * проверено живым POST 27.07.2026 — форма ответа `{url}` подтвердилась.
  */
-export const KNOWLEDGE_IMAGE_UPLOAD_ENABLED = false;
+export const KNOWLEDGE_IMAGE_UPLOAD_ENABLED = true;
 
 export interface KnowledgeAttachment {
   /** Абсолютный или относительный URL загруженного файла. */
