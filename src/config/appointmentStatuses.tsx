@@ -8,7 +8,6 @@ import {
   Build as BuildIcon,
   Paid as PaidIcon,
   PieChart as PieChartIcon,
-  PrintOutlined as PrintIcon,
   CardGiftcard as CardGiftcardIcon,
 } from "@mui/icons-material";
 import type { SxProps, Theme } from "@mui/material";
@@ -77,7 +76,9 @@ export type StatusCode =
   | "partially_paid"
   | "paid_cashless"
   | "discounted"
-  | "free";
+  | "free"
+  /** Остаток к оплате — чип «Долг N» рядом с «Частично оплачено». */
+  | "debt";
 
 /**
  * Всё, что может прийти в статусе, → канонический код.
@@ -102,6 +103,7 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   paid_cashless: "paid_cashless",
   discounted: "discounted",
   free: "free",
+  debt: "debt",
   // legacy-значения Supabase (русские строки, приходят из старых данных)
   "ожидаем": "scheduled",
   "подтверждён": "confirmed",
@@ -124,6 +126,7 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   "оплачено безналом": "paid_cashless",
   "со скидкой": "discounted",
   "бесплатно": "free",
+  "долг": "debt",
 };
 
 /** Цвет и иконка на код статуса. */
@@ -140,6 +143,7 @@ const STATUS_VISUAL: Record<StatusCode, { color: StatusConfig["color"]; icon: Re
   paid_cashless: { color: "info", icon: <DoneIcon fontSize="small" /> },
   discounted: { color: "secondary", icon: <DoneIcon fontSize="small" /> },
   free: { color: "success", icon: <CardGiftcardIcon fontSize="small" /> },
+  debt: { color: "warning", icon: <PaidIcon fontSize="small" /> },
 };
 
 const ALL_STATUS_CODES = Object.keys(STATUS_VISUAL) as StatusCode[];
@@ -213,7 +217,7 @@ export function normalizeDjangoStatus(status: string): string {
   return getStatusLabel(status);
 }
 
-export const getStatusConfig = (status: any): StatusConfig => {
+export const getStatusConfig = (status: unknown): StatusConfig => {
   const code = resolveStatusCode(status);
   const visual = code ? STATUS_VISUAL[code] : STATUS_VISUAL.scheduled;
   return {

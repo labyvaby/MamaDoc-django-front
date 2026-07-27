@@ -16,6 +16,9 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import type { Dayjs } from "dayjs";
 
+import { getStatusLabel } from "../../config/appointmentStatuses";
+import { tt } from "../../i18n/t";
+
 export type AppointmentStatusFilter =
   | "all"
   | "scheduled"
@@ -25,18 +28,31 @@ export type AppointmentStatusFilter =
   | "cancelled"
   | "no_show";
 
+const STATUS_FILTER_VALUES: ReadonlyArray<AppointmentStatusFilter> = [
+  "all",
+  "scheduled",
+  "waiting",
+  "in_progress",
+  "completed",
+  "cancelled",
+  "no_show",
+];
+
+/**
+ * Метки берём из того же словаря, что и чипы статуса: раньше здесь был
+ * хардкод («Принимается» против «На приёме» в чипе), и фильтр не менялся
+ * вместе с вертикалью бизнеса («Пациент не пришел» / «Клиент не пришел»).
+ * Геттеры ленивые — на момент импорта модуля i18n ещё не инициализирован.
+ */
 export const APPOINTMENT_STATUS_OPTIONS: ReadonlyArray<{
   value: AppointmentStatusFilter;
-  label: string;
-}> = [
-  { value: "all", label: "Все статусы" },
-  { value: "scheduled", label: "Запланирован" },
-  { value: "waiting", label: "Ожидает" },
-  { value: "in_progress", label: "Принимается" },
-  { value: "completed", label: "Завершён" },
-  { value: "cancelled", label: "Отменён" },
-  { value: "no_show", label: "Неявка" },
-];
+  readonly label: string;
+}> = STATUS_FILTER_VALUES.map((value) => ({
+  value,
+  get label() {
+    return value === "all" ? tt("appointments:filters.allStatuses") : getStatusLabel(value);
+  },
+}));
 
 type Props = {
   date: Dayjs | null;

@@ -76,14 +76,10 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
     appt.status === "canceled" ||
     (appt.status as string) === "cancelled" ||
     appt.status === "no_show";
-  const hasDebt = appt.debt && appt.debt !== "0.00" && appt.debt !== "0";
-
   const totalStr =
     appt.totalAmount && appt.totalAmount !== "0.00" && appt.totalAmount !== "0"
       ? formatKGS(appt.totalAmount)
       : null;
-
-  const debtStr = hasDebt ? t("row.debt", { amount: formatKGS(appt.debt) }) : null;
 
   return (
     <Box
@@ -203,12 +199,9 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
               {t("row.total", { amount: totalStr })}
             </Typography>
           )}
-          {/* Debt highlight — факт долга виден всем (операционный статус). */}
-          {debtStr && (
-            <Typography variant="caption" color="warning.main" fontWeight={700}>
-              {debtStr}
-            </Typography>
-          )}
+          {/* Долг показывает AppointmentStatusChips чипом «Долг N» — здесь
+              строчка дублировала его (и висела на любом неоплаченном приёме,
+              где долг равен «Итого»). */}
 
           {/* Action icons — stop click bubbling */}
           <Stack direction="row" spacing={0} onClick={(e) => e.stopPropagation()}>

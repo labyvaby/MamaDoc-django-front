@@ -79,6 +79,7 @@ describe("канонические коды резолвятся сами в с�
     "paid_cashless",
     "discounted",
     "free",
+    "debt",
   ];
 
   it.each(codes)("%s", (code) => {
