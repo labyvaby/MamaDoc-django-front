@@ -21,7 +21,8 @@ import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import { getService } from "../../api/catalog";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import { getService, SERVICE_RELATED_PRODUCT_ENABLED } from "../../api/catalog";
 import type { Service } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
 import { AppButton, InfoTile } from "../ui";
@@ -340,6 +341,19 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                     />
                   )}
                 </Stack>
+              </Box>
+            )}
+
+            {/* Сопутствующий товар */}
+            {SERVICE_RELATED_PRODUCT_ENABLED && service.relatedProduct && (
+              <Box>
+                <SectionHeader icon={<Inventory2OutlinedIcon />} title="Сопутствующий товар" />
+                <InfoTile
+                  icon={<Inventory2OutlinedIcon />}
+                  label={service.relatedProduct.name}
+                  value={`${formatKGS(service.relatedProduct.price)} · остаток ${service.relatedProduct.stock}`}
+                  active
+                />
               </Box>
             )}
 

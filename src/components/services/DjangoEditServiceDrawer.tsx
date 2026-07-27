@@ -19,6 +19,7 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import { createFilterOptions } from "@mui/material/Autocomplete";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -30,11 +31,20 @@ import {
   SERVICE_CATEGORIES_ENABLED,
   SERVICE_CATEGORY_LABELS,
   SERVICE_CATEGORY_OPTIONS,
+  SERVICE_RELATED_PRODUCT_ENABLED,
   type Service,
   type ServiceCategory,
 } from "../../api/catalog";
+import { getProducts, type DjangoProduct } from "../../api/warehouse";
+import { formatKGS } from "../../utility/format";
 import { usePermissions } from "../../hooks/usePermissions";
 import type { RbacBranch } from "../../api/auth";
+
+// Поиск товара по названию, штрихкоду и цене (как в форме приёма).
+const productFilter = createFilterOptions<DjangoProduct>({
+  matchFrom: "any",
+  stringify: (p) => `${p.name} ${p.barcode} ${p.price}`,
+});
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -77,9 +87,35 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(record.imageUrl ?? null);
   const [removePhoto, setRemovePhoto] = React.useState(false);
   const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
+  const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+  const [productsLoading, setProductsLoading] = React.useState(false);
+  const [relatedProduct, setRelatedProduct] = React.useState<DjangoProduct | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+
+  // Загружаем товары и подставляем уже привязанный (по record.relatedProductId).
+  React.useEffect(() => {
+    if (!open || !SERVICE_RELATED_PRODUCT_ENABLED) return;
+    const ctrl = new AbortController();
+    setProductsLoading(true);
+    getProducts(ctrl.signal)
+      .then((list) => {
+        if (ctrl.signal.aborted) return;
+        const active = list.filter((p) => p.isActive);
+        setProducts(active);
+        setRelatedProduct(
+          record.relatedProductId != null
+            ? active.find((p) => p.id === record.relatedProductId) ?? null
+            : null,
+        );
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ctrl.signal.aborted) setProductsLoading(false);
+      });
+    return () => ctrl.abort();
+  }, [open, record.relatedProductId]);
 
   // Sync selectedBranches from record.branches when drawer opens.
   React.useEffect(() => {
@@ -104,6 +140,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setPhotoPreview(record.imageUrl ?? null);
       setRemovePhoto(false);
       setSelectedBranches([]);
+      setRelatedProduct(null);
       setBusy(false);
       setTouched(false);
       setSubmitError(null);
@@ -154,6 +191,9 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         isActive,
         branchIds: selectedBranches.map((b) => b.id),
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
+        ...(SERVICE_RELATED_PRODUCT_ENABLED
+          ? { relatedProductId: relatedProduct?.id ?? null }
+          : {}),
       });
       if (photoFile) {
         await uploadServiceImage(record.id, photoFile);
@@ -347,6 +387,43 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                     </MenuItem>
                   ))}
                 </TextField>
+              </Stack>
+            )}
+
+            {/* Сопутствующий товар (со склада) */}
+            {SERVICE_RELATED_PRODUCT_ENABLED && (
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  Сопутствующий товар
+                </Typography>
+                <Autocomplete
+                  options={products}
+                  loading={productsLoading}
+                  filterOptions={productFilter}
+                  value={relatedProduct}
+                  onChange={(_, v) => setRelatedProduct(v)}
+                  getOptionLabel={(p) => `${p.name} — ${formatKGS(p.price)}`}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  noOptionsText="Товары не найдены"
+                  disabled={busy}
+                  renderOption={(props, p) => (
+                    <li {...props} key={p.id}>
+                      <Stack>
+                        <Typography variant="body2">{p.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {formatKGS(p.price)} · остаток {p.stock} {p.unit}
+                        </Typography>
+                      </Stack>
+                    </li>
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Например: Гель для УЗИ"
+                      helperText="Подтягивается автоматически при выборе услуги; можно изменить или убрать"
+                    />
+                  )}
+                />
               </Stack>
             )}
 
