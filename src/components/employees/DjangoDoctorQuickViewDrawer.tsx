@@ -26,7 +26,7 @@ import {
 import { getServices, type Service } from "../../api/catalog";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { ORG_WIDE } from "../../api/scope";
-import { getStatusConfig, normalizeDjangoStatus } from "../../config/appointmentStatuses";
+import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
 
 dayjs.locale("ru");
 
@@ -245,7 +245,6 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
               ) : (
                 <Stack spacing={1.5}>
                   {appointments.map((a) => {
-                    const cfg = getStatusConfig(normalizeDjangoStatus(a.status));
                     const serviceNames = a.services
                       .map((sl) => sl.service?.name)
                       .filter(Boolean)
@@ -256,7 +255,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
                           <Typography variant="body2" fontWeight={600}>
                             {dayjs(a.scheduledAt).format("HH:mm DD.MM.YYYY")}
                           </Typography>
-                          <Chip label={cfg.label} size="small" variant="outlined" />
+                          <AppointmentStatusChips appointment={a} chipHeight={20} />
                         </Stack>
                         {a.patient?.fullName && (
                           <Typography variant="caption" color="text.secondary" display="block">

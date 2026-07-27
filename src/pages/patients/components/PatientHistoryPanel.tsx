@@ -1,7 +1,8 @@
 /**
  * PatientHistoryPanel — правая колонка «История приёмов» (Django mode).
  *   - фильтр Врачи / Процедуры (визуальный — Django appointments ещё без поля типа)
- *   - статус-чипы через getStatusChipSx (оригинальные цвета)
+ *   - статус приёма и оплаты — через общий AppointmentStatusChips (одна логика
+ *     со страницей «Приёмы», иначе оплаченный приём здесь выглядел «Ожидаем»)
  *   - кликабельные строки с датой, врачом, услугой, суммой, статусом
  */
 import React from "react";
@@ -20,12 +21,7 @@ import { AppCard, ListEmptyState, ListLoadingSkeleton, SegmentedTabs } from "../
 import { subtleBg } from "../../../theme/uiHelpers";
 import { formatKGS } from "../../../utility/format";
 import type { DjangoAppointment } from "../../../api/appointments";
-import {
-  getStatusConfig,
-  getStatusChipSx,
-  normalizeDjangoStatus,
-} from "../../../config/appointmentStatuses";
-import { PAYMENT_STATUS_LABELS, PAYMENT_STATUS_COLOR } from "../../appointments/DjangoPaymentDrawer";
+import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
 import { useT } from "../../../i18n/VerticalProvider";
 
 type FilterType = "all" | "doctor" | "procedure";
@@ -154,10 +150,6 @@ const PatientHistoryPanel: React.FC<Props> = ({
                   h.totalAmount && h.totalAmount !== "0.00" && h.totalAmount !== "0"
                     ? formatKGS(h.totalAmount)
                     : null;
-                const displayStatus = normalizeDjangoStatus(h.status);
-                const statusCfg = getStatusConfig(displayStatus);
-                const statusChipSx = getStatusChipSx(displayStatus);
-
                 return (
                   <Box
                     key={h.id}
@@ -204,7 +196,11 @@ const PatientHistoryPanel: React.FC<Props> = ({
                             {total}
                           </Typography>
                         )}
-                        <Chip label={statusCfg.label} icon={statusCfg.icon} size="small" sx={statusChipSx} />
+                        <AppointmentStatusChips
+                          appointment={h}
+                          direction="column"
+                          chipHeight={22}
+                        />
                         {hasConclusion(h) && (
                           <Chip
                             label={t("history.conclusionChip")}
@@ -213,15 +209,6 @@ const PatientHistoryPanel: React.FC<Props> = ({
                             color="info"
                             variant="outlined"
                             sx={{ height: 20, fontSize: "0.65rem", "& .MuiChip-icon": { fontSize: 14 } }}
-                          />
-                        )}
-                        {canViewFinance && h.paymentStatus && (
-                          <Chip
-                            label={PAYMENT_STATUS_LABELS[h.paymentStatus] ?? h.paymentStatus}
-                            size="small"
-                            color={PAYMENT_STATUS_COLOR[h.paymentStatus] ?? "default"}
-                            variant="outlined"
-                            sx={{ height: 20, fontSize: "0.65rem" }}
                           />
                         )}
                       </Stack>

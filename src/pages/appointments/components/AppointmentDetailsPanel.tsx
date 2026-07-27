@@ -52,7 +52,7 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { scheduleDateInfo } from "../../vaccinations/meta";
-import { getStatusConfig, getStatusChipSx } from "../../../config/appointmentStatuses";
+import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
@@ -311,21 +311,29 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     }
   }, [appt, onStartAppointment, activeEmployeeId, startBusy]);
 
-  // Статус «Оплачено безналом» — только карта, без наличных.
-  // Держим код статуса, а не метку: метка зависит от вертикали.
-  const displayStatus = React.useMemo(() => {
-    if (
-      (appt.status === "completed" || payStatus === "paid") &&
-      cardPaid > 0 &&
-      cashPaid === 0
-    ) {
-      return "paid_cashless";
-    }
-    return appt.status;
-  }, [appt.status, payStatus, cardPaid, cashPaid]);
+  /**
+   * Источник для чипов статуса: платёжные поля берём из журнала оплат
+   * (payQuery свежее полей приёма), а способы оплаты собираем из самих
+   * платежей — по ним компонент отличает безнал («Оплачено» синим) от
+   * наличных и рисует иконки способов.
+   */
+  const statusChipsSource = React.useMemo(() => {
+    const methodsFromPayments = [
+      cashPaid > 0 && "cash",
+      cardPaid > 0 && "card",
+      balancePaid > 0 && "balance",
+      bonusesPaid > 0 && "bonus",
+      insurancePaid > 0 && "insurance",
+    ].filter(Boolean) as string[];
 
-  const statusCfg = getStatusConfig(displayStatus);
-  const statusChipSx = getStatusChipSx(displayStatus);
+    return {
+      ...appt,
+      paymentStatus: payStatus,
+      paidTotal,
+      paymentMethods:
+        methodsFromPayments.length > 0 ? methodsFromPayments : appt.paymentMethods,
+    };
+  }, [appt, payStatus, paidTotal, cashPaid, cardPaid, balancePaid, bonusesPaid, insurancePaid]);
 
   // Services grouped by employee
   const servicesByEmployee = React.useMemo(() => {
@@ -664,14 +672,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               </Stack>
             </Stack>
 
-            {/* ── Status ── */}
+            {/* ── Status ──
+                Статус приёма + факт оплаты одним компонентом (как в списке
+                приёмов): бэк при оплате статус приёма не меняет, и раньше
+                открытый приём показывал врачу «Ожидаем» на оплачённом визите —
+                финансовый блок ниже врачу недоступен. Факт оплаты виден всем
+                ролям, суммы и действия остаются под правами. */}
             <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-              <Chip
-                label={statusCfg.label}
-                icon={statusCfg.icon}
-                size="small"
-                sx={statusChipSx}
-              />
+              <AppointmentStatusChips appointment={statusChipsSource} alwaysShowStatus />
               {/* bank confirmation double-check chip */}
               {(appt as any).hasBankConfirmation && (
                 <Tooltip title={t("details.paymentConfirmedByBank")}>

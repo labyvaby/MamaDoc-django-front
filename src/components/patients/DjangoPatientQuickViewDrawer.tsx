@@ -27,11 +27,7 @@ import "dayjs/locale/ru";
 import { getPatient, type DjangoPatient } from "../../api/patients";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { ORG_WIDE } from "../../api/scope";
-import {
-  getStatusConfig,
-  getStatusChipSx,
-  normalizeDjangoStatus,
-} from "../../config/appointmentStatuses";
+import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
 
 dayjs.locale("ru");
 
@@ -280,8 +276,6 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
               ) : recent.length > 0 ? (
                 <List disablePadding>
                   {recent.map((appt) => {
-                    const displayStatus = normalizeDjangoStatus(appt.status);
-                    const statusCfg = getStatusConfig(displayStatus);
                     return (
                       <ListItem
                         key={appt.id}
@@ -299,12 +293,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                               <Typography variant="body2" fontWeight={500}>
                                 {dayjs(appt.scheduledAt).format("D MMMM YYYY, HH:mm")}
                               </Typography>
-                              <Chip
-                                label={statusCfg.label}
-                                icon={statusCfg.icon}
-                                size="small"
-                                sx={{ ...getStatusChipSx(displayStatus), height: 20 }}
-                              />
+                              <AppointmentStatusChips appointment={appt} chipHeight={20} />
                             </Stack>
                           }
                           secondary={

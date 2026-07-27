@@ -1,8 +1,10 @@
 import React from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -40,13 +42,20 @@ import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import LinkOffOutlined from "@mui/icons-material/LinkOffOutlined";
 import SmartDisplayOutlined from "@mui/icons-material/SmartDisplayOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
+import FullscreenOutlined from "@mui/icons-material/FullscreenOutlined";
+import FullscreenExitOutlined from "@mui/icons-material/FullscreenExitOutlined";
+import LayersOutlined from "@mui/icons-material/LayersOutlined";
 
 import { getErrorMessage } from "../../api/client";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useCloseGuard } from "../../hooks/useCloseGuard";
+import { ConfirmDialog } from "../../components/ui";
 import {
   KNOWLEDGE_IMAGE_UPLOAD_ENABLED,
+  buildArticleTitle,
   isSafeImageUrl,
+  parseArticleSeries,
   parseYoutubeId,
   splitCover,
   uploadKnowledgeImage,
@@ -56,6 +65,7 @@ import {
   type KnowledgeArticlePayload,
   type KnowledgeCategory,
 } from "../../api/knowledge";
+import { useArticleDraft, type ArticleDraftInput } from "./useArticleDraft";
 
 /** Отбирает из FileList только картинки (paste/drop приносят и текст, и файлы). */
 const imageFiles = (list: FileList | null | undefined): File[] =>
@@ -66,6 +76,8 @@ interface ArticleEditorDrawerProps {
   /** null — создание новой статьи. */
   article: KnowledgeArticle | null;
   categories: KnowledgeCategory[];
+  /** Названия уже существующих серий — подсказка, чтобы не плодить дубли. */
+  knownSeries?: string[];
   busy: boolean;
   error: string | null;
   onClose: () => void;
@@ -82,11 +94,17 @@ interface ArticleEditorDrawerProps {
  * из буфера, drag&drop) закрыта флагом KNOWLEDGE_IMAGE_UPLOAD_ENABLED — на бэке
  * эндпоинта ещё нет; при выключенном флаге файл не вставляется (base64 бэк
  * молча вырежет), вместо этого показываем подсказку про ссылку.
+ *
+ * Серия: поля «Серия» и «Номер части» не уходят на бэк отдельно — из них
+ * собирается название статьи (см. buildArticleTitle). Так автор не обязан
+ * помнить формат «Обзор CRM. Часть 2 — Приёмы», а мы не рискуем разъехаться
+ * с разбором названия в ленте.
  */
 const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   open,
   article,
   categories,
+  knownSeries = [],
   busy,
   error,
   onClose,
@@ -98,6 +116,11 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   const [title, setTitle] = React.useState("");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
   const [isPublished, setIsPublished] = React.useState(false);
+  const [fullscreen, setFullscreen] = React.useState(false);
+  /** Статья — часть серии; поля серии показываются только при включённом. */
+  const [seriesOn, setSeriesOn] = React.useState(false);
+  const [seriesName, setSeriesName] = React.useState("");
+  const [partNumber, setPartNumber] = React.useState("");
   /** Обложка живёт в content отдельной картинкой — см. splitCover/withCover. */
   const [coverUrl, setCoverUrl] = React.useState("");
   /** Превью обложки не загрузилось (битая ссылка) — предупреждаем, но не блокируем. */
@@ -180,16 +203,123 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
 
   React.useEffect(() => {
     if (!open || !editor) return;
-    setTitle(article?.title ?? "");
+    // Название разбираем на серию и подзаголовок части — редактируются они
+    // раздельно, а на бэк уходит собранная обратно строка.
+    const series = article ? parseArticleSeries(article.title) : null;
+    setSeriesOn(Boolean(series));
+    setSeriesName(series?.name ?? "");
+    setPartNumber(series ? String(series.partNumber) : "");
+    setTitle(series ? series.partTitle ?? "" : article?.title ?? "");
     setCategoryId(article?.categoryId ?? "");
     setIsPublished(article?.isPublished ?? false);
     setUploadHint(false);
+    setFullscreen(false);
     // Обложку показываем отдельным полем, поэтому в редактор идёт тело без неё.
     const { coverUrl: cover, body } = splitCover(article?.content ?? "");
     setCoverUrl(cover ?? "");
     setCoverBroken(false);
     editor.commands.setContent(body);
+    initialFields.current = {
+      title: series ? series.partTitle ?? "" : article?.title ?? "",
+      categoryId: article?.categoryId ?? "",
+      isPublished: article?.isPublished ?? false,
+      coverUrl: cover ?? "",
+      seriesOn: Boolean(series),
+      seriesName: series?.name ?? "",
+      partNumber: series ? String(series.partNumber) : "",
+    };
+    setContentDirty(false);
   }, [open, article, editor]);
+
+  // ── Несохранённые правки ──────────────────────────────────────────────────
+  // Поля сравниваем со снимком на открытие, текст — по событию редактора:
+  // дёргать getHTML() на каждый рендер ради сравнения строк слишком дорого
+  // для длинной статьи.
+  const initialFields = React.useRef({
+    title: "",
+    categoryId: "" as number | "",
+    isPublished: false,
+    coverUrl: "",
+    seriesOn: false,
+    seriesName: "",
+    partNumber: "",
+  });
+  const [contentDirty, setContentDirty] = React.useState(false);
+
+  const fieldsDirty =
+    title !== initialFields.current.title ||
+    categoryId !== initialFields.current.categoryId ||
+    isPublished !== initialFields.current.isPublished ||
+    coverUrl !== initialFields.current.coverUrl ||
+    seriesOn !== initialFields.current.seriesOn ||
+    seriesName !== initialFields.current.seriesName ||
+    partNumber !== initialFields.current.partNumber;
+  const dirty = (contentDirty || fieldsDirty) && !busy;
+
+  // ── Черновик в браузере ───────────────────────────────────────────────────
+  const draft = useArticleDraft(article?.id ?? null, open);
+
+  // Пишем черновик на любое изменение формы. Содержимое берём из редактора
+  // по событию update — состояние React о наборе текста не знает.
+  const snapshot = React.useCallback(
+    (): ArticleDraftInput => ({
+      title,
+      content: editor?.getHTML() ?? "",
+      categoryId: categoryId === "" ? null : categoryId,
+      isPublished,
+      coverUrl,
+      seriesName: seriesOn ? seriesName : "",
+      partNumber: seriesOn ? partNumber : "",
+    }),
+    [title, editor, categoryId, isPublished, coverUrl, seriesOn, seriesName, partNumber],
+  );
+
+  // Зависимость — draft.save (стабильна по ключу), а не весь draft: объект
+  // хука новый на каждый рендер и переподписывал бы редактор впустую.
+  const saveDraft = draft.save;
+  React.useEffect(() => {
+    if (!open || !editor) return;
+    saveDraft(snapshot());
+    const onUpdate = () => {
+      setContentDirty(true);
+      saveDraft(snapshot());
+    };
+    editor.on("update", onUpdate);
+    return () => {
+      editor.off("update", onUpdate);
+    };
+  }, [open, editor, snapshot, saveDraft]);
+
+  const restoreDraft = () => {
+    const saved = draft.restorable;
+    if (!saved || !editor) return;
+    setTitle(saved.title);
+    setCategoryId(saved.categoryId ?? "");
+    setIsPublished(saved.isPublished);
+    setCoverUrl(saved.coverUrl);
+    setSeriesOn(Boolean(saved.seriesName));
+    setSeriesName(saved.seriesName);
+    setPartNumber(saved.partNumber);
+    editor.commands.setContent(saved.content);
+    draft.dismiss();
+  };
+
+  // Сохранилось на сервере — черновик больше не нужен. Признак успеха:
+  // busy сняли, а ошибку не показали (родитель ставит error именно при сбое).
+  const wasBusy = React.useRef(false);
+  const clearDraft = draft.clear;
+  React.useEffect(() => {
+    if (wasBusy.current && !busy && !error) clearDraft();
+    wasBusy.current = busy;
+  }, [busy, error, clearDraft]);
+
+  // Закрытие с несохранёнными правками — только по подтверждению (крестик,
+  // клик мимо дровера, кнопка «назад», закрытие вкладки).
+  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
+    isDirty: dirty,
+    isOpen: open,
+    onClose,
+  });
 
   // ── Ссылки ────────────────────────────────────────────────────────────────
   const [linkOpen, setLinkOpen] = React.useState(false);
@@ -288,8 +418,24 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
 
   // ── Сохранение ────────────────────────────────────────────────────────────
   const hasContent = !(editorState?.isEmpty ?? true);
+  const partNo = Number(partNumber);
+  const partValid = Number.isInteger(partNo) && partNo >= 1 && partNo <= 999;
+
+  /** Итоговое название: в серии оно собирается, вне серии — это само поле. */
+  const finalTitle = buildArticleTitle(
+    title,
+    seriesOn && seriesName.trim() && partValid
+      ? { name: seriesName, partNumber: partNo }
+      : null,
+  );
+
   const form = useFormValidation({
-    title: title.trim() ? null : "Введите заголовок статьи",
+    // В серии подзаголовок части необязателен: «Обзор CRM. Часть 3» —
+    // законное название, номер уже отличает часть от остальных.
+    title:
+      seriesOn || title.trim() ? null : "Введите заголовок статьи",
+    seriesName: !seriesOn || seriesName.trim() ? null : "Укажите название серии",
+    partNumber: !seriesOn || partValid ? null : "Номер части — целое число от 1 до 999",
     cover: coverValid ? null : "Нужна ссылка http(s) — файл с компьютера так не вставить",
     content: hasContent ? null : "Напишите текст статьи",
   });
@@ -298,7 +444,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     if (!editor) return;
     if (!form.validate()) return;
     onSubmit({
-      title: title.trim(),
+      title: finalTitle,
       // Обложка хранится внутри content первой картинкой title="cover".
       content: withCover(editor.getHTML(), coverUrl.trim() || null),
       categoryId: categoryId === "" ? null : categoryId,
@@ -334,32 +480,141 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
-      PaperProps={{ sx: { width: { xs: "100%", md: 720 } } }}
+      onClose={busy ? undefined : guardedClose}
+      PaperProps={{ sx: { width: fullscreen ? "100%" : { xs: "100%", md: 720 } } }}
     >
       <Stack sx={{ height: "100%" }}>
         {/* Шапка */}
-        <Stack direction="row" alignItems="center" sx={{ px: 2.5, py: 1.5 }}>
+        <Stack direction="row" alignItems="center" gap={0.5} sx={{ px: 2.5, py: 1.5 }}>
           <Typography variant="h6" fontWeight={600} sx={{ flex: 1 }}>
             {article ? "Изменить статью" : "Новая статья"}
           </Typography>
-          <IconButton onClick={onClose} disabled={busy}>
+          <Tooltip title={fullscreen ? "Свернуть" : "Развернуть на весь экран"}>
+            <IconButton
+              onClick={() => setFullscreen((v) => !v)}
+              sx={{ display: { xs: "none", md: "inline-flex" } }}
+            >
+              {fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+            </IconButton>
+          </Tooltip>
+          <IconButton onClick={guardedClose} disabled={busy}>
             <CloseOutlined />
           </IconButton>
         </Stack>
         <Divider />
 
         {/* Форма */}
-        <Stack spacing={2} sx={{ p: 2.5, flex: 1, minHeight: 0, overflow: "auto" }}>
+        <Stack
+          spacing={2}
+          sx={{
+            p: 2.5,
+            flex: 1,
+            minHeight: 0,
+            overflow: "auto",
+            // На весь экран колонка текста не растягивается на всю ширину —
+            // читать и править строку в 2000px невозможно.
+            ...(fullscreen && { maxWidth: 980, width: "100%", mx: "auto" }),
+          }}
+        >
+          {draft.restorable && (
+            <Alert
+              severity="info"
+              action={
+                <Stack direction="row" gap={0.5}>
+                  <Button size="small" onClick={restoreDraft}>
+                    Восстановить
+                  </Button>
+                  <Button size="small" color="inherit" onClick={draft.clear}>
+                    Удалить
+                  </Button>
+                </Stack>
+              }
+            >
+              Остался несохранённый черновик от{" "}
+              {new Date(draft.restorable.savedAt).toLocaleString("ru-RU", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Alert>
+          )}
+
+          {/* Серия: несколько статей, которые читают по порядку */}
+          <Stack
+            sx={{
+              borderRadius: 1.5,
+              border: `1px solid ${theme.palette.divider}`,
+              px: 1.5,
+              py: 1,
+            }}
+          >
+            <Stack direction="row" alignItems="center" gap={1}>
+              <LayersOutlined fontSize="small" sx={{ color: "text.secondary" }} />
+              <Typography variant="body2" sx={{ flex: 1 }}>
+                Часть серии
+              </Typography>
+              <Switch
+                size="small"
+                checked={seriesOn}
+                onChange={(e) => setSeriesOn(e.target.checked)}
+                disabled={busy}
+              />
+            </Stack>
+            {seriesOn && (
+              <Stack direction={{ xs: "column", sm: "row" }} gap={1.5} sx={{ mt: 1.5 }}>
+                <Autocomplete
+                  freeSolo
+                  options={knownSeries}
+                  value={seriesName}
+                  onInputChange={(_e, value) => setSeriesName(value)}
+                  disabled={busy}
+                  sx={{ flex: 1 }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Название серии"
+                      size="small"
+                      placeholder="Обзор CRM"
+                      {...form.field(
+                        "seriesName",
+                        "Общее для всех частей — выберите из списка, чтобы часть попала в ту же серию",
+                      )}
+                    />
+                  )}
+                />
+                <TextField
+                  label="Номер части"
+                  size="small"
+                  type="number"
+                  value={partNumber}
+                  onChange={(e) => setPartNumber(e.target.value)}
+                  disabled={busy}
+                  inputProps={{ min: 1, max: 999 }}
+                  sx={{ width: { xs: "100%", sm: 140 } }}
+                  {...form.field("partNumber")}
+                />
+              </Stack>
+            )}
+          </Stack>
+
           <TextField
-            label="Заголовок"
+            label={seriesOn ? "Заголовок части" : "Заголовок"}
             size="small"
             fullWidth
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             disabled={busy}
-            {...form.field("title")}
+            placeholder={seriesOn ? "Приёмы" : undefined}
+            {...form.field(
+              "title",
+              // Показываем итоговое название, только когда его уже есть из чего
+              // собрать — иначе подсказка висела бы пустыми кавычками.
+              seriesOn && seriesName.trim() && partValid
+                ? `Статья будет называться «${finalTitle}»`
+                : undefined,
+            )}
           />
           <Stack direction="row" gap={2} alignItems="center">
             <TextField
@@ -568,8 +823,16 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
         </Stack>
 
         <Divider />
-        <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ p: 2 }}>
-          <Button onClick={onClose} disabled={busy}>
+        <Stack direction="row" alignItems="center" gap={1} sx={{ p: 2 }}>
+          {dirty && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label="Черновик сохранён в браузере"
+              sx={{ borderRadius: "7px" }}
+            />
+          )}
+          <Button onClick={guardedClose} disabled={busy} sx={{ ml: "auto" }}>
             Отмена
           </Button>
           <Button
@@ -721,6 +984,15 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Закрыть без сохранения?"
+        message="Правки не отправлены на сервер. Черновик останется в этом браузере — при следующем открытии предложим его восстановить."
+        confirmText="Закрыть"
+        onConfirm={confirmClose}
+        onClose={cancelClose}
+      />
     </Drawer>
   );
 };

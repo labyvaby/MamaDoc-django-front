@@ -212,6 +212,157 @@ export function isSafeImageUrl(url: string): boolean {
   }
 }
 
+// ── Серии статей ──────────────────────────────────────────────────────────────
+
+/**
+ * Серия — несколько отдельных статей, которые читают по порядку («Обзор CRM.
+ * Часть 1 / 2 / 3»). Каждая часть остаётся самостоятельной статьёй со своей
+ * ссылкой; серия — только способ их связать.
+ *
+ * У бэка полей серии нет (тикет MamaDoc/backend_ticket_knowledge_series.md),
+ * поэтому связь читается из названия по соглашению
+ * «<Серия>. Часть N — <Подзаголовок>». Это не разметка, которую мы навязали:
+ * авторы и так называют части именно так, а редактор собирает такое название
+ * сам из полей «Серия» и «Номер части», чтобы формат не приходилось
+ * соблюдать вручную.
+ *
+ * ⚠ Пока источник — название, переименование статьи мимо нашего редактора
+ * (админка Django, другой клиент) разорвёт серию. Когда бэк отдаст
+ * seriesId/partNumber, меняется только parseArticleSeries — UI и вёрстка те же.
+ */
+export const KNOWLEDGE_SERIES_FROM_BACKEND = false;
+
+export interface ArticleSeriesRef {
+  /** Ключ серии — нормализованное имя (пока нет seriesId с бэка). */
+  key: string;
+  /** Имя серии в том виде, как его написал автор. */
+  name: string;
+  partNumber: number;
+  /** Подзаголовок части («Приёмы») или null, если автор его не задал. */
+  partTitle: string | null;
+}
+
+/**
+ * «<Серия><разделитель> Часть <N><разделитель> <Подзаголовок>».
+ * Разделитель перед «Часть» и подзаголовок необязательны, регистр не важен,
+ * скобочная форма «Обзор CRM (часть 2)» тоже понимается.
+ */
+const SERIES_TITLE_RE =
+  /^(.*?\S)\s*(?:[.,;:—–-]|\()?\s*часть\s+(\d{1,3})\b\s*\)?\s*(?:[.:—–-]+\s*(\S.*?))?\s*$/iu;
+
+/** Хвостовая пунктуация имени серии не должна плодить разные ключи. */
+const trimTail = (value: string): string => value.trim().replace(/[.,;:—–-]+$/, "").trim();
+
+const seriesKey = (name: string): string =>
+  trimTail(name).toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+
+/**
+ * Разбирает название статьи. null — обычная статья вне серии («Часть тела»
+ * без номера или «Часть 2» без имени серии сериями не считаются).
+ */
+export function parseArticleSeries(title: string): ArticleSeriesRef | null {
+  const m = SERIES_TITLE_RE.exec(title);
+  if (!m) return null;
+  const name = trimTail(m[1]);
+  const partNumber = Number(m[2]);
+  if (!name || !Number.isInteger(partNumber) || partNumber < 1) return null;
+  return { key: seriesKey(name), name, partNumber, partTitle: m[3]?.trim() || null };
+}
+
+/**
+ * Собирает название статьи из полей редактора — обратная операция к
+ * parseArticleSeries (buildArticleTitle → parseArticleSeries возвращает то же,
+ * из чего собрали; инвариант зафиксирован тестом).
+ */
+export function buildArticleTitle(
+  plainTitle: string,
+  series: { name: string; partNumber: number } | null,
+): string {
+  const title = plainTitle.trim();
+  if (!series) return title;
+  const name = trimTail(series.name);
+  if (!name) return title;
+  return `${name}. Часть ${series.partNumber}${title ? ` — ${title}` : ""}`;
+}
+
+export interface KnowledgeSeriesPart {
+  article: KnowledgeArticleListItem;
+  partNumber: number;
+  /** Подзаголовок части; если его нет — показываем название целиком. */
+  partTitle: string | null;
+}
+
+/** Подпись части: подзаголовок, если автор его задал, иначе просто номер. */
+export const partLabel = (part: KnowledgeSeriesPart): string =>
+  part.partTitle ?? `Часть ${part.partNumber}`;
+
+export interface KnowledgeSeriesGroup {
+  key: string;
+  name: string;
+  /** Части по возрастанию номера. */
+  parts: KnowledgeSeriesPart[];
+  /** Самая свежая правка среди частей — по ней серия занимает место в ленте. */
+  updatedAt: string;
+}
+
+export type KnowledgeFeedItem =
+  | { kind: "article"; key: string; article: KnowledgeArticleListItem }
+  | { kind: "series"; key: string; series: KnowledgeSeriesGroup };
+
+/** Минимум частей, при котором показываем серию, а не обычную статью. */
+const MIN_SERIES_PARTS = 2;
+
+/**
+ * Схлопывает части одной серии в один элемент ленты. Одинокая «Часть 1» —
+ * ещё не серия (автор мог только начать писать), поэтому показываем её
+ * обычной карточкой. Порядок ленты сохраняется: серия встаёт на место своей
+ * первой встреченной части, то есть сортировка бэка не ломается.
+ *
+ * ⚠ Части, не попавшие в загруженные страницы, в группу не войдут — серия
+ * покажет меньше частей, чем есть. Поэтому лента группирует по всем
+ * подгруженным страницам сразу, а не по одной.
+ */
+export function groupArticleFeed(articles: KnowledgeArticleListItem[]): KnowledgeFeedItem[] {
+  const groups = new Map<string, KnowledgeSeriesGroup>();
+  for (const article of articles) {
+    const ref = parseArticleSeries(article.title);
+    if (!ref) continue;
+    const group = groups.get(ref.key);
+    const part: KnowledgeSeriesPart = {
+      article,
+      partNumber: ref.partNumber,
+      partTitle: ref.partTitle,
+    };
+    if (group) {
+      group.parts.push(part);
+      if (article.updatedAt > group.updatedAt) group.updatedAt = article.updatedAt;
+    } else {
+      groups.set(ref.key, {
+        key: ref.key,
+        name: ref.name,
+        parts: [part],
+        updatedAt: article.updatedAt,
+      });
+    }
+  }
+
+  const emitted = new Set<string>();
+  const feed: KnowledgeFeedItem[] = [];
+  for (const article of articles) {
+    const ref = parseArticleSeries(article.title);
+    const group = ref ? groups.get(ref.key) : undefined;
+    if (!group || group.parts.length < MIN_SERIES_PARTS) {
+      feed.push({ kind: "article", key: `a${article.id}`, article });
+      continue;
+    }
+    if (emitted.has(group.key)) continue;
+    emitted.add(group.key);
+    group.parts.sort((a, b) => a.partNumber - b.partNumber || a.article.id - b.article.id);
+    feed.push({ kind: "series", key: `s${group.key}`, series: group });
+  }
+  return feed;
+}
+
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 let mockSeq = 800;
@@ -263,6 +414,43 @@ const mockArticles: MockArticle[] = [
       "<p>Чек-лист перед сменой:</p><ul><li>Проверить автоклав (журнал циклов).</li><li>Разложить инструменты по наборам.</li><li>Отметить в журнале стерилизации.</li></ul><p><i>Ответственная — старшая медсестра смены.</i></p>",
     createdAt: "2026-07-05T08:00:00Z",
     updatedAt: "2026-07-05T08:00:00Z",
+  },
+  // Серия из трёх частей — связаны через название (см. parseArticleSeries).
+  {
+    id: 14,
+    title: "Работа с кассой. Часть 1 — Открытие смены",
+    categoryId: 1,
+    categoryName: "Регистратура",
+    authorName: "Шаршебаев Автандил",
+    isPublished: true,
+    content:
+      "<p>Смену открывает администратор, который первым вышел на работу.</p><h2>Порядок действий</h2><ol><li>Включить ККМ и дождаться загрузки.</li><li>Пробить X-отчёт, сверить остаток с журналом.</li><li>Внести разменные деньги и записать сумму.</li></ol><p>Если остаток не сошёлся — не открывать смену и позвонить бухгалтеру.</p>",
+    createdAt: "2026-07-14T09:00:00Z",
+    updatedAt: "2026-07-14T09:00:00Z",
+  },
+  {
+    id: 15,
+    title: "Работа с кассой. Часть 2 — Приём оплаты",
+    categoryId: 1,
+    categoryName: "Регистратура",
+    authorName: "Шаршебаев Автандил",
+    isPublished: true,
+    content:
+      "<p>Оплата принимается после приёма, кроме процедур по прейскуранту.</p><h2>Наличные</h2><p>Пересчитать при пациенте, пробить чек, выдать сдачу вместе с чеком.</p><h2>Карта</h2><p>Сумма на терминале должна совпадать с суммой в системе до копейки.</p>",
+    createdAt: "2026-07-15T09:00:00Z",
+    updatedAt: "2026-07-16T11:00:00Z",
+  },
+  {
+    id: 16,
+    title: "Работа с кассой. Часть 3 — Закрытие смены и инкассация",
+    categoryId: 1,
+    categoryName: "Регистратура",
+    authorName: "Шаршебаев Автандил",
+    isPublished: true,
+    content:
+      "<p>Смена закрывается в день её открытия, переносить на завтра нельзя.</p><h2>Z-отчёт</h2><p>Снять Z-отчёт, подшить в журнал, расписаться.</p><h2>Инкассация</h2><p>Сумму сверх разменного фонда сдать старшему администратору под роспись.</p>",
+    createdAt: "2026-07-16T09:00:00Z",
+    updatedAt: "2026-07-17T08:00:00Z",
   },
   {
     id: 13,
