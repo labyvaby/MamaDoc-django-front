@@ -13,7 +13,9 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/CloseOutlined";
 import dayjs from "dayjs";
+import { useT } from "../../../i18n/VerticalProvider";
 
+// Названия месяцев — данные локали, не терминология вертикали (см. FreeSlotsView).
 export const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
@@ -56,6 +58,7 @@ const RegistryFilterDrawer: React.FC<Props> = ({
   availableYears,
   availableServices,
 }) => {
+  const { t } = useT("appointments");
   const [local, setLocal] = React.useState<RegistryFilters>(filters);
 
   React.useEffect(() => {
@@ -79,7 +82,7 @@ const RegistryFilterDrawer: React.FC<Props> = ({
       PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw" } }}
     >
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 2 }}>
-        <Typography variant="h6">Фильтры</Typography>
+        <Typography variant="h6">{t("registry.filters.title")}</Typography>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
@@ -99,7 +102,7 @@ const RegistryFilterDrawer: React.FC<Props> = ({
         <Stack spacing={3}>
           <TextField
             select
-            label="Год"
+            label={t("registry.filters.year")}
             value={local.year}
             onChange={(e) =>
               // При смене года месяц сбрасываем на «весь год», иначе остался бы
@@ -115,13 +118,13 @@ const RegistryFilterDrawer: React.FC<Props> = ({
 
           <TextField
             select
-            label="Месяц"
+            label={t("registry.filters.month")}
             value={local.month}
             onChange={(e) => setLocal((p) => ({ ...p, month: e.target.value }))}
             fullWidth
             SelectProps={{ displayEmpty: true }}
           >
-            <MenuItem value="">Весь год</MenuItem>
+            <MenuItem value="">{t("registry.filters.wholeYear")}</MenuItem>
             {months.map((m) => (
               <MenuItem key={m.value} value={m.value}>{MONTH_NAMES[m.monthIndex]}</MenuItem>
             ))}
@@ -132,9 +135,13 @@ const RegistryFilterDrawer: React.FC<Props> = ({
             value={local.serviceName}
             onChange={(_, v) => setLocal((p) => ({ ...p, serviceName: v }))}
             renderInput={(params) => (
-              <TextField {...params} label="Услуга" placeholder="Все услуги" />
+              <TextField
+                {...params}
+                label={t("registry.filters.service")}
+                placeholder={t("registry.filters.allServices")}
+              />
             )}
-            noOptionsText="Нет услуг за период"
+            noOptionsText={t("registry.filters.noServicesInPeriod")}
             isOptionEqualToValue={(option, value) => option === value}
           />
         </Stack>
@@ -150,7 +157,7 @@ const RegistryFilterDrawer: React.FC<Props> = ({
             onClose();
           }}
         >
-          Сбросить
+          {t("common:actions.reset")}
         </Button>
         <Button
           variant="contained"
@@ -160,7 +167,7 @@ const RegistryFilterDrawer: React.FC<Props> = ({
             onClose();
           }}
         >
-          Применить
+          {t("common:actions.apply")}
         </Button>
       </Box>
     </Drawer>

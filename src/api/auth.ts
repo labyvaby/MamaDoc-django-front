@@ -26,6 +26,12 @@ export type RbacOrganization = {
   logoUrl?: string | null;
   /** Цветовая палитра и тема организации */
   themeConfig?: Record<string, any> | null;
+  /** Вертикаль бизнеса — определяет терминологию интерфейса
+   *  («пациент» для клиники, «клиент» для салона красоты).
+   *  Опционально: бэкенд добавит поле в селектор /auth/me/ по тикету
+   *  MamaDoc/backend_ticket_organization_vertical.md; до этого поле
+   *  отсутствует и фронт работает по профилю clinic (DEFAULT_VERTICAL). */
+  vertical?: string | null;
 };
 
 export type RbacBranch = {

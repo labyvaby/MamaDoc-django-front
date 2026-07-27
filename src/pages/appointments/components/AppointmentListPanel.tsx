@@ -39,10 +39,12 @@ import {
   isSlotCovered,
 } from "./slotAvailability";
 import { formatKGS } from "../../../utility/format";
+import { useT } from "../../../i18n/VerticalProvider";
+import { agree } from "../../../i18n/formatters";
 import {
   getStatusConfig,
   getStatusChipSx,
-  normalizeDjangoStatus,
+  getStatusLabel,
 } from "../../../config/appointmentStatuses";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -109,16 +111,14 @@ function isGap(item: RenderItem): item is GapSlot {
 
 const GAP_THRESHOLD_MS = 30 * 60 * 1000;
 
-// ─── SMS-уведомления: маппинг тип → иконка/подпись/цвет (1-в-1 со старым фронтом) ─
-const NOTIF_CONFIG: Record<
-  string,
-  { label: string; Icon: React.ElementType; color: string }
-> = {
-  created_10m: { label: "Запись", Icon: SmsOutlined, color: "success.main" },
-  reminder_2h: { label: "Напомин.", Icon: AlarmOutlined, color: "info.main" },
-  rescheduled_10m: { label: "Перенос", Icon: EventRepeatOutlined, color: "warning.main" },
-  appointment_change: { label: "Изменение", Icon: EditCalendarOutlined, color: "warning.main" },
-  appointment_cancel: { label: "Отмена", Icon: EventBusyOutlined, color: "error.main" },
+// ─── SMS-уведомления: маппинг тип → иконка/цвет (1-в-1 со старым фронтом).
+// Подписи живут в словаре (appointments:notifications.*).
+const NOTIF_CONFIG: Record<string, { Icon: React.ElementType; color: string }> = {
+  created_10m: { Icon: SmsOutlined, color: "success.main" },
+  reminder_2h: { Icon: AlarmOutlined, color: "info.main" },
+  rescheduled_10m: { Icon: EventRepeatOutlined, color: "warning.main" },
+  appointment_change: { Icon: EditCalendarOutlined, color: "warning.main" },
+  appointment_cancel: { Icon: EventBusyOutlined, color: "error.main" },
 };
 
 // ─── DoctorStoryItem — Instagram-style аватар врача ──────────────────────────
@@ -198,7 +198,9 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, nickname, photo
 
 // ─── AddSlotButton — кнопка "Есть окно на HH:mm" ─────────────────────────────
 
-const AddSlotButton: React.FC<{ timeStr: string; onClick: () => void }> = ({ timeStr, onClick }) => (
+const AddSlotButton: React.FC<{ timeStr: string; onClick: () => void }> = ({ timeStr, onClick }) => {
+  const { t } = useT("appointments");
+  return (
   <Box
     onClick={onClick}
     sx={{
@@ -222,10 +224,11 @@ const AddSlotButton: React.FC<{ timeStr: string; onClick: () => void }> = ({ tim
   >
     <AddCircleOutline sx={{ fontSize: 18, mr: 1, opacity: 0.8 }} />
     <Typography variant="body2" fontWeight={600}>
-      Есть окно на {timeStr}
+      {t("list.freeSlotAt", { time: timeStr })}
     </Typography>
   </Box>
-);
+  );
+};
 
 // ─── AppointmentListPanel ─────────────────────────────────────────────────────
 
@@ -247,6 +250,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   groupEmployeeIds = null,
   dayShifts = null,
 }) => {
+  const { t, term } = useT("appointments");
   const theme = useTheme();
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
 
@@ -318,7 +322,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       if (names.length === 0) {
         // В процедурном кабинете приёмы без совпадения с медсёстрами не показываем.
         if (groupEmployeeIds) continue;
-        const key = "Без врача";
+        const key = t("list.noSpecialistGroup");
         if (!groups[key]) groups[key] = [];
         groups[key].push(appt);
       } else {
@@ -330,7 +334,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     }
 
     return groups;
-  }, [filteredItems, groupEmployeeIds]);
+  }, [filteredItems, groupEmployeeIds, t]);
 
   // ── Build render list per group: sort by time + insert gap slots ──────────
   const groupedItemsWithGaps = React.useMemo(() => {
@@ -481,7 +485,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         title={
           <Stack direction="column" gap={2} sx={{ width: "100%" }}>
             <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
-              Приемы ({titleDate})
+              {t("list.title", { date: titleDate })}
             </Typography>
 
             {!hideDoctorStrip && availableDoctors.length > 0 && (
@@ -529,14 +533,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                     }}
                   >
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      Все
+                      {t("filters.all")}
                     </Typography>
                   </Box>
                   <Typography
                     variant="caption"
                     sx={{ fontWeight: selectedDoctor === null ? 700 : 500, fontSize: "0.75rem" }}
                   >
-                    Все
+                    {t("filters.all")}
                   </Typography>
                 </Stack>
 
@@ -558,7 +562,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           </Stack>
         }
         action={
-          <IconButton aria-label="Фильтры" sx={{ display: "none" }}>
+          <IconButton aria-label={t("filters.button")} sx={{ display: "none" }}>
             <FilterListOutlined />
           </IconButton>
         }
@@ -581,14 +585,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       >
         {error ? (
           <Typography sx={{ p: 2 }} variant="body2" color="error">
-            Ошибка: {error}
+            {t("list.errorPrefix", { message: error })}
           </Typography>
         ) : groupEntries.length === 0 ? (
           <Typography
             sx={{ p: 2, color: loading ? "text.disabled" : "text.primary" }}
             variant="body2"
           >
-            {loading ? "Загрузка…" : "Нет записей"}
+            {loading ? t("list.loading") : t("list.empty")}
           </Typography>
         ) : (
           <Stack spacing={0}>
@@ -614,7 +618,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       {docName}
                     </Typography>
                     <Chip
-                      label={`${apptCount} приемов`}
+                      label={t("list.count", { count: apptCount })}
                       size="small"
                       variant="outlined"
                       sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper" }}
@@ -653,21 +657,21 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           sl.conclusionState === "completed",
                       );
 
-                      // Определяем статус для отображения
-                      const displayStatus = normalizeDjangoStatus(a.status);
+                      // Стиль чипа подбираем по коду статуса, а не по метке:
+                      // метка зависит от вертикали и ключом быть не может.
                       const isCardOnly =
                         (a.paymentMethods ?? []).length === 1 &&
                         a.paymentMethods?.[0] === "card";
                       const paymentStyleStatus =
                         a.paymentStatus === "paid" && isCardOnly
-                          ? "Оплачено безналом"
+                          ? "paid_cashless"
                           : a.paymentStatus === "paid"
-                          ? "Оплачено"
+                          ? "paid"
                           : a.paymentStatus === "partial"
-                          ? "Частично"
-                          : displayStatus;
+                          ? "partially_paid"
+                          : a.status;
 
-                      const statusCfg = getStatusConfig(displayStatus);
+                      const statusCfg = getStatusConfig(a.status);
                       // 100% скидка: оплат нет (paidTotal=0), но чек закрыт —
                       // показываем чип «Со скидкой» вместо статуса «Ожидаем»,
                       // иначе приём выглядит неоплаченным.
@@ -708,7 +712,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                             <Stack>
                               <Stack direction="row" alignItems="center" gap={0.5}>
                                 {a.isNight && (
-                                  <Tooltip title="Ночной">
+                                  <Tooltip title={t("list.night")}>
                                     <NightlightOutlined color="action" fontSize="small" />
                                   </Tooltip>
                                 )}
@@ -717,7 +721,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                 </Typography>
                               </Stack>
                               <Typography variant="body2" color="text.secondary">
-                                Пациент: {a.patient?.fullName ?? "—"}
+                                {t("list.patientLabel")} {a.patient?.fullName ?? "—"}
                               </Typography>
                               {a.patient?.phone && (
                                 <Typography variant="caption" color="text.disabled">
@@ -735,7 +739,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     label={statusCfg.label}
                                     icon={statusCfg.icon}
                                     size="small"
-                                    sx={getStatusChipSx(displayStatus)}
+                                    sx={getStatusChipSx(a.status)}
                                   />
                                 )}
 
@@ -760,9 +764,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                           <PaymentsOutlined sx={{ fontSize: 16 }} />
                                         )}
                                         <span>
-                                          {paymentStyleStatus === "Оплачено безналом"
-                                            ? "Оплачено"
-                                            : paymentStyleStatus}
+                                          {paymentStyleStatus === "paid_cashless"
+                                            ? t("list.paid")
+                                            : getStatusLabel(paymentStyleStatus)}
                                         </span>
                                       </Stack>
                                     }
@@ -777,9 +781,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     т.е. это всегда скидка 100%). */}
                                 {isDiscounted && (
                                   <Chip
-                                    label="Скидка 100%"
+                                    label={t("list.fullDiscount")}
                                     size="small"
-                                    sx={getStatusChipSx("Со скидкой")}
+                                    sx={getStatusChipSx("discounted")}
                                   />
                                 )}
 
@@ -787,12 +791,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     компанией; синий тинт, отличим от зелёного
                                     чипа оплаты в обеих темах. */}
                                 {(a.paymentMethods ?? []).includes("insurance") && (
-                                    <Tooltip title="Оплата страховкой">
+                                    <Tooltip title={t("list.insurancePayment")}>
                                       <Chip
                                         label={
                                           <Stack direction="row" alignItems="center" gap={0.5}>
                                             <HealthAndSafetyOutlined sx={{ fontSize: 14 }} />
-                                            <span>Страховка</span>
+                                            <span>{t("list.insurance")}</span>
                                           </Stack>
                                         }
                                         size="small"
@@ -814,9 +818,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   )}
 
                                 {/* Иконка принтера = есть заключение (приём
-                                    фактически завершён врачом). */}
+                                    фактически завершён врачом). Род термина
+                                    меняется по вертикали: «Заключение готово»
+                                    / «Отчёт готов» — отсюда agree(). */}
                                 {hasConclusion && (
-                                  <Tooltip title="Заключение готово">
+                                  <Tooltip
+                                    title={`${t("list.conclusionSubject")} ${agree(
+                                      term.conclusion.gender,
+                                      ["готов", "готова", "готово"],
+                                    )}`}
+                                  >
                                     <PrintOutlinedIcon
                                       sx={{ fontSize: 20, color: "action.active", opacity: 0.8 }}
                                     />
@@ -827,12 +838,17 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     старым фронтом (home/AppointmentsList): по одной
                                     на тип, с типом и временем в tooltip. */}
                                 {notificationsMap?.has(a.id) &&
-                                  [...notificationsMap.get(a.id)!.entries()].map(([t, sentAt]) => {
-                                    const cfg =
-                                      NOTIF_CONFIG[t] ?? { label: t, Icon: SmsOutlined, color: "success.main" };
+                                  [...notificationsMap.get(a.id)!.entries()].map(([notifType, sentAt]) => {
+                                    const cfg = NOTIF_CONFIG[notifType] ?? {
+                                      Icon: SmsOutlined,
+                                      color: "success.main",
+                                    };
+                                    const label = t(`notifications.${notifType}`, {
+                                      defaultValue: notifType,
+                                    });
                                     const time = sentAt ? dayjs(sentAt).format("DD.MM HH:mm") : "";
                                     return (
-                                      <Tooltip key={t} title={`SMS: ${cfg.label}${time ? ` · ${time}` : ""}`}>
+                                      <Tooltip key={notifType} title={`SMS: ${label}${time ? ` · ${time}` : ""}`}>
                                         <cfg.Icon sx={{ fontSize: 16, color: cfg.color, opacity: 0.9 }} />
                                       </Tooltip>
                                     );
@@ -848,11 +864,11 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   color="text.secondary"
                                   sx={{ mt: 0.5 }}
                                 >
-                                  Итого: {formatKGS(totalAmount)}
+                                  {t("list.total")} {formatKGS(totalAmount)}
                                   {/* Скидка видна и при частичной (чек оплачен
                                       с дисконтом — чип этого не показывает). */}
                                   {discountAmount > 0 &&
-                                    ` · скидка ${formatKGS(discountAmount)}`}
+                                    t("list.discountSuffix", { amount: formatKGS(discountAmount) })}
                                 </Typography>
                               )}
 

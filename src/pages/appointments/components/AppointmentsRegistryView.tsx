@@ -52,6 +52,7 @@ import RegistryFilterDrawer, {
   type RegistryFilters,
   defaultRegistryFilters,
 } from "./RegistryFilterDrawer";
+import { useT } from "../../../i18n/VerticalProvider";
 
 type PaymentFilter = "all" | PaymentStatus;
 
@@ -62,17 +63,16 @@ type PaymentFilter = "all" | PaymentStatus;
  */
 const PAYMENT_CHIPS: {
   value: PaymentFilter;
-  label: string;
   tone: "success" | "info" | "warning" | "error" | null;
   /** Показывать чип, только когда есть такие записи (редкие статусы). */
   onlyIfPresent?: boolean;
 }[] = [
-  { value: "all", label: "Все", tone: null },
-  { value: "paid", label: "Оплачено", tone: "success" },
-  { value: "discounted", label: "Со скидкой", tone: "info" },
-  { value: "partial", label: "Долг", tone: "warning" },
-  { value: "unpaid", label: "Не оплачено", tone: "error" },
-  { value: "refunded", label: "Возврат", tone: null, onlyIfPresent: true },
+  { value: "all", tone: null },
+  { value: "paid", tone: "success" },
+  { value: "discounted", tone: "info" },
+  { value: "partial", tone: "warning" },
+  { value: "unpaid", tone: "error" },
+  { value: "refunded", tone: null, onlyIfPresent: true },
 ];
 
 type Props = {
@@ -107,6 +107,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   groupEmployeeIds = null,
   extraLoading = false,
 }) => {
+  const { t } = useT("appointments");
   usePageTitle(pageTitle);
   const { can } = useCanChecker();
   const { open: notify } = useNotification();
@@ -235,7 +236,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
 
   const periodLabel = filters.month
     ? `${MONTH_NAMES[dayjs(filters.month).month()]} ${filters.year}`
-    : `${filters.year} · весь год`;
+    : t("registry.wholeYearLabel", { year: filters.year });
 
   const appliedFilterChips: { key: string; label: string; clear: () => void }[] = [
     ...(!isPeriodDefault
@@ -312,7 +313,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
         p: 2,
       }}
     >
-      <Typography align="center">Выберите запись для просмотра деталей</Typography>
+      <Typography align="center">{t("registry.noSelection")}</Typography>
     </Box>
   );
 
@@ -380,7 +381,14 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                 sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", gap: 1 }}
               >
                 <Typography variant="subtitle2" fontWeight={600}>
-                  {listLabel} ({isFiltered ? `${doctorFilteredCount} из ${baseHistory.length}` : baseHistory.length})
+                  {listLabel} (
+                  {isFiltered
+                    ? t("registry.filteredCount", {
+                        shown: doctorFilteredCount,
+                        total: baseHistory.length,
+                      })
+                    : baseHistory.length}
+                  )
                 </Typography>
                 <Badge badgeContent={activeFilterCount} color="primary">
                   <Button
@@ -390,7 +398,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                     onClick={() => setFilterDrawerOpen(true)}
                     sx={{ textTransform: "none" }}
                   >
-                    Фильтры
+                    {t("registry.filtersButton")}
                   </Button>
                 </Badge>
               </Stack>
@@ -418,7 +426,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                       size="small"
                       clickable
                       onClick={() => setPaymentFilter(o.value)}
-                      label={`${o.label} · ${count}`}
+                      label={`${t(`registry.payFilter.${o.value}`)} · ${count}`}
                       sx={(t) => ({
                         height: 26,
                         borderRadius: "8px",

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Aximo">
+  <style>
+    .bg { fill: #159c91; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #18b7aa; }
+    }
+  </style>
+  <rect class="bg" x="3" y="3" width="42" height="42" rx="12"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 35 24 12l11 23M17.4 27h13.2" stroke-width="3.4"/>
+    <path d="M8 22c4.5-7.5 12.2-10.7 20-8.5 5.3 1.5 9.6 5 12.5 10" stroke-width="1.7" opacity=".5"/>
+  </g>
+</svg>

@@ -34,6 +34,7 @@ import {
 } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── AddCategoryDialog ──────────────────────────────────────────────────────────
 
@@ -44,13 +45,10 @@ type AddDialogProps = {
   onCreated: () => void;
 };
 
-const KIND_OPTIONS: { value: ExpenseCategoryKind; label: string; description: string }[] = [
-  { value: "general", label: "Обычная", description: "Общий расход организации" },
-  { value: "advance", label: "Аванс сотруднику", description: "Привязывается к месяцу расхода" },
-  { value: "salary", label: "Заработная плата", description: "Привязывается к предыдущему месяцу" },
-];
+const KIND_KEYS: ExpenseCategoryKind[] = ["general", "advance", "salary"];
 
 const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizationId, onCreated }) => {
+  const { t } = useT("settings");
   const [name, setName] = React.useState("");
   const [kind, setKind] = React.useState<ExpenseCategoryKind>("general");
   const [busy, setBusy] = React.useState(false);
@@ -62,7 +60,7 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
 
   const handleSubmit = async () => {
     const trimmed = name.trim();
-    if (trimmed.length < 2) { setError("Название должно содержать минимум 2 символа"); return; }
+    if (trimmed.length < 2) { setError(t("expenseCategories.dialog.nameTooShort")); return; }
     setBusy(true);
     setError(null);
     try {
@@ -82,11 +80,11 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Добавить категорию</DialogTitle>
+      <DialogTitle>{t("expenseCategories.dialog.title")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название категории *"
+            label={t("expenseCategories.dialog.nameLabel")}
             size="small"
             fullWidth
             autoFocus
@@ -98,18 +96,18 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
           />
           <TextField
             select
-            label="Тип категории"
+            label={t("expenseCategories.dialog.kindLabel")}
             size="small"
             fullWidth
             value={kind}
             onChange={(e) => setKind(e.target.value as ExpenseCategoryKind)}
             disabled={busy}
           >
-            {KIND_OPTIONS.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
+            {KIND_KEYS.map((key) => (
+              <MenuItem key={key} value={key}>
                 <Stack>
-                  <Typography variant="body2">{opt.label}</Typography>
-                  <Typography variant="caption" color="text.secondary">{opt.description}</Typography>
+                  <Typography variant="body2">{t(`expenseCategories.kindOptions.${key}.label`)}</Typography>
+                  <Typography variant="caption" color="text.secondary">{t(`expenseCategories.kindOptions.${key}.description`)}</Typography>
                 </Stack>
               </MenuItem>
             ))}
@@ -118,14 +116,14 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>Отмена</Button>
+        <Button onClick={onClose} disabled={busy}>{t("common:actions.cancel")}</Button>
         <Button
           variant="contained"
           onClick={handleSubmit}
           disabled={busy || name.trim().length < 2}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : "Добавить"}
+          {busy ? t("common:state.saving") : t("common:actions.add")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -135,7 +133,8 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
 // ── Главный компонент ──────────────────────────────────────────────────────────
 
 const ExpenseCategoriesSettingsPage: React.FC = () => {
-  usePageTitle("Категории расходов");
+  const { t } = useT("settings");
+  usePageTitle(t("expenseCategories.title"));
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = React.useState(false);
@@ -174,10 +173,10 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Категории расходов
+              {t("expenseCategories.title")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Категории используются при создании расходов.
+              {t("expenseCategories.description")}
             </Typography>
           </Box>
           <Button
@@ -187,14 +186,14 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
             onClick={() => setAddOpen(true)}
             disabled={needsOrg || permLoading}
           >
-            Добавить категорию
+            {t("expenseCategories.addButton")}
           </Button>
         </Stack>
 
         {/* Требуется выбор организации */}
         {needsOrg && (
           <Alert severity="info">
-            Выберите организацию в контексте, чтобы управлять категориями расходов.
+            {t("expenseCategories.needsOrg")}
           </Alert>
         )}
 
@@ -216,7 +215,7 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
         {!categoriesQuery.isLoading && !needsOrg && categories.length === 0 && !categoriesQuery.error && (
           <Box sx={{ py: 6, textAlign: "center" }}>
             <Typography variant="body2" color="text.disabled">
-              Категорий пока нет
+              {t("expenseCategories.empty")}
             </Typography>
           </Box>
         )}
@@ -227,9 +226,9 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Тип</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Статус</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.name")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.kind")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.status")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -238,12 +237,12 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                     <TableCell>{cat.name}</TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {cat.kind === "general" ? "Обычная" : cat.kind === "advance" ? "Аванс" : "Зарплата"}
+                        {t(`expenseCategories.kindShort.${cat.kind}`)}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={cat.isActive ? "Активна" : "Неактивна"}
+                        label={cat.isActive ? t("expenseCategories.status.active") : t("expenseCategories.status.inactive")}
                         size="small"
                         color={cat.isActive ? "success" : "default"}
                         variant="outlined"

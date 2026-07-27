@@ -835,8 +835,8 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         selected={isActive}
         sx={{
           borderRadius: "10px",
-          my: 0,
-          py: 0.5,
+          my: theme.appLayout.sidebar.itemGap,
+          py: theme.appLayout.sidebar.itemPaddingY,
           px: 1.4,
           color: (theme) => (isActive ? theme.palette.primary.onSurface : undefined),
           '& .MuiListItemIcon-root': {

@@ -38,17 +38,7 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { parseBackendError } from "../../../api/appointments";
-
-// ── Transaction type labels ────────────────────────────────────────────────────
-
-const TX_LABELS: Record<BalanceTransactionType, string> = {
-  top_up: "Пополнение",
-  deduct: "Списание",
-  bonus_accrual: "Начисление бонусов",
-  bonus_redeem: "Списание бонусов",
-  bonus_refund: "Возврат бонусов",
-  correction: "Коррекция",
-};
+import { useT } from "../../../i18n/VerticalProvider";
 
 const TX_COLOR: Record<BalanceTransactionType, string> = {
   top_up: "success.main",
@@ -77,6 +67,7 @@ type Props = {
 // ── History tab ───────────────────────────────────────────────────────────────
 
 const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
+  const { t } = useT("patients");
   const [page, setPage] = React.useState(1);
 
   const txQuery = useQuery({
@@ -117,7 +108,7 @@ const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
   if (results.length === 0) {
     return (
       <Stack alignItems="center" py={4}>
-        <Typography variant="body2" color="text.disabled">Операций пока нет</Typography>
+        <Typography variant="body2" color="text.disabled">{t("balance.empty")}</Typography>
       </Stack>
     );
   }
@@ -144,15 +135,15 @@ const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
                 {/* left */}
                 <Stack spacing={0.25} sx={{ minWidth: 0, flex: 1, pr: 1 }}>
                   <Typography variant="body2" fontWeight={600}>
-                    {TX_LABELS[tx.transactionType] ?? tx.transactionType}
+                    {t(`common:balanceTx.${tx.transactionType}`, { defaultValue: tx.transactionType })}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {fmt(tx.createdAt)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {tx.createdByName ?? "Система"}
+                    {tx.createdByName ?? t("balance.system")}
                     {" · "}
-                    {tx.branchName ?? "Без филиала"}
+                    {tx.branchName ?? t("balance.noBranch")}
                   </Typography>
                   {tx.comment && (
                     <Typography
@@ -165,12 +156,12 @@ const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
                   )}
                   {tx.appointmentId && (
                     <Typography variant="caption" color="text.disabled">
-                      Приём #{tx.appointmentId}
+                      {t("balance.visitRef", { id: tx.appointmentId })}
                     </Typography>
                   )}
                   {tx.paymentId && (
                     <Typography variant="caption" color="text.disabled">
-                      Платёж #{tx.paymentId}
+                      {t("balance.paymentRef", { id: tx.paymentId })}
                     </Typography>
                   )}
                 </Stack>
@@ -179,20 +170,20 @@ const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
                 <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
                   {amountNum !== 0 && (
                     <Typography variant="body2" fontWeight={700} color={color}>
-                      {amountNum > 0 ? "+" : ""}{tx.amount} с
+                      {amountNum > 0 ? "+" : ""}{tx.amount} {t("balance.currencyShort")}
                     </Typography>
                   )}
                   {bonusNum !== 0 && (
                     <Typography variant="caption" color={color}>
-                      бонусы {bonusNum > 0 ? "+" : ""}{tx.bonusesAmount} с
+                      {t("balance.bonusesPrefix")} {bonusNum > 0 ? "+" : ""}{tx.bonusesAmount} {t("balance.currencyShort")}
                     </Typography>
                   )}
                   <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem" }}>
-                    баланс {tx.balanceBefore} → {tx.balanceAfter} с
+                    {t("balance.balancePrefix")} {tx.balanceBefore} → {tx.balanceAfter} {t("balance.currencyShort")}
                   </Typography>
                   {bonusNum !== 0 && (
                     <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem" }}>
-                      бонусы {tx.bonusesBefore} → {tx.bonusesAfter} с
+                      {t("balance.bonusesPrefix")} {tx.bonusesBefore} → {tx.bonusesAfter} {t("balance.currencyShort")}
                     </Typography>
                   )}
                 </Stack>
@@ -212,10 +203,14 @@ const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
               disabled={!hasPrev || txQuery.isFetching}
               onClick={() => setPage((p) => p - 1)}
             >
-              Назад
+              {t("balance.prev")}
             </Button>
             <Typography variant="caption" color="text.secondary">
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, count)} из {count}
+              {t("balance.pageRange", {
+                from: (page - 1) * PAGE_SIZE + 1,
+                to: Math.min(page * PAGE_SIZE, count),
+                total: count,
+              })}
             </Typography>
             <Button
               size="small"
@@ -223,7 +218,7 @@ const HistoryTab: React.FC<{ patientId: number }> = ({ patientId }) => {
               disabled={!hasNext || txQuery.isFetching}
               onClick={() => setPage((p) => p + 1)}
             >
-              Далее
+              {t("balance.next")}
             </Button>
           </Stack>
         </Box>
@@ -242,6 +237,7 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
   branchId,
   onSuccess,
 }) => {
+  const { t } = useT("patients");
   const queryClient = useQueryClient();
   const [tab, setTab] = React.useState(0);
   const [type, setType] = React.useState<TopUpType>("balance");
@@ -268,7 +264,7 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
     setSuccess(false);
     const parsed = parseFloat(amount.replace(",", "."));
     if (!amount || isNaN(parsed) || parsed === 0) {
-      setError("Введите корректную сумму");
+      setError(t("balance.invalidAmount"));
       return;
     }
     if (!patientId) return;
@@ -310,7 +306,7 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
         <Stack direction="row" alignItems="center" gap={1.25}>
           <AccountBalanceWalletOutlined color="primary" />
           <Box>
-            <Typography variant="h6" sx={{ lineHeight: 1.2 }}>Баланс</Typography>
+            <Typography variant="h6" sx={{ lineHeight: 1.2 }}>{t("balance.title")}</Typography>
             <Typography variant="caption" color="text.secondary">{patientFio}</Typography>
           </Box>
         </Stack>
@@ -327,8 +323,8 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
           sx={{ px: 3 }}
           variant="fullWidth"
         >
-          <Tab label="Пополнение" />
-          <Tab label="История" disabled={!patientId} />
+          <Tab label={t("balance.tabTopUp")} />
+          <Tab label={t("balance.tabHistory")} disabled={!patientId} />
         </Tabs>
         <Divider />
       </Box>
@@ -339,7 +335,7 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
           <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5 }}>
             <Stack spacing={3}>
               <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>Тип пополнения</Typography>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>{t("balance.typeLabel")}</Typography>
                 <ToggleButtonGroup
                   value={type}
                   exclusive
@@ -347,18 +343,18 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
                   fullWidth
                   size="small"
                 >
-                  <ToggleButton value="balance">Баланс</ToggleButton>
-                  <ToggleButton value="bonuses">Бонусы</ToggleButton>
+                  <ToggleButton value="balance">{t("balance.typeBalance")}</ToggleButton>
+                  <ToggleButton value="bonuses">{t("balance.typeBonuses")}</ToggleButton>
                 </ToggleButtonGroup>
               </Box>
 
               <TextField
-                label="Сумма (отрицательная — списание)"
+                label={t("balance.amountLabel")}
                 value={amount}
                 onChange={(e) => { setError(null); setSuccess(false); setAmount(e.target.value); }}
                 type="number"
                 inputProps={{ step: "any" }}
-                InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
+                InputProps={{ endAdornment: <InputAdornment position="end">{t("balance.currency")}</InputAdornment> }}
                 fullWidth
                 size="small"
                 error={!!error}
@@ -367,32 +363,36 @@ const BalanceTopUpDrawer: React.FC<Props> = ({
               />
 
               <TextField
-                label="Комментарий"
+                label={t("balance.commentLabel")}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 fullWidth
                 size="small"
                 multiline
                 minRows={2}
-                placeholder="Необязательно"
+                placeholder={t("balance.commentPlaceholder")}
                 disabled={submitting}
               />
 
-              {success && <Alert severity="success">Счёт успешно пополнен!</Alert>}
+              {success && <Alert severity="success">{t("balance.success")}</Alert>}
             </Stack>
           </Box>
 
           <Divider />
           <Box sx={{ px: 3, py: 2, flexShrink: 0 }}>
             <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-              <Button variant="outlined" onClick={onClose} disabled={submitting}>Отмена</Button>
+              <Button variant="outlined" onClick={onClose} disabled={submitting}>{t("balance.cancel")}</Button>
               <Button
                 variant="contained"
                 onClick={handleSubmit}
                 disabled={submitting || !amount}
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : undefined}
               >
-                {submitting ? "Сохранение…" : parseFloat(amount.replace(",", ".")) < 0 ? "Списать" : "Пополнить"}
+                {submitting
+                  ? t("balance.submitting")
+                  : parseFloat(amount.replace(",", ".")) < 0
+                  ? t("balance.submitDeduct")
+                  : t("balance.submitTopUp")}
               </Button>
             </Stack>
           </Box>

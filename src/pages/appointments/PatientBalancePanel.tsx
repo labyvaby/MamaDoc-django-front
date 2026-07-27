@@ -30,17 +30,14 @@ import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../api/queryKeys";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
 
 // ── Transaction type labels ────────────────────────────────────────────────────
 
-const TX_LABELS: Record<BalanceTransactionType, string> = {
-  top_up: "Пополнение",
-  deduct: "Списание",
-  bonus_accrual: "Начисление бонусов",
-  bonus_redeem: "Списание бонусов",
-  bonus_refund: "Возврат бонусов",
-  correction: "Коррекция",
-};
+/** Подпись операции баланса — из общего словаря (common:balanceTx). */
+const txLabel = (type: BalanceTransactionType | string): string =>
+  tt(`common:balanceTx.${type}`, { defaultValue: String(type) });
 
 /** true, если ошибка запроса — 403/404 (нет доступа / нет кошелька). */
 function isAccessDeniedStatus(err: unknown): boolean {
@@ -64,6 +61,7 @@ type PatientBalancePanelProps = {
 const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
   patientId,
 }) => {
+  const { t } = useT("appointments");
   const queryClient = useQueryClient();
   const canManageFinance = useCan("finance.manage");
 
@@ -133,7 +131,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
     setFormError(null);
     const amount = parseFloat(amountStr.replace(",", "."));
     if (!amountStr || isNaN(amount) || amount <= 0) {
-      setFormError("Введите корректную сумму");
+      setFormError(t("balancePanel.invalidAmount"));
       return;
     }
     const bonuses = parseFloat(bonusesStr.replace(",", "."));
@@ -168,7 +166,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
           sx={{ color: "text.secondary" }}
         />
         <Typography variant="body2" fontWeight={600} color="text.secondary">
-          Баланс пациента
+          {t("balancePanel.title")}
         </Typography>
         {balanceQuery.isFetching && <CircularProgress size={12} />}
       </Stack>
@@ -189,24 +187,24 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
         <Stack spacing={1}>
           {isDebt && (
             <Alert severity="error" sx={{ py: 0.25 }}>
-              Задолженность: {Math.abs(balanceNum).toFixed(2)} с
+              {t("balancePanel.debt", { amount: Math.abs(balanceNum).toFixed(2) })}
             </Alert>
           )}
           <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">Баланс</Typography>
+            <Typography variant="body2" color="text.secondary">{t("balancePanel.balance")}</Typography>
             <Typography
               variant="body2"
               fontWeight={isDebt ? 700 : 600}
               color={isDebt ? "error.main" : "text.primary"}
             >
-              {balance.balance} с
+              {t("common:currency.amountShort", { amount: balance.balance })}
             </Typography>
           </Stack>
           {parseFloat(balance.bonuses) > 0 && (
             <Stack direction="row" justifyContent="space-between">
-              <Typography variant="body2" color="text.secondary">Бонусы</Typography>
+              <Typography variant="body2" color="text.secondary">{t("balancePanel.bonuses")}</Typography>
               <Typography variant="body2" fontWeight={500} color="success.main">
-                {balance.bonuses} с
+                {t("common:currency.amountShort", { amount: balance.bonuses })}
               </Typography>
             </Stack>
           )}
@@ -223,16 +221,16 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
               onClick={() => setTopUpOpen(true)}
               sx={{ textTransform: "none" }}
             >
-              Пополнить
+              {t("balancePanel.topUp")}
             </Button>
           ) : (
             <Stack spacing={1.25} mt={0.5}>
               <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
-                Пополнение баланса
+                {t("balancePanel.topUpTitle")}
               </Typography>
 
               <TextField
-                label="Сумма"
+                label={t("balancePanel.amount")}
                 size="small"
                 value={amountStr}
                 onChange={(e) => {
@@ -241,27 +239,27 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                 }}
                 inputProps={{ inputMode: "decimal" }}
                 InputProps={{
-                  endAdornment: <InputAdornment position="end">с</InputAdornment>,
+                  endAdornment: <InputAdornment position="end">{t("balancePanel.currency")}</InputAdornment>,
                 }}
                 fullWidth
                 disabled={topUpMutation.isPending}
               />
 
               <TextField
-                label="Бонусы"
+                label={t("balancePanel.bonuses")}
                 size="small"
                 value={bonusesStr}
                 onChange={(e) => setBonusesStr(e.target.value)}
                 inputProps={{ inputMode: "decimal" }}
                 InputProps={{
-                  endAdornment: <InputAdornment position="end">с</InputAdornment>,
+                  endAdornment: <InputAdornment position="end">{t("balancePanel.currency")}</InputAdornment>,
                 }}
                 fullWidth
                 disabled={topUpMutation.isPending}
               />
 
               <TextField
-                label="Комментарий"
+                label={t("balancePanel.comment")}
                 size="small"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -281,7 +279,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                   disabled={topUpMutation.isPending}
                   fullWidth
                 >
-                  Отмена
+                  {t("balancePanel.cancel")}
                 </Button>
                 <Button
                   size="small"
@@ -291,7 +289,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                   startIcon={topUpMutation.isPending ? <CircularProgress size={14} /> : undefined}
                   fullWidth
                 >
-                  Пополнить
+                  {t("balancePanel.topUp")}
                 </Button>
               </Stack>
             </Stack>
@@ -302,7 +300,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
       {/* Transactions toggle — виден только когда есть хоть одна операция */}
       {balance && hasHistory && (
         <Box mt={1.5}>
-          <Tooltip title={txExpanded ? "Скрыть историю" : "История операций"}>
+          <Tooltip title={txExpanded ? t("balancePanel.hideHistory") : t("balancePanel.showHistory")}>
             <Button
               size="small"
               variant="text"
@@ -310,7 +308,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
               endIcon={txExpanded ? <ExpandLessOutlined fontSize="small" /> : <ExpandMoreOutlined fontSize="small" />}
               sx={{ textTransform: "none", color: "text.secondary", px: 0 }}
             >
-              История
+              {t("balancePanel.history")}
             </Button>
           </Tooltip>
 
@@ -332,7 +330,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                 >
                   <Stack spacing={0}>
                     <Typography variant="caption" fontWeight={500}>
-                      {TX_LABELS[tx.transactionType] ?? tx.transactionType}
+                      {txLabel(tx.transactionType)}
                     </Typography>
                     {tx.comment && (
                       <Typography variant="caption" color="text.disabled" noWrap sx={{ maxWidth: 160 }}>
@@ -346,12 +344,12 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
                   <Stack alignItems="flex-end" spacing={0}>
                     {parseFloat(tx.amount) !== 0 && (
                       <Typography variant="caption" fontWeight={600}>
-                        {tx.amount} с → {tx.balanceAfter} с
+                        {t("balancePanel.txAmount", { amount: tx.amount, after: tx.balanceAfter })}
                       </Typography>
                     )}
                     {parseFloat(tx.bonusesAmount) !== 0 && (
                       <Typography variant="caption" color="success.main">
-                        бонусы {tx.bonusesAmount} с
+                        {t("balancePanel.txBonuses", { amount: tx.bonusesAmount })}
                       </Typography>
                     )}
                   </Stack>
@@ -359,7 +357,7 @@ const PatientBalancePanel: React.FC<PatientBalancePanelProps> = ({
               ))}
               {(txQuery.data?.count ?? 0) > 10 && (
                 <Typography variant="caption" color="text.disabled" display="block" mt={0.5}>
-                  Показаны последние 10 из {txQuery.data?.count}
+                  {t("balancePanel.lastTen", { total: txQuery.data?.count })}
                 </Typography>
               )}
             </Box>

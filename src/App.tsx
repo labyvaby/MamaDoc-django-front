@@ -36,6 +36,8 @@ import { RefreshProvider } from "./contexts/refresh-context";
 import { ClientSessionProvider } from "./contexts/client-session-context";
 import { TitleProvider } from "./contexts/title-context";
 import { PageCacheProvider } from "./contexts/page-cache-context";
+import "./i18n";
+import { VerticalProvider } from "./i18n/VerticalProvider";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { ProtectedRoute } from "./components/rbac/ProtectedRoute";
 import { RequirePermission } from "./components/rbac/RequirePermission";
@@ -313,6 +315,7 @@ function App() {
   }, []);
   return (
     <RefineKbarProvider>
+      <VerticalProvider>
       <PageCacheProvider>
         <TitleProvider>
           <ColorModeContextProvider>
@@ -1284,6 +1287,7 @@ function App() {
           </ColorModeContextProvider>
         </TitleProvider>
       </PageCacheProvider>
+      </VerticalProvider>
     </RefineKbarProvider>
   );
 }

@@ -53,6 +53,7 @@ import type { DjangoFamily } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
 import AddressAutocomplete from "./AddressAutocomplete";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   initialPhone,
   branchId,
 }) => {
+  const { t } = useT("patients");
   const { open: notify } = useNotification();
   const canManageBlacklist = useCan("patients.manage");
 
@@ -160,10 +162,10 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
 
   // ── валидация ─────────────────────────────────────────────────────────────
   const v = useFormValidation({
-    fio: fio.trim() ? null : "Введите ФИО пациента",
+    fio: fio.trim() ? null : t("form.errors.fullNameRequired"),
     blacklistReason:
       canManageBlacklist && isBlacklisted && !blacklistReason.trim()
-        ? "Укажите причину добавления в чёрный список"
+        ? t("form.errors.blacklistReasonRequired")
         : null,
   });
 
@@ -200,12 +202,12 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
         } catch {
           notify?.({
             type: "error",
-            message: "Пациент добавлен, но фото не удалось загрузить",
+            message: t("addDrawer.createdPhotoFailed"),
           });
         }
       }
 
-      notify?.({ type: "success", message: "Пациент добавлен" });
+      notify?.({ type: "success", message: t("addDrawer.created") });
       onCreated?.(patient);
       onClose();
     } catch (err: unknown) {
@@ -252,8 +254,8 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             py: 1,
           }}
         >
-          <Typography variant="h6">Добавить пациента</Typography>
-          <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+          <Typography variant="h6">{t("addDrawer.title")}</Typography>
+          <IconButton onClick={busy ? undefined : onClose} aria-label={t("form.close")}>
             <CloseOutlined />
           </IconButton>
         </Box>
@@ -287,14 +289,14 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             {/* ── ФИО ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                ФИО *
+                {t("form.fullName")}
               </Typography>
               <TextField
                 value={fio}
                 onChange={(e) => setFio(e.target.value)}
                 fullWidth
                 autoFocus
-                placeholder="Введите ФИО пациента"
+                placeholder={t("form.errors.fullNameRequired")}
                 disabled={busy}
                 {...v.field("fio")}
               />
@@ -303,7 +305,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             {/* ── Телефон ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Телефон
+                {t("form.phone")}
               </Typography>
               <TextField
                 value={phone}
@@ -340,7 +342,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             <Stack spacing={0.5}>
               <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1}>
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Дата рождения
+                  {t("form.birthDate")}
                 </Typography>
                 {formatPatientAge(birth) && (
                   <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
@@ -355,7 +357,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                   textField: {
                     fullWidth: true,
                     InputLabelProps: { shrink: true },
-                    placeholder: "дд.мм.гггг",
+                    placeholder: t("form.birthDatePlaceholder"),
                     disabled: busy,
                   },
                 }}
@@ -365,7 +367,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             {/* ── Пол ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Пол
+                {t("form.gender")}
               </Typography>
               <ToggleButtonGroup
                 value={gender === "unknown" ? null : gender}
@@ -375,15 +377,15 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 fullWidth
                 size="small"
               >
-                <ToggleButton value="male">Мальчик</ToggleButton>
-                <ToggleButton value="female">Девочка</ToggleButton>
+                <ToggleButton value="male">{t("form.genderMale")}</ToggleButton>
+                <ToggleButton value="female">{t("form.genderFemale")}</ToggleButton>
               </ToggleButtonGroup>
             </Stack>
 
             {/* ── Адрес ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Адрес
+                {t("form.address")}
               </Typography>
               <AddressAutocomplete
                 value={address}
@@ -395,7 +397,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
             {/* ── ИНН ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                ИНН
+                {t("form.inn")}
               </Typography>
               <TextField
                 value={inn}
@@ -436,7 +438,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                   }
                   label={
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      В чёрном списке
+                      {t("form.blacklisted")}
                     </Typography>
                   }
                 />
@@ -447,7 +449,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     fullWidth
                     multiline
                     minRows={2}
-                    placeholder="Укажите причину"
+                    placeholder={t("addDrawer.blacklistReasonPlaceholder")}
                     disabled={busy}
                     required={isBlacklisted}
                     {...v.field("blacklistReason")}
@@ -471,7 +473,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 sx={{ py: 0.5 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  Возможный дубль
+                  {t("addDrawer.possibleDuplicate")}
                 </Typography>
                 {duplicates.slice(0, 3).map((d) => (
                   <Typography key={d.id} variant="body2">
@@ -486,7 +488,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
 
           <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ p: 2 }}>
             <Button onClick={onClose} disabled={busy}>
-              Отмена
+              {t("form.cancel")}
             </Button>
             <Button
               variant="contained"
@@ -496,10 +498,10 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
               {busy ? (
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <CircularProgress size={18} />
-                  <span>Сохранение…</span>
+                  <span>{t("form.saving")}</span>
                 </Stack>
               ) : (
-                "Сохранить"
+                t("form.save")
               )}
             </Button>
           </Stack>

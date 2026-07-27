@@ -51,23 +51,7 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../../api/queryKeys";
-
-const CHANNEL_LABEL: Record<string, string> = { sms: "SMS", whatsapp: "WhatsApp" };
-
-const TIMING_LABEL: Record<string, string> = {
-  created_10m: "Отправить через (мин)",
-  reminder_2h: "Отправить за (мин)",
-  appointment_change: "Задержка (мин)",
-  appointment_cancel: "Задержка (мин)",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Ожидает",
-  queued: "В очереди",
-  sent: "Отправлено",
-  delivered: "Доставлено",
-  failed: "Ошибка",
-};
+import { useT } from "../../../i18n/VerticalProvider";
 
 const STATUS_COLOR: Record<string, "default" | "info" | "success" | "error" | "warning"> = {
   pending: "default",
@@ -80,8 +64,20 @@ const STATUS_COLOR: Record<string, "default" | "info" | "success" | "error" | "w
 const PAGE_SIZE = 50;
 
 const DjangoNotificationSettingsPage: React.FC = () => {
-  usePageTitle("Уведомления");
+  const { t } = useT("settings");
+  usePageTitle(t("notifications.pageTitle"));
   const queryClient = useQueryClient();
+
+  const CHANNEL_LABEL: Record<string, string> = {
+    sms: t("notifications.channels.sms"),
+    whatsapp: t("notifications.channels.whatsapp"),
+  };
+  const TIMING_LABEL: Record<string, string> = {
+    created_10m: t("notifications.timing.created_10m"),
+    reminder_2h: t("notifications.timing.reminder_2h"),
+    appointment_change: t("notifications.timing.appointment_change"),
+    appointment_cancel: t("notifications.timing.appointment_cancel"),
+  };
 
   const canView = useCan("notifications.manage");
   const {
@@ -129,12 +125,12 @@ const DjangoNotificationSettingsPage: React.FC = () => {
     onSuccess: (data) => {
       setDraft(structuredClone(data));
       queryClient.setQueryData(djangoQueryKeys.notifications.settings(orgId ?? null), data);
-      setMessage({ type: "success", text: "Настройки уведомлений сохранены" });
+      setMessage({ type: "success", text: t("notifications.saveSuccess") });
     },
     onError: (err) => {
       setMessage({
         type: "error",
-        text: err instanceof Error ? err.message : "Ошибка при сохранении",
+        text: err instanceof Error ? err.message : t("notifications.saveError"),
       });
     },
   });
@@ -161,19 +157,19 @@ const DjangoNotificationSettingsPage: React.FC = () => {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1000, mx: "auto", height: "100%", display: "flex", flexDirection: "column" }}>
-      <PageHeader title="Уведомления" showSearch={false} />
+      <PageHeader title={t("notifications.pageTitle")} showSearch={false} />
 
       <Tabs
         value={activeTab}
         onChange={(_, v) => setActiveTab(v)}
         sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}
       >
-        <Tab icon={<SettingsOutlined fontSize="small" />} iconPosition="start" label="Настройки" />
-        <Tab icon={<HistoryOutlined fontSize="small" />} iconPosition="start" label="История отправок" />
+        <Tab icon={<SettingsOutlined fontSize="small" />} iconPosition="start" label={t("notifications.tabs.settings")} />
+        <Tab icon={<HistoryOutlined fontSize="small" />} iconPosition="start" label={t("notifications.tabs.history")} />
       </Tabs>
 
       {needsOrg ? (
-        <Alert severity="info">Выберите организацию для настройки уведомлений.</Alert>
+        <Alert severity="info">{t("notifications.needsOrg")}</Alert>
       ) : (
         <Box sx={{ flex: 1, overflowY: "auto", pb: 6 }}>
           {activeTab === 0 && (
@@ -181,7 +177,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
               <Alert severity="error">
                 {settingsQuery.error instanceof Error
                   ? settingsQuery.error.message
-                  : "Не удалось загрузить настройки уведомлений"}
+                  : t("notifications.loadError")}
               </Alert>
             ) : settingsQuery.isLoading || !draft ? (
               <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
@@ -190,12 +186,11 @@ const DjangoNotificationSettingsPage: React.FC = () => {
             ) : (
               <Stack spacing={3}>
                 <Alert severity="info" icon={<InfoOutlined />}>
-                  Произвольный текст отправляется по SMS. Сейчас реально уходит «Подтверждение записи»;
-                  остальные типы настраиваются и заработают после подключения их триггеров.
+                  {t("notifications.infoBanner")}
                 </Alert>
 
                 <Card variant="outlined">
-                  <CardHeader title="Глобальный переключатель" subheader="Общее управление уведомлениями клиники" />
+                  <CardHeader title={t("notifications.globalCard.title")} subheader={t("notifications.globalCard.subheader")} />
                   <Divider />
                   <CardContent>
                     <FormControlLabel
@@ -208,9 +203,9 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                       }
                       label={
                         <Box>
-                          <Typography variant="body1" fontWeight={600}>Уведомления включены</Typography>
+                          <Typography variant="body1" fontWeight={600}>{t("notifications.globalCard.switchLabel")}</Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Если выключено, клиника не отправляет никакие уведомления
+                            {t("notifications.globalCard.switchCaption")}
                           </Typography>
                         </Box>
                       }
@@ -237,7 +232,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           <TextField
                             select
                             size="small"
-                            label="Канал"
+                            label={t("notifications.channelLabel")}
                             value={rule.channel}
                             onChange={(e) => updateRule(index, { channel: e.target.value })}
                             sx={{ width: { xs: "100%", md: 180 } }}
@@ -249,7 +244,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           <TextField
                             size="small"
                             type="number"
-                            label={TIMING_LABEL[rule.notificationType] ?? "Смещение (мин)"}
+                            label={TIMING_LABEL[rule.notificationType] ?? t("notifications.timing.default")}
                             value={rule.offsetMinutes}
                             onChange={(e) =>
                               updateRule(index, { offsetMinutes: Math.max(0, Number(e.target.value) || 0) })
@@ -262,15 +257,19 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           fullWidth
                           multiline
                           rows={3}
-                          label="Текст сообщения"
+                          label={t("notifications.messageTextLabel")}
+                          // Не через t(): пример буквально показывает синтаксис шаблона
+                          // {{var}}, который движок сообщений подставляет в тексте — если
+                          // положить эту строку в JSON, i18next попытается интерполировать
+                          // patient_name/appointment_date как свои переменные.
                           placeholder="Здравствуйте, {{patient_name}}! Вы записаны на {{appointment_date}}."
                           value={rule.body}
                           onChange={(e) => updateRule(index, { body: e.target.value })}
-                          helperText="Пусто — будет использован стандартный шаблон Raven (WhatsApp)."
+                          helperText={t("notifications.messageTextHelper")}
                         />
 
                         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}>
-                          <Typography variant="caption" color="text.secondary">Переменные:</Typography>
+                          <Typography variant="caption" color="text.secondary">{t("notifications.variablesLabel")}</Typography>
                           {(draft.variables ?? []).map((variable) => (
                             <Chip
                               key={variable}
@@ -295,7 +294,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                     onClick={() => saveMutation.mutate()}
                     disabled={saveMutation.isPending}
                   >
-                    {saveMutation.isPending ? "Сохранение..." : "Сохранить изменения"}
+                    {saveMutation.isPending ? t("common:state.saving") : t("notifications.saveButton")}
                   </Button>
                 </Box>
               </Stack>
@@ -321,6 +320,14 @@ const DjangoNotificationSettingsPage: React.FC = () => {
 };
 
 const NotificationHistoryTab: React.FC<{ orgId?: number; enabled: boolean }> = ({ orgId, enabled }) => {
+  const { t } = useT("settings");
+  const STATUS_LABEL: Record<string, string> = {
+    pending: t("notifications.status.pending"),
+    queued: t("notifications.status.queued"),
+    sent: t("notifications.status.sent"),
+    delivered: t("notifications.status.delivered"),
+    failed: t("notifications.status.failed"),
+  };
   const [page, setPage] = useState(1);
   const historyQuery = useQuery({
     queryKey: djangoQueryKeys.notifications.history({ page, orgId: orgId ?? null }),
@@ -344,11 +351,11 @@ const NotificationHistoryTab: React.FC<{ orgId?: number; enabled: boolean }> = (
         <Table size="small">
           <TableHead sx={{ bgcolor: "action.hover" }}>
             <TableRow>
-              <TableCell sx={{ fontWeight: 700 }}>Дата отправки</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Пациент</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Тип</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Статус</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Приём</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{t("notifications.columns.sentAt")}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{t("notifications.columns.patient")}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{t("notifications.columns.type")}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{t("notifications.columns.status")}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{t("notifications.columns.visit")}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -357,7 +364,7 @@ const NotificationHistoryTab: React.FC<{ orgId?: number; enabled: boolean }> = (
                 <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
                   <Stack alignItems="center" spacing={1} sx={{ color: "text.secondary" }}>
                     <InfoOutlined />
-                    <Typography>История уведомлений пуста</Typography>
+                    <Typography>{t("notifications.historyEmpty")}</Typography>
                   </Stack>
                 </TableCell>
               </TableRow>

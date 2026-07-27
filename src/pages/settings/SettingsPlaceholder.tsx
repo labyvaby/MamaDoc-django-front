@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Stack, Typography } from "@mui/material";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
+import { useT } from "../../i18n/VerticalProvider";
 
 /**
  * Minimal empty-state placeholder rendered while the matching backend
@@ -10,7 +11,9 @@ import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 export const SettingsPlaceholder: React.FC<{
   title: string;
   hint?: string;
-}> = ({ title, hint }) => (
+}> = ({ title, hint }) => {
+  const { t } = useT("settings");
+  return (
   <Stack spacing={2} sx={{ height: "100%" }}>
     <Typography variant="h6" fontWeight={600}>
       {title}
@@ -35,10 +38,11 @@ export const SettingsPlaceholder: React.FC<{
         sx={{ fontSize: 36, color: "text.disabled" }}
       />
       <Typography variant="body2">
-        {hint ?? "Раздел в разработке."}
+        {hint ?? t("placeholder.defaultHint")}
       </Typography>
     </Box>
   </Stack>
-);
+  );
+};
 
 export default SettingsPlaceholder;

@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import dayjs from "dayjs";
+import { useT } from "../../../i18n/VerticalProvider";
 
 export type CashDateChoice = "today" | "appointment";
 
@@ -37,6 +38,7 @@ const CashDateConfirmDialog: React.FC<CashDateConfirmDialogProps> = ({
   onChoose,
   onCancel,
 }) => {
+  const { t } = useT("appointments");
   const todayLabel = dayjs(todayDate).format("D MMMM");
   const appointmentLabel = dayjs(appointmentDate).format("D MMMM");
   return (
@@ -44,14 +46,12 @@ const CashDateConfirmDialog: React.FC<CashDateConfirmDialogProps> = ({
       <DialogTitle>
         <Stack direction="row" alignItems="center" gap={1}>
           <EventOutlined color="warning" fontSize="small" />
-          Какой датой провести оплату в кассе?
+          {t("cashDateDialog.title")}
         </Stack>
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary">
-          Дата приёма отличается от сегодняшней. Выберите, каким числом
-          оплата картой/страховкой попадёт в кассу и отчёты — это не влияет
-          на дату самого приёма.
+          {t("cashDateDialog.text")}
         </Typography>
       </DialogContent>
       <DialogActions sx={{ flexDirection: "column", alignItems: "stretch", gap: 1, px: 3, pb: 2 }}>
@@ -60,17 +60,17 @@ const CashDateConfirmDialog: React.FC<CashDateConfirmDialogProps> = ({
           variant="outlined"
           onClick={() => onChoose("today")}
         >
-          Сегодня ({todayLabel})
+          {t("cashDateDialog.today", { date: todayLabel })}
         </Button>
         <Button
           fullWidth
           variant="contained"
           onClick={() => onChoose("appointment")}
         >
-          Дата приёма ({appointmentLabel})
+          {t("cashDateDialog.appointmentDate", { date: appointmentLabel })}
         </Button>
         <Button fullWidth color="inherit" onClick={onCancel}>
-          Отмена
+          {t("cashDateDialog.cancel")}
         </Button>
       </DialogActions>
     </Dialog>

@@ -2,6 +2,7 @@ import React from "react";
 import { Avatar, Box, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import type { DjangoAppointment } from "../../../api/appointments";
+import { useT } from "../../../i18n/VerticalProvider";
 
 interface Doctor {
   id: number;
@@ -29,6 +30,7 @@ const AppointmentDoctorFilter: React.FC<AppointmentDoctorFilterProps> = ({
   selectedEmployeeId,
   onSelect,
 }) => {
+  const { t } = useT("appointments");
   const theme = useTheme();
 
   const doctors = React.useMemo<Doctor[]>(() => {
@@ -90,7 +92,7 @@ const AppointmentDoctorFilter: React.FC<AppointmentDoctorFilterProps> = ({
             fontWeight={700}
             sx={{ color: selectedEmployeeId === null ? "primary.contrastText" : "text.secondary" }}
           >
-            Все
+            {t("filters.all")}
           </Typography>
         </Box>
         <Typography
@@ -101,7 +103,7 @@ const AppointmentDoctorFilter: React.FC<AppointmentDoctorFilterProps> = ({
             color: selectedEmployeeId === null ? "text.primary" : "text.secondary",
           }}
         >
-          Все
+          {t("filters.all")}
         </Typography>
       </Stack>
 

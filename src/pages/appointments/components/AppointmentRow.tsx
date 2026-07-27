@@ -28,38 +28,12 @@ import {
 import {
   getStatusConfig,
   getStatusChipSx,
-  normalizeDjangoStatus,
 } from "../../../config/appointmentStatuses";
+import { useT } from "../../../i18n/VerticalProvider";
 
-// Labels matching original MamaDoc crm.pediatr.kg statuses
-export const APPT_STATUS_LABELS: Record<string, string> = {
-  scheduled: "Ожидаем",
-  waiting: "Пациент здесь",
-  in_progress: "Принимается",
-  completed: "Завершён",
-  cancelled: "Отменено",
-  no_show: "Не пришёл",
-};
-
-export const PAYMENT_APPT_STATUS_LABELS: Record<string, string> = {
-  unpaid: "Не оплачен",
-  partial: "Частично оплачен",
-  paid: "Оплачено",
-  overpaid: "Переплата",
-  refunded: "Возврат",
-};
-
-export const APPT_STATUS_COLOR: Record<
-  string,
-  "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"
-> = {
-  scheduled: "default",
-  waiting: "info",
-  in_progress: "primary",
-  completed: "success",
-  cancelled: "error",
-  no_show: "default",
-};
+/** Развёрнутые метки оплаты для строки списка (в чипах — короткие,
+ *  см. PAYMENT_STATUS_LABELS в DjangoPaymentDrawer). */
+const PAYMENT_ROW_CODES = ["unpaid", "partial", "paid", "overpaid", "refunded"] as const;
 
 interface AppointmentRowProps {
   appointment: DjangoAppointment;
@@ -84,9 +58,10 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
   onEdit,
   onPay,
 }) => {
+  const { t } = useT("appointments");
   const theme = useTheme();
   const time = dayjs(appt.scheduledAt).format("HH:mm");
-  const patientName = appt.patient?.fullName ?? "Бронирование";
+  const patientName = appt.patient?.fullName ?? t("row.noPatient");
 
   // Collect unique employee names
   const uniqueEmployees = Array.from(
@@ -103,14 +78,14 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
       ? null
       : appt.services.length === 1
       ? firstService?.service?.name ?? null
-      : `${appt.services.length} услуг`;
+      : t("common:counts.services", { count: appt.services.length });
 
   const doctorLabel =
     uniqueEmployees.length === 0
-      ? "Без врача"
+      ? t("row.noSpecialist")
       : uniqueEmployees.length === 1
       ? uniqueEmployees[0][1]
-      : `${uniqueEmployees.length} исполнит.`;
+      : t("common:counts.performers", { count: uniqueEmployees.length });
 
   const payStatus = appt.paymentStatus;
   const isCancelled =
@@ -125,7 +100,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
       ? formatKGS(appt.totalAmount)
       : null;
 
-  const debtStr = hasDebt ? `долг ${formatKGS(appt.debt)}` : null;
+  const debtStr = hasDebt ? t("row.debt", { amount: formatKGS(appt.debt) }) : null;
 
   // Payment method icons — infer from payment status and available payment info
   // We check services or use paymentStatus as proxy
@@ -133,19 +108,19 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
   const hasCardPayment = false; // we don't have per-method breakdown on row level
   const hasBalancePayment = false;
 
-  // Display status using original getStatusChipSx (same colours as original MamaDoc)
-  const displayStatus = normalizeDjangoStatus(appt.status);
-  const statusCfg = getStatusConfig(displayStatus);
-  const statusChipSx = getStatusChipSx(displayStatus);
+  // Статус и его стиль резолвятся по слагу — метка терминологична и ключом быть не может.
+  const statusCfg = getStatusConfig(appt.status);
+  const statusChipSx = getStatusChipSx(appt.status);
 
   // Payment chip uses original status chip style too
   const payStatusSafe = payStatus ?? "";
-  const payDisplayLabel = PAYMENT_APPT_STATUS_LABELS[payStatusSafe] ?? PAYMENT_STATUS_LABELS[payStatusSafe as keyof typeof PAYMENT_STATUS_LABELS] ?? payStatusSafe;
+  const payDisplayLabel = (PAYMENT_ROW_CODES as readonly string[]).includes(payStatusSafe)
+    ? t(`paymentStatusLong.${payStatusSafe}`)
+    : PAYMENT_STATUS_LABELS[payStatusSafe as keyof typeof PAYMENT_STATUS_LABELS] ?? payStatusSafe;
   const payChipSx = payStatusSafe ? getStatusChipSx(
-    payStatusSafe === "paid" ? "Оплачено" :
-    payStatusSafe === "partial" ? "Частично оплачено" :
-    payStatusSafe === "unpaid" ? "Ожидаем" :
-    payStatusSafe === "refunded" ? "Отменено" : "Ожидаем"
+    payStatusSafe === "paid" ? "paid" :
+    payStatusSafe === "partial" ? "partially_paid" :
+    payStatusSafe === "refunded" ? "canceled" : "scheduled"
   ) : undefined;
 
   return (
@@ -183,7 +158,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
             <Typography variant="subtitle2" fontWeight={700}>{time}</Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 200 }}>
-            Пациент: {patientName}
+            {t("row.patientLabel")} {patientName}
           </Typography>
           {appt.patient?.phone && (
             <Typography variant="caption" color="text.disabled" noWrap>
@@ -253,12 +228,12 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
             {/* Бейдж «Страховка» — визит (со)оплачен страховой компанией. */}
             {!isCancelled &&
               (appt.paymentMethods ?? []).includes("insurance") && (
-                <Tooltip title="Оплата страховкой">
+                <Tooltip title={t("row.insurancePayment")}>
                   <Chip
                     label={
                       <Stack direction="row" alignItems="center" gap={0.5}>
                         <HealthAndSafetyOutlined sx={{ fontSize: 13 }} />
-                        <span>Страховка</span>
+                        <span>{t("row.insurance")}</span>
                       </Stack>
                     }
                     size="small"
@@ -281,7 +256,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
 
             {/* Conclusion icon like original */}
             {appt.hasMedicalConclusion && (
-              <Tooltip title="Есть заключение">
+              <Tooltip title={t("row.hasConclusion")}>
                 <PrintOutlinedIcon sx={{ fontSize: 18, color: "action.active", opacity: 0.8 }} />
               </Tooltip>
             )}
@@ -291,7 +266,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
               прав на финансы), как в оригинале. */}
           {totalStr && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Итого: {totalStr}
+              {t("row.total", { amount: totalStr })}
             </Typography>
           )}
           {/* Debt highlight — факт долга виден всем (операционный статус). */}
@@ -304,7 +279,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
           {/* Action icons — stop click bubbling */}
           <Stack direction="row" spacing={0} onClick={(e) => e.stopPropagation()}>
             {canManageFinance && (
-              <Tooltip title={isCancelled ? "Недоступно для отменённых" : "Оплата"}>
+              <Tooltip title={isCancelled ? t("row.disabledForCancelled") : t("row.pay")}>
                 <span>
                   <IconButton size="small" onClick={() => onPay(appt)} disabled={isCancelled} sx={{ p: 0.5 }}>
                     <PaymentsOutlined sx={{ fontSize: 16 }} />
@@ -313,7 +288,7 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
               </Tooltip>
             )}
             {canUpdate && (
-              <Tooltip title="Редактировать">
+              <Tooltip title={t("row.edit")}>
                 <IconButton size="small" onClick={() => onEdit(appt)} sx={{ p: 0.5 }}>
                   <EditOutlined sx={{ fontSize: 16 }} />
                 </IconButton>

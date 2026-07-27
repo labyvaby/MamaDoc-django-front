@@ -1,0 +1,635 @@
+{
+  "layout": {
+    "title": "Настройки",
+    "tabsAriaLabel": "Разделы настроек",
+    "noOrgSelected": "Организация не выбрана",
+    "groups": {
+      "clinic": "{{org.nom, capitalize}}",
+      "access": "Доступы",
+      "catalogs": "Справочники",
+      "operations": "Операционные"
+    },
+    "tabs": {
+      "organization": "Организация",
+      "branches": "{{branch.nomPl, capitalize}}",
+      "roles": "Роли",
+      "memberships": "{{employee.nomPl, capitalize}} и доступы",
+      "specializations": "Специализации",
+      "banks": "Банки",
+      "insurers": "Страховые",
+      "expenseCategories": "Категории расходов",
+      "diagnoses": "{{diagnosis.nomPl, capitalize}}",
+      "tasks": "Задачи",
+      "cleaning": "Уборка"
+    }
+  },
+  "placeholder": {
+    "defaultHint": "Раздел в разработке."
+  },
+  "banks": {
+    "title": "Банки",
+    "description": "Справочник банков. Используется при выборе банка в карточке сотрудника.",
+    "addButton": "Добавить банк",
+    "needsOrg": "Выберите организацию в контексте, чтобы управлять справочником банков.",
+    "empty": "Банков пока нет",
+    "columns": {
+      "name": "Название",
+      "status": "Статус",
+      "actions": "Действия"
+    },
+    "status": {
+      "active": "Активен",
+      "inactive": "Неактивен"
+    },
+    "tooltips": {
+      "edit": "Редактировать",
+      "activate": "Активировать",
+      "deactivate": "Деактивировать"
+    },
+    "dialog": {
+      "editTitle": "Редактировать банк",
+      "createTitle": "Добавить банк",
+      "nameLabel": "Название банка *",
+      "nameTooShort": "Название должно содержать минимум 2 символа"
+    }
+  },
+  "insurers": {
+    "title": "Страховые компании",
+    "description": "Справочник страховых. Используется при оплате приёма способом «страховка».",
+    "addButton": "Добавить страховую",
+    "needsOrg": "Выберите организацию в контексте, чтобы управлять справочником страховых.",
+    "empty": "Страховых компаний пока нет",
+    "columns": {
+      "name": "Название",
+      "contract": "Договор",
+      "phone": "Телефон",
+      "status": "Статус",
+      "actions": "Действия"
+    },
+    "status": {
+      "active": "Активна",
+      "hidden": "Скрыта"
+    },
+    "tooltips": {
+      "edit": "Редактировать",
+      "activate": "Активировать",
+      "hide": "Скрыть из выбора"
+    },
+    "dialog": {
+      "editTitle": "Редактировать страховую",
+      "createTitle": "Добавить страховую компанию",
+      "nameLabel": "Название компании *",
+      "nameTooShort": "Название должно содержать минимум 2 символа",
+      "contractLabel": "Номер договора",
+      "contractHelper": "Договор {{org.gen}} со страховой (необязательно)",
+      "phoneLabel": "Телефон"
+    }
+  },
+  "expenseCategories": {
+    "title": "Категории расходов",
+    "description": "Категории используются при создании расходов.",
+    "addButton": "Добавить категорию",
+    "needsOrg": "Выберите организацию в контексте, чтобы управлять категориями расходов.",
+    "empty": "Категорий пока нет",
+    "columns": {
+      "name": "Название",
+      "kind": "Тип",
+      "status": "Статус"
+    },
+    "status": {
+      "active": "Активна",
+      "inactive": "Неактивна"
+    },
+    "kindShort": {
+      "general": "Обычная",
+      "advance": "Аванс",
+      "salary": "Зарплата"
+    },
+    "kindOptions": {
+      "general": {
+        "label": "Обычная",
+        "description": "Общий расход организации"
+      },
+      "advance": {
+        "label": "Аванс {{employee.dat}}",
+        "description": "Привязывается к месяцу расхода"
+      },
+      "salary": {
+        "label": "Заработная плата",
+        "description": "Привязывается к предыдущему месяцу"
+      }
+    },
+    "dialog": {
+      "title": "Добавить категорию",
+      "nameLabel": "Название категории *",
+      "nameTooShort": "Название должно содержать минимум 2 символа",
+      "kindLabel": "Тип категории"
+    }
+  },
+  "specializations": {
+    "title": "Специализации",
+    "description": "Специализации назначаются {{specialist.datPl}} в карточке {{employee.gen}}.",
+    "addButton": "Добавить специализацию",
+    "needsOrg": "Выберите организацию в контексте, чтобы управлять специализациями.",
+    "empty": "Специализаций пока нет",
+    "columns": {
+      "name": "Название",
+      "status": "Статус",
+      "actions": "Действия"
+    },
+    "status": {
+      "active": "Активна",
+      "inactive": "Неактивна"
+    },
+    "tooltips": {
+      "rename": "Переименовать",
+      "activate": "Активировать",
+      "deactivate": "Деактивировать"
+    },
+    "dialog": {
+      "editTitle": "Переименовать специализацию",
+      "createTitle": "Добавить специализацию",
+      "nameLabel": "Название специализации *",
+      "nameTooShort": "Название должно содержать минимум 2 символа"
+    }
+  },
+  "skud": {
+    "pageTitle": "Настройки СКУД",
+    "cardTitle": "Конфигурация интеграции",
+    "cardSubtitle": "Параметры подключения к системе контроля доступа",
+    "ipPlaceholder": "Например: 89.123.45.6 или 10.0.0.0/24",
+    "orgIpLabel": "Общий IP организации",
+    "orgIpHelper": "Запасной вариант: используется вместе с IP {{branch.genPl}}. Можно добавить несколько адресов — вставьте список через запятую или с новой строки. Если ничего не заполнено — проверка отключена и смену можно начать откуда угодно.",
+    "branchIpsTitle": "Wi-Fi IP по {{branch.datPl}}",
+    "branchIpsDescription": "{{employee.nom, capitalize}} сможет начать смену, если его внешний IP совпадает с любым из IP {{branch.gen}} или с общим IP {{org.gen}}. У {{branch.gen}} может быть несколько адресов (например, разные Wi-Fi роутеры) — добавляйте их по одному или вставьте списком.",
+    "branchIpHelper": "Например, IP основного и резервного Wi-Fi роутера {{branch.gen}}.",
+    "saveSuccess": "Настройки успешно сохранены",
+    "saveError": "Ошибка при сохранении настроек"
+  },
+  "diagnoses": {
+    "title": "{{diagnosis.nomPl, capitalize}} (МКБ-10)",
+    "shownOfTotal": "Показано {{loaded}} из {{total}}",
+    "searchPlaceholder": "Поиск по коду или названию…",
+    "addButton": "Добавить",
+    "description": "Справочник {{diagnosis.genPl}}, из которого {{specialist.nomPl}} выбирают значения в заключении. Список настраивается отдельно для каждой организации.",
+    "emptySearch": "Ничего не найдено по запросу «{{query}}».",
+    "emptyCatalog": "Справочник {{diagnosis.genPl}} пуст.",
+    "addFirst": "Добавить {{diagnosis.acc}}",
+    "columns": {
+      "code": "Код",
+      "title": "Название",
+      "displayName": "Название для печати",
+      "active": "Активен",
+      "actions": "Действия"
+    },
+    "tooltips": {
+      "edit": "Редактировать",
+      "delete": "Удалить"
+    },
+    "loadingNext": "Загрузка следующих {{pageSize}}...",
+    "showMore": "Показать ещё ({{loaded}} из {{total}})",
+    "allShown": "Показаны все {{total}} {{diagnosis.genPl}}",
+    "deleteConfirmTitle": "Удалить {{diagnosis.acc}}?",
+    "deleteConfirmBody": "«{{code}} — {{title}}» будет удалено из справочника. История уже созданных заключений не изменится.",
+    "deleteSuccess": "Удалено из справочника",
+    "deleting": "Удаление…",
+    "unknownError": "Неизвестная ошибка"
+  },
+  "diagnosisForm": {
+    "editTitle": "Редактирование {{diagnosis.gen}}",
+    "createTitle": "Добавление {{diagnosis.gen}}",
+    "editTitleLower": "редактирование {{diagnosis.gen}}",
+    "createTitleLower": "добавление {{diagnosis.gen}}",
+    "codeLabel": "Код МКБ-10 *",
+    "codePlaceholder": "Например: A09",
+    "codeRequired": "Укажите код МКБ-10",
+    "titleLabel": "Название *",
+    "titlePlaceholder": "Например: Острый гастроэнтерит неуточнённый",
+    "titleRequired": "Укажите название {{diagnosis.gen}}",
+    "displayNameLabel": "Название для печати",
+    "displayNamePlaceholder": "Необязательно — например: Простуда",
+    "displayNameHelper": "Если заполнено, в PDF заключения {{patient.nom}} увидит это название вместо кода МКБ-10 и служебного названия.",
+    "activeToggleLabel": "Активность",
+    "captionActive": "{{diagnosis.nom, capitalize}} отображается {{specialist.datPl}} при заполнении заключения.",
+    "captionHidden": "{{diagnosis.nom, capitalize}} не отображается {{specialist.datPl}} при заполнении заключения, но уже выданные заключения сохранят {{diagnosis.acc}}.",
+    "updated": "Изменения сохранены",
+    "created": "Добавлено в справочник",
+    "unknownError": "Неизвестная ошибка"
+  },
+  "notifications": {
+    "pageTitle": "Уведомления",
+    "tabs": {
+      "settings": "Настройки",
+      "history": "История отправок"
+    },
+    "needsOrg": "Выберите организацию для настройки уведомлений.",
+    "infoBanner": "Произвольный текст отправляется по SMS. Сейчас реально уходит «Подтверждение записи»; остальные типы настраиваются и заработают после подключения их триггеров.",
+    "loadError": "Не удалось загрузить настройки уведомлений",
+    "globalCard": {
+      "title": "Глобальный переключатель",
+      "subheader": "Общее управление уведомлениями {{org.gen}}",
+      "switchLabel": "Уведомления включены",
+      "switchCaption": "Если выключено, {{org.nom}} не отправляет никакие уведомления"
+    },
+    "channelLabel": "Канал",
+    "channels": {
+      "sms": "SMS",
+      "whatsapp": "WhatsApp"
+    },
+    "timing": {
+      "created_10m": "Отправить через (мин)",
+      "reminder_2h": "Отправить за (мин)",
+      "appointment_change": "Задержка (мин)",
+      "appointment_cancel": "Задержка (мин)",
+      "default": "Смещение (мин)"
+    },
+    "messageTextLabel": "Текст сообщения",
+    "messageTextHelper": "Пусто — будет использован стандартный шаблон Raven (WhatsApp).",
+    "variablesLabel": "Переменные:",
+    "saveButton": "Сохранить изменения",
+    "saveSuccess": "Настройки уведомлений сохранены",
+    "saveError": "Ошибка при сохранении",
+    "columns": {
+      "sentAt": "Дата отправки",
+      "patient": "{{patient.nom, capitalize}}",
+      "type": "Тип",
+      "status": "Статус",
+      "visit": "{{visit.nom, capitalize}}"
+    },
+    "status": {
+      "pending": "Ожидает",
+      "queued": "В очереди",
+      "sent": "Отправлено",
+      "delivered": "Доставлено",
+      "failed": "Ошибка"
+    },
+    "historyEmpty": "История уведомлений пуста"
+  },
+  "organization": {
+    "title": "Организация",
+    "noOrgSelected": "Активная организация не выбрана.",
+    "logoReplace": "Заменить логотип",
+    "logoUpload": "Загрузить логотип",
+    "logoHint": "PNG, JPG, SVG или WebP, до 5 МБ.",
+    "logoTypeError": "Можно загрузить только изображение (PNG, JPG, SVG, WebP).",
+    "logoSizeError": "Файл слишком большой — максимум 5 МБ.",
+    "nameLabel": "Название {{org.gen}}",
+    "nameRequired": "Название не может быть пустым",
+    "patientScope": {
+      "sectionTitle": "База {{patient.genPl}}",
+      "sectionHint": "Определяет, видят ли {{branch.nomPl}} общий список {{patient.genPl}} или у каждого {{branch.gen}} своя база.",
+      "shared": {
+        "label": "Общая база на все {{branch.nomPl}}",
+        "hint": "Все {{branch.nomPl}} видят одних и тех же {{patient.genPl}}. Переключение {{branch.gen}} не фильтрует список."
+      },
+      "perBranch": {
+        "label": "Отдельная база у каждого {{branch.gen}}",
+        "hint": "У каждого {{branch.gen}} своя база {{patient.genPl}}. Список фильтруется по выбранному {{branch.dat}}."
+      }
+    },
+    "overlapMode": {
+      "sectionTitle": "Пересечение {{visit.genPl}}",
+      "sectionHint": "Как поступать, когда новый {{visit.nom}} пересекается по времени с другим {{visit.ins}} {{employee.gen}}.",
+      "forbid": {
+        "label": "Запрещать пересечение",
+        "hint": "Если {{visit.nom}} пересекается с другим {{visit.ins}} {{employee.gen}}, сохранить нельзя."
+      },
+      "warn": {
+        "label": "Разрешать после подтверждения",
+        "hint": "Система покажет предупреждение со списком пересечений и позволит сохранить после подтверждения. Свободные окна считаются без изменений."
+      }
+    },
+    "viewOnlyChip": "Только просмотр — нет прав на изменение",
+    "saveSuccess": "Настройки сохранены.",
+    "unknownError": "Неизвестная ошибка"
+  },
+  "memberships": {
+    "title": "{{employee.nomPl, capitalize}} и доступы",
+    "searchPlaceholder": "Поиск участника…",
+    "emptySearch": "Ничего не найдено по запросу «{{query}}».",
+    "emptyTitle": "Нет участников для отображения.",
+    "emptyHintBefore": "Участники добавляются при создании {{employee.gen}} (",
+    "emptyHintAfter": " Добавить {{employee.acc}}).",
+    "owner": "Владелец",
+    "inactive": "Неактивен",
+    "noRole": "Без роли",
+    "allBranches": "Все {{branch.nomPl}}",
+    "editAccessAria": "Редактировать доступы",
+    "updated": "Доступы участника обновлены",
+    "unknownError": "Неизвестная ошибка",
+    "form": {
+      "title": "Доступы участника",
+      "roleLabel": "Роль",
+      "branchesLabel": "Доступ в CRM ({{branch.nomPl}})",
+      "branchesHint": "Какие {{branch.nomPl}} участник видит в системе",
+      "branchesPlaceholder": "Выберите {{branch.nomPl}}",
+      "activeLabel": "Активен"
+    }
+  },
+  "branches": {
+    "title": "{{branch.nomPl, capitalize}}",
+    "activeOfTotal": "Активных: {{active}} из {{total}}",
+    "searchPlaceholder": "Поиск по названию, адресу…",
+    "addButton": "Добавить",
+    "description": "Точки обслуживания организации. {{branch.nom, capitalize}} используется при записи на {{visit.acc}}, продажах и в кассе.",
+    "empty": "{{branch.nomPl, capitalize}} пока нет.",
+    "addFirst": "Добавить {{branch.acc}}",
+    "emptySearch": "Ничего не найдено по запросу «{{query}}».",
+    "columns": {
+      "name": "Название",
+      "address": "Адрес",
+      "phones": "Телефоны",
+      "maps": "Карты",
+      "status": "Статус",
+      "actions": "Действия"
+    },
+    "status": {
+      "active": "Работает",
+      "inactive": "Отключён"
+    },
+    "tooltips": {
+      "edit": "Редактировать",
+      "disable": "Отключить"
+    },
+    "disableConfirmTitle": "Отключить {{branch.acc}}?",
+    "disableConfirmBody": "«{{name}}» будет деактивирован и скрыт из выбора. Связанные данные ({{visit.nomPl}}, продажи) сохраняются, {{branch.acc}} можно снова включить через редактирование.",
+    "disableSuccess": "{{branch.nom, capitalize}} отключён",
+    "disabling": "Отключение…",
+    "disableButton": "Отключить",
+    "unknownError": "Неизвестная ошибка"
+  },
+  "branchForm": {
+    "editTitle": "Редактирование {{branch.gen}}",
+    "createTitle": "Добавление {{branch.gen}}",
+    "editTitleLower": "редактирование {{branch.gen}}",
+    "createTitleLower": "добавление {{branch.gen}}",
+    "logoLabel": "Логотип",
+    "logoReplace": "Заменить",
+    "logoUpload": "Загрузить",
+    "logoHint": "PNG, JPG, SVG или WebP, до 5 МБ.",
+    "logoTypeError": "Можно загрузить только изображение (PNG, JPG, SVG, WebP).",
+    "logoSizeError": "Файл слишком большой — максимум 5 МБ.",
+    "nameLabel": "Название *",
+    "nameRequired": "Укажите название {{branch.gen}}",
+    "namePlaceholder": "Например: Центральный филиал",
+    "addressLabel": "Адрес",
+    "addressPlaceholder": "Город, улица, дом",
+    "phonesLabel": "Телефоны",
+    "phonePlaceholder": "+996 700 000 000",
+    "removePhoneAria": "Удалить телефон",
+    "addPhone": "Добавить номер",
+    "mapLinksLabel": "Ссылки на карты",
+    "mapLinkInvalid": "{{label}}: ссылка должна начинаться с http:// или https://",
+    "mapLinkInvalidShort": "Ссылка должна начинаться с http:// или https://",
+    "timezoneLabel": "Часовой пояс",
+    "activeLabel": "Активен",
+    "activeStatus": "Работает",
+    "inactiveStatus": "Отключён",
+    "activeCaption": "{{branch.nom, capitalize}} доступен для записи, продаж и выбора в интерфейсе.",
+    "inactiveCaption": "{{branch.nom, capitalize}} скрыт из выбора; существующие данные сохраняются.",
+    "updated": "{{branch.nom, capitalize}} обновлён",
+    "created": "{{branch.nom, capitalize}} создан",
+    "unknownError": "Неизвестная ошибка"
+  },
+  "cleaning": {
+    "pageTitle": "Настройки · Уборка",
+    "demoDataChip": "Демо-данные",
+    "title": "Уборка",
+    "types": {
+      "sectionTitle": "Типы уборки",
+      "sectionDescription": "Уборщица выбирает тип при отметке. В ЗП попадает сумма ставок типов по подтверждённым уборкам за месяц.",
+      "addButton": "Добавить",
+      "loadError": "Не удалось загрузить типы уборки",
+      "columns": {
+        "name": "Название",
+        "rate": "Ставка",
+        "active": "Активен"
+      },
+      "empty": "Типов пока нет — добавьте первый",
+      "tooltips": {
+        "edit": "Изменить",
+        "delete": "Удалить"
+      },
+      "dialog": {
+        "editTitle": "Изменить тип уборки",
+        "createTitle": "Новый тип уборки",
+        "nameLabel": "Название",
+        "namePlaceholder": "Например: Генеральная уборка",
+        "rateLabel": "Ставка",
+        "rateHelperInvalid": "Число, максимум 2 знака после точки",
+        "rateHelperHint": "За одну подтверждённую уборку этого типа",
+        "activeLabel": "Активен",
+        "activeCaption": "Неактивный тип нельзя выбрать при отметке уборки"
+      },
+      "updated": "Тип обновлён",
+      "created": "Тип создан",
+      "saveError": "Не удалось сохранить тип уборки",
+      "toggleError": "Не удалось изменить тип",
+      "deleteSuccess": "Тип удалён",
+      "deleteError": "Не удалось удалить тип",
+      "deleteConfirmTitle": "Удалить тип уборки?",
+      "deleteConfirmBody": "Тип «{{name}}» будет удалён. История уборок по нему сохранится."
+    }
+  },
+  "roles": {
+    "title": "Роли",
+    "searchPlaceholder": "Поиск роли…",
+    "createButton": "Создать роль",
+    "unknownError": "Неизвестная ошибка",
+    "createdSnack": "Роль создана",
+    "updatedSnack": "Роль обновлена",
+    "emptyTitle": "Нет ролей для отображения.",
+    "createFirst": "Создать первую роль",
+    "emptySearch": "Ничего не найдено по запросу «{{query}}».",
+    "orgRolesSection": "Роли организации",
+    "systemRolesSection": "Системные роли",
+    "categories": {
+      "appointments": "{{visit.nomPl, capitalize}}",
+      "patients": "{{patient.nomPl, capitalize}}",
+      "staff": "{{employee.nomPl, capitalize}}",
+      "catalog": "{{service.nomPl, capitalize}}",
+      "content": "Контент",
+      "organization": "Организация",
+      "branches": "{{branch.nomPl, capitalize}}",
+      "rbac": "Доступы и роли",
+      "roles": "Роли",
+      "users": "Пользователи",
+      "finance": "Финансы",
+      "warehouse": "Склад",
+      "reports": "Отчёты",
+      "attendance": "СКУД",
+      "schedule": "Расписание",
+      "services": "{{service.nomPl, capitalize}}",
+      "expenses": "Расходы"
+    },
+    "row": {
+      "systemChip": "Системная",
+      "noPermissions": "Нет прав",
+      "permCount_one": "{{count}} право",
+      "permCount_few": "{{count}} права",
+      "permCount_many": "{{count}} прав",
+      "editSystemTooltip": "Редактировать системную роль (доступно суперпользователю)",
+      "editTooltip": "Редактировать",
+      "editAria": "Редактировать роль"
+    },
+    "form": {
+      "createTitle": "Создать роль",
+      "editTitle": "Редактировать роль",
+      "systemWarning": "Системная роль — сохранить изменения может только суперпользователь.",
+      "nameLabel": "Название",
+      "namePlaceholder": "Например: Врач-педиатр",
+      "nameRequired": "Введите название роли",
+      "codeLabel": "Код",
+      "codePlaceholder": "Например: pediatrician",
+      "codeRequired": "Введите код роли",
+      "codeLocked": "Код роли нельзя изменить после создания",
+      "codeHint": "Только латиница, цифры, дефис и подчёркивание",
+      "descriptionLabel": "Описание",
+      "descriptionPlaceholder": "Краткое описание роли (необязательно)",
+      "permissionsTitle": "Права доступа",
+      "permissionsHint": "Выберите разрешения, которые будут назначены этой роли. Права из отключённых модулей организации помечены и не действуют, пока модуль не включён. Пользователи с этой ролью увидят изменения после возврата на вкладку или перезагрузки страницы.",
+      "byCategoryLabel": "По категориям:",
+      "permissionsPlaceholder": "Выберите права из списка…",
+      "moduleOffChip": "модуль отключён",
+      "selectedOfTotal": "Выбрано: {{selected}} из {{total}}"
+    },
+    "mobilePicker": {
+      "selectedOfTotal": "выбрано из {{total}}",
+      "noPermissionsHint": " · роль пока без прав",
+      "clearButton": "Очистить",
+      "searchPlaceholder": "Поиск права…",
+      "noResults": "Прав по запросу не найдено",
+      "moduleOffHint": "не действует, пока модуль выключен",
+      "ofCount": "{{selected}} из {{total}}"
+    }
+  },
+  "tasks": {
+    "pageTitle": "Настройки задач",
+    "roles": {
+      "admin": "Админ",
+      "manager": "Управляющий",
+      "owner": "Владелец",
+      "doctor": "{{specialist.nom, capitalize}}",
+      "nurse": "{{assistant.nom, capitalize}}",
+      "receptionist": "Ресепшен",
+      "registrator": "Регистратор",
+      "accountant": "Бухгалтер"
+    },
+    "interval": {
+      "daily": "Каждый день",
+      "weekly": "Раз в неделю",
+      "monthly": "Раз в месяц",
+      "weeklyOn": "Еженедельно, {{day}}",
+      "monthlyOn": "Ежемесячно, {{day}}-го числа"
+    },
+    "categoryDialog": {
+      "editTitle": "Изменить категорию",
+      "createTitle": "Добавить категорию",
+      "nameLabel": "Название *",
+      "nameTooShort": "Название — минимум 2 символа",
+      "rolesLabel": "Группы-исполнители *",
+      "rolesRequired": "Выберите хотя бы одну группу-исполнителя",
+      "rolesHint": "Заявки категории увидят сотрудники с этими ролями",
+      "priorityLabel": "Приоритет по умолчанию",
+      "saveError": "Не удалось сохранить категорию"
+    },
+    "ruleDialog": {
+      "title": "Новое правило повторения",
+      "taskNameLabel": "Название задачи *",
+      "nameTooShort": "Название — минимум 2 символа",
+      "descriptionLabel": "Описание",
+      "categoryLabel": "Категория *",
+      "categoryRequired": "Выберите категорию",
+      "priorityLabel": "Приоритет",
+      "priorityHelper": "Пусто — приоритет категории по умолчанию",
+      "priorityDefault": "По умолчанию",
+      "intervalLabel": "Повторение *",
+      "dayOfWeekLabel": "День недели",
+      "dayOfMonthLabel": "День месяца",
+      "dayOfMonthHelper": "1–28, чтобы не пропускать февраль",
+      "createError": "Не удалось создать правило"
+    },
+    "stockRuleDialog": {
+      "editTitle": "Изменить порог",
+      "createTitle": "Новый порог остатка",
+      "productWarehouseLabel": "Товар · склад",
+      "productLabel": "Товар *",
+      "productRequired": "Выберите товар",
+      "noProductsFound": "Товары не найдены",
+      "warehouseLabel": "Склад *",
+      "warehouseRequired": "Выберите склад",
+      "thresholdLabel": "Минимальный остаток *",
+      "thresholdInvalid": "Число больше нуля, до 2 знаков после точки",
+      "thresholdHelperUnit": "Единица: {{unit}}. Остаток ниже порога — автозадача на пополнение",
+      "thresholdHelperDefault": "Остаток ниже порога — автозадача на пополнение",
+      "categoryLabel": "Категория заявки *",
+      "categoryRequired": "Выберите категорию заявки",
+      "categoryHint": "Группа этой категории получит автозадачу",
+      "pickersError": "Не удалось загрузить товары или склады — нужен доступ к модулю «Склады»",
+      "saveError": "Не удалось сохранить порог"
+    },
+    "categories": {
+      "sectionTitle": "Категории заявок",
+      "sectionDescription": "Категория определяет, какие группы персонала видят заявку.",
+      "addButton": "Добавить категорию",
+      "empty": "Категорий пока нет",
+      "columns": {
+        "name": "Название",
+        "roles": "Группы",
+        "priority": "Приоритет",
+        "active": "Активна"
+      },
+      "editTooltip": "Изменить",
+      "toggleError": "Не удалось обновить категорию"
+    },
+    "rules": {
+      "sectionTitle": "Повторяющиеся задачи",
+      "sectionDescription": "Система создаёт задачи по расписанию и раздаёт группе категории.",
+      "addButton": "Новое правило",
+      "empty": "Правил пока нет",
+      "columns": {
+        "task": "Задача",
+        "category": "Категория",
+        "schedule": "Расписание",
+        "nextRun": "Следующий запуск",
+        "active": "Активно"
+      },
+      "deleteTooltip": "Удалить",
+      "toggleError": "Не удалось обновить правило",
+      "deleteError": "Не удалось удалить правило",
+      "deleteConfirmTitle": "Удалить правило?",
+      "deleteConfirmBody": "«{{title}}» больше не будет создаваться автоматически."
+    },
+    "stockRules": {
+      "sectionTitle": "Пороги товаров",
+      "sectionDescription": "Остаток на складе упал ниже порога — система сама создаёт заявку на пополнение.",
+      "addButton": "Новый порог",
+      "empty": "Порогов пока нет",
+      "columns": {
+        "product": "Товар",
+        "warehouse": "Склад",
+        "threshold": "Порог",
+        "category": "Категория заявки",
+        "active": "Активно"
+      },
+      "editTooltip": "Изменить",
+      "deleteTooltip": "Удалить",
+      "toggleError": "Не удалось обновить порог",
+      "deleteError": "Не удалось удалить порог",
+      "deleteConfirmTitle": "Удалить порог?",
+      "deleteConfirmBody": "Автозадачи на пополнение «{{name}}» больше не будут создаваться."
+    },
+    "suggestions": {
+      "sectionTitle": "Предложения автономности",
+      "sectionDescription": "Заявки, которые повторяются, — система предлагает перевести их в автоматические.",
+      "empty": "Предложений нет — повторяющихся заявок не обнаружено",
+      "frequencyDetail": "{{occurrences}} раза за {{days}} дней",
+      "monthlyDetail": "{{months}} месяца подряд",
+      "suggestedPrefix": "предлагается: {{interval}}",
+      "approveButton": "Перевести в автономность",
+      "dismissButton": "Отклонить",
+      "approveError": "Не удалось принять предложение",
+      "dismissError": "Не удалось отклонить предложение"
+    }
+  }
+}

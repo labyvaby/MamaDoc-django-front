@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
+import { useT } from "../../../i18n/VerticalProvider";
 
 import type {
   DjangoEmployeeWithServices,
@@ -52,6 +53,7 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
   onChange,
   onDelete,
 }) => {
+  const { t } = useT("appointments");
   const availableEmployees = getEmployeesForService(row.serviceId);
   const availableServices = getServicesForEmployee(row.employeeId);
 
@@ -90,7 +92,7 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
         <Typography variant="caption" fontWeight={600} color="text.secondary">
           {selectedService
             ? selectedService.name
-            : "Выберите услугу и специалиста"}
+            : t("servicePicker.title")}
         </Typography>
         {showDelete && (
           <IconButton size="small" color="error" onClick={onDelete} sx={{ p: 0.25 }}>
@@ -125,8 +127,10 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
             <Stack>
               <Typography variant="body2">{s.name}</Typography>
               <Typography variant="caption" color="text.secondary">
-                {Number(s.basePrice)} с
-                {s.durationMinutes ? ` · ${s.durationMinutes} мин` : ""}
+                {t("servicePicker.priceAmount", { amount: Number(s.basePrice) })}
+                {s.durationMinutes
+                  ? t("servicePicker.durationSuffix", { minutes: s.durationMinutes })
+                  : ""}
               </Typography>
             </Stack>
           </li>
@@ -135,9 +139,9 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
           <TextField
             {...params}
             size="small"
-            placeholder="Услуга *"
+            placeholder={t("servicePicker.serviceLabel")}
             error={touched && !row.serviceId}
-            helperText={touched && !row.serviceId ? "Выберите услугу" : ""}
+            helperText={touched && !row.serviceId ? t("servicePicker.servicePlaceholder") : ""}
           />
         )}
       />
@@ -165,9 +169,9 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
           <TextField
             {...params}
             size="small"
-            placeholder="Специалист *"
+            placeholder={t("servicePicker.specialistLabel")}
             error={touched && !row.employeeId}
-            helperText={touched && !row.employeeId ? "Выберите специалиста" : ""}
+            helperText={touched && !row.employeeId ? t("servicePicker.specialistPlaceholder") : ""}
           />
         )}
       />
@@ -176,14 +180,16 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
       {selectedService && (
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography variant="caption" color="text.secondary">
-            Цена:
+            {t("servicePicker.price")}
           </Typography>
           <Typography variant="caption" fontWeight={600}>
-            {Number(row.unitPrice || selectedService.basePrice)} с
+            {t("servicePicker.priceAmount", {
+              amount: Number(row.unitPrice || selectedService.basePrice),
+            })}
           </Typography>
           {row.unitPrice && row.unitPrice !== selectedService.basePrice && (
             <Typography variant="caption" color="info.main">
-              (изменена)
+              {t("servicePicker.changed")}
             </Typography>
           )}
         </Stack>
@@ -191,12 +197,12 @@ const AppointmentServicePicker: React.FC<AppointmentServicePickerProps> = ({
 
       {incompatible && (
         <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
-          Этот специалист не оказывает выбранную услугу
+          {t("servicePicker.specialistMismatch")}
         </Alert>
       )}
       {noProviders && (
         <Alert severity="warning" sx={{ py: 0, fontSize: "0.75rem" }}>
-          Нет специалистов для этой услуги
+          {t("servicePicker.noSpecialists")}
         </Alert>
       )}
     </Stack>

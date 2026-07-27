@@ -43,15 +43,20 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import DjangoConclusionDrawer from "./DjangoConclusionDrawer";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
+import { agree } from "../../i18n/formatters";
 
 // ── state display ──────────────────────────────────────────────────────────────
 
-const STATE_LABEL: Record<ConclusionState, string> = {
-  not_created: "Не создано",
-  draft: "Черновик",
-  completed: "Готово",
-  not_required: "Не требуется",
-};
+/** Подпись состояния заключения — из словаря. */
+const stateLabel = (state: ConclusionState): string =>
+  tt(
+    `appointments:conclusionSlots.state.${
+      state === "not_created" ? "none" : state === "not_required" ? "notRequired" : state
+    }`,
+    { defaultValue: String(state) },
+  );
 
 const STATE_COLOR: Record<
   ConclusionState,
@@ -77,6 +82,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
   appointmentId,
   onClose,
 }) => {
+  const { t } = useT("appointments");
   const canView = useCan([
     "medical.conclusions.view",
     "medical.conclusions.create",
@@ -158,7 +164,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         py={1.5}
         sx={{ flexShrink: 0 }}
       >
-        <Typography variant="h6">Заключение</Typography>
+        <Typography variant="h6">{t("conclusionSlots.title")}</Typography>
         {onClose && (
           <IconButton size="small" onClick={onClose}>
             <CloseOutlined fontSize="small" />
@@ -174,20 +180,20 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           mb={1}
         >
           <Typography variant="body2" fontWeight={600} color="text.secondary">
-            Врачебные заключения
+            {t("conclusionSlots.sectionTitle")}
           </Typography>
           {slotsQuery.isFetching && <CircularProgress size={14} />}
         </Stack>
 
         {slotsQuery.error && (
           <Alert severity="error" sx={{ mb: 1 }}>
-            {slotsQuery.error instanceof Error ? slotsQuery.error.message : "Ошибка загрузки"}
+            {slotsQuery.error instanceof Error ? slotsQuery.error.message : t("conclusionSlots.state.error")}
           </Alert>
         )}
 
         {!slotsQuery.isLoading && slots.length === 0 && !slotsQuery.error && (
           <Typography variant="body2" color="text.disabled">
-            Для этого приёма нет врачебных заключений
+            {t("conclusionSlots.empty")}
           </Typography>
         )}
 
@@ -230,6 +236,7 @@ const SlotRow: React.FC<{
   appointmentId: number;
   onOpen: () => void;
 }> = ({ slot, appointmentId, onOpen }) => {
+  const { t, term } = useT("appointments");
   const hasConclusion = slot.conclusion !== null;
   const showCreate = slot.canEdit && slot.state === "not_created";
   const showEdit = slot.canEdit && slot.state !== "not_created";
@@ -255,14 +262,16 @@ const SlotRow: React.FC<{
         </Typography>
         {showNotCreatedMsg && (
           <Typography variant="caption" color="text.disabled">
-            Заключение ещё не создано
+            {t("conclusionSlots.notCreatedYet", {
+              created: agree(term.conclusion.gender, ["создан", "создана", "создано"]),
+            })}
           </Typography>
         )}
       </Stack>
 
       {/* center: state badge */}
       <Chip
-        label={STATE_LABEL[slot.state]}
+        label={stateLabel(slot.state)}
         size="small"
         color={STATE_COLOR[slot.state]}
         variant="outlined"
@@ -279,7 +288,7 @@ const SlotRow: React.FC<{
             onClick={onOpen}
             sx={{ whiteSpace: "nowrap" }}
           >
-            Создать
+            {t("conclusionSlots.create")}
           </Button>
         )}
         {showEdit && (
@@ -290,7 +299,7 @@ const SlotRow: React.FC<{
             onClick={onOpen}
             sx={{ whiteSpace: "nowrap" }}
           >
-            Редактировать
+            {t("conclusionSlots.edit")}
           </Button>
         )}
         {showView && (
@@ -301,12 +310,12 @@ const SlotRow: React.FC<{
             onClick={onOpen}
             sx={{ whiteSpace: "nowrap" }}
           >
-            Просмотр
+            {t("conclusionSlots.view")}
           </Button>
         )}
         {slot.canPrint && hasConclusion && (
           <>
-            <Tooltip title="Печать заключения (PDF)">
+            <Tooltip title={t("conclusionSlots.printConclusion")}>
               <Button
                 size="small"
                 variant="text"
@@ -320,10 +329,10 @@ const SlotRow: React.FC<{
                 }
                 sx={{ whiteSpace: "nowrap" }}
               >
-                Печать
+                {t("conclusionSlots.print")}
               </Button>
             </Tooltip>
-            <Tooltip title="Печать справки (PDF)">
+            <Tooltip title={t("conclusionSlots.printCertificate")}>
               <Button
                 size="small"
                 variant="text"
@@ -336,7 +345,7 @@ const SlotRow: React.FC<{
                 }
                 sx={{ whiteSpace: "nowrap" }}
               >
-                Справка
+                {t("conclusionSlots.certificate")}
               </Button>
             </Tooltip>
           </>

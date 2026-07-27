@@ -39,23 +39,7 @@ import {
 import { ApiError } from "../../api/client";
 import { usePermissions } from "../../hooks/usePermissions";
 import type { RbacBranch } from "../../api/auth";
-
-// ── Error parsing ───────────────────────────────────────────────────────────
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
-      const e = (err.payload as Record<string, unknown>).error;
-      if (typeof e === "string") return e;
-      if (typeof e === "object" && e !== null && "message" in e) {
-        return String((e as Record<string, unknown>).message);
-      }
-    }
-    return err.message;
-  }
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
-}
+import { useT } from "../../i18n/VerticalProvider";
 
 // Бэкенд может вернуть один и тот же системный набор ролей по разу на каждую
 // организацию. Оставляем роли активной организации — членство тоже принадлежит
@@ -84,6 +68,23 @@ function MembershipFormDrawer({
   onClose,
   onSaved,
 }: MembershipFormDrawerProps) {
+  const { t } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
+        const e = (err.payload as Record<string, unknown>).error;
+        if (typeof e === "string") return e;
+        if (typeof e === "object" && e !== null && "message" in e) {
+          return String((e as Record<string, unknown>).message);
+        }
+      }
+      return err.message;
+    }
+    if (err instanceof Error) return err.message;
+    return t("memberships.unknownError");
+  }
+
   const [roleId, setRoleId] = React.useState<number | "">("");
   const [crmBranches, setCrmBranches] = React.useState<RbacBranch[]>([]);
   const [isActive, setIsActive] = React.useState(true);
@@ -148,9 +149,9 @@ function MembershipFormDrawer({
         py={1.5}
       >
         <Typography variant="h6" fontWeight={600}>
-          Доступы участника
+          {t("memberships.form.title")}
         </Typography>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+        <IconButton onClick={busy ? undefined : onClose} aria-label={t("common:actions.close")}>
           <CloseOutlined />
         </IconButton>
       </Stack>
@@ -171,7 +172,7 @@ function MembershipFormDrawer({
               )}
               {membership.isOwner && (
                 <Chip
-                  label="Владелец"
+                  label={t("memberships.owner")}
                   size="small"
                   color="primary"
                   sx={{ ml: 1, height: 18, fontSize: 10 }}
@@ -189,7 +190,7 @@ function MembershipFormDrawer({
           {/* ── Роль ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Роль
+              {t("memberships.form.roleLabel")}
             </Typography>
             <TextField
               select
@@ -201,7 +202,7 @@ function MembershipFormDrawer({
               disabled={busy}
               SelectProps={{ displayEmpty: true }}
             >
-              <MenuItem value="">Без роли</MenuItem>
+              <MenuItem value="">{t("memberships.noRole")}</MenuItem>
               {roles.map((r) => (
                 <MenuItem key={r.id} value={r.id}>
                   {r.name}
@@ -213,10 +214,10 @@ function MembershipFormDrawer({
           {/* ── Доступ в CRM (филиалы) ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Доступ в CRM (филиалы)
+              {t("memberships.form.branchesLabel")}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Какие филиалы участник видит в системе
+              {t("memberships.form.branchesHint")}
             </Typography>
             <Autocomplete
               multiple
@@ -237,7 +238,7 @@ function MembershipFormDrawer({
                 ))
               }
               renderInput={(params) => (
-                <TextField {...params} placeholder="Выберите филиалы" />
+                <TextField {...params} placeholder={t("memberships.form.branchesPlaceholder")} />
               )}
             />
           </Stack>
@@ -251,7 +252,7 @@ function MembershipFormDrawer({
                 disabled={busy}
               />
             }
-            label="Активен"
+            label={t("memberships.form.activeLabel")}
           />
         </Stack>
       </Box>
@@ -260,7 +261,7 @@ function MembershipFormDrawer({
 
       <Box px={2.5} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
         <AppButton onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </AppButton>
         <AppButton
           variant="contained"
@@ -268,7 +269,7 @@ function MembershipFormDrawer({
           disabled={busy}
           loading={busy}
         >
-          {busy ? "Сохранение…" : "Сохранить"}
+          {busy ? t("common:state.saving") : t("common:actions.save")}
         </AppButton>
       </Box>
     </Drawer>
@@ -284,6 +285,7 @@ interface MembershipRowProps {
 }
 
 function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
+  const { t } = useT("settings");
   return (
     <Paper
       variant="outlined"
@@ -305,10 +307,10 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
             {membership.username || membership.email || `#${membership.userId}`}
           </Typography>
           {membership.isOwner && (
-            <Chip label="Владелец" size="small" color="primary" sx={{ height: 18, fontSize: 10 }} />
+            <Chip label={t("memberships.owner")} size="small" color="primary" sx={{ height: 18, fontSize: 10 }} />
           )}
           {!membership.isActive && (
-            <Chip label="Неактивен" size="small" sx={{ height: 18, fontSize: 10 }} />
+            <Chip label={t("memberships.inactive")} size="small" sx={{ height: 18, fontSize: 10 }} />
           )}
         </Stack>
         {membership.email && (
@@ -324,7 +326,7 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
           <Chip label={membership.role.name} size="small" variant="outlined" />
         ) : (
           <Typography variant="caption" color="text.disabled" fontStyle="italic">
-            Без роли
+            {t("memberships.noRole")}
           </Typography>
         )}
       </Box>
@@ -333,7 +335,7 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
       <Box>
         {membership.branches.length === 0 ? (
           <Typography variant="caption" color="text.disabled" fontStyle="italic">
-            Все филиалы
+            {t("memberships.allBranches")}
           </Typography>
         ) : (
           <Stack direction="row" flexWrap="wrap" gap={0.5}>
@@ -355,7 +357,7 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
       {/* Actions */}
       <Stack direction="row" alignItems="center" gap={0.5} justifyContent="flex-end">
         {canEdit && (
-          <IconButton size="small" onClick={onEdit} aria-label="Редактировать доступы">
+          <IconButton size="small" onClick={onEdit} aria-label={t("memberships.editAccessAria")}>
             <EditOutlined fontSize="small" />
           </IconButton>
         )}
@@ -367,6 +369,23 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
 // ── MembershipsSettingsPage ───────────────────────────────────────────────────
 
 const MembershipsSettingsPage: React.FC = () => {
+  const { t } = useT("settings");
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.payload && typeof err.payload === "object" && "error" in err.payload) {
+        const e = (err.payload as Record<string, unknown>).error;
+        if (typeof e === "string") return e;
+        if (typeof e === "object" && e !== null && "message" in e) {
+          return String((e as Record<string, unknown>).message);
+        }
+      }
+      return err.message;
+    }
+    if (err instanceof Error) return err.message;
+    return t("memberships.unknownError");
+  }
+
   const { activeOrganization, activeMembership } = usePermissions();
   const [memberships, setMemberships] = React.useState<RbacMembership[]>([]);
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
@@ -410,7 +429,7 @@ const MembershipsSettingsPage: React.FC = () => {
 
   const handleSaved = (saved: RbacMembership) => {
     setMemberships((prev) => prev.map((m) => (m.id === saved.id ? saved : m)));
-    setSnack("Доступы участника обновлены");
+    setSnack(t("memberships.updated"));
   };
 
   // Суперюзеру бэкенд отдаёт memberships всех организаций, из-за чего один и
@@ -446,7 +465,7 @@ const MembershipsSettingsPage: React.FC = () => {
           <Stack direction="row" alignItems="center" gap={1}>
             <GroupsOutlined color="action" />
             <Typography variant="h6" fontWeight={600}>
-              Сотрудники и доступы
+              {t("memberships.title")}
             </Typography>
             {!loading && (
               <Chip label={orgMemberships.length} size="small" sx={{ height: 20 }} />
@@ -455,7 +474,7 @@ const MembershipsSettingsPage: React.FC = () => {
 
           <TextField
             size="small"
-            placeholder="Поиск участника…"
+            placeholder={t("memberships.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             InputProps={{
@@ -474,7 +493,7 @@ const MembershipsSettingsPage: React.FC = () => {
             severity="error"
             action={
               <AppButton size="small" color="inherit" onClick={loadData}>
-                Повторить
+                {t("common:actions.retry")}
               </AppButton>
             }
           >
@@ -514,11 +533,11 @@ const MembershipsSettingsPage: React.FC = () => {
             }}
           >
             <GroupsOutlined sx={{ fontSize: 40, color: "text.disabled" }} />
-            <Typography variant="body2">Нет участников для отображения.</Typography>
+            <Typography variant="body2">{t("memberships.emptyTitle")}</Typography>
             <Typography variant="caption">
-              Участники добавляются при создании сотрудника (
-              <AddOutlined sx={{ fontSize: 12, verticalAlign: "middle" }} /> Добавить
-              сотрудника).
+              {t("memberships.emptyHintBefore")}
+              <AddOutlined sx={{ fontSize: 12, verticalAlign: "middle" }} />
+              {t("memberships.emptyHintAfter")}
             </Typography>
           </Box>
         )}
@@ -526,7 +545,7 @@ const MembershipsSettingsPage: React.FC = () => {
         {!loading && orgMemberships.length > 0 && filtered.length === 0 && (
           <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
             <Typography variant="body2">
-              Ничего не найдено по запросу «{search}».
+              {t("memberships.emptySearch", { query: search })}
             </Typography>
           </Box>
         )}

@@ -26,14 +26,9 @@ import {
   normalizeDjangoStatus,
 } from "../../../config/appointmentStatuses";
 import { PAYMENT_STATUS_LABELS, PAYMENT_STATUS_COLOR } from "../../appointments/DjangoPaymentDrawer";
+import { useT } from "../../../i18n/VerticalProvider";
 
 type FilterType = "all" | "doctor" | "procedure";
-
-const FILTER_TABS: { key: FilterType; label: string }[] = [
-  { key: "all", label: "Все" },
-  { key: "doctor", label: "Врачи" },
-  { key: "procedure", label: "Процедуры" },
-];
 
 type Props = {
   selected: boolean;
@@ -44,13 +39,16 @@ type Props = {
   onClick: (appt: DjangoAppointment) => void;
 };
 
-function doctorsLabel(appt: DjangoAppointment): string {
+/** Тип функции перевода — панель получает её из useT и прокидывает в хелперы. */
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
+
+function doctorsLabel(appt: DjangoAppointment, t: TFunc): string {
   const names = Array.from(
     new Set(appt.services.filter((s) => s.employee).map((s) => s.employee!.fullName)),
   );
   if (names.length === 0) return "—";
   if (names.length === 1) return names[0];
-  return `${names.length} исполнит.`;
+  return t("common:counts.performers", { count: names.length });
 }
 
 /**
@@ -67,10 +65,10 @@ function hasConclusion(appt: DjangoAppointment): boolean {
   );
 }
 
-function servicesLabel(appt: DjangoAppointment): string | null {
+function servicesLabel(appt: DjangoAppointment, t: TFunc): string | null {
   if (appt.services.length === 0) return null;
   if (appt.services.length === 1) return appt.services[0].service?.name ?? null;
-  return `${appt.services.length} услуг`;
+  return t("common:counts.services", { count: appt.services.length });
 }
 
 const PatientHistoryPanel: React.FC<Props> = ({
@@ -81,7 +79,17 @@ const PatientHistoryPanel: React.FC<Props> = ({
   canViewFinance,
   onClick,
 }) => {
+  const { t } = useT("patients");
   const [filter, setFilter] = React.useState<FilterType>("all");
+
+  const filterTabs: { key: FilterType; label: string }[] = React.useMemo(
+    () => [
+      { key: "all", label: t("history.filterAll") },
+      { key: "doctor", label: t("history.filterDoctor") },
+      { key: "procedure", label: t("history.filterProcedure") },
+    ],
+    [t],
+  );
 
   // Django appointments don't have an appointment_type field yet — filter is visual placeholder
   const filtered = React.useMemo(() => history, [history]);
@@ -95,7 +103,7 @@ const PatientHistoryPanel: React.FC<Props> = ({
             <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap" sx={{ mb: 1.25 }}>
               <Stack direction="row" alignItems="center" gap={1.25}>
                 <HistoryOutlined color="primary" />
-                <Typography variant="h6">История приёмов</Typography>
+                <Typography variant="h6">{t("history.title")}</Typography>
               </Stack>
               {selected && !loading && !error && (
                 <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
@@ -103,7 +111,7 @@ const PatientHistoryPanel: React.FC<Props> = ({
                 </Typography>
               )}
             </Stack>
-            <SegmentedTabs layoutId="django-patient-history-filter" tabs={FILTER_TABS} value={filter} onChange={setFilter} />
+            <SegmentedTabs layoutId="django-patient-history-filter" tabs={filterTabs} value={filter} onChange={setFilter} />
           </Box>
         }
         disableContentPadding
@@ -125,23 +133,23 @@ const PatientHistoryPanel: React.FC<Props> = ({
           {!selected ? (
             <ListEmptyState
               icon={<HistoryOutlined />}
-              title="Пациент не выбран"
-              description="Выберите пациента слева, чтобы увидеть историю приёмов"
+              title={t("history.notSelectedTitle")}
+              description={t("history.notSelectedDescription")}
             />
           ) : loading ? (
             <ListLoadingSkeleton rows={5} />
           ) : error ? (
-            <ListEmptyState icon={<ErrorOutlineOutlined />} title="Не удалось загрузить" description={error} />
+            <ListEmptyState icon={<ErrorOutlineOutlined />} title={t("errors.loadFailed")} description={error} />
           ) : filtered.length === 0 ? (
             <ListEmptyState
               icon={<EventBusyOutlined />}
-              title="История пуста"
-              description="У пациента ещё не было приёмов"
+              title={t("history.emptyTitle")}
+              description={t("history.emptyDescription")}
             />
           ) : (
             <Stack spacing={0.75}>
               {filtered.map((h) => {
-                const svc = servicesLabel(h);
+                const svc = servicesLabel(h, t);
                 const total =
                   h.totalAmount && h.totalAmount !== "0.00" && h.totalAmount !== "0"
                     ? formatKGS(h.totalAmount)
@@ -182,11 +190,11 @@ const PatientHistoryPanel: React.FC<Props> = ({
                           {dayjs(h.scheduledAt).format("D MMMM YYYY, HH:mm")}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" noWrap>
-                          Врач: {doctorsLabel(h)}
+                          {t("history.specialistLabel")} {doctorsLabel(h, t)}
                         </Typography>
                         {svc && (
                           <Typography variant="body2" color="text.secondary" noWrap>
-                            Услуга: {svc}
+                            {t("history.serviceLabel")} {svc}
                           </Typography>
                         )}
                       </Stack>
@@ -199,7 +207,7 @@ const PatientHistoryPanel: React.FC<Props> = ({
                         <Chip label={statusCfg.label} icon={statusCfg.icon} size="small" sx={statusChipSx} />
                         {hasConclusion(h) && (
                           <Chip
-                            label="Заключение"
+                            label={t("history.conclusionChip")}
                             icon={<DescriptionOutlined />}
                             size="small"
                             color="info"

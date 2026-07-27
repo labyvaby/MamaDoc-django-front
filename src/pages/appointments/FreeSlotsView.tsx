@@ -24,7 +24,13 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import { subtleBg } from "../../theme/uiHelpers";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
 
+// Календарные подписи — данные локали, а не терминология вертикали:
+// в клинике и салоне они одинаковы, поэтому в глоссарий не выносятся.
+// Полноценно это заменяется данными dayjs (ru) — отдельная задача, т.к.
+// в родительном падеже («января») нужна standalone-форма.
 const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTHS_GEN = [
   "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -81,19 +87,35 @@ function summarize(emp: EmployeeAvailability, todayIso: string): DocSummary {
   const noSchedule = !emp.days.some((d) => d.scheduled || d.dayOff);
 
   if (nearest && nearest.date === todayIso) {
-    return { todayFree, nearest, status: "free", label: `Сегодня, ближайшее ${nearest.start}`, noSchedule };
+    return {
+      todayFree,
+      nearest,
+      status: "free",
+      label: tt("appointments:slots.todayNearest", { time: nearest.start }),
+      noSchedule,
+    };
   }
   if (nearest) {
     const d = dayjs(nearest.date);
     const isTomorrow = nearest.date === dayjs().add(1, "day").format("YYYY-MM-DD");
-    const rel = isTomorrow ? "завтра" : `${WEEKDAY_SHORT[mondayIndex(d)]} ${d.date()}`;
-    return { todayFree, nearest, status: "later", label: `Ближайшее ${rel}, ${nearest.start}`, noSchedule };
+    const rel = isTomorrow
+      ? tt("appointments:slots.tomorrow")
+      : `${WEEKDAY_SHORT[mondayIndex(d)]} ${d.date()}`;
+    return {
+      todayFree,
+      nearest,
+      status: "later",
+      label: tt("appointments:slots.nearest", { when: rel, time: nearest.start }),
+      noSchedule,
+    };
   }
   return {
     todayFree,
     nearest: null,
     status: "none",
-    label: noSchedule ? "График не задан" : "Свободных окон нет",
+    label: noSchedule
+      ? tt("appointments:slots.noScheduleShort")
+      : tt("appointments:slots.noFreeSlotsShort"),
     noSchedule,
   };
 }
@@ -113,6 +135,7 @@ export interface FreeSlotsViewProps {
 }
 
 const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId, headerActions, onBook }) => {
+  const { t } = useT("appointments");
   const theme = useTheme();
 
   const todayIso = React.useMemo(() => dayjs().format("YYYY-MM-DD"), []);
@@ -264,7 +287,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
           </Typography>
           {selectableDays.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-              В расписании врачей нет смен
+              {t("slots.noShifts")}
             </Typography>
           ) : (
             <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
@@ -335,7 +358,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                           fontWeight: d.freeCount > 0 ? 600 : 400,
                         }}
                       >
-                        {d.freeCount > 0 ? String(d.freeCount) : "нет"}
+                        {d.freeCount > 0 ? String(d.freeCount) : t("slots.none")}
                       </Typography>
                     </Box>
                   );
@@ -392,7 +415,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
             color="text.secondary"
             sx={{ fontWeight: 600, px: 2, pt: 1.5, pb: 1 }}
           >
-            Специальности
+            {t("slots.specialities")}
           </Typography>
           {specsQuery.isLoading ? (
             <Stack alignItems="center" py={3}>
@@ -437,7 +460,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                         sx={{ flex: 1, minWidth: 0 }}
                         noWrap
                       >
-                        Все специалисты
+                        {t("slots.allSpecialists")}
                       </Typography>
                       {overall && (
                         <Box
@@ -454,7 +477,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                               : subtleBg(t, true),
                             ...(t.palette.mode === "dark" && overall.free ? { color: t.palette.success.light } : {}),
                           })}
-                          title="Свободны сегодня"
+                          title={t("slots.freeToday")}
                         >
                           {overall.free}/{overall.total}
                         </Box>
@@ -515,7 +538,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
               })()}
               {specs.length === 0 ? (
                 <Typography variant="body2" color="text.disabled" sx={{ px: 2, py: 2 }}>
-                  Нет специальностей
+                  {t("slots.noSpecialities")}
                 </Typography>
               ) : (
                 specs.map((s) => {
@@ -570,7 +593,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                 : subtleBg(t, true),
                               ...(t.palette.mode === "dark" && badge.free ? { color: t.palette.success.light } : {}),
                             })}
-                            title="Свободны сегодня"
+                            title={t("slots.freeToday")}
                           >
                             {badge.free}/{badge.total}
                           </Box>
@@ -669,7 +692,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                   size="small"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Поиск врача…"
+                  placeholder={t("slots.searchSpecialist")}
                   sx={{ width: { xs: 200, sm: 260 } }}
                   InputProps={{
                     startAdornment: (
@@ -679,10 +702,13 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                 />
                 <Box>
                   <Typography variant="subtitle1" fontWeight={600}>
-                    Сетка врачей {specId ? `(${specs.find((s) => s.id === specId)?.name})` : "(Все специалисты)"}
+                    {t("slots.grid")}{" "}
+                    {specId
+                      ? `(${specs.find((s) => s.id === specId)?.name})`
+                      : t("slots.allSpecialistsOption")}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Найдено врачей: {docs.length}
+                    {t("slots.foundSpecialists", { count: docs.length })}
                   </Typography>
                 </Box>
               </Stack>
@@ -699,7 +725,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                     <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
                       <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
                       <Typography variant="body2" color="text.disabled">
-                        {search ? "Врачи по вашему запросу не найдены" : "Врачи не найдены"}
+                        {search
+                          ? t("slots.specialistsNotFoundByQuery")
+                          : t("slots.specialistsNotFound")}
                       </Typography>
                     </Stack>
                   );
@@ -710,7 +738,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                     <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
                       <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
                       <Typography variant="body2" color="text.disabled">
-                        На эту дату у врачей нет рабочих смен
+                        {t("slots.noShiftsOnDate")}
                       </Typography>
                     </Stack>
                   );
@@ -802,13 +830,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                 {emp.fullName}
                               </Typography>
                               <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-                                {specName ?? "Специалист"}
+                                {specName ?? t("slots.specialist")}
                               </Typography>
                             </Box>
                           </Stack>
                           {docDay && docDay.scheduled && (
                             <Chip
-                              label={docDay.freeCount > 0 ? `${docDay.freeCount} окон` : "нет окон"}
+                              label={
+                                docDay.freeCount > 0
+                                  ? t("slots.slotsCount", { count: docDay.freeCount })
+                                  : t("slots.noSlots")
+                              }
                               size="small"
                               color={docDay.freeCount > 0 ? "success" : "default"}
                               variant={docDay.freeCount > 0 ? "outlined" : "filled"}
@@ -825,11 +857,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                           </Typography>
 
                           {!docDay || !docDay.scheduled ? (
-                            <Alert severity="info" icon={false}>Нет рабочего графика на этот день</Alert>
+                            <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
                           ) : docDay.dayOff ? (
-                            <Alert severity="info" icon={false}>Выходной день</Alert>
+                            <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>
                           ) : docDay.slots.length === 0 ? (
-                            <Alert severity="info" icon={false}>Нет доступных окон</Alert>
+                            <Alert severity="info" icon={false}>{t("slots.noFreeSlots")}</Alert>
                           ) : (
                             <Stack spacing={0.75}>
                               {docDay.slots.map((slot: AvailabilitySlot) => {
@@ -877,7 +909,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                     {slot.free ? (
                                       <>
                                         <Typography variant="caption" color="success.main" sx={{ flex: 1, fontWeight: 500 }}>
-                                          Свободно
+                                          {t("slots.free")}
                                         </Typography>
                                         <Stack
                                           direction="row"
@@ -896,16 +928,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                           })}
                                         >
                                           <AddOutlined sx={{ fontSize: 15 }} />
-                                          Записать
+                                          {t("slots.book")}
                                         </Stack>
                                       </>
                                     ) : busy ? (
                                       <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
-                                        Занято{slot.patientName ? ` · ${slot.patientName}` : ""}
+                                        {t("slots.busy")}{slot.patientName ? ` · ${slot.patientName}` : ""}
                                       </Typography>
                                     ) : (
                                       <Typography variant="caption" color="text.disabled" sx={{ flex: 1 }}>
-                                        Время прошло
+                                        {t("slots.timePassed")}
                                       </Typography>
                                     )}
                                   </Stack>
@@ -954,7 +986,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                       {selectedDoc.emp.fullName}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {specId ? specs.find((s) => s.id === specId)?.name ?? "" : "Специалист"}
+                      {specId ? specs.find((s) => s.id === specId)?.name ?? "" : t("slots.specialist")}
                     </Typography>
                   </Box>
                 </Stack>
@@ -967,14 +999,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                   onClick={() => setSelDocId(null)}
                   sx={{ textTransform: "none", fontSize: "0.75rem" }}
                 >
-                  К сетке врачей
+                  {t("slots.backToGrid")}
                 </Button>
               </Stack>
 
               {/* Таймлайн окон выбранного дня */}
               <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 2 }}>
                 {!selectedDay ? (
-                  <Alert severity="info" icon={false}>В расписании врача нет смен</Alert>
+                  <Alert severity="info" icon={false}>{t("slots.noShiftsForSpecialist")}</Alert>
                 ) : (
                   <>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
@@ -982,11 +1014,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                       {MONTHS_GEN[dayjs(selectedDay.date).month()]}
                     </Typography>
                     {selectedDay.dayOff ? (
-                      <Alert severity="info" icon={false}>Выходной день</Alert>
+                      <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>
                     ) : !selectedDay.scheduled ? (
-                      <Alert severity="info" icon={false}>Нет рабочего графика на этот день</Alert>
+                      <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
                     ) : selectedDay.slots.length === 0 ? (
-                      <Alert severity="info" icon={false}>Нет окон</Alert>
+                      <Alert severity="info" icon={false}>{t("slots.noSlotsShort")}</Alert>
                     ) : (
                       <Stack spacing={0.75}>
                         {selectedDay.slots.map((slot) => {
@@ -1034,7 +1066,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                               {slot.free ? (
                                 <>
                                   <Typography variant="caption" color="success.main" sx={{ flex: 1, fontWeight: 500 }}>
-                                    Свободно
+                                    {t("slots.free")}
                                   </Typography>
                                   <Stack
                                     direction="row"
@@ -1053,16 +1085,16 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                     })}
                                   >
                                     <AddOutlined sx={{ fontSize: 15 }} />
-                                    Записать
+                                    {t("slots.book")}
                                   </Stack>
                                 </>
                               ) : busy ? (
                                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
-                                  Занято{slot.patientName ? ` · ${slot.patientName}` : ""}
+                                  {t("slots.busy")}{slot.patientName ? ` · ${slot.patientName}` : ""}
                                 </Typography>
                               ) : (
                                 <Typography variant="caption" color="text.disabled" sx={{ flex: 1 }}>
-                                  Время прошло
+                                  {t("slots.timePassed")}
                                 </Typography>
                               )}
                             </Stack>

@@ -64,35 +64,37 @@ import { getProducts, getWarehouses, type DjangoProduct } from "../../api/wareho
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { TASK_PRIORITY_META, TASK_PRIORITY_OPTIONS } from "../tasks/meta";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Справочники ────────────────────────────────────────────────────────────────
+// Роли-исполнители для привязки категорий (без superadmin). Подписи — из
+// settings.json (tasks.roles) через roleOptionsOf(t), т.к. doctor/nurse
+// параметризуются глоссарием (врач/медсестра ↔ мастер/ассистент).
 
-/** Роли-исполнители для привязки категорий (без superadmin). */
-const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: "admin", label: "Админ" },
-  { value: "manager", label: "Управляющий" },
-  { value: "owner", label: "Владелец" },
-  { value: "doctor", label: "Врач" },
-  { value: "nurse", label: "Медсестра" },
-  { value: "receptionist", label: "Ресепшен" },
-  { value: "registrator", label: "Регистратор" },
-  { value: "accountant", label: "Бухгалтер" },
-];
+const ROLE_VALUES = ["admin", "manager", "owner", "doctor", "nurse", "receptionist", "registrator", "accountant"] as const;
 
-const roleLabel = (v: string) => ROLE_OPTIONS.find((r) => r.value === v)?.label ?? v;
+function roleOptionsOf(t: (key: string) => string): { value: string; label: string }[] {
+  return ROLE_VALUES.map((value) => ({ value, label: t(`tasks.roles.${value}`) }));
+}
 
-const INTERVAL_OPTIONS: { value: RecurringInterval; label: string }[] = [
-  { value: "daily", label: "Каждый день" },
-  { value: "weekly", label: "Раз в неделю" },
-  { value: "monthly", label: "Раз в месяц" },
-];
+function roleLabelOf(v: string, t: (key: string) => string): string {
+  return (ROLE_VALUES as readonly string[]).includes(v) ? t(`tasks.roles.${v}`) : v;
+}
 
+// Названия дней недели — данные локали, одинаковые в обеих вертикалях,
+// сознательно не выносятся в JSON (см. CLAUDE.md, «Терминология и вертикали»).
 const WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
 
-function intervalLabel(rule: RecurringTaskRule): string {
-  if (rule.interval === "daily") return "Каждый день";
-  if (rule.interval === "weekly") return `Еженедельно, ${WEEKDAYS[(rule.dayOfWeek ?? 1) - 1].toLowerCase()}`;
-  return `Ежемесячно, ${rule.dayOfMonth ?? 1}-го числа`;
+const INTERVAL_VALUES: RecurringInterval[] = ["daily", "weekly", "monthly"];
+
+function intervalOptionsOf(t: (key: string) => string): { value: RecurringInterval; label: string }[] {
+  return INTERVAL_VALUES.map((value) => ({ value, label: t(`tasks.interval.${value}`) }));
+}
+
+function intervalLabel(rule: RecurringTaskRule, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (rule.interval === "daily") return t("tasks.interval.daily");
+  if (rule.interval === "weekly") return t("tasks.interval.weeklyOn", { day: WEEKDAYS[(rule.dayOfWeek ?? 1) - 1].toLowerCase() });
+  return t("tasks.interval.monthlyOn", { day: rule.dayOfMonth ?? 1 });
 }
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -107,6 +109,7 @@ type CategoryDialogProps = {
 };
 
 const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category, onSaved }) => {
+  const { t } = useT("settings");
   const orgId = useApiOrgId();
   const [name, setName] = React.useState("");
   const [roles, setRoles] = React.useState<string[]>([]);
@@ -126,8 +129,8 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    name: name.trim().length >= 2 ? null : "Название — минимум 2 символа",
-    roles: roles.length > 0 ? null : "Выберите хотя бы одну группу-исполнителя",
+    name: name.trim().length >= 2 ? null : t("tasks.categoryDialog.nameTooShort"),
+    roles: roles.length > 0 ? null : t("tasks.categoryDialog.rolesRequired"),
   });
 
   const handleSubmit = async () => {
@@ -158,19 +161,21 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
       onSaved();
       onClose();
     } catch (e) {
-      setError(errMsg(e, "Не удалось сохранить категорию"));
+      setError(errMsg(e, t("tasks.categoryDialog.saveError")));
     } finally {
       setBusy(false);
     }
   };
 
+  const roleOptions = roleOptionsOf(t);
+
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{category ? "Изменить категорию" : "Добавить категорию"}</DialogTitle>
+      <DialogTitle>{category ? t("tasks.categoryDialog.editTitle") : t("tasks.categoryDialog.createTitle")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название *"
+            label={t("tasks.categoryDialog.nameLabel")}
             size="small"
             fullWidth
             autoFocus
@@ -182,7 +187,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
           />
           <TextField
             select
-            label="Группы-исполнители *"
+            label={t("tasks.categoryDialog.rolesLabel")}
             size="small"
             fullWidth
             disabled={busy}
@@ -196,14 +201,14 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
               renderValue: (selected) => (
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                   {(selected as string[]).map((v) => (
-                    <Chip key={v} label={roleLabel(v)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                    <Chip key={v} label={roleLabelOf(v, t)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
                   ))}
                 </Box>
               ),
             }}
-            {...form.field("roles", "Заявки категории увидят сотрудники с этими ролями")}
+            {...form.field("roles", t("tasks.categoryDialog.rolesHint"))}
           >
-            {ROLE_OPTIONS.map((r) => (
+            {roleOptions.map((r) => (
               <MenuItem key={r.value} value={r.value}>
                 {r.label}
               </MenuItem>
@@ -211,7 +216,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
           </TextField>
           <TextField
             select
-            label="Приоритет по умолчанию"
+            label={t("tasks.categoryDialog.priorityLabel")}
             size="small"
             fullWidth
             disabled={busy}
@@ -229,7 +234,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -237,7 +242,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
           disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : category ? "Сохранить" : "Добавить"}
+          {busy ? t("common:state.saving") : category ? t("common:actions.save") : t("common:actions.add")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -254,6 +259,7 @@ type RuleDialogProps = {
 };
 
 const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSaved }) => {
+  const { t } = useT("settings");
   const orgId = useApiOrgId();
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -281,8 +287,8 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    title: title.trim().length >= 2 ? null : "Название — минимум 2 символа",
-    categoryId: categoryId !== "" ? null : "Выберите категорию",
+    title: title.trim().length >= 2 ? null : t("tasks.ruleDialog.nameTooShort"),
+    categoryId: categoryId !== "" ? null : t("tasks.ruleDialog.categoryRequired"),
   });
 
   const handleSubmit = async () => {
@@ -305,7 +311,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
       onSaved();
       onClose();
     } catch (e) {
-      setError(errMsg(e, "Не удалось создать правило"));
+      setError(errMsg(e, t("tasks.ruleDialog.createError")));
     } finally {
       setBusy(false);
     }
@@ -313,11 +319,11 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Новое правило повторения</DialogTitle>
+      <DialogTitle>{t("tasks.ruleDialog.title")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            label="Название задачи *"
+            label={t("tasks.ruleDialog.taskNameLabel")}
             size="small"
             fullWidth
             autoFocus
@@ -328,7 +334,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
             {...form.field("title")}
           />
           <TextField
-            label="Описание"
+            label={t("tasks.ruleDialog.descriptionLabel")}
             size="small"
             fullWidth
             multiline
@@ -339,7 +345,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
           />
           <TextField
             select
-            label="Категория *"
+            label={t("tasks.ruleDialog.categoryLabel")}
             size="small"
             fullWidth
             disabled={busy}
@@ -357,15 +363,15 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
           </TextField>
           <TextField
             select
-            label="Приоритет"
+            label={t("tasks.ruleDialog.priorityLabel")}
             size="small"
             fullWidth
             disabled={busy}
             value={priority}
             onChange={(e) => setPriority(e.target.value as TaskPriority | "")}
-            helperText="Пусто — приоритет категории по умолчанию"
+            helperText={t("tasks.ruleDialog.priorityHelper")}
           >
-            <MenuItem value="">По умолчанию</MenuItem>
+            <MenuItem value="">{t("tasks.ruleDialog.priorityDefault")}</MenuItem>
             {TASK_PRIORITY_OPTIONS.map((o) => (
               <MenuItem key={o.value} value={o.value}>
                 {o.label}
@@ -374,14 +380,14 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
           </TextField>
           <TextField
             select
-            label="Повторение *"
+            label={t("tasks.ruleDialog.intervalLabel")}
             size="small"
             fullWidth
             disabled={busy}
             value={interval}
             onChange={(e) => setInterval(e.target.value as RecurringInterval)}
           >
-            {INTERVAL_OPTIONS.map((o) => (
+            {intervalOptionsOf(t).map((o) => (
               <MenuItem key={o.value} value={o.value}>
                 {o.label}
               </MenuItem>
@@ -390,7 +396,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
           {interval === "weekly" && (
             <TextField
               select
-              label="День недели"
+              label={t("tasks.ruleDialog.dayOfWeekLabel")}
               size="small"
               fullWidth
               disabled={busy}
@@ -407,13 +413,13 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
           {interval === "monthly" && (
             <TextField
               select
-              label="День месяца"
+              label={t("tasks.ruleDialog.dayOfMonthLabel")}
               size="small"
               fullWidth
               disabled={busy}
               value={String(dayOfMonth)}
               onChange={(e) => setDayOfMonth(Number(e.target.value))}
-              helperText="1–28, чтобы не пропускать февраль"
+              helperText={t("tasks.ruleDialog.dayOfMonthHelper")}
             >
               {Array.from({ length: 28 }, (_, i) => (
                 <MenuItem key={i + 1} value={String(i + 1)}>
@@ -427,7 +433,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -435,7 +441,7 @@ const RuleDialog: React.FC<RuleDialogProps> = ({ open, onClose, categories, onSa
           disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : "Создать"}
+          {busy ? t("common:state.saving") : t("common:actions.create")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -462,6 +468,7 @@ type StockRuleDialogProps = {
 };
 
 const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, categories, rule, onSaved }) => {
+  const { t } = useT("settings");
   const orgId = useApiOrgId();
   const [product, setProduct] = React.useState<DjangoProduct | null>(null);
   const [warehouseId, setWarehouseId] = React.useState<number | "">("");
@@ -499,11 +506,11 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
   const normalized = normalizeThreshold(threshold);
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    product: rule != null || product != null ? null : "Выберите товар",
-    warehouseId: rule != null || warehouseId !== "" ? null : "Выберите склад",
+    product: rule != null || product != null ? null : t("tasks.stockRuleDialog.productRequired"),
+    warehouseId: rule != null || warehouseId !== "" ? null : t("tasks.stockRuleDialog.warehouseRequired"),
     threshold:
-      normalized != null ? null : "Число больше нуля, до 2 знаков после точки",
-    categoryId: categoryId !== "" ? null : "Выберите категорию заявки",
+      normalized != null ? null : t("tasks.stockRuleDialog.thresholdInvalid"),
+    categoryId: categoryId !== "" ? null : t("tasks.stockRuleDialog.categoryRequired"),
   });
 
   const handleSubmit = async () => {
@@ -534,7 +541,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
       onSaved();
       onClose();
     } catch (e) {
-      setError(errMsg(e, "Не удалось сохранить порог"));
+      setError(errMsg(e, t("tasks.stockRuleDialog.saveError")));
     } finally {
       setBusy(false);
     }
@@ -544,12 +551,12 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{rule ? "Изменить порог" : "Новый порог остатка"}</DialogTitle>
+      <DialogTitle>{rule ? t("tasks.stockRuleDialog.editTitle") : t("tasks.stockRuleDialog.createTitle")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {rule ? (
             <TextField
-              label="Товар · склад"
+              label={t("tasks.stockRuleDialog.productWarehouseLabel")}
               size="small"
               fullWidth
               disabled
@@ -565,11 +572,11 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
                 isOptionEqualToValue={(a, b) => a.id === b.id}
                 loading={productsQuery.isLoading}
                 disabled={busy}
-                noOptionsText="Товары не найдены"
+                noOptionsText={t("tasks.stockRuleDialog.noProductsFound")}
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Товар *"
+                    label={t("tasks.stockRuleDialog.productLabel")}
                     size="small"
                     autoFocus
                     {...form.field("product")}
@@ -578,7 +585,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
               />
               <TextField
                 select
-                label="Склад *"
+                label={t("tasks.stockRuleDialog.warehouseLabel")}
                 size="small"
                 fullWidth
                 disabled={busy || warehousesQuery.isLoading}
@@ -595,7 +602,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
             </>
           )}
           <TextField
-            label="Минимальный остаток *"
+            label={t("tasks.stockRuleDialog.thresholdLabel")}
             size="small"
             fullWidth
             disabled={busy}
@@ -606,21 +613,21 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
             error={(threshold.trim() !== "" || form.attempted) && normalized == null}
             helperText={
               (threshold.trim() !== "" || form.attempted) && normalized == null
-                ? "Число больше нуля, до 2 знаков после точки"
+                ? t("tasks.stockRuleDialog.thresholdInvalid")
                 : product?.unit
-                ? `Единица: ${product.unit}. Остаток ниже порога — автозадача на пополнение`
-                : "Остаток ниже порога — автозадача на пополнение"
+                ? t("tasks.stockRuleDialog.thresholdHelperUnit", { unit: product.unit })
+                : t("tasks.stockRuleDialog.thresholdHelperDefault")
             }
           />
           <TextField
             select
-            label="Категория заявки *"
+            label={t("tasks.stockRuleDialog.categoryLabel")}
             size="small"
             fullWidth
             disabled={busy}
             value={categoryId === "" ? "" : String(categoryId)}
             onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
-            {...form.field("categoryId", "Группа этой категории получит автозадачу")}
+            {...form.field("categoryId", t("tasks.stockRuleDialog.categoryHint"))}
           >
             {categories
               .filter((c) => c.isActive)
@@ -632,7 +639,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
           </TextField>
           {pickersError && rule == null && (
             <Alert severity="error">
-              Не удалось загрузить товары или склады — нужен доступ к модулю «Склады»
+              {t("tasks.stockRuleDialog.pickersError")}
             </Alert>
           )}
           {error && <Alert severity="error">{error}</Alert>}
@@ -640,7 +647,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
-          Отмена
+          {t("common:actions.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -648,7 +655,7 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
           disabled={busy}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : rule ? "Сохранить" : "Добавить"}
+          {busy ? t("common:state.saving") : rule ? t("common:actions.save") : t("common:actions.add")}
         </Button>
       </DialogActions>
     </Dialog>
@@ -658,7 +665,8 @@ const StockRuleDialog: React.FC<StockRuleDialogProps> = ({ open, onClose, catego
 // ── Главный компонент ──────────────────────────────────────────────────────────
 
 const TasksSettingsPage: React.FC = () => {
-  usePageTitle("Настройки задач");
+  const { t } = useT("settings");
+  usePageTitle(t("tasks.pageTitle"));
   const orgId = useApiOrgId();
   const queryClient = useQueryClient();
 
@@ -703,14 +711,14 @@ const TasksSettingsPage: React.FC = () => {
   const toggleCategory = useMutation({
     mutationFn: (c: TaskCategory) => updateTaskCategory(c.id, { isActive: !c.isActive }, orgId),
     onSuccess: invalidateAll,
-    onError: (e) => setError(errMsg(e, "Не удалось обновить категорию")),
+    onError: (e) => setError(errMsg(e, t("tasks.categories.toggleError"))),
   });
 
   const toggleRule = useMutation({
     mutationFn: (r: RecurringTaskRule) =>
       updateRecurringRule(r.id, { isActive: !r.isActive }, orgId),
     onSuccess: invalidateAll,
-    onError: (e) => setError(errMsg(e, "Не удалось обновить правило")),
+    onError: (e) => setError(errMsg(e, t("tasks.rules.toggleError"))),
   });
 
   const removeRule = useMutation({
@@ -719,13 +727,13 @@ const TasksSettingsPage: React.FC = () => {
       setRuleToDelete(null);
       invalidateAll();
     },
-    onError: (e) => setError(errMsg(e, "Не удалось удалить правило")),
+    onError: (e) => setError(errMsg(e, t("tasks.rules.deleteError"))),
   });
 
   const toggleStockRule = useMutation({
     mutationFn: (r: StockTaskRule) => updateStockRule(r.id, { isActive: !r.isActive }, orgId),
     onSuccess: invalidateAll,
-    onError: (e) => setError(errMsg(e, "Не удалось обновить порог")),
+    onError: (e) => setError(errMsg(e, t("tasks.stockRules.toggleError"))),
   });
 
   const removeStockRule = useMutation({
@@ -734,19 +742,19 @@ const TasksSettingsPage: React.FC = () => {
       setStockRuleToDelete(null);
       invalidateAll();
     },
-    onError: (e) => setError(errMsg(e, "Не удалось удалить порог")),
+    onError: (e) => setError(errMsg(e, t("tasks.stockRules.deleteError"))),
   });
 
   const approveSuggestion = useMutation({
     mutationFn: (s: AutomationSuggestion) => approveAutomationSuggestion(s.id, orgId),
     onSuccess: invalidateAll,
-    onError: (e) => setError(errMsg(e, "Не удалось принять предложение")),
+    onError: (e) => setError(errMsg(e, t("tasks.suggestions.approveError"))),
   });
 
   const dismissSuggestion = useMutation({
     mutationFn: (s: AutomationSuggestion) => dismissAutomationSuggestion(s.id, orgId),
     onSuccess: invalidateAll,
-    onError: (e) => setError(errMsg(e, "Не удалось отклонить предложение")),
+    onError: (e) => setError(errMsg(e, t("tasks.suggestions.dismissError"))),
   });
 
   const categories = categoriesQuery.data ?? [];
@@ -774,10 +782,10 @@ const TasksSettingsPage: React.FC = () => {
           <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
             <Box>
               <Typography variant="h6" fontWeight={600}>
-                Категории заявок
+                {t("tasks.categories.sectionTitle")}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Категория определяет, какие группы персонала видят заявку.
+                {t("tasks.categories.sectionDescription")}
               </Typography>
             </Box>
             <Button
@@ -786,7 +794,7 @@ const TasksSettingsPage: React.FC = () => {
               startIcon={<AddOutlined />}
               onClick={() => setCategoryDialog({ open: true, category: null })}
             >
-              Добавить категорию
+              {t("tasks.categories.addButton")}
             </Button>
           </Stack>
 
@@ -796,18 +804,18 @@ const TasksSettingsPage: React.FC = () => {
             </Stack>
           ) : categories.length === 0 ? (
             <Typography variant="body2" color="text.disabled" sx={{ py: 3, textAlign: "center" }}>
-              Категорий пока нет
+              {t("tasks.categories.empty")}
             </Typography>
           ) : (
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Название</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Группы</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Приоритет</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.categories.columns.name")}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.categories.columns.roles")}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.categories.columns.priority")}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }} align="center">
-                      Активна
+                      {t("tasks.categories.columns.active")}
                     </TableCell>
                     <TableCell />
                   </TableRow>
@@ -819,7 +827,7 @@ const TasksSettingsPage: React.FC = () => {
                       <TableCell>
                         <Stack direction="row" gap={0.5} flexWrap="wrap">
                           {c.assignedRoles.map((r) => (
-                            <Chip key={r} label={roleLabel(r)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                            <Chip key={r} label={roleLabelOf(r, t)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
                           ))}
                         </Stack>
                       </TableCell>
@@ -835,7 +843,7 @@ const TasksSettingsPage: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell align="right">
-                        <Tooltip title="Изменить">
+                        <Tooltip title={t("tasks.categories.editTooltip")}>
                           <IconButton size="small" onClick={() => setCategoryDialog({ open: true, category: c })}>
                             <EditOutlined sx={{ fontSize: 18 }} />
                           </IconButton>
@@ -856,14 +864,14 @@ const TasksSettingsPage: React.FC = () => {
           <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
             <Box>
               <Typography variant="h6" fontWeight={600}>
-                Повторяющиеся задачи
+                {t("tasks.rules.sectionTitle")}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Система создаёт задачи по расписанию и раздаёт группе категории.
+                {t("tasks.rules.sectionDescription")}
               </Typography>
             </Box>
             <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => setRuleDialogOpen(true)}>
-              Новое правило
+              {t("tasks.rules.addButton")}
             </Button>
           </Stack>
 
@@ -873,19 +881,19 @@ const TasksSettingsPage: React.FC = () => {
             </Stack>
           ) : rules.length === 0 ? (
             <Typography variant="body2" color="text.disabled" sx={{ py: 3, textAlign: "center" }}>
-              Правил пока нет
+              {t("tasks.rules.empty")}
             </Typography>
           ) : (
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Задача</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Категория</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Расписание</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Следующий запуск</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.rules.columns.task")}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.rules.columns.category")}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.rules.columns.schedule")}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.rules.columns.nextRun")}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }} align="center">
-                      Активно
+                      {t("tasks.rules.columns.active")}
                     </TableCell>
                     <TableCell />
                   </TableRow>
@@ -895,7 +903,7 @@ const TasksSettingsPage: React.FC = () => {
                     <TableRow key={r.id} hover>
                       <TableCell sx={{ opacity: r.isActive ? 1 : 0.5 }}>{r.title}</TableCell>
                       <TableCell>{r.categoryName}</TableCell>
-                      <TableCell>{intervalLabel(r)}</TableCell>
+                      <TableCell>{intervalLabel(r, t)}</TableCell>
                       <TableCell>{dayjs(r.nextRun).format("DD.MM.YYYY")}</TableCell>
                       <TableCell align="center">
                         <Switch
@@ -906,7 +914,7 @@ const TasksSettingsPage: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell align="right">
-                        <Tooltip title="Удалить">
+                        <Tooltip title={t("tasks.rules.deleteTooltip")}>
                           <IconButton size="small" onClick={() => setRuleToDelete(r)}>
                             <DeleteOutlined sx={{ fontSize: 18 }} />
                           </IconButton>
@@ -927,10 +935,10 @@ const TasksSettingsPage: React.FC = () => {
           <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} flexWrap="wrap">
             <Box>
               <Typography variant="h6" fontWeight={600}>
-                Пороги товаров
+                {t("tasks.stockRules.sectionTitle")}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Остаток на складе упал ниже порога — система сама создаёт заявку на пополнение.
+                {t("tasks.stockRules.sectionDescription")}
               </Typography>
             </Box>
             <Button
@@ -939,7 +947,7 @@ const TasksSettingsPage: React.FC = () => {
               startIcon={<AddOutlined />}
               onClick={() => setStockDialog({ open: true, rule: null })}
             >
-              Новый порог
+              {t("tasks.stockRules.addButton")}
             </Button>
           </Stack>
 
@@ -949,21 +957,21 @@ const TasksSettingsPage: React.FC = () => {
             </Stack>
           ) : stockRules.length === 0 ? (
             <Typography variant="body2" color="text.disabled" sx={{ py: 3, textAlign: "center" }}>
-              Порогов пока нет
+              {t("tasks.stockRules.empty")}
             </Typography>
           ) : (
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Товар</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Склад</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.stockRules.columns.product")}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.stockRules.columns.warehouse")}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }} align="right">
-                      Порог
+                      {t("tasks.stockRules.columns.threshold")}
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Категория заявки</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{t("tasks.stockRules.columns.category")}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }} align="center">
-                      Активно
+                      {t("tasks.stockRules.columns.active")}
                     </TableCell>
                     <TableCell />
                   </TableRow>
@@ -986,12 +994,12 @@ const TasksSettingsPage: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell align="right">
-                        <Tooltip title="Изменить">
+                        <Tooltip title={t("tasks.stockRules.editTooltip")}>
                           <IconButton size="small" onClick={() => setStockDialog({ open: true, rule: r })}>
                             <EditOutlined sx={{ fontSize: 18 }} />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="Удалить">
+                        <Tooltip title={t("tasks.stockRules.deleteTooltip")}>
                           <IconButton size="small" onClick={() => setStockRuleToDelete(r)}>
                             <DeleteOutlined sx={{ fontSize: 18 }} />
                           </IconButton>
@@ -1011,10 +1019,10 @@ const TasksSettingsPage: React.FC = () => {
         <Stack spacing={2}>
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Предложения автономности
+              {t("tasks.suggestions.sectionTitle")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Заявки, которые повторяются, — система предлагает перевести их в автоматические.
+              {t("tasks.suggestions.sectionDescription")}
             </Typography>
           </Box>
 
@@ -1024,14 +1032,14 @@ const TasksSettingsPage: React.FC = () => {
             </Stack>
           ) : suggestions.length === 0 ? (
             <Typography variant="body2" color="text.disabled" sx={{ py: 3, textAlign: "center" }}>
-              Предложений нет — повторяющихся заявок не обнаружено
+              {t("tasks.suggestions.empty")}
             </Typography>
           ) : (
             <Stack spacing={1.25}>
               {suggestions.map((s) => (
                 <Box
                   key={s.id}
-                  sx={(t) => ({
+                  sx={(theme) => ({
                     display: "flex",
                     alignItems: "center",
                     gap: 1.5,
@@ -1039,12 +1047,12 @@ const TasksSettingsPage: React.FC = () => {
                     borderRadius: "10px",
                     border: 1,
                     borderColor: "divider",
-                    bgcolor: subtleBg(t),
+                    bgcolor: subtleBg(theme),
                     flexWrap: "wrap",
                   })}
                 >
                   <Box
-                    sx={(t) => ({
+                    sx={(theme) => ({
                       width: 40,
                       height: 40,
                       borderRadius: "10px",
@@ -1053,7 +1061,7 @@ const TasksSettingsPage: React.FC = () => {
                       alignItems: "center",
                       justifyContent: "center",
                       color: "primary.onSurface",
-                      bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.1),
+                      bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.16 : 0.1),
                       "& .MuiSvgIcon-root": { fontSize: 20 },
                     })}
                   >
@@ -1066,9 +1074,9 @@ const TasksSettingsPage: React.FC = () => {
                     <Typography variant="caption" color="text.secondary">
                       {s.categoryName} ·{" "}
                       {s.kind === "frequency"
-                        ? `${s.occurrences} раза за ${s.periodDays} дней`
-                        : `${s.monthsInARow} месяца подряд`}{" "}
-                      · предлагается: {INTERVAL_OPTIONS.find((o) => o.value === s.suggestedInterval)?.label.toLowerCase()}
+                        ? t("tasks.suggestions.frequencyDetail", { occurrences: s.occurrences, days: s.periodDays })
+                        : t("tasks.suggestions.monthlyDetail", { months: s.monthsInARow })}{" "}
+                      · {t("tasks.suggestions.suggestedPrefix", { interval: intervalOptionsOf(t).find((o) => o.value === s.suggestedInterval)?.label.toLowerCase() })}
                     </Typography>
                   </Box>
                   <Stack direction="row" gap={1}>
@@ -1078,7 +1086,7 @@ const TasksSettingsPage: React.FC = () => {
                       disabled={approveSuggestion.isPending}
                       onClick={() => approveSuggestion.mutate(s)}
                     >
-                      Перевести в автономность
+                      {t("tasks.suggestions.approveButton")}
                     </Button>
                     <Button
                       size="small"
@@ -1086,7 +1094,7 @@ const TasksSettingsPage: React.FC = () => {
                       onClick={() => dismissSuggestion.mutate(s)}
                       sx={{ textTransform: "none", color: "text.secondary" }}
                     >
-                      Отклонить
+                      {t("tasks.suggestions.dismissButton")}
                     </Button>
                   </Stack>
                 </Box>
@@ -1117,9 +1125,9 @@ const TasksSettingsPage: React.FC = () => {
       />
       <ConfirmDialog
         open={ruleToDelete != null}
-        title="Удалить правило?"
-        message={ruleToDelete ? `«${ruleToDelete.title}» больше не будет создаваться автоматически.` : ""}
-        confirmText="Удалить"
+        title={t("tasks.rules.deleteConfirmTitle")}
+        message={ruleToDelete ? t("tasks.rules.deleteConfirmBody", { title: ruleToDelete.title }) : ""}
+        confirmText={t("common:actions.delete")}
         variant="error"
         loading={removeRule.isPending}
         onConfirm={() => ruleToDelete && removeRule.mutate(ruleToDelete.id)}
@@ -1127,13 +1135,13 @@ const TasksSettingsPage: React.FC = () => {
       />
       <ConfirmDialog
         open={stockRuleToDelete != null}
-        title="Удалить порог?"
+        title={t("tasks.stockRules.deleteConfirmTitle")}
         message={
           stockRuleToDelete
-            ? `Автозадачи на пополнение «${stockRuleToDelete.productName}» больше не будут создаваться.`
+            ? t("tasks.stockRules.deleteConfirmBody", { name: stockRuleToDelete.productName })
             : ""
         }
-        confirmText="Удалить"
+        confirmText={t("common:actions.delete")}
         variant="error"
         loading={removeStockRule.isPending}
         onConfirm={() => stockRuleToDelete && removeStockRule.mutate(stockRuleToDelete.id)}

@@ -43,22 +43,22 @@ import {
   type CatalogDiagnosis,
 } from "../../api/medical";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
-
-// ── error parsing ───────────────────────────────────────────────────────────
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) return extractApiError(err.payload, err.status);
-  if (err instanceof Error) return err.message;
-  return "Неизвестная ошибка";
-}
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
 
 const DiagnosesSettingsPage: React.FC = () => {
-  usePageTitle("Диагнозы");
+  const { t } = useT("settings");
+  usePageTitle(t("diagnoses.title"));
   const queryClient = useQueryClient();
+
+  function extractErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) return extractApiError(err.payload, err.status);
+    if (err instanceof Error) return err.message;
+    return t("diagnoses.unknownError");
+  }
   const { enqueueSnackbar } = useSnackbar();
 
   const [search, setSearch] = React.useState("");
@@ -150,7 +150,7 @@ const DiagnosesSettingsPage: React.FC = () => {
     setDeleteBusy(true);
     try {
       await deleteDiagnosis(deleteTarget.id);
-      enqueueSnackbar("Диагноз удалён из справочника", { variant: "success" });
+      enqueueSnackbar(t("diagnoses.deleteSuccess"), { variant: "success" });
       setDeleteTarget(null);
       await refresh();
     } catch (err) {
@@ -177,10 +177,10 @@ const DiagnosesSettingsPage: React.FC = () => {
         >
           <Stack direction="row" alignItems="center" gap={1}>
             <Typography variant="h6" fontWeight={600}>
-              Диагнозы (МКБ-10)
+              {t("diagnoses.title")}
             </Typography>
             {!query.isLoading && (
-              <Tooltip title={`Показано ${loadedCount} из ${totalCount}`}>
+              <Tooltip title={t("diagnoses.shownOfTotal", { loaded: loadedCount, total: totalCount })}>
                 <Chip label={totalCount} size="small" sx={{ height: 20 }} />
               </Tooltip>
             )}
@@ -194,7 +194,7 @@ const DiagnosesSettingsPage: React.FC = () => {
           >
             <TextField
               size="small"
-              placeholder="Поиск по коду или названию…"
+              placeholder={t("diagnoses.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               InputProps={{
@@ -212,14 +212,13 @@ const DiagnosesSettingsPage: React.FC = () => {
               onClick={() => setFormTarget("new")}
               sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
             >
-              Добавить
+              {t("diagnoses.addButton")}
             </Button>
           </Stack>
         </Stack>
 
         <Typography variant="body2" color="text.secondary">
-          Справочник диагнозов, из которого врачи выбирают значения в заключении.
-          Список настраивается отдельно для каждой организации.
+          {t("diagnoses.description")}
         </Typography>
 
         {query.error && (
@@ -227,7 +226,7 @@ const DiagnosesSettingsPage: React.FC = () => {
             severity="error"
             action={
               <Button size="small" color="inherit" onClick={() => refresh()}>
-                Повторить
+                {t("common:actions.retry")}
               </Button>
             }
           >
@@ -263,16 +262,16 @@ const DiagnosesSettingsPage: React.FC = () => {
             }}
           >
             {search ? (
-              <Typography variant="body2">Ничего не найдено по запросу «{search}».</Typography>
+              <Typography variant="body2">{t("diagnoses.emptySearch", { query: search })}</Typography>
             ) : (
               <>
-                <Typography variant="body2">Справочник диагнозов пуст.</Typography>
+                <Typography variant="body2">{t("diagnoses.emptyCatalog")}</Typography>
                 <Button
                   variant="outlined"
                   startIcon={<AddOutlined />}
                   onClick={() => setFormTarget("new")}
                 >
-                  Добавить первый диагноз
+                  {t("diagnoses.addFirst")}
                 </Button>
               </>
             )}
@@ -282,11 +281,11 @@ const DiagnosesSettingsPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ width: 110 }}>Код</TableCell>
-                  <TableCell>Название</TableCell>
-                  <TableCell>Название для печати</TableCell>
-                  <TableCell sx={{ width: 110 }} align="center">Активен</TableCell>
-                  <TableCell sx={{ width: 96 }} align="right">Действия</TableCell>
+                  <TableCell sx={{ width: 110 }}>{t("diagnoses.columns.code")}</TableCell>
+                  <TableCell>{t("diagnoses.columns.title")}</TableCell>
+                  <TableCell>{t("diagnoses.columns.displayName")}</TableCell>
+                  <TableCell sx={{ width: 110 }} align="center">{t("diagnoses.columns.active")}</TableCell>
+                  <TableCell sx={{ width: 96 }} align="right">{t("diagnoses.columns.actions")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -316,12 +315,12 @@ const DiagnosesSettingsPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Редактировать">
+                      <Tooltip title={t("diagnoses.tooltips.edit")}>
                         <IconButton size="small" onClick={() => setFormTarget(d)}>
                           <EditOutlined fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="Удалить">
+                      <Tooltip title={t("diagnoses.tooltips.delete")}>
                         <IconButton size="small" color="error" onClick={() => setDeleteTarget(d)}>
                           <DeleteOutlineOutlined fontSize="small" />
                         </IconButton>
@@ -347,7 +346,7 @@ const DiagnosesSettingsPage: React.FC = () => {
                 <Stack direction="row" alignItems="center" gap={1}>
                   <CircularProgress size={20} />
                   <Typography variant="caption" color="text.secondary">
-                    Загрузка следующих 50...
+                    {t("diagnoses.loadingNext", { pageSize: PAGE_SIZE })}
                   </Typography>
                 </Stack>
               ) : query.hasNextPage ? (
@@ -357,11 +356,11 @@ const DiagnosesSettingsPage: React.FC = () => {
                   onClick={() => query.fetchNextPage()}
                   sx={{ color: "text.secondary" }}
                 >
-                  Показать ещё ({loadedCount} из {totalCount})
+                  {t("diagnoses.showMore", { loaded: loadedCount, total: totalCount })}
                 </Button>
               ) : (
                 <Typography variant="caption" color="text.secondary">
-                  Показаны все {totalCount} диагнозов
+                  {t("diagnoses.allShown", { total: totalCount })}
                 </Typography>
               )}
             </Box>
@@ -379,19 +378,18 @@ const DiagnosesSettingsPage: React.FC = () => {
 
       {/* Delete confirm */}
       <Dialog open={deleteTarget !== null} onClose={deleteBusy ? undefined : () => setDeleteTarget(null)}>
-        <DialogTitle>Удалить диагноз?</DialogTitle>
+        <DialogTitle>{t("diagnoses.deleteConfirmTitle")}</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            «{deleteTarget?.code} — {deleteTarget?.title}» будет удалён из справочника.
-            Уже созданные заключения сохранят свой диагноз (история не меняется).
+            {t("diagnoses.deleteConfirmBody", { code: deleteTarget?.code, title: deleteTarget?.title })}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteTarget(null)} disabled={deleteBusy}>
-            Отмена
+            {t("common:actions.cancel")}
           </Button>
           <Button color="error" variant="contained" onClick={handleDelete} disabled={deleteBusy}>
-            {deleteBusy ? "Удаление…" : "Удалить"}
+            {deleteBusy ? t("diagnoses.deleting") : t("common:actions.delete")}
           </Button>
         </DialogActions>
       </Dialog>
