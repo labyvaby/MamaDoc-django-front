@@ -36,6 +36,7 @@ import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 
 import { CustomDateTimePicker } from "../../components/ui";
+import { useT } from "../../i18n/VerticalProvider";
 import { roundDateTimeLocalToStep } from "../../utility/time";
 import { formatKGS } from "../../utility/format";
 import { useCan } from "../../hooks/useCan";
@@ -153,6 +154,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   initialEmployeeId,
   initialServiceId,
 }) => {
+  const { t } = useT("appointments");
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
   const {
@@ -379,18 +381,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   });
   // Порядок ключей = порядок полей в форме: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    scheduledAt: scheduledAt ? null : "Выберите дату и время",
-    patient: isBooking || selectedPatient ? null : "Выберите пациента",
+    scheduledAt: scheduledAt ? null : t("addDrawer.errors.dateTimeRequired"),
+    patient: isBooking || selectedPatient ? null : t("addDrawer.errors.patientRequired"),
     services:
       validRows.length === 0
-        ? "Добавьте хотя бы одну услугу с исполнителем"
+        ? t("addDrawer.errors.serviceRequired")
         : incompatibleRows.length > 0
-          ? "Исполнитель не оказывает выбранную услугу"
+          ? t("addDrawer.errors.performerMismatch")
           : null,
     products:
-      overstockedRows.length > 0 ? "Количество товара больше остатка на складе" : null,
+      overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
     adminComment:
-      isBooking && !adminComment.trim() ? "Опишите бронь в комментарии" : null,
+      isBooking && !adminComment.trim() ? t("addDrawer.errors.bookingReasonRequired") : null,
   });
   const touched = form.attempted;
 
@@ -453,7 +455,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         ...(allowOverlap ? { allowOverlap: true } : {}),
       });
       setOverlapConflict(null);
-      notify?.({ type: "success", message: "Приём успешно создан!" });
+      notify?.({ type: "success", message: t("addDrawer.created") });
       onCreated?.();
       onClose();
     } catch (err: unknown) {
@@ -537,7 +539,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             flexShrink: 0,
           }}
         >
-          <Typography variant="h6">Добавить приём</Typography>
+          <Typography variant="h6">{t("addDrawer.title")}</Typography>
           <IconButton onClick={requestClose}>
             <CloseOutlined />
           </IconButton>
@@ -557,14 +559,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           <Stack spacing={2.5}>
             {!activeBranch && (
               <Alert severity="warning">
-                <AlertTitle>Не выбран филиал</AlertTitle>
-                Приём всегда создаётся в конкретном филиале, а сейчас включён
-                режим «Все филиалы» — поэтому кнопка «Сохранить» недоступна.
+                <AlertTitle>{t("addDrawer.noBranchTitle")}</AlertTitle>
+                {t("addDrawer.noBranchText")}
                 <br />
-                Как выбрать филиал: нажмите на <b>название клиники вверху
-                бокового меню</b> (на телефоне сначала откройте меню кнопкой ☰)
-                и в списке выберите нужный филиал. После этого вернитесь сюда и
-                создайте приём.
+                {t("addDrawer.noBranchHowTo")} <b>{t("addDrawer.noBranchHowToLink")}</b>{" "}
+                {t("addDrawer.noBranchHowToTail")}
               </Alert>
             )}
             {saveError && (
@@ -575,12 +574,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
             {/* ── 1. Дата и время ── */}
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Дата и время приёма
+              {t("addDrawer.dateTimeSection")}
             </Typography>
             <Grid container spacing={1.5} alignItems="stretch">
               <Grid item xs={12} sm={7.5}>
                 <CustomDateTimePicker
-                  label="Дата и время *"
+                  label={t("addDrawer.dateTimeLabel")}
                   value={scheduledAt ? dayjs(scheduledAt) : null}
                   onChange={(val) => {
                     const s = val ? val.format() : "";
@@ -634,7 +633,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                       },
                     }}
                   >
-                    <ToggleButton value="day" aria-label="Дневной">
+                    <ToggleButton value="day" aria-label={t("addDrawer.day")}>
                       <WbSunnyOutlined
                         sx={{
                           fontSize: 20,
@@ -642,7 +641,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         }}
                       />
                     </ToggleButton>
-                    <ToggleButton value="night" aria-label="Ночной">
+                    <ToggleButton value="night" aria-label={t("addDrawer.night")}>
                       <NightlightOutlined
                         sx={{
                           fontSize: 20,
@@ -659,10 +658,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             <Stack spacing={0.5}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                  Пациент *
+                  {t("addDrawer.patientLabel")}
                 </Typography>
                 <Button size="small" onClick={() => setAddPatientOpen(true)}>
-                  + Добавить пациента
+                  {t("addDrawer.addPatient")}
                 </Button>
               </Stack>
 
@@ -689,7 +688,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                   <Stack direction="row" alignItems="center" justifyContent="space-between">
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        Бронирование (без пациента)
+                        {t("addDrawer.bookingWithoutPatient")}
                       </Typography>
                     </Stack>
                     <Box
@@ -728,7 +727,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                   onInputChange={(_, v) => setPatientSearch(v)}
                   onChange={(_, v) => setSelectedPatient(v)}
                   getOptionLabel={(p) =>
-                    `${p.fullName || "Нет ФИО"} — ${p.phone || "Нет телефона"}`
+                    t("addDrawer.patientOption", {
+                      name: p.fullName || t("addDrawer.noFullName"),
+                      phone: p.phone || t("addDrawer.noPhone"),
+                    })
                   }
                   filterOptions={(x) => x}
                   isOptionEqualToValue={(a, b) => a.id === b.id}
@@ -746,7 +748,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         <Stack sx={{ minWidth: 0 }}>
                           <Stack direction="row" alignItems="center" spacing={1}>
                             <Typography variant="body2" noWrap>
-                              {p.fullName || "Нет ФИО"}
+                              {p.fullName || t("addDrawer.noFullName")}
                             </Typography>
                             {p.isBlacklisted && (
                               <ReportProblemIcon color="error" sx={{ fontSize: 16 }} />
@@ -764,7 +766,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      placeholder="Поиск по ФИО или телефону"
+                      placeholder={t("addDrawer.searchPlaceholder")}
                       fullWidth
                       error={Boolean(form.errorOf("patient"))}
                       helperText={form.errorOf("patient") ?? ""}
@@ -777,10 +779,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
               {!isBooking && selectedPatient?.isBlacklisted && (
                 <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    Клиент находится в чёрном списке
+                    {t("addDrawer.blacklisted")}
                   </Typography>
                   <Typography variant="body2">
-                    Причина: {selectedPatient.blacklistReason || "не указана"}
+                    {t("addDrawer.blacklistReason", {
+                      reason: selectedPatient.blacklistReason || t("addDrawer.notSpecified"),
+                    })}
                   </Typography>
                 </Alert>
               )}
@@ -788,7 +792,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
               {!isBooking && patientHasDebt && (
                 <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    У пациента задолженность:{" "}
+                    {t("addDrawer.patientDebt")}{" "}
                     {formatKGS(Math.abs(patientBalanceNum))}
                   </Typography>
                 </Alert>
@@ -797,7 +801,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
               {!isBooking && duplicateAppointments.length > 0 && (
                 <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    У пациента уже есть запись на это время
+                    {t("addDrawer.duplicateWarning")}
                   </Typography>
                   {duplicateAppointments.map((a) => {
                     const line = a.services[0];
@@ -813,7 +817,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     );
                   })}
                   <Typography variant="body2" color="text.secondary">
-                    Проверьте, не создаёте ли вы дубль.
+                    {t("addDrawer.duplicateHint")}
                   </Typography>
                 </Alert>
               )}
@@ -839,7 +843,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                           color="text.secondary"
                           sx={{ fontWeight: 500 }}
                         >
-                          Услуги и специалисты
+                          {t("addDrawer.servicesSection")}
                         </Typography>
                       </Stack>
                       <Divider />
@@ -848,7 +852,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         <Stack direction="row" alignItems="center" spacing={1}>
                           <CircularProgress size={14} />
                           <Typography variant="caption" color="text.secondary">
-                            Загрузка справочников…
+                            {t("addDrawer.loadingDicts")}
                           </Typography>
                         </Stack>
                       )}
@@ -883,7 +887,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                             <Stack spacing={1.5}>
                               {index === 0 && (
                                 <Typography variant="caption" color="text.secondary">
-                                  Врач / Исполнитель
+                                  {t("addDrawer.specialistColumn")}
                                 </Typography>
                               )}
                               <Autocomplete<DjangoEmployeeWithServices>
@@ -911,13 +915,13 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
-                                    placeholder="Исполнитель"
+                                    placeholder={t("addDrawer.performer")}
                                     size="small"
                                     fullWidth
                                     error={touched && !row.employeeId}
                                     helperText={
                                       touched && !row.employeeId
-                                        ? "Выберите исполнителя"
+                                        ? t("addDrawer.performerPlaceholder")
                                         : ""
                                     }
                                   />
@@ -926,7 +930,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
                               {index === 0 && (
                                 <Typography variant="caption" color="text.secondary">
-                                  Наименование услуги
+                                  {t("addDrawer.serviceNameColumn")}
                                 </Typography>
                               )}
                               <Stack direction="row" spacing={1} alignItems="flex-start">
@@ -951,7 +955,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                           : row.employeeId,
                                     });
                                   }}
-                                  getOptionLabel={(s) => `${s.name} — ${Number(s.basePrice)} с`}
+                                  getOptionLabel={(s) =>
+                                    t("addDrawer.serviceOption", {
+                                      name: s.name,
+                                      price: Number(s.basePrice),
+                                    })
+                                  }
                                   isOptionEqualToValue={(a, b) => a.id === b.id}
                                   renderOption={(props, s) => (
                                     <li {...props} key={s.id}>
@@ -961,9 +970,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                           variant="caption"
                                           color="text.secondary"
                                         >
-                                          {Number(s.basePrice)} с
+                                          {t("addDrawer.priceAmount", { amount: Number(s.basePrice) })}
                                           {s.durationMinutes
-                                            ? ` · ${s.durationMinutes} мин`
+                                            ? t("addDrawer.durationSuffix", { minutes: s.durationMinutes })
                                             : ""}
                                         </Typography>
                                       </Stack>
@@ -972,12 +981,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                   renderInput={(params) => (
                                     <TextField
                                       {...params}
-                                      placeholder="Услуга"
+                                      placeholder={t("addDrawer.service")}
                                       size="small"
                                       fullWidth
                                       error={touched && !row.serviceId}
                                       helperText={
-                                        touched && !row.serviceId ? "Выберите услугу" : ""
+                                        touched && !row.serviceId ? t("addDrawer.servicePlaceholder") : ""
                                       }
                                     />
                                   )}
@@ -1004,19 +1013,19 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
                               {selectedService && (
                                 <Typography variant="caption" color="text.secondary">
-                                  Цена:{" "}
+                                  {t("addDrawer.priceLabel")}{" "}
                                   <strong>
                                     {formatKGS(selectedService.basePrice)}
                                   </strong>
                                   {selectedService.durationMinutes
-                                    ? ` · ${selectedService.durationMinutes} мин`
+                                    ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
                                     : ""}
                                 </Typography>
                               )}
 
                               {incompatible && (
                                 <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
-                                  Этот специалист не оказывает выбранную услугу
+                                  {t("addDrawer.specialistMismatch")}
                                 </Alert>
                               )}
                             </Stack>
@@ -1042,7 +1051,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         disabled={data.loading}
                         sx={{ alignSelf: "flex-start" }}
                       >
-                        + Добавить услугу
+                        {t("addDrawer.addService")}
                       </Button>
 
                       {form.errorOf("services") && (
@@ -1077,7 +1086,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                           <Divider />
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
                             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                              Общая стоимость
+                              {t("addDrawer.totalCost")}
                             </Typography>
                             <Typography variant="h6" sx={{ fontWeight: 700, color: "primary.onSurface" }}>
                               {formatKGS(totalCost)}
@@ -1107,7 +1116,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                           color="text.secondary"
                           sx={{ fontWeight: 500 }}
                         >
-                          Товары
+                          {t("addDrawer.productsSection")}
                         </Typography>
                         {productsLoading && <CircularProgress size={14} />}
                       </Stack>
@@ -1139,13 +1148,13 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                   `${p.name} — ${formatKGS(p.price)}`
                                 }
                                 isOptionEqualToValue={(a, b) => a.id === b.id}
-                                noOptionsText="Нет товаров в наличии"
+                                noOptionsText={t("addDrawer.noProductsInStock")}
                                 renderOption={(props, p) => (
                                   <li {...props} key={p.id}>
                                     <Stack>
                                       <Typography variant="body2">{p.name}</Typography>
                                       <Typography variant="caption" color="text.secondary">
-                                        {formatKGS(p.price)} · в наличии: {p.stock} {p.unit}
+                                        {t("addDrawer.productStock", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
                                       </Typography>
                                     </Stack>
                                   </li>
@@ -1153,7 +1162,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
-                                    placeholder="Товар"
+                                    placeholder={t("addDrawer.product")}
                                     size="small"
                                     fullWidth
                                   />
@@ -1162,7 +1171,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                               <TextField
                                 type="number"
                                 size="small"
-                                label="Кол-во"
+                                label={t("addDrawer.quantity")}
                                 value={row.quantity}
                                 onChange={(e) => {
                                   // Разрешаем пустую строку (можно стереть) и
@@ -1208,18 +1217,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                             </Stack>
                             {selectedProduct && (
                               <Typography variant="caption" color="text.secondary">
-                                Сумма:{" "}
+                                {t("addDrawer.sumLabel")}{" "}
                                 <strong>
                                   {formatKGS(selectedProduct.price * parseQty(row.quantity))}
                                 </strong>
                                 {overstocked
-                                  ? ` · недостаточно на складе (в наличии ${selectedProduct.stock})`
+                                  ? t("addDrawer.insufficientStock", { stock: selectedProduct.stock })
                                   : ""}
                               </Typography>
                             )}
                             {overstocked && (
                               <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
-                                Количество превышает остаток на складе
+                                {t("addDrawer.productOverStock")}
                               </Alert>
                             )}
                           </Stack>
@@ -1237,12 +1246,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         disabled={productsLoading || products.length === 0}
                         sx={{ alignSelf: "flex-start" }}
                       >
-                        + Добавить товар
+                        {t("addDrawer.addProduct")}
                       </Button>
 
                       {!productsLoading && products.length === 0 && (
                         <Typography variant="caption" color="text.secondary">
-                          Нет товаров в наличии для продажи
+                          {t("addDrawer.noProductsForSale")}
                         </Typography>
                       )}
                     </Stack>
@@ -1252,7 +1261,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 {/* ── 4. Текстовые поля ── */}
                 <Stack spacing={0.5}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    Жалобы при обращении
+                    {t("addDrawer.complaintsSection")}
                   </Typography>
                   <TextField
                     value={complaints}
@@ -1261,13 +1270,13 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     minRows={3}
                     fullWidth
                     size="small"
-                    placeholder="Необязательно"
+                    placeholder={t("addDrawer.optional")}
                   />
                 </Stack>
 
                 <Stack spacing={0.5}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    Комментарий администратора{isBooking ? " *" : ""}
+                    {t("addDrawer.adminCommentLabel", { required: isBooking ? " *" : "" })}
                   </Typography>
                   <TextField
                     value={adminComment}
@@ -1277,7 +1286,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     fullWidth
                     size="small"
                     placeholder={
-                      isBooking ? "Причина бронирования (обязательно)" : "Необязательно"
+                      isBooking ? t("addDrawer.bookingReason") : t("addDrawer.optional")
                     }
                     {...form.field("adminComment")}
                   />
@@ -1300,7 +1309,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         >
           <Stack direction="row" spacing={1} justifyContent="flex-end">
             <Button onClick={requestClose} disabled={saving}>
-              Отмена
+              {t("addDrawer.cancel")}
             </Button>
             <Button
               variant="contained"
@@ -1310,7 +1319,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 saving ? <CircularProgress size={16} color="inherit" /> : undefined
               }
             >
-              {saving ? "Сохранение…" : "Сохранить"}
+              {saving ? t("addDrawer.saving") : t("addDrawer.save")}
             </Button>
           </Stack>
         </Box>
@@ -1328,20 +1337,23 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
       {/* Подтверждение создания при уже существующей записи на это время */}
       <Dialog open={confirmDuplicateOpen} onClose={() => setConfirmDuplicateOpen(false)}>
-        <DialogTitle>У пациента уже есть запись на это время</DialogTitle>
+        <DialogTitle>{t("addDrawer.duplicateWarning")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {selectedPatient?.fullName || "Пациент"} уже записан на{" "}
-            {scheduledAt ? dayjs(scheduledAt).format("D MMMM YYYY, HH:mm") : "это время"}
-            {duplicateAppointments[0]?.services[0]?.employee?.fullName
-              ? ` (${duplicateAppointments[0].services[0].employee!.fullName})`
-              : ""}
-            . Создать ещё одну запись на то же время?
+            {t("addDrawer.duplicateDialogText", {
+              name: selectedPatient?.fullName || t("addDrawer.patient"),
+              when: scheduledAt
+                ? dayjs(scheduledAt).format("D MMMM YYYY, HH:mm")
+                : t("addDrawer.thisTime"),
+              performer: duplicateAppointments[0]?.services[0]?.employee?.fullName
+                ? ` (${duplicateAppointments[0].services[0].employee!.fullName})`
+                : "",
+            })}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmDuplicateOpen(false)} autoFocus>
-            Отмена
+            {t("addDrawer.cancel")}
           </Button>
           <Button
             color="warning"
@@ -1351,7 +1363,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
               void performSave();
             }}
           >
-            Всё равно создать
+            {t("addDrawer.createAnyway")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1366,16 +1378,16 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
       {/* Подтверждение закрытия при несохранённых данных */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)}>
-        <DialogTitle>Закрыть без сохранения?</DialogTitle>
+        <DialogTitle>{t("addDrawer.discardTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Введённые данные приёма будут потеряны. Закрыть форму?
+            {t("addDrawer.discardText")}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmCloseOpen(false)}>Продолжить ввод</Button>
+          <Button onClick={() => setConfirmCloseOpen(false)}>{t("addDrawer.discardKeep")}</Button>
           <Button onClick={confirmDiscardAndClose} color="error" variant="contained" autoFocus>
-            Закрыть
+            {t("addDrawer.discardConfirm")}
           </Button>
         </DialogActions>
       </Dialog>

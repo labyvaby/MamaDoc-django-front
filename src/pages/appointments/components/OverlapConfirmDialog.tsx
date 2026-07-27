@@ -14,6 +14,7 @@ import dayjs from "dayjs";
 
 import { AppButton } from "../../../components/ui/AppButton";
 import type { AppointmentOverlapConflict } from "../../../api/appointments";
+import { useT } from "../../../i18n/VerticalProvider";
 
 /** "10:00–10:30" (same day) or "1 сен 10:00 – 2 сен 09:30" (spanning days). */
 function formatInterval(startsAt: string, endsAt: string): string {
@@ -46,6 +47,7 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
   onCancel,
   onConfirm,
 }) => {
+  const { t } = useT("appointments");
   const requested = conflict?.requestedSlot;
   return (
     <Dialog
@@ -57,20 +59,20 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
       <DialogTitle>
         <Stack direction="row" alignItems="center" gap={1}>
           <LayersOutlined color="warning" fontSize="small" />
-          Время приёма пересекается
+          {t("overlapDialog.title")}
         </Stack>
       </DialogTitle>
       <DialogContent>
         {requested && (
           <Typography variant="body2" sx={{ mb: 1.5 }}>
-            Новый приём:{" "}
+            {t("overlapDialog.newVisit")}{" "}
             <strong>
               {formatInterval(requested.startsAt, requested.endsAt)}
             </strong>
           </Typography>
         )}
         <Typography variant="caption" color="text.secondary">
-          Пересекается с приёмами:
+          {t("overlapDialog.text")}
         </Typography>
         <Stack spacing={1} sx={{ mt: 0.75 }}>
           {(conflict?.overlaps ?? []).map((o) => (
@@ -87,10 +89,10 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
                 {formatInterval(o.startsAt, o.endsAt)}
               </Typography>
               <Typography variant="caption" color="text.secondary" component="div">
-                Сотрудник: {o.employeeName || "—"}
+                {t("overlapDialog.employee", { name: o.employeeName || "—" })}
               </Typography>
               <Typography variant="caption" color="text.secondary" component="div">
-                Пациент: {o.patientName || "—"}
+                {t("overlapDialog.patient", { name: o.patientName || "—" })}
               </Typography>
             </Box>
           ))}
@@ -98,7 +100,7 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel} disabled={saving}>
-          Нет, вернуться
+          {t("overlapDialog.cancel")}
         </Button>
         <AppButton
           color="warning"
@@ -107,7 +109,7 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
           loading={saving}
           disabled={saving}
         >
-          Да, сохранить
+          {t("overlapDialog.confirm")}
         </AppButton>
       </DialogActions>
     </Dialog>

@@ -45,6 +45,7 @@ import type { DjangoFamily } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
 import AddressAutocomplete from "./AddressAutocomplete";
+import { useT } from "../../i18n/VerticalProvider";
 
 type Props = {
   open: boolean;
@@ -59,6 +60,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   onClose,
   onUpdated,
 }) => {
+  const { t } = useT("patients");
   const { open: notify } = useNotification();
   const canManageBlacklist = useCan("patients.manage");
 
@@ -80,10 +82,10 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [error, setError] = React.useState<string | null>(null);
 
   const v = useFormValidation({
-    fio: fio.trim() ? null : "Введите ФИО пациента",
+    fio: fio.trim() ? null : t("form.errors.fullNameRequired"),
     blacklistReason:
       canManageBlacklist && isBlacklisted && !blacklistReason.trim()
-        ? "Укажите причину добавления в чёрный список"
+        ? t("form.errors.blacklistReasonRequired")
         : null,
   });
 
@@ -161,13 +163,13 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
         try {
           await uploadPatientPhoto(patient.id, photoFile);
         } catch {
-          notify?.({ type: "error", message: "Данные сохранены, но фото не удалось загрузить" });
+          notify?.({ type: "error", message: t("editDrawer.savedPhotoFailed") });
         }
       }
 
       // fetch fresh to get updated photoUrl
       const fresh = await getPatient(patient.id);
-      notify?.({ type: "success", message: "Изменения сохранены" });
+      notify?.({ type: "success", message: t("editDrawer.saved") });
       onUpdated(fresh);
       onClose();
     } catch (err: unknown) {
@@ -216,8 +218,8 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             py: 1,
           }}
         >
-          <Typography variant="h6">Редактировать пациента</Typography>
-          <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+          <Typography variant="h6">{t("editDrawer.title")}</Typography>
+          <IconButton onClick={busy ? undefined : onClose} aria-label={t("form.close")}>
             <CloseOutlined />
           </IconButton>
         </Box>
@@ -243,7 +245,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             {/* ── Фото ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Фото пациента
+                {t("editDrawer.photo")}
               </Typography>
               <PatientPhotoUploader
                 photoFile={photoFile}
@@ -260,7 +262,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                   onClick={handleRemovePhoto}
                   sx={{ alignSelf: "flex-start" }}
                 >
-                  Удалить фото
+                  {t("editDrawer.photoDelete")}
                 </Button>
               )}
             </Stack>
@@ -268,14 +270,14 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             {/* ── ФИО ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                ФИО *
+                {t("form.fullName")}
               </Typography>
               <TextField
                 value={fio}
                 onChange={(e) => setFio(e.target.value)}
                 fullWidth
                 autoFocus
-                placeholder="Введите ФИО пациента"
+                placeholder={t("form.errors.fullNameRequired")}
                 disabled={busy}
                 {...v.field("fio")}
               />
@@ -284,7 +286,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             {/* ── Телефон ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Телефон
+                {t("form.phone")}
               </Typography>
               <TextField
                 value={phone}
@@ -321,7 +323,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             <Stack spacing={0.5}>
               <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1}>
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Дата рождения
+                  {t("form.birthDate")}
                 </Typography>
                 {formatPatientAge(birth) && (
                   <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
@@ -336,7 +338,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                   textField: {
                     fullWidth: true,
                     InputLabelProps: { shrink: true },
-                    placeholder: "дд.мм.гггг",
+                    placeholder: t("form.birthDatePlaceholder"),
                     disabled: busy,
                   },
                 }}
@@ -346,7 +348,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             {/* ── Пол ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Пол
+                {t("form.gender")}
               </Typography>
               <ToggleButtonGroup
                 value={gender === "unknown" ? null : gender}
@@ -356,15 +358,15 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                 fullWidth
                 size="small"
               >
-                <ToggleButton value="male">Мальчик</ToggleButton>
-                <ToggleButton value="female">Девочка</ToggleButton>
+                <ToggleButton value="male">{t("form.genderMale")}</ToggleButton>
+                <ToggleButton value="female">{t("form.genderFemale")}</ToggleButton>
               </ToggleButtonGroup>
             </Stack>
 
             {/* ── Адрес ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Адрес
+                {t("form.address")}
               </Typography>
               <AddressAutocomplete
                 value={address}
@@ -376,7 +378,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             {/* ── ИНН ── */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                ИНН
+                {t("form.inn")}
               </Typography>
               <TextField
                 value={inn}
@@ -424,7 +426,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                         color: isBlacklisted ? "error.main" : "text.primary",
                       }}
                     >
-                      В чёрном списке
+                      {t("form.blacklisted")}
                     </Typography>
                   }
                 />
@@ -435,7 +437,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                     fullWidth
                     multiline
                     minRows={2}
-                    placeholder="Опишите причину..."
+                    placeholder={t("editDrawer.blacklistReasonPlaceholder")}
                     disabled={busy}
                     required={isBlacklisted}
                     {...v.field("blacklistReason")}
@@ -452,7 +454,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
         >
           <Stack direction="row" gap={1} justifyContent="flex-end">
             <Button onClick={onClose} disabled={busy}>
-              Отмена
+              {t("form.cancel")}
             </Button>
             <Button
               variant="contained"
@@ -462,10 +464,10 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
               {busy ? (
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <CircularProgress size={18} />
-                  <span>Сохранение…</span>
+                  <span>{t("form.saving")}</span>
                 </Stack>
               ) : (
-                "Сохранить"
+                t("form.save")
               )}
             </Button>
           </Stack>

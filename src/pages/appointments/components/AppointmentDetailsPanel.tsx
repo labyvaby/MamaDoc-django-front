@@ -52,8 +52,10 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { scheduleDateInfo } from "../../vaccinations/meta";
-import { getStatusConfig, getStatusChipSx, normalizeDjangoStatus } from "../../../config/appointmentStatuses";
+import { getStatusConfig, getStatusChipSx } from "../../../config/appointmentStatuses";
 import { PaymentInfoBlock } from "../../../components/ui";
+import { useT } from "../../../i18n/VerticalProvider";
+import { tt } from "../../../i18n/t";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
 import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
@@ -111,7 +113,9 @@ function initials(name?: string | null): string {
 
 function som(value?: string | number | null): string {
   const n = Number(value ?? 0);
-  return `${isNaN(n) ? 0 : n.toLocaleString("ru-RU")} сом`;
+  return tt("appointments:details.amountWithCurrency", {
+    amount: isNaN(n) ? 0 : n.toLocaleString("ru-RU"),
+  });
 }
 
 const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
@@ -135,6 +139,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onDelete,
   onClose,
 }) => {
+  const { t } = useT("appointments");
   const theme = useTheme();
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
@@ -306,17 +311,17 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     }
   }, [appt, onStartAppointment, activeEmployeeId, startBusy]);
 
-  // Статус "Оплачено безналом" — только карта, без наличных
+  // Статус «Оплачено безналом» — только карта, без наличных.
+  // Держим код статуса, а не метку: метка зависит от вертикали.
   const displayStatus = React.useMemo(() => {
-    const normalized = normalizeDjangoStatus(appt.status);
     if (
       (appt.status === "completed" || payStatus === "paid") &&
       cardPaid > 0 &&
       cashPaid === 0
     ) {
-      return "Оплачено безналом";
+      return "paid_cashless";
     }
-    return normalized;
+    return appt.status;
   }, [appt.status, payStatus, cardPaid, cashPaid]);
 
   const statusCfg = getStatusConfig(displayStatus);
@@ -338,7 +343,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       if (!map.has(key)) {
         map.set(key, {
           employeeId: sl.employee?.id ?? null,
-          employeeName: sl.employee?.fullName ?? "Без врача",
+          employeeName: sl.employee?.fullName ?? t("details.noSpecialist"),
           employeePhotoUrl: sl.employee?.photoUrl ?? null,
           services: [],
         });
@@ -378,7 +383,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             onClick={() => onPay(appt)}
             sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
           >
-            {hasPaid ? "Изменить оплату" : "Принять оплату"}
+            {hasPaid ? t("details.editPayment") : t("details.acceptPayment")}
           </Button>
         </Stack>
       ) : undefined;
@@ -452,7 +457,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={<EventAvailableOutlined />}
                     onClick={() => onConfirmVisit(appt)}
                   >
-                    Подтвердить
+                    {t("details.confirm")}
                   </Button>
                 )}
 
@@ -467,7 +472,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={<DirectionsWalkOutlined />}
                     onClick={() => onArrived(appt)}
                   >
-                    Пациент здесь
+                    {t("details.patientArrived")}
                   </Button>
                 )}
 
@@ -490,7 +495,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     onClick={handleStartAppointment}
                     disabled={startBusy}
                   >
-                    Начать приём
+                    {t("details.startVisit")}
                   </Button>
                 )}
 
@@ -502,7 +507,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={<EditOutlined />}
                     onClick={openConclusions}
                   >
-                    Изменить заключение
+                    {t("details.editConclusion")}
                   </Button>
                 )}
 
@@ -514,7 +519,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={<EditOutlined />}
                     onClick={() => onEdit(appt)}
                   >
-                    Изменить
+                    {t("details.edit")}
                   </Button>
                 )}
 
@@ -529,7 +534,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={<VaccinesOutlined />}
                     onClick={() => onRecordVaccination(appt)}
                   >
-                    Ввести прививку
+                    {t("details.recordVaccine")}
                   </Button>
                 )}
 
@@ -543,7 +548,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={showConclusions ? <VisibilityOutlined /> : <DescriptionOutlined />}
                     onClick={() => onToggleConclusion?.()}
                   >
-                    {showConclusions ? "Скрыть заключение" : "Заключение"}
+                    {showConclusions ? t("details.hideConclusion") : t("details.conclusion")}
                   </Button>
                 )}
 
@@ -555,7 +560,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               {(isAdminRole || isRegistratorRole) && (
                 <Stack direction="row" spacing={0.5}>
                   {canUpdate && onCancelAppt && !isCancelled && (
-                    <Tooltip title="Отменить запись">
+                    <Tooltip title={t("details.cancelRecord")}>
                       <IconButton
                         size="small"
                         color="error"
@@ -571,7 +576,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     </Tooltip>
                   )}
                   {canDelete && onDelete && (
-                    <Tooltip title="Удалить">
+                    <Tooltip title={t("details.delete")}>
                       <span>
                         <IconButton
                           size="small"
@@ -638,8 +643,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     color="text.disabled"
                     sx={{ fontSize: "0.725rem", lineHeight: 1.2, textAlign: "right" }}
                   >
-                    Создан: {dayjs(appt.createdAt).format("DD.MM HH:mm")}
-                    {createdByName ? ` · ${createdByName}` : ""}
+                    {t("details.createdAt", {
+                      when: dayjs(appt.createdAt).format("DD.MM HH:mm"),
+                      author: createdByName ? ` · ${createdByName}` : "",
+                    })}
                   </Typography>
                 )}
                 {appt.updatedAt && appt.updatedAt !== appt.createdAt && (
@@ -648,8 +655,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     color="text.disabled"
                     sx={{ fontSize: "0.725rem", lineHeight: 1.2, textAlign: "right" }}
                   >
-                    Изм: {dayjs(appt.updatedAt).format("DD.MM HH:mm")}
-                    {updatedByName ? ` · ${updatedByName}` : ""}
+                    {t("details.updatedAt", {
+                      when: dayjs(appt.updatedAt).format("DD.MM HH:mm"),
+                      author: updatedByName ? ` · ${updatedByName}` : "",
+                    })}
                   </Typography>
                 )}
               </Stack>
@@ -665,7 +674,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               />
               {/* bank confirmation double-check chip */}
               {(appt as any).hasBankConfirmation && (
-                <Tooltip title="Оплата подтверждена банком">
+                <Tooltip title={t("details.paymentConfirmedByBank")}>
                   <Chip
                     size="small"
                     label="✓✓"
@@ -700,13 +709,13 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       onClick={() => onPay(appt)}
                       sx={{ alignSelf: "flex-start" }}
                     >
-                      Принять оплату
+                      {t("details.acceptPayment")}
                     </Button>
                   )
                 )}
                 {hasRefund && (
                   <Typography variant="caption" color="error.main" fontWeight={600} display="block">
-                    Возврат: {som(refundedTotal)}
+                    {t("details.refundLabel", { amount: som(refundedTotal) })}
                   </Typography>
                 )}
                 <Divider />
@@ -717,7 +726,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             {appt.patient ? (
               <Box>
                 <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  Пациент
+                  {t("details.patient")}
                 </Typography>
                 <Paper
                   variant="outlined"
@@ -777,7 +786,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             ) : (
               <Box>
                 <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  Пациент
+                  {t("details.patient")}
                 </Typography>
                 <Paper
                   variant="outlined"
@@ -788,7 +797,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   }}
                 >
                   <Typography variant="body2" color="text.secondary">
-                    Бронирование (без пациента)
+                    {t("details.bookingWithoutPatient")}
                   </Typography>
                 </Paper>
               </Box>
@@ -800,7 +809,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 <Stack direction="row" alignItems="center" gap={1} mb={0.75}>
                   <VaccinesOutlined sx={{ fontSize: 18, color: "primary.onSurface" }} />
                   <Typography variant="caption" color="text.secondary">
-                    Положено по календарю
+                    {t("details.byCalendar")}
                   </Typography>
                   <Box sx={{ flex: 1 }} />
                   {multiDue && (
@@ -812,7 +821,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       onClick={() => onRecordVaccinationMulti?.(appt, selectedDoseInputs)}
                       sx={{ boxShadow: "none", textTransform: "none", borderRadius: "8px" }}
                     >
-                      Ввести выбранные ({selectedDoseInputs.length})
+                      {t("details.recordSelected", { count: selectedDoseInputs.length })}
                     </Button>
                   )}
                 </Stack>
@@ -848,7 +857,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                         )}
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography variant="body2" fontWeight={600} noWrap>
-                            {slot.vaccineName} · доза {slot.doseNumber}
+                            {t("details.vaccineDose", { vaccine: slot.vaccineName, dose: slot.doseNumber })}
                           </Typography>
                           <Typography
                             variant="caption"
@@ -872,7 +881,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                           }
                           sx={{ boxShadow: "none", textTransform: "none", flexShrink: 0, borderRadius: "8px" }}
                         >
-                          Ввести
+                          {t("details.record")}
                         </Button>
                       </Paper>
                     );
@@ -884,7 +893,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             {/* ── Services grouped by doctor ── */}
             <Box>
               <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                Услуги и специалисты
+                {t("details.servicesAndSpecialists")}
               </Typography>
               {appt.services.length === 0 ? (
                 <Paper
@@ -896,7 +905,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   }}
                 >
                   <Typography variant="body2" color="text.disabled">
-                    Услуги не указаны
+                    {t("details.noServices")}
                   </Typography>
                 </Paper>
               ) : (
@@ -1020,7 +1029,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             {(appt.productLines ?? []).filter((pl) => pl.status !== "canceled").length > 0 && (
               <Box>
                 <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  Товары
+                  {t("details.products")}
                 </Typography>
                 <Stack spacing={1}>
                   {(appt.productLines ?? [])
@@ -1079,7 +1088,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                         <DescriptionOutlined color="primary" fontSize="small" />
                         <Typography variant="subtitle2" color="text.secondary">
-                          Жалобы пациента
+                          {t("details.patientComplaints")}
                         </Typography>
                       </Stack>
                       <Typography
@@ -1102,7 +1111,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                         <DescriptionOutlined color="secondary" fontSize="small" />
                         <Typography variant="subtitle2" color="text.secondary">
-                          Жалобы (врач)
+                          {t("details.doctorComplaints")}
                         </Typography>
                       </Stack>
                       <Typography
@@ -1123,7 +1132,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   {appt.adminComment && (
                     <Box>
                       <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        Комментарий администратора
+                        {t("details.adminComment")}
                       </Typography>
                       <Typography
                         variant="body2"
@@ -1149,7 +1158,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               <>
                 <Divider />
                 <Typography variant="caption" color="text.secondary" display="block">
-                  Информация об оплате
+                  {t("details.paymentInfo")}
                 </Typography>
                 {paymentBlock(false)}
               </>
@@ -1205,19 +1214,17 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       {/* ── Confirm dialog ── */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>
-          {confirmAction === "delete" ? "Удалить приём?" : "Отменить запись?"}
+          {confirmAction === "delete" ? t("details.deleteTitle") : t("details.cancelTitle")}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {confirmAction === "delete"
-              ? "Удалить можно только ошибочно созданный приём без оплат, возвратов и медицинских заключений."
-              : "Запись будет переведена в статус «Отменено». Она не удалится из истории."}
+            {confirmAction === "delete" ? t("details.deleteText") : t("details.cancelText")}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>Назад</Button>
+          <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
           <Button onClick={handleConfirm} color="error" variant="contained" autoFocus>
-            {confirmAction === "delete" ? "Удалить" : "Подтвердить отмену"}
+            {confirmAction === "delete" ? t("details.delete") : t("details.cancelSubmit")}
           </Button>
         </DialogActions>
       </Dialog>

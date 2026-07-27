@@ -29,15 +29,14 @@ import {
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const METHOD_LABELS: Record<string, string> = {
-  cash: "Наличные",
-  card: "Карта",
-  balance: "Баланс пациента",
-  bonus: "Бонусы",
-};
+/** Подпись метода оплаты — из общего словаря (common:paymentMethods). */
+const methodLabel = (method: string): string =>
+  tt(`common:paymentMethods.${method}`, { defaultValue: method });
 
 function parseDecimal(s: string | undefined): number {
   if (!s) return 0;
@@ -81,6 +80,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t } = useT("appointments");
   const queryClient = useQueryClient();
   const [amountStr, setAmountStr] = React.useState("");
   const [reason, setReason] = React.useState("");
@@ -142,8 +142,8 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
     amount:
       amountValue > 0 && amountValue <= remaining + 0.001
         ? null
-        : `Укажите сумму от 0.01 до ${fmt(remaining)} с`,
-    reason: reason.trim() ? null : "Укажите причину возврата",
+        : t("refunds.errors.amountRange", { max: fmt(remaining) }),
+    reason: reason.trim() ? null : t("refunds.errors.reasonRequired"),
   });
 
   if (!state) return null;
@@ -172,7 +172,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
           <Stack direction="row" alignItems="center" spacing={1}>
             <UndoOutlined fontSize="small" color="error" />
             <Typography variant="h6" fontWeight={600} fontSize="1rem">
-              Возврат платежа
+              {t("refunds.title")}
             </Typography>
           </Stack>
         </DialogTitle>
@@ -182,27 +182,27 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             {/* Payment info */}
             <Box sx={{ bgcolor: "action.hover", borderRadius: 1, px: 1.5, py: 1 }}>
               <Stack direction="row" justifyContent="space-between">
-                <Typography variant="caption" color="text.secondary">Метод</Typography>
+                <Typography variant="caption" color="text.secondary">{t("refunds.method")}</Typography>
                 <Typography variant="caption" fontWeight={600}>
-                  {METHOD_LABELS[state.payment.method] ?? state.payment.method}
+                  {methodLabel(state.payment.method)}
                 </Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
-                <Typography variant="caption" color="text.secondary">Сумма платежа</Typography>
-                <Typography variant="caption" fontWeight={600}>{state.payment.amount} с</Typography>
+                <Typography variant="caption" color="text.secondary">{t("refunds.paymentAmount")}</Typography>
+                <Typography variant="caption" fontWeight={600}>{t("common:currency.amountShort", { amount: state.payment.amount })}</Typography>
               </Stack>
               {parseDecimal(state.payment.refundedAmount) > 0 && (
                 <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">Уже возвращено</Typography>
+                  <Typography variant="caption" color="text.secondary">{t("refunds.alreadyRefunded")}</Typography>
                   <Typography variant="caption" fontWeight={600} color="error.main">
-                    {state.payment.refundedAmount} с
+                    {t("common:currency.amountShort", { amount: state.payment.refundedAmount })}
                   </Typography>
                 </Stack>
               )}
               <Stack direction="row" justifyContent="space-between">
-                <Typography variant="caption" color="text.secondary">Доступно к возврату</Typography>
+                <Typography variant="caption" color="text.secondary">{t("refunds.availableToRefund")}</Typography>
                 <Typography variant="caption" fontWeight={700} color="warning.main">
-                  {fmt(state.remaining)} с
+                  {t("common:currency.amountShort", { amount: fmt(state.remaining) })}
                 </Typography>
               </Stack>
             </Box>
@@ -210,12 +210,12 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             {/* Amount */}
             <Stack spacing={0.5}>
               <TextField
-                label="Сумма возврата"
+                label={t("refunds.amountLabel")}
                 size="small"
                 value={amountStr}
                 onChange={(e) => { setLocalError(null); setAmountStr(e.target.value); }}
                 {...v.field("amount", " ")}
-                InputProps={{ endAdornment: <InputAdornment position="end">с</InputAdornment> }}
+                InputProps={{ endAdornment: <InputAdornment position="end">{t("refunds.currency")}</InputAdornment> }}
                 inputProps={{ inputMode: "decimal" }}
                 fullWidth
                 disabled={refundMutation.isPending}
@@ -227,13 +227,13 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
                 sx={{ textTransform: "none", alignSelf: "flex-start", px: 0 }}
                 disabled={refundMutation.isPending}
               >
-                Вернуть полностью ({fmt(state.remaining)} с)
+                {t("refunds.refundFull", { amount: fmt(state.remaining) })}
               </Button>
             </Stack>
 
             {/* Reason */}
             <TextField
-              label="Причина возврата"
+              label={t("refunds.reasonLabel")}
               size="small"
               multiline
               minRows={2}
@@ -255,7 +255,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             onClick={onClose}
             disabled={refundMutation.isPending}
           >
-            Отмена
+            {t("refunds.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -264,29 +264,29 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             disabled={refundMutation.isPending}
             startIcon={refundMutation.isPending ? <CircularProgress size={14} /> : undefined}
           >
-            Оформить возврат
+            {t("refunds.submit")}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Confirmation dialog */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Подтвердите возврат</DialogTitle>
+        <DialogTitle>{t("refunds.confirmTitle")}</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            Вернуть <strong>{fmt(amount)} с</strong> по платежу{" "}
-            <strong>{METHOD_LABELS[state.payment.method] ?? state.payment.method}</strong>?
+            {t("refunds.refundVerb")} <strong>{fmt(amount)} {t("refunds.currency")}</strong> {t("refunds.byPayment")}{" "}
+            <strong>{methodLabel(state.payment.method)}</strong>?
           </Typography>
           <Typography variant="body2" color="text.secondary" mt={0.75}>
-            Причина: {reason}
+            {t("refunds.reasonInline", { reason })}
           </Typography>
           <Alert severity="warning" sx={{ mt: 1.5, py: 0.5 }} icon={false}>
-            После возврата изменение состава оплаты недоступно. Дополнительные возвраты можно делать по каждому платежу.
+            {t("refunds.confirmText")}
           </Alert>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button variant="outlined" onClick={() => setConfirmOpen(false)} disabled={refundMutation.isPending}>
-            Отмена
+            {t("refunds.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -295,7 +295,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
             disabled={refundMutation.isPending}
             startIcon={refundMutation.isPending ? <CircularProgress size={14} /> : undefined}
           >
-            Подтвердить
+            {t("refunds.confirm")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -311,6 +311,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
   summary,
   onSummaryUpdated,
 }) => {
+  const { t } = useT("appointments");
   const canRefund = useCan("finance.refund");
   const [dialogState, setDialogState] = React.useState<RefundDialogState>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
@@ -328,7 +329,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
       <Stack direction="row" alignItems="center" spacing={1} mb={1.25}>
         <UndoOutlined fontSize="small" sx={{ color: "text.secondary" }} />
         <Typography variant="body2" fontWeight={600} color="text.secondary">
-          Возвраты
+          {t("refunds.sectionTitle")}
         </Typography>
       </Stack>
 
@@ -336,19 +337,19 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
       {hasRefunds && (
         <Stack spacing={0.5} mb={1.5} sx={{ bgcolor: "action.hover", borderRadius: 1, px: 1.5, py: 1 }}>
           <Stack direction="row" justifyContent="space-between">
-            <Typography variant="caption" color="text.secondary">Оплачено (брутто)</Typography>
-            <Typography variant="caption" fontWeight={500}>{summary.paidTotal} с</Typography>
+            <Typography variant="caption" color="text.secondary">{t("refunds.paidGross")}</Typography>
+            <Typography variant="caption" fontWeight={500}>{t("common:currency.amountShort", { amount: summary.paidTotal })}</Typography>
           </Stack>
           <Stack direction="row" justifyContent="space-between">
-            <Typography variant="caption" color="text.secondary">Возвращено</Typography>
+            <Typography variant="caption" color="text.secondary">{t("refunds.refunded")}</Typography>
             <Typography variant="caption" fontWeight={600} color="error.main">
-              − {summary.refundedTotal} с
+              {t("common:currency.minusAmountShort", { amount: summary.refundedTotal })}
             </Typography>
           </Stack>
           <Divider sx={{ my: 0.25 }} />
           <Stack direction="row" justifyContent="space-between">
-            <Typography variant="caption" color="text.secondary" fontWeight={600}>Чистая оплата</Typography>
-            <Typography variant="caption" fontWeight={700}>{fmt(paidNet)} с</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>{t("refunds.netPaid")}</Typography>
+            <Typography variant="caption" fontWeight={700}>{t("common:currency.amountShort", { amount: fmt(paidNet) })}</Typography>
           </Stack>
         </Stack>
       )}
@@ -356,7 +357,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
       {/* Blocked-apply notice */}
       {hasRefunds && (
         <Alert severity="info" icon={false} sx={{ mb: 1.5, py: 0.5, fontSize: "0.75rem" }}>
-          После возврата изменение состава оплаты недоступно. Дополнительные возвраты можно делать по каждому платежу.
+          {t("refunds.confirmText")}
         </Alert>
       )}
 
@@ -384,17 +385,17 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
               >
                 <Stack spacing={0}>
                   <Typography variant="caption" fontWeight={600}>
-                    {METHOD_LABELS[p.method] ?? p.method}
+                    {methodLabel(p.method)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {p.amount} с
+                    {t("common:currency.amountShort", { amount: p.amount })}
                     {refundedAmt > 0 && (
-                      <> · возвращено: <Box component="span" sx={{ color: "error.main", fontWeight: 600 }}>{p.refundedAmount} с</Box></>
+                      <> {t("refunds.refundedInline")} <Box component="span" sx={{ color: "error.main", fontWeight: 600 }}>{p.refundedAmount} {t("refunds.currency")}</Box></>
                     )}
                   </Typography>
                   {canRefundThis && (
                     <Typography variant="caption" color="warning.main">
-                      доступно к возврату: {fmt(remaining)} с
+                      {t("refunds.availableInline", { amount: fmt(remaining) })}
                     </Typography>
                   )}
                 </Stack>
@@ -406,12 +407,12 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
                     onClick={() => setDialogState({ payment: p, remaining })}
                     sx={{ textTransform: "none", minWidth: 80, flexShrink: 0, ml: 1 }}
                   >
-                    Возврат
+                    {t("refunds.refund")}
                   </Button>
                 )}
                 {!canRefundThis && refundedAmt > 0 && (
                   <Typography variant="caption" color="text.disabled" sx={{ ml: 1, flexShrink: 0 }}>
-                    Возвращён
+                    {t("refunds.refundedChip")}
                   </Typography>
                 )}
               </Stack>
@@ -429,7 +430,9 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
             onClick={() => setHistoryOpen((v) => !v)}
             sx={{ textTransform: "none", color: "text.secondary", px: 0 }}
           >
-            {historyOpen ? "Скрыть историю возвратов" : `История возвратов (${refunds.length})`}
+            {historyOpen
+              ? t("refunds.hideHistory")
+              : t("refunds.showHistory", { count: refunds.length })}
           </Button>
 
           <Collapse in={historyOpen} unmountOnExit>
@@ -445,7 +448,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
                 >
                   <Stack spacing={0}>
                     <Typography variant="caption" fontWeight={500}>
-                      {METHOD_LABELS[r.method] ?? r.method}
+                      {methodLabel(r.method)}
                     </Typography>
                     <Typography variant="caption" color="text.disabled" sx={{ maxWidth: 180 }}>
                       {r.reason}
@@ -455,7 +458,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
                     </Typography>
                   </Stack>
                   <Typography variant="caption" fontWeight={700} color="error.main" sx={{ flexShrink: 0, ml: 1 }}>
-                    − {r.amount} с
+                    {t("common:currency.minusAmountShort", { amount: r.amount })}
                   </Typography>
                 </Stack>
               ))}

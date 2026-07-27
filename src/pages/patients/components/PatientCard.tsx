@@ -37,15 +37,10 @@ import { AppCard, AppButton, InfoTile, UserAvatar, ListEmptyState } from "../../
 import { subtleBg } from "../../../theme/uiHelpers";
 import type { DjangoPatient } from "../../../api/patients";
 import type { PatientBalance } from "../../../api/patientBalance";
+import { useT } from "../../../i18n/VerticalProvider";
 
-function getDeclension(number: number, titles: [string, string, string]): string {
-  const cases = [2, 0, 1, 1, 1, 2];
-  return titles[
-    number % 100 > 4 && number % 100 < 20
-      ? 2
-      : cases[number % 10 < 5 ? number % 10 : 5]
-  ];
-}
+/** Тип функции перевода — карточка прокидывает её в хелперы вне компонента. */
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
 
 function formatDateRu(iso?: string | null): string {
   if (!iso) return "—";
@@ -54,7 +49,7 @@ function formatDateRu(iso?: string | null): string {
   return d.toLocaleDateString("ru-RU");
 }
 
-function calculateAge(birthDateStr: string): string {
+function calculateAge(birthDateStr: string, t: TFunc): string {
   const birthDate = new Date(birthDateStr);
   const now = new Date();
   if (isNaN(birthDate.getTime())) return "";
@@ -62,12 +57,13 @@ function calculateAge(birthDateStr: string): string {
   let m = now.getMonth() - birthDate.getMonth();
   if (now.getDate() < birthDate.getDate()) m--;
   if (m < 0) { m += 12; y--; }
-  const yearStr = getDeclension(y, ["год", "года", "лет"]);
-  const monthStr = getDeclension(m, ["месяц", "месяца", "месяцев"]);
-  if (y === 0 && m === 0) return "(меньше месяца)";
+  // Склонение «год/года/лет» отдано плюрализации i18next вместо ручной таблицы.
+  const yearStr = t("card.age.years", { count: y });
+  const monthStr = t("card.age.months", { count: m });
+  if (y === 0 && m === 0) return t("card.age.lessThanMonth");
   if (y === 0) return `(${m} ${monthStr})`;
   if (m === 0) return `(${y} ${yearStr})`;
-  return `(${y} ${yearStr} и ${m} ${monthStr})`;
+  return t("card.ageYearsMonths", { years: y, yearWord: yearStr, months: m, monthWord: monthStr });
 }
 
 function formatMoney(v?: string | null): string {
@@ -177,6 +173,7 @@ const PatientCard: React.FC<Props> = ({
   lastService,
   lastComplaints,
 }) => {
+  const { t } = useT("patients");
   const [menuAnchor, setMenuAnchor] = React.useState<null | HTMLElement>(null);
 
   return (
@@ -187,7 +184,7 @@ const PatientCard: React.FC<Props> = ({
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap" sx={{ px: 2, pt: 2, pb: 1.5 }}>
             <Stack direction="row" alignItems="center" gap={1.25}>
               <PersonOutlineOutlined color="primary" />
-              <Typography variant="h6">Карточка пациента</Typography>
+              <Typography variant="h6">{t("card.title")}</Typography>
             </Stack>
             {patient && (onTopUp || onEdit || onMerge || onFace) && (
               <>
@@ -205,22 +202,22 @@ const PatientCard: React.FC<Props> = ({
                   >
                   {onTopUp && (
                     <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="success" onClick={onTopUp} startIcon={<AccountBalanceWalletOutlined />}>
-                      Пополнить
+                      {t("card.actions.topUp")}
                     </AppButton>
                   )}
                   {onMerge && (
                     <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
-                      Объединить
+                      {t("card.actions.merge")}
                     </AppButton>
                   )}
                   {onFace && (
                     <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="info" onClick={onFace} startIcon={<CameraAltOutlined />}>
-                      Камера
+                      {t("card.actions.camera")}
                     </AppButton>
                   )}
                   {onEdit && (
                     <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="contained" onClick={onEdit} startIcon={<EditOutlined />}>
-                      Редактировать
+                      {t("card.actions.edit")}
                     </AppButton>
                   )}
                 </Stack>
@@ -239,25 +236,25 @@ const PatientCard: React.FC<Props> = ({
                     {onEdit && (
                       <MenuItem onClick={() => { setMenuAnchor(null); onEdit(); }}>
                         <ListItemIcon><EditOutlined fontSize="small" /></ListItemIcon>
-                        <ListItemText>Редактировать</ListItemText>
+                        <ListItemText>{t("card.actions.edit")}</ListItemText>
                       </MenuItem>
                     )}
                     {onTopUp && (
                       <MenuItem onClick={() => { setMenuAnchor(null); onTopUp(); }}>
                         <ListItemIcon><AccountBalanceWalletOutlined fontSize="small" color="success" /></ListItemIcon>
-                        <ListItemText>Пополнить счёт</ListItemText>
+                        <ListItemText>{t("card.actions.topUpAccount")}</ListItemText>
                       </MenuItem>
                     )}
                     {onMerge && (
                       <MenuItem onClick={() => { setMenuAnchor(null); onMerge(); }}>
                         <ListItemIcon><MergeTypeIcon fontSize="small" color="warning" /></ListItemIcon>
-                        <ListItemText>Объединить с дублем</ListItemText>
+                        <ListItemText>{t("card.actions.mergeWithDuplicate")}</ListItemText>
                       </MenuItem>
                     )}
                     {onFace && (
                       <MenuItem onClick={() => { setMenuAnchor(null); onFace(); }}>
                         <ListItemIcon><CameraAltOutlined fontSize="small" color="info" /></ListItemIcon>
-                        <ListItemText>Камера</ListItemText>
+                        <ListItemText>{t("card.actions.camera")}</ListItemText>
                       </MenuItem>
                     )}
                   </Menu>
@@ -274,13 +271,13 @@ const PatientCard: React.FC<Props> = ({
             <Stack spacing={1.5} sx={{ p: 2 }}>
               {patient.isBlacklisted && (
                 <Alert severity="error" variant="outlined" sx={{ borderRadius: "10px" }}>
-                  <AlertTitle sx={{ fontWeight: 600 }}>В чёрном списке</AlertTitle>
-                  {patient.blacklistReason || "Причина не указана"}
+                  <AlertTitle sx={{ fontWeight: 600 }}>{t("card.blacklistTitle")}</AlertTitle>
+                  {patient.blacklistReason || t("card.blacklistNoReason")}
                 </Alert>
               )}
               {!patient.isActive && (
                 <Alert severity="warning" variant="outlined" sx={{ borderRadius: "10px" }}>
-                  Пациент помечен как неактивный
+                  {t("card.inactive")}
                 </Alert>
               )}
 
@@ -311,7 +308,7 @@ const PatientCard: React.FC<Props> = ({
                     </Link>
                   ) : (
                     <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5 }}>
-                      Телефон не указан
+                      {t("card.noPhone")}
                     </Typography>
                   )}
 
@@ -336,41 +333,41 @@ const PatientCard: React.FC<Props> = ({
                   {patient.birthDate && (
                     <InfoTile
                       icon={<CalendarMonthOutlined />}
-                      label="Дата рождения"
-                      value={`${formatDateRu(patient.birthDate)} ${calculateAge(patient.birthDate)}`}
+                      label={t("card.birthDate")}
+                      value={`${formatDateRu(patient.birthDate)} ${calculateAge(patient.birthDate, t)}`}
                     />
                   )}
                   {patient.address && (
-                    <InfoTile icon={<PlaceOutlined />} label="Адрес" value={patient.address} />
+                    <InfoTile icon={<PlaceOutlined />} label={t("card.address")} value={patient.address} />
                   )}
                 </Box>
               )}
 
               {/* Семья */}
               {patient.family && (
-                <FactBlock icon={<GroupsOutlined />} title="Семья">
+                <FactBlock icon={<GroupsOutlined />} title={t("card.family")}>
                   <Typography variant="body2" fontWeight={600}>
                     {patient.family.name}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {patient.family.memberCount} участника
+                    {t("card.familyMembers", { count: patient.family.memberCount })}
                   </Typography>
                 </FactBlock>
               )}
 
               {/* Счёт пациента */}
-              <FactBlock icon={<AccountBalanceWalletOutlined />} title="Счёт пациента">
+              <FactBlock icon={<AccountBalanceWalletOutlined />} title={t("card.account")}>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                   <AmountTile
                     icon={<AccountBalanceWalletOutlined />}
-                    label="Баланс"
-                    value={balance ? `${formatMoney(balance.balance)} сом` : "—"}
+                    label={t("card.balance")}
+                    value={balance ? t("card.amountWithCurrency", { amount: formatMoney(balance.balance) }) : "—"}
                     tone="success"
                   />
                   <AmountTile
                     icon={<CardGiftcardOutlined />}
-                    label="Бонусы"
-                    value={balance ? `${formatMoney(balance.bonuses)} сом` : "—"}
+                    label={t("card.bonuses")}
+                    value={balance ? t("card.amountWithCurrency", { amount: formatMoney(balance.bonuses) }) : "—"}
                     tone="warning"
                   />
                 </Stack>
@@ -378,7 +375,7 @@ const PatientCard: React.FC<Props> = ({
 
               {/* Последний прием */}
               {(lastDateTime || lastService || lastComplaints) && (
-                <FactBlock icon={<EventAvailableOutlined />} title="Последний приём">
+                <FactBlock icon={<EventAvailableOutlined />} title={t("card.lastVisit")}>
                   <Stack spacing={0.5}>
                     {lastDateTime && (
                       <Typography variant="body2" fontWeight={600}>
@@ -388,7 +385,7 @@ const PatientCard: React.FC<Props> = ({
                     {lastService && (
                       <Typography variant="body2">
                         <Typography component="span" variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-                          Услуга:
+                          {t("card.serviceLabel")}
                         </Typography>
                         {lastService}
                       </Typography>
@@ -396,7 +393,7 @@ const PatientCard: React.FC<Props> = ({
                     {lastComplaints && (
                       <Typography variant="body2">
                         <Typography component="span" variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-                          Жалобы:
+                          {t("card.complaintsLabel")}
                         </Typography>
                         {lastComplaints}
                       </Typography>
@@ -407,7 +404,7 @@ const PatientCard: React.FC<Props> = ({
 
               {/* Примечания */}
               {patient.notes && (
-                <FactBlock icon={<NotesOutlined />} title="Примечания">
+                <FactBlock icon={<NotesOutlined />} title={t("card.notes")}>
                   <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{patient.notes}</Typography>
                 </FactBlock>
               )}
@@ -415,8 +412,8 @@ const PatientCard: React.FC<Props> = ({
           ) : (
             <ListEmptyState
               icon={<PersonOutlineOutlined />}
-              title="Пациент не выбран"
-              description="Выберите пациента из списка слева, чтобы увидеть карточку"
+              title={t("card.notSelectedTitle")}
+              description={t("card.notSelectedDescription")}
             />
           )}
         </Box>

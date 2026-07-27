@@ -13,6 +13,7 @@ import {
 } from "@mui/icons-material";
 import type { SxProps, Theme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import { tt } from "../i18n/t";
 
 /**
  * Константы статусов
@@ -58,154 +59,167 @@ export interface StatusConfig {
 /**
  * Базовая конфигурация статуса (без цветов, т.к. они зависят от темы)
  */
-// Django backend status slug → Russian display label.
-// Slug'и фронта совпадают с бэком (server/apps/appointments/models.py).
-// Старые двойные слаги (waiting/cancelled) оставлены алиасами на случай
-// устаревших данных в кэше — чтобы не утёк сырой slug в UI.
-export const DJANGO_STATUS_LABEL: Record<string, string> = {
-  scheduled: "Ожидаем",
-  confirmed: "Подтверждён",
-  arrived: "Пациент здесь",
-  in_progress: "На приёме",
-  completed: "Завершено",
-  canceled: "Отменено",
-  no_show: "Пациент не пришел",
-  // legacy aliases (на всякий случай)
-  waiting: "Пациент здесь",
-  cancelled: "Отменено",
+/**
+ * Канонический код статуса — единственный ключ, по которому подбираются цвет
+ * и иконка. Раньше цвет матчился по русской метке; теперь метка зависит от
+ * вертикали бизнеса («Пациент здесь» / «Клиент здесь»), и такое сравнение
+ * ломалось бы. Код — стабилен, метка — производная от него.
+ */
+export type StatusCode =
+  | "scheduled"
+  | "confirmed"
+  | "arrived"
+  | "in_progress"
+  | "completed"
+  | "canceled"
+  | "no_show"
+  | "paid"
+  | "partially_paid"
+  | "paid_cashless"
+  | "discounted"
+  | "free";
+
+/**
+ * Всё, что может прийти в статусе, → канонический код.
+ * Ключи в нижнем регистре: слаги Django, legacy-значения Supabase (русские
+ * строки из APPOINTMENT_STATUSES) и исторические алиасы.
+ */
+const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
+  // Django-слаги
+  scheduled: "scheduled",
+  confirmed: "confirmed",
+  arrived: "arrived",
+  in_progress: "in_progress",
+  completed: "completed",
+  canceled: "canceled",
+  cancelled: "canceled",
+  no_show: "no_show",
+  waiting: "arrived",
+  // Платёжные коды: не приходят с бэка в поле status, но передаются в
+  // getStatusConfig/getStatusChipSx как код для подбора цвета чипа.
+  paid: "paid",
+  partially_paid: "partially_paid",
+  paid_cashless: "paid_cashless",
+  discounted: "discounted",
+  free: "free",
+  // legacy-значения Supabase (русские строки, приходят из старых данных)
+  "ожидаем": "scheduled",
+  "подтверждён": "confirmed",
+  "подтвержден": "confirmed",
+  "пациент здесь": "arrived",
+  "в очереди": "arrived",
+  "прибыл": "arrived",
+  "на приёме": "in_progress",
+  "на приеме": "in_progress",
+  "в работе": "in_progress",
+  "в процессе": "in_progress",
+  "завершено": "completed",
+  "завершён": "completed",
+  "отменено": "canceled",
+  "отменен": "canceled",
+  "пациент не пришел": "no_show",
+  "оплачено": "paid",
+  "частично оплачено": "partially_paid",
+  "частично": "partially_paid",
+  "оплачено безналом": "paid_cashless",
+  "со скидкой": "discounted",
+  "бесплатно": "free",
 };
 
-// Normalize a backend (Django) status slug to the Russian label used in getStatusConfig
+/** Цвет и иконка на код статуса. */
+const STATUS_VISUAL: Record<StatusCode, { color: StatusConfig["color"]; icon: React.ReactElement }> = {
+  scheduled: { color: "warning", icon: <HourglassEmptyIcon fontSize="small" /> },
+  confirmed: { color: "info", icon: <EventAvailableIcon fontSize="small" /> },
+  arrived: { color: "success", icon: <CheckCircleIcon fontSize="small" /> },
+  in_progress: { color: "warning", icon: <BuildIcon fontSize="small" /> },
+  completed: { color: "default", icon: <DoneIcon fontSize="small" /> },
+  canceled: { color: "error", icon: <CancelIcon fontSize="small" /> },
+  no_show: { color: "default", icon: <CancelIcon fontSize="small" /> },
+  paid: { color: "success", icon: <DoneIcon fontSize="small" /> },
+  partially_paid: { color: "purple", icon: <PieChartIcon fontSize="small" /> },
+  paid_cashless: { color: "info", icon: <DoneIcon fontSize="small" /> },
+  discounted: { color: "secondary", icon: <DoneIcon fontSize="small" /> },
+  free: { color: "success", icon: <CardGiftcardIcon fontSize="small" /> },
+};
+
+const ALL_STATUS_CODES = Object.keys(STATUS_VISUAL) as StatusCode[];
+
+/**
+ * Резолв произвольного значения статуса в канонический код (или null).
+ *
+ * Принимает слаг бэка, legacy-значение Supabase и уже отображаемую метку —
+ * последнее важно, потому что по коду встречается двойное преобразование
+ * `getStatusConfig(normalizeDjangoStatus(status))`. Метка терминологична
+ * («Пациент здесь» / «Клиент здесь»), поэтому статичной таблицей алиасов её
+ * не покрыть: сверяемся с актуальными метками текущей вертикали.
+ */
+export const resolveStatusCode = (status: unknown): StatusCode | null => {
+  if (typeof status !== "string") return null;
+  const key = status.trim().toLowerCase();
+  if (!key) return null;
+
+  const direct = STATUS_CODE_BY_ALIAS[key];
+  if (direct) return direct;
+
+  return (
+    ALL_STATUS_CODES.find((code) => tt(`appointments:status.${code}`).toLowerCase() === key) ?? null
+  );
+};
+
+/** Отображаемая метка статуса — из словаря, зависит от вертикали. */
+export const getStatusLabel = (status: unknown): string => {
+  const code = resolveStatusCode(status);
+  if (code) return tt(`appointments:status.${code}`);
+  // Неизвестный статус показываем как есть, чтобы не терять информацию.
+  return typeof status === "string" && status.trim()
+    ? status
+    : tt("appointments:status.scheduled");
+};
+
+/**
+ * Django-слаг → отображаемая метка.
+ *
+ * Ленивые геттеры: значение вычисляется в момент обращения, когда i18n уже
+ * инициализирован и известна вертикаль. Обычным объектом-константой это не
+ * сделать — она бы «застыла» на момент импорта модуля.
+ */
+export const DJANGO_STATUS_LABEL: Record<string, string> = Object.defineProperties(
+  {},
+  Object.fromEntries(
+    (
+      [
+        "scheduled",
+        "confirmed",
+        "arrived",
+        "in_progress",
+        "completed",
+        "canceled",
+        "no_show",
+        "waiting",
+        "cancelled",
+      ] as const
+    ).map((slug) => [
+      slug,
+      { enumerable: true, get: () => getStatusLabel(slug) },
+    ])
+  )
+) as Record<string, string>;
+
+/**
+ * Нормализация статуса к отображаемой метке.
+ * Историческое имя сохранено: функция вызывается из полутора десятков мест.
+ */
 export function normalizeDjangoStatus(status: string): string {
-  return DJANGO_STATUS_LABEL[status] ?? status;
+  return getStatusLabel(status);
 }
 
 export const getStatusConfig = (status: any): StatusConfig => {
-  if (typeof status !== 'string') {
-    return {
-      color: "warning",
-      icon: <HourglassEmptyIcon fontSize="small" />,
-      label: status ? String(status) : "Ожидаем",
-    };
-  }
-  // Normalise Django slugs → Russian labels so colour-matching below works
-  const resolved = DJANGO_STATUS_LABEL[status.trim()] ?? status;
-  const statusLower = resolved.trim().toLowerCase();
-
-  // Отменено - красный
-  if (statusLower === APPOINTMENT_STATUSES.CANCELLED.toLowerCase() || statusLower === "отменен" || statusLower === "cancelled" || statusLower === "canceled") {
-    return {
-      color: "error",
-      icon: <CancelIcon fontSize="small" />,
-      label: status,
-    };
-  }
-
-  // Подтверждён (пациент подтвердил визит по телефону) - синий
-  if (
-    statusLower === APPOINTMENT_STATUSES.CONFIRMED.toLowerCase() ||
-    statusLower === "подтвержден" ||
-    statusLower === "confirmed"
-  ) {
-    return {
-      color: "info",
-      icon: <EventAvailableIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Пациент здесь - зеленый
-  if (
-    statusLower === APPOINTMENT_STATUSES.PATIENT_ARRIVED.toLowerCase() ||
-    statusLower === "в очереди" ||
-    statusLower === "прибыл" ||
-    statusLower === "waiting" ||
-    statusLower === "arrived"
-  ) {
-    return {
-      color: "success",
-      icon: <CheckCircleIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Оплачено - темно-зеленый
-  if (statusLower === APPOINTMENT_STATUSES.PAID.toLowerCase()) {
-    return {
-      color: "success",
-      icon: <DoneIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Со скидкой (100%) - фиолетовый
-  if (statusLower === APPOINTMENT_STATUSES.DISCOUNTED.toLowerCase()) {
-    return {
-      color: "secondary",
-      icon: <DoneIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // В работе - желтый/оранжевый
-  if (statusLower === APPOINTMENT_STATUSES.IN_PROGRESS.toLowerCase() || statusLower === "в процессе" || statusLower === "in_progress") {
-    return {
-      color: "warning",
-      icon: <BuildIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Завершено - серый/спокойный синий
-  if (statusLower === APPOINTMENT_STATUSES.COMPLETED.toLowerCase() || statusLower === "завершён" || statusLower === "completed") {
-    return {
-      color: "default",
-      icon: <DoneIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Пациент не пришел - серый
-  if (statusLower === APPOINTMENT_STATUSES.PATIENT_NOT_CAME.toLowerCase() || statusLower === "no_show") {
-    return {
-      color: "default",
-      icon: <CancelIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Частично оплачено - фиолетовый (уникальный)
-  if (statusLower === APPOINTMENT_STATUSES.PARTIALLY_PAID.toLowerCase() || statusLower === "частично") {
-    return {
-      color: "purple" as any,
-      icon: <PieChartIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Оплачено безналом - синий (info)
-  if (statusLower === "оплачено безналом") {
-    return {
-      color: "info",
-      icon: <DoneIcon fontSize="small" />,
-      label: "Оплачено",
-    };
-  }
-
-  // Бесплатно - зелёный с иконкой подарка
-  if (statusLower === APPOINTMENT_STATUSES.FREE.toLowerCase()) {
-    return {
-      color: "success",
-      icon: <CardGiftcardIcon fontSize="small" />,
-      label: resolved,
-    };
-  }
-
-  // Ожидаем (дефолт) - жёлтый
+  const code = resolveStatusCode(status);
+  const visual = code ? STATUS_VISUAL[code] : STATUS_VISUAL.scheduled;
   return {
-    color: "warning",
-    icon: <HourglassEmptyIcon fontSize="small" />,
-    label: resolved,
+    color: visual.color,
+    icon: visual.icon,
+    label: getStatusLabel(status),
   };
 };
 

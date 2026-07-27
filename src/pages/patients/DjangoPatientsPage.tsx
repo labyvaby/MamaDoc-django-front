@@ -21,6 +21,7 @@ import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { useT } from "../../i18n/VerticalProvider";
 import {
   searchPatients,
 } from "../../api/patients";
@@ -50,7 +51,9 @@ import FaceCaptureDrawer from "./components/FaceCaptureDrawer";
 
 // ── "В разработке" placeholder for Old conclusions tab ───────────────────────
 
-const OldConclusionsPlaceholder: React.FC = () => (
+const OldConclusionsPlaceholder: React.FC = () => {
+  const { t } = useT("patients");
+  return (
   <Box
     sx={{
       height: "100%",
@@ -69,13 +72,14 @@ const OldConclusionsPlaceholder: React.FC = () => (
   >
     <ConstructionOutlined sx={{ fontSize: 36, color: "primary.onSurface", opacity: 0.7 }} />
     <Typography variant="subtitle1" fontWeight={600} align="center">
-      Старые заключения в разработке
+      {t("oldConclusions.title")}
     </Typography>
     <Typography variant="body2" align="center" sx={{ maxWidth: 320 }}>
-      Перенос архивных заключений на новый backend ещё в работе.
+      {t("oldConclusions.description")}
     </Typography>
   </Box>
-);
+  );
+};
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
@@ -84,7 +88,8 @@ const MotionBox = motion(Box);
 type RightTabKey = "card" | "history" | "old" | "vaccinations";
 
 const DjangoPatientsPage: React.FC = () => {
-  usePageTitle("Все пациенты");
+  const { t } = useT("patients");
+  usePageTitle(t("page.title"));
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -185,13 +190,13 @@ const DjangoPatientsPage: React.FC = () => {
         setHasMore(data.length === PER_PAGE);
       } catch (e) {
         if ((e as { name?: string })?.name === "AbortError") return;
-        setError(e instanceof Error ? e.message : "Ошибка загрузки данных");
+        setError(e instanceof Error ? e.message : t("errors.loadList"));
       } finally {
         if (!ctrl.signal.aborted) setLoadingData(false);
         inFlightRef.current = false;
       }
     },
-    [scope],
+    [scope, t],
   );
 
   // Reload from the top whenever the (debounced) search term changes.
@@ -255,7 +260,7 @@ const DjangoPatientsPage: React.FC = () => {
       })
       .catch((e) => {
         if ((e as { name?: string })?.name === "AbortError") return;
-        setHistoryError(e instanceof Error ? e.message : "Ошибка загрузки истории");
+        setHistoryError(e instanceof Error ? e.message : t("errors.loadHistory"));
       })
       .finally(() => setHistoryLoading(false));
 
@@ -274,7 +279,7 @@ const DjangoPatientsPage: React.FC = () => {
     ? last.services.length === 1
       ? last.services[0].service?.name ?? undefined
       : last.services.length > 1
-      ? `${last.services.length} услуг`
+      ? t("common:counts.services", { count: last.services.length })
       : undefined
     : undefined;
   const lastComplaints = last?.complaints ?? undefined;
@@ -374,36 +379,36 @@ const DjangoPatientsPage: React.FC = () => {
 
   const noSelection = (
     <Box sx={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed", borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
-      <Typography color="text.secondary">Выберите пациента слева</Typography>
+      <Typography color="text.secondary">{t("placeholders.noSelection")}</Typography>
     </Box>
   );
 
   // Полный набор вкладок правой панели (планшет / мобильный: одна колонка на всё).
   const fullTabDefs: { key: RightTabKey; label: string }[] = [
-    { key: "card", label: "Карточка" },
-    { key: "history", label: "История" },
-    { key: "old", label: "Старые зак." },
-    ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: "Прививки" }] : []),
+    { key: "card", label: t("tabs.card") },
+    { key: "history", label: t("tabs.history") },
+    { key: "old", label: t("tabs.old") },
+    ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
   ];
 
   // Десктоп: карточка уже отдельной колонкой, правая колонка — только история/архив.
   const rightTabDefs: { key: RightTabKey; label: string }[] = [
-    { key: "history", label: "История приёмов" },
-    { key: "old", label: "Старые заключения" },
-    ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: "Прививки" }] : []),
+    { key: "history", label: t("tabs.historyFull") },
+    { key: "old", label: t("tabs.oldFull") },
+    ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
   ];
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <PageHeader
-        title="Все пациенты"
+        title={t("page.title")}
         showTitle={false}
-        addButtonText="Добавить пациент"
+        addButtonText={t("page.addButton")}
         onAdd={canCreate ? handleAdd : undefined}
         showSearch
         searchVal={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Поиск..."
+        searchPlaceholder={t("page.searchPlaceholder")}
         loading={loadingData}
       />
 
@@ -454,7 +459,7 @@ const DjangoPatientsPage: React.FC = () => {
             <MotionBox variants={cascadeItem} sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>
               {selected ? cardNode : (
                 <Box sx={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed", borderColor: "divider", borderRadius: 1, bgcolor: "background.paper" }}>
-                  <Typography color="text.secondary">Карточка пациента</Typography>
+                  <Typography color="text.secondary">{t("placeholders.card")}</Typography>
                 </Box>
               )}
             </MotionBox>

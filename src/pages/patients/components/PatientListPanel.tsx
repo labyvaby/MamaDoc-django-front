@@ -11,6 +11,7 @@ import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import { AppCard, ListEmptyState, ListLoadingSkeleton, UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { useT } from "../../../i18n/VerticalProvider";
 
 import type { DjangoPatient } from "../../../api/patients";
 
@@ -33,6 +34,8 @@ const PatientListPanel: React.FC<Props> = ({
   hasMore = false,
   onLoadMore,
 }) => {
+  const { t } = useT("patients");
+
   // Infinite scroll: when scrolled near the bottom, request the next page.
   const handleScroll = React.useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
@@ -55,7 +58,7 @@ const PatientListPanel: React.FC<Props> = ({
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2, pt: 2, pb: 1.5 }}>
             <Stack direction="row" alignItems="center" gap={1.25}>
               <PeopleOutlineOutlined color="primary" />
-              <Typography variant="h6">Пациенты</Typography>
+              <Typography variant="h6">{t("list.title")}</Typography>
             </Stack>
             {patients.length > 0 && !error && (
               <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
@@ -82,14 +85,14 @@ const PatientListPanel: React.FC<Props> = ({
           }}
         >
           {error ? (
-            <ListEmptyState icon={<ErrorOutlineOutlined />} title="Не удалось загрузить" description={error} />
+            <ListEmptyState icon={<ErrorOutlineOutlined />} title={t("errors.loadFailed")} description={error} />
           ) : isInitialLoading ? (
             <ListLoadingSkeleton rows={8} />
           ) : patients.length === 0 ? (
             <ListEmptyState
               icon={<PeopleOutlineOutlined />}
-              title="Пациенты не найдены"
-              description="Измените запрос или добавьте нового пациента"
+              title={t("list.emptyTitle")}
+              description={t("list.emptyDescription")}
             />
           ) : (
             <>
@@ -139,7 +142,7 @@ const PatientListPanel: React.FC<Props> = ({
                           sx={{ borderRadius: "10px", fontSize: 13 }}
                         />
                         {p.isBlacklisted && (
-                          <Tooltip title={p.blacklistReason || "Причина не указана"} arrow>
+                          <Tooltip title={p.blacklistReason || t("list.blacklistNoReason")} arrow>
                             <Box
                               sx={(t) => ({
                                 position: "absolute",
@@ -163,7 +166,7 @@ const PatientListPanel: React.FC<Props> = ({
 
                       <Box sx={{ minWidth: 0, flex: 1 }}>
                         <Typography variant="body2" fontWeight={600} noWrap>
-                          {p.fullName || "Без имени"}
+                          {p.fullName || t("list.noName")}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                           {p.phone || "—"}
@@ -178,7 +181,7 @@ const PatientListPanel: React.FC<Props> = ({
                 <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ py: 1.5 }}>
                   <CircularProgress size={18} />
                   <Typography variant="caption" color="text.secondary">
-                    Загрузка…
+                    {t("list.loading")}
                   </Typography>
                 </Stack>
               )}

@@ -1,0 +1,55 @@
+{
+  "actions": {
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "delete": "Удалить",
+    "edit": "Редактировать",
+    "add": "Добавить",
+    "create": "Создать",
+    "search": "Поиск",
+    "reset": "Сбросить",
+    "apply": "Применить",
+    "retry": "Повторить",
+    "back": "Назад",
+    "confirm": "Подтвердить"
+  },
+  "state": {
+    "loading": "Загрузка…",
+    "saving": "Сохранение…",
+    "empty": "Ничего не найдено",
+    "error": "Произошла ошибка"
+  },
+  "labels": {
+    "required": "Обязательное поле",
+    "notSpecified": "Не указано",
+    "total": "Всего"
+  },
+  "counts": {
+    "services_one": "{{count}} {{service.nom}}",
+    "services_few": "{{count}} {{service.gen}}",
+    "services_many": "{{count}} {{service.genPl}}",
+    "performers": "{{count}} исполнит."
+  },
+  "currency": {
+    "short": "с",
+    "long": "сом",
+    "amountShort": "{{amount}} с",
+    "minusAmountShort": "− {{amount}} с"
+  },
+  "paymentMethods": {
+    "cash": "Наличные",
+    "card": "Карта",
+    "balance": "Баланс {{patient.gen}}",
+    "bonus": "Бонусы",
+    "insurance": "Страховка"
+  },
+  "balanceTx": {
+    "top_up": "Пополнение",
+    "deduct": "Списание",
+    "bonus_accrual": "Начисление бонусов",
+    "bonus_redeem": "Списание бонусов",
+    "bonus_refund": "Возврат бонусов",
+    "correction": "Коррекция"
+  }
+}

@@ -33,6 +33,7 @@ import {
   type DjangoPatient,
 } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
+import { useT } from "../../i18n/VerticalProvider";
 
 type Props = {
   open: boolean;
@@ -48,6 +49,7 @@ const MergePatientDrawer: React.FC<Props> = ({
   initialPatient,
   onMerged,
 }) => {
+  const { t } = useT("patients");
   const { open: notify } = useNotification();
 
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -128,7 +130,7 @@ const MergePatientDrawer: React.FC<Props> = ({
     setBusy(true);
     try {
       await mergePatients(primaryId, duplicateId);
-      notify?.({ type: "success", message: "Пациенты объединены" });
+      notify?.({ type: "success", message: t("mergeDrawer.merged") });
       onMerged();
       onClose();
     } catch (e) {
@@ -158,9 +160,9 @@ const MergePatientDrawer: React.FC<Props> = ({
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
         <Stack direction="row" alignItems="center" gap={1}>
           <MergeIcon color="primary" />
-          <Typography variant="h6">Объединить пациентов</Typography>
+          <Typography variant="h6">{t("mergeDrawer.title")}</Typography>
         </Stack>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+        <IconButton onClick={busy ? undefined : onClose} aria-label={t("form.close")}>
           <CloseOutlined />
         </IconButton>
       </Box>
@@ -172,7 +174,7 @@ const MergePatientDrawer: React.FC<Props> = ({
           {/* Текущий пациент */}
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
-              Выбранный пациент
+              {t("mergeDrawer.selected")}
             </Typography>
             {patientA && (
               <PatientChip patient={patientA} />
@@ -182,11 +184,11 @@ const MergePatientDrawer: React.FC<Props> = ({
           {/* Поиск дубля */}
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
-              Найти дубликат
+              {t("mergeDrawer.findDuplicate")}
             </Typography>
             <TextField
               fullWidth
-              placeholder="Поиск по имени или телефону…"
+              placeholder={t("mergeDrawer.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -236,10 +238,10 @@ const MergePatientDrawer: React.FC<Props> = ({
           {patientA && patientB && (
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
-                Кого оставить основным?
+                {t("mergeDrawer.whichIsPrimary")}
               </Typography>
               <Alert severity="warning" sx={{ mb: 2 }}>
-                Дубликат будет удалён, все его приёмы перенесены на основного
+                {t("mergeDrawer.hint")}
               </Alert>
               <RadioGroup
                 value={primaryId != null ? String(primaryId) : ""}
@@ -270,7 +272,7 @@ const MergePatientDrawer: React.FC<Props> = ({
       <Box sx={{ p: 2, borderTop: 1, borderColor: "divider" }}>
         <Stack direction="row" gap={1} justifyContent="flex-end">
           <Button onClick={onClose} disabled={busy}>
-            Отмена
+            {t("form.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -279,7 +281,7 @@ const MergePatientDrawer: React.FC<Props> = ({
             onClick={handleMerge}
             startIcon={busy ? <CircularProgress size={16} /> : <MergeIcon />}
           >
-            Объединить
+            {t("mergeDrawer.submit")}
           </Button>
         </Stack>
       </Box>
@@ -289,28 +291,28 @@ const MergePatientDrawer: React.FC<Props> = ({
       <DialogTitle>
         <Stack direction="row" alignItems="center" gap={1.5}>
           <WarningAmberIcon color="warning" />
-          <Typography variant="h6">Подтвердите объединение</Typography>
+          <Typography variant="h6">{t("mergeDrawer.confirmTitle")}</Typography>
         </Stack>
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
           <Box sx={{ bgcolor: "action.hover", borderRadius: 1, p: 1.5 }}>
-            <Typography variant="caption" color="text.secondary">Основной (останется)</Typography>
+            <Typography variant="caption" color="text.secondary">{t("mergeDrawer.primary")}</Typography>
             <Typography variant="body1" fontWeight={600}>{primaryName}</Typography>
           </Box>
           <Box sx={{ bgcolor: "error.lighter", borderRadius: 1, p: 1.5, border: "1px solid", borderColor: "error.light" }}>
-            <Typography variant="caption" color="error.main">Дубль (будет удалён)</Typography>
+            <Typography variant="caption" color="error.main">{t("mergeDrawer.duplicate")}</Typography>
             <Typography variant="body1" fontWeight={600}>{duplicateName}</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            Все приёмы, продажи и баланс дубля будут перенесены на основного. Действие необратимо.
+            {t("mergeDrawer.confirmHint")}
           </Typography>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={() => setConfirmOpen(false)}>Отмена</Button>
+        <Button onClick={() => setConfirmOpen(false)}>{t("form.cancel")}</Button>
         <Button variant="contained" color="error" onClick={handleConfirm}>
-          Объединить
+          {t("mergeDrawer.submit")}
         </Button>
       </DialogActions>
     </Dialog>

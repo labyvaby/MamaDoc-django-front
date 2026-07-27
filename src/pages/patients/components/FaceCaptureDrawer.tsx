@@ -22,6 +22,7 @@ import {
   syncFaceCapture,
   type DjangoFaceCapture,
 } from "../../../api/patients";
+import { useT } from "../../../i18n/VerticalProvider";
 
 type Props = {
   open: boolean;
@@ -31,13 +32,8 @@ type Props = {
   canForceCapture?: boolean;
 };
 
-const statusLabel: Record<DjangoFaceCapture["status"], string> = {
-  pending: "Ожидает привязки",
-  synced: "Привязано",
-  sync_failed: "Ошибка отправки",
-};
-
 const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientName, canForceCapture = false }) => {
+  const { t } = useT("patients");
   const [captures, setCaptures] = React.useState<DjangoFaceCapture[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [busyId, setBusyId] = React.useState<number | null>(null);
@@ -50,11 +46,11 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
     try {
       setCaptures(await getFaceCaptures());
     } catch {
-      setError("Не удалось загрузить захваты камеры");
+      setError(t("face.errors.load"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     if (open) void load();
@@ -67,7 +63,7 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
       await forceFaceCapture();
       setTimeout(() => void load(), 1200);
     } catch {
-      setError("Не удалось запросить захват с камеры");
+      setError(t("face.errors.force"));
     } finally {
       setForcing(false);
     }
@@ -81,7 +77,7 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
       const updated = await assignFaceCapture(capture.id, patientId);
       setCaptures((prev) => prev.map((item) => item.id === updated.id ? updated : item));
     } catch {
-      setError("Не удалось привязать лицо к пациенту");
+      setError(t("face.errors.assign"));
     } finally {
       setBusyId(null);
     }
@@ -94,7 +90,7 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
       const updated = await syncFaceCapture(capture.id);
       setCaptures((prev) => prev.map((item) => item.id === updated.id ? updated : item));
     } catch {
-      setError("Не удалось повторить отправку подписи");
+      setError(t("face.errors.sync"));
     } finally {
       setBusyId(null);
     }
@@ -107,8 +103,10 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
           <Stack direction="row" spacing={1} alignItems="center">
             <CameraAltOutlined color="primary" />
             <Box>
-              <Typography variant="h6">Камера</Typography>
-              <Typography variant="caption" color="text.secondary">Лица пациента: {patientName || "—"}</Typography>
+              <Typography variant="h6">{t("face.title")}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t("face.subtitle", { name: patientName || "—" })}
+              </Typography>
             </Box>
           </Stack>
           <IconButton onClick={onClose}><CloseOutlined /></IconButton>
@@ -117,10 +115,10 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
         <Stack direction="row" spacing={1} sx={{ p: 2 }}>
           {canForceCapture && (
             <Button variant="contained" startIcon={<CameraAltOutlined />} onClick={() => void handleForceCapture()} disabled={forcing}>
-              {forcing ? "Запрос…" : "Запросить захват"}
+              {forcing ? t("face.forcing") : t("face.forceCapture")}
             </Button>
           )}
-          <Button variant="outlined" startIcon={<RefreshOutlined />} onClick={() => void load()} disabled={loading}>Обновить</Button>
+          <Button variant="outlined" startIcon={<RefreshOutlined />} onClick={() => void load()} disabled={loading}>{t("face.refresh")}</Button>
         </Stack>
         {error && <Alert severity="error" sx={{ mx: 2, mb: 1 }}>{error}</Alert>}
         <Box sx={{ flex: 1, overflowY: "auto", px: 2, pb: 2 }}>
@@ -128,7 +126,7 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
             <Stack alignItems="center" sx={{ py: 5 }}><CircularProgress /></Stack>
           ) : captures.length === 0 ? (
             <Typography color="text.secondary" sx={{ py: 5, textAlign: "center" }}>
-              Захватов пока нет. Нажмите «Запросить захват».
+              {t("face.empty")}
             </Typography>
           ) : (
             <Stack spacing={1.5}>
@@ -140,21 +138,21 @@ const FaceCaptureDrawer: React.FC<Props> = ({ open, onClose, patientId, patientN
                       <Box component="img" src={capture.photoUrl} alt={`Face ${capture.faceId}`} sx={{ width: 84, height: 84, borderRadius: 1, objectFit: "cover", bgcolor: "action.hover" }} />
                     ) : <Box sx={{ width: 84, height: 84, borderRadius: 1, bgcolor: "action.hover" }} />}
                     <Stack spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="subtitle2">Лицо #{capture.faceId}</Typography>
+                      <Typography variant="subtitle2">{t("face.faceNumber", { id: capture.faceId })}</Typography>
                       <Typography variant="caption" color={capture.status === "sync_failed" ? "error.main" : "text.secondary"}>
-                        {statusLabel[capture.status]}
+                        {t(`face.status.${capture.status}`, { defaultValue: capture.status })}
                       </Typography>
                       {capture.patient && <Typography variant="body2" noWrap>{capture.patient.fullName}</Typography>}
                       {capture.syncError && <Typography variant="caption" color="error.main">{capture.syncError}</Typography>}
                       <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
                         {capture.status === "pending" && (
                           <Button size="small" startIcon={<LinkOutlined />} onClick={() => void handleAssign(capture)} disabled={busy || !patientId}>
-                            {busy ? "Сохранение…" : "Привязать"}
+                            {busy ? t("face.assigning") : t("face.assign")}
                           </Button>
                         )}
                         {capture.status === "sync_failed" && capture.patient && (
                           <Button size="small" startIcon={<ReplayOutlined />} onClick={() => void handleSync(capture)} disabled={busy}>
-                            Повторить
+                            {t("face.retry")}
                           </Button>
                         )}
                       </Stack>

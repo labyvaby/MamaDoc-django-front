@@ -68,6 +68,7 @@ import { appointmentPatientToStub } from "./patientStub";
 import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── data hooks ────────────────────────────────────────────────────────────────
 
@@ -238,14 +239,15 @@ type AppointmentsPageProps = {
 };
 
 const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
+  const { t } = useT("appointments");
   const isDoctorCabinet = scope === "me";
   const isNurseCabinet = scope === "nurse";
   const pageTitle = isDoctorCabinet
-    ? "Кабинет врача"
+    ? t("page.titleDoctor")
     : isNurseCabinet
-    ? "Процедурный кабинет"
-    : "Регистратура";
-  const addButtonText = isNurseCabinet ? "Добавить процедуру" : "Добавить прием";
+    ? t("page.titleProcedure")
+    : t("page.titleReception");
+  const addButtonText = isNurseCabinet ? t("page.addProcedure") : t("page.addVisit");
   usePageTitle(pageTitle);
   const { can } = useCanChecker();
   const queryClient = useQueryClient();
@@ -690,11 +692,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   >
                     <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
                       <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      Список
+                      {t("page.tabList")}
                     </ToggleButton>
                     <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
                       <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      Окна
+                      {t("page.tabSlots")}
                     </ToggleButton>
                   </ToggleButtonGroup>
                 )}
@@ -738,11 +740,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   >
                     <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
                       <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      Список
+                      {t("page.tabList")}
                     </ToggleButton>
                     <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
                       <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      Окна
+                      {t("page.tabSlots")}
                     </ToggleButton>
                   </ToggleButtonGroup>
                 )
@@ -835,7 +837,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   }}
                 >
                   <Typography align="center">
-                    Выберите приём для просмотра подробной информации
+                    {t("page.noSelection")}
                   </Typography>
                 </Box>
               )}
@@ -972,21 +974,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       {/* Confirm cancel / delete */}
       <Dialog open={!!confirm} onClose={() => (confirmBusy ? undefined : setConfirm(null))}>
         <DialogTitle>
-          {confirm?.mode === "delete" ? "Удалить приём?" : "Отменить запись?"}
+          {confirm?.mode === "delete" ? t("confirm.deleteTitle") : t("confirm.cancelTitle")}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {confirm?.mode === "delete"
-              ? "Приём будет удалён без возможности восстановления."
-              : "Запись будет помечена как отменённая."}
+            {confirm?.mode === "delete" ? t("confirm.deleteText") : t("confirm.cancelText")}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirm(null)} disabled={confirmBusy} color="inherit">
-            Отмена
+            {t("confirm.dismiss")}
           </Button>
           <Button onClick={handleConfirm} disabled={confirmBusy} color="error" variant="contained">
-            {confirm?.mode === "delete" ? "Удалить" : "Подтвердить отмену"}
+            {confirm?.mode === "delete" ? t("confirm.deleteSubmit") : t("confirm.cancelSubmit")}
           </Button>
         </DialogActions>
       </Dialog>

@@ -47,16 +47,26 @@ import AppointmentRefundsPanel from "./AppointmentRefundsPanel";
 import CashDateConfirmDialog, {
   type CashDateChoice,
 } from "./components/CashDateConfirmDialog";
+import { tt } from "../../i18n/t";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Payment status display ─────────────────────────────────────────────────────
 
-export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
-  unpaid: "Не оплачен",
-  partial: "Частично",
-  paid: "Оплачен",
-  discounted: "Со скидкой",
-  refunded: "Возврат",
-};
+/**
+ * Метки платёжного статуса. Ленивые геттеры, а не обычный объект: значение
+ * берётся из словаря в момент обращения, когда i18n уже инициализирован.
+ * Форма доступа `PAYMENT_STATUS_LABELS[status]` сохранена — полтора десятка
+ * файлов-потребителей менять не нужно.
+ */
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = Object.defineProperties(
+  {},
+  Object.fromEntries(
+    (["unpaid", "partial", "paid", "discounted", "refunded"] as const).map((code) => [
+      code,
+      { enumerable: true, get: () => tt(`appointments:paymentStatus.${code}`) },
+    ])
+  )
+) as Record<PaymentStatus, string>;
 
 export const PAYMENT_STATUS_COLOR: Record<
   PaymentStatus,
@@ -94,25 +104,26 @@ function computeStatus(payable: number, paid: number, discount: number, total: n
   return "unpaid";
 }
 
+/**
+ * Текст ошибки бэкенда → понятное сообщение для пользователя.
+ * Строки в raw.includes() — это ответы бэкенда (данные, не UI): их не
+ * переводим, иначе перестанут совпадать. Переводится только результат.
+ */
 function mapSaveError(raw: string): string {
   if (raw.includes("уже содержит оплату с баланса") || raw.includes("replace-all"))
-    return "Этот приём уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.";
+    return tt("appointments:payment.errors.balanceAlreadyUsed");
   if (raw.includes("недостаточно бонусов") || raw.includes("insufficient bonus"))
-    return "Недостаточно бонусов на счёте пациента.";
+    return tt("appointments:payment.errors.notEnoughBonuses");
   if (raw.includes("Страховая компания не найдена"))
-    return "Страховая компания не найдена или неактивна. Обновите список и выберите заново.";
+    return tt("appointments:payment.errors.insurerNotFound");
   return raw;
 }
 
 const CANCELLED_STATUSES = new Set(["canceled", "cancelled", "no_show"]);
 
-const METHOD_LABELS: Record<string, string> = {
-  cash: "Наличные",
-  card: "Карта",
-  balance: "Баланс пациента",
-  bonus: "Бонусы",
-  insurance: "Страховка",
-};
+/** Подпись метода оплаты — из общего словаря (common:paymentMethods). */
+const methodLabel = (method: string): string =>
+  tt(`common:paymentMethods.${method}`, { defaultValue: method });
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -131,6 +142,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   appointment,
   onSaved,
 }) => {
+  const { t } = useT("appointments");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const appointmentId = appointment?.id ?? null;
@@ -336,7 +348,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     insurerMissing || applyBlockedByRefund || applyBlockedByBonus;
 
   const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
-  const patientName = appointment?.patient?.fullName ?? "Бронирование";
+  const patientName = appointment?.patient?.fullName ?? t("payment.booking");
   const hasPatient = !!patientId;
 
   // Quick-fill handlers
@@ -369,7 +381,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
   const applyMutation = useMutation({
     mutationFn: (payload: ApplyPaymentPayload) => {
-      if (!appointmentId) throw new Error("Нет выбранного приёма");
+      if (!appointmentId) throw new Error(t("payment.noAppointment"));
       return applyAppointmentPayment(appointmentId, payload);
     },
     onSuccess: (result) => {
@@ -384,7 +396,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.balance(patientId) });
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.transactions(patientId) });
       }
-      notify?.({ type: "success", message: "Оплата сохранена" });
+      notify?.({ type: "success", message: t("payment.saved") });
       onClose();
       onSaved?.(result);
     },
@@ -484,7 +496,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       >
         <Stack direction="row" alignItems="center" spacing={1}>
           <PaymentsOutlined color="primary" />
-          <Typography variant="h6">Оплата приёма</Typography>
+          <Typography variant="h6">{t("payment.title")}</Typography>
         </Stack>
         <IconButton onClick={onClose} disabled={applyMutation.isPending}>
           <CloseOutlined />
@@ -507,7 +519,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
         {isCancelled && (
           <Alert severity="warning">
-            Приём отменён или помечен как неявка — оплата недоступна.
+            {t("payment.cancelledNotice")}
           </Alert>
         )}
 
@@ -542,7 +554,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   display="block"
                   sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}
                 >
-                  Пациент
+                  {t("payment.patient")}
                 </Typography>
                 <Typography variant="body1" sx={{ fontWeight: 600 }}>
                   {patientName}
@@ -558,21 +570,21 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     display="block"
                     sx={{ mb: 1, fontWeight: 600, letterSpacing: 0.5 }}
                   >
-                    Счёт пациента
+                    {t("payment.patientAccount")}
                   </Typography>
                   <Stack spacing={1}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Stack direction="row" alignItems="center" spacing={0.75}>
                         <AccountBalanceWalletOutlined sx={{ fontSize: 16, color: "success.main" }} />
                         <Typography variant="body2">
-                          Баланс:{" "}
+                          {t("balancePanel.balanceInline")}{" "}
                           <Box component="strong" sx={{ color: "success.main" }}>
-                            {availableBalance.toLocaleString()} с
+                            {t("common:currency.amountShort", { amount: availableBalance.toLocaleString() })}
                           </Box>
                         </Typography>
                       </Stack>
                       {(availableBalance > 0 || balanceUsed > 0) && (
-                        <Tooltip title={balanceUsed > 0 ? "Убрать" : "Использовать баланс"}>
+                        <Tooltip title={balanceUsed > 0 ? t("payment.remove") : t("payment.useBalance")}>
                           <Button
                             size="small"
                             variant={balanceUsed > 0 ? "contained" : "outlined"}
@@ -586,7 +598,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                               }
                             }}
                           >
-                            {balanceUsed > 0 ? `− ${balanceUsed.toLocaleString()} с` : "Использовать"}
+                            {balanceUsed > 0
+                              ? t("payment.minusAmount", { amount: balanceUsed.toLocaleString() })
+                              : t("payment.use")}
                           </Button>
                         </Tooltip>
                       )}
@@ -596,14 +610,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                       <Stack direction="row" alignItems="center" spacing={0.75}>
                         <CardGiftcardOutlined sx={{ fontSize: 16, color: "warning.main" }} />
                         <Typography variant="body2">
-                          Бонусы:{" "}
+                          {t("balancePanel.bonusesInline")}{" "}
                           <Box component="strong" sx={{ color: "warning.main" }}>
-                            {availableBonuses.toLocaleString()} с
+                            {t("common:currency.amountShort", { amount: availableBonuses.toLocaleString() })}
                           </Box>
                         </Typography>
                       </Stack>
                       {(availableBonuses > 0 || bonusUsed > 0) && (
-                        <Tooltip title={bonusUsed > 0 ? "Убрать" : "Использовать бонусы"}>
+                        <Tooltip title={bonusUsed > 0 ? t("payment.remove") : t("payment.useBonuses")}>
                           <Button
                             size="small"
                             variant={bonusUsed > 0 ? "contained" : "outlined"}
@@ -617,7 +631,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                               }
                             }}
                           >
-                            {bonusUsed > 0 ? `− ${bonusUsed.toLocaleString()} с` : "Использовать"}
+                            {bonusUsed > 0
+                              ? t("payment.minusAmount", { amount: bonusUsed.toLocaleString() })
+                              : t("payment.use")}
                           </Button>
                         </Tooltip>
                       )}
@@ -634,15 +650,15 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 <Stack direction="row" spacing={2} alignItems="flex-start" flexWrap="wrap" useFlexGap>
                   <Box sx={{ flexShrink: 0 }}>
                     <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                      Стоимость
+                      {t("payment.cost")}
                     </Typography>
                     <Typography variant="h6" fontWeight={600} noWrap>
-                      {total.toLocaleString()} с
+                      {t("common:currency.amountShort", { amount: total.toLocaleString() })}
                     </Typography>
                   </Box>
                   <Box sx={{ flex: "1 1 180px", minWidth: 180 }}>
                     <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                      Скидка
+                      {t("payment.discount")}
                     </Typography>
                     <DiscountInput
                       total={total}
@@ -663,7 +679,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   <Stack flex={1} spacing={0.5}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="caption" color="text.secondary" display="block">
-                        Наличные
+                        {t("payment.cash")}
                       </Typography>
                       <Button
                         size="small"
@@ -715,7 +731,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   <Stack flex={1} spacing={0.5}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="caption" color="text.secondary" display="block">
-                        Безналичные
+                        {t("payment.cashless")}
                       </Typography>
                       <Button
                         size="small"
@@ -769,7 +785,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 <Stack spacing={0.5}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography variant="caption" color="text.secondary" display="block">
-                      Страховка
+                      {t("payment.insurance")}
                     </Typography>
                     <Button
                       size="small"
@@ -778,7 +794,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                       sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
                       disabled={isCancelled}
                     >
-                      Покрыть остаток
+                      {t("payment.coverRemainder")}
                     </Button>
                   </Stack>
                   <Stack
@@ -826,7 +842,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                           инпутом (floating-label запрещён по гайду). */}
                       <Stack spacing={0.5}>
                         <Typography variant="caption" color="text.secondary" display="block">
-                          Страховая компания
+                          {t("payment.insuranceCompany")}
                         </Typography>
                         <TextField
                           select
@@ -837,14 +853,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                             setInsurerId(e.target.value === "" ? "" : Number(e.target.value));
                           }}
                           error={insurerMissing}
-                          helperText={insurerMissing ? "Выберите компанию" : ""}
+                          helperText={insurerMissing ? t("payment.selectCompany") : ""}
                           disabled={isCancelled}
                         >
                           {insurers.length === 0 && (
                             <MenuItem value="" disabled>
                               {insurersQuery.isLoading
-                                ? "Загрузка…"
-                                : "Справочник пуст — добавьте в настройках"}
+                                ? t("payment.loading")
+                                : t("payment.emptyDirectory")}
                             </MenuItem>
                           )}
                           {insurers.map((i) => (
@@ -856,14 +872,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                       </Stack>
                       <Stack spacing={0.5}>
                         <Typography variant="caption" color="text.secondary" display="block">
-                          Номер полиса
+                          {t("payment.policyNumber")}
                         </Typography>
                         <TextField
                           size="small"
                           fullWidth
                           value={policyNumber}
                           onChange={(e) => setPolicyNumber(e.target.value)}
-                          placeholder="Необязательно"
+                          placeholder={t("payment.optional")}
                           disabled={isCancelled}
                         />
                       </Stack>
@@ -875,13 +891,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 {needsDateChoice && (
                   <Stack direction="row" alignItems="center" justifyContent="space-between">
                     <Typography variant="caption" color="text.secondary">
-                      Дата кассы:{" "}
+                      {t("payment.cashDateInline")}{" "}
                       <strong>
                         {cashDateConfirmed
                           ? (cashDateChoice === "appointment"
-                            ? `дата приёма (${dayjs(appointmentDateIso).format("D MMMM")})`
-                            : `сегодня (${dayjs(todayIso).format("D MMMM")})`)
-                          : "не выбрана"}
+                            ? t("payment.cashDateAppointment", { date: dayjs(appointmentDateIso).format("D MMMM") })
+                            : t("payment.cashDateToday", { date: dayjs(todayIso).format("D MMMM") }))
+                          : t("payment.notSelected")}
                       </strong>
                     </Typography>
                     <Button
@@ -891,7 +907,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                       sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
                       disabled={isCancelled}
                     >
-                      изменить
+                      {t("payment.change")}
                     </Button>
                   </Stack>
                 )}
@@ -911,17 +927,17 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     <Stack spacing={0.5}>
                       {balanceUsed > 0 && (
                         <Stack direction="row" justifyContent="space-between">
-                          <Typography variant="caption" color="success.main">Со счёта</Typography>
+                          <Typography variant="caption" color="success.main">{t("payment.fromAccount")}</Typography>
                           <Typography variant="caption" color="success.main" fontWeight={600}>
-                            − {balanceUsed.toLocaleString()} с
+                            {t("payment.minusAmount", { amount: balanceUsed.toLocaleString() })}
                           </Typography>
                         </Stack>
                       )}
                       {bonusUsed > 0 && (
                         <Stack direction="row" justifyContent="space-between">
-                          <Typography variant="caption" color="warning.main">Бонусами</Typography>
+                          <Typography variant="caption" color="warning.main">{t("payment.withBonuses")}</Typography>
                           <Typography variant="caption" color="warning.main" fontWeight={600}>
-                            − {bonusUsed.toLocaleString()} с
+                            {t("payment.minusAmount", { amount: bonusUsed.toLocaleString() })}
                           </Typography>
                         </Stack>
                       )}
@@ -934,7 +950,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                               : ""}
                           </Typography>
                           <Typography variant="caption" color="primary.main" fontWeight={600}>
-                            − {insuranceNum.toLocaleString()} с
+                            {t("common:currency.minusAmountShort", { amount: insuranceNum.toLocaleString() })}
                           </Typography>
                         </Stack>
                       )}
@@ -947,16 +963,16 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 {/* Итого */}
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                    Итого к оплате
+                    {t("payment.totalDue")}
                   </Typography>
                   <Typography variant="h5" fontWeight={700} color="success.main">
-                    {payable.toLocaleString()} с
+                    {t("common:currency.amountShort", { amount: payable.toLocaleString() })}
                   </Typography>
                 </Stack>
 
                 {/* Status + debt */}
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2" color="text.secondary">Статус</Typography>
+                  <Typography variant="body2" color="text.secondary">{t("payment.status")}</Typography>
                   <Chip
                     label={PAYMENT_STATUS_LABELS[statusPreview] ?? statusPreview}
                     size="small"
@@ -977,9 +993,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     }}
                   >
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="error.main" fontWeight={600}>Долг</Typography>
+                      <Typography variant="body2" color="error.main" fontWeight={600}>{t("payment.debt")}</Typography>
                       <Typography variant="h6" color="error.main" fontWeight={700}>
-                        {debt.toLocaleString()} с
+                        {t("common:currency.amountShort", { amount: debt.toLocaleString() })}
                       </Typography>
                     </Stack>
                   </Paper>
@@ -987,7 +1003,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
                 {overpaid && (
                   <Alert severity="error" sx={{ py: 0.5 }}>
-                    Переплата: внесено больше суммы к оплате
+                    {t("payment.overpaid")}
                   </Alert>
                 )}
               </Stack>
@@ -998,12 +1014,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         {/* Refund / bonus block guards */}
         {applyBlockedByRefund && (
           <Alert severity="info" icon={false}>
-            Изменение оплаты недоступно — по приёму уже оформлен возврат.
+            {t("payment.lockedRefund")}
           </Alert>
         )}
         {!applyBlockedByRefund && applyBlockedByBonus && (
           <Alert severity="info" icon={false}>
-            Изменение оплаты недоступно — по приёму уже списаны бонусы. Для корректировки оформите возврат.
+            {t("payment.lockedBonuses")}
           </Alert>
         )}
 
@@ -1013,19 +1029,19 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             <Divider />
             <Stack spacing={0.75}>
               <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
-                История платежей
+                {t("payment.history")}
               </Typography>
               {summary.payments.map((p) => (
                 <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
                   <Typography variant="caption" color="text.secondary">
-                    {METHOD_LABELS[p.method] ?? p.method}
+                    {methodLabel(p.method)}
                     {p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""}
                     {p.method === "insurance" && p.policyNumber ? ` (${p.policyNumber})` : ""}
                     {(p.method === "card" || p.method === "insurance") && p.cashDate
-                      ? ` · касса ${dayjs(p.cashDate).format("D MMM")}`
+                      ? t("payment.cashDateSuffix", { date: dayjs(p.cashDate).format("D MMM") })
                       : ""}
                   </Typography>
-                  <Typography variant="caption" fontWeight={500}>{p.amount} с</Typography>
+                  <Typography variant="caption" fontWeight={500}>{t("common:currency.amountShort", { amount: p.amount })}</Typography>
                 </Stack>
               ))}
             </Stack>
@@ -1046,7 +1062,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         {!isCancelled && (
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              Комментарий администратора
+              {t("payment.adminComment")}
             </Typography>
             <TextField
               fullWidth
@@ -1055,7 +1071,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               size="small"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Добавьте комментарий (необязательно)"
+              placeholder={t("payment.commentPlaceholder")}
             />
           </Stack>
         )}
@@ -1074,10 +1090,10 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           startIcon={applyMutation.isPending ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
           {applyMutation.isPending
-            ? "Сохранение…"
+            ? t("payment.saving")
             : summary?.payments && summary.payments.length > 0
-            ? "Обновить оплату"
-            : "Подтвердить оплату"}
+            ? t("payment.updatePayment")
+            : t("payment.confirmPayment")}
         </Button>
       </Box>
 

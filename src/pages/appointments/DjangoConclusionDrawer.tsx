@@ -50,6 +50,9 @@ import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
+import { agree } from "../../i18n/formatters";
 
 import {
   upsertConclusion,
@@ -151,17 +154,17 @@ function validateVitals(
   if (weight.trim()) {
     const w = Number(weight);
     if (isNaN(w) || w < 1 || w > 999)
-      return "Вес должен быть от 1 до 999 кг";
+      return tt("appointments:conclusion.errors.weightRange");
   }
   if (height.trim()) {
     const h = Number(height);
     if (isNaN(h) || h < 1 || h > 999)
-      return "Рост должен быть от 1 до 999 см";
+      return tt("appointments:conclusion.errors.heightRange");
   }
   if (temp.trim()) {
     const t = Number(temp);
     if (isNaN(t) || t < 34 || t > 42)
-      return "Температура должна быть от 34 до 42 °C";
+      return tt("appointments:conclusion.errors.temperatureRange");
   }
   return null;
 }
@@ -287,6 +290,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   onStartEdit,
   onSaved,
 }) => {
+  const { t, term } = useT("appointments");
   const { open: notify } = useNotification();
 
   // ── form state ────────────────────────────────────────────────────────────
@@ -396,7 +400,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         draftNotifiedRef.current = true;
         notify?.({
           type: "success",
-          message: "Восстановлен несохранённый черновик заключения",
+          message: t("conclusion.draftRestored"),
         });
       }
       return;
@@ -560,7 +564,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     if (tpl.anamnesis) setAnamnesis(tpl.anamnesis);
     if (tpl.objective) setObjective(tpl.objective);
     setTplAnchor(null);
-    notify?.({ type: "success", message: "Шаблон применён" });
+    notify?.({ type: "success", message: t("conclusion.templateApplied") });
   };
 
   const handleSaveTemplate = async () => {
@@ -577,7 +581,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       setTemplates((prev) => [...prev, created]);
       setSaveTplOpen(false);
       setTplName("");
-      notify?.({ type: "success", message: "Шаблон сохранён" });
+      notify?.({ type: "success", message: t("conclusion.templateSaved") });
     } catch (err: unknown) {
       notify?.({ type: "error", message: parseBackendError(err) });
     } finally {
@@ -603,7 +607,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const completion = useFormValidation({
     conclusionText: conclusionText.trim()
       ? null
-      : "Заполните заключение перед завершением",
+      : t("conclusion.errors.fillBeforeComplete"),
   });
 
   // ── submit ────────────────────────────────────────────────────────────────
@@ -648,8 +652,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         type: "success",
         message:
           targetStatus === "completed"
-            ? "Заключение завершено"
-            : "Черновик сохранён",
+            ? t("conclusion.completed", {
+                finished: agree(term.conclusion.gender, ["завершён", "завершена", "завершено"]),
+              })
+            : t("conclusion.draftSaved"),
       });
       onSaved?.(saved);
       onClose();
@@ -704,7 +710,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       >
         <Stack spacing={0.25}>
           <Typography variant="h6" lineHeight={1.3}>
-            {readOnly ? "Заключение" : conclusion ? "Редактировать заключение" : "Новое заключение"}
+            {readOnly
+              ? t("conclusion.title")
+              : conclusion
+                ? t("conclusion.editTitle")
+                : t("conclusion.newTitle")}
           </Typography>
           {/* Услуга/врач и время правки — только в дровере-редакторе, не в
               inline-просмотре (там шапка чистая, как в оригинале). */}
@@ -730,12 +740,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 startIcon={<ContentCopyOutlined />}
                 onClick={(e) => setTplAnchor(e.currentTarget)}
               >
-                Шаблоны
+                {t("conclusion.templates")}
               </Button>
               <IconButton
                 size="small"
                 color="primary"
-                title="Сохранить как шаблон"
+                title={t("conclusion.saveAsTemplate")}
                 onClick={() => {
                   setTplName("");
                   setSaveTplOpen(true);
@@ -769,7 +779,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 onClick={onStartEdit}
                 sx={{ whiteSpace: "nowrap" }}
               >
-                Изменить заключение
+                {t("conclusion.editConclusion")}
               </Button>
             )}
             {canPrint && conclusion && (
@@ -787,7 +797,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   }
                   sx={{ whiteSpace: "nowrap" }}
                 >
-                  Печать
+                  {t("conclusion.print")}
                 </Button>
                 <Button
                   size="small"
@@ -802,7 +812,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   }
                   sx={{ whiteSpace: "nowrap" }}
                 >
-                  Справка
+                  {t("conclusion.certificate")}
                 </Button>
               </>
             )}
@@ -819,7 +829,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         slotProps={{ paper: { sx: { maxWidth: 360 } } }}
       >
         {templates.length === 0 && (
-          <MenuItem disabled>Нет сохранённых шаблонов</MenuItem>
+          <MenuItem disabled>{t("conclusion.noTemplates")}</MenuItem>
         )}
         {templates.map((tpl) => (
           <MenuItem
@@ -867,7 +877,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* read-only empty state */}
           {readOnly && !conclusion && (
             <Alert severity="info">
-              Этот врач ещё не создал заключение
+              {t("conclusion.noConclusionByDoctor")}
             </Alert>
           )}
 
@@ -878,17 +888,17 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
                 <Stack direction="row" spacing={3} justifyContent="space-around">
                   <Box textAlign="center">
-                    <Typography variant="caption" color="text.secondary">Вес</Typography>
-                    <Typography variant="h6">{weightKg ? `${weightKg} кг` : "—"}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t("conclusion.weight")}</Typography>
+                    <Typography variant="h6">{weightKg ? t("conclusion.weightWithUnit", { value: weightKg }) : "—"}</Typography>
                   </Box>
                   <Divider orientation="vertical" flexItem />
                   <Box textAlign="center">
-                    <Typography variant="caption" color="text.secondary">Рост</Typography>
-                    <Typography variant="h6">{heightCm ? `${heightCm} см` : "—"}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t("conclusion.height")}</Typography>
+                    <Typography variant="h6">{heightCm ? t("conclusion.heightWithUnit", { value: heightCm }) : "—"}</Typography>
                   </Box>
                   <Divider orientation="vertical" flexItem />
                   <Box textAlign="center">
-                    <Typography variant="caption" color="text.secondary">Температура</Typography>
+                    <Typography variant="caption" color="text.secondary">{t("conclusion.temperature")}</Typography>
                     <Typography
                       variant="h6"
                       color={parseFloat(temperature) > 37 ? "error.main" : "text.primary"}
@@ -903,7 +913,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {(patientComplaints ?? "").trim() && (
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Жалобы пациента
+                    {t("conclusion.patientComplaints")}
                   </Typography>
                   <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>
                     {patientComplaints}
@@ -914,7 +924,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {/* Диагноз — чипы */}
               <Box>
                 <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Диагноз (МКБ-10)
+                  {t("conclusion.diagnosisIcd")}
                 </Typography>
                 {selectedDiagnoses.length > 0 ? (
                   <Box display="flex" gap={1} flexWrap="wrap">
@@ -927,7 +937,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                     ))}
                   </Box>
                 ) : (
-                  <Typography variant="body2" color="text.disabled">Не указан</Typography>
+                  <Typography variant="body2" color="text.disabled">{t("conclusion.notSpecified")}</Typography>
                 )}
               </Box>
 
@@ -936,24 +946,24 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {complaints.trim() && (
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Жалобы (врач)
+                    {t("conclusion.doctorComplaints")}
                   </Typography>
                   <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{complaints}</Typography>
                 </Box>
               )}
 
               <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Анамнез</Typography>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>{t("conclusion.anamnesis")}</Typography>
                 <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{anamnesis || "—"}</Typography>
               </Box>
 
               <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Объективно</Typography>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>{t("conclusion.objectively")}</Typography>
                 <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{objective || "—"}</Typography>
               </Box>
 
               <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Заключение</Typography>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>{t("conclusion.title")}</Typography>
                 <Typography
                   variant="body1"
                   sx={{
@@ -963,14 +973,17 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                     fontStyle: conclusionText ? "normal" : "italic",
                   }}
                 >
-                  {conclusionText || "Заключение не заполнено"}
+                  {conclusionText ||
+                    t("conclusion.notFilled", {
+                      filled: agree(term.conclusion.gender, ["заполнен", "заполнена", "заполнено"]),
+                    })}
                 </Typography>
               </Box>
 
               {internalComment.trim() && (
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Внутренний комментарий
+                    {t("conclusion.internalComment")}
                   </Typography>
                   <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>{internalComment}</Typography>
                 </Box>
@@ -980,7 +993,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               {photoUrls.length > 0 && (
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Фотографии
+                    {t("conclusion.photos2")}
                   </Typography>
                   <Grid container spacing={1}>
                     {photoUrls.map((url) => (
@@ -988,7 +1001,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                         <Box
                           component="img"
                           src={url}
-                          alt="Фото заключения"
+                          alt={t("conclusion.photos")}
                           onClick={() => setPreviewPhoto(url)}
                           sx={{
                             width: 72,
@@ -1015,8 +1028,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           <Paper ref={vitals.anchor("vitals")} variant="outlined" sx={{ p: 1.5 }}>
             <Stack direction="row" spacing={1.5}>
               <VitalStepper
-                label="Рост"
-                suffix="см"
+                label={t("conclusion.height")}
+                suffix={t("conclusion.heightUnit")}
                 value={heightCm}
                 onChange={setHeightCm}
                 step={1}
@@ -1025,8 +1038,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 disabled={readOnly}
               />
               <VitalStepper
-                label="Вес"
-                suffix="кг"
+                label={t("conclusion.weight")}
+                suffix={t("conclusion.weightUnit")}
                 value={weightKg}
                 onChange={setWeightKg}
                 step={1}
@@ -1035,7 +1048,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 disabled={readOnly}
               />
               <VitalStepper
-                label="Температура"
+                label={t("conclusion.temperature")}
                 suffix="°C"
                 value={temperature}
                 onChange={setTemperature}
@@ -1056,7 +1069,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {(patientComplaints ?? "").trim() && (
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Жалобы пациента
+                {t("conclusion.patientComplaints")}
               </Typography>
               <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
@@ -1069,7 +1082,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── doctor complaints ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Жалобы (врач)
+              {t("conclusion.doctorComplaints")}
             </Typography>
             <TextField
               value={complaints}
@@ -1079,14 +1092,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               minRows={2}
               fullWidth
               size="small"
-              placeholder={readOnly ? "—" : "Необязательно"}
+              placeholder={readOnly ? "—" : t("conclusion.optional")}
             />
           </Stack>
 
           {/* ── anamnesis ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Анамнез
+              {t("conclusion.anamnesis")}
             </Typography>
             <TextField
               value={anamnesis}
@@ -1096,14 +1109,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               minRows={3}
               fullWidth
               size="small"
-              placeholder={readOnly ? "—" : "Необязательно"}
+              placeholder={readOnly ? "—" : t("conclusion.optional")}
             />
           </Stack>
 
           {/* ── objective ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Объективно
+              {t("conclusion.objectively")}
             </Typography>
             <TextField
               value={objective}
@@ -1113,14 +1126,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               minRows={3}
               fullWidth
               size="small"
-              placeholder={readOnly ? "—" : "Необязательно"}
+              placeholder={readOnly ? "—" : t("conclusion.optional")}
             />
           </Stack>
 
           {/* ── diagnosis (catalog multi-select + free text) ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Диагноз (МКБ-10)
+              {t("conclusion.diagnosisIcd")}
             </Typography>
             <Autocomplete
               multiple
@@ -1139,8 +1152,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               }}
               noOptionsText={
                 diagInput.trim()
-                  ? "Ничего не найдено"
-                  : "Начните вводить код или название…"
+                  ? t("conclusion.nothingFound")
+                  : t("conclusion.startTypingCode")
               }
               getOptionLabel={(o) =>
                 typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
@@ -1165,15 +1178,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   placeholder={
                     readOnly
                       ? "—"
-                      : "Выберите из каталога или впишите диагноз и нажмите Enter…"
+                      : t("conclusion.diagnosisPlaceholder")
                   }
                 />
               )}
             />
             {catalogError && (
               <Alert severity="warning" sx={{ py: 0 }}>
-                Не удалось загрузить каталог диагнозов — поиск по нему не
-                будет работать. Закройте и откройте форму, чтобы повторить.
+                {t("conclusion.catalogLoadFailed")}
               </Alert>
             )}
             {/* сводка выбранных диагнозов (как в оригинале) */}
@@ -1189,7 +1201,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   ? selectedDiagnoses
                       .map((d) => [d.code, d.title].filter(Boolean).join(" "))
                       .join(". ")
-                  : "Диагноз не выбран"}
+                  : t("conclusion.noDiagnosis", {
+                      selected: agree(term.diagnosis.gender, ["выбран", "выбрана", "выбрано"]),
+                    })}
               </Typography>
             </Paper>
           </Stack>
@@ -1197,7 +1211,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── conclusion (main) ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Заключение {!readOnly && "*"}
+              {t("conclusion.conclusionRequired")} {!readOnly && "*"}
             </Typography>
             <TextField
               value={conclusionText}
@@ -1207,7 +1221,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               minRows={4}
               fullWidth
               size="small"
-              placeholder={readOnly ? "—" : "Текст заключения"}
+              placeholder={readOnly ? "—" : t("conclusion.text")}
               {...completion.field("conclusionText", "")}
             />
           </Stack>
@@ -1215,7 +1229,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {/* ── internal comment ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Внутренний комментарий
+              {t("conclusion.internalComment")}
             </Typography>
             <TextField
               value={internalComment}
@@ -1225,14 +1239,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               minRows={2}
               fullWidth
               size="small"
-              placeholder={readOnly ? "—" : "Не виден пациенту"}
+              placeholder={readOnly ? "—" : t("conclusion.notVisibleToPatient")}
             />
           </Stack>
 
           {/* ── photos ── */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Фотографии
+              {t("conclusion.photos2")}
             </Typography>
             <Grid container spacing={1}>
               {photoUrls.map((url) => (
@@ -1251,7 +1265,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                     <Box
                       component="img"
                       src={url}
-                      alt="Фото заключения"
+                      alt={t("conclusion.photos")}
                       onClick={() => setPreviewPhoto(url)}
                       sx={{
                         width: "100%",
@@ -1317,7 +1331,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           {!readOnly && (
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Статус
+                {t("conclusion.status")}
               </Typography>
               <TextField
                 select
@@ -1326,8 +1340,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 size="small"
                 fullWidth
               >
-                <MenuItem value="draft">Черновик</MenuItem>
-                <MenuItem value="completed">Завершено</MenuItem>
+                <MenuItem value="draft">{t("conclusion.statusDraft")}</MenuItem>
+                <MenuItem value="completed">{t("conclusion.statusCompleted")}</MenuItem>
               </TextField>
             </Stack>
           )}
@@ -1346,7 +1360,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   )
                 }
               >
-                Печать заключения
+                {t("conclusion.printConclusion")}
               </Button>
               <Button
                 size="small"
@@ -1359,7 +1373,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   )
                 }
               >
-                Справка
+                {t("conclusion.certificate")}
               </Button>
             </Stack>
           )}
@@ -1373,7 +1387,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       <Box sx={{ p: 2, flexShrink: 0 }}>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
           <Button onClick={saving ? undefined : onClose} disabled={saving}>
-            {readOnly ? "Закрыть" : "Отмена"}
+            {readOnly ? t("conclusion.close") : t("conclusion.cancel")}
           </Button>
           {!readOnly && (
             <>
@@ -1387,7 +1401,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   ) : undefined
                 }
               >
-                Сохранить черновик
+                {t("conclusion.saveDraft")}
               </Button>
               <Button
                 variant="contained"
@@ -1402,7 +1416,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   )
                 }
               >
-                Завершить
+                {t("conclusion.complete")}
               </Button>
             </>
           )}
@@ -1418,21 +1432,21 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Сохранить как шаблон</DialogTitle>
+        <DialogTitle>{t("conclusion.saveTemplateTitle")}</DialogTitle>
         <DialogContent>
           <TextField
             value={tplName}
             onChange={(e) => setTplName(e.target.value)}
             fullWidth
             autoFocus
-            placeholder="Название шаблона"
+            placeholder={t("conclusion.templateNamePlaceholder")}
             disabled={tplBusy}
             sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSaveTplOpen(false)} disabled={tplBusy}>
-            Отмена
+            {t("conclusion.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -1442,7 +1456,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               tplBusy ? <CircularProgress size={16} color="inherit" /> : undefined
             }
           >
-            Сохранить
+            {t("conclusion.save")}
           </Button>
         </DialogActions>
       </Dialog>

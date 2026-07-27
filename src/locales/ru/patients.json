@@ -1,0 +1,191 @@
+{
+  "page": {
+    "title": "Все {{patient.nomPl}}",
+    "addButton": "Добавить {{patient.acc}}",
+    "searchPlaceholder": "Поиск..."
+  },
+  "tabs": {
+    "card": "{{card.nom, capitalize}}",
+    "history": "История",
+    "historyFull": "История {{visit.genPl}}",
+    "old": "Старые зак.",
+    "oldFull": "Старые {{conclusion.nomPl}}",
+    "vaccinations": "{{vaccine.nomPl, capitalize}}"
+  },
+  "placeholders": {
+    "noSelection": "Выберите {{patient.acc}} слева",
+    "card": "{{card.nom, capitalize}} {{patient.gen}}"
+  },
+  "oldConclusions": {
+    "title": "Старые {{conclusion.nomPl}} в разработке",
+    "description": "Перенос архивных {{conclusion.genPl}} на новый backend ещё в работе."
+  },
+  "errors": {
+    "loadList": "Ошибка загрузки данных",
+    "loadHistory": "Ошибка загрузки истории",
+    "loadFailed": "Не удалось загрузить"
+  },
+  "list": {
+    "title": "{{patient.nomPl, capitalize}}",
+    "emptyTitle": "{{patient.nomPl, capitalize}} не найдены",
+    "emptyDescription": "Измените запрос или добавьте нового {{patient.acc}}",
+    "loading": "Загрузка…",
+    "noName": "Без имени",
+    "blacklistNoReason": "Причина не указана"
+  },
+  "history": {
+    "title": "История {{visit.genPl}}",
+    "filterAll": "Все",
+    "filterDoctor": "{{specialist.nomPl, capitalize}}",
+    "filterProcedure": "{{procedure.nomPl, capitalize}}",
+    "notSelectedTitle": "{{patient.nom, capitalize}} не выбран",
+    "notSelectedDescription": "Выберите {{patient.acc}} слева, чтобы увидеть историю {{visit.genPl}}",
+    "emptyTitle": "История пуста",
+    "emptyDescription": "У {{patient.gen}} ещё не было {{visit.genPl}}",
+    "specialistLabel": "{{specialist.nom, capitalize}}:",
+    "serviceLabel": "{{service.nom, capitalize}}:",
+    "conclusionChip": "{{conclusion.nom, capitalize}}"
+  },
+  "card": {
+    "title": "{{card.nom, capitalize}} {{patient.gen}}",
+    "notSelectedTitle": "{{patient.nom, capitalize}} не выбран",
+    "notSelectedDescription": "Выберите {{patient.acc}} из списка слева, чтобы увидеть {{card.acc}}",
+    "actions": {
+      "topUp": "Пополнить",
+      "topUpAccount": "Пополнить счёт",
+      "merge": "Объединить",
+      "mergeWithDuplicate": "Объединить с дублем",
+      "camera": "Камера",
+      "edit": "Редактировать"
+    },
+    "blacklistTitle": "В чёрном списке",
+    "blacklistNoReason": "Причина не указана",
+    "inactive": "{{patient.nom, capitalize}} помечен как неактивный",
+    "noPhone": "Телефон не указан",
+    "birthDate": "Дата рождения",
+    "address": "Адрес",
+    "family": "Семья",
+    "familyMembers_one": "{{count}} участник",
+    "familyMembers_few": "{{count}} участника",
+    "familyMembers_many": "{{count}} участников",
+    "account": "Счёт {{patient.gen}}",
+    "balance": "Баланс",
+    "bonuses": "Бонусы",
+    "amountWithCurrency": "{{amount}} сом",
+    "ageYearsMonths": "({{years}} {{yearWord}} и {{months}} {{monthWord}})",
+    "lastVisit": "Последний {{visit.nom}}",
+    "serviceLabel": "{{service.nom, capitalize}}:",
+    "complaintsLabel": "{{complaint.nomPl, capitalize}}:",
+    "notes": "Примечания",
+    "age": {
+      "lessThanMonth": "(меньше месяца)",
+      "years_one": "год",
+      "years_few": "года",
+      "years_many": "лет",
+      "months_one": "месяц",
+      "months_few": "месяца",
+      "months_many": "месяцев"
+    }
+  },
+  "balance": {
+    "title": "Баланс",
+    "tabTopUp": "Пополнение",
+    "tabHistory": "История",
+    "typeLabel": "Тип пополнения",
+    "typeBalance": "Баланс",
+    "typeBonuses": "Бонусы",
+    "amountLabel": "Сумма (отрицательная — списание)",
+    "currency": "сом",
+    "currencyShort": "с",
+    "commentLabel": "Комментарий",
+    "commentPlaceholder": "Необязательно",
+    "success": "Счёт успешно пополнен!",
+    "invalidAmount": "Введите корректную сумму",
+    "submitTopUp": "Пополнить",
+    "submitDeduct": "Списать",
+    "submitting": "Сохранение…",
+    "cancel": "Отмена",
+    "empty": "Операций пока нет",
+    "system": "Система",
+    "noBranch": "Без {{branch.gen}}",
+    "visitRef": "{{visit.nom, capitalize}} #{{id}}",
+    "paymentRef": "Платёж #{{id}}",
+    "bonusesPrefix": "бонусы",
+    "balancePrefix": "баланс",
+    "prev": "Назад",
+    "next": "Далее",
+    "pageRange": "{{from}}–{{to}} из {{total}}"
+  },
+  "face": {
+    "title": "Камера",
+    "subtitle": "Лица {{patient.gen}}: {{name}}",
+    "forceCapture": "Запросить захват",
+    "forcing": "Запрос…",
+    "refresh": "Обновить",
+    "empty": "Захватов пока нет. Нажмите «Запросить захват».",
+    "faceNumber": "Лицо #{{id}}",
+    "assign": "Привязать",
+    "assigning": "Сохранение…",
+    "retry": "Повторить",
+    "status": {
+      "pending": "Ожидает привязки",
+      "synced": "Привязано",
+      "sync_failed": "Ошибка отправки"
+    },
+    "errors": {
+      "load": "Не удалось загрузить захваты камеры",
+      "force": "Не удалось запросить захват с камеры",
+      "assign": "Не удалось привязать лицо к {{patient.dat}}",
+      "sync": "Не удалось повторить отправку подписи"
+    }
+  },
+  "form": {
+    "fullName": "ФИО *",
+    "phone": "Телефон",
+    "birthDate": "Дата рождения",
+    "birthDatePlaceholder": "дд.мм.гггг",
+    "gender": "Пол",
+    "genderMale": "Мальчик",
+    "genderFemale": "Девочка",
+    "address": "Адрес",
+    "inn": "ИНН",
+    "blacklisted": "В чёрном списке",
+    "save": "Сохранить",
+    "saving": "Сохранение…",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "errors": {
+      "fullNameRequired": "Введите ФИО {{patient.gen}}",
+      "blacklistReasonRequired": "Укажите причину добавления в чёрный список"
+    }
+  },
+  "addDrawer": {
+    "title": "Добавить {{patient.acc}}",
+    "blacklistReasonPlaceholder": "Укажите причину",
+    "possibleDuplicate": "Возможный дубль",
+    "created": "{{patient.nom, capitalize}} добавлен",
+    "createdPhotoFailed": "{{patient.nom, capitalize}} добавлен, но фото не удалось загрузить"
+  },
+  "editDrawer": {
+    "title": "Редактировать {{patient.acc}}",
+    "photo": "Фото {{patient.gen}}",
+    "photoDelete": "Удалить фото",
+    "blacklistReasonPlaceholder": "Опишите причину...",
+    "saved": "Изменения сохранены",
+    "savedPhotoFailed": "Данные сохранены, но фото не удалось загрузить"
+  },
+  "mergeDrawer": {
+    "title": "Объединить {{patient.accPl}}",
+    "selected": "Выбранный {{patient.nom}}",
+    "findDuplicate": "Найти дубликат",
+    "searchPlaceholder": "Поиск по имени или телефону…",
+    "whichIsPrimary": "Кого оставить основным?",
+    "hint": "Дубликат будет удалён, все его {{visit.nomPl}} перенесены на основного",
+    "confirmTitle": "Подтвердите объединение",
+    "primary": "Основной (останется)",
+    "duplicate": "Дубль (будет удалён)",
+    "confirmHint": "Все {{visit.nomPl}}, продажи и баланс дубля будут перенесены на основного. Действие необратимо.",
+    "submit": "Объединить",
+    "merged": "{{patient.nomPl, capitalize}} объединены"
+  }
+}
