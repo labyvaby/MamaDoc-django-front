@@ -10,9 +10,6 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
-import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
-import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
@@ -21,26 +18,17 @@ import dayjs from "dayjs";
 
 import { formatKGS } from "../../../utility/format";
 import type { DjangoAppointment } from "../../../api/appointments";
-import {
-  PAYMENT_STATUS_LABELS,
-  PAYMENT_STATUS_COLOR,
-} from "../DjangoPaymentDrawer";
-import {
-  getStatusConfig,
-  getStatusChipSx,
-} from "../../../config/appointmentStatuses";
+import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
 import { useT } from "../../../i18n/VerticalProvider";
-
-/** Развёрнутые метки оплаты для строки списка (в чипах — короткие,
- *  см. PAYMENT_STATUS_LABELS в DjangoPaymentDrawer). */
-const PAYMENT_ROW_CODES = ["unpaid", "partial", "paid", "overpaid", "refunded"] as const;
 
 interface AppointmentRowProps {
   appointment: DjangoAppointment;
   selected: boolean;
   canUpdate: boolean;
   canManageFinance: boolean;
-  canViewFinance: boolean;
+  /** Не влияет на бейджи оплаты (факт оплаты — общий операционный статус);
+   *  проп сохранён в контракте для будущих финансовых деталей. */
+  canViewFinance?: boolean;
   onClick: (a: DjangoAppointment) => void;
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
@@ -51,9 +39,6 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
   selected,
   canUpdate,
   canManageFinance,
-  // Не влияет на бейджи оплаты (факт — общий операционный статус); проп
-  // сохранён в контракте для будущих финансовых деталей.
-  canViewFinance: _canViewFinance,
   onClick,
   onEdit,
   onPay,
@@ -87,12 +72,10 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
       ? uniqueEmployees[0][1]
       : t("common:counts.performers", { count: uniqueEmployees.length });
 
-  const payStatus = appt.paymentStatus;
   const isCancelled =
     appt.status === "canceled" ||
     (appt.status as string) === "cancelled" ||
     appt.status === "no_show";
-  const hasPaid = appt.paidTotal && appt.paidTotal !== "0.00" && appt.paidTotal !== "0";
   const hasDebt = appt.debt && appt.debt !== "0.00" && appt.debt !== "0";
 
   const totalStr =
@@ -101,27 +84,6 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
       : null;
 
   const debtStr = hasDebt ? t("row.debt", { amount: formatKGS(appt.debt) }) : null;
-
-  // Payment method icons — infer from payment status and available payment info
-  // We check services or use paymentStatus as proxy
-  const hasCashPayment = payStatus === "paid" || payStatus === "partial";
-  const hasCardPayment = false; // we don't have per-method breakdown on row level
-  const hasBalancePayment = false;
-
-  // Статус и его стиль резолвятся по слагу — метка терминологична и ключом быть не может.
-  const statusCfg = getStatusConfig(appt.status);
-  const statusChipSx = getStatusChipSx(appt.status);
-
-  // Payment chip uses original status chip style too
-  const payStatusSafe = payStatus ?? "";
-  const payDisplayLabel = (PAYMENT_ROW_CODES as readonly string[]).includes(payStatusSafe)
-    ? t(`paymentStatusLong.${payStatusSafe}`)
-    : PAYMENT_STATUS_LABELS[payStatusSafe as keyof typeof PAYMENT_STATUS_LABELS] ?? payStatusSafe;
-  const payChipSx = payStatusSafe ? getStatusChipSx(
-    payStatusSafe === "paid" ? "paid" :
-    payStatusSafe === "partial" ? "partially_paid" :
-    payStatusSafe === "refunded" ? "canceled" : "scheduled"
-  ) : undefined;
 
   return (
     <Box
@@ -189,41 +151,13 @@ const AppointmentRow: React.FC<AppointmentRowProps> = ({
         {/* Right: status chips + total + action icons — like original AppointmentsList.tsx */}
         <Stack alignItems="flex-end" spacing={0.5}>
           <Stack direction="row" alignItems="center" gap={1}>
-            {/* Appointment status chip — only when not completed/paid to reduce noise */}
-            {appt.status !== "completed" && appt.status !== "scheduled" && (
-              <Chip
-                label={statusCfg.label}
-                icon={statusCfg.icon}
-                size="small"
-                sx={statusChipSx}
-              />
-            )}
-
-            {/* Payment status chip with method icons — like original.
-                У отменённых не показываем (статус-чип «Отменено» уже есть) —
-                иначе дублируется метка «Отменено».
+            {/* Статус приёма + статус оплаты — общий компонент, та же логика,
+                что в истории пациента и карточках врача/пациента (иначе
+                оплаченный приём там выглядел как «Ожидаем»).
                 Факт оплаты — операционный статус (вызывать ли пациента),
                 виден всем ролям; финансовые ДЕЙСТВИЯ (кнопка «Оплата»)
                 остаются под canManageFinance ниже. */}
-            {!isCancelled && payStatusSafe && hasPaid && payChipSx && (
-              <Chip
-                label={
-                  <Stack direction="row" alignItems="center" gap={0.5}>
-                    <PaymentsOutlined sx={{ fontSize: 13 }} />
-                    <span>{payDisplayLabel}</span>
-                  </Stack>
-                }
-                size="small"
-                sx={payChipSx}
-              />
-            )}
-            {!isCancelled && payStatusSafe && !hasPaid && payChipSx && (
-              <Chip
-                label={payDisplayLabel}
-                size="small"
-                sx={payChipSx}
-              />
-            )}
+            <AppointmentStatusChips appointment={appt} />
 
             {/* Бейдж «Страховка» — визит (со)оплачен страховой компанией. */}
             {!isCancelled &&

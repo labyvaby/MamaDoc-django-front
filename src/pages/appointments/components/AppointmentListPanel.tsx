@@ -16,10 +16,6 @@ import {
 import { useTheme, alpha } from "@mui/material/styles";
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
-import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
-import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
-import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
@@ -41,11 +37,7 @@ import {
 import { formatKGS } from "../../../utility/format";
 import { useT } from "../../../i18n/VerticalProvider";
 import { agree } from "../../../i18n/formatters";
-import {
-  getStatusConfig,
-  getStatusChipSx,
-  getStatusLabel,
-} from "../../../config/appointmentStatuses";
+import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -642,12 +634,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       const a = item as DjangoAppointment;
                       const isSelected = selectedId === a.id;
 
-                      // Суммы оплаты — на уровне строки списка методы недоступны,
-                      // используем paymentStatus как proxy
-                      const paidTotal = Number(a.paidTotal ?? 0);
                       const totalAmount = Number(a.totalAmount ?? 0);
                       const discountAmount = Number(a.discountAmount ?? 0);
-                      const hasPaid = paidTotal > 0;
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
                       const hasConclusion = (a.services ?? []).some(
@@ -656,35 +644,6 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           sl.conclusionState === "draft" ||
                           sl.conclusionState === "completed",
                       );
-
-                      // Стиль чипа подбираем по коду статуса, а не по метке:
-                      // метка зависит от вертикали и ключом быть не может.
-                      const isCardOnly =
-                        (a.paymentMethods ?? []).length === 1 &&
-                        a.paymentMethods?.[0] === "card";
-                      const paymentStyleStatus =
-                        a.paymentStatus === "paid" && isCardOnly
-                          ? "paid_cashless"
-                          : a.paymentStatus === "paid"
-                          ? "paid"
-                          : a.paymentStatus === "partial"
-                          ? "partially_paid"
-                          : a.status;
-
-                      const statusCfg = getStatusConfig(a.status);
-                      // 100% скидка: оплат нет (paidTotal=0), но чек закрыт —
-                      // показываем чип «Со скидкой» вместо статуса «Ожидаем»,
-                      // иначе приём выглядит неоплаченным.
-                      const isDiscounted = a.paymentStatus === "discounted" && !hasPaid;
-                      // Прячем статус-чип, когда состояние и так понятно по
-                      // другим меткам: завершён, оплачен/частично/скидка, или
-                      // есть заключение (его передаёт иконка принтера).
-                      const hideStatusChip =
-                        a.status === "completed" ||
-                        a.paymentStatus === "paid" ||
-                        a.paymentStatus === "partial" ||
-                        isDiscounted ||
-                        hasConclusion;
 
                       return (
                         <Box
@@ -733,59 +692,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                             {/* Right: чипы статуса + иконки оплаты + сумма */}
                             <Stack alignItems="flex-end">
                               <Stack direction="row" alignItems="center" gap={1}>
-                                {/* Статус-чип (не показываем если завершён/оплачен) */}
-                                {!hideStatusChip && (
-                                  <Chip
-                                    label={statusCfg.label}
-                                    icon={statusCfg.icon}
-                                    size="small"
-                                    sx={getStatusChipSx(a.status)}
-                                  />
-                                )}
-
-                                {/* Чип оплаты — показываем «Оплачено»/«Частично
-                                    оплачено» (статус ОПЛАТЫ, не статус приёма).
+                                {/* Статус приёма + статус оплаты + «Скидка 100%» —
+                                    общий компонент. Та же логика применяется в
+                                    истории пациента и карточках врача/пациента:
+                                    иначе оплаченный приём выглядел там как
+                                    «Ожидаем», и врач с регистратором видели по
+                                    одному приёму разное.
                                     Факт оплаты — операционный статус, виден всем
                                     ролям (врачу важно знать, закрыт ли чек);
                                     финансовые действия остаются под правами. */}
-                                {hasPaid && (
-                                  <Chip
-                                    label={
-                                      <Stack direction="row" alignItems="center" gap={0.5}>
-                                        {a.paymentMethods && a.paymentMethods.length > 0 ? (
-                                          <>
-                                            {a.paymentMethods.includes("cash") && <PaymentsOutlined sx={{ fontSize: 16 }} />}
-                                            {a.paymentMethods.includes("card") && <CreditCardOutlined sx={{ fontSize: 16 }} />}
-                                            {a.paymentMethods.includes("balance") && <AccountBalanceWalletOutlined sx={{ fontSize: 16 }} />}
-                                            {a.paymentMethods.includes("bonus") && <CardGiftcardOutlined sx={{ fontSize: 16 }} />}
-                                            {a.paymentMethods.includes("insurance") && <HealthAndSafetyOutlined sx={{ fontSize: 16 }} />}
-                                          </>
-                                        ) : (
-                                          <PaymentsOutlined sx={{ fontSize: 16 }} />
-                                        )}
-                                        <span>
-                                          {paymentStyleStatus === "paid_cashless"
-                                            ? t("list.paid")
-                                            : getStatusLabel(paymentStyleStatus)}
-                                        </span>
-                                      </Stack>
-                                    }
-                                    size="small"
-                                    sx={getStatusChipSx(paymentStyleStatus)}
-                                  />
-                                )}
-
-                                {/* Полная скидка: оплат нет, но приём закрыт —
-                                    фиолетовый чип (статус discounted на бэке
-                                    ставится только при остатке 0 без оплат,
-                                    т.е. это всегда скидка 100%). */}
-                                {isDiscounted && (
-                                  <Chip
-                                    label={t("list.fullDiscount")}
-                                    size="small"
-                                    sx={getStatusChipSx("discounted")}
-                                  />
-                                )}
+                                <AppointmentStatusChips appointment={a} />
 
                                 {/* Бейдж «Страховка» — визит (со)оплачен страховой
                                     компанией; синий тинт, отличим от зелёного
