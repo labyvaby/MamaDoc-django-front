@@ -415,7 +415,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                     <TextField
                       {...params}
                       placeholder="Например: Гель для УЗИ"
-                      helperText="Подтягивается автоматически при выборе услуги; можно изменить или убрать"
+                      helperText="Необязательно: товар со склада, связанный с услугой"
                     />
                   )}
                 />

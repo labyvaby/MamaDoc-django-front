@@ -30,16 +30,21 @@ export const SERVICE_CATEGORY_OPTIONS = Object.keys(
 
 /**
  * Сопутствующий товар услуги (заказчик 27.07.2026 — например «УЗИ» → «Гель
- * для УЗИ»). Ждём бэк (тикет MamaDoc/backend_ticket_service_related_product.md,
- * Service.relatedProductId/relatedProduct) — включить после подтверждения на
- * живом API.
+ * для УЗИ»). Бэк реализовал (тикет
+ * MamaDoc/backend_ticket_service_related_product.md) — проверено на живом API
+ * 28.07.2026 (услуга «Первичный прием (тест)»): GET отдаёт relatedProductId +
+ * relatedProduct {id, name, price, stock}, PATCH сохраняет и очищает (null),
+ * несуществующий/чужой товар → 400 «Товар N не найден или принадлежит другой
+ * организации».
  */
-export const SERVICE_RELATED_PRODUCT_ENABLED = false;
+export const SERVICE_RELATED_PRODUCT_ENABLED = true;
 
 export interface RelatedProductRef {
   id: number;
   name: string;
+  /** Нормализовано из строки-decimal бэка ("9000.00"). */
   price: number;
+  /** Нормализовано из строки-decimal бэка ("10.000"). */
   stock: number;
 }
 
@@ -105,14 +110,25 @@ export interface ServiceUpdatePayload {
   relatedProductId?: number | null;
 }
 
+/** Бэк отдаёт price/stock товара строками-decimal — приводим к числам (как mapProduct в api/warehouse.ts). */
+function normalizeRelatedProduct(
+  product: Service["relatedProduct"],
+): RelatedProductRef | null {
+  if (!product) return null;
+  return {
+    ...product,
+    price: parseFloat(String(product.price)) || 0,
+    stock: parseFloat(String(product.stock)) || 0,
+  };
+}
+
 function normalizeService(service: Service): Service {
   return {
     ...service,
     // Пока бэк не отдаёт category, поле undefined → нормализуем в null.
     category: service.category ?? null,
-    // Пока бэк не отдаёт relatedProduct*, поля undefined → нормализуем в null.
     relatedProductId: service.relatedProductId ?? null,
-    relatedProduct: service.relatedProduct ?? null,
+    relatedProduct: normalizeRelatedProduct(service.relatedProduct),
     branches: Array.isArray(service.branches) ? service.branches : [],
     hasHiddenBranches: Boolean(service.hasHiddenBranches),
   };

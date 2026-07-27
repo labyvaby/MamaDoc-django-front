@@ -99,16 +99,18 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     if (!open || !SERVICE_RELATED_PRODUCT_ENABLED) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
-    getProducts(ctrl.signal)
+    getProducts(ctrl.signal, { includeInactive: true })
       .then((list) => {
         if (ctrl.signal.aborted) return;
         const active = list.filter((p) => p.isActive);
-        setProducts(active);
-        setRelatedProduct(
+        // Привязанный товар мог быть деактивирован — держим его в опциях,
+        // иначе пикер покажет пусто и сохранение молча очистит связь.
+        const linked =
           record.relatedProductId != null
-            ? active.find((p) => p.id === record.relatedProductId) ?? null
-            : null,
-        );
+            ? list.find((p) => p.id === record.relatedProductId) ?? null
+            : null;
+        setProducts(linked && !linked.isActive ? [linked, ...active] : active);
+        setRelatedProduct(linked);
       })
       .catch(() => {})
       .finally(() => {
@@ -420,7 +422,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                     <TextField
                       {...params}
                       placeholder="Например: Гель для УЗИ"
-                      helperText="Подтягивается автоматически при выборе услуги; можно изменить или убрать"
+                      helperText="Необязательно: товар со склада, связанный с услугой"
                     />
                   )}
                 />
