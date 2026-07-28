@@ -47,6 +47,7 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import BookingDetailDrawer from "./BookingDetailDrawer";
 import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
+import { useT } from "../../i18n/VerticalProvider";
 
 const PAGE_SIZE = 20;
 /** Лимит выборки для сводки/счётчиков: 5 страниц по 100. */
@@ -196,6 +197,7 @@ const BOOKING_RANGE_PRESETS: DateRangePreset[] = DATE_PRESETS.map((p) => ({
 }));
 
 const BookingsPage: React.FC = () => {
+  const { t } = useT("bookings");
   usePageTitle("Брони");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -367,7 +369,7 @@ const BookingsPage: React.FC = () => {
       },
       {
         field: "patientName",
-        headerName: "Пациент",
+        headerName: t("patientLabel"),
         flex: 1,
         minWidth: 200,
         sortable: false,
@@ -387,7 +389,7 @@ const BookingsPage: React.FC = () => {
           </Stack>
         ),
       },
-      { field: "doctorName", headerName: "Врач", flex: 1, minWidth: 150, sortable: false },
+      { field: "doctorName", headerName: t("specialistLabel"), flex: 1, minWidth: 150, sortable: false },
       {
         field: "date",
         headerName: "Дата и время",
@@ -443,7 +445,7 @@ const BookingsPage: React.FC = () => {
         renderCell: ({ row }) => <StatusChip status={row.status} />,
       },
     ],
-    [todayStr],
+    [todayStr, t],
   );
 
   if (!permLoading && !canView) return <AccessDenied />;
@@ -511,14 +513,14 @@ const BookingsPage: React.FC = () => {
             <TextField
               select
               size="small"
-              label="Врач"
+              label={t("specialistLabel")}
               value={doctorId === "" ? "" : String(doctorId)}
               onChange={(e) =>
                 setDoctorId(e.target.value === "" ? "" : Number(e.target.value))
               }
               sx={{ minWidth: 180 }}
             >
-              <MenuItem value="">Все врачи</MenuItem>
+              <MenuItem value="">{t("allSpecialists")}</MenuItem>
               {doctors.map((d) => (
                 <MenuItem key={d.id} value={String(d.id)}>
                   {d.fullName}
