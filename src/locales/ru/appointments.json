@@ -506,6 +506,9 @@
     "appointment_change": "Изменение",
     "appointment_cancel": "Отмена"
   },
+  "summaryCards": {
+    "paidVisits": "Оплачено {{visit.genPl}}"
+  },
   "allRegistry": {
     "appointmentsPageTitle": "Все {{visit.nomPl}}",
     "appointmentsListLabel": "{{visit.nomPl, capitalize}}",
