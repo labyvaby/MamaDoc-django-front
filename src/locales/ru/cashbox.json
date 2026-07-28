@@ -1,0 +1,6 @@
+{
+  "paymentsBreakdown": "Оплаты {{visit.genPl}}",
+  "patientBalancePayments": "Оплачено с баланса {{patient.genPl}} (внутренние операции)",
+  "typeLabelPayment": "Оплата {{visit.gen}}",
+  "appointmentRef": "{{visit.nom}} №{{id}}"
+}

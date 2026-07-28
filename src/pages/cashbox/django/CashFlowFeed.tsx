@@ -33,6 +33,7 @@ import {
 } from "../../../api/cashbox";
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { formatSom } from "./FlowCard";
+import { tt } from "../../../i18n/t";
 
 const MotionBox = motion(Box);
 
@@ -51,21 +52,27 @@ const DIR_TABS: { key: Direction; label: string }[] = [
 const IN_TYPES: CashboxEntryType[] = ["payment", "sale"];
 const OUT_TYPES: CashboxEntryType[] = ["refund", "expense", "supply"];
 
-const TYPE_LABELS: Record<CashboxEntryType, string> = {
-  payment: "Оплата приёма",
-  sale: "Продажа товара",
-  refund: "Возврат",
-  expense: "Расход",
-  supply: "Закупка товара",
-};
+/** Ленивые геттеры для типа "payment": значение зависит от вертикали и
+ *  вычисляется в момент обращения (см. DJANGO_STATUS_LABEL). */
+const TYPE_LABELS: Record<CashboxEntryType, string> = Object.defineProperties(
+  {
+    sale: "Продажа товара",
+    refund: "Возврат",
+    expense: "Расход",
+    supply: "Закупка товара",
+  } as Record<CashboxEntryType, string>,
+  { payment: { enumerable: true, get: () => tt("cashbox:typeLabelPayment") } },
+);
 
-const TYPE_CHIP_LABELS: Record<CashboxEntryType, string> = {
-  payment: "Оплаты приёмов",
-  sale: "Продажи товаров",
-  refund: "Возвраты",
-  expense: "Расходы",
-  supply: "Закупки",
-};
+const TYPE_CHIP_LABELS: Record<CashboxEntryType, string> = Object.defineProperties(
+  {
+    sale: "Продажи товаров",
+    refund: "Возвраты",
+    expense: "Расходы",
+    supply: "Закупки",
+  } as Record<CashboxEntryType, string>,
+  { payment: { enumerable: true, get: () => tt("cashbox:paymentsBreakdown") } },
+);
 
 const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
@@ -103,10 +110,10 @@ function entrySubtitle(e: CashboxEntry): string {
   const titleIsTypeLabel = entryTitle(e) === TYPE_LABELS[e.entryType];
   const parts: string[] = titleIsTypeLabel ? [] : [TYPE_LABELS[e.entryType]];
   if (e.entryType === "payment") {
-    if (e.appointmentId) parts.push(`приём №${e.appointmentId}`);
+    if (e.appointmentId) parts.push(tt("cashbox:appointmentRef", { id: e.appointmentId }));
     if (e.insurerName) parts.push(e.insurerName);
   } else if (e.entryType === "refund") {
-    if (e.appointmentId) parts.push(`приём №${e.appointmentId}`);
+    if (e.appointmentId) parts.push(tt("cashbox:appointmentRef", { id: e.appointmentId }));
     if (e.reason) parts.push(e.reason);
   } else if (e.note) {
     parts.push(e.note);
