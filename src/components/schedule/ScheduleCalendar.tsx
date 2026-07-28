@@ -40,6 +40,7 @@ import {
   type ShiftWriteData,
 } from "../../api/attendance";
 import { getDjangoEmployees } from "../../api/staff";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 import { subtleBg } from "../../theme";
 import type { ScheduleEmployee, ScheduleShift } from "./types";
@@ -419,6 +420,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
   const today = dayjs();
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+  const orgId = useApiOrgId();
 
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -454,7 +456,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
     let cancelled = false;
     (async () => {
       try {
-        const empPage = await getDjangoEmployees({ pageSize: 200 });
+        const empPage = await getDjangoEmployees({ pageSize: 200, organizationId: orgId });
         if (cancelled) return;
         const loadedEmps: Employee[] = (empPage.results || []).map((e) => ({
           id: e.id,
@@ -479,7 +481,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
     return () => {
       cancelled = true;
     };
-  }, [notify]);
+  }, [notify, orgId]);
 
   // Смены — по видимому диапазону месяца. Бэкенд сам ограничивает выдачу:
   // обычный сотрудник видит только свои, управляющий — все.

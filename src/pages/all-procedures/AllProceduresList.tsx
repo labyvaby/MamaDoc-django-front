@@ -11,18 +11,23 @@ import { useQuery } from "@tanstack/react-query";
 
 import AppointmentsRegistryView from "../appointments/components/AppointmentsRegistryView";
 import { getDjangoEmployees } from "../../api/staff";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import type { DjangoAppointment, AppointmentServiceLine } from "../../api/appointments";
 import { useT } from "../../i18n/VerticalProvider";
 
 export const AllProceduresList: React.FC = () => {
   const { t } = useT("appointments");
+  const orgId = useApiOrgId();
   // Медсёстры по clinical role (не RBAC). Тот же queryKey, что в
   // AppointmentsPage (useClinicalIds) — кэш общий.
   const nurseIdsQuery = useQuery({
-    queryKey: ["staff", "employees", "clinicalIds", "nurse"],
+    queryKey: ["staff", "employees", "clinicalIds", "nurse", orgId],
     queryFn: async ({ signal }) => {
-      const res = await getDjangoEmployees({ status: "active", pageSize: 500 }, signal);
+      const res = await getDjangoEmployees(
+        { status: "active", pageSize: 500, organizationId: orgId },
+        signal,
+      );
       return res.results.filter((e) => e.clinicalRole === "nurse").map((e) => e.id);
     },
     staleTime: DJANGO_LIST_STALE_TIME_MS,

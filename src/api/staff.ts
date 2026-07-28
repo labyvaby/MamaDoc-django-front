@@ -302,6 +302,8 @@ export interface GetEmployeesParams {
   branchId?: number;
   page?: number;
   pageSize?: number;
+  /** Обязателен для суперпользователя/мультиорг-аккаунта (см. useApiOrgId). */
+  organizationId?: number;
 }
 
 function normalizeEmployeeListItem(item: DjangoEmployeeListItem): DjangoEmployeeListItem {
@@ -332,6 +334,7 @@ export function getDjangoEmployees(
   if (params?.branchId != null) qs.set("branchId", String(params.branchId));
   if (params?.page != null) qs.set("page", String(params.page));
   if (params?.pageSize != null) qs.set("pageSize", String(params.pageSize));
+  if (params?.organizationId != null) qs.set("organizationId", String(params.organizationId));
   const query = qs.toString() ? `?${qs.toString()}` : "";
   return apiRequest<PaginatedDjangoEmployees>(`/staff/employees/${query}`, { signal }).then(
     (payload) => ({

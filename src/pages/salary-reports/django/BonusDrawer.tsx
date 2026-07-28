@@ -89,7 +89,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
     const timer = setTimeout(() => {
       setEmpLoading(true);
       getDjangoEmployees(
-        { search: employeeInput || undefined, status: "active", pageSize: 20 },
+        { search: employeeInput || undefined, status: "active", pageSize: 20, organizationId },
         controller.signal,
       )
         .then((res) => setEmployeeOptions(res.results))
@@ -102,7 +102,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [employeeInput, open]);
+  }, [employeeInput, open, organizationId]);
 
   // Existing bonuses of the selected employee for this month
   const listParams = {

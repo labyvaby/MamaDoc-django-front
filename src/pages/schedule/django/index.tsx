@@ -40,6 +40,7 @@ import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { CustomDatePicker } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import {
   getScheduleRules,
   createScheduleRule,
@@ -173,10 +174,14 @@ const EmployeePicker: React.FC<{
   disabled?: boolean;
 }> = ({ value, onChange, disabled }) => {
   const [input, setInput] = React.useState("");
+  const orgId = useApiOrgId();
   const query = useQuery({
-    queryKey: ["django", "schedule", "employees", input],
+    queryKey: ["django", "schedule", "employees", input, orgId ?? null],
     queryFn: ({ signal }) =>
-      getDjangoEmployees({ search: input || undefined, status: "active", pageSize: 20 }, signal),
+      getDjangoEmployees(
+        { search: input || undefined, status: "active", pageSize: 20, organizationId: orgId },
+        signal,
+      ),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const options = query.data?.results ?? [];
@@ -995,8 +1000,9 @@ const DjangoSchedulePage: React.FC = () => {
   });
 
   const employeesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.reference.employees, branchId ?? null],
-    queryFn: ({ signal }) => getDjangoEmployees({ pageSize: 200, branchId }, signal),
+    queryKey: [...djangoQueryKeys.reference.employees, branchId ?? null, orgId ?? null],
+    queryFn: ({ signal }) =>
+      getDjangoEmployees({ pageSize: 200, branchId, organizationId: orgId }, signal),
     enabled: tab === "calendar",
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });

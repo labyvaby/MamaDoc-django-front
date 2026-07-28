@@ -117,6 +117,7 @@ export function useEmployeesPageState() {
             branchId: branchId ?? undefined,
             page,
             pageSize: 50,
+            organizationId: orgId ?? undefined,
           },
           ctrl.signal,
         );
@@ -156,7 +157,7 @@ export function useEmployeesPageState() {
         setLoadingMore(false);
       }
     }
-  }, [contextKey, qDebounced, branchId]);
+  }, [contextKey, qDebounced, branchId, orgId]);
 
   // Re-fetch when context (org/branch) changes — clear stale data first
   React.useEffect(() => {

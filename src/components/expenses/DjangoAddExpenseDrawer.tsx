@@ -184,7 +184,12 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     const timer = setTimeout(() => {
       setEmpLoading(true);
       getDjangoEmployees(
-        { search: employeeInput || undefined, status: "active", pageSize: 20 },
+        {
+          search: employeeInput || undefined,
+          status: "active",
+          pageSize: 20,
+          organizationId: organizationId ?? undefined,
+        },
         controller.signal,
       )
         .then((res) => setEmployeeOptions(res.results))
@@ -197,7 +202,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [employeeInput, needsEmployee]);
+  }, [employeeInput, needsEmployee, organizationId]);
 
   // ── Photo pick ────────────────────────────────────────────────────────────────
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
