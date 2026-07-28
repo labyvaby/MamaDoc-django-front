@@ -32,6 +32,7 @@ import type { RbacBranch } from "../../../api/auth";
 import { mapDjangoFullToRow } from "../viewModel";
 import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
+import { useT } from "../../../i18n/VerticalProvider";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import { CustomDatePicker } from "../../../components/ui";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
@@ -91,6 +92,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   onClose,
   onCreated,
 }) => {
+  const { t } = useT("employees");
   const { open: notify } = useNotification();
   const { activeOrganization, activeBranch, activeMembership } = usePermissions();
   const canViewSpecs = useCan("staff.specializations.view");
@@ -737,9 +739,9 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
             fullWidth
             disabled={busy}
           >
-            <MenuItem value="doctor">Врач</MenuItem>
-            <MenuItem value="nurse">Медсестра</MenuItem>
-            <MenuItem value="other">Другой</MenuItem>
+            <MenuItem value="doctor">{t("clinicalRole.doctor")}</MenuItem>
+            <MenuItem value="nurse">{t("clinicalRole.nurse")}</MenuItem>
+            <MenuItem value="other">{t("clinicalRole.other")}</MenuItem>
           </TextField>
         </Field>
 

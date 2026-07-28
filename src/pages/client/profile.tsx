@@ -31,6 +31,7 @@ import { getStatusConfig, getStatusChipSx } from "../../config/appointmentStatus
 import { supabase } from "../../utility/supabaseClient";
 import { useClientSession } from "../../contexts/client-session-context";
 import AximoLogo from "../../components/auth/AximoLogo";
+import { useT } from "../../i18n/VerticalProvider";
 import dayjs from "dayjs";
 
 type Appointment = {
@@ -91,6 +92,7 @@ function formatKGS(v?: number | null) {
 }
 
 const ClientProfilePage: React.FC = () => {
+  const { t } = useT("client");
   const navigate = useNavigate();
   const { patient, logout } = useClientSession();
 
@@ -182,7 +184,7 @@ const ClientProfilePage: React.FC = () => {
         {/* Карточка пациента */}
         <Card variant="outlined">
           <CardHeader
-            title={<Stack direction="row" alignItems="center" gap={1.25}><PersonOutlineOutlined color="primary" /><Typography variant="h6">Карточка пациента</Typography></Stack>}
+            title={<Stack direction="row" alignItems="center" gap={1.25}><PersonOutlineOutlined color="primary" /><Typography variant="h6">{t("patientCardTitle")}</Typography></Stack>}
             sx={{ pb: 1 }}
           />
           <Divider />
@@ -217,7 +219,7 @@ const ClientProfilePage: React.FC = () => {
           <CardHeader
             title={
               <Stack direction="row" alignItems="center" justifyContent="space-between">
-                <Stack direction="row" alignItems="center" gap={1.25}><HistoryOutlined color="primary" /><Typography variant="h6">История приёмов</Typography></Stack>
+                <Stack direction="row" alignItems="center" gap={1.25}><HistoryOutlined color="primary" /><Typography variant="h6">{t("visitHistoryTitle")}</Typography></Stack>
                 {!loadingAppts && <Chip size="small" label={appointments.length} />}
               </Stack>
             }
@@ -243,7 +245,7 @@ const ClientProfilePage: React.FC = () => {
                       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2} sx={{ width: "100%" }}>
                         <Stack>
                           <Typography variant="subtitle2">{dayjs(appt.appointment_at).format("HH:mm DD.MM.YYYY")}</Typography>
-                          {appt.doctor_name && <Typography variant="body2" color="text.secondary">Врач: {appt.doctor_name}</Typography>}
+                          {appt.doctor_name && <Typography variant="body2" color="text.secondary">{t("specialistLabel", { name: appt.doctor_name })}</Typography>}
                           {appt.service_names && <Typography variant="body2" color="text.secondary">Услуга: {appt.service_names}</Typography>}
                         </Stack>
                         <Stack alignItems="flex-end" flexShrink={0}>
@@ -277,7 +279,7 @@ const ClientProfilePage: React.FC = () => {
         </Box>
 
         <Box sx={{ px: 2, pb: 1, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <Typography variant="h6">Детали приёма</Typography>
+          <Typography variant="h6">{t("visitDetailsTitle")}</Typography>
           <IconButton size="small" onClick={closeSheet}><CloseIcon fontSize="small" /></IconButton>
         </Box>
         <Divider />
@@ -305,7 +307,7 @@ const ClientProfilePage: React.FC = () => {
 
               {detail.doctor_name && (
                 <Box>
-                  <Typography variant="subtitle2" color="text.secondary">Врач</Typography>
+                  <Typography variant="subtitle2" color="text.secondary">{t("specialistFieldLabel")}</Typography>
                   <Typography variant="body1">{detail.doctor_name}</Typography>
                 </Box>
               )}

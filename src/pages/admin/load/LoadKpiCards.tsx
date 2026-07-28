@@ -9,6 +9,7 @@ import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
 
 import { subtleBg } from "../../../theme/uiHelpers";
 import type { LoadKpi } from "../../../api/load";
+import { useT } from "../../../i18n/VerticalProvider";
 
 const WEEKDAYS = [
   "Понедельник",
@@ -94,6 +95,7 @@ export interface LoadKpiCardsProps {
 }
 
 const LoadKpiCards: React.FC<LoadKpiCardsProps> = ({ kpi, daysCount }) => {
+  const { t } = useT("load");
   const peak = kpi.peakHour != null ? `${String(kpi.peakHour).padStart(2, "0")}:00` : "—";
   const busiest = kpi.busiestWeekday != null ? WEEKDAYS[kpi.busiestWeekday] : "—";
   const deltaUp = (kpi.deltaPct ?? 0) >= 0;
@@ -108,7 +110,7 @@ const LoadKpiCards: React.FC<LoadKpiCardsProps> = ({ kpi, daysCount }) => {
         icon={<SpeedOutlined />}
         label="Пиковый час"
         value={peak}
-        sub={kpi.peakHour != null ? `${kpi.peakCount} приёмов` : "нет данных"}
+        sub={kpi.peakHour != null ? t("count", { count: kpi.peakCount }) : t("noData")}
       />
       <Tile
         icon={<BarChartOutlined />}

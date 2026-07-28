@@ -187,5 +187,21 @@
     "confirmHint": "Все {{visit.nomPl}}, продажи и баланс дубля будут перенесены на основного. Действие необратимо.",
     "submit": "Объединить",
     "merged": "{{patient.nomPl, capitalize}} объединены"
+  },
+  "quickView": {
+    "title": "Информация о {{patient.pre}}",
+    "chip": "{{patient.nom, capitalize}}",
+    "phone": "Телефон:",
+    "birthDate": "Дата рождения:",
+    "gender": "Пол:",
+    "genderMale": "Мальчик",
+    "genderFemale": "Девочка",
+    "address": "Адрес:",
+    "family": "Семья:",
+    "recentVisits": "Последние {{visit.nomPl}}",
+    "noVisits": "Нет записей о {{visit.datPl}}",
+    "notFound": "{{patient.nom, capitalize}} не найден",
+    "doctorLabel": "{{specialist.nom, capitalize}}: {{name}}",
+    "servicesLabel": "{{service.nomPl, capitalize}}: {{name}}"
   }
 }

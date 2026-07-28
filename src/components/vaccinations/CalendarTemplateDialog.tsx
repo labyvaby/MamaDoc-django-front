@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useT } from "../../i18n/VerticalProvider";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
@@ -40,6 +41,7 @@ function numOrNull(v: string): number | null {
 }
 
 const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, onClose, row }) => {
+  const { t } = useT("vaccinations");
   const orgId = useApiOrgId();
   const queryClient = useQueryClient();
   const [error, setError] = React.useState<string | null>(null);
@@ -162,7 +164,7 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Например: 3 месяца"
-            helperText="Показывается пациенту как заголовок возрастной группы"
+            helperText={t("calendarTemplate.labelHelper")}
           />
           <FormControlLabel
             control={<Switch checked={mandatory} onChange={(e) => setMandatory(e.target.checked)} />}

@@ -29,6 +29,8 @@ import { getAppointments, type DjangoAppointment } from "../../api/appointments"
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
 
 dayjs.locale("ru");
 
@@ -53,18 +55,19 @@ function doctorsLabel(appt: DjangoAppointment): string {
   );
   if (names.length === 0) return "—";
   if (names.length === 1) return names[0];
-  return `${names.length} исполнит.`;
+  return tt("common:counts.performers", { count: names.length });
 }
 
 function servicesLabel(appt: DjangoAppointment): string {
   if (appt.services.length === 0) return "—";
   if (appt.services.length === 1) return appt.services[0].service?.name ?? "—";
-  return `${appt.services.length} услуг`;
+  return tt("common:counts.services", { count: appt.services.length });
 }
 
 const RECENT_LIMIT = 5;
 
 const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientId }) => {
+  const { t } = useT("patients");
   const [loading, setLoading] = React.useState(false);
   const [patient, setPatient] = React.useState<DjangoPatient | null>(null);
   const [recent, setRecent] = React.useState<DjangoAppointment[]>([]);
@@ -136,7 +139,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
         }}
       >
         <Typography variant="h6" fontWeight={600}>
-          Информация о пациенте
+          {t("quickView.title")}
         </Typography>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
@@ -173,7 +176,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                   {patient.fullName}
                 </Typography>
                 <Chip
-                  label="Пациент"
+                  label={t("quickView.chip")}
                   size="small"
                   color="primary"
                   variant="outlined"
@@ -188,7 +191,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <LocalPhoneOutlinedIcon fontSize="small" color="action" />
                 <Typography variant="body2" color="text.secondary">
-                  Телефон:
+                  {t("quickView.phone")}
                 </Typography>
                 {patient.phone ? (
                   <Typography
@@ -211,7 +214,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                 <Stack direction="row" spacing={1.5} alignItems="center">
                   <CakeOutlinedIcon fontSize="small" color="action" />
                   <Typography variant="body2" color="text.secondary">
-                    Дата рождения:
+                    {t("quickView.birthDate")}
                   </Typography>
                   <Typography variant="body2" fontWeight={500}>
                     {dayjs(patient.birthDate).format("DD.MM.YYYY")}
@@ -224,10 +227,10 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                 <Stack direction="row" spacing={1.5} alignItems="center">
                   <WcOutlinedIcon fontSize="small" color="action" />
                   <Typography variant="body2" color="text.secondary">
-                    Пол:
+                    {t("quickView.gender")}
                   </Typography>
                   <Typography variant="body2" fontWeight={500}>
-                    {patient.gender === "male" ? "Мальчик" : "Девочка"}
+                    {patient.gender === "male" ? t("quickView.genderMale") : t("quickView.genderFemale")}
                   </Typography>
                 </Stack>
               )}
@@ -237,7 +240,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                   <PlaceOutlinedIcon fontSize="small" color="action" sx={{ mt: 0.25 }} />
                   <Box>
                     <Typography variant="body2" color="text.secondary">
-                      Адрес:
+                      {t("quickView.address")}
                     </Typography>
                     <Typography variant="body2" fontWeight={500}>
                       {patient.address}
@@ -250,7 +253,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                 <Stack direction="row" spacing={1.5} alignItems="center">
                   <GroupOutlinedIcon fontSize="small" color="action" />
                   <Typography variant="body2" color="text.secondary">
-                    Семья:
+                    {t("quickView.family")}
                   </Typography>
                   <Typography variant="body2" fontWeight={500}>
                     {patient.family.name} ({patient.family.memberCount})
@@ -266,7 +269,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
                 <MedicalServicesOutlinedIcon fontSize="small" color="primary" />
                 <Typography variant="subtitle2" fontWeight={600}>
-                  Последние приёмы
+                  {t("quickView.recentVisits")}
                 </Typography>
               </Stack>
 
@@ -301,10 +304,10 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                           secondary={
                             <>
                               <Typography variant="caption" display="block" color="text.secondary">
-                                Врач: {doctorsLabel(appt)}
+                                {t("quickView.doctorLabel", { name: doctorsLabel(appt) })}
                               </Typography>
                               <Typography variant="caption" display="block" color="text.secondary">
-                                Услуги: {servicesLabel(appt)}
+                                {t("quickView.servicesLabel", { name: servicesLabel(appt) })}
                               </Typography>
                             </>
                           }
@@ -315,14 +318,14 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
                 </List>
               ) : (
                 <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
-                  Нет записей о приёмах
+                  {t("quickView.noVisits")}
                 </Typography>
               )}
             </Box>
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
-            Пациент не найден
+            {t("quickView.notFound")}
           </Typography>
         )}
       </Box>

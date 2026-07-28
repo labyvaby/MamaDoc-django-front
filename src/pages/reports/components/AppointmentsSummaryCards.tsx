@@ -16,6 +16,7 @@ import { formatKGS } from '../../../utility/format';
 import { IS_DJANGO_BACKEND } from '../../../config/backend';
 import { getMonthlyReport } from '../../../api/reports';
 import { usePermissions } from '../../../hooks/usePermissions';
+import { useT } from '../../../i18n/VerticalProvider';
 
 interface ExtraCard {
     title: string;
@@ -46,6 +47,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     showBaseCards = true,
 }) => {
     const theme = useTheme();
+    const { t } = useT('appointments');
     const { activeOrganization } = usePermissions();
 
     const { data: rpcData, isFetching } = useQuery({
@@ -137,7 +139,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
 
     const baseCards = !showBaseCards ? extraCards : hasSplit ? [
         {
-            title: 'Оплачено приёмов',
+            title: t('summaryCards.paidVisits'),
             primaryValue: metrics.apptPaid.toString(),
             secondaryText: `Всего: ${metrics.apptTotal} · Отменено: ${metrics.apptCancelled}`,
             color: 'success' as const,

@@ -23,6 +23,8 @@ import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/query
 import FlowCard, { formatSom, type FlowBreakdownRow } from "./FlowCard";
 import CashBalanceCard from "./CashBalanceCard";
 import CashFlowFeed from "./CashFlowFeed";
+import { useT } from "../../../i18n/VerticalProvider";
+import { tt } from "../../../i18n/t";
 
 // ── Period presets ────────────────────────────────────────────────────────────
 
@@ -79,7 +81,7 @@ function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
     inflow: payments + sales,
     outflow: refunds + expenses + supplies,
     breakdown: [
-      { key: "payment", label: "Оплаты приёмов", amount: payments, direction: 1 },
+      { key: "payment", label: tt("cashbox:paymentsBreakdown"), amount: payments, direction: 1 },
       { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
       { key: "refund", label: "Возвраты", amount: refunds, direction: -1 },
       { key: "expense", label: "Расходы", amount: expenses, direction: -1 },
@@ -108,6 +110,7 @@ function periodLabel(range: DateRange): string {
  *    доступен только с правом finance.view_history (day-picker ↔ range-picker).
  */
 const DjangoCashboxPage: React.FC = () => {
+  const { t } = useT("cashbox");
   usePageTitle("Касса");
   const theme = useTheme();
   const canView = useCan("finance.view");
@@ -255,7 +258,7 @@ const DjangoCashboxPage: React.FC = () => {
                 />
                 <InfoTile
                   icon={<AccountBalanceWalletOutlined />}
-                  label="Оплачено с баланса пациентов (внутренние операции)"
+                  label={t("patientBalancePayments")}
                   value={formatSom(balancePayments)}
                   active={balancePayments > 0}
                 />

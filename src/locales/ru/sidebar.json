@@ -1,0 +1,5 @@
+{
+  "doctorRoom": "Кабинет {{specialist.gen}}",
+  "allPatients": "Все {{patient.nomPl}}",
+  "allAppointments": "Все {{visit.nomPl}}"
+}

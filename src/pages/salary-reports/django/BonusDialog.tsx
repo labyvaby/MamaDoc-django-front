@@ -29,6 +29,7 @@ import {
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
 import { useFormValidation } from "../../../hooks/useFormValidation";
+import { useT } from "../../../i18n/VerticalProvider";
 
 interface Props {
   open: boolean;
@@ -42,7 +43,7 @@ interface Props {
   readOnly: boolean;
 }
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Ошибка");
+const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 const BonusDialog: React.FC<Props> = ({
   open,
@@ -54,6 +55,7 @@ const BonusDialog: React.FC<Props> = ({
   organizationId,
   readOnly,
 }) => {
+  const { t } = useT("salaryReports");
   const queryClient = useQueryClient();
   const [amount, setAmount] = React.useState("");
   const [reason, setReason] = React.useState("");
@@ -90,13 +92,13 @@ const BonusDialog: React.FC<Props> = ({
       setReason("");
       setError(null);
     },
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => setError(errMsg(e, t("notify.genericError"))),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteBonus(id),
     onSuccess: invalidate,
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => setError(errMsg(e, t("notify.genericError"))),
   });
 
   const busy = createMutation.isPending || deleteMutation.isPending;
@@ -114,8 +116,8 @@ const BonusDialog: React.FC<Props> = ({
     amount:
       Number.isFinite(Number(amount)) && Number(amount) > 0
         ? null
-        : "Введите сумму больше нуля",
-    reason: reason.trim() ? null : "Укажите причину надбавки",
+        : t("bonusDialog.amountRequired"),
+    reason: reason.trim() ? null : t("bonusDialog.reasonRequired"),
   });
 
   const handleAdd = () => {
@@ -130,7 +132,7 @@ const BonusDialog: React.FC<Props> = ({
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
       <DialogTitle sx={{ pb: 0.5 }}>
-        Надбавки
+        {t("bonusDialog.title")}
         <Typography variant="body2" color="text.secondary">
           {employeeName} · {dayjs(`${year}-${String(month).padStart(2, "0")}-01`).format("MMMM YYYY")}
         </Typography>
@@ -150,7 +152,7 @@ const BonusDialog: React.FC<Props> = ({
           <Stack spacing={1} sx={{ mb: 1 }}>
             {bonuses.length === 0 && (
               <Typography variant="caption" color="text.disabled">
-                Надбавок за этот месяц нет
+                {t("bonusDialog.noBonusesMonth")}
               </Typography>
             )}
             {bonuses.map((b: PayrollBonus) => (
@@ -178,7 +180,7 @@ const BonusDialog: React.FC<Props> = ({
                     )}
                   </Box>
                   {!readOnly && (
-                    <Tooltip title="Удалить">
+                    <Tooltip title={t("bonusDialog.deleteTooltip")}>
                       <span>
                         <IconButton
                           size="small"
@@ -197,7 +199,7 @@ const BonusDialog: React.FC<Props> = ({
             {bonuses.length > 0 && (
               <Stack direction="row" justifyContent="space-between" sx={{ pt: 0.5 }}>
                 <Typography variant="caption" color="text.secondary" fontWeight={700}>
-                  Итого надбавок
+                  {t("bonusDialog.totalBonuses")}
                 </Typography>
                 <Typography variant="caption" fontWeight={700}>
                   {formatKGS(total)}
@@ -212,7 +214,7 @@ const BonusDialog: React.FC<Props> = ({
             <Divider sx={{ my: 1.5 }} />
             <Stack spacing={1.5}>
               <TextField
-                label="Сумма (сом)"
+                label={t("bonusDialog.amountLabel")}
                 type="number"
                 size="small"
                 fullWidth
@@ -223,13 +225,13 @@ const BonusDialog: React.FC<Props> = ({
                 {...form.field("amount")}
               />
               <TextField
-                label="Причина"
+                label={t("bonusDialog.reasonLabel")}
                 size="small"
                 fullWidth
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 disabled={busy}
-                placeholder="Напр.: мыл полы"
+                placeholder={t("bonusDialog.reasonPlaceholder")}
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                 {...form.field("reason")}
               />
@@ -240,7 +242,7 @@ const BonusDialog: React.FC<Props> = ({
                 onClick={handleAdd}
                 disabled={busy}
               >
-                Добавить надбавку
+                {t("bonusDialog.addBonus")}
               </Button>
             </Stack>
           </>
@@ -248,13 +250,13 @@ const BonusDialog: React.FC<Props> = ({
 
         {readOnly && (
           <Alert severity="info" sx={{ mt: 1, fontSize: "0.78rem", py: 0.5 }}>
-            Месяц заморожен — изменение надбавок недоступно.
+            {t("bonusDialog.lockedInfo")}
           </Alert>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={busy} size="small">
-          Закрыть
+          {t("bonusDialog.close")}
         </Button>
       </DialogActions>
     </Dialog>

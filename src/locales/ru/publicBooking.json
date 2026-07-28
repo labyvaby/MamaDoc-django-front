@@ -1,0 +1,12 @@
+{
+  "backToList": "К списку {{specialist.genPl}}",
+  "notFound": "{{specialist.nom, capitalize}} не найден.",
+  "chooseSpecialist": "Выберите {{specialist.acc}}",
+  "chooseSpecialistHint": "Найдите {{specialist.acc}} и запишитесь на удобное время.",
+  "searchPlaceholder": "Поиск по имени {{specialist.gen}}",
+  "noSpecialistsFound": "По вашему запросу {{specialist.nomPl}} не найдены.",
+  "selectServiceRequired": "Выберите услугу",
+  "selectSlotRequired": "Выберите дату и время приёма",
+  "noSlotsAvailable": "У {{specialist.gen}} сейчас нет свободного времени для онлайн-записи на ближайшие две недели. Выберите другого {{specialist.acc}} или свяжитесь с {{org.ins}}.",
+  "onlineBookingSoon": "Онлайн-запись скоро заработает. Пока, пожалуйста, позвоните в {{org.acc}}, чтобы записаться на выбранное время."
+}

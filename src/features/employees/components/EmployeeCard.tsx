@@ -59,6 +59,7 @@ import { subtleBg } from "../../../theme/uiHelpers";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useCan } from "../../../hooks/useCan";
+import { useT } from "../../../i18n/VerticalProvider";
 import { getServices } from "../../../api/catalog";
 import { orgWide } from "../../../api/scope";
 import {
@@ -99,12 +100,7 @@ export type EmployeeCardProps = {
   onEdit?: (emp: EmployesRow) => void;
 };
 
-const declension = (number: number, titles: [string, string, string]) => {
-  const cases = [2, 0, 1, 1, 1, 2];
-  return titles[
-    number % 100 > 4 && number % 100 < 20 ? 2 : cases[number % 10 < 5 ? number % 10 : 5]
-  ];
-};
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
 
 /** Полных месяцев между датой и сегодня (отрицательно для будущих дат). */
 const monthsSince = (dateStr: string) => {
@@ -117,29 +113,28 @@ const monthsSince = (dateStr: string) => {
   return monthDiff;
 };
 
-const calculateAge = (birthDate: string) => {
+const calculateAge = (birthDate: string, t: TFunc) => {
   if (!birthDate) return "";
   const monthDiff = monthsSince(birthDate);
   const y = Math.floor(monthDiff / 12);
   const m = monthDiff % 12;
 
-  const yearsStr = `${y} ${declension(y, ["год", "года", "лет"])}`;
-  const monthsStr =
-    m > 0 ? ` и ${m} ${declension(m, ["месяц", "месяца", "месяцев"])}` : "";
+  const yearsStr = t("card.ageYears", { count: y });
+  const monthsStr = m > 0 ? ` и ${t("card.ageMonths", { count: m })}` : "";
 
   return `(${yearsStr}${monthsStr})`;
 };
 
 /** Стаж от даты приёма: «2 года и 3 месяца», «5 месяцев», «меньше месяца». */
-const formatTenure = (hiredDate: string) => {
+const formatTenure = (hiredDate: string, t: TFunc) => {
   const monthDiff = monthsSince(hiredDate);
   if (monthDiff < 0) return "";
-  if (monthDiff === 0) return "меньше месяца";
+  if (monthDiff === 0) return t("card.tenureLessThanMonth");
   const y = Math.floor(monthDiff / 12);
   const m = monthDiff % 12;
   const parts: string[] = [];
-  if (y > 0) parts.push(`${y} ${declension(y, ["год", "года", "лет"])}`);
-  if (m > 0) parts.push(`${m} ${declension(m, ["месяц", "месяца", "месяцев"])}`);
+  if (y > 0) parts.push(t("card.ageYears", { count: y }));
+  if (m > 0) parts.push(t("card.ageMonths", { count: m }));
   return parts.join(" и ");
 };
 
@@ -260,6 +255,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onOpenServices,
   onEdit,
 }) => {
+  const { t } = useT("employees");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [related, setRelated] = useState<RelatedModalType>(null);
   // Выбранный месяц для «связанных данных» — якорь "YYYY-MM-DD" (1-е число месяца).
@@ -474,16 +470,16 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const hired = emp?.hired_at || "";
   const photo = emp?.photo_url || undefined;
   const roleText =
-    roleDisplayName || (emp?.status === "active" ? "Сотрудник" : "—");
+    roleDisplayName || (emp?.status === "active" ? t("card.fallbackEmployee") : "—");
   const status = emp?.status;
   const isActive = status === "active";
   const isFired = status === "fired";
   const statusText = isActive
-    ? "Работает"
+    ? t("list.status.active")
     : status === "inactive"
-    ? "Не работает"
+    ? t("list.status.inactive")
     : isFired
-    ? "Уволен"
+    ? t("list.status.fired")
     : status || "—";
 
   type UnknownRecord = Record<string, unknown>;
@@ -545,7 +541,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               }}
             />
             <Typography variant="subtitle1" fontWeight={600}>
-              Карточка сотрудника
+              {t("card.title")}
             </Typography>
           </Stack>
         }
@@ -556,7 +552,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               startIcon={<EditOutlined fontSize="small" />}
               onClick={() => onEdit(emp)}
             >
-              Редактировать
+              {t("common:actions.edit")}
             </AppButton>
           ) : undefined
         }
@@ -656,14 +652,14 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
             {/* Контакты — видны всем сотрудникам */}
             <Box>
-              <SectionHeader icon={<ContactPageOutlined />} title="Контакты" />
+              <SectionHeader icon={<ContactPageOutlined />} title={t("card.sections.contacts")} />
               <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
-                <InfoTile icon={<LocalPhoneOutlined />} label="Телефон" value={phone} active={Boolean(phone)} />
-                <InfoTile icon={<EmailOutlined />} label="Email" value={emp.email} active={Boolean(emp.email)} />
-                <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={emp.telegram_id} active={Boolean(emp.telegram_id)} />
+                <InfoTile icon={<LocalPhoneOutlined />} label={t("card.fields.phone")} value={phone} active={Boolean(phone)} />
+                <InfoTile icon={<EmailOutlined />} label={t("card.fields.email")} value={emp.email} active={Boolean(emp.email)} />
+                <InfoTile icon={<TelegramIcon />} label={t("card.fields.telegramId")} value={emp.telegram_id} active={Boolean(emp.telegram_id)} />
                 <InfoTile
                   icon={<InstagramIcon />}
-                  label="Instagram"
+                  label={t("card.fields.instagram")}
                   value={emp.instagram ? `@${emp.instagram}` : undefined}
                   active={Boolean(emp.instagram)}
                 />
@@ -673,17 +669,17 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             {/* Личное — дата рождения и адрес приходят только с правом (или своя карточка) */}
             {(birth || hired || emp.address || emp.notes) && (
               <Box>
-                <SectionHeader icon={<CakeOutlined />} title="Личное" />
+                <SectionHeader icon={<CakeOutlined />} title={t("card.sections.personal")} />
                 <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
                   {birth && (
                     <InfoTile
                       icon={<CakeOutlined />}
-                      label="Дата рождения"
+                      label={t("card.fields.birthDate")}
                       value={
                         <>
                           {formatDateRu(birth)}{" "}
                           <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
-                            {calculateAge(birth)}
+                            {calculateAge(birth, t)}
                           </Box>
                         </>
                       }
@@ -692,13 +688,13 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   {hired && (
                     <InfoTile
                       icon={<EventAvailableOutlined />}
-                      label="Дата приёма на работу"
+                      label={t("card.fields.hiredDate")}
                       value={
                         <>
                           {formatDateRu(hired)}{" "}
-                          {formatTenure(hired) && (
+                          {formatTenure(hired, t) && (
                             <Box component="span" sx={{ color: "text.secondary", fontWeight: 400 }}>
-                              (стаж {formatTenure(hired)})
+                              ({t("card.tenureLabel", { tenure: formatTenure(hired, t) })})
                             </Box>
                           )}
                         </>
@@ -706,11 +702,11 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                     />
                   )}
                   {emp.address && (
-                    <InfoTile icon={<HomeOutlined />} label="Адрес проживания" value={emp.address} />
+                    <InfoTile icon={<HomeOutlined />} label={t("card.fields.address")} value={emp.address} />
                   )}
                   {emp.notes && (
                     <Box sx={{ gridColumn: { md: "1 / -1" } }}>
-                      <InfoTile icon={<NotesOutlined />} label="Описание" value={emp.notes} />
+                      <InfoTile icon={<NotesOutlined />} label={t("card.fields.notes")} value={emp.notes} />
                     </Box>
                   )}
                 </Box>
@@ -722,29 +718,29 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               <Box>
                 <SectionHeader
                   icon={<AccountBalanceOutlined />}
-                  title="Реквизиты"
+                  title={t("card.sections.requisites")}
                   action={
                     <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
                       <LockOutlined sx={{ fontSize: 14 }} />
-                      <Typography variant="caption">приватно</Typography>
+                      <Typography variant="caption">{t("card.requisitesPrivate")}</Typography>
                     </Stack>
                   }
                 />
                 <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
                   {emp.bank && (
-                    <InfoTile icon={<AccountBalanceOutlined />} label="Банк" value={emp.bank} />
+                    <InfoTile icon={<AccountBalanceOutlined />} label={t("card.fields.bank")} value={emp.bank} />
                   )}
                   {emp.bik && (
-                    <InfoTile icon={<AccountBalanceOutlined />} label="БИК" value={emp.bik} monospace />
+                    <InfoTile icon={<AccountBalanceOutlined />} label={t("card.fields.bik")} value={emp.bik} monospace />
                   )}
                   <InfoTile
                     icon={<CreditCardOutlined />}
-                    label="Номер счёта"
+                    label={t("card.fields.accountNumber")}
                     value={emp.bank_account_number ? formatBank(emp.bank_account_number) : undefined}
                     active={Boolean(emp.bank_account_number)}
                     monospace
                   />
-                  <InfoTile icon={<BadgeOutlined />} label="ИНН" value={emp.inn} active={Boolean(emp.inn)} monospace />
+                  <InfoTile icon={<BadgeOutlined />} label={t("card.fields.inn")} value={emp.inn} active={Boolean(emp.inn)} monospace />
                 </Box>
                 {emp.elqr_url && (
                   <Box
@@ -790,8 +786,8 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       )}
                     </Box>
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" fontWeight={600}>elQR (реквизиты)</Typography>
-                      <Typography variant="caption" color="primary.onSurface">Открыть</Typography>
+                      <Typography variant="body2" fontWeight={600}>{t("card.elqrLabel")}</Typography>
+                      <Typography variant="caption" color="primary.onSurface">{t("card.openAction")}</Typography>
                     </Box>
                   </Box>
                 )}
@@ -802,7 +798,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             {((IS_DJANGO_BACKEND && djangoSpecs.length > 0) ||
               (!IS_DJANGO_BACKEND && isDoctor && supabaseSpecName)) && (
               <Box>
-                <SectionHeader icon={<WorkOutlined />} title="Специализации" />
+                <SectionHeader icon={<WorkOutlined />} title={t("card.sections.specializations")} />
                 <Stack direction="row" flexWrap="wrap" gap={1}>
                   {IS_DJANGO_BACKEND
                     ? djangoSpecs.map((sp) => (
@@ -831,7 +827,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             {/* Достижения — только полученные бейджи, без прогресса и счётчиков */}
             {achievementsEnabled && employeeBadges.length > 0 && (
               <Box>
-                <SectionHeader icon={<EmojiEventsOutlined />} title="Достижения" />
+                <SectionHeader icon={<EmojiEventsOutlined />} title={t("card.sections.achievements")} />
                 <Stack direction="row" flexWrap="wrap" gap={1}>
                   {employeeBadges.map((b) => (
                     <Tooltip
@@ -850,7 +846,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             {/* Паспортные фото */}
             {emp.passport_photos && emp.passport_photos.length > 0 && (
               <Box>
-                <SectionHeader icon={<ContactPageOutlined />} title="Паспортные данные (фото)" />
+                <SectionHeader icon={<ContactPageOutlined />} title={t("card.sections.passportPhotos")} />
                 <ImageList cols={3} gap={10} sx={{ m: 0 }}>
                   {emp.passport_photos.map((url, i) => (
                     <ImageListItem
@@ -865,7 +861,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       <Box
                         component="img"
                         src={url}
-                        alt={`Паспорт ${i + 1}`}
+                        alt={t("card.passportAlt", { index: i + 1 })}
                         onClick={() => setPreviewUrl(url)}
                         sx={{
                           width: "100%",
@@ -916,7 +912,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   <Box
                     component="img"
                     src={previewUrl}
-                    alt="Паспорт"
+                    alt={t("card.passportPreviewAlt")}
                     onClick={(e) => e.stopPropagation()}
                     sx={{
                       width: "70vw",
@@ -935,24 +931,24 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               <Box>
                 <SectionHeader
                   icon={<LinkOutlined />}
-                  title="Связанные данные"
+                  title={t("card.sections.relatedData")}
                   action={
                     <Stack
                       direction="row"
                       alignItems="center"
                       gap={0.25}
-                      sx={(t) => ({
+                      sx={(theme) => ({
                         borderRadius: "9px",
                         border: 1,
                         borderColor: "divider",
-                        bgcolor: subtleBg(t),
+                        bgcolor: subtleBg(theme),
                         px: 0.25,
                       })}
                     >
                       <IconButton
                         size="small"
                         onClick={() => shiftRelatedMonth(-1)}
-                        aria-label="Предыдущий месяц"
+                        aria-label={t("card.prevMonth")}
                         sx={{ p: 0.5 }}
                       >
                         <ChevronLeftOutlined sx={{ fontSize: 18 }} />
@@ -968,7 +964,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                         size="small"
                         onClick={() => shiftRelatedMonth(1)}
                         disabled={isCurrentMonth}
-                        aria-label="Следующий месяц"
+                        aria-label={t("card.nextMonth")}
                         sx={{ p: 0.5 }}
                       >
                         <ChevronRightOutlined sx={{ fontSize: 18 }} />
@@ -980,14 +976,18 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   {(canViewAttendance || isOwnCard) && (
                     <RelatedTile
                       icon={<AccessTimeOutlined />}
-                      title="СКУД"
-                      subtitle={shiftsQ.isFetching ? "Смен: —" : `Смен: ${shiftsQ.data?.length ?? "—"}`}
+                      title={t("card.related.attendance")}
+                      subtitle={
+                        shiftsQ.isFetching
+                          ? t("card.related.shiftsCountUnknown")
+                          : t("card.related.shiftsCount", { count: shiftsQ.data?.length ?? "—" })
+                      }
                       stat={
                         <TileStat
                           loading={shiftsQ.isFetching}
                           error={Boolean(shiftsQ.error)}
                           value={monthHours.toFixed(1)}
-                          unit="ч/мес"
+                          unit={t("card.related.hoursUnit")}
                         />
                       }
                       onClick={() => setRelated("skud")}
@@ -996,18 +996,18 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   {(canViewExpenses || isOwnCard) && (
                     <RelatedTile
                       icon={<ReceiptLongOutlined />}
-                      title="Расходы"
+                      title={t("card.related.expenses")}
                       subtitle={
                         expensesQ.isFetching
-                          ? "Записей: —"
-                          : `Записей: ${expensesQ.data?.results?.length ?? "—"}`
+                          ? t("card.related.recordsCountUnknown")
+                          : t("card.related.recordsCount", { count: expensesQ.data?.results?.length ?? "—" })
                       }
                       stat={
                         <TileStat
                           loading={expensesQ.isFetching}
                           error={Boolean(expensesQ.error)}
                           value={monthExpenses.toLocaleString("ru-RU")}
-                          unit="с"
+                          unit={t("card.related.currencyUnit")}
                         />
                       }
                       onClick={() => setRelated("exp")}
@@ -1016,14 +1016,14 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   {(canViewPayroll || isOwnCard) && (
                     <RelatedTile
                       icon={<PaymentsOutlined />}
-                      title="Зарплата"
-                      subtitle="К выплате за месяц"
+                      title={t("card.related.salary")}
+                      subtitle={t("card.related.salarySubtitle")}
                       stat={
                         <TileStat
                           loading={payrollQ.isFetching}
                           error={Boolean(payrollQ.error)}
                           value={monthNetSalary.toLocaleString("ru-RU")}
-                          unit="с"
+                          unit={t("card.related.currencyUnit")}
                         />
                       }
                       onClick={() => setRelated("sal")}
@@ -1037,7 +1037,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             <Box>
               <SectionHeader
                 icon={<LocalOfferOutlined />}
-                title="Услуги сотрудника"
+                title={t("card.sections.employeeServices")}
                 action={
                   <Stack direction="row" alignItems="center" gap={1}>
                     {isLoadingServices && <CircularProgress size={16} />}
@@ -1053,7 +1053,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                         }}
                         sx={{ minWidth: 0 }}
                       >
-                        Управление
+                        {t("card.manageAction")}
                       </AppButton>
                     )}
                   </Stack>
@@ -1121,7 +1121,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                               borderColor: "divider",
                             }}
                           >
-                            {meta.price.toLocaleString("ru-RU")} с
+                            {meta.price.toLocaleString("ru-RU")} {t("card.related.currencyUnit")}
                           </Typography>
                         )}
                       </Stack>
@@ -1130,7 +1130,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 </Box>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  {isLoadingServices ? "Загрузка..." : "Нет привязанных услуг"}
+                  {isLoadingServices ? t("card.loadingServices") : t("card.noServices")}
                 </Typography>
               )}
             </Box>
@@ -1161,7 +1161,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               sx={{ fontSize: 64, mb: 2, color: "text.secondary" }}
             />
             <Typography variant="body1" color="text.secondary">
-              Выберите сотрудника из списка
+              {t("card.emptyPrompt")}
             </Typography>
           </Box>
         )}

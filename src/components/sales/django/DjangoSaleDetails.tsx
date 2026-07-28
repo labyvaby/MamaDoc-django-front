@@ -21,6 +21,7 @@ import { formatKGS, formatDateRu } from "../../../utility/format";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { PaymentInfoBlock, ListEmptyState } from "../../ui";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../../config/saleStatuses";
+import { useT } from "../../../i18n/VerticalProvider";
 
 interface DjangoSaleDetailsProps {
     sale: DjangoSale | null;
@@ -37,6 +38,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
     canEdit = true,
     canDelete = true,
 }) => {
+    const { t } = useT("sales");
     const [confirmOpen, setConfirmOpen] = React.useState(false);
 
     if (!sale) {
@@ -52,8 +54,8 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
             >
                 <ListEmptyState
                     icon={<ReceiptLongOutlinedIcon />}
-                    title="Выберите продажу"
-                    description="Нажмите на продажу в списке, чтобы увидеть состав, оплату и покупателя."
+                    title={t("details.emptyTitle")}
+                    description={t("details.emptyDescription")}
                 />
             </Box>
         );
@@ -83,14 +85,14 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                 {fromAppointment ? (
                     <Box sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}>
                         <Chip
-                            label="С приёма"
+                            label={t("details.fromVisitChip")}
                             icon={<MedicalServicesOutlinedIcon />}
                             size="small"
                             color="info"
                             variant="outlined"
                         />
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-                            Товары проданы в составе приёма — редактируются в карточке приёма.
+                            {t("details.fromVisitHint")}
                         </Typography>
                     </Box>
                 ) : (
@@ -104,13 +106,13 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                         startIcon={<EditOutlined />}
                                         onClick={() => onEdit?.(sale)}
                                     >
-                                        Изменить
+                                        {t("details.editAction")}
                                     </Button>
                                 )}
                             </Stack>
 
                             {canDelete && onDelete && (
-                                <Tooltip title="Удалить">
+                                <Tooltip title={t("details.deleteTooltip")}>
                                     <span>
                                         <IconButton
                                             size="small"
@@ -141,14 +143,14 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
                                     {fromAppointment
-                                        ? `Приём #${sale.appointmentId ?? sale.id}`
-                                        : `Продажа #${sale.id}`}
+                                        ? t("details.visitTitle", { id: sale.appointmentId ?? sale.id })
+                                        : t("details.saleTitle", { id: sale.id })}
                                 </Typography>
                                 {!fromAppointment && (
                                     <Chip
                                         label={
                                             hasDiscount
-                                                ? `Со скидкой ${sale.discountPercent}%`
+                                                ? t("details.discountedChip", { percent: sale.discountPercent })
                                                 : getSaleStatusConfig(displayStatus).label
                                         }
                                         icon={getSaleStatusConfig(displayStatus).icon}
@@ -162,7 +164,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                         {/* Дата и время */}
                         <Box>
                             <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                                Дата и время
+                                {t("details.dateTime")}
                             </Typography>
                             <Typography variant="body1">
                                 {sale.createdAt
@@ -180,7 +182,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                         {/* Информация о покупателе */}
                         <Box>
                             <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                                Покупатель
+                                {t("details.buyer")}
                             </Typography>
                             <Paper
                                 variant="outlined"
@@ -205,7 +207,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                 </Avatar>
                                 <Box sx={{ flex: 1 }}>
                                     <Typography variant="subtitle1" fontWeight={600}>
-                                        {sale.patientName || "Анонимный покупатель"}
+                                        {sale.patientName || t("details.anonymousBuyer")}
                                     </Typography>
                                     {sale.patientPhone && (
                                         <Typography variant="body2" color="text.secondary">
@@ -226,7 +228,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                         {/* Товары */}
                         <Box>
                             <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                                Товары
+                                {t("details.products")}
                             </Typography>
                             <Stack spacing={1.5}>
                                 {sale.lines?.map((line) => (
@@ -255,10 +257,10 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                         </Avatar>
                                         <Box sx={{ flex: 1 }}>
                                             <Typography variant="body1" fontWeight={600}>
-                                                {line.productName || "Товар удален"}
+                                                {line.productName || t("details.productDeleted")}
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                {line.quantity} шт × {formatKGS(line.price)}
+                                                {t("details.qtyByPrice", { quantity: line.quantity, price: formatKGS(line.price) })}
                                             </Typography>
                                         </Box>
                                         <Typography variant="body1" fontWeight={700}>
@@ -275,14 +277,14 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                         {fromAppointment ? (
                             <Box>
                                 <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                                    Оплата (в рамках приёма)
+                                    {t("details.paymentInVisit")}
                                 </Typography>
                                 <Stack spacing={1}>
                                     {[
-                                        { label: "Наличные", value: sale.paidCash },
-                                        { label: "Карта", value: sale.paidCard },
-                                        { label: "Баланс", value: sale.paidBalance },
-                                        { label: "Бонусы", value: sale.paidBonuses },
+                                        { label: t("details.paymentCash"), value: sale.paidCash },
+                                        { label: t("details.paymentCard"), value: sale.paidCard },
+                                        { label: t("details.paymentBalance"), value: sale.paidBalance },
+                                        { label: t("details.paymentBonuses"), value: sale.paidBonuses },
                                     ]
                                         .filter((row) => (row.value ?? 0) > 0)
                                         .map((row) => (
@@ -293,12 +295,12 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                         ))}
                                     {sale.paidCash === 0 && sale.paidCard === 0 && sale.paidBalance === 0 && sale.paidBonuses === 0 && (
                                         <Typography variant="body2" color="text.secondary">
-                                            Оплата по приёму не внесена
+                                            {t("details.noVisitPayment")}
                                         </Typography>
                                     )}
                                     <Divider />
                                     <Stack direction="row" justifyContent="space-between">
-                                        <Typography variant="body2" fontWeight={600}>Сумма товаров</Typography>
+                                        <Typography variant="body2" fontWeight={600}>{t("details.productsSum")}</Typography>
                                         <Typography variant="body2" fontWeight={700}>{formatKGS(sale.totalAmount ?? 0)}</Typography>
                                     </Stack>
                                 </Stack>
@@ -326,7 +328,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                 <Divider />
                                 <Box>
                                     <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                                        Комментарий
+                                        {t("details.comment")}
                                     </Typography>
                                     <Typography variant="body2">{sale.comment}</Typography>
                                 </Box>
@@ -343,9 +345,9 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                     onDelete?.(sale);
                     setConfirmOpen(false);
                 }}
-                title="Удаление продажи"
-                message="Вы уверены, что хотите удалить эту продажу? Это действие нельзя отменить, а товары вернутся на склад."
-                confirmText="Удалить"
+                title={t("details.deleteDialogTitle")}
+                message={t("details.deleteDialogMessage")}
+                confirmText={t("details.deleteConfirm")}
                 variant="error"
             />
         </>

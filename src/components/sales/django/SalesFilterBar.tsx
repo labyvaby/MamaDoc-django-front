@@ -15,20 +15,13 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { DateRangeField } from "../../ui";
+import { useT } from "../../../i18n/VerticalProvider";
 
 /** Пресеты периода для панели фильтров продаж. */
 export type SalesPeriodPreset = "today" | "week" | "month" | "all" | "custom";
 /** UI-значения фильтров (включая «любой»). */
 export type SalesPaymentUI = "all" | "cash" | "cashless";
 export type SalesStatusUI = "all" | "paid" | "debt";
-
-const PERIOD_OPTIONS: { value: SalesPeriodPreset; label: string }[] = [
-    { value: "today", label: "Сегодня" },
-    { value: "week", label: "7 дней" },
-    { value: "month", label: "Этот месяц" },
-    { value: "all", label: "Всё время" },
-    { value: "custom", label: "Период" },
-];
 
 export interface SalesFilterBarProps {
     period: SalesPeriodPreset;
@@ -66,6 +59,14 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
     hasActiveFilters,
     onReset,
 }) => {
+    const { t } = useT("sales");
+    const PERIOD_OPTIONS: { value: SalesPeriodPreset; label: string }[] = [
+        { value: "today", label: t("filterBar.periodToday") },
+        { value: "week", label: t("filterBar.periodWeek") },
+        { value: "month", label: t("filterBar.periodMonth") },
+        { value: "all", label: t("filterBar.periodAll") },
+        { value: "custom", label: t("filterBar.periodCustom") },
+    ];
     return (
         <Paper variant="outlined" elevation={0} sx={{ p: 1.5 }}>
             <Stack spacing={1.5}>
@@ -126,7 +127,7 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
                         size="small"
                         value={search}
                         onChange={(e) => onSearchChange(e.target.value)}
-                        placeholder="Пациент, товар или № чека"
+                        placeholder={t("filterBar.searchPlaceholder")}
                         sx={{ flex: 1, minWidth: 220 }}
                         InputProps={{
                             startAdornment: (
@@ -140,27 +141,27 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
                     <TextField
                         select
                         size="small"
-                        label="Оплата"
+                        label={t("filterBar.paymentLabel")}
                         value={paymentMethod}
                         onChange={(e) => onPaymentMethodChange(e.target.value as SalesPaymentUI)}
                         sx={{ minWidth: 150 }}
                     >
-                        <MenuItem value="all">Любая</MenuItem>
-                        <MenuItem value="cash">Наличные</MenuItem>
-                        <MenuItem value="cashless">Безналичные</MenuItem>
+                        <MenuItem value="all">{t("filterBar.paymentAny")}</MenuItem>
+                        <MenuItem value="cash">{t("filterBar.paymentCash")}</MenuItem>
+                        <MenuItem value="cashless">{t("filterBar.paymentCashless")}</MenuItem>
                     </TextField>
 
                     <TextField
                         select
                         size="small"
-                        label="Статус"
+                        label={t("filterBar.statusLabel")}
                         value={status}
                         onChange={(e) => onStatusChange(e.target.value as SalesStatusUI)}
                         sx={{ minWidth: 150 }}
                     >
-                        <MenuItem value="all">Любой</MenuItem>
-                        <MenuItem value="paid">Оплачено</MenuItem>
-                        <MenuItem value="debt">Долг</MenuItem>
+                        <MenuItem value="all">{t("filterBar.statusAny")}</MenuItem>
+                        <MenuItem value="paid">{t("filterBar.statusPaid")}</MenuItem>
+                        <MenuItem value="debt">{t("filterBar.statusDebt")}</MenuItem>
                     </TextField>
 
                     {hasActiveFilters && (
@@ -170,7 +171,7 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
                             startIcon={<CloseOutlined fontSize="small" />}
                             sx={{ textTransform: "none" }}
                         >
-                            Сбросить
+                            {t("filterBar.reset")}
                         </Button>
                     )}
                     <Box sx={{ flexGrow: 1 }} />

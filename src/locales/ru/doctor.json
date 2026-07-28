@@ -1,0 +1,10 @@
+{
+  "visitsTitle": "{{visit.nomPl, capitalize}} ({{date}})",
+  "searchPlaceholder": "Поиск {{patient.gen}}...",
+  "patientLabel": "{{patient.nom, capitalize}}: {{name}}",
+  "noName": "Без имени",
+  "selectVisitPrompt": "Выберите {{visit.acc}} для заполнения заключения",
+  "specialistFallback": "{{specialist.nom, capitalize}}",
+  "noConclusionYet": "{{name}} еще не оставил заключение",
+  "specialistComplaintsLabel": "Жалобы ({{specialist.nom}})"
+}

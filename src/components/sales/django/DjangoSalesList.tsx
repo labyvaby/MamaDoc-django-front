@@ -18,14 +18,17 @@ import { subtleBg } from "../../../theme";
 import { formatKGS } from "../../../utility/format";
 import { getSaleStatusConfig, getSaleStatusChipSx } from "../../../config/saleStatuses";
 import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
+import { useT } from "../../../i18n/VerticalProvider";
+
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
 
 /** Подпись способа оплаты по суммам нал/безнал. */
-const paymentLabel = (sale: DjangoSale): string | null => {
+const paymentLabel = (sale: DjangoSale, t: TFunc): string | null => {
     const cash = sale.paidCash > 0;
     const card = sale.paidCard > 0;
-    if (cash && card) return "Смеш.";
-    if (cash) return "Нал";
-    if (card) return "Безнал";
+    if (cash && card) return t("list.paymentMixed");
+    if (cash) return t("list.paymentCash");
+    if (card) return t("list.paymentCard");
     return null;
 };
 
@@ -46,6 +49,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
     loadMoreRef,
     loadingMore,
 }) => {
+    const { t } = useT("sales");
     return (
         <Paper
             elevation={0}
@@ -60,7 +64,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
         >
             <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                    Список продаж ({sales.length})
+                    {t("list.title", { count: sales.length })}
                 </Typography>
             </Box>
 
@@ -68,8 +72,8 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                 <Box sx={{ position: "absolute", inset: 0, display: "flex", pointerEvents: "none" }}>
                     <ListEmptyState
                         icon={<ReceiptLongOutlinedIcon />}
-                        title="Продаж пока нет"
-                        description="Здесь появятся оформленные продажи за выбранный период."
+                        title={t("list.emptyTitle")}
+                        description={t("list.emptyDescription")}
                     />
                 </Box>
             )}
@@ -145,10 +149,10 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                             {sale.lines
                                                 ?.map((l) => l.productName)
                                                 .filter(Boolean)
-                                                .join(", ") || "Товар удалён"}
+                                                .join(", ") || t("list.productDeleted")}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary" noWrap display="block">
-                                            №{sale.id} · {sale.patientName || "Анонимный"}
+                                            №{sale.id} · {sale.patientName || t("list.anonymous")}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary" noWrap display="block">
                                             {dayjs(sale.createdAt).format("DD.MM HH:mm")}
@@ -161,7 +165,7 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                         </Typography>
                                         {fromAppointment ? (
                                             <Chip
-                                                label="С приёма"
+                                                label={t("list.fromVisitChip")}
                                                 icon={<MedicalServicesOutlinedIcon />}
                                                 size="small"
                                                 color="info"
@@ -169,9 +173,9 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                             />
                                         ) : (
                                             <Stack direction="row" spacing={0.5} alignItems="center">
-                                                {paymentLabel(sale) && (
+                                                {paymentLabel(sale, t) && (
                                                     <Chip
-                                                        label={paymentLabel(sale)}
+                                                        label={paymentLabel(sale, t)}
                                                         size="small"
                                                         variant="outlined"
                                                         sx={{ height: 22, borderRadius: "7px" }}

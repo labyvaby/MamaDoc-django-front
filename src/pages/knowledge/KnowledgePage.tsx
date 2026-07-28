@@ -44,6 +44,7 @@ import {
   createKnowledgeArticle,
   getKnowledgeArticles,
   getKnowledgeCategories,
+  getKnowledgeSeries,
   groupArticleFeed,
   type KnowledgeArticleListItem,
   type KnowledgeArticlePayload,
@@ -247,14 +248,13 @@ const KnowledgePage: React.FC = () => {
 
   const [categoriesOpen, setCategoriesOpen] = React.useState(false);
 
-  // Имена серий для подсказки в редакторе — только из уже загруженных статей.
-  const knownSeries = React.useMemo(() => {
-    const names = new Map<string, string>();
-    for (const item of groupArticleFeed(articles)) {
-      if (item.kind === "series") names.set(item.series.key, item.series.name);
-    }
-    return [...names.values()].sort((a, b) => a.localeCompare(b, "ru"));
-  }, [articles]);
+  // Существующие серии — подсказка автокомплита в редакторе.
+  const seriesQuery = useQuery({
+    queryKey: djangoQueryKeys.knowledge.series({ orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getKnowledgeSeries({ organizationId: orgId }, signal),
+    enabled: canManage,
+  });
+  const knownSeries = seriesQuery.data ?? [];
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>

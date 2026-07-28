@@ -196,6 +196,8 @@ export const djangoQueryKeys = {
       ["django", "knowledge", "articles", params] as const,
     article: (articleId: number) =>
       ["django", "knowledge", "article", articleId] as const,
+    series: (params: Record<string, unknown>) =>
+      ["django", "knowledge", "series", params] as const,
     videos: (params: Record<string, unknown>) =>
       ["django", "knowledge", "videos", params] as const,
   },

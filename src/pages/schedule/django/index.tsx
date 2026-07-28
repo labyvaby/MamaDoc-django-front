@@ -71,6 +71,100 @@ function weekdaysLabel(weekdays: number[]): string {
   return [...weekdays].sort((a, b) => a - b).map((d) => WEEKDAY_LABELS[d]).join(", ");
 }
 
+/** dayjs считает 0=Вс, а бэкенд расписания — 0=Пн. */
+function toRuleWeekday(date: Dayjs): number {
+  return (date.day() + 6) % 7;
+}
+
+// ── Мелкие общие блоки форм ───────────────────────────────────────────────────
+
+const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+    {children}
+  </Typography>
+);
+
+/** Чипы дней недели: используются и в правиле, и в форме смены с повтором. */
+const WeekdayChips: React.FC<{
+  value: number[];
+  onToggle: (day: number) => void;
+}> = ({ value, onToggle }) => (
+  <Stack direction="row" gap={0.5} flexWrap="wrap">
+    {WEEKDAY_LABELS.map((label, d) => {
+      const active = value.includes(d);
+      return (
+        <Chip
+          key={label}
+          label={label}
+          size="small"
+          clickable
+          onClick={() => onToggle(d)}
+          sx={(t) => ({
+            borderRadius: "7px",
+            fontWeight: 500,
+            border: 1,
+            borderColor: active ? alpha(t.palette.primary.main, 0.4) : "divider",
+            color: active ? "primary.onSurface" : "text.secondary",
+            bgcolor: active
+              ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1)
+              : "transparent",
+          })}
+        />
+      );
+    })}
+  </Stack>
+);
+
+/** Сегмент-переключатель на два состояния (гайд §5.7). */
+const SegmentToggle = <T extends string>({
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (id: T) => void;
+  disabled?: boolean;
+}) => (
+  <Stack
+    direction="row"
+    sx={{
+      p: 0.5,
+      gap: 0.25,
+      border: 1,
+      borderColor: "divider",
+      borderRadius: "10px",
+      bgcolor: "background.paper",
+      width: "fit-content",
+      opacity: disabled ? 0.6 : 1,
+      pointerEvents: disabled ? "none" : "auto",
+    }}
+  >
+    {options.map(({ id, label }) => {
+      const active = value === id;
+      return (
+        <ButtonBase
+          key={id}
+          onClick={() => onChange(id)}
+          sx={{
+            px: 1.5,
+            py: 0.6,
+            borderRadius: "7px",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            color: active ? "primary.contrastText" : "text.secondary",
+            bgcolor: active ? "primary.main" : "transparent",
+            transition: "color .15s ease, background-color .15s ease",
+          }}
+        >
+          {label}
+        </ButtonBase>
+      );
+    })}
+  </Stack>
+);
+
 // ── Employee autocomplete (общий для форм) ────────────────────────────────────
 
 const EmployeePicker: React.FC<{
@@ -129,6 +223,11 @@ const RuleFormDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Филиал правила: null — «общее», такое правило видно во всех филиалах
+  // (бэкенд отдаёт «правила филиала ИЛИ branchId=null»).
+  const [ruleBranchId, setRuleBranchId] = React.useState<number | null>(branchId ?? null);
+  const { activeMembership } = usePermissions();
+  const branches = activeMembership?.branches ?? [];
 
   React.useEffect(() => {
     if (!open) return;
@@ -145,6 +244,7 @@ const RuleFormDrawer: React.FC<{
       setLunchStart(rule.lunchStart ?? "13:00");
       setLunchEnd(rule.lunchEnd ?? "14:00");
       setComment(rule.comment);
+      setRuleBranchId(rule.branchId);
     } else {
       setEmployee(null);
       setDateFrom(dayjs());
@@ -156,8 +256,9 @@ const RuleFormDrawer: React.FC<{
       setLunchStart("13:00");
       setLunchEnd("14:00");
       setComment("");
+      setRuleBranchId(branchId ?? null);
     }
-  }, [open, rule]);
+  }, [open, rule, branchId]);
 
   const toggleWeekday = (d: number) =>
     setWeekdays((prev) =>
@@ -194,6 +295,8 @@ const RuleFormDrawer: React.FC<{
           startTime,
           endTime,
           ...(hasLunch ? { lunchStart, lunchEnd } : { clearLunch: true }),
+          // tri-state: null в JSON филиал не очищает — только явный clearBranch.
+          ...(ruleBranchId == null ? { clearBranch: true } : { branchId: ruleBranchId }),
           comment: comment.trim(),
         });
       } else {
@@ -208,7 +311,7 @@ const RuleFormDrawer: React.FC<{
           lunchEnd: hasLunch ? lunchEnd : undefined,
           comment: comment.trim(),
           organizationId,
-          branchId,
+          branchId: ruleBranchId,
         });
       }
       onSaved();
@@ -283,30 +386,37 @@ const RuleFormDrawer: React.FC<{
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Дни недели *
             </Typography>
-            <Stack ref={form.anchor("weekdays")} direction="row" gap={0.5} flexWrap="wrap">
-              {WEEKDAY_LABELS.map((label, d) => {
-                const active = weekdays.includes(d);
-                return (
-                  <Chip
-                    key={label}
-                    label={label}
-                    size="small"
-                    clickable
-                    onClick={() => toggleWeekday(d)}
-                    sx={(t) => ({
-                      borderRadius: "7px",
-                      fontWeight: 500,
-                      border: 1,
-                      borderColor: active ? alpha(t.palette.primary.main, 0.4) : "divider",
-                      color: active ? "primary.onSurface" : "text.secondary",
-                      bgcolor: active
-                        ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1)
-                        : "transparent",
-                    })}
-                  />
-                );
-              })}
-            </Stack>
+            <Box ref={form.anchor("weekdays")}>
+              <WeekdayChips value={weekdays} onToggle={toggleWeekday} />
+            </Box>
+          </Stack>
+
+          <Stack spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              Филиал
+            </Typography>
+            {/* «none» вместо "" — MUI не рисует выбранный MenuItem с пустым value. */}
+            <TextField
+              select
+              size="small"
+              value={ruleBranchId == null ? "none" : String(ruleBranchId)}
+              onChange={(e) =>
+                setRuleBranchId(e.target.value === "none" ? null : Number(e.target.value))
+              }
+              disabled={busy}
+            >
+              <MenuItem value="none">Общее (все филиалы)</MenuItem>
+              {branches.map((b) => (
+                <MenuItem key={b.id} value={String(b.id)}>
+                  {b.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            {ruleBranchId == null && (
+              <Typography variant="caption" color="text.disabled">
+                Правило без филиала показывается в расписании всех филиалов.
+              </Typography>
+            )}
           </Stack>
 
           <Stack spacing={0.5}>
@@ -442,28 +552,71 @@ const ExceptionDrawer: React.FC<{
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Повтор: разовая смена уходит в исключения, «по дням недели» — в недельный
+  // шаблон (/scheduling/rules/), чтобы не заводить смены по одной.
+  const [repeat, setRepeat] = React.useState<"once" | "weekly">("once");
+  const [weekdays, setWeekdays] = React.useState<number[]>([]);
+  const [dateTo, setDateTo] = React.useState<Dayjs>(dayjs().add(1, "year"));
+  const [hasLunch, setHasLunch] = React.useState(true);
+  const [lunchStart, setLunchStart] = React.useState("13:00");
+  const [lunchEnd, setLunchEnd] = React.useState("14:00");
+
+  const isRule = kind === "extra" && repeat === "weekly";
 
   React.useEffect(() => {
     if (open) {
+      const start = initialDate ?? dayjs();
       setEmployee(null);
-      setDate(initialDate ?? dayjs());
+      setDate(start);
       setKind(initialKind);
       setStartTime("09:00");
       setEndTime("13:00");
       setComment("");
       setError(null);
       setBusy(false);
+      setRepeat("once");
+      // Предзаполняем днём недели выбранной даты: пользователь пришёл из
+      // конкретного дня календаря, «повторять как сегодня» — ожидаемый сценарий.
+      setWeekdays([toRuleWeekday(start)]);
+      setDateTo(start.add(1, "year"));
+      setHasLunch(true);
+      setLunchStart("13:00");
+      setLunchEnd("14:00");
     }
   }, [open, initialDate, initialKind]);
+
+  // При переключении на график время по умолчанию — полный рабочий день,
+  // а не половина (у разовой доп. смены дефолт 09:00–13:00).
+  const handleRepeatChange = (next: "once" | "weekly") => {
+    setRepeat(next);
+    if (next === "weekly" && startTime === "09:00" && endTime === "13:00") setEndTime("17:00");
+  };
+
+  const toggleWeekday = (d: number) =>
+    setWeekdays((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b),
+    );
 
   // Порядок ключей = порядок полей: в первое проблемное уйдёт фокус.
   const form = useFormValidation({
     employee: employee ? null : "Выберите сотрудника",
-    date: date.isValid() ? null : "Укажите дату",
+    date: isRule || date.isValid() ? null : "Укажите дату",
+    weekdays: !isRule || weekdays.length > 0 ? null : "Выберите хотя бы один день недели",
+    period: !isRule
+      ? null
+      : !date.isValid() || !dateTo.isValid()
+        ? "Укажите период действия"
+        : date.isAfter(dateTo)
+          ? "Начало периода позже его конца"
+          : null,
     hours:
-      kind !== "extra" || startTime < endTime
+      (kind !== "extra" && !isRule) || startTime < endTime
         ? null
         : "Начало смены должно быть раньше конца",
+    lunch:
+      !isRule || !hasLunch || lunchStart < lunchEnd
+        ? null
+        : "Начало обеда должно быть раньше его конца",
   });
 
   const handleSubmit = async () => {
@@ -471,16 +624,32 @@ const ExceptionDrawer: React.FC<{
     setError(null);
     setBusy(true);
     try {
-      await createScheduleException({
-        employeeId: employee!.id,
-        date: date.format("YYYY-MM-DD"),
-        kind,
-        startTime: kind === "extra" ? startTime : undefined,
-        endTime: kind === "extra" ? endTime : undefined,
-        comment: comment.trim(),
-        organizationId,
-        branchId,
-      });
+      if (isRule) {
+        await createScheduleRule({
+          employeeId: employee!.id,
+          dateFrom: date.format("YYYY-MM-DD"),
+          dateTo: dateTo.format("YYYY-MM-DD"),
+          weekdays,
+          startTime,
+          endTime,
+          lunchStart: hasLunch ? lunchStart : undefined,
+          lunchEnd: hasLunch ? lunchEnd : undefined,
+          comment: comment.trim(),
+          organizationId,
+          branchId,
+        });
+      } else {
+        await createScheduleException({
+          employeeId: employee!.id,
+          date: date.format("YYYY-MM-DD"),
+          kind,
+          startTime: kind === "extra" ? startTime : undefined,
+          endTime: kind === "extra" ? endTime : undefined,
+          comment: comment.trim(),
+          organizationId,
+          branchId,
+        });
+      }
       onSaved();
       onClose();
     } catch (e) {
@@ -490,7 +659,11 @@ const ExceptionDrawer: React.FC<{
     }
   };
 
-  const HeaderIcon = initialKind === "extra" ? AddOutlined : EventBusyOutlined;
+  const HeaderIcon = isRule
+    ? CalendarMonthOutlined
+    : initialKind === "extra"
+      ? AddOutlined
+      : EventBusyOutlined;
 
   return (
     <Drawer
@@ -510,7 +683,7 @@ const ExceptionDrawer: React.FC<{
         <Stack direction="row" alignItems="center" spacing={1}>
           <HeaderIcon color="primary" />
           <Typography variant="h6" fontWeight={600}>
-            {title}
+            {isRule ? "Постоянный график" : title}
           </Typography>
         </Stack>
         <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть" edge="end">
@@ -533,32 +706,17 @@ const ExceptionDrawer: React.FC<{
             )}
           </Stack>
           <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Дата *
-            </Typography>
-            <CustomDatePicker
-              value={date}
-              onChange={(v) => v && setDate(v)}
-              slotProps={{
-                textField: {
-                  size: "small",
-                  fullWidth: true,
-                  error: Boolean(form.errorOf("date")),
-                  helperText: form.errorOf("date") ?? undefined,
-                  ref: form.anchor("date"),
-                },
-              }}
-            />
-          </Stack>
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Тип *
-            </Typography>
+            <FieldLabel>Тип *</FieldLabel>
             <TextField
               select
               size="small"
               value={kind}
-              onChange={(e) => setKind(e.target.value as ScheduleExceptionKind)}
+              onChange={(e) => {
+                const next = e.target.value as ScheduleExceptionKind;
+                setKind(next);
+                // Повтор осмыслен только для рабочей смены (недельный шаблон).
+                if (next !== "extra") setRepeat("once");
+              }}
               disabled={busy}
             >
               <MenuItem value="day_off">Выходной</MenuItem>
@@ -566,11 +724,83 @@ const ExceptionDrawer: React.FC<{
               <MenuItem value="extra">Смена</MenuItem>
             </TextField>
           </Stack>
+
+          {kind === "extra" && (
+            <Stack spacing={0.75}>
+              <FieldLabel>Повтор</FieldLabel>
+              <SegmentToggle
+                value={repeat}
+                onChange={handleRepeatChange}
+                disabled={busy}
+                options={[
+                  { id: "once", label: "Разово" },
+                  { id: "weekly", label: "По дням недели" },
+                ]}
+              />
+              <Typography variant="caption" color="text.disabled">
+                {isRule
+                  ? "Постоянный график: смены появятся во все выбранные дни недели за период."
+                  : "Одна смена на выбранную дату."}
+              </Typography>
+            </Stack>
+          )}
+
+          {isRule ? (
+            <>
+              <Stack spacing={0.5}>
+                <FieldLabel>Дни недели *</FieldLabel>
+                <Box ref={form.anchor("weekdays")}>
+                  <WeekdayChips value={weekdays} onToggle={toggleWeekday} />
+                </Box>
+                {form.errorOf("weekdays") && (
+                  <Typography variant="caption" color="error">
+                    {form.errorOf("weekdays")}
+                  </Typography>
+                )}
+              </Stack>
+              <Stack spacing={0.5}>
+                <FieldLabel>Период действия</FieldLabel>
+                <Stack ref={form.anchor("period")} direction="row" spacing={1}>
+                  <CustomDatePicker
+                    value={date}
+                    onChange={(v) => v && setDate(v)}
+                    slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
+                  />
+                  <CustomDatePicker
+                    value={dateTo}
+                    onChange={(v) => v && setDateTo(v)}
+                    slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
+                  />
+                </Stack>
+                {form.errorOf("period") && (
+                  <Typography variant="caption" color="error">
+                    {form.errorOf("period")}
+                  </Typography>
+                )}
+              </Stack>
+            </>
+          ) : (
+            <Stack spacing={0.5}>
+              <FieldLabel>Дата *</FieldLabel>
+              <CustomDatePicker
+                value={date}
+                onChange={(v) => v && setDate(v)}
+                slotProps={{
+                  textField: {
+                    size: "small",
+                    fullWidth: true,
+                    error: Boolean(form.errorOf("date")),
+                    helperText: form.errorOf("date") ?? undefined,
+                    ref: form.anchor("date"),
+                  },
+                }}
+              />
+            </Stack>
+          )}
+
           {kind === "extra" && (
             <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Время смены *
-              </Typography>
+              <FieldLabel>{isRule ? "Рабочие часы *" : "Время смены *"}</FieldLabel>
               <Stack direction="row" spacing={1} alignItems="center">
                 <TextField
                   type="time"
@@ -595,6 +825,52 @@ const ExceptionDrawer: React.FC<{
               </Stack>
             </Stack>
           )}
+
+          {isRule && (
+            <Stack spacing={0.5}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <FieldLabel>Обед</FieldLabel>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => setHasLunch((v) => !v)}
+                  sx={{ textTransform: "none", fontSize: "0.75rem" }}
+                  disabled={busy}
+                >
+                  {hasLunch ? "Убрать обед" : "Добавить обед"}
+                </Button>
+              </Stack>
+              {hasLunch && (
+                <>
+                  <Stack ref={form.anchor("lunch")} direction="row" spacing={1} alignItems="center">
+                    <TextField
+                      type="time"
+                      size="small"
+                      value={lunchStart}
+                      onChange={(e) => setLunchStart(e.target.value)}
+                      sx={{ flex: 1 }}
+                      disabled={busy}
+                    />
+                    <Typography color="text.secondary">—</Typography>
+                    <TextField
+                      type="time"
+                      size="small"
+                      value={lunchEnd}
+                      onChange={(e) => setLunchEnd(e.target.value)}
+                      sx={{ flex: 1 }}
+                      disabled={busy}
+                    />
+                  </Stack>
+                  {form.errorOf("lunch") && (
+                    <Typography variant="caption" color="error">
+                      {form.errorOf("lunch")}
+                    </Typography>
+                  )}
+                </>
+              )}
+            </Stack>
+          )}
+
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               Комментарий
@@ -622,7 +898,7 @@ const ExceptionDrawer: React.FC<{
           disabled={busy}
           startIcon={busy ? <CircularProgress size={20} color="inherit" /> : undefined}
         >
-          {busy ? "Сохранение…" : "Добавить"}
+          {busy ? "Сохранение…" : isRule ? "Добавить график" : "Добавить"}
         </Button>
       </Box>
     </Drawer>
@@ -998,6 +1274,7 @@ const DjangoSchedulePage: React.FC = () => {
                     <TableCell sx={{ fontWeight: 600 }}>Сотрудник</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Период</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Дни</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Филиал</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Часы</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Обед</TableCell>
                     {canManage && (
@@ -1016,6 +1293,15 @@ const DjangoSchedulePage: React.FC = () => {
                         {dayjs(rule.dateTo).format("DD.MM.YY")}
                       </TableCell>
                       <TableCell>{weekdaysLabel(rule.weekdays)}</TableCell>
+                      <TableCell>
+                        {rule.branchName ? (
+                          rule.branchName
+                        ) : (
+                          <Tooltip title="Правило без филиала — видно в расписании всех филиалов">
+                            <Chip label="Общее" size="small" variant="outlined" color="warning" />
+                          </Tooltip>
+                        )}
+                      </TableCell>
                       <TableCell sx={{ fontFamily: "monospace" }}>
                         {rule.startTime}–{rule.endTime}
                       </TableCell>

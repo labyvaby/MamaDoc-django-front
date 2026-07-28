@@ -35,6 +35,7 @@ import {
 import { searchPatients, type DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
+import { useT } from "../../i18n/VerticalProvider";
 
 type Scenario = "ours" | "external";
 
@@ -72,6 +73,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   initialDoseNumber = null,
   initialInjectionSite = null,
 }) => {
+  const { t } = useT("vaccinations");
   const queryClient = useQueryClient();
   const orgId = useApiOrgId();
   const { activeBranch, activeEmployee } = usePermissions();
@@ -270,7 +272,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    patient: patient ? null : "Выберите пациента",
+    patient: patient ? null : t("recordDrawer.patientRequired"),
     vaccineId: vaccineId !== "" ? null : "Выберите вакцину",
     batchId:
       scenario === "external" || batchId !== "" ? null : "Выберите партию вакцины",
@@ -501,14 +503,14 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
         </TextField>
 
         <TextField
-          label="ID осмотра врача (необязательно)"
+          label={t("recordDrawer.visitIdLabel")}
           value={appointmentId}
           onChange={(e) => setAppointmentId(e.target.value.replace(/[^\d]/g, ""))}
           fullWidth
           helperText={
             scenario === "ours"
-              ? "Указан — строка вакцины попадёт в счёт этого осмотра"
-              : "Для внешней прививки необязателен"
+              ? t("recordDrawer.visitIdHelperLinked")
+              : t("recordDrawer.visitIdHelperExternal")
           }
         />
 

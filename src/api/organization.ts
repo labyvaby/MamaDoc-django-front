@@ -1,4 +1,6 @@
 import { apiRequest } from "./client";
+import { DEFAULT_VERTICAL, type Vertical } from "../i18n/types";
+import { isVertical } from "../i18n/glossary";
 
 // ── Organization shape (mirrors OrganizationPayload rename='camel') ──────────
 
@@ -22,6 +24,11 @@ export interface DjangoOrganization {
    *  08.07.2026; в /auth/me и /auth/context поле относительное `/media/...`). */
   logoUrl: string | null;
   themeConfig?: Record<string, any> | null;
+  /** Вертикаль бизнеса — определяет терминологию интерфейса
+   *  («пациент» для клиники, «клиент» для салона красоты). Choices на бэке:
+   *  MamaDoc/backend_ticket_organization_vertical.md. Отсутствующее или
+   *  незнакомое значение нормализуется в DEFAULT_VERTICAL. */
+  vertical: Vertical;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,6 +41,7 @@ export interface UpdateOrganizationPayload {
   patientScope?: PatientScope;
   appointmentOverlapMode?: AppointmentOverlapMode;
   themeConfig?: Record<string, any> | null;
+  vertical?: Vertical;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -94,9 +102,11 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
  *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
 type DjangoOrganizationWire = Omit<
   DjangoOrganization,
-  "logoUrl" | "appointmentOverlapMode" | "themeConfig"
+  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical"
 > &
-  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">>;
+  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">> & {
+    vertical?: string | null;
+  };
 
 function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization {
   return {
@@ -104,6 +114,7 @@ function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization 
     logoUrl: raw.logoUrl ?? null,
     appointmentOverlapMode: raw.appointmentOverlapMode ?? "forbid",
     themeConfig: raw.themeConfig ?? null,
+    vertical: isVertical(raw.vertical) ? raw.vertical : DEFAULT_VERTICAL,
   };
 }
 

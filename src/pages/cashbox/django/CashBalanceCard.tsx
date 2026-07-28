@@ -10,6 +10,7 @@ import { AppCard } from "../../../components/ui";
 import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import { formatSom, FlowBreakdownBlock, type FlowBreakdownRow } from "./FlowCard";
+import { tt } from "../../../i18n/t";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function cashFlowNumbers(s: CashboxSummary | undefined): CashFlowNumbers {
     inflow: payments + sales,
     outflow: refunds + expenses + supplies,
     breakdown: [
-      { key: "payment", label: "Оплаты приёмов", amount: payments, direction: 1 },
+      { key: "payment", label: tt("cashbox:paymentsBreakdown"), amount: payments, direction: 1 },
       { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
       { key: "refund", label: "Возвраты", amount: refunds, direction: -1 },
       { key: "expense", label: "Расходы", amount: expenses, direction: -1 },

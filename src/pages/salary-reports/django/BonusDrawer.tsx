@@ -30,6 +30,7 @@ import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/st
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
 import { useFormValidation } from "../../../hooks/useFormValidation";
+import { useT } from "../../../i18n/VerticalProvider";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ interface BonusDrawerProps {
   organizationId?: number;
 }
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Ошибка");
+const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
   month,
   organizationId,
 }) => {
+  const { t } = useT("salaryReports");
   const queryClient = useQueryClient();
 
   // Form state
@@ -148,21 +150,21 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
       setReason("");
       invalidate();
     },
-    onError: (e: unknown) => setError(errMsg(e)),
+    onError: (e: unknown) => setError(errMsg(e, t("notify.genericError"))),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteBonus(id),
     onSuccess: invalidate,
-    onError: (e: unknown) => setError(errMsg(e)),
+    onError: (e: unknown) => setError(errMsg(e, t("notify.genericError"))),
   });
 
   const amountNum = parseFloat(amount.replace(",", ".")) || 0;
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
-    employee: employee ? null : "Выберите сотрудника",
-    amount: amountNum > 0 ? null : "Укажите сумму больше нуля",
-    reason: reason.trim() ? null : "Укажите причину надбавки",
+    employee: employee ? null : t("bonusDrawer.employeeRequired"),
+    amount: amountNum > 0 ? null : t("bonusDrawer.amountRequired"),
+    reason: reason.trim() ? null : t("bonusDrawer.reasonRequired"),
   });
   const busy = createMutation.isPending || deleteMutation.isPending;
 
@@ -206,14 +208,14 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
           <PaidOutlined sx={{ color: "success.main" }} />
           <Box>
             <Typography variant="h6" fontWeight={600}>
-              Единоразовая надбавка
+              {t("bonusDrawer.title")}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {monthLabel} · войдёт в колонку «Надбавка» отчёта
+              {t("bonusDrawer.subtitle", { month: monthLabel })}
             </Typography>
           </Box>
         </Stack>
-        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть" edge="end">
+        <IconButton onClick={busy ? undefined : onClose} aria-label={t("common:actions.close")} edge="end">
           <CloseOutlined />
         </IconButton>
       </Box>
@@ -233,7 +235,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
           {/* Сотрудник */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Сотрудник *
+              {t("bonusDrawer.employeeLabel")}
             </Typography>
             <Autocomplete
               options={
@@ -256,7 +258,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                 <TextField
                   {...params}
                   size="small"
-                  placeholder="Введите имя сотрудника..."
+                  placeholder={t("bonusDrawer.employeePlaceholder")}
                   {...form.field("employee")}
                   InputProps={{
                     ...params.InputProps,
@@ -269,14 +271,14 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                   }}
                 />
               )}
-              noOptionsText="Сотрудники не найдены"
+              noOptionsText={t("bonusDrawer.noEmployeesFound")}
             />
           </Stack>
 
           {/* Сумма */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Сумма *
+              {t("bonusDrawer.amountLabel")}
             </Typography>
             <TextField
               size="small"
@@ -289,7 +291,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
               placeholder="0"
               inputProps={{ inputMode: "decimal" }}
               InputProps={{
-                endAdornment: <InputAdornment position="end">с</InputAdornment>,
+                endAdornment: <InputAdornment position="end">{t("common:currency.short")}</InputAdornment>,
               }}
               disabled={busy}
               {...form.field("amount")}
@@ -299,7 +301,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
           {/* Причина */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Причина *
+              {t("bonusDrawer.reasonLabel")}
             </Typography>
             <TextField
               size="small"
@@ -311,7 +313,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                 setError(null);
                 setReason(e.target.value);
               }}
-              placeholder="Например: переработка в праздники"
+              placeholder={t("bonusDrawer.reasonPlaceholder")}
               disabled={busy}
               inputProps={{ maxLength: 255 }}
               {...form.field("reason")}
@@ -332,7 +334,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                 display="block"
                 mb={1}
               >
-                Уже начислено · {employee.fullName}
+                {t("bonusDrawer.alreadyAccrued", { name: employee.fullName })}
               </Typography>
 
               {bonusesQuery.isLoading && (
@@ -343,7 +345,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
 
               {!bonusesQuery.isLoading && bonuses.length === 0 && (
                 <Typography variant="caption" color="text.disabled">
-                  В этом месяце надбавок ещё нет
+                  {t("bonusDrawer.noBonusesYetMonth")}
                 </Typography>
               )}
 
@@ -358,7 +360,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                 >
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="body2" noWrap>
-                      {b.reason || "Без причины"}
+                      {b.reason || t("bonusDrawer.noReason")}
                     </Typography>
                     <Typography variant="caption" color="text.disabled">
                       {dayjs(b.createdAt).format("DD.MM")}
@@ -369,7 +371,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
                     <Typography variant="body2" fontWeight={600} color="success.main">
                       + {formatKGS(b.amount)}
                     </Typography>
-                    <Tooltip title="Удалить надбавку">
+                    <Tooltip title={t("bonusDrawer.deleteTooltip")}>
                       <span>
                         <IconButton
                           size="small"
@@ -387,7 +389,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
               {bonuses.length > 0 && (
                 <Stack direction="row" justifyContent="space-between" pt={1}>
                   <Typography variant="caption" color="text.secondary">
-                    Итого за месяц
+                    {t("bonusDrawer.totalMonth")}
                   </Typography>
                   <Typography variant="caption" fontWeight={600}>
                     {formatKGS(String(monthTotal))}
@@ -413,7 +415,7 @@ const BonusDrawer: React.FC<BonusDrawerProps> = ({
             ) : undefined
           }
         >
-          {createMutation.isPending ? "Начисление…" : "Начислить надбавку"}
+          {createMutation.isPending ? t("bonusDrawer.submitting") : t("bonusDrawer.submit")}
         </Button>
       </Box>
     </Drawer>

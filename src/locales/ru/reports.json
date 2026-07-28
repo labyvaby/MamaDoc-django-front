@@ -1,0 +1,21 @@
+{
+  "cards": {
+    "paidVisits": "Оплачено {{visit.genPl}}",
+    "visitsSlashProcedures": "{{visit.nomPl, capitalize}} / Процедуры"
+  },
+  "productsInVisits": "Товары в {{visit.prePl}}",
+  "soldInVisits": "Продано в {{visit.prePl}}",
+  "dayVisitsCount": "{{visit.nomPl, capitalize}}: {{count}}",
+  "tableHeaders": {
+    "date": "Дата",
+    "visits": "{{visit.nomPl, capitalize}}",
+    "procedures": "Процедуры",
+    "waiting": "В ожидании",
+    "medServices": "Мед. услуги",
+    "products": "Товары",
+    "cash": "Наличные",
+    "cashless": "Безнал",
+    "insurance": "Страховка",
+    "debt": "Долг"
+  }
+}

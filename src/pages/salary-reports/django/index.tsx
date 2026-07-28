@@ -44,6 +44,7 @@ import { DjangoAddExpenseDrawer } from "../../../components/expenses/DjangoAddEx
 import { PageHeader, MonthNavigation } from "../../../components/ui";
 import { AppointmentsSummaryCards } from "../../reports/components/AppointmentsSummaryCards";
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useT } from "../../../i18n/VerticalProvider";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
@@ -219,7 +220,8 @@ const RoleTable: React.FC<{
 };
 
 const DjangoSalaryReportsPage: React.FC = () => {
-  usePageTitle("Отчёт по зарплате");
+  const { t } = useT("salaryReports");
+  usePageTitle(t("page.title"));
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
   
@@ -332,9 +334,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
     try {
       await lockPeriod(year, month);
       await query.refetch();
-      notify?.({ type: "success", message: "Месяц заморожен" });
+      notify?.({ type: "success", message: t("notify.monthFrozen") });
     } catch (e) {
-      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
+      notify?.({ type: "error", message: e instanceof Error ? e.message : t("notify.genericError") });
     } finally {
       setBusy(false);
     }
@@ -347,9 +349,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
       await query.refetch();
       setRecalcOpen(false);
       setReason("");
-      notify?.({ type: "success", message: "Пересчитано" });
+      notify?.({ type: "success", message: t("notify.recalculated") });
     } catch (e) {
-      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
+      notify?.({ type: "error", message: e instanceof Error ? e.message : t("notify.genericError") });
     } finally {
       setBusy(false);
     }
@@ -361,9 +363,9 @@ const DjangoSalaryReportsPage: React.FC = () => {
       await unlockPeriod(year, month);
       await query.refetch();
       setUnlockOpen(false);
-      notify?.({ type: "success", message: "Месяц разморожен — отчёт снова живой" });
+      notify?.({ type: "success", message: t("notify.unfrozen") });
     } catch (e) {
-      notify?.({ type: "error", message: e instanceof Error ? e.message : "Ошибка" });
+      notify?.({ type: "error", message: e instanceof Error ? e.message : t("notify.genericError") });
     } finally {
       setBusy(false);
     }
@@ -385,7 +387,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
-        title="Отчёт по зарплате"
+        title={t("page.title")}
         showTitle={false}
         showSearch={false}
         dateNavigation={
@@ -402,13 +404,13 @@ const DjangoSalaryReportsPage: React.FC = () => {
             {report && (
               <Chip
                 size="small"
-                label={report.status === "locked" ? "Заморожен" : "Черновик"}
+                label={report.status === "locked" ? t("status.locked") : t("status.draft")}
                 color={report.status === "locked" ? "success" : "default"}
                 variant={report.status === "locked" ? "filled" : "outlined"}
               />
             )}
             {canManage && report?.status === "draft" && (
-              <Tooltip title="Единоразовая надбавка сотруднику">
+              <Tooltip title={t("tooltips.bonusPerEmployee")}>
                 <Button
                   size="small"
                   variant="outlined"
@@ -417,12 +419,12 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   startIcon={compactHeader ? undefined : <PaidOutlinedIcon />}
                   sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
                 >
-                  {compactHeader ? <PaidOutlinedIcon fontSize="small" /> : "Надбавка"}
+                  {compactHeader ? <PaidOutlinedIcon fontSize="small" /> : t("actions.bonusButton")}
                 </Button>
               </Tooltip>
             )}
             {canManage && report?.status === "draft" && (
-              <Tooltip title="Настройки месяца">
+              <Tooltip title={t("tooltips.monthSettings")}>
                 <Button
                   size="small"
                   variant="outlined"
@@ -432,25 +434,25 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   onClick={() => setSettingsDialogOpen(true)}
                   sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
                 >
-                  {compactHeader ? <SettingsIcon fontSize="small" /> : "Настройки месяца"}
+                  {compactHeader ? <SettingsIcon fontSize="small" /> : t("actions.monthSettings")}
                 </Button>
               </Tooltip>
             )}
             {/* Срез по филиалу — всегда живой расчёт; заморозка (org-wide
                 снимки) доступна только в режиме «Все филиалы». */}
             {branchFilterId != null && (
-              <Tooltip title="Срез по филиалу: приёмы и авансы этого филиала, всегда живой расчёт. Часы СКУД и заморозка — в режиме «Все филиалы» (у смен нет филиала).">
+              <Tooltip title={t("branchSlice.tooltip")}>
                 <Chip
                   size="small"
                   color="info"
                   variant="outlined"
-                  label={`Срез: ${activeBranch?.name ?? "филиал"}`}
+                  label={t("branchSlice.label", { name: activeBranch?.name ?? t("branchSlice.labelFallback") })}
                 />
               </Tooltip>
             )}
             {canManage && branchFilterId == null && report?.status === "draft" && (
               <Button size="small" variant="outlined" disabled={busy} onClick={handleLock}>
-                Заморозить
+                {t("actions.freeze")}
               </Button>
             )}
             {canManage && branchFilterId == null && report?.status === "locked" && (
@@ -460,7 +462,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 disabled={busy}
                 onClick={() => setRecalcOpen(true)}
               >
-                Пересчитать
+                {t("actions.recalculate")}
               </Button>
             )}
             {canManage && branchFilterId == null && report?.status === "locked" && (
@@ -471,7 +473,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 disabled={busy}
                 onClick={() => setUnlockOpen(true)}
               >
-                Разморозить
+                {t("actions.unfreeze")}
               </Button>
             )}
           </Stack>
@@ -480,7 +482,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
 
       {needsOrg ? (
         <Box sx={{ px: 3, pt: 2 }}>
-          <Alert severity="info">Выберите организацию, чтобы увидеть отчёт.</Alert>
+          <Alert severity="info">{t("emptyStates.selectOrg")}</Alert>
         </Box>
       ) : (
         <Box
@@ -504,15 +506,15 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 showBaseCards={canViewReports}
                 extraCards={[
                   {
-                    title: "Аванс",
+                    title: t("summaryCards.advanceTitle"),
                     primaryValue: formatKGS(totalAdvances),
-                    secondaryText: "Выплачено авансом",
+                    secondaryText: t("summaryCards.advanceSubtitle"),
                     color: "primary",
                   },
                   {
-                    title: "К выплате",
+                    title: t("summaryCards.netTitle"),
                     primaryValue: formatKGS(totalNet),
-                    secondaryText: "Итого за месяц",
+                    secondaryText: t("summaryCards.netSubtitle"),
                     color: "info",
                   },
                 ]}
@@ -528,13 +530,13 @@ const DjangoSalaryReportsPage: React.FC = () => {
 
           {query.error && (
             <Alert severity="error">
-              {query.error instanceof Error ? query.error.message : "Ошибка загрузки"}
+              {query.error instanceof Error ? query.error.message : t("emptyStates.loadError")}
             </Alert>
           )}
 
           {!query.isLoading && !hasRows && !query.error && (
             <Typography variant="body2" color="text.disabled" sx={{ py: 4, textAlign: "center" }}>
-              За выбранный месяц начислений нет.
+              {t("emptyStates.noAccrualsMonth")}
             </Typography>
           )}
 
@@ -546,11 +548,11 @@ const DjangoSalaryReportsPage: React.FC = () => {
               <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {(() => {
                   const roleGroups = [
-                    { label: "Врачи", roleNames: ["doctor"] },
-                    { label: "Медсёстры / Процедуры", roleNames: ["nurse", "procedure"] },
-                    { label: "Регистраторы", roleNames: ["registrator", "receptionist"] },
-                    { label: "Администраторы", roleNames: ["admin", "accountant", "superadmin"] },
-                    { label: "Техперсонал / Санитарки", roleNames: ["cleaner", "сleaner"] },
+                    { label: t("roleGroups.doctors"), roleNames: ["doctor"] },
+                    { label: t("roleGroups.nursesProcedure"), roleNames: ["nurse", "procedure"] },
+                    { label: t("roleGroups.registrators"), roleNames: ["registrator", "receptionist"] },
+                    { label: t("roleGroups.admins"), roleNames: ["admin", "accountant", "superadmin"] },
+                    { label: t("roleGroups.technical"), roleNames: ["cleaner", "сleaner"] },
                   ];
 
                   const rendered: React.ReactNode[] = [];
@@ -623,7 +625,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                             color="text.secondary"
                             sx={{ textTransform: "uppercase", letterSpacing: 0.5, fontSize: "0.65rem" }}
                           >
-                            Прочие
+                            {t("roleGroups.other")}
                           </Typography>
                         </Box>
                         <Stack spacing={0.75}>
@@ -652,11 +654,11 @@ const DjangoSalaryReportsPage: React.FC = () => {
               <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {(() => {
                   const roleGroups: { label: string; roleNames: string[]; cols: ColumnConfig }[] = [
-                    { label: "Врачи", roleNames: ["doctor"], cols: COLUMNS_DOCTOR },
-                    { label: "Медсёстры / Процедуры", roleNames: ["nurse", "procedure"], cols: COLUMNS_NURSE },
-                    { label: "Регистраторы", roleNames: ["registrator", "receptionist"], cols: COLUMNS_REGISTRATOR },
-                    { label: "Администраторы", roleNames: ["admin", "accountant", "superadmin"], cols: COLUMNS_ADMIN },
-                    { label: "Техперсонал / Санитарки", roleNames: ["cleaner", "сleaner"], cols: COLUMNS_ADMIN },
+                    { label: t("roleGroups.doctors"), roleNames: ["doctor"], cols: COLUMNS_DOCTOR },
+                    { label: t("roleGroups.nursesProcedure"), roleNames: ["nurse", "procedure"], cols: COLUMNS_NURSE },
+                    { label: t("roleGroups.registrators"), roleNames: ["registrator", "receptionist"], cols: COLUMNS_REGISTRATOR },
+                    { label: t("roleGroups.admins"), roleNames: ["admin", "accountant", "superadmin"], cols: COLUMNS_ADMIN },
+                    { label: t("roleGroups.technical"), roleNames: ["cleaner", "сleaner"], cols: COLUMNS_ADMIN },
                   ];
 
                   const rendered: React.ReactNode[] = [];
@@ -696,26 +698,26 @@ const DjangoSalaryReportsPage: React.FC = () => {
                         <Table size="small" sx={{ fontSize: "0.75rem", "& .MuiTableCell-root": { fontSize: "0.75rem", py: 0.6, px: 1 } }}>
                           <TableHead>
                             <TableRow>
-                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Сотрудник</TableCell>
+                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.employee")}</TableCell>
                               {cols.hours && !report?.settings?.merge_night_into_day && (
                                 <>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Дневные</TableCell>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Ночные</TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.dayHours")}</TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.nightHours")}</TableCell>
                                 </>
                               )}
                               {cols.hours && (
-                                <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Часы</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.hours")}</TableCell>
                               )}
-                              {cols.appointments && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{cols.appointmentsLabel ?? "Все приёмы"}</TableCell>}
-                              {cols.distributed && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "info.main" }}>Распределённые</TableCell>}
-                              {cols.createdBy && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "success.main" }}>Создал</TableCell>}
-                              {cols.statusWaiting && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Ожидание</TableCell>}
-                              {cols.statusCancelled && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Отменены</TableCell>}
-                              {cols.statusDiscount && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Со скидкой</TableCell>}
-                              {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Бонусы</TableCell>}
-                              {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Зарплата</TableCell>}
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
+                              {cols.appointments && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{cols.appointmentsLabel ?? t("columns.allAppointments")}</TableCell>}
+                              {cols.distributed && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "info.main" }}>{t("columns.distributed")}</TableCell>}
+                              {cols.createdBy && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "success.main" }}>{t("columns.createdBy")}</TableCell>}
+                              {cols.statusWaiting && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.waiting")}</TableCell>}
+                              {cols.statusCancelled && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.cancelled")}</TableCell>}
+                              {cols.statusDiscount && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.discount")}</TableCell>}
+                              {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.bonusesColumn")}</TableCell>}
+                              {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.salary")}</TableCell>}
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>{t("columns.advance")}</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>{t("columns.netSalary")}</TableCell>
                               {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}
                             </TableRow>
                           </TableHead>
@@ -761,23 +763,23 @@ const DjangoSalaryReportsPage: React.FC = () => {
                           }}
                         >
                           <Typography variant="subtitle2" fontWeight={800} color="text.secondary">
-                            Прочие
+                            {t("roleGroups.other")}
                           </Typography>
                         </Box>
                         <Table size="small" sx={{ fontSize: "0.75rem", "& .MuiTableCell-root": { fontSize: "0.75rem", py: 0.6, px: 1 } }}>
                           <TableHead>
                             <TableRow>
-                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Сотрудник</TableCell>
+                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.employee")}</TableCell>
                               {!report?.settings?.merge_night_into_day && (
                                 <>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Дневные</TableCell>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Ночные</TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.dayHours")}</TableCell>
+                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.nightHours")}</TableCell>
                                 </>
                               )}
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Часы</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>Зарплата</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>Аванс</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>К выплате</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.hours")}</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.salary")}</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>{t("columns.advance")}</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>{t("columns.netSalary")}</TableCell>
                               {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}
                             </TableRow>
                           </TableHead>
@@ -810,50 +812,48 @@ const DjangoSalaryReportsPage: React.FC = () => {
       )}
 
       <Dialog open={recalcOpen} onClose={() => (busy ? undefined : setRecalcOpen(false))}>
-        <DialogTitle>Пересчитать месяц</DialogTitle>
+        <DialogTitle>{t("dialogs.recalcTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            Снимки будут пересчитаны заново. Укажите причину (для истории).
+            {t("dialogs.recalcDescription")}
           </DialogContentText>
           <TextField
             autoFocus
             fullWidth
             multiline
             minRows={2}
-            label="Причина"
+            label={t("dialogs.reasonLabel")}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRecalcOpen(false)} disabled={busy} color="inherit">
-            Отмена
+            {t("common:actions.cancel")}
           </Button>
           <Button
             onClick={handleRecalc}
             disabled={busy || !reason.trim()}
             variant="contained"
           >
-            Пересчитать
+            {t("actions.recalculate")}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={unlockOpen} onClose={() => (busy ? undefined : setUnlockOpen(false))}>
-        <DialogTitle>Разморозить месяц</DialogTitle>
+        <DialogTitle>{t("dialogs.unlockTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Отчёт снова станет живым: цифры будут пересчитываться на лету, а
-            надбавки и настройки — редактироваться. Все сохранённые снимки
-            останутся в истории; при повторной заморозке появится новая ревизия.
+            {t("dialogs.unlockDescription")}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setUnlockOpen(false)} disabled={busy} color="inherit">
-            Отмена
+            {t("common:actions.cancel")}
           </Button>
           <Button onClick={handleUnlock} disabled={busy} variant="contained" color="warning">
-            Разморозить
+            {t("actions.unfreeze")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -883,12 +883,12 @@ const DjangoSalaryReportsPage: React.FC = () => {
             // (kind=salary зачитывается в предыдущий месяц относительно даты расхода).
             categoryKind: dayjs().isSame(parsed, "month") ? "advance" : "salary",
             cardAmount: payoutRow.netSalary,
-            name: `Зарплата — ${payoutRow.fullName}`,
+            name: t("payoutExpenseName", { name: payoutRow.fullName }),
           }}
           onCreated={() => {
             setPayoutRow(null);
             void query.refetch();
-            notify?.({ type: "success", message: "Выплата проведена" });
+            notify?.({ type: "success", message: t("notify.payoutDone") });
           }}
         />
       )}

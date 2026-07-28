@@ -1,0 +1,10 @@
+{
+  "hourlyTitle": "{{visit.nomPl, capitalize}} по часам",
+  "dailyTitle": "{{visit.nomPl, capitalize}} по дням",
+  "specialistsLoad": "Нагрузка по {{specialist.datPl}}",
+  "count_one": "{{count}} {{visit.nom}}",
+  "count_few": "{{count}} {{visit.gen}}",
+  "count_many": "{{count}} {{visit.genPl}}",
+  "noData": "нет данных",
+  "chartTooltipLabel": "{{visit.nomPl, capitalize}}"
+}

@@ -13,6 +13,7 @@ import { subtleBg } from '../../../theme';
 import type { PayrollMonthSettings } from '../types';
 import { IS_DJANGO_BACKEND } from '../../../config/backend';
 import { updatePeriodSettings } from '../../../api/payroll';
+import { useT } from '../../../i18n/VerticalProvider';
 
 interface Props {
   open: boolean;
@@ -132,6 +133,7 @@ const SettingRow: React.FC<SettingRowProps> = ({
 export const PeriodSettingsDialog: React.FC<Props> = ({
   open, onClose, month, monthLabel, initialSettings, onSaved, organizationId,
 }) => {
+  const { t } = useT('salaryReports');
   const theme = useTheme();
   const [mergeNight,     setMergeNight]     = useState(false);
   const [disableDynamic, setDisableDynamic] = useState(false);
@@ -162,7 +164,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
         setSaving(false);
         onClose();
       } catch (err: any) {
-        setError(err.message || 'Ошибка сохранения настроек');
+        setError(err.message || t('periodSettings.saveError'));
         setSaving(false);
       }
       return;
@@ -229,10 +231,10 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
               </Box>
               <Box>
                 <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-                  Настройки месяца
+                  {t('periodSettings.title')}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Модификаторы расчёта зарплаты
+                  {t('periodSettings.subtitle')}
                 </Typography>
               </Box>
             </Stack>
@@ -247,7 +249,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
               />
               {activeCount > 0 && (
                 <Chip
-                  label={`${activeCount} активн${activeCount === 1 ? 'о' : 'о'}`}
+                  label={t('periodSettings.activeCount', { count: activeCount })}
                   size="small"
                   color="warning"
                   sx={{ fontSize: '0.72rem', fontWeight: 700 }}
@@ -277,33 +279,33 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             color="text.disabled"
             sx={{ letterSpacing: 0.8, fontSize: '0.62rem', px: 0.5 }}
           >
-            Флаги расчёта
+            {t('periodSettings.flagsSection')}
           </Typography>
 
           <SettingRow
             icon={<NightsStayIcon fontSize="small" />}
             iconColor={theme.palette.purple.onSurface}
             iconFill={theme.palette.purple.main}
-            title="Объединить ночные часы с дневными"
-            description="Все часы (дневные + ночные) оплачиваются по дневной ставке. Ночная надбавка не применяется."
+            title={t('periodSettings.mergeNightTitle')}
+            description={t('periodSettings.mergeNightDesc')}
             checked={mergeNight}
             onChange={v => setMergeNight(v)}
             disabled={saving}
-            activeLabel="Включено"
-            inactiveLabel="Выключено"
+            activeLabel={t('periodSettings.on')}
+            inactiveLabel={t('periodSettings.off')}
           />
 
           <SettingRow
             icon={<PercentIcon fontSize="small" />}
             iconColor={theme.palette.success.onSurface}
             iconFill={theme.palette.success.main}
-            title="Процент за услуги"
-            description="dynamic_rules — процент от стоимости приёмов и услуг"
+            title={t('periodSettings.percentTitle')}
+            description={t('periodSettings.percentDesc')}
             checked={!disableDynamic}
             onChange={v => setDisableDynamic(!v)}
             disabled={saving}
-            activeLabel="Учитывается"
-            inactiveLabel="Отключён"
+            activeLabel={t('periodSettings.considered')}
+            inactiveLabel={t('periodSettings.percentDisabled')}
           />
 
           <Typography
@@ -312,20 +314,20 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             color="text.disabled"
             sx={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.62rem', px: 0.5, pt: 1 }}
           >
-            Регистратура
+            {t('periodSettings.registratorSection')}
           </Typography>
 
           <SettingRow
             icon={<PeopleAltIcon fontSize="small" />}
             iconColor="#e07b39"
             iconFill="#e07b39"
-            title="Распределение по месячным часам"
-            description="Приёмы делятся пропорционально общим часам за месяц. Если выключено — делятся по часам каждого конкретного дня (старая логика)."
+            title={t('periodSettings.distributionTitle')}
+            description={t('periodSettings.distributionDesc')}
             checked={monthlyDistribution}
             onChange={v => setMonthlyDistribution(v)}
             disabled={saving}
-            activeLabel="Новая логика"
-            inactiveLabel="Старая логика"
+            activeLabel={t('periodSettings.newLogic')}
+            inactiveLabel={t('periodSettings.oldLogic')}
           />
         </Stack>
       </Box>
@@ -347,7 +349,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             disabled={saving}
             sx={{ fontWeight: 600, color: 'text.secondary' }}
           >
-            Отмена
+            {t('periodSettings.cancel')}
           </Button>
           <Button
             variant="contained"
@@ -356,7 +358,7 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
             startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}
             sx={{ fontWeight: 700, borderRadius: "14px", px: 3 }}
           >
-            Сохранить
+            {t('periodSettings.save')}
           </Button>
         </Stack>
       </Box>

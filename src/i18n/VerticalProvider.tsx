@@ -20,8 +20,8 @@ const VerticalContext = createContext<VerticalContextValue>({
 const DEV_VERTICAL_KEY = "mamadoc:vertical";
 
 /**
- * Только для разработки: позволяет посмотреть интерфейс в другой вертикали,
- * пока бэкенд не отдаёт organization.vertical. В консоли браузера:
+ * Только для разработки: позволяет посмотреть интерфейс в другой вертикали
+ * без организации с vertical="beauty" под рукой. В консоли браузера:
  *   localStorage.setItem("mamadoc:vertical", "beauty"); location.reload();
  *   localStorage.removeItem("mamadoc:vertical"); location.reload();
  * В проде игнорируется — вертикаль берётся только с бэкенда.
@@ -40,9 +40,9 @@ const readDevVertical = (): Vertical | null => {
  * Определяет вертикаль бизнеса по активной организации и раздаёт
  * соответствующий глоссарий вниз по дереву.
  *
- * Источник истины — поле `vertical` в activeOrganization из /auth/me/.
- * Пока бэкенд поле не отдаёт, значение отсутствует и мы работаем как клиника
- * (см. DEFAULT_VERTICAL) — старое поведение не меняется.
+ * Источник истины — поле `vertical` в activeOrganization из /auth/me/
+ * (бэк отдаёт с 28.07.2026, choices "clinic" | "beauty"). Отсутствующее
+ * или незнакомое значение трактуется как клиника (см. DEFAULT_VERTICAL).
  */
 export const VerticalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { activeOrganization } = usePermissions();

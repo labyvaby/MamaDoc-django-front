@@ -32,6 +32,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { useT } from "../../i18n/VerticalProvider";
 import {
   getReviews,
   getReviewStats,
@@ -77,6 +78,7 @@ const StatCard: React.FC<{
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const ReviewsPage: React.FC = () => {
+  const { t } = useT("reviews");
   usePageTitle("Отзывы");
   const theme = useTheme();
   const canView = useCan("reviews.view");
@@ -288,14 +290,14 @@ const ReviewsPage: React.FC = () => {
             <TextField
               select
               size="small"
-              label="Врач"
+              label={t("list.specialistLabel")}
               value={doctorId === "" ? "" : String(doctorId)}
               onChange={(e) =>
                 setDoctorId(e.target.value === "" ? "" : Number(e.target.value))
               }
               sx={{ minWidth: 180 }}
             >
-              <MenuItem value="">Все врачи</MenuItem>
+              <MenuItem value="">{t("list.allSpecialists")}</MenuItem>
               {doctors.map((d) => (
                 <MenuItem key={d.id} value={String(d.id)}>
                   {d.fullName}
@@ -320,8 +322,8 @@ const ReviewsPage: React.FC = () => {
                 <TableHead>
                   <TableRow>
                     <TableCell>Дата</TableCell>
-                    <TableCell>Пациент</TableCell>
-                    <TableCell>Врач</TableCell>
+                    <TableCell>{t("list.patientColumn")}</TableCell>
+                    <TableCell>{t("list.specialistColumn")}</TableCell>
                     <TableCell align="center">Оценка</TableCell>
                     <TableCell>Комментарий</TableCell>
                     <TableCell align="center">Тип</TableCell>

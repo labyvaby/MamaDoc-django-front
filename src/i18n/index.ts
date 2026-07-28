@@ -5,6 +5,20 @@ import common from "../locales/ru/common.json";
 import patients from "../locales/ru/patients.json";
 import appointments from "../locales/ru/appointments.json";
 import settings from "../locales/ru/settings.json";
+import employees from "../locales/ru/employees.json";
+import salaryReports from "../locales/ru/salaryReports.json";
+import sales from "../locales/ru/sales.json";
+import vaccinations from "../locales/ru/vaccinations.json";
+import reviews from "../locales/ru/reviews.json";
+import cashbox from "../locales/ru/cashbox.json";
+import load from "../locales/ru/load.json";
+import doctor from "../locales/ru/doctor.json";
+import reports from "../locales/ru/reports.json";
+import sidebar from "../locales/ru/sidebar.json";
+import bookings from "../locales/ru/bookings.json";
+import client from "../locales/ru/client.json";
+import publicBooking from "../locales/ru/publicBooking.json";
+import print from "../locales/ru/print.json";
 import { capitalize, lower } from "./formatters";
 
 /**
@@ -13,7 +27,7 @@ import { capitalize, lower } from "./formatters";
  * Новый модуль: добавить JSON в src/locales/ru/ и ключ сюда.
  */
 export const resources = {
-  ru: { common, patients, appointments, settings },
+  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, print },
 } as const;
 
 export type Namespace = keyof (typeof resources)["ru"];

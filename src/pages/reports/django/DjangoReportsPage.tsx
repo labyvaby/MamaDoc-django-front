@@ -36,6 +36,7 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { formatKGS } from "../../../utility/format";
+import { useT } from "../../../i18n/VerticalProvider";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -49,6 +50,7 @@ dayjs.locale("ru");
 const num = (value: string | undefined): number => Number(value ?? 0);
 
 const DjangoReportsPage: React.FC = () => {
+  const { t } = useT("reports");
   usePageTitle("Отчеты");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
@@ -124,7 +126,7 @@ const DjangoReportsPage: React.FC = () => {
     if (!summary || !totals) return [];
     return [
       {
-        title: "Оплачено приёмов",
+        title: t("cards.paidVisits"),
         primaryValue: String(summary.apptPaidCount),
         secondaryText: `Всего: ${summary.apptTotalCount} · Отменено: ${summary.apptCancelledCount}`,
         color: "success",
@@ -154,9 +156,9 @@ const DjangoReportsPage: React.FC = () => {
         color: "error",
       },
       {
-        title: "Приёмы / Процедуры",
+        title: t("cards.visitsSlashProcedures"),
         primaryValue: `${totals.appointmentsCount} / ${totals.proceduresCount}`,
-        secondaryText: "Приёмы / Процедуры",
+        secondaryText: t("cards.visitsSlashProcedures"),
         color: "primary",
       },
       {
@@ -172,9 +174,9 @@ const DjangoReportsPage: React.FC = () => {
         color: "primary",
       },
       {
-        title: "Товары в приёмах",
+        title: t("productsInVisits"),
         primaryValue: formatKGS(totals.products),
-        secondaryText: "Продано в приёмах",
+        secondaryText: t("soldInVisits"),
         color: "secondary",
       },
       {
@@ -192,7 +194,7 @@ const DjangoReportsPage: React.FC = () => {
         color: "warning",
       },
     ];
-  }, [summary, totals]);
+  }, [summary, totals, t]);
 
   if (!permLoading && !canView) return <AccessDenied />;
 
@@ -283,7 +285,7 @@ const DjangoReportsPage: React.FC = () => {
                               {dayjs(day.date).format("DD MMMM")}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {dayjs(day.date).format("dddd")} • Приемы: {day.appointmentsCount} | Процедуры:{" "}
+                              {dayjs(day.date).format("dddd")} • {t("dayVisitsCount", { count: day.appointmentsCount })} | Процедуры:{" "}
                               {day.proceduresCount}
                             </Typography>
                           </Box>
@@ -385,20 +387,27 @@ const DjangoReportsPage: React.FC = () => {
                   <Table stickyHeader size="small">
                     <TableHead>
                       <TableRow>
-                        {["Дата", "Приемы", "Процедуры", "В ожидании", "Мед. услуги", "Товары", "Наличные", "Безнал", "Страховка", "Долг"].map(
+                        {(
+                          [
+                            { key: "date", label: t("tableHeaders.date"), align: "left" as const },
+                            { key: "visits", label: t("tableHeaders.visits"), align: "center" as const },
+                            { key: "procedures", label: t("tableHeaders.procedures"), align: "center" as const },
+                            { key: "waiting", label: t("tableHeaders.waiting"), align: "center" as const },
+                            { key: "medServices", label: t("tableHeaders.medServices"), align: "right" as const },
+                            { key: "products", label: t("tableHeaders.products"), align: "right" as const },
+                            { key: "cash", label: t("tableHeaders.cash"), align: "right" as const },
+                            { key: "cashless", label: t("tableHeaders.cashless"), align: "right" as const },
+                            { key: "insurance", label: t("tableHeaders.insurance"), align: "right" as const },
+                            { key: "debt", label: t("tableHeaders.debt"), align: "right" as const },
+                          ]
+                        ).map(
                           (h) => (
                             <TableCell
-                              key={h}
-                              align={
-                                h === "Дата"
-                                  ? "left"
-                                  : h === "Приемы" || h === "Процедуры" || h === "В ожидании"
-                                  ? "center"
-                                  : "right"
-                              }
-                              sx={{ fontWeight: 800, ...(h === "В ожидании" ? { color: "error.main" } : {}) }}
+                              key={h.key}
+                              align={h.align}
+                              sx={{ fontWeight: 800, ...(h.key === "waiting" ? { color: "error.main" } : {}) }}
                             >
-                              {h}
+                              {h.label}
                             </TableCell>
                           ),
                         )}

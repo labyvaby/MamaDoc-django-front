@@ -8,6 +8,7 @@ import type { EmployesRow } from "../types";
 import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { useT } from "../../../i18n/VerticalProvider";
 
 export type EmployeeListProps = {
   items: EmployesRow[];
@@ -55,12 +56,17 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   roles = [],
   selectedId,
 }) => {
+  const { t } = useT("employees");
   /** Пилюля статуса (работает / не работает / уволен). */
   const StatusPill: React.FC<{ status?: string | null }> = ({ status }) => {
     if (!status) return null;
     const isActive = status === "active";
     const isFired = status === "fired";
-    const label = isActive ? "Работает" : isFired ? "Уволен" : "Не работает";
+    const label = isActive
+      ? t("list.status.active")
+      : isFired
+      ? t("list.status.fired")
+      : t("list.status.inactive");
     return (
       <Chip
         size="small"
@@ -101,11 +107,15 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
   const renderItem = (e: EmployesRow) => {
     const statusText =
-      e.status === "active" ? "работает" : e.status === "inactive" ? "не работает" : e.status;
+      e.status === "active"
+        ? t("list.status.active").toLowerCase()
+        : e.status === "inactive"
+        ? t("list.status.inactive").toLowerCase()
+        : e.status;
 
     let roleText: string;
     if (IS_DJANGO_BACKEND) {
-      roleText = e._djangoRole?.name || statusText || "Сотрудник";
+      roleText = e._djangoRole?.name || statusText || t("list.fallbackEmployee");
     } else {
       const roleObj = roles.find((r) => r.id === e.role_id);
       roleText =
@@ -171,12 +181,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
             <Typography variant="body2" fontWeight={500} noWrap>
-              {e.full_name || "Без имени"}
+              {e.full_name || t("list.noName")}
             </Typography>
             {hasPassports && (
               <DescriptionOutlined
                 sx={{ fontSize: 15, color: "primary.onSurface", flexShrink: 0 }}
-                titleAccess="Паспорт загружен"
+                titleAccess={t("list.passportUploaded")}
               />
             )}
           </Stack>
@@ -197,7 +207,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
             {onEdit && (
               <IconButton
                 size="small"
-                aria-label="Редактировать"
+                aria-label={t("common:actions.edit")}
                 onClick={(ev) => {
                   ev.stopPropagation();
                   onEdit(e);
@@ -216,7 +226,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
             {onDelete && (
               <IconButton
                 size="small"
-                aria-label="Уволить"
+                aria-label={t("list.fireTooltip")}
                 onClick={(ev) => {
                   ev.stopPropagation();
                   onDelete(e);
@@ -250,7 +260,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
       items.forEach((item) => {
         const role = item._djangoRole;
         const gId = role ? String(role.id) : "other";
-        const gName = role ? role.name : "Без доступа в систему";
+        const gName = role ? role.name : t("list.noSystemAccessGroup");
         if (!grouped[gId]) grouped[gId] = { name: gName, items: [] };
         grouped[gId].items.push(item);
       });
@@ -320,14 +330,14 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     >
       {items.length === 0 ? (
         <Typography sx={{ p: 2 }} color="text.secondary">
-          {loading ? "Загрузка…" : "Нет записей"}
+          {loading ? t("common:state.loading") : t("list.empty")}
         </Typography>
       ) : (
         <Stack spacing={1}>{getGroupedItems()}</Stack>
       )}
       {loadingMore && (
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", px: 0.5, py: 1.25 }}>
-          Загрузка…
+          {t("common:state.loading")}
         </Typography>
       )}
     </Box>

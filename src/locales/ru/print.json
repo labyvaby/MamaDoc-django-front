@@ -1,0 +1,5 @@
+{
+  "patientFioLabel": "ФИО {{patient.gen}}:",
+  "visitDateTimeLabel": "Дата и время {{visit.gen}}:",
+  "specialistLabel": "{{specialist.nom, capitalize}}:"
+}

@@ -1,0 +1,6 @@
+{
+  "patientLabel": "{{patient.nom, capitalize}}",
+  "specialistLabel": "{{specialist.nom, capitalize}}",
+  "allSpecialists": "Все {{specialist.nomPl}}",
+  "visitInCrm": "{{visit.nom, capitalize}} в CRM"
+}

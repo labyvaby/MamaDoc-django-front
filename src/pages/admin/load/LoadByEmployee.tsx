@@ -3,6 +3,7 @@ import { Box, Stack, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 
 import type { EmployeeLoad } from "../../../api/load";
+import { useT } from "../../../i18n/VerticalProvider";
 
 interface Props {
   rows: EmployeeLoad[];
@@ -18,6 +19,7 @@ function initials(name: string): string {
 }
 
 export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle }) => {
+  const { t } = useT("load");
   const maxAppts = rows.reduce((m, r) => Math.max(m, r.appointments), 0) || 1;
 
   if (rows.length === 0) {
@@ -73,7 +75,7 @@ export const LoadByEmployee: React.FC<Props> = ({ rows, selectedIds, onToggle })
                   {r.fullName}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                  {r.appointments} приёмов{hoursNum > 0 ? ` · ${hoursNum.toLocaleString("ru-RU")} ч` : ""}
+                  {t("count", { count: r.appointments })}{hoursNum > 0 ? ` · ${hoursNum.toLocaleString("ru-RU")} ч` : ""}
                 </Typography>
               </Stack>
               <Box

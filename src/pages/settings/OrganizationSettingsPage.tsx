@@ -17,6 +17,7 @@ import {
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
+import TranslateOutlined from "@mui/icons-material/TranslateOutlined";
 import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 
@@ -36,6 +37,8 @@ import {
 } from "../../api/organization";
 import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
+import { SUPPORTED_VERTICALS } from "../../i18n/glossary";
+import type { Vertical } from "../../i18n/types";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -91,8 +94,19 @@ const OrganizationSettingsPage: React.FC = () => {
     },
   ];
 
+  const VERTICAL_OPTIONS: { value: Vertical; label: string; hint: string }[] =
+    SUPPORTED_VERTICALS.map((value) => ({
+      value,
+      label: t(`organization.vertical.${value}.label`),
+      hint: t(`organization.vertical.${value}.hint`),
+    }));
+
   const { activeOrganization, isSuperAdmin, hasPermission } = usePermissions();
   const canUpdate = isSuperAdmin() || hasPermission("organization.update");
+  // Терминология переведена под вертикаль только частично (см. settings.json
+  // organization.vertical.superadminOnlyNote) — переключатель пока виден
+  // только суперадмину, не самой организации.
+  const canEditVertical = isSuperAdmin();
 
   const orgId = activeOrganization?.id ?? null;
 
@@ -101,6 +115,7 @@ const OrganizationSettingsPage: React.FC = () => {
   const [scope, setScope] = React.useState<PatientScope>("shared");
   const [overlapMode, setOverlapMode] =
     React.useState<AppointmentOverlapMode>("forbid");
+  const [vertical, setVertical] = React.useState<Vertical>("clinic");
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -125,6 +140,7 @@ const OrganizationSettingsPage: React.FC = () => {
       setName(data.name);
       setScope(data.patientScope);
       setOverlapMode(data.appointmentOverlapMode);
+      setVertical(data.vertical);
     } catch (err) {
       setLoadError(extractErrorMessage(err));
     } finally {
@@ -140,7 +156,8 @@ const OrganizationSettingsPage: React.FC = () => {
   const nameDirty = !!org && trimmedName !== "" && trimmedName !== org.name;
   const scopeDirty = !!org && scope !== org.patientScope;
   const overlapDirty = !!org && overlapMode !== org.appointmentOverlapMode;
-  const dirty = nameDirty || scopeDirty || overlapDirty;
+  const verticalDirty = !!org && canEditVertical && vertical !== org.vertical;
+  const dirty = nameDirty || scopeDirty || overlapDirty || verticalDirty;
 
   // Название обязательно: пустое поле блокирует сохранение и получает фокус.
   const form = useFormValidation({
@@ -158,15 +175,18 @@ const OrganizationSettingsPage: React.FC = () => {
         ...(nameDirty ? { name: trimmedName } : {}),
         ...(scopeDirty ? { patientScope: scope } : {}),
         ...(overlapDirty ? { appointmentOverlapMode: overlapMode } : {}),
+        ...(verticalDirty ? { vertical } : {}),
       });
       setOrg(updated);
       setName(updated.name);
       setScope(updated.patientScope);
       setOverlapMode(updated.appointmentOverlapMode);
+      setVertical(updated.vertical);
       setSaved(true);
-      // Название организации показывается в переключателе контекста в сайдбаре —
-      // перечитываем /auth/me/, чтобы оно обновилось без перезагрузки страницы.
-      if (nameDirty) retryAuth();
+      // Название организации показывается в переключателе контекста в сайдбаре,
+      // а вертикаль меняет глоссарий по всему приложению — перечитываем
+      // /auth/me/, чтобы обновилось без перезагрузки страницы.
+      if (nameDirty || verticalDirty) retryAuth();
     } catch (err) {
       setSaveError(extractErrorMessage(err));
     } finally {
@@ -419,6 +439,50 @@ const OrganizationSettingsPage: React.FC = () => {
                 ))}
               </RadioGroup>
             </FormControl>
+
+            {/* Vertical (terminology) — superadmin only, see canEditVertical */}
+            {canEditVertical && (
+              <FormControl disabled={busy}>
+                <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
+                  <TranslateOutlined fontSize="small" color="action" />
+                  <FormLabel sx={{ fontWeight: 600 }}>
+                    {t("organization.vertical.sectionTitle")}
+                  </FormLabel>
+                </Stack>
+                <Typography variant="caption" color="text.secondary" mb={1}>
+                  {t("organization.vertical.sectionHint")}
+                </Typography>
+                <Alert severity="warning" sx={{ mb: 1 }}>
+                  {t("organization.vertical.superadminOnlyNote")}
+                </Alert>
+                <RadioGroup
+                  value={vertical}
+                  onChange={(e) => {
+                    setVertical(e.target.value as Vertical);
+                    setSaved(false);
+                  }}
+                >
+                  {VERTICAL_OPTIONS.map((opt) => (
+                    <FormControlLabel
+                      key={opt.value}
+                      value={opt.value}
+                      control={<Radio size="small" />}
+                      sx={{ alignItems: "flex-start", mt: 0.5 }}
+                      label={
+                        <Box sx={{ py: 0.25 }}>
+                          <Typography variant="body2" fontWeight={500}>
+                            {opt.label}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {opt.hint}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  ))}
+                </RadioGroup>
+              </FormControl>
+            )}
 
             {!canUpdate && (
               <Chip

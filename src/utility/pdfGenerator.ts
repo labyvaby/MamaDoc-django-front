@@ -1,4 +1,5 @@
 import html2pdf from "html2pdf.js";
+import { tt } from "../i18n/t";
 
 export type ConclusionPDFData = {
   patientFio: string;
@@ -82,9 +83,9 @@ export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Bl
         padding: 50mm 15mm 20mm 10mm;
       "
     >
-      <div style="margin-bottom: 1.5mm;"><b>ФИО пациента:</b> ${escapeHtml(patientFio)}</div>
+      <div style="margin-bottom: 1.5mm;"><b>${escapeHtml(tt("print:patientFioLabel"))}</b> ${escapeHtml(patientFio)}</div>
       <div style="margin-bottom: 1.5mm;"><b>Дата рождения:</b> ${escapeHtml(patientDob)}</div>
-      <div style="margin-bottom: 5mm;"><b>Дата и время приема:</b> ${escapeHtml(appointmentDate)}</div>
+      <div style="margin-bottom: 5mm;"><b>${escapeHtml(tt("print:visitDateTimeLabel"))}</b> ${escapeHtml(appointmentDate)}</div>
 
       <div style="margin-bottom: 5mm; display: flex;">
         <div style="width: 45mm;"><b>Рост:</b> ${heightDisplay ? `${escapeHtml(heightDisplay)} см` : ""}</div>
@@ -118,7 +119,7 @@ export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Bl
       </div>
 
       <div style="margin-top: 8mm; display: flex; justify-content: space-between; align-items: flex-start;">
-        <div style="flex: 1;"><b>Врач:</b> ${escapeHtml(doctorFio)}</div>
+        <div style="flex: 1;"><b>${escapeHtml(tt("print:specialistLabel"))}</b> ${escapeHtml(doctorFio)}</div>
         <div style="width: 70mm;">
           <div style="display: flex; justify-content: space-between;">
             <b>Подпись:</b>
@@ -224,7 +225,7 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
 
       <div style="margin-top: 10mm; display: flex; flex-direction: column; gap: 2mm;">
         <div><b>Дата выдачи:</b> ${escapeHtml(issueDate)}</div>
-        <div><b>Врач:</b> ${escapeHtml(doctorFio)}</div>
+        <div><b>${escapeHtml(tt("print:specialistLabel"))}</b> ${escapeHtml(doctorFio)}</div>
       </div>
 
       <div style="margin-top: 15mm; display: flex; justify-content: flex-end; align-items: flex-start;">

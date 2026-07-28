@@ -25,6 +25,14 @@
     "notSpecified": "Не указано",
     "total": "Всего"
   },
+  "fieldLabels": {
+    "patient": "{{patient.nom, capitalize}}",
+    "doctor": "{{specialist.nom, capitalize}}"
+  },
+  "serviceCategories": {
+    "doctor": "Услуги {{specialist.genPl}}",
+    "nurse": "Услуги {{assistant.genPl}}"
+  },
   "counts": {
     "services_one": "{{count}} {{service.nom}}",
     "services_few": "{{count}} {{service.gen}}",

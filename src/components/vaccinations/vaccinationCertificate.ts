@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import type { DjangoPatient } from "../../api/patients";
 import type { VaccinationRecord, VaccinationScheduleSlot } from "../../api/vaccinations";
 import { injectionSiteLabel } from "../../pages/vaccinations/meta";
+import { tt } from "../../i18n/t";
 
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] ?? c));
@@ -69,9 +70,9 @@ export function printVaccinationCertificate(
       @media print { body { margin:12mm; } }
     </style></head><body>
     <h1>Прививочный сертификат</h1>
-    <div class="sub">Выписка из электронной карты пациента</div>
+    <div class="sub">${esc(tt("vaccinations:certificate.subtitle"))}</div>
     <div class="meta">
-      <div><b>Пациент:</b> ${esc(patient.fullName)}</div>
+      <div><b>${esc(tt("vaccinations:certificate.patientLabel"))}</b> ${esc(patient.fullName)}</div>
       <div><b>Дата рождения:</b> ${dob}</div>
       ${patient.phone ? `<div><b>Телефон:</b> ${esc(patient.phone)}</div>` : ""}
       <div><b>Дата выписки:</b> ${dayjs().format("DD.MM.YYYY")}</div>
@@ -87,7 +88,7 @@ export function printVaccinationCertificate(
         ? `<h2>Предстоящие прививки</h2><table><thead><tr><th>Дата</th><th>Вакцина</th><th>Доза</th><th>Статус</th></tr></thead><tbody>${upcomingRows}</tbody></table>`
         : ""
     }
-    <div class="foot">Документ сформирован автоматически из электронной карты пациента.</div>
+    <div class="foot">${esc(tt("vaccinations:certificate.footer"))}</div>
   </body></html>`);
   win.document.close();
   win.focus();

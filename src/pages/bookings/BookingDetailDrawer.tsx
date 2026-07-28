@@ -29,6 +29,7 @@ import {
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { BOOKING_STATUS_META } from "./meta";
+import { useT } from "../../i18n/VerticalProvider";
 
 interface Props {
   bookingId: number | null;
@@ -48,6 +49,7 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
 );
 
 const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose }) => {
+  const { t } = useT("bookings");
   const open = bookingId != null;
   const queryClient = useQueryClient();
   const { open: notify } = useNotification();
@@ -133,7 +135,7 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
 
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
               <Field
-                label="Пациент"
+                label={t("patientLabel")}
                 value={
                   <>
                     {b.patientName}
@@ -150,7 +152,7 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
                   </>
                 }
               />
-              <Field label="Врач" value={b.doctorName || "—"} />
+              <Field label={t("specialistLabel")} value={b.doctorName || "—"} />
             </Stack>
 
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
@@ -190,7 +192,7 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
 
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
               <Field
-                label="Приём в CRM"
+                label={t("visitInCrm")}
                 value={b.appointmentId != null ? `#${b.appointmentId}` : "не материализована"}
               />
               <Field

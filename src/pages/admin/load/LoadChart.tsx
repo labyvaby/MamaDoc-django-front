@@ -12,6 +12,7 @@ import {
 import dayjs from "dayjs";
 
 import type { HourPoint, DayPoint } from "../../../api/load";
+import { useT } from "../../../i18n/VerticalProvider";
 
 export type LoadChartMode = "hourly" | "daily";
 
@@ -29,6 +30,7 @@ function hourWindow(hourly: HourPoint[]): [number, number] {
 }
 
 export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
+  const { t } = useT("load");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -101,7 +103,7 @@ export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
           }}
           labelStyle={{ fontWeight: 600, color: theme.palette.text.primary }}
           itemStyle={{ color: theme.palette.text.secondary }}
-          formatter={(value: number | undefined) => [value ?? 0, "Приёмов"]}
+          formatter={(value: number | undefined) => [value ?? 0, t("chartTooltipLabel")]}
           labelFormatter={(label) => (mode === "daily" ? `Дата: ${label}` : `Время: ${label}`)}
         />
         <Area

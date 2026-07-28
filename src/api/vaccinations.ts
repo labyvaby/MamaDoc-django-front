@@ -23,12 +23,11 @@ export const VACCINATIONS_USE_MOCKS = false;
 
 /**
  * Списание доз партии (порча / истёк срок / холодовая цепь).
- * Эндпоинта `POST /vaccinations/batches/<id>/write-off/` в гайде нет — тикет
- * `MamaDoc/backend_ticket_vaccinations_batch_writeoff.md`. Пока флаг выключен,
- * кнопка «Списать» и колонка «списано» скрыты; вся логика уже на месте и
- * включается одним значением, когда бэк ответит.
+ * `POST /vaccinations/batches/<id>/write-off/` — тикет
+ * `MamaDoc/backend_ticket_vaccinations_batch_writeoff.md`, бэк реализовал
+ * контракт один в один (28.07.2026).
  */
-export const VACCINATION_BATCH_WRITEOFF_ENABLED = false;
+export const VACCINATION_BATCH_WRITEOFF_ENABLED = true;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

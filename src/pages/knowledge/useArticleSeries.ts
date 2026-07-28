@@ -4,18 +4,22 @@ import { useQuery } from "@tanstack/react-query";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
   getKnowledgeArticles,
-  parseArticleSeries,
-  type ArticleSeriesRef,
   type KnowledgeArticle,
   type KnowledgeSeriesPart,
 } from "../../api/knowledge";
 
-/** Сколько частей серии имеет смысл искать одним запросом. */
-const SERIES_LOOKUP_PAGE_SIZE = 50;
+/**
+ * Сколько статей организации просмотреть в поисках соседей серии.
+ *
+ * ⚠ Если в организации статей больше — часть, оказавшаяся за пределами этой
+ * страницы, не попадёт в навигацию (то же ограничение, что у groupArticleFeed
+ * в ленте: группируем среди подгруженного, не по всей организации).
+ */
+const SERIES_LOOKUP_PAGE_SIZE = 200;
 
 export interface ArticleSeriesContext {
   /** null — статья не часть серии либо соседей не нашлось. */
-  ref: ArticleSeriesRef | null;
+  ref: { id: number; name: string } | null;
   parts: KnowledgeSeriesPart[];
   /** Позиция текущей статьи в parts, -1 — не найдена. */
   index: number;
@@ -36,10 +40,12 @@ const EMPTY: ArticleSeriesContext = {
 /**
  * Соседние части серии для страницы статьи.
  *
- * Серия связана через название (полей серии у бэка нет — см. api/knowledge.ts),
- * поэтому соседей ищем серверным поиском по имени серии и оставляем те, чей
- * разобранный ключ совпал. Поиск идёт по title+content, так что в выдачу
- * попадают и посторонние статьи — фильтр по ключу их отсекает.
+ * Ни `seriesId`, ни `seriesName` список статей не фильтруют и не ищутся —
+ * проверено на живом API 28.07.2026: `seriesId` как query-параметр бэк молча
+ * игнорирует, а серверный поиск (`search`) индексирует только title+content,
+ * куда `seriesName` не входит (это отдельное поле статьи, а не часть текста).
+ * Поэтому соседей ищем среди широкой выборки статей организации и сверяем
+ * `seriesId` на клиенте — тот же приём, что и в groupArticleFeed для ленты.
  *
  * Права соблюдаются сами собой: без knowledge.manage бэк отдаёт только
  * опубликованные части, и в навигации черновики не появятся.
@@ -49,23 +55,21 @@ export function useArticleSeries(
   orgId: number | undefined,
 ): ArticleSeriesContext {
   const ref = React.useMemo(
-    () => (article ? parseArticleSeries(article.title) : null),
+    () =>
+      article?.seriesId != null && article.seriesName != null
+        ? { id: article.seriesId, name: article.seriesName }
+        : null,
     [article],
   );
 
   const query = useQuery({
     queryKey: djangoQueryKeys.knowledge.articles({
-      seriesOf: ref?.key ?? "",
+      seriesOf: ref?.id ?? "",
       orgId: orgId ?? null,
     }),
     queryFn: ({ signal }) =>
       getKnowledgeArticles(
-        {
-          search: ref?.name,
-          page: 1,
-          pageSize: SERIES_LOOKUP_PAGE_SIZE,
-          organizationId: orgId,
-        },
+        { page: 1, pageSize: SERIES_LOOKUP_PAGE_SIZE, organizationId: orgId },
         signal,
       ),
     enabled: Boolean(ref),
@@ -77,19 +81,14 @@ export function useArticleSeries(
 
     const parts: KnowledgeSeriesPart[] = [];
     for (const item of query.data?.results ?? []) {
-      const itemRef = parseArticleSeries(item.title);
-      if (!itemRef || itemRef.key !== ref.key) continue;
-      parts.push({
-        article: item,
-        partNumber: itemRef.partNumber,
-        partTitle: itemRef.partTitle,
-      });
+      if (item.seriesId !== ref.id || item.partNumber == null) continue;
+      parts.push({ article: item, partNumber: item.partNumber, partTitle: item.title });
     }
     // Текущая статья может не попасть в выдачу поиска (например, она черновик,
     // открытый по прямой ссылке) — добавляем её сами, иначе «часть 2 из 3»
     // посчиталась бы неверно.
-    if (!parts.some((p) => p.article.id === article.id)) {
-      parts.push({ article, partNumber: ref.partNumber, partTitle: ref.partTitle });
+    if (!parts.some((p) => p.article.id === article.id) && article.partNumber != null) {
+      parts.push({ article, partNumber: article.partNumber, partTitle: article.title });
     }
     parts.sort((a, b) => a.partNumber - b.partNumber || a.article.id - b.article.id);
 

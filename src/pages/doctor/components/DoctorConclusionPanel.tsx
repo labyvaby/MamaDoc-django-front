@@ -23,6 +23,7 @@ import {
 } from "../../../services/diagnoses";
 import { useNotification } from "@refinedev/core";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useT } from "../../../i18n/VerticalProvider";
 import { supabase } from "../../../utility/supabaseClient";
 import { DB_TABLES } from "../../../utility/constants";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -90,6 +91,7 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
     selectedDoctorId: propSelectedDoctorId,
     readOnly = false
 }) => {
+    const { t } = useT("doctor");
     const { open: notify } = useNotification();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -433,12 +435,12 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
     if (!appointmentId) {
         return (
             <Box sx={{ p: 4, textAlign: "center", color: "text.secondary" }}>
-                Выберите прием для заполнения заключения
+                {t("selectVisitPrompt")}
             </Box>
         );
     }
 
-    const currentDoctorName = availableDoctors.find(d => d.id === currentDoctorId)?.full_name || "Врач";
+    const currentDoctorName = availableDoctors.find(d => d.id === currentDoctorId)?.full_name || t("specialistFallback");
 
     if (loading) {
         return (
@@ -636,12 +638,12 @@ export const DoctorConclusionPanel: React.FC<DoctorConclusionPanelProps> = ({
                                     fontStyle: conclusion ? 'normal' : 'italic'
                                 }}
                             >
-                                {conclusion || `Врач ${currentDoctorName} еще не оставил заключение`}
+                                {conclusion || `${t("specialistFallback")} ${t("noConclusionYet", { name: currentDoctorName })}`}
                             </Typography>
                         </Box>
 
                         <Box>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>Жалобы (врач)</Typography>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>{t("specialistComplaintsLabel")}</Typography>
                             <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>{doctorComplaints || "—"}</Typography>
                         </Box>
 
