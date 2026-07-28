@@ -1,3 +1,5 @@
+import { tt } from "../i18n/t";
+
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 const API_URL = API_BASE;
@@ -71,9 +73,7 @@ const FIELD_LABELS: Record<string, string> = {
   username: "Имя пользователя",
   login: "Логин",
   // Доменные сущности (id → читаемое имя)
-  patient: "Пациент",
   employee: "Сотрудник",
-  doctor: "Врач",
   service: "Услуга",
   services: "Услуги",
   product: "Товар",
@@ -89,6 +89,13 @@ const FIELD_LABELS: Record<string, string> = {
   batch: "Партия",
   diagnosis: "Диагноз",
 };
+
+// patient/doctor вертикально-зависимы (пациент/врач ↔ клиент/мастер) —
+// геттеры вместо литералов, чтобы значение не застыло до смены вертикали.
+Object.defineProperties(FIELD_LABELS, {
+  patient: { enumerable: true, get: () => tt("common:fieldLabels.patient") },
+  doctor: { enumerable: true, get: () => tt("common:fieldLabels.doctor") },
+});
 
 /** snake_case → camelCase и отрезаем суффикс Id, чтобы найти подпись в словаре. */
 function normalizeFieldKey(key: string): string {

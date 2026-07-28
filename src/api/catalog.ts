@@ -1,4 +1,5 @@
 import { apiRequest, API_BASE } from "./client";
+import { tt } from "../i18n/t";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -18,11 +19,19 @@ export const SERVICE_CATEGORIES_ENABLED = true;
 export type ServiceCategory = "doctor" | "nurse" | "lab" | "hardware";
 
 export const SERVICE_CATEGORY_LABELS: Record<ServiceCategory, string> = {
-  doctor: "Услуги врачей",
-  nurse: "Услуги медсестёр",
+  doctor: "",
+  nurse: "",
   lab: "Лаборатория",
   hardware: "Аппаратные услуги",
 };
+
+// doctor/nurse вертикально-зависимы — геттеры вместо литералов (порядок
+// ключей сохранён — определены выше плейсхолдером, чтобы не сдвинуть
+// порядок опций фильтра при redefine).
+Object.defineProperties(SERVICE_CATEGORY_LABELS, {
+  doctor: { enumerable: true, get: () => tt("common:serviceCategories.doctor") },
+  nurse: { enumerable: true, get: () => tt("common:serviceCategories.nurse") },
+});
 
 export const SERVICE_CATEGORY_OPTIONS = Object.keys(
   SERVICE_CATEGORY_LABELS,
