@@ -28,6 +28,7 @@ import { getAppointments, type DjangoAppointment } from "../../api/appointments"
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
+import { useT } from "../../i18n/VerticalProvider";
 
 dayjs.locale("ru");
 
@@ -38,12 +39,6 @@ type Props = {
   /** Имя/фото из приёма — показываем сразу, даже если у зрителя нет staff.view. */
   fallbackName?: string | null;
   fallbackPhotoUrl?: string | null;
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  doctor: "Врач",
-  nurse: "Медсестра",
-  other: "Сотрудник",
 };
 
 function initials(name?: string | null): string {
@@ -66,6 +61,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
   fallbackName,
   fallbackPhotoUrl,
 }) => {
+  const { t } = useT("employees");
   const [loading, setLoading] = React.useState(false);
   const [employee, setEmployee] = React.useState<DjangoEmployee | null>(null);
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
@@ -112,9 +108,15 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
     };
   }, [doctorId, open, orgId]);
 
+  const ROLE_LABEL: Record<string, string> = {
+    doctor: t("doctorQuickView.roleDoctor"),
+    nurse: t("doctorQuickView.roleNurse"),
+    other: t("doctorQuickView.roleOther"),
+  };
+
   const name = employee?.fullName ?? fallbackName ?? "";
   const photoUrl = employee?.photoUrl ?? fallbackPhotoUrl ?? null;
-  const roleLabel = employee ? ROLE_LABEL[employee.clinicalRole] ?? "Сотрудник" : "Врач";
+  const roleLabel = employee ? ROLE_LABEL[employee.clinicalRole] ?? t("doctorQuickView.roleOther") : t("doctorQuickView.roleDoctor");
 
   return (
     <Drawer
@@ -143,7 +145,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
         }}
       >
         <Typography variant="h6" fontWeight={600}>
-          Информация о враче
+          {t("doctorQuickView.title")}
         </Typography>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
@@ -204,7 +206,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                   <MedicalServicesIcon fontSize="small" color="success" />
                   <Typography variant="subtitle2" fontWeight={600}>
-                    Оказываемые услуги
+                    {t("doctorQuickView.servicesProvided")}
                   </Typography>
                 </Stack>
                 <Stack divider={<Divider flexItem />}>
@@ -237,12 +239,12 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                 <EventOutlinedIcon fontSize="small" color="primary" />
                 <Typography variant="subtitle2" fontWeight={600}>
-                  Последние приёмы
+                  {t("doctorQuickView.recentVisits")}
                 </Typography>
               </Stack>
               {appointments.length === 0 ? (
                 <Typography variant="body2" color="text.disabled">
-                  Нет приёмов
+                  {t("doctorQuickView.noVisits")}
                 </Typography>
               ) : (
                 <Stack spacing={1.5}>
@@ -261,12 +263,12 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
                         </Stack>
                         {a.patient?.fullName && (
                           <Typography variant="caption" color="text.secondary" display="block">
-                            Пациент: {a.patient.fullName}
+                            {t("doctorQuickView.patientLabel", { name: a.patient.fullName })}
                           </Typography>
                         )}
                         {serviceNames && (
                           <Typography variant="caption" color="text.secondary" display="block">
-                            Услуги: {serviceNames}
+                            {t("doctorQuickView.servicesLabel", { name: serviceNames })}
                           </Typography>
                         )}
                       </Box>
@@ -278,7 +280,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
-            Врач не найден
+            {t("doctorQuickView.notFound")}
           </Typography>
         )}
       </Box>

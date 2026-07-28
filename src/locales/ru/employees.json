@@ -82,5 +82,17 @@
     "nurse": "{{assistant.nom, capitalize}}",
     "other": "Другой",
     "doctorNoServicesHint": "У {{specialist.gen}} нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам."
+  },
+  "doctorQuickView": {
+    "roleDoctor": "{{specialist.nom, capitalize}}",
+    "roleNurse": "{{assistant.nom, capitalize}}",
+    "roleOther": "{{employee.nom, capitalize}}",
+    "title": "Информация о {{specialist.pre}}",
+    "servicesProvided": "Оказываемые услуги",
+    "recentVisits": "Последние {{visit.nomPl}}",
+    "noVisits": "Нет {{visit.genPl}}",
+    "patientLabel": "{{patient.nom, capitalize}}: {{name}}",
+    "servicesLabel": "{{service.nomPl, capitalize}}: {{name}}",
+    "notFound": "{{specialist.nom, capitalize}} не найден"
   }
 }
