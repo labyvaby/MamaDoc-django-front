@@ -18,6 +18,7 @@ import { useParams } from "react-router";
 import { getRateContext, postRate, type RateContext } from "../../api/reviews";
 import { ApiError } from "../../api/client";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useT } from "../../i18n/VerticalProvider";
 
 const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
   <Box
@@ -41,6 +42,7 @@ const Shell: React.FC<React.PropsWithChildren> = ({ children }) => (
 );
 
 const PublicRatePage: React.FC = () => {
+  const { t } = useT("reviews");
   const { token = "" } = useParams<{ token: string }>();
 
   const [ctx, setCtx] = React.useState<RateContext | null>(null);
@@ -144,7 +146,7 @@ const PublicRatePage: React.FC = () => {
       </Typography>
       {ctx.doctorName && (
         <Typography variant="body2" color="text.secondary">
-          Приём: {ctx.doctorName}
+          {t("public.visitLabel", { name: ctx.doctorName })}
         </Typography>
       )}
     </Box>
@@ -236,7 +238,7 @@ const PublicRatePage: React.FC = () => {
       {header}
       <Box sx={{ textAlign: "center" }}>
         <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-          Оцените ваш визит
+          {t("public.rateYourVisit")}
         </Typography>
         {error && (
           <Alert severity="error" sx={{ my: 2 }}>

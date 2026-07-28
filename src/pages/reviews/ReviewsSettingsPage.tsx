@@ -34,6 +34,7 @@ import {
 } from "../../api/reviews";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { CHANNEL_LABELS } from "./meta";
+import { useT } from "../../i18n/VerticalProvider";
 
 const CHANNEL_OPTIONS: ReviewChannel[] = ["whatsapp", "sms", "whatsapp_then_sms"];
 
@@ -41,6 +42,7 @@ const CHANNEL_OPTIONS: ReviewChannel[] = ["whatsapp", "sms", "whatsapp_then_sms"
 type FormState = Omit<ReviewSettings, "organizationId" | "variables">;
 
 const ReviewsSettingsPage: React.FC = () => {
+  const { t } = useT("reviews");
   usePageTitle("Настройки отзывов");
   const theme = useTheme();
   const canManage = useCan("reviews.manage");
@@ -165,8 +167,7 @@ const ReviewsSettingsPage: React.FC = () => {
                 label="Включить авторассылку запросов отзыва"
               />
               <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                Поллер найдёт завершённые приёмы и отправит приглашение через заданную
-                задержку. Глобальный рубильник также должен быть включён на сервере.
+                {t("settings.pollerHint")}
               </Typography>
 
               <Divider sx={{ my: 2 }} />
@@ -189,7 +190,7 @@ const ReviewsSettingsPage: React.FC = () => {
                 <TextField
                   type="number"
                   size="small"
-                  label="Задержка после приёма (мин)"
+                  label={t("settings.delayLabel")}
                   value={form.delayMinutes}
                   onChange={(e) => set("delayMinutes", Number(e.target.value))}
                   inputProps={{ min: 0 }}

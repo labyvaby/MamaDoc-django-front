@@ -1,0 +1,16 @@
+{
+  "list": {
+    "specialistLabel": "{{specialist.nom, capitalize}}",
+    "allSpecialists": "Все {{specialist.nomPl}}",
+    "patientColumn": "{{patient.nom, capitalize}}",
+    "specialistColumn": "{{specialist.nom, capitalize}}"
+  },
+  "settings": {
+    "pollerHint": "Поллер найдёт завершённые {{visit.nomPl}} и отправит приглашение через заданную задержку. Глобальный рубильник также должен быть включён на сервере.",
+    "delayLabel": "Задержка после {{visit.gen}} (мин)"
+  },
+  "public": {
+    "visitLabel": "{{visit.nom, capitalize}}: {{name}}",
+    "rateYourVisit": "Оцените ваш {{visit.acc}}"
+  }
+}
