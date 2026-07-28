@@ -51,6 +51,7 @@ import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { ConfirmDialog } from "../../components/ui";
+import { compressImage } from "../../utility/imageCompression";
 import {
   KNOWLEDGE_IMAGE_UPLOAD_ENABLED,
   createKnowledgeSeries,
@@ -369,6 +370,34 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const imageUrlValid = isSafeImageUrl(imageUrl);
 
+  // ── Обложка: загрузка файлом ──────────────────────────────────────────────
+  const [coverBusy, setCoverBusy] = React.useState(false);
+  const [coverUploadError, setCoverUploadError] = React.useState<string | null>(null);
+  const coverFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const uploadCoverFile = async (file: File) => {
+    if (!KNOWLEDGE_IMAGE_UPLOAD_ENABLED) {
+      setUploadHint(true);
+      return;
+    }
+    setCoverBusy(true);
+    setCoverUploadError(null);
+    try {
+      const compressed = await compressImage(file);
+      const outFile =
+        compressed instanceof File
+          ? compressed
+          : new File([compressed], file.name, { type: "image/jpeg" });
+      const { url } = await uploadKnowledgeImage(outFile, orgId);
+      setCoverUrl(url);
+      setCoverBroken(false);
+    } catch (err) {
+      setCoverUploadError(getErrorMessage(err));
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
   const openImageDialog = () => {
     setImageUrl("");
     setImageAlt("");
@@ -400,7 +429,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     setImageBusy(true);
     setImageError(null);
     try {
-      const { url } = await uploadKnowledgeImage(file, orgId);
+      const compressed = await compressImage(file);
+      const outFile =
+        compressed instanceof File
+          ? compressed
+          : new File([compressed], file.name, { type: "image/jpeg" });
+      const { url } = await uploadKnowledgeImage(outFile, orgId);
       insertImage(url, imageAlt || file.name);
       setImageOpen(false);
     } catch (err) {
@@ -732,7 +766,35 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 ) : undefined,
               }}
             />
+            <Tooltip title="Загрузить файл с компьютера">
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={() => coverFileInputRef.current?.click()}
+                  disabled={busy || seriesBusy || coverBusy}
+                  sx={{ mt: 0.5 }}
+                >
+                  {coverBusy ? (
+                    <CircularProgress size={18} />
+                  ) : (
+                    <ImageOutlined fontSize="small" />
+                  )}
+                </IconButton>
+              </span>
+            </Tooltip>
+            <input
+              ref={coverFileInputRef}
+              type="file"
+              hidden
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void uploadCoverFile(file);
+              }}
+            />
           </Stack>
+          {coverUploadError && <Alert severity="error">{coverUploadError}</Alert>}
 
           {/* Тулбар */}
           <Stack
