@@ -13,6 +13,11 @@ import reviews from "../locales/ru/reviews.json";
 import cashbox from "../locales/ru/cashbox.json";
 import load from "../locales/ru/load.json";
 import doctor from "../locales/ru/doctor.json";
+import reports from "../locales/ru/reports.json";
+import sidebar from "../locales/ru/sidebar.json";
+import bookings from "../locales/ru/bookings.json";
+import client from "../locales/ru/client.json";
+import publicBooking from "../locales/ru/publicBooking.json";
 import { capitalize, lower } from "./formatters";
 
 /**
@@ -21,7 +26,7 @@ import { capitalize, lower } from "./formatters";
  * Новый модуль: добавить JSON в src/locales/ru/ и ключ сюда.
  */
 export const resources = {
-  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor },
+  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking },
 } as const;
 
 export type Namespace = keyof (typeof resources)["ru"];
