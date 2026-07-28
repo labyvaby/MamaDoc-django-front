@@ -12,5 +12,10 @@
     "visitIdLabel": "ID {{visit.gen}} (необязательно)",
     "visitIdHelperLinked": "Указан — строка вакцины попадёт в счёт этого {{visit.gen}}",
     "visitIdHelperExternal": "Для внешней прививки необязателен"
+  },
+  "page": {
+    "patientColumn": "{{patient.nom, capitalize}}",
+    "patientFallback": "{{patient.nom, capitalize}} #{{id}}",
+    "deleteRowMessage": "{{details}}. Связанные плановые слоты {{patient.genPl}}, достроенные из этой строки, перестанут обновляться."
   }
 }

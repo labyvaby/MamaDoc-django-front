@@ -52,6 +52,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { subtleBg } from "../../theme/uiHelpers";
+import { useT } from "../../i18n/VerticalProvider";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -177,6 +178,7 @@ const StatTile: React.FC<{
 );
 
 const VaccinationsPage: React.FC = () => {
+  const { t } = useT("vaccinations");
   usePageTitle("Прививки");
   const theme = useTheme();
   const { can, loading: permLoading } = useCanChecker();
@@ -350,7 +352,7 @@ const VaccinationsPage: React.FC = () => {
     () => [
       {
         field: "patientName",
-        headerName: "Пациент",
+        headerName: t("page.patientColumn"),
         flex: 1,
         minWidth: 200,
         sortable: false,
@@ -359,7 +361,7 @@ const VaccinationsPage: React.FC = () => {
             <UserAvatar name={row.patientName ?? `#${row.patientId}`} size={28} sx={{ borderRadius: "8px", flexShrink: 0 }} />
             <Box sx={twoLineCellSx}>
               <Typography variant="body2" fontWeight={500} noWrap>
-                {row.patientName ?? `Пациент #${row.patientId}`}
+                {row.patientName ?? t("page.patientFallback", { id: row.patientId })}
               </Typography>
               {row.patientPhone && (
                 <Typography variant="caption" color="text.secondary" noWrap>
@@ -439,7 +441,7 @@ const VaccinationsPage: React.FC = () => {
         ),
       },
     ],
-    [canRecord, scheduleMutation.isPending],
+    [canRecord, scheduleMutation.isPending, t],
   );
 
   const recordsColumns = React.useMemo<GridColDef<VaccinationRecord>[]>(
@@ -1257,7 +1259,9 @@ const VaccinationsPage: React.FC = () => {
         <DialogContent>
           <DialogContentText>
             {deleteConfirm
-              ? `${deleteConfirm.vaccineName} · доза ${deleteConfirm.doseNumber} · ${deleteConfirm.label || `${deleteConfirm.ageMonths} мес`}. Связанные плановые слоты пациентов, достроенные из этой строки, перестанут обновляться.`
+              ? t("page.deleteRowMessage", {
+                  details: `${deleteConfirm.vaccineName} · доза ${deleteConfirm.doseNumber} · ${deleteConfirm.label || `${deleteConfirm.ageMonths} мес`}`,
+                })
               : ""}
           </DialogContentText>
         </DialogContent>
