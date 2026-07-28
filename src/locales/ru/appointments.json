@@ -505,5 +505,19 @@
     "rescheduled_10m": "Перенос",
     "appointment_change": "Изменение",
     "appointment_cancel": "Отмена"
+  },
+  "bankConfirmation": {
+    "title": "Подтвердить банковский платёж",
+    "loadError": "Ошибка загрузки платежей",
+    "confirmError": "Ошибка подтверждения",
+    "confirmed": "Оплата подтверждена банком",
+    "noneFound": "Подходящие платежи в банке не найдены. Проверьте сумму и время {{visit.gen}}.",
+    "available": "Доступные платежи",
+    "usedElsewhere": "Уже привязаны к другому {{visit.dat}}",
+    "cancel": "Отмена",
+    "confirming": "...",
+    "select": "Выбрать",
+    "timeDiff": "±{{minutes}} мин",
+    "amount": "{{amount}} сом"
   }
 }

@@ -9,6 +9,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import dayjs from "dayjs";
 import { BankCandidate, findBankCandidates, confirmBankPayment } from "../../services/bankConfirmation";
 import { useNotification } from "@refinedev/core";
+import { useT } from "../../i18n/VerticalProvider";
 
 interface BankConfirmationModalProps {
     open: boolean;
@@ -23,6 +24,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
     onClose,
     onConfirmed,
 }) => {
+    const { t } = useT("appointments");
     const { open: notify } = useNotification();
     const [candidates, setCandidates] = React.useState<BankCandidate[]>([]);
     const [loading, setLoading] = React.useState(false);
@@ -33,7 +35,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
         setLoading(true);
         findBankCandidates(appointmentId)
             .then(setCandidates)
-            .catch(() => notify?.({ type: "error", message: "Ошибка загрузки платежей" }))
+            .catch(() => notify?.({ type: "error", message: t("bankConfirmation.loadError") }))
             .finally(() => setLoading(false));
     }, [open, appointmentId]);
 
@@ -42,14 +44,14 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
         try {
             const result = await confirmBankPayment(appointmentId, movementId);
             if (!result.ok) {
-                notify?.({ type: "error", message: result.error ?? "Ошибка подтверждения" });
+                notify?.({ type: "error", message: result.error ?? t("bankConfirmation.confirmError") });
                 return;
             }
-            notify?.({ type: "success", message: "Оплата подтверждена банком" });
+            notify?.({ type: "success", message: t("bankConfirmation.confirmed") });
             onConfirmed();
             onClose();
         } catch {
-            notify?.({ type: "error", message: "Ошибка подтверждения" });
+            notify?.({ type: "error", message: t("bankConfirmation.confirmError") });
         } finally {
             setConfirming(null);
         }
@@ -77,7 +79,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
                 <Stack direction="row" alignItems="center" gap={1}>
                     <AccountBalanceOutlined color="primary" fontSize="small" />
                     <Typography variant="h6" fontSize="1rem">
-                        Подтвердить банковский платёж
+                        {t("bankConfirmation.title")}
                     </Typography>
                 </Stack>
                 <IconButton size="small" onClick={onClose}>
@@ -92,14 +94,14 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
                     </Box>
                 ) : candidates.length === 0 ? (
                     <Alert severity="warning">
-                        Подходящие платежи в банке не найдены. Проверьте сумму и время приёма.
+                        {t("bankConfirmation.noneFound")}
                     </Alert>
                 ) : (
                     <Stack spacing={1.5}>
                         {availableCandidates.length > 0 && (
                             <>
                                 <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ }}>
-                                    Доступные платежи
+                                    {t("bankConfirmation.available")}
                                 </Typography>
                                 {availableCandidates.map(c => (
                                     <CandidateRow
@@ -117,7 +119,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
                             <>
                                 <Divider />
                                 <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ }}>
-                                    Уже привязаны к другому приёму
+                                    {t("bankConfirmation.usedElsewhere")}
                                 </Typography>
                                 {usedCandidates.map(c => (
                                     <CandidateRow
@@ -136,7 +138,7 @@ export const BankConfirmationModal: React.FC<BankConfirmationModalProps> = ({
 
             <Box sx={{ px: 2, py: 1.5, borderTop: 1, borderColor: "divider" }}>
                 <Button fullWidth variant="outlined" color="inherit" onClick={onClose}>
-                    Отмена
+                    {t("bankConfirmation.cancel")}
                 </Button>
             </Box>
         </Drawer>
@@ -148,7 +150,9 @@ const CandidateRow: React.FC<{
     onConfirm: (id: string) => void;
     confirming: boolean;
     disabled: boolean;
-}> = ({ candidate, onConfirm, confirming, disabled }) => (
+}> = ({ candidate, onConfirm, confirming, disabled }) => {
+    const { t } = useT("appointments");
+    return (
     <Box sx={{
         display: "flex",
         alignItems: "center",
@@ -164,10 +168,10 @@ const CandidateRow: React.FC<{
         <Stack spacing={0.25} flex={1} minWidth={0}>
             <Stack direction="row" alignItems="center" gap={1}>
                 <Typography variant="subtitle2" fontWeight={700}>
-                    {Number(candidate.credit_amount).toLocaleString()} сом
+                    {t("bankConfirmation.amount", { amount: Number(candidate.credit_amount).toLocaleString() })}
                 </Typography>
                 <Chip
-                    label={`±${candidate.time_diff_min} мин`}
+                    label={t("bankConfirmation.timeDiff", { minutes: candidate.time_diff_min })}
                     size="small"
                     color={candidate.time_diff_min <= 60 ? "success" : "default"}
                     sx={{ height: 20, fontSize: "0.7rem" }}
@@ -192,7 +196,8 @@ const CandidateRow: React.FC<{
             startIcon={confirming ? <CircularProgress size={14} color="inherit" /> : <CheckCircleOutlined />}
             sx={{ flexShrink: 0 }}
         >
-            {confirming ? "..." : "Выбрать"}
+            {confirming ? t("bankConfirmation.confirming") : t("bankConfirmation.select")}
         </Button>
     </Box>
-);
+    );
+};
