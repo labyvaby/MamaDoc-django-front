@@ -144,6 +144,28 @@
     "amountRequired": "Введите сумму больше нуля",
     "reasonRequired": "Укажите причину надбавки"
   },
+  "periodSettings": {
+    "title": "Настройки месяца",
+    "subtitle": "Модификаторы расчёта зарплаты",
+    "activeCount": "{{count}} активно",
+    "saveError": "Ошибка сохранения настроек",
+    "flagsSection": "Флаги расчёта",
+    "mergeNightTitle": "Объединить ночные часы с дневными",
+    "mergeNightDesc": "Все часы (дневные + ночные) оплачиваются по дневной ставке. Ночная надбавка не применяется.",
+    "on": "Включено",
+    "off": "Выключено",
+    "percentTitle": "Процент за услуги",
+    "percentDesc": "dynamic_rules — процент от стоимости {{visit.genPl}} и {{service.genPl}}",
+    "considered": "Учитывается",
+    "percentDisabled": "Отключён",
+    "registratorSection": "Регистратура",
+    "distributionTitle": "Распределение по месячным часам",
+    "distributionDesc": "{{visit.nomPl, capitalize}} делятся пропорционально общим часам за месяц. Если выключено — делятся по часам каждого конкретного дня (старая логика).",
+    "newLogic": "Новая логика",
+    "oldLogic": "Старая логика",
+    "cancel": "Отмена",
+    "save": "Сохранить"
+  },
   "bonusDrawer": {
     "title": "Единоразовая надбавка",
     "subtitle": "{{month}} · войдёт в колонку «Надбавка» отчёта",
