@@ -21,6 +21,7 @@ import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import { getStatusConfig, getStatusChipSx, APPOINTMENT_STATUSES } from "../../../config/appointmentStatuses";
 import { formatKGS } from "../../../utility/format";
 import { Appointment } from "../../home/types";
+import { useT } from "../../../i18n/VerticalProvider";
 
 type DoctorAppointmentListProps = {
     loading: boolean;
@@ -39,6 +40,7 @@ export const DoctorAppointmentList: React.FC<DoctorAppointmentListProps> = ({
     titleDate,
     onOpenFilters
 }) => {
+    const { t } = useT("doctor");
     const [search, setSearch] = React.useState("");
 
     const filteredItems = React.useMemo(() => {
@@ -54,7 +56,7 @@ export const DoctorAppointmentList: React.FC<DoctorAppointmentListProps> = ({
             <CardHeader
                 title={
                     <Stack direction="row" alignItems="center" gap={1}>
-                        <Typography variant="subtitle1">Приемы ({titleDate})</Typography>
+                        <Typography variant="subtitle1">{t("visitsTitle", { date: titleDate })}</Typography>
                         <Chip size="small" label={filteredItems.length} />
                     </Stack>
                 }
@@ -83,7 +85,7 @@ export const DoctorAppointmentList: React.FC<DoctorAppointmentListProps> = ({
                     </IconButton>
                     <InputBase
                         sx={{ ml: 1, flex: 1, fontSize: "0.875rem" }}
-                        placeholder="Поиск пациента..."
+                        placeholder={t("searchPlaceholder")}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />
@@ -146,7 +148,7 @@ export const DoctorAppointmentList: React.FC<DoctorAppointmentListProps> = ({
                                                 </Typography>
                                             </Stack>
                                             <Typography variant="body2" color="text.secondary">
-                                                Пациент: {item.patient_name || "Без имени"}
+                                                {t("patientLabel", { name: item.patient_name || t("noName") })}
                                             </Typography>
                                             {item.service_names && (
                                                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
