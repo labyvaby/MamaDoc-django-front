@@ -1,0 +1,7 @@
+{
+  "patientCardTitle": "Карточка {{patient.gen}}",
+  "visitHistoryTitle": "История {{visit.genPl}}",
+  "specialistLabel": "{{specialist.nom, capitalize}}: {{name}}",
+  "visitDetailsTitle": "Детали {{visit.gen}}",
+  "specialistFieldLabel": "{{specialist.nom, capitalize}}"
+}
