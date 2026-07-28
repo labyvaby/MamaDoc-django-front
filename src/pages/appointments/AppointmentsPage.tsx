@@ -33,6 +33,7 @@ dayjs.locale("ru");
 import { useCanChecker, useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useActiveScope } from "../../hooks/useActiveScope";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
 import DjangoAddAppointmentDrawer from "./DjangoAddAppointmentDrawer";
 import DjangoEditAppointmentDrawer from "./DjangoEditAppointmentDrawer";
 import FreeSlotsView from "./FreeSlotsView";
@@ -174,10 +175,14 @@ function useHomeDashboard(params: {
  * `enabled` — a clinician looking at their own list doesn't need it.
  */
 function useClinicalIds(role: "doctor" | "nurse", enabled: boolean): Set<number> {
+  const orgId = useApiOrgId();
   const query = useQuery({
-    queryKey: ["staff", "employees", "clinicalIds", role],
+    queryKey: ["staff", "employees", "clinicalIds", role, orgId],
     queryFn: async ({ signal }) => {
-      const res = await getDjangoEmployees({ status: "active", pageSize: 500 }, signal);
+      const res = await getDjangoEmployees(
+        { status: "active", pageSize: 500, organizationId: orgId },
+        signal,
+      );
       return res.results.filter((e) => e.clinicalRole === role).map((e) => e.id);
     },
     enabled,

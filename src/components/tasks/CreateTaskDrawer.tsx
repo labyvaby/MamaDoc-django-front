@@ -116,8 +116,9 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   });
 
   const employeesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.reference.employees, "tasks-assignee"],
-    queryFn: ({ signal }) => getDjangoEmployees({ status: "active", pageSize: 200 }, signal),
+    queryKey: [...djangoQueryKeys.reference.employees, "tasks-assignee", orgId],
+    queryFn: ({ signal }) =>
+      getDjangoEmployees({ status: "active", pageSize: 200, organizationId: orgId }, signal),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });

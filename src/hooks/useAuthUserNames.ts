@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getDjangoEmployees } from "../api/staff";
+import { useApiOrgId } from "./useApiOrgId";
 import {
   djangoQueryKeys,
   DJANGO_REFERENCE_STALE_TIME_MS,
@@ -16,13 +17,14 @@ const EMPTY: Record<number, string> = {};
  * справочник — подписи просто останутся без имён.
  */
 export function useAuthUserNames(enabled: boolean = true): Record<number, string> {
+  const orgId = useApiOrgId();
   const q = useQuery({
-    queryKey: djangoQueryKeys.staff.userNames,
+    queryKey: [...djangoQueryKeys.staff.userNames, orgId],
     queryFn: async ({ signal }) => {
       const map: Record<number, string> = {};
       let page: number | null = 1;
       while (page != null) {
-        const res = await getDjangoEmployees({ page, pageSize: 200 }, signal);
+        const res = await getDjangoEmployees({ page, pageSize: 200, organizationId: orgId }, signal);
         for (const emp of res.results) {
           if (emp.authUserId != null) map[emp.authUserId] = emp.fullName;
         }

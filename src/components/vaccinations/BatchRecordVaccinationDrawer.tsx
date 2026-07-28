@@ -91,8 +91,9 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
   byVaccineRef.current = batchesByVaccine;
 
   const employeesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.reference.employees, "vacc-batch-administered-by"],
-    queryFn: ({ signal }) => getDjangoEmployees({ status: "active", pageSize: 200 }, signal),
+    queryKey: [...djangoQueryKeys.reference.employees, "vacc-batch-administered-by", orgId],
+    queryFn: ({ signal }) =>
+      getDjangoEmployees({ status: "active", pageSize: 200, organizationId: orgId }, signal),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });

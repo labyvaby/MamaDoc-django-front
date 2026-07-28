@@ -194,8 +194,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   });
 
   const employeesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.reference.employees, "vaccinations-administered-by"],
-    queryFn: ({ signal }) => getDjangoEmployees({ status: "active", pageSize: 200 }, signal),
+    queryKey: [...djangoQueryKeys.reference.employees, "vaccinations-administered-by", orgId],
+    queryFn: ({ signal }) =>
+      getDjangoEmployees({ status: "active", pageSize: 200, organizationId: orgId }, signal),
     enabled: open,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });

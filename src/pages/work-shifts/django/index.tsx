@@ -43,6 +43,7 @@ import duration from "dayjs/plugin/duration";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../../hooks/useDjangoSkud";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { getDjangoEmployees } from "../../../api/staff";
 import {
   createShift,
@@ -77,6 +78,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
   // Как в оригинале: без карточки сотрудника отметка невозможна — показываем
   // предупреждение вместо кнопок, а не ошибку 400 после клика.
   const { activeEmployee } = usePermissions();
+  const orgId = useApiOrgId();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = React.useState<number | null>(null);
   const [startDate, setStartDate] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
@@ -97,8 +99,8 @@ const DjangoWorkShiftsPage: React.FC = () => {
   } = useDjangoSkudActions(true, selectedEmployeeId, startDate, endDate);
 
   const employeesQuery = useQuery({
-    queryKey: djangoQueryKeys.reference.employees,
-    queryFn: ({ signal }) => getDjangoEmployees({ pageSize: 200 }, signal),
+    queryKey: [...djangoQueryKeys.reference.employees, orgId ?? null],
+    queryFn: ({ signal }) => getDjangoEmployees({ pageSize: 200, organizationId: orgId }, signal),
     enabled: canManage,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { DateRangeField, type DateRange } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
 
 export interface LoadFiltersProps {
@@ -20,10 +21,14 @@ const LoadFilters: React.FC<LoadFiltersProps> = ({
   onEmployeesChange,
 }) => {
   const [empInput, setEmpInput] = React.useState("");
+  const orgId = useApiOrgId();
   const empQuery = useQuery({
-    queryKey: ["django", "load", "employees", empInput],
+    queryKey: ["django", "load", "employees", empInput, orgId],
     queryFn: ({ signal }) =>
-      getDjangoEmployees({ search: empInput || undefined, status: "active", pageSize: 20 }, signal),
+      getDjangoEmployees(
+        { search: empInput || undefined, status: "active", pageSize: 20, organizationId: orgId },
+        signal,
+      ),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const options = empQuery.data?.results ?? [];

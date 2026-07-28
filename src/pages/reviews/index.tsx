@@ -148,7 +148,7 @@ const ReviewsPage: React.FC = () => {
   const doctorsQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, "doctors", orgKey],
     queryFn: ({ signal }) =>
-      getDjangoEmployees({ status: "active", pageSize: 200 }, signal),
+      getDjangoEmployees({ status: "active", pageSize: 200, organizationId }, signal),
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
