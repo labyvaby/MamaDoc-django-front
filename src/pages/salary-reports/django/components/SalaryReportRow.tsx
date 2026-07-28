@@ -33,6 +33,7 @@ import {
   type PayrollRow,
   type EmployeeDailyDetailRow,
 } from "../../../../api/payroll";
+import { useT } from "../../../../i18n/VerticalProvider";
 
 dayjs.locale("ru");
 
@@ -59,7 +60,6 @@ export const COLUMNS_REGISTRATOR: ColumnConfig = {
   statusDiscount: false,
   bonuses: true,
   percent: true,
-  appointmentsLabel: "Все приёмы",
 };
 
 export const COLUMNS_DOCTOR: ColumnConfig = {
@@ -72,7 +72,6 @@ export const COLUMNS_DOCTOR: ColumnConfig = {
   statusDiscount: true,
   bonuses: false,
   percent: true,
-  appointmentsLabel: "Все приёмы",
 };
 
 export const COLUMNS_NURSE: ColumnConfig = {
@@ -85,7 +84,6 @@ export const COLUMNS_NURSE: ColumnConfig = {
   statusDiscount: false,
   bonuses: true,
   percent: true,
-  appointmentsLabel: "Все приёмы",
 };
 
 export const COLUMNS_ADMIN: ColumnConfig = {
@@ -107,15 +105,17 @@ export const COLUMNS_ADMIN: ColumnConfig = {
  * состав зависит от роли (у врача — процент/фикс по услугам, у регистратора —
  * почасовая и заработок за распределённые приёмы, у санитарки — уборки).
  */
-function earningsBreakdown(row: PayrollRow): { label: string; value: string }[] {
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
+
+function earningsBreakdown(row: PayrollRow, t: TFunc): { label: string; value: string }[] {
   const parts: [string, string | undefined][] = [
-    ["Процент по услугам", row.servicePercentPay],
-    ["Фикс по услугам", row.serviceFixedPay],
-    ["За приёмы", row.appointmentPay],
-    ["Товары", row.productPay],
-    ["Почасовая", row.hourlyPay],
-    ["Уборки", row.cleaningEarnings],
-    ["Надбавка", row.bonus],
+    [t("row.breakdown.servicePercent"), row.servicePercentPay],
+    [t("row.breakdown.serviceFixed"), row.serviceFixedPay],
+    [t("row.breakdown.forAppointments"), row.appointmentPay],
+    [t("row.breakdown.products"), row.productPay],
+    [t("row.breakdown.hourly"), row.hourlyPay],
+    [t("row.breakdown.cleaning"), row.cleaningEarnings],
+    [t("row.breakdown.bonus"), row.bonus],
   ];
   return parts
     .filter(([, v]) => parseFloat(v || "0") > 0)
@@ -147,6 +147,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   periodSettings,
   onPayout,
 }) => {
+  const { t } = useT("salaryReports");
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const [dailyData, setDailyData] = useState<EmployeeDailyDetailRow[]>([]);
@@ -158,7 +159,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
 
   const totalHours = parseFloat(row.dayHours || "0") + parseFloat(row.nightHours || "0");
   const hasHours = parseFloat(row.dayHours || "0") > 0 || parseFloat(row.nightHours || "0") > 0;
-  const breakdown = earningsBreakdown(row);
+  const breakdown = earningsBreakdown(row, t);
 
   // payable — есть остаток к выплате; paid — начислено, но авансы всё покрыли; none — начислений нет.
   const netPayable = Math.round(parseFloat(row.netSalary || "0"));
@@ -246,7 +247,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   color="text.secondary"
                   sx={{ display: "block", fontWeight: 700, textTransform: "uppercase", fontSize: "0.55rem", lineHeight: 1.2 }}
                 >
-                  Итого ЗП
+                  {t("row.total")}
                 </Typography>
                 <Typography fontWeight={800} color="primary.main" sx={{ fontSize: "0.95rem", lineHeight: 1.1 }}>
                   {formatKGS(row.netSalary)}
@@ -264,17 +265,17 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             {cols.hours && (
               <Grid2 size={4}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
-                  Часы
+                  {t("row.hoursShort")}
                 </Typography>
                 <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700}>
-                  {totalHours.toFixed(1)} ч
+                  {t("row.hoursUnit", { hours: totalHours.toFixed(1) })}
                 </Typography>
               </Grid2>
             )}
             {cols.createdBy && isRegistrator && (
               <Grid2 size={4}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
-                  Создал
+                  {t("row.created")}
                 </Typography>
                 <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700} color="success.main">
                   {row.createdByCount}
@@ -284,7 +285,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             {cols.distributed && isRegistrator && (
               <Grid2 size={4}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
-                  Распред.
+                  {t("row.distributedShort")}
                 </Typography>
                 <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700} color="info.main">
                   {parseFloat(row.distributedAppointments || "0").toFixed(0)}
@@ -294,7 +295,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             {cols.appointments && !isRegistrator && (
               <Grid2 size={4}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
-                  Все приёмы
+                  {t("row.allAppointments")}
                 </Typography>
                 <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700}>
                   {row.totalCount}
@@ -303,7 +304,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             )}
             <Grid2 size={4}>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
-                Начислено
+                {t("row.earnings")}
               </Typography>
               <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700}>
                 {formatKGS(row.earnings)}
@@ -311,7 +312,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             </Grid2>
             <Grid2 size={4}>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6rem", display: "block", lineHeight: 1.2 }}>
-                Аванс
+                {t("row.advance")}
               </Typography>
               <Typography sx={{ fontSize: "0.78rem" }} fontWeight={700} color="error.main">
                 {formatKGS(row.advances)}
@@ -324,7 +325,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
           <Divider />
           <Box ref={collapseRef} sx={{ p: 1.5, bgcolor: alpha(theme.palette.background.default, 0.5) }}>
             <Typography variant="caption" fontWeight={700} color="text.secondary" gutterBottom sx={{ display: "block", mb: 1 }}>
-              По дням
+              {t("row.byDay")}
             </Typography>
             {detailLoading ? (
               <Box sx={{ py: 3, display: "flex", justifyContent: "center" }}>
@@ -335,8 +336,8 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                 {dailyData.length === 0 ? (
                   <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
                     {parseFloat(row.cleaningEarnings || "0") > 0
-                      ? "Начислений по приёмам за месяц нет — заработок за подтверждённые уборки."
-                      : "Нет данных за месяц"}
+                      ? t("row.noAccrualsCleaningOnly")
+                      : t("row.noDataMonth")}
                   </Typography>
                 ) : (
                   dailyData.map((day, idx) => (
@@ -363,14 +364,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     <Grid2 container spacing={2}>
                       <Grid2 size={4}>
                         <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
-                          Часы
+                          {t("row.hoursShort")}
                         </Typography>
                         <Stack direction="row" alignItems="center" spacing={0.5}>
                           <Typography variant="body2" fontWeight={700}>
                             {parseFloat(day.dayHours).toFixed(1)} / {parseFloat(day.nightHours).toFixed(1)}
                           </Typography>
                           {day.hasWarning && (
-                            <Tooltip title="Аномальная длительность (> 36ч)">
+                            <Tooltip title={t("row.anomalyDuration")}>
                               <ReportProblemIcon sx={{ color: "error.main", fontSize: "0.85rem" }} />
                             </Tooltip>
                           )}
@@ -379,7 +380,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {isRegistrator ? (
                         <Grid2 size={4}>
                           <Typography variant="caption" color="success.main" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
-                            Создал
+                            {t("row.createdShort")}
                           </Typography>
                           <Typography variant="body2" fontWeight={700} color="success.main">
                             {day.createdByCount}
@@ -388,7 +389,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       ) : (
                         <Grid2 size={4}>
                           <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
-                            Приемы
+                            {t("row.appointmentsShort")}
                           </Typography>
                           <Typography variant="body2" fontWeight={700}>
                             {day.appointmentsCount}
@@ -397,7 +398,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       )}
                       <Grid2 size={4}>
                         <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
-                          Процент
+                          {t("row.percent")}
                         </Typography>
                         <Typography variant="body2" fontWeight={700}>
                           {formatKGS(day.percentSum)}
@@ -406,7 +407,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {parseFloat(day.expensesSum) > 0 && (
                         <Grid2 size={12}>
                           <Typography variant="caption" color="error.main" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
-                            ВЫПЛАЧЕНО: {formatKGS(day.expensesSum)}
+                            {t("row.paidOut", { amount: formatKGS(day.expensesSum) })}
                           </Typography>
                         </Grid2>
                       )}
@@ -428,7 +429,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                 >
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Начислено
+                      {t("row.earnings")}
                     </Typography>
                     <Typography variant="body2" fontWeight={700}>
                       {formatKGS(row.earnings)}
@@ -437,7 +438,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   {breakdown.map((p) => (
                     <Stack key={p.label} direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
                       <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
-                        в т.ч. {p.label.toLowerCase()}
+                        {t("row.inclLower", { label: p.label.toLowerCase() })}
                       </Typography>
                       <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
                         {formatKGS(p.value)}
@@ -446,7 +447,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   ))}
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Авансы
+                      {t("row.totalAdvances")}
                     </Typography>
                     <Typography variant="body2" fontWeight={700} color="error.main">
                       {formatKGS(row.advances)}
@@ -455,7 +456,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   <Divider sx={{ my: 0.75 }} />
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography variant="body2" fontWeight={800}>
-                      Итого к выплате
+                      {t("row.totalPayable")}
                     </Typography>
                     <Typography variant="body1" fontWeight={800} color="primary.main">
                       {formatKGS(row.netSalary)}
@@ -472,7 +473,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       onClick={() => onPayout(row)}
                       sx={{ mt: 1.25, borderRadius: 1.5, fontWeight: 700 }}
                     >
-                      Выплатить {formatKGS(row.netSalary)}
+                      {t("row.payoutAmount", { amount: formatKGS(row.netSalary) })}
                     </Button>
                   )}
                   {onPayout && payState === "paid" && (
@@ -480,7 +481,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       size="small"
                       color="success"
                       variant="outlined"
-                      label="✓ Выплачено"
+                      label={t("actions.paidBadge")}
                       sx={{ mt: 1.25, fontWeight: 700, alignSelf: "flex-start" }}
                     />
                   )}
@@ -608,7 +609,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
             sx={{ whiteSpace: "nowrap", width: 0, cursor: "default" }}
           >
             {payState === "payable" ? (
-              <Tooltip title={`Создать расход: выплата ${formatKGS(row.netSalary)} — ${row.fullName}`}>
+              <Tooltip title={t("tooltips.createExpensePayout", { amount: formatKGS(row.netSalary), name: row.fullName })}>
                 <Button
                   size="small"
                   variant="outlined"
@@ -628,7 +629,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     "&:hover": { bgcolor: alpha(theme.palette.success.main, 0.14) },
                   }}
                 >
-                  Выплатить
+                  {t("actions.payout")}
                 </Button>
               </Tooltip>
             ) : payState === "paid" ? (
@@ -636,7 +637,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                 size="small"
                 color="success"
                 variant="outlined"
-                label="✓ Выплачено"
+                label={t("actions.paidBadge")}
                 sx={{ fontWeight: 700, height: 22, fontSize: "0.65rem" }}
               />
             ) : null}
@@ -649,7 +650,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
           <Collapse in={open} timeout="auto" unmountOnExit>
             <Box ref={collapseRef} sx={{ margin: 2 }}>
               <Typography variant="subtitle2" fontWeight={800} gutterBottom component="div">
-                Дневная детализация
+                {t("row.dailyDetail")}
               </Typography>
               {detailLoading ? (
                 <Box sx={{ py: 3, display: "flex", justifyContent: "center" }}>
@@ -660,32 +661,32 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   {dailyData.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
                       {parseFloat(row.cleaningEarnings || "0") > 0
-                        ? "Начислений по приёмам за месяц нет — заработок за подтверждённые уборки."
-                        : "Начислений по дням за этот месяц нет."}
+                        ? t("row.noAccrualsCleaningOnly")
+                        : t("row.noDataMonthAlt")}
                     </Typography>
                   ) : (
                   <Table size="small" sx={{ "& .MuiTableCell-root": { py: 0.75 } }}>
                     <TableHead>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 800 }}>Дата</TableCell>
+                        <TableCell sx={{ fontWeight: 800 }}>{t("row.date")}</TableCell>
                         {!periodSettings?.merge_night_into_day && (
                           <>
-                            <TableCell align="center" sx={{ fontWeight: 800 }}>Дневные часы</TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 800 }}>Ночные часы</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.dayHoursFull")}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.nightHoursFull")}</TableCell>
                           </>
                         )}
                         {periodSettings?.merge_night_into_day && (
-                          <TableCell align="center" sx={{ fontWeight: 800 }}>Часы</TableCell>
+                          <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.hoursShort")}</TableCell>
                         )}
-                        <TableCell align="right" sx={{ fontWeight: 800 }}>Почасовая ЗП</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.hourlyPay")}</TableCell>
                         {isRegistrator ? (
-                          <TableCell align="center" sx={{ fontWeight: 800, color: "success.main" }}>Создано приемов</TableCell>
+                          <TableCell align="center" sx={{ fontWeight: 800, color: "success.main" }}>{t("row.createdAppointments")}</TableCell>
                         ) : (
-                          <TableCell align="center" sx={{ fontWeight: 800 }}>Все приемы</TableCell>
+                          <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.allAppointmentsFull")}</TableCell>
                         )}
-                        <TableCell align="right" sx={{ fontWeight: 800 }}>Сумма по услугам</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800, color: "error.main" }}>Выплачено авансов</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800, color: "primary.main" }}>Итого ЗП за день</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.servicesSum")}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800, color: "error.main" }}>{t("row.advancesPaid")}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800, color: "primary.main" }}>{t("row.totalPerDay")}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -743,7 +744,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                   >
                     <Stack spacing={1}>
                       <Stack direction="row" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">Начислено за месяц:</Typography>
+                        <Typography variant="body2" color="text.secondary">{t("row.accruedMonth")}</Typography>
                         <Typography variant="body2" fontWeight={700}>{formatKGS(row.earnings)}</Typography>
                       </Stack>
                       {/* Часть начислений (за распределённые приёмы, уборки,
@@ -751,17 +752,17 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                           раскладывается — поэтому показываем состав. */}
                       {breakdown.map((p) => (
                         <Stack key={p.label} direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
-                          <Typography variant="caption" color="text.secondary">в т.ч. {p.label.toLowerCase()}:</Typography>
+                          <Typography variant="caption" color="text.secondary">{t("row.inclLowerColon", { label: p.label.toLowerCase() })}</Typography>
                           <Typography variant="caption" fontWeight={700}>{formatKGS(p.value)}</Typography>
                         </Stack>
                       ))}
                       <Stack direction="row" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">Выплачено авансов:</Typography>
+                        <Typography variant="body2" color="text.secondary">{t("row.advancesPaidColon")}</Typography>
                         <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.advances)}</Typography>
                       </Stack>
                       <Divider />
                       <Stack direction="row" justifyContent="space-between">
-                        <Typography variant="body2" fontWeight={800}>Итого к выплате:</Typography>
+                        <Typography variant="body2" fontWeight={800}>{t("row.totalPayableColon")}</Typography>
                         <Typography variant="body2" fontWeight={800} color="primary.main">{formatKGS(row.netSalary)}</Typography>
                       </Stack>
                     </Stack>
