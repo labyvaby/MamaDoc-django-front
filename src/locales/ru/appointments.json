@@ -506,6 +506,12 @@
     "appointment_change": "Изменение",
     "appointment_cancel": "Отмена"
   },
+  "allRegistry": {
+    "appointmentsPageTitle": "Все {{visit.nomPl}}",
+    "appointmentsListLabel": "{{visit.nomPl, capitalize}}",
+    "appointmentsSearchPlaceholder": "Поиск {{patient.gen}}, {{service.gen}}...",
+    "proceduresSearchPlaceholder": "Поиск {{patient.gen}}, процедуры..."
+  },
   "bankConfirmation": {
     "title": "Подтвердить банковский платёж",
     "loadError": "Ошибка загрузки платежей",

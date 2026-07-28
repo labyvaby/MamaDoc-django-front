@@ -6,13 +6,17 @@
  */
 import React from "react";
 import AppointmentsRegistryView from "../appointments/components/AppointmentsRegistryView";
+import { useT } from "../../i18n/VerticalProvider";
 
-export const AllAppointmentsList: React.FC = () => (
-  <AppointmentsRegistryView
-    pageTitle="Все приемы"
-    listLabel="Приёмы"
-    searchPlaceholder="Поиск пациента, услуги..."
-  />
-);
+export const AllAppointmentsList: React.FC = () => {
+  const { t } = useT("appointments");
+  return (
+    <AppointmentsRegistryView
+      pageTitle={t("allRegistry.appointmentsPageTitle")}
+      listLabel={t("allRegistry.appointmentsListLabel")}
+      searchPlaceholder={t("allRegistry.appointmentsSearchPlaceholder")}
+    />
+  );
+};
 
 export default AllAppointmentsList;

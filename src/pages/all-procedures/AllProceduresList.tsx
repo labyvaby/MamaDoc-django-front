@@ -13,8 +13,10 @@ import AppointmentsRegistryView from "../appointments/components/AppointmentsReg
 import { getDjangoEmployees } from "../../api/staff";
 import { DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import type { DjangoAppointment, AppointmentServiceLine } from "../../api/appointments";
+import { useT } from "../../i18n/VerticalProvider";
 
 export const AllProceduresList: React.FC = () => {
+  const { t } = useT("appointments");
   // Медсёстры по clinical role (не RBAC). Тот же queryKey, что в
   // AppointmentsPage (useClinicalIds) — кэш общий.
   const nurseIdsQuery = useQuery({
@@ -45,7 +47,7 @@ export const AllProceduresList: React.FC = () => {
     <AppointmentsRegistryView
       pageTitle="Все процедуры"
       listLabel="Процедуры"
-      searchPlaceholder="Поиск пациента, процедуры..."
+      searchPlaceholder={t("allRegistry.proceduresSearchPlaceholder")}
       getLines={nurseLines}
       isVisible={hasNurseLine}
       groupEmployeeIds={nurseIds}
