@@ -38,6 +38,7 @@ import { ApiError, isAbortError } from "../../api/client";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { formatKGS } from "../../utility/format";
 import { PublicBookingShell } from "./shell";
+import { useT } from "../../i18n/VerticalProvider";
 
 // ── Успех записи ──────────────────────────────────────────────────────────────
 
@@ -45,7 +46,9 @@ const BookingSuccess: React.FC<{
   result: GuestBookingResult;
   doctorName: string;
   onDone: () => void;
-}> = ({ result, doctorName, onDone }) => (
+}> = ({ result, doctorName, onDone }) => {
+  const { t } = useT("publicBooking");
+  return (
   <Paper variant="outlined" sx={{ p: 4, borderRadius: "14px", textAlign: "center" }}>
     <CheckCircleOutlined color="success" sx={{ fontSize: 56, mb: 1 }} />
     <Typography variant="h6" fontWeight={700} gutterBottom>
@@ -60,10 +63,11 @@ const BookingSuccess: React.FC<{
       </Typography>
     )}
     <Button variant="outlined" onClick={onDone}>
-      К списку врачей
+      {t("backToList")}
     </Button>
   </Paper>
-);
+  );
+};
 
 // ── Форма гостя ───────────────────────────────────────────────────────────────
 
@@ -181,6 +185,7 @@ const Reviews: React.FC<{ reviews: ProfessionalReview[] }> = ({ reviews }) => {
 // ── Основная страница ─────────────────────────────────────────────────────────
 
 const DoctorBookingPage: React.FC = () => {
+  const { t } = useT("publicBooking");
   const { idOrSlug = "" } = useParams<{ idOrSlug: string }>();
   const navigate = useNavigate();
 
@@ -260,8 +265,8 @@ const DoctorBookingPage: React.FC = () => {
     service:
       !doctor || doctor.services.length === 0 || serviceId !== null
         ? null
-        : "Выберите услугу",
-    slot: selectedDate && selectedTime ? null : "Выберите дату и время приёма",
+        : t("selectServiceRequired"),
+    slot: selectedDate && selectedTime ? null : t("selectSlotRequired"),
   });
 
   const handleSubmit = (name: string, phone: string, comment: string) => {
@@ -281,10 +286,7 @@ const DoctorBookingPage: React.FC = () => {
       .catch((e) => {
         // Бэк ещё не реализовал POST /bookings/ (§7) — 404/405 объясняем человечно.
         if (e instanceof ApiError && (e.status === 404 || e.status === 405)) {
-          setSubmitError(
-            "Онлайн-запись скоро заработает. Пока, пожалуйста, позвоните в клинику, " +
-              "чтобы записаться на выбранное время.",
-          );
+          setSubmitError(t("onlineBookingSoon"));
         } else {
           setSubmitError(e instanceof Error ? e.message : "Не удалось записаться");
         }
@@ -305,9 +307,9 @@ const DoctorBookingPage: React.FC = () => {
   if (notFound || !doctor) {
     return (
       <PublicBookingShell maxWidth="md">
-        <Alert severity="warning">Врач не найден.</Alert>
+        <Alert severity="warning">{t("notFound")}</Alert>
         <Button sx={{ mt: 2 }} startIcon={<ArrowBackOutlined />} onClick={() => navigate("/book")}>
-          К списку врачей
+          {t("backToList")}
         </Button>
       </PublicBookingShell>
     );
@@ -333,7 +335,7 @@ const DoctorBookingPage: React.FC = () => {
         onClick={() => navigate("/book")}
         sx={{ mb: 2 }}
       >
-        К списку врачей
+        {t("backToList")}
       </Button>
 
       {error && (
@@ -449,8 +451,7 @@ const DoctorBookingPage: React.FC = () => {
           </Box>
         ) : !hasAvailableDay ? (
           <Typography variant="body2" color="text.secondary">
-            У врача сейчас нет свободного времени для онлайн-записи на ближайшие две
-            недели. Выберите другого специалиста или свяжитесь с клиникой.
+            {t("noSlotsAvailable")}
           </Typography>
         ) : (
           <>

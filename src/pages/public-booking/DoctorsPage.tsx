@@ -29,6 +29,7 @@ import {
 } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
 import { PublicBookingShell } from "./shell";
+import { useT } from "../../i18n/VerticalProvider";
 
 /** Склонение «года/лет» для стажа. */
 function experienceLabel(years: number): string {
@@ -78,6 +79,7 @@ const DoctorCard: React.FC<{ doctor: ProfessionalPreview; onClick: () => void }>
 );
 
 const DoctorsPage: React.FC = () => {
+  const { t } = useT("publicBooking");
   const navigate = useNavigate();
 
   const [specialists, setSpecialists] = React.useState<Specialist[]>([]);
@@ -152,17 +154,17 @@ const DoctorsPage: React.FC = () => {
   return (
     <PublicBookingShell>
       <Typography variant="h5" fontWeight={700} gutterBottom>
-        Выберите врача
+        {t("chooseSpecialist")}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Найдите специалиста и запишитесь на удобное время.
+        {t("chooseSpecialistHint")}
       </Typography>
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 2 }}>
         <TextField
           fullWidth
           size="small"
-          placeholder="Поиск по имени врача"
+          placeholder={t("searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           InputProps={{
@@ -223,7 +225,7 @@ const DoctorsPage: React.FC = () => {
         </Box>
       ) : doctors.length === 0 ? (
         <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
-          По вашему запросу врачи не найдены.
+          {t("noSpecialistsFound")}
         </Typography>
       ) : (
         <Box
