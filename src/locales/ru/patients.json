@@ -189,7 +189,7 @@
     "merged": "{{patient.nomPl, capitalize}} объединены"
   },
   "quickView": {
-    "title": "Информация {{patient.pre}}",
+    "title": "Информация о {{patient.pre}}",
     "chip": "{{patient.nom, capitalize}}",
     "phone": "Телефон:",
     "birthDate": "Дата рождения:",
