@@ -55,6 +55,7 @@ import DjangoSalarySettings, {
 import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useT } from "../../../i18n/VerticalProvider";
 import { CustomDatePicker } from "../../../components/ui";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
@@ -122,6 +123,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   onClose,
   onUpdated,
 }) => {
+  const { t } = useT("employees");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
 
@@ -616,7 +618,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     isDoctor &&
     (canViewServices || canManageServices) &&
     selectedServices.length === 0
-      ? "У врача нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам."
+      ? t("clinicalRole.doctorNoServicesHint")
       : undefined;
 
   return (
@@ -938,9 +940,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
             fullWidth
             disabled={busy}
           >
-            <MenuItem value="doctor">Врач</MenuItem>
-            <MenuItem value="nurse">Медсестра</MenuItem>
-            <MenuItem value="other">Другой</MenuItem>
+            <MenuItem value="doctor">{t("clinicalRole.doctor")}</MenuItem>
+            <MenuItem value="nurse">{t("clinicalRole.nurse")}</MenuItem>
+            <MenuItem value="other">{t("clinicalRole.other")}</MenuItem>
           </TextField>
         </Field>
 

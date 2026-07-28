@@ -1,0 +1,86 @@
+{
+  "page": {
+    "title": "{{employee.nomPl, capitalize}}",
+    "addButton": "Добавить {{employee.acc}}",
+    "noAccess": "У вас нет прав на просмотр {{employee.genPl}}",
+    "selectPrompt": "Выберите {{employee.acc}} для просмотра"
+  },
+  "list": {
+    "empty": "Нет записей",
+    "status": {
+      "active": "Работает",
+      "inactive": "Не работает",
+      "fired": "Уволен"
+    },
+    "fallbackEmployee": "{{employee.nom, capitalize}}",
+    "noSystemAccessGroup": "Без доступа в систему",
+    "passportUploaded": "Паспорт загружен",
+    "fireTooltip": "Уволить",
+    "noName": "Без имени"
+  },
+  "card": {
+    "title": "Карточка {{employee.gen}}",
+    "emptyPrompt": "Выберите {{employee.acc}} из списка",
+    "fallbackEmployee": "{{employee.nom, capitalize}}",
+    "ageYears_one": "{{count}} год",
+    "ageYears_few": "{{count}} года",
+    "ageYears_many": "{{count}} лет",
+    "ageMonths_one": "{{count}} месяц",
+    "ageMonths_few": "{{count}} месяца",
+    "ageMonths_many": "{{count}} месяцев",
+    "tenureLessThanMonth": "меньше месяца",
+    "tenureLabel": "стаж {{tenure}}",
+    "sections": {
+      "contacts": "Контакты",
+      "personal": "Личное",
+      "requisites": "Реквизиты",
+      "specializations": "Специализации",
+      "achievements": "Достижения",
+      "passportPhotos": "Паспортные данные (фото)",
+      "relatedData": "Связанные данные",
+      "employeeServices": "Услуги {{employee.gen}}"
+    },
+    "fields": {
+      "phone": "Телефон",
+      "email": "Email",
+      "telegramId": "Telegram ID",
+      "instagram": "Instagram",
+      "birthDate": "Дата рождения",
+      "hiredDate": "Дата приёма на работу",
+      "address": "Адрес проживания",
+      "notes": "Описание",
+      "bank": "Банк",
+      "bik": "БИК",
+      "accountNumber": "Номер счёта",
+      "inn": "ИНН"
+    },
+    "requisitesPrivate": "приватно",
+    "elqrLabel": "elQR (реквизиты)",
+    "openAction": "Открыть",
+    "prevMonth": "Предыдущий месяц",
+    "nextMonth": "Следующий месяц",
+    "related": {
+      "attendance": "СКУД",
+      "shiftsCount": "Смен: {{count}}",
+      "shiftsCountUnknown": "Смен: —",
+      "hoursUnit": "ч/мес",
+      "expenses": "Расходы",
+      "recordsCount": "Записей: {{count}}",
+      "recordsCountUnknown": "Записей: —",
+      "currencyUnit": "с",
+      "salary": "Зарплата",
+      "salarySubtitle": "К выплате за месяц"
+    },
+    "manageAction": "Управление",
+    "loadingServices": "Загрузка...",
+    "noServices": "Нет привязанных услуг",
+    "passportAlt": "Паспорт {{index}}",
+    "passportPreviewAlt": "Паспорт"
+  },
+  "clinicalRole": {
+    "doctor": "{{specialist.nom, capitalize}}",
+    "nurse": "{{assistant.nom, capitalize}}",
+    "other": "Другой",
+    "doctorNoServicesHint": "У {{specialist.gen}} нет закреплённых услуг — добавьте их во вкладке «Услуги», чтобы задать ставки по услугам."
+  }
+}

@@ -5,6 +5,7 @@ import common from "../locales/ru/common.json";
 import patients from "../locales/ru/patients.json";
 import appointments from "../locales/ru/appointments.json";
 import settings from "../locales/ru/settings.json";
+import employees from "../locales/ru/employees.json";
 import { capitalize, lower } from "./formatters";
 
 /**
@@ -13,7 +14,7 @@ import { capitalize, lower } from "./formatters";
  * Новый модуль: добавить JSON в src/locales/ru/ и ключ сюда.
  */
 export const resources = {
-  ru: { common, patients, appointments, settings },
+  ru: { common, patients, appointments, settings, employees },
 } as const;
 
 export type Namespace = keyof (typeof resources)["ru"];

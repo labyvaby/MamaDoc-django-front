@@ -8,6 +8,7 @@ import {
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useT } from "../../i18n/VerticalProvider";
 
 import EmployeeList from "./components/EmployeeList";
 import EmployeeCard from "./components/EmployeeCard";
@@ -36,7 +37,8 @@ const DeleteEmployeeDialog = React.lazy(
 );
 
 const EmployeesPage: React.FC = () => {
-  usePageTitle("Сотрудники");
+  const { t } = useT("employees");
+  usePageTitle(t("page.title"));
   const state = useEmployeesPageState();
   const [onboardOpen, setOnboardOpen] = React.useState(false);
   const [servicesDrawer, setServicesDrawer] = React.useState<{
@@ -108,7 +110,7 @@ const EmployeesPage: React.FC = () => {
     return (
       <Box sx={{ p: 4, textAlign: "center" }}>
         <Typography color="text.secondary">
-          У вас нет прав на просмотр сотрудников
+          {t("page.noAccess")}
         </Typography>
       </Box>
     );
@@ -126,9 +128,9 @@ const EmployeesPage: React.FC = () => {
     >
       {/* --- ШАПКА --- */}
       <PageHeader
-        title="Сотрудники"
+        title={t("page.title")}
         showTitle={false}
-        addButtonText="Добавить сотрудника"
+        addButtonText={t("page.addButton")}
         onAdd={handleAddClick}
         showSearch
         searchVal={state.q}
@@ -218,7 +220,7 @@ const EmployeesPage: React.FC = () => {
                       color: "text.secondary",
                     }}
                   >
-                    <Typography>Выберите сотрудника для просмотра</Typography>
+                    <Typography>{t("page.selectPrompt")}</Typography>
                   </Box>
                 )}
               </Box>
