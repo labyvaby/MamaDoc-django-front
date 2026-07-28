@@ -30,6 +30,7 @@ import { ApiError, isAbortError } from "../../../api/client";
 import { orgWide } from "../../../api/scope";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useT } from "../../../i18n/VerticalProvider";
 import { DiscountInput } from "../../ui";
 
 // CSS to hide spin buttons
@@ -74,6 +75,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     availableProducts,
     onSaved,
 }) => {
+    const { t } = useT("sales");
     const { open: notify } = useNotification();
     const { activeBranch } = usePermissions();
     const orgId = useApiOrgId();
@@ -127,7 +129,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 );
                 setPatients(rows.map((p) => ({
                     id: p.id,
-                    fullName: p.fullName || "Без имени",
+                    fullName: p.fullName || t("form.noName"),
                     phone: p.phone,
                 })));
             } catch (e) {
@@ -158,7 +160,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             if (sale) {
                 setSelectedPatient(
                     sale.patientId
-                        ? { id: sale.patientId, fullName: sale.patientName || "Без имени" }
+                        ? { id: sale.patientId, fullName: sale.patientName || t("form.noName") }
                         : null,
                 );
                 setProductLines(
@@ -232,16 +234,16 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             setLoading(true);
             if (isEdit && sale) {
                 await updateSale(sale.id, data);
-                notify?.({ type: "success", message: "Продажа обновлена" });
+                notify?.({ type: "success", message: t("form.updated") });
             } else {
                 await createSale(data);
-                notify?.({ type: "success", message: "Продажа успешно создана" });
+                notify?.({ type: "success", message: t("form.created") });
             }
             onSaved();
             onClose();
         } catch (e) {
             console.error(e);
-            const message = e instanceof ApiError ? e.message : "Ошибка при сохранении продажи";
+            const message = e instanceof ApiError ? e.message : t("form.saveError");
             notify?.({ type: "error", message });
         } finally {
             setLoading(false);
@@ -257,7 +259,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
         >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
-                <Typography variant="h6">{isEdit ? "Изменить продажу" : "Новая продажа"}</Typography>
+                <Typography variant="h6">{isEdit ? t("form.editTitle") : t("form.createTitle")}</Typography>
                 <IconButton onClick={loading ? undefined : guardedClose}><CloseOutlined /></IconButton>
             </Box>
             <Divider />
@@ -280,7 +282,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 {showBranchSelect && (
                     <Stack spacing={0.5}>
                         <Typography variant="body2" color={touched && !selectedBranch ? "error" : "text.secondary"} sx={{ fontWeight: 600 }}>
-                            Филиал продажи *
+                            {t("form.branchLabel")}
                         </Typography>
                         <Autocomplete<DjangoBranch, false, false, false>
                             options={branches}
@@ -291,12 +293,12 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                             renderInput={(params) => (
                                 <TextField
                                     {...params}
-                                    placeholder="Выберите филиал..."
+                                    placeholder={t("form.branchPlaceholder")}
                                     error={touched && !selectedBranch}
-                                    helperText={touched && !selectedBranch ? "Обязательное поле" : ""}
+                                    helperText={touched && !selectedBranch ? t("form.branchRequired") : ""}
                                 />
                             )}
-                            noOptionsText="Нет филиалов"
+                            noOptionsText={t("form.noBranches")}
                         />
                     </Stack>
                 )}
@@ -304,7 +306,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 {/* Patient */}
                 <Stack spacing={0.5}>
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        Пациент
+                        {t("form.patientLabel")}
                     </Typography>
                     <Autocomplete
                         options={patients}
@@ -316,18 +318,18 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                         filterOptions={(x) => x}
                         loading={patientsLoading}
                         isOptionEqualToValue={(o, v) => o.id === v.id}
-                        noOptionsText={patientInput.length < 2 ? "Введите имя или телефон" : "Не найдено"}
-                        renderInput={(params) => <TextField {...params} placeholder="Поиск пациента..." />}
+                        noOptionsText={patientInput.length < 2 ? t("form.patientNoOptionsShort") : t("form.patientNoOptionsEmpty")}
+                        renderInput={(params) => <TextField {...params} placeholder={t("form.patientPlaceholder")} />}
                     />
                 </Stack>
 
                 {/* Products Selection - Товары */}
                 <Typography variant="body2" color={touched && !hasValidProduct ? "error" : "text.secondary"} sx={{ fontWeight: 600, mb: 1 }}>
-                    Товары *
+                    {t("form.productsLabel")}
                 </Typography>
                 {touched && !hasValidProduct && (
                     <Typography variant="caption" color="error" sx={{ mt: -0.5 }}>
-                        Выберите хотя бы один товар
+                        {t("form.productsRequired")}
                     </Typography>
                 )}
 
@@ -348,13 +350,13 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                                         updated[index].productId = v?.id ?? null;
                                         setProductLines(updated);
                                     }}
-                                    getOptionLabel={(o) => `${o.label} — ${o.price || 0} сом`}
+                                    getOptionLabel={(o) => t("form.productPriceOption", { label: o.label, price: o.price || 0 })}
                                     getOptionDisabled={(o) => o.isActive === false}
                                     isOptionEqualToValue={(o, v) => o.id === v.id}
                                     renderInput={(params) => (
                                         <TextField
                                             {...params}
-                                            placeholder="Товар"
+                                            placeholder={t("form.productPlaceholder")}
                                             size="small"
                                             fullWidth
                                         />
@@ -363,10 +365,10 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                                         <li {...props}>
                                             <Stack direction="row" spacing={1} alignItems="center" width="100%">
                                                 <Typography variant="body2" flex={1}>
-                                                    {option.label} — {option.price || 0} сом
+                                                    {t("form.productPriceOption", { label: option.label, price: option.price || 0 })}
                                                 </Typography>
                                                 {option.isActive === false && (
-                                                    <Chip label="Не доступен" size="small" color="error" />
+                                                    <Chip label={t("form.productUnavailable")} size="small" color="error" />
                                                 )}
                                             </Stack>
                                         </li>
@@ -377,7 +379,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                                 <Stack direction="row" spacing={1.5} alignItems="flex-end">
                                     <Stack spacing={0.5} sx={{ minWidth: 120 }}>
                                         <Typography variant="caption" color="text.secondary">
-                                            Количество
+                                            {t("form.quantityLabel")}
                                         </Typography>
                                         <Box
                                             sx={{
@@ -445,7 +447,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
 
                                     <Stack spacing={0.5} sx={{ flex: 1 }}>
                                         <Typography variant="caption" color="text.secondary">
-                                            Штрихкод
+                                            {t("form.barcodeLabel")}
                                         </Typography>
                                         <TextField
                                             size="small"
@@ -460,17 +462,17 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                                 {selectedProduct && (
                                     <Box>
                                         <Typography variant="caption" color="text.secondary">
-                                            Стоимость
+                                            {t("form.costLabel")}
                                         </Typography>
                                         <Typography variant="body1" fontWeight={600}>
-                                            {((typeof row.quantity === "number" ? row.quantity : 0) * selectedProduct.price).toLocaleString()} сом
+                                            {t("form.costValue", { amount: ((typeof row.quantity === "number" ? row.quantity : 0) * selectedProduct.price).toLocaleString() })}
                                         </Typography>
                                     </Box>
                                 )}
 
                                 {/* Удалить строку */}
                                 {productLines.length > 1 && (
-                                    <Tooltip title="Удалить товар">
+                                    <Tooltip title={t("form.removeProduct")}>
                                         <IconButton
                                             size="small"
                                             color="error"
@@ -505,7 +507,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                     }}
                     sx={{ alignSelf: "flex-start" }}
                 >
-                    + Добавить товар
+                    {t("form.addProduct")}
                 </Button>
 
                 <Divider />
@@ -527,15 +529,15 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                         <Stack direction="row" spacing={2} alignItems="flex-start" flexWrap="wrap" useFlexGap>
                             <Box sx={{ flexShrink: 0 }}>
                                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                    Стоимость
+                                    {t("form.costLabel")}
                                 </Typography>
                                 <Typography variant="h6" fontWeight={600} noWrap>
-                                    {baseTotal.toLocaleString()} сом
+                                    {t("form.costValue", { amount: baseTotal.toLocaleString() })}
                                 </Typography>
                             </Box>
                             <Box sx={{ flex: "1 1 180px", minWidth: 180 }}>
                                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                    Скидка
+                                    {t("form.discountLabel")}
                                 </Typography>
                                 <DiscountInput
                                     total={baseTotal}
@@ -558,7 +560,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                             <Stack flex={1} spacing={0.5}>
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                                     <Typography variant="caption" color="text.secondary" display="block">
-                                        Наличные
+                                        {t("form.cashLabel")}
                                     </Typography>
                                     <Button
                                         size="small"
@@ -569,7 +571,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                                         }}
                                         sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
                                     >
-                                        100%
+                                        {t("form.percentAll")}
                                     </Button>
                                 </Stack>
                                 <Stack direction="row" alignItems="center" spacing={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, bgcolor: "background.paper" }}>
@@ -599,7 +601,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                             <Stack flex={1} spacing={0.5}>
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                                     <Typography variant="caption" color="text.secondary" display="block">
-                                        Безналичные
+                                        {t("form.cardLabel")}
                                     </Typography>
                                     <Button
                                         size="small"
@@ -610,7 +612,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                                         }}
                                         sx={{ minWidth: "auto", px: 1, fontSize: "0.7rem", textTransform: "none" }}
                                     >
-                                        100%
+                                        {t("form.percentAll")}
                                     </Button>
                                 </Stack>
                                 <Stack direction="row" alignItems="center" spacing={0} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, bgcolor: "background.paper" }}>
@@ -643,20 +645,20 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                         {/* Итого к оплате */}
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                             <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                                Итого к оплате
+                                {t("form.totalDue")}
                             </Typography>
                             <Typography variant="h5" fontWeight={700} color="success.main">
-                                {finalTotal.toLocaleString()} сом
+                                {t("form.costValue", { amount: finalTotal.toLocaleString() })}
                             </Typography>
                         </Stack>
 
                         {/* Статус и Долг */}
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                             <Typography variant="body2" color="text.secondary">
-                                Статус
+                                {t("form.statusLabel")}
                             </Typography>
                             <Chip
-                                label={debt <= 0 ? "Оплачено" : "Долг"}
+                                label={debt <= 0 ? t("form.statusPaid") : t("form.statusDebt")}
                                 size="small"
                                 color={debt <= 0 ? "success" : "error"}
                                 sx={{ fontWeight: 600 }}
@@ -676,10 +678,10 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                             >
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                                     <Typography variant="body2" color="error.main" fontWeight={600}>
-                                        Долг
+                                        {t("form.debtLabel")}
                                     </Typography>
                                     <Typography variant="h6" color="error.main" fontWeight={700}>
-                                        {debt.toLocaleString()} сом
+                                        {t("form.costValue", { amount: debt.toLocaleString() })}
                                     </Typography>
                                 </Stack>
                             </Paper>
@@ -690,7 +692,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 {/* Comment */}
                 <Stack spacing={0.5}>
                     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        Комментарий к покупке
+                        {t("form.commentLabel")}
                     </Typography>
                     <TextField
                         fullWidth
@@ -698,7 +700,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                         rows={2}
                         value={comment}
                         onChange={(e) => setComment(e.target.value)}
-                        placeholder="Добавьте комментарий (необязательно)"
+                        placeholder={t("form.commentPlaceholder")}
                     />
                 </Stack>
 
@@ -707,9 +709,9 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             {/* Footer */}
             <Box sx={{ p: 2, borderTop: 1, borderColor: "divider" }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" fontWeight={600}>К оплате:</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>{t("form.footerTotal")}</Typography>
                     <Typography variant="h5" fontWeight={700} color={debt > 0 ? "error" : "success.main"}>
-                        {finalTotal.toLocaleString()} сом
+                        {t("form.costValue", { amount: finalTotal.toLocaleString() })}
                     </Typography>
                 </Stack>
                 <Button
@@ -719,11 +721,11 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                     onClick={handleSubmit}
                     disabled={!hasValidProduct || loading || (showBranchSelect && !selectedBranch)}
                 >
-                    {loading ? <CircularProgress size={24} color="inherit" /> : isEdit ? "Сохранить изменения" : "Оформить продажу"}
+                    {loading ? <CircularProgress size={24} color="inherit" /> : isEdit ? t("form.submitEdit") : t("form.submitCreate")}
                 </Button>
             </Box>
         </Drawer>
-        <CloseGuardDialog open={confirmOpen} title="создание продажи" onConfirm={confirmClose} onCancel={cancelClose} />
+        <CloseGuardDialog open={confirmOpen} title={t("form.closeGuardTitle")} onConfirm={confirmClose} onCancel={cancelClose} />
         </>
     );
 };
