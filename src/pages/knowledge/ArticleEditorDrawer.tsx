@@ -53,9 +53,8 @@ import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { ConfirmDialog } from "../../components/ui";
 import {
   KNOWLEDGE_IMAGE_UPLOAD_ENABLED,
-  buildArticleTitle,
+  createKnowledgeSeries,
   isSafeImageUrl,
-  parseArticleSeries,
   parseYoutubeId,
   splitCover,
   uploadKnowledgeImage,
@@ -64,6 +63,7 @@ import {
   type KnowledgeArticle,
   type KnowledgeArticlePayload,
   type KnowledgeCategory,
+  type KnowledgeSeries,
 } from "../../api/knowledge";
 import { useArticleDraft, type ArticleDraftInput } from "./useArticleDraft";
 
@@ -76,8 +76,8 @@ interface ArticleEditorDrawerProps {
   /** null — создание новой статьи. */
   article: KnowledgeArticle | null;
   categories: KnowledgeCategory[];
-  /** Названия уже существующих серий — подсказка, чтобы не плодить дубли. */
-  knownSeries?: string[];
+  /** Существующие серии — подсказка автокомплита и источник seriesId при выборе. */
+  knownSeries?: KnowledgeSeries[];
   busy: boolean;
   error: string | null;
   onClose: () => void;
@@ -95,10 +95,11 @@ interface ArticleEditorDrawerProps {
  * эндпоинта ещё нет; при выключенном флаге файл не вставляется (base64 бэк
  * молча вырежет), вместо этого показываем подсказку про ссылку.
  *
- * Серия: поля «Серия» и «Номер части» не уходят на бэк отдельно — из них
- * собирается название статьи (см. buildArticleTitle). Так автор не обязан
- * помнить формат «Обзор CRM. Часть 2 — Приёмы», а мы не рискуем разъехаться
- * с разбором названия в ленте.
+ * Серия: поле «Название серии» — автокомплит по уже существующим сериям
+ * (knownSeries); выбор существующего имени привязывает статью к её seriesId,
+ * новое имя создаёт серию на лету (POST /knowledge/series/) перед сохранением
+ * статьи. Заголовок статьи — обычное поле, отдельного «сборного» названия
+ * больше нет (см. api/knowledge.ts).
  */
 const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   open,
@@ -121,6 +122,9 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   const [seriesOn, setSeriesOn] = React.useState(false);
   const [seriesName, setSeriesName] = React.useState("");
   const [partNumber, setPartNumber] = React.useState("");
+  /** Создание новой серии (POST /knowledge/series/) перед сохранением статьи. */
+  const [seriesBusy, setSeriesBusy] = React.useState(false);
+  const [seriesError, setSeriesError] = React.useState<string | null>(null);
   /** Обложка живёт в content отдельной картинкой — см. splitCover/withCover. */
   const [coverUrl, setCoverUrl] = React.useState("");
   /** Превью обложки не загрузилось (битая ссылка) — предупреждаем, но не блокируем. */
@@ -203,30 +207,29 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
 
   React.useEffect(() => {
     if (!open || !editor) return;
-    // Название разбираем на серию и подзаголовок части — редактируются они
-    // раздельно, а на бэк уходит собранная обратно строка.
-    const series = article ? parseArticleSeries(article.title) : null;
-    setSeriesOn(Boolean(series));
-    setSeriesName(series?.name ?? "");
-    setPartNumber(series ? String(series.partNumber) : "");
-    setTitle(series ? series.partTitle ?? "" : article?.title ?? "");
+    const hasSeries = article?.seriesId != null && article?.partNumber != null;
+    setSeriesOn(hasSeries);
+    setSeriesName(hasSeries ? article?.seriesName ?? "" : "");
+    setPartNumber(hasSeries ? String(article?.partNumber) : "");
+    setTitle(article?.title ?? "");
     setCategoryId(article?.categoryId ?? "");
     setIsPublished(article?.isPublished ?? false);
     setUploadHint(false);
     setFullscreen(false);
+    setSeriesError(null);
     // Обложку показываем отдельным полем, поэтому в редактор идёт тело без неё.
     const { coverUrl: cover, body } = splitCover(article?.content ?? "");
     setCoverUrl(cover ?? "");
     setCoverBroken(false);
     editor.commands.setContent(body);
     initialFields.current = {
-      title: series ? series.partTitle ?? "" : article?.title ?? "",
+      title: article?.title ?? "",
       categoryId: article?.categoryId ?? "",
       isPublished: article?.isPublished ?? false,
       coverUrl: cover ?? "",
-      seriesOn: Boolean(series),
-      seriesName: series?.name ?? "",
-      partNumber: series ? String(series.partNumber) : "",
+      seriesOn: hasSeries,
+      seriesName: hasSeries ? article?.seriesName ?? "" : "",
+      partNumber: hasSeries ? String(article?.partNumber) : "",
     };
     setContentDirty(false);
   }, [open, article, editor]);
@@ -421,17 +424,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
   const partNo = Number(partNumber);
   const partValid = Number.isInteger(partNo) && partNo >= 1 && partNo <= 999;
 
-  /** Итоговое название: в серии оно собирается, вне серии — это само поле. */
-  const finalTitle = buildArticleTitle(
-    title,
-    seriesOn && seriesName.trim() && partValid
-      ? { name: seriesName, partNumber: partNo }
-      : null,
-  );
+  // Заголовок статьи в серии необязателен — «Часть N» уже отличает её от
+  // остальных, номер уже задан отдельным полем. Пустое поле подставит
+  // дефолтное название при сохранении (бэк не принимает пустой title).
+  const finalTitle = title.trim() || (seriesOn && partValid ? `Часть ${partNo}` : "");
 
   const form = useFormValidation({
-    // В серии подзаголовок части необязателен: «Обзор CRM. Часть 3» —
-    // законное название, номер уже отличает часть от остальных.
     title:
       seriesOn || title.trim() ? null : "Введите заголовок статьи",
     seriesName: !seriesOn || seriesName.trim() ? null : "Укажите название серии",
@@ -440,15 +438,38 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     content: hasContent ? null : "Напишите текст статьи",
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!editor) return;
     if (!form.validate()) return;
+
+    let seriesId: number | null = null;
+    if (seriesOn && seriesName.trim() && partValid) {
+      const name = seriesName.trim();
+      const existing = knownSeries.find((s) => s.name.trim().toLowerCase() === name.toLowerCase());
+      if (existing) {
+        seriesId = existing.id;
+      } else {
+        setSeriesError(null);
+        setSeriesBusy(true);
+        try {
+          seriesId = (await createKnowledgeSeries({ name }, orgId)).id;
+        } catch (err) {
+          setSeriesBusy(false);
+          setSeriesError(getErrorMessage(err));
+          return;
+        }
+        setSeriesBusy(false);
+      }
+    }
+
     onSubmit({
       title: finalTitle,
       // Обложка хранится внутри content первой картинкой title="cover".
       content: withCover(editor.getHTML(), coverUrl.trim() || null),
       categoryId: categoryId === "" ? null : categoryId,
       isPublished,
+      seriesId,
+      partNumber: seriesOn && partValid ? partNo : null,
     });
   };
 
@@ -480,7 +501,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : guardedClose}
+      onClose={busy || seriesBusy ? undefined : guardedClose}
       PaperProps={{ sx: { width: fullscreen ? "100%" : { xs: "100%", md: 720 } } }}
     >
       <Stack sx={{ height: "100%" }}>
@@ -497,7 +518,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               {fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
             </IconButton>
           </Tooltip>
-          <IconButton onClick={guardedClose} disabled={busy}>
+          <IconButton onClick={guardedClose} disabled={busy || seriesBusy}>
             <CloseOutlined />
           </IconButton>
         </Stack>
@@ -558,17 +579,17 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 size="small"
                 checked={seriesOn}
                 onChange={(e) => setSeriesOn(e.target.checked)}
-                disabled={busy}
+                disabled={busy || seriesBusy}
               />
             </Stack>
             {seriesOn && (
               <Stack direction={{ xs: "column", sm: "row" }} gap={1.5} sx={{ mt: 1.5 }}>
                 <Autocomplete
                   freeSolo
-                  options={knownSeries}
+                  options={knownSeries.map((s) => s.name)}
                   value={seriesName}
                   onInputChange={(_e, value) => setSeriesName(value)}
-                  disabled={busy}
+                  disabled={busy || seriesBusy}
                   sx={{ flex: 1 }}
                   renderInput={(params) => (
                     <TextField
@@ -589,12 +610,17 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                   type="number"
                   value={partNumber}
                   onChange={(e) => setPartNumber(e.target.value)}
-                  disabled={busy}
+                  disabled={busy || seriesBusy}
                   inputProps={{ min: 1, max: 999 }}
                   sx={{ width: { xs: "100%", sm: 140 } }}
                   {...form.field("partNumber")}
                 />
               </Stack>
+            )}
+            {seriesError && (
+              <Alert severity="error" sx={{ mt: 1.5 }} onClose={() => setSeriesError(null)}>
+                {seriesError}
+              </Alert>
             )}
           </Stack>
 
@@ -605,14 +631,12 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            disabled={busy}
+            disabled={busy || seriesBusy}
             placeholder={seriesOn ? "Приёмы" : undefined}
             {...form.field(
               "title",
-              // Показываем итоговое название, только когда его уже есть из чего
-              // собрать — иначе подсказка висела бы пустыми кавычками.
-              seriesOn && seriesName.trim() && partValid
-                ? `Статья будет называться «${finalTitle}»`
+              seriesOn && !title.trim() && partValid
+                ? `Если оставить пустым — название будет «Часть ${partNo}»`
                 : undefined,
             )}
           />
@@ -625,7 +649,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               onChange={(e) =>
                 setCategoryId(e.target.value === "none" ? "" : Number(e.target.value))
               }
-              disabled={busy}
+              disabled={busy || seriesBusy}
               sx={{ width: 260 }}
             >
               <MenuItem value="none">Без раздела</MenuItem>
@@ -642,7 +666,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               <Switch
                 checked={isPublished}
                 onChange={(e) => setIsPublished(e.target.checked)}
-                disabled={busy}
+                disabled={busy || seriesBusy}
               />
             </Stack>
           </Stack>
@@ -685,7 +709,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                 setCoverUrl(e.target.value);
                 setCoverBroken(false);
               }}
-              disabled={busy}
+              disabled={busy || seriesBusy}
               {...form.field(
                 "cover",
                 coverBroken
@@ -701,7 +725,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
                       setCoverUrl("");
                       setCoverBroken(false);
                     }}
-                    disabled={busy}
+                    disabled={busy || seriesBusy}
                   >
                     <CloseOutlined fontSize="small" />
                   </IconButton>
@@ -832,16 +856,16 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               sx={{ borderRadius: "7px" }}
             />
           )}
-          <Button onClick={guardedClose} disabled={busy} sx={{ ml: "auto" }}>
+          <Button onClick={guardedClose} disabled={busy || seriesBusy} sx={{ ml: "auto" }}>
             Отмена
           </Button>
           <Button
             variant="contained"
             onClick={handleSubmit}
-            disabled={busy}
-            startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
+            disabled={busy || seriesBusy}
+            startIcon={busy || seriesBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
           >
-            {busy ? "Сохранение…" : "Сохранить"}
+            {busy || seriesBusy ? "Сохранение…" : "Сохранить"}
           </Button>
         </Stack>
       </Stack>

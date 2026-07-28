@@ -32,9 +32,8 @@ import { ConfirmDialog } from "../../components/ui";
 import {
   deleteKnowledgeArticle,
   getKnowledgeArticle,
-  getKnowledgeArticles,
   getKnowledgeCategories,
-  groupArticleFeed,
+  getKnowledgeSeries,
   partLabel,
   splitCover,
   updateKnowledgeArticle,
@@ -167,22 +166,13 @@ const ArticleViewPage: React.FC = () => {
     enabled: canManage,
   });
 
-  // Имена существующих серий — для подсказки в редакторе (чтобы новая часть
-  // попала в ту же серию, а не завела вторую с опечаткой в названии).
-  const seriesNamesQuery = useQuery({
-    queryKey: djangoQueryKeys.knowledge.articles({ seriesNames: true, orgId: orgId ?? null }),
-    queryFn: ({ signal }) =>
-      getKnowledgeArticles({ page: 1, pageSize: 100, organizationId: orgId }, signal),
+  // Существующие серии — подсказка автокомплита в редакторе.
+  const seriesQuery = useQuery({
+    queryKey: djangoQueryKeys.knowledge.series({ orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getKnowledgeSeries({ organizationId: orgId }, signal),
     enabled: canManage,
-    staleTime: 5 * 60 * 1000,
   });
-  const knownSeries = React.useMemo(() => {
-    const names = new Map<string, string>();
-    for (const item of groupArticleFeed(seriesNamesQuery.data?.results ?? [])) {
-      if (item.kind === "series") names.set(item.series.key, item.series.name);
-    }
-    return [...names.values()].sort((a, b) => a.localeCompare(b, "ru"));
-  }, [seriesNamesQuery.data]);
+  const knownSeries = seriesQuery.data ?? [];
 
   // ── Редактирование ────────────────────────────────────────────────────────
   const [editorOpen, setEditorOpen] = React.useState(false);
