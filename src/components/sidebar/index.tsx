@@ -24,6 +24,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
 import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
+import { useT } from "../../i18n/VerticalProvider";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -339,6 +340,7 @@ const DesktopSidebarHeader: React.FC = () => {
 
 // Extra static sections: mimic the provided design with many items
 const SidebarSecondary: React.FC = () => {
+  const { t } = useT("sidebar");
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -563,7 +565,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Кабинет врача */}
         {show("my-work") && can_.doctorRoom && (
-          <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label="Кабинет врача" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label={t("doctorRoom")} collapsed={siderCollapsed} />
         )}
 
         {/* Процедурный кабинет */}
@@ -632,7 +634,7 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem
             to={IS_DJANGO_BACKEND ? "/patients" : "/patient-search"}
             icon={<SearchOutlined />}
-            label="Все пациенты"
+            label={t("allPatients")}
             collapsed={siderCollapsed}
           />
         )}
@@ -644,7 +646,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
-          <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label="Все приемы" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
         )}
 
         {/* Все процедуры */}
