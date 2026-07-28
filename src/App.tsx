@@ -38,6 +38,7 @@ import { TitleProvider } from "./contexts/title-context";
 import { PageCacheProvider } from "./contexts/page-cache-context";
 import "./i18n";
 import { VerticalProvider } from "./i18n/VerticalProvider";
+import { tt } from "./i18n/t";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { ProtectedRoute } from "./components/rbac/ProtectedRoute";
 import { RequirePermission } from "./components/rbac/RequirePermission";
@@ -403,7 +404,7 @@ function App() {
                       {
                         name: "patients",
                         list: "/patients",
-                        meta: { label: "Пациенты" }
+                        meta: { label: tt("patients:list.title") }
                       },
                       {
                         name: "employees",
@@ -418,7 +419,7 @@ function App() {
                       {
                         name: "doctor",
                         list: "/doctor",
-                        meta: { label: "Кабинет врача" }
+                        meta: { label: tt("sidebar:doctorRoom") }
                       },
                       {
                         name: "nurse",
@@ -453,7 +454,7 @@ function App() {
                       {
                         name: "all-appointments",
                         list: "/all-appointments",
-                        meta: { label: "Все приемы" }
+                        meta: { label: tt("sidebar:allAppointments") }
                       },
                       {
                         name: "bookings",
