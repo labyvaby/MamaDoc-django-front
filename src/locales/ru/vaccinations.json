@@ -1,0 +1,16 @@
+{
+  "certificate": {
+    "subtitle": "Выписка из электронной карты {{patient.gen}}",
+    "patientLabel": "{{patient.nom, capitalize}}:",
+    "footer": "Документ сформирован автоматически из электронной карты {{patient.gen}}."
+  },
+  "calendarTemplate": {
+    "labelHelper": "Показывается {{patient.dat}} как заголовок возрастной группы"
+  },
+  "recordDrawer": {
+    "patientRequired": "Выберите {{patient.acc}}",
+    "visitIdLabel": "ID {{visit.gen}} (необязательно)",
+    "visitIdHelperLinked": "Указан — строка вакцины попадёт в счёт этого {{visit.gen}}",
+    "visitIdHelperExternal": "Для внешней прививки необязателен"
+  }
+}
