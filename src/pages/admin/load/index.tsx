@@ -18,6 +18,7 @@ import type { DjangoEmployeeListItem } from "../../../api/staff";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import { parseBackendError } from "../../../api/appointments";
 import { DEFAULT_RANGE_PRESETS, type DateRange } from "../../../components/ui";
+import { useT } from "../../../i18n/VerticalProvider";
 
 import LoadFilters from "./LoadFilters";
 import LoadKpiCards from "./LoadKpiCards";
@@ -59,6 +60,7 @@ const Card: React.FC<{ title?: React.ReactNode; action?: React.ReactNode; childr
 );
 
 export const LoadAnalyticsPage: React.FC = () => {
+  const { t } = useT("load");
   usePageTitle("Нагрузка");
   const theme = useTheme();
   const { isSuperAdmin, activeOrganization, activeBranch } = usePermissions();
@@ -152,7 +154,7 @@ export const LoadAnalyticsPage: React.FC = () => {
               <Card
                 title={
                   <Typography variant="subtitle2" fontWeight={600}>
-                    {chartMode === "hourly" ? "Приёмы по часам" : "Приёмы по дням"}
+                    {chartMode === "hourly" ? t("hourlyTitle") : t("dailyTitle")}
                   </Typography>
                 }
                 action={
@@ -187,7 +189,7 @@ export const LoadAnalyticsPage: React.FC = () => {
                 <Card title="Плотность: день недели × час" sx={{ flex: 2, minWidth: 0 }}>
                   <LoadHeatmap cells={data.heatmap} />
                 </Card>
-                <Card title="Нагрузка по врачам" sx={{ flex: 1, minWidth: { lg: 300 } }}>
+                <Card title={t("specialistsLoad")} sx={{ flex: 1, minWidth: { lg: 300 } }}>
                   <LoadByEmployee
                     rows={data.byEmployee}
                     selectedIds={employeeIds}
