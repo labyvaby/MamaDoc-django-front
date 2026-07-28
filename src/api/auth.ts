@@ -28,9 +28,9 @@ export type RbacOrganization = {
   themeConfig?: Record<string, any> | null;
   /** Вертикаль бизнеса — определяет терминологию интерфейса
    *  («пациент» для клиники, «клиент» для салона красоты).
-   *  Опционально: бэкенд добавит поле в селектор /auth/me/ по тикету
-   *  MamaDoc/backend_ticket_organization_vertical.md; до этого поле
-   *  отсутствует и фронт работает по профилю clinic (DEFAULT_VERTICAL). */
+   *  Отдаётся бэком с 28.07.2026 (choices "clinic" | "beauty");
+   *  опционально на типе для старых организаций без миграции —
+   *  отсутствующее или незнакомое значение фронт трактует как clinic. */
   vertical?: string | null;
 };
 
