@@ -706,6 +706,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                               {cols.statusWaiting && <TableCell align="center">{t("columns.waiting")}</TableCell>}
                               {cols.statusCancelled && <TableCell align="center">{t("columns.cancelled")}</TableCell>}
                               {cols.statusDiscount && <TableCell align="center">{t("columns.discount")}</TableCell>}
+                              {cols.appointmentPay && <TableCell align="right">{t("columns.forAppointments")}</TableCell>}
                               {cols.bonuses && <TableCell align="right">{t("columns.bonusesColumn")}</TableCell>}
                               {cols.percent && <TableCell align="right">{t("columns.salary")}</TableCell>}
                               <TableCell align="right" sx={{ color: "error.onSurface" }}>{t("columns.advance")}</TableCell>

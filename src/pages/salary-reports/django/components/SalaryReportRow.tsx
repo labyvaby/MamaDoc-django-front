@@ -45,6 +45,7 @@ export interface ColumnConfig {
   statusWaiting: boolean;
   statusCancelled: boolean;
   statusDiscount: boolean;
+  appointmentPay: boolean;
   bonuses: boolean;
   percent: boolean;
   appointmentsLabel?: string;
@@ -58,6 +59,7 @@ export const COLUMNS_REGISTRATOR: ColumnConfig = {
   statusWaiting: false,
   statusCancelled: false,
   statusDiscount: false,
+  appointmentPay: true,
   bonuses: true,
   percent: true,
 };
@@ -70,6 +72,7 @@ export const COLUMNS_DOCTOR: ColumnConfig = {
   statusWaiting: true,
   statusCancelled: true,
   statusDiscount: true,
+  appointmentPay: false,
   bonuses: false,
   percent: true,
 };
@@ -82,6 +85,7 @@ export const COLUMNS_NURSE: ColumnConfig = {
   statusWaiting: false,
   statusCancelled: true,
   statusDiscount: false,
+  appointmentPay: false,
   bonuses: true,
   percent: true,
 };
@@ -94,6 +98,7 @@ export const COLUMNS_ADMIN: ColumnConfig = {
   statusWaiting: false,
   statusCancelled: false,
   statusDiscount: false,
+  appointmentPay: false,
   bonuses: false,
   // Начисленное показываем и здесь: иначе у санитарок/администраторов видны
   // только аванс и «К выплате», и минус в остатке ничем не объяснён.
@@ -559,6 +564,12 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
 
         {cols.statusDiscount && (
           <TableCell align="center">{row.discountedCount}</TableCell>
+        )}
+
+        {cols.appointmentPay && (
+          <TableCell align="right" sx={{ fontWeight: 700 }}>
+            {parseFloat(row.appointmentPay || "0") > 0 ? formatKGS(row.appointmentPay as string) : "—"}
+          </TableCell>
         )}
 
         {cols.bonuses && (

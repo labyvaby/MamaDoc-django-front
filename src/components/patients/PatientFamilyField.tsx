@@ -69,6 +69,11 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
 
   return (
     <Box>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 0.5 }}>
+        <Button size="small" startIcon={<AddOutlined />} onClick={() => setDialogOpen(true)} disabled={disabled} sx={{ textTransform: "none" }}>
+          Создать семью
+        </Button>
+      </Box>
       <Autocomplete
         options={options}
         value={value}
@@ -84,9 +89,6 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
         disabled={disabled}
         noOptionsText="Семьи не найдены"
       />
-      <Button size="small" startIcon={<AddOutlined />} onClick={() => setDialogOpen(true)} disabled={disabled} sx={{ mt: 0.5 }}>
-        Создать семью
-      </Button>
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Новая семья</DialogTitle>
         <DialogContent>
