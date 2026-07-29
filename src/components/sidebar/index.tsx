@@ -376,7 +376,11 @@ const SidebarSecondary: React.FC = () => {
     registratura: isSuper || (!isNurse && !isDoctor()),
     bookings: IS_DJANGO_BACKEND && (isSuper || can(["bookings.view", "bookings.manage"])),
     doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
-    nurseRoom: isSuper || isAdmin() || isNurse,
+    // Список привилегированных повторяет isPrivileged из AppointmentsPage:
+    // роут /nurse пускает по appointments.view, и сама страница показывает
+    // им приёмы всех медсестёр — скрывать пункт меню было нечем оправдать
+    // (управляющий и регистратор его не видели, хотя страница им открыта).
+    nurseRoom: isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse,
     schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
     cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
@@ -403,7 +407,12 @@ const SidebarSecondary: React.FC = () => {
     salaryReports: IS_DJANGO_BACKEND
       ? (isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null))
       : true,
-    reports: isSuper || isAdmin() || hasRole(["accountant"]),
+    // В Django-режиме гейтим правом, а не ролью: роль-гейт скрывал «Отчеты»
+    // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
+    // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
+    reports: IS_DJANGO_BACKEND
+      ? (isSuper || can("reports.view"))
+      : (isSuper || isAdmin() || hasRole(["accountant"])),
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
     load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
     notifications: isSuper,
