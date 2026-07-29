@@ -28,6 +28,7 @@ import { useLocation, useNavigate } from "react-router";
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { AchievementToast } from "./components/achievements/AchievementToast";
+import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { AttendanceReminder } from "./components/attendance/AttendanceReminder";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
@@ -96,6 +97,7 @@ const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
 const CleaningPage = lazy(() => import("./pages/cleaning"));
 const CleaningSettingsPage = lazy(() => import("./pages/settings/CleaningSettingsPage"));
+const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/AnnouncementsSettingsPage"));
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
@@ -533,6 +535,7 @@ function App() {
                               >
                                 <DjangoContextRemount>
                                   <>
+                                    {IS_DJANGO_BACKEND && <AnnouncementBanner />}
                                     <Outlet />
                                     {IS_DJANGO_BACKEND && <AttendanceReminder />}
                                   </>
@@ -1101,6 +1104,16 @@ function App() {
                                     <CleaningSettingsPage />
                                   </Suspense>
                                 </RequireModule>
+                              }
+                            />
+                            <Route
+                              path="settings/announcements"
+                              element={
+                                <RequirePermission permission={["announcements.view", "announcements.manage"]}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <AnnouncementsSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
                               }
                             />
                             <Route

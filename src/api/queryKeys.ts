@@ -77,6 +77,13 @@ export const djangoQueryKeys = {
       ["django", "notifications", "history", filters] as const,
   },
 
+  announcements: {
+    all: ["django", "announcements"] as const,
+    active: ["django", "announcements", "active"] as const,
+    list: (params?: Record<string, unknown>) =>
+      ["django", "announcements", "list", params ?? {}] as const,
+  },
+
   expenses: {
     all: ["django", "expenses"] as const,
     list: (filters: Record<string, unknown>) =>

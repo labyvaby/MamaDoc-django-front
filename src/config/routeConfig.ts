@@ -99,6 +99,10 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/settings/cleaning',
     requiredPermissions: [PERMISSIONS.CLEANING_MANAGE],
   },
+  {
+    path: '/settings/announcements',
+    requiredPermissions: ['announcements.view', 'announcements.manage'],
+  },
 
   // База знаний (страница статьи /knowledge/:articleId — те же права)
   {
