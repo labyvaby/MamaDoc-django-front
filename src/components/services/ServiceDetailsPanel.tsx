@@ -22,7 +22,11 @@ import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
-import { getService, SERVICE_RELATED_PRODUCT_ENABLED } from "../../api/catalog";
+import {
+  getService,
+  SERVICE_RELATED_PRODUCT_ENABLED,
+  SERVICE_RELATED_PRODUCTS_MULTI_ENABLED,
+} from "../../api/catalog";
 import type { Service } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
 import { AppButton, InfoTile } from "../ui";
@@ -344,16 +348,34 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               </Box>
             )}
 
-            {/* Сопутствующий товар */}
-            {SERVICE_RELATED_PRODUCT_ENABLED && service.relatedProduct && (
+            {/* Сопутствующие товары */}
+            {SERVICE_RELATED_PRODUCT_ENABLED && service.relatedProducts.length > 0 && (
               <Box>
-                <SectionHeader icon={<Inventory2OutlinedIcon />} title="Сопутствующий товар" />
-                <InfoTile
+                <SectionHeader
                   icon={<Inventory2OutlinedIcon />}
-                  label={service.relatedProduct.name}
-                  value={`${formatKGS(service.relatedProduct.price)} · остаток ${service.relatedProduct.stock}`}
-                  active
+                  title={
+                    SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
+                      ? "Сопутствующие товары"
+                      : "Сопутствующий товар"
+                  }
                 />
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 1.25,
+                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                  }}
+                >
+                  {service.relatedProducts.map((p) => (
+                    <InfoTile
+                      key={p.id}
+                      icon={<Inventory2OutlinedIcon />}
+                      label={p.name}
+                      value={`${formatKGS(p.price)} · остаток ${p.stock}`}
+                      active
+                    />
+                  ))}
+                </Box>
               </Box>
             )}
 

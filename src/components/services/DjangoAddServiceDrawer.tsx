@@ -19,31 +19,25 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import { createFilterOptions } from "@mui/material/Autocomplete";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
+import RelatedProductsPicker from "./RelatedProductsPicker";
 import {
   createService,
-  uploadServiceImage,
+  relatedProductsPayload,
   SERVICE_CATEGORIES_ENABLED,
   SERVICE_CATEGORY_LABELS,
   SERVICE_CATEGORY_OPTIONS,
   SERVICE_RELATED_PRODUCT_ENABLED,
+  uploadServiceImage,
   type ServiceCategory,
 } from "../../api/catalog";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
-import { formatKGS } from "../../utility/format";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
-
-// Поиск товара по названию, штрихкоду и цене (как в форме приёма).
-const productFilter = createFilterOptions<DjangoProduct>({
-  matchFrom: "any",
-  stringify: (p) => `${p.name} ${p.barcode} ${p.price}`,
-});
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -87,7 +81,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
-  const [relatedProduct, setRelatedProduct] = React.useState<DjangoProduct | null>(null);
+  const [relatedProducts, setRelatedProducts] = React.useState<DjangoProduct[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
@@ -129,7 +123,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       setPhotoFile(null);
       setPhotoPreview(null);
       setSelectedBranches([]);
-      setRelatedProduct(null);
+      setRelatedProducts([]);
       setBusy(false);
       setTouched(false);
       setSubmitError(null);
@@ -185,9 +179,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         isActive,
         branchIds: effectiveBranchIds,
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
-        ...(SERVICE_RELATED_PRODUCT_ENABLED
-          ? { relatedProductId: relatedProduct?.id ?? null }
-          : {}),
+        ...relatedProductsPayload(relatedProducts.map((p) => p.id)),
       });
       if (photoFile) {
         try {
@@ -387,41 +379,15 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
               </Stack>
             )}
 
-            {/* Сопутствующий товар (со склада) */}
+            {/* Сопутствующие товары (со склада) */}
             {SERVICE_RELATED_PRODUCT_ENABLED && (
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Сопутствующий товар
-                </Typography>
-                <Autocomplete
-                  options={products}
-                  loading={productsLoading}
-                  filterOptions={productFilter}
-                  value={relatedProduct}
-                  onChange={(_, v) => setRelatedProduct(v)}
-                  getOptionLabel={(p) => `${p.name} — ${formatKGS(p.price)}`}
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  noOptionsText="Товары не найдены"
-                  disabled={busy}
-                  renderOption={(props, p) => (
-                    <li {...props} key={p.id}>
-                      <Stack>
-                        <Typography variant="body2">{p.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatKGS(p.price)} · остаток {p.stock} {p.unit}
-                        </Typography>
-                      </Stack>
-                    </li>
-                  )}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Например: Гель для УЗИ"
-                      helperText="Необязательно: товар со склада, связанный с услугой"
-                    />
-                  )}
-                />
-              </Stack>
+              <RelatedProductsPicker
+                options={products}
+                loading={productsLoading}
+                value={relatedProducts}
+                onChange={setRelatedProducts}
+                disabled={busy}
+              />
             )}
 
             {/* Описание */}

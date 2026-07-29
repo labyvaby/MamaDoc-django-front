@@ -48,6 +48,19 @@ export const SERVICE_CATEGORY_OPTIONS = Object.keys(
  */
 export const SERVICE_RELATED_PRODUCT_ENABLED = true;
 
+/**
+ * Несколько сопутствующих товаров на услугу (заказчик 29.07.2026). Бэк пока
+ * держит один FK — проверено на живом API 29.07.2026 (услуга «Тест услуга 4с»,
+ * id 35): `PATCH {relatedProductIds:[43]}` → 200, но поле **молча
+ * игнорируется** (в ответе только `relatedProductId`/`relatedProduct`, связь не
+ * создана), плюрального `relatedProducts` в GET нет. Тикет —
+ * MamaDoc/backend_ticket_service_related_products_multi.md.
+ *
+ * ⚠ Молчаливое игнорирование значит, что «нет ошибки» ≠ «бэк готов»:
+ * переключать флаг только после того, как GET начнёт отдавать `relatedProducts`.
+ */
+export const SERVICE_RELATED_PRODUCTS_MULTI_ENABLED = false;
+
 export interface RelatedProductRef {
   id: number;
   name: string;
@@ -70,9 +83,15 @@ export interface Service {
   sortOrder: number;
   /** Категория услуги; null — без категории. */
   category: ServiceCategory | null;
-  /** Сопутствующий товар склада; null — не привязан. */
+  /** Сопутствующий товар склада (одиночный контракт бэка); null — не привязан. */
   relatedProductId: number | null;
   relatedProduct: RelatedProductRef | null;
+  /**
+   * Все сопутствующие товары. Пока бэк отдаёт один товар — нормализуется из
+   * `relatedProduct` (пустой массив, если привязки нет), поэтому UI можно писать
+   * сразу под список.
+   */
+  relatedProducts: RelatedProductRef[];
   /** Branches visible to the current user. */
   branches: BranchRef[];
   /** True when the service is also assigned to branches outside the caller's scope. */
@@ -97,6 +116,8 @@ export interface ServiceCreatePayload {
   category?: ServiceCategory | null;
   /** Сопутствующий товар; null/отсутствие — без привязки. */
   relatedProductId?: number | null;
+  /** Список сопутствующих товаров; пустой массив — без привязок (нужен M2M на бэке). */
+  relatedProductIds?: number[];
 }
 
 export interface ServiceUpdatePayload {
@@ -117,6 +138,21 @@ export interface ServiceUpdatePayload {
   category?: ServiceCategory | null;
   /** Сопутствующий товар; null очищает привязку. */
   relatedProductId?: number | null;
+  /** Список сопутствующих товаров; пустой массив очищает все привязки. */
+  relatedProductIds?: number[];
+}
+
+/**
+ * Тело запроса для привязки товаров: пока бэк принимает один FK — отправляем
+ * `relatedProductId` (первый выбранный), после M2M — `relatedProductIds`.
+ * Одно место, чтобы после переключения флага не искать все формы услуги.
+ */
+export function relatedProductsPayload(
+  productIds: number[],
+): Pick<ServiceUpdatePayload, "relatedProductId" | "relatedProductIds"> {
+  if (!SERVICE_RELATED_PRODUCT_ENABLED) return {};
+  if (SERVICE_RELATED_PRODUCTS_MULTI_ENABLED) return { relatedProductIds: productIds };
+  return { relatedProductId: productIds[0] ?? null };
 }
 
 /** Бэк отдаёт price/stock товара строками-decimal — приводим к числам (как mapProduct в api/warehouse.ts). */
@@ -131,6 +167,21 @@ function normalizeRelatedProduct(
   };
 }
 
+/**
+ * Список товаров: плюральное поле бэка, если оно появилось, иначе — одиночная
+ * привязка как массив из одного элемента.
+ */
+function normalizeRelatedProducts(service: Service): RelatedProductRef[] {
+  const list = Array.isArray(service.relatedProducts) ? service.relatedProducts : null;
+  if (list) {
+    return list
+      .map((p) => normalizeRelatedProduct(p))
+      .filter((p): p is RelatedProductRef => p !== null);
+  }
+  const single = normalizeRelatedProduct(service.relatedProduct);
+  return single ? [single] : [];
+}
+
 function normalizeService(service: Service): Service {
   return {
     ...service,
@@ -138,6 +189,7 @@ function normalizeService(service: Service): Service {
     category: service.category ?? null,
     relatedProductId: service.relatedProductId ?? null,
     relatedProduct: normalizeRelatedProduct(service.relatedProduct),
+    relatedProducts: normalizeRelatedProducts(service),
     branches: Array.isArray(service.branches) ? service.branches : [],
     hasHiddenBranches: Boolean(service.hasHiddenBranches),
   };
