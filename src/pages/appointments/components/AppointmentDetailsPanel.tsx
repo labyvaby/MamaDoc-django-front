@@ -436,6 +436,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         variant="detailed"
         showIcons
         dense
+        // У оплаченного приёма чипа скидки нет (там «Оплачено») — шапка
+        // единственное место, где виден дисконт.
+        showDiscountPercent
         actionButton={actionBtn}
       />
     );

@@ -5,6 +5,7 @@ import { setCurrentGlossary } from "../i18n/glossary";
 import {
   getStatusConfig,
   getStatusLabel,
+  getStatusTrack,
   normalizeDjangoStatus,
   resolveStatusCode,
   DJANGO_STATUS_LABEL,
@@ -80,6 +81,7 @@ describe("канонические коды резолвятся сами в с�
     "discounted",
     "free",
     "debt",
+    "insurance",
   ];
 
   it.each(codes)("%s", (code) => {
@@ -89,30 +91,115 @@ describe("канонические коды резолвятся сами в с�
   });
 });
 
-describe("getStatusConfig — цвета не изменились", () => {
+describe("getStatusConfig — цвета", () => {
   const expectedColors: [string, string][] = [
     ["canceled", "error"],
     ["confirmed", "info"],
-    ["arrived", "success"],
+    ["arrived", "teal"],
     ["completed", "default"],
-    ["no_show", "default"],
+    ["no_show", "error"],
     ["in_progress", "warning"],
-    ["scheduled", "warning"],
+    ["scheduled", "default"],
     [APPOINTMENT_STATUSES.PAID, "success"],
     [APPOINTMENT_STATUSES.PARTIALLY_PAID, "purple"],
     [APPOINTMENT_STATUSES.DISCOUNTED, "secondary"],
-    [APPOINTMENT_STATUSES.FREE, "success"],
-    ["оплачено безналом", "info"],
+    [APPOINTMENT_STATUSES.FREE, "secondary"],
+    // Оплата картой — тот же факт, что и наличными: цвет один, различает иконка.
+    ["оплачено безналом", "success"],
+    ["долг", "error"],
   ];
 
   it.each(expectedColors)("«%s» → цвет %s", (status, color) => {
     expect(getStatusConfig(status).color).toBe(color);
   });
 
-  it("неизвестный статус получает дефолтный жёлтый и показывается как есть", () => {
+  it("неизвестный статус получает нейтральный серый и показывается как есть", () => {
     const cfg = getStatusConfig("новый статус с бэка");
-    expect(cfg.color).toBe("warning");
+    expect(cfg.color).toBe("default");
     expect(cfg.label).toBe("новый статус с бэка");
+    expect(cfg.track).toBe("visit");
+  });
+});
+
+describe("две дорожки: ход визита и деньги", () => {
+  const visitCodes: StatusCode[] = [
+    "scheduled",
+    "confirmed",
+    "arrived",
+    "in_progress",
+    "completed",
+    "canceled",
+    "no_show",
+  ];
+  const moneyCodes: StatusCode[] = [
+    "paid",
+    "paid_cashless",
+    "partially_paid",
+    "debt",
+    "discounted",
+    "free",
+    "insurance",
+  ];
+
+  it.each(visitCodes)("«%s» — дорожка визита", (code) => {
+    expect(getStatusTrack(code)).toBe("visit");
+  });
+
+  it.each(moneyCodes)("«%s» — дорожка денег", (code) => {
+    expect(getStatusTrack(code)).toBe("money");
+  });
+
+  /**
+   * Главный инвариант: внутри одной дорожки цвет не должен повторяться —
+   * иначе два состояния снова станут неразличимы, как «Подтверждён» и
+   * «Оплачено картой» до разделения дорожек. Исключения перечислены явно:
+   * это состояния, которые намеренно означают одно и то же.
+   */
+  const ALLOWED_SAME_COLOR: Record<string, StatusCode[][]> = {
+    // «Ожидаем» и «Завершено» оба нейтрально-серые: ни то ни другое не требует
+    // действия прямо сейчас, а различает их иконка (песочные часы / флаг).
+    // «Отменено» и «Неявка» — оба неудачные исходы, красные; различает иконка.
+    visit: [
+      ["scheduled", "completed"],
+      ["canceled", "no_show"],
+    ],
+    // Оплата картой и наличными — один факт (чек закрыт), различает иконка.
+    // Скидка 100% и «бесплатно» — тоже одно: чек закрыт без денег.
+    money: [
+      ["paid", "paid_cashless"],
+      ["discounted", "free"],
+    ],
+  };
+
+  it.each([
+    ["visit", visitCodes],
+    ["money", moneyCodes],
+  ] as const)("в дорожке %s цвета не повторяются", (track, codes) => {
+    const byColor = new Map<string, StatusCode[]>();
+    for (const code of codes) {
+      const color = getStatusConfig(code).color;
+      byColor.set(color, [...(byColor.get(color) ?? []), code]);
+    }
+
+    const collisions = [...byColor.values()]
+      .filter((group) => group.length > 1)
+      .filter(
+        (group) =>
+          !ALLOWED_SAME_COLOR[track].some(
+            (allowed) =>
+              allowed.length === group.length && allowed.every((c) => group.includes(c)),
+          ),
+      );
+
+    expect(collisions).toEqual([]);
+  });
+
+  it("иконки различаются у всех статусов", () => {
+    // Раньше «Завершено», «Оплачено», «Оплачено картой» и «Со скидкой» несли
+    // одну галочку — иконка не добавляла ничего к цвету.
+    // Сравниваем сами компоненты иконок: muiName в сборке может отсутствовать.
+    const icons = [...visitCodes, ...moneyCodes].map((code) => getStatusConfig(code).icon.type);
+    expect(new Set(icons).size).toBe(icons.length);
   });
 });
 
@@ -156,10 +243,10 @@ describe("двойное преобразование slug → метка → к
 
   it.each(["clinic", "beauty"] as const)("в вертикали %s цвет сохраняется", (vertical) => {
     setCurrentGlossary(vertical);
-    expect(doublePass("arrived").color).toBe("success");
+    expect(doublePass("arrived").color).toBe("teal");
     expect(doublePass("canceled").color).toBe("error");
     expect(doublePass("confirmed").color).toBe("info");
-    expect(doublePass("no_show").color).toBe("default");
+    expect(doublePass("no_show").color).toBe("error");
     expect(doublePass("in_progress").color).toBe("warning");
   });
 

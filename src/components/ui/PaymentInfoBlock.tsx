@@ -19,6 +19,7 @@ import {
   InfoOutlined,
   CancelOutlined as CancelIcon,
 } from "@mui/icons-material";
+import { discountPercentOf } from "../../utility/format";
 
 export interface PaymentInfo {
   baseTotal: number;
@@ -51,6 +52,15 @@ export interface PaymentInfoBlockProps {
    * (расходы, продажи) остаётся обычный размер.
    */
   dense?: boolean;
+  /**
+   * Дописывать к шапке «· скидка N%». По умолчанию выключено: продажи уже
+   * показывают процент отдельным чипом («Со скидкой 20%») из своего
+   * discountPercent, и второй процент рядом — не только дубль, но и риск
+   * расхождения, если бэк отдаёт дробный процент, а мы округляем.
+   * Приёмам включаем: у оплаченного приёма чипа скидки нет, и шапка —
+   * единственное место, где дисконт виден.
+   */
+  showDiscountPercent?: boolean;
 }
 
 export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
@@ -58,14 +68,28 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
   variant = "detailed",
   actionButton,
   dense = false,
+  showDiscountPercent = false,
 }) => {
   const theme = useTheme();
   const {
-    discountPercent, discountAmount, baseTotal, cash, card,
+    discountAmount, baseTotal, cash, card,
     balance = 0, bonuses = 0, insurance = 0, insurerName, policyNumber,
     finalTotal, debt = 0, status,
   } = payment;
   const totalPaid = cash + card + balance + bonuses + insurance;
+
+  // Шапка показывает сумму К ОПЛАТЕ: baseTotal — это цена до скидки, и на чеке
+  // со скидкой она расходилась с фактически принятыми деньгами (1600 при
+  // оплате 1000), причём сама скидка нигде не выводилась — 600 сом просто
+  // «исчезали». Исходную сумму оставляем зачёркнутой рядом.
+  // Процент считаем сами, а не берём из payment.discountPercent: вызывающие
+  // округляют его по-своему, и 99.6% превращались в «100%» — то есть в
+  // «платить нечего».
+  const hasDiscount = discountPercentOf(baseTotal, discountAmount) != null;
+  const headerDiscountPercent = showDiscountPercent
+    ? discountPercentOf(baseTotal, discountAmount)
+    : null;
+  const headerTotal = hasDiscount ? finalTotal : baseTotal || finalTotal;
 
   let isPaid: boolean = false;
   let isPartiallyPaid: boolean = false;
@@ -209,23 +233,53 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
             {dense ? (
               // Плотный режим: подпись и сумма одной строкой — заголовочная
               // «Общая сумма» в h4 занимала полкарточки приёма.
-              <Stack direction="row" alignItems="baseline" spacing={0.75}>
+              <Stack direction="row" alignItems="baseline" spacing={0.75} flexWrap="wrap">
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
                   Общая сумма
                 </Typography>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  {formatAmount(baseTotal || finalTotal)}
+                  {hasDiscount && (
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, mr: 0.75, textDecoration: "line-through" }}
+                    >
+                      {formatAmount(baseTotal)}
+                    </Typography>
+                  )}
+                  {formatAmount(headerTotal)}
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ fontWeight: 700, ml: 0.5 }}>сом</Typography>
                 </Typography>
+                {headerDiscountPercent != null && (
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                    · скидка {headerDiscountPercent}%
+                  </Typography>
+                )}
               </Stack>
             ) : (
               <Box>
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1, display: 'block', mb: 0.5 }}>
                   Общая сумма
                 </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                  {formatAmount(baseTotal || finalTotal)}
+                <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'baseline', gap: 0.5, flexWrap: 'wrap' }}>
+                  {hasDiscount && (
+                    <Typography
+                      component="span"
+                      variant="h6"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, textDecoration: "line-through" }}
+                    >
+                      {formatAmount(baseTotal)}
+                    </Typography>
+                  )}
+                  {formatAmount(headerTotal)}
                   <Typography component="span" variant="h6" color="text.secondary" sx={{ fontWeight: 700 }}>сом</Typography>
+                  {headerDiscountPercent != null && (
+                    <Typography component="span" variant="body2" color="text.secondary" sx={{ fontWeight: 700 }}>
+                      · скидка {headerDiscountPercent}%
+                    </Typography>
+                  )}
                 </Typography>
               </Box>
             )}

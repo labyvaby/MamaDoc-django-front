@@ -25,6 +25,26 @@ export const formatQuantity = (value: number | string | null | undefined): strin
 };
 
 /**
+ * Процент скидки от суммы до скидки; null — считать не из чего.
+ *
+ * Единая точка расчёта: процент показывают чип приёма, строка «Итого» в списке
+ * и блок оплаты в карточке — они обязаны совпадать. Округление до 100%
+ * разрешено, только когда скидка действительно покрывает весь чек: «100%»
+ * читается как «платить нечего», и округлённые 99.6% выдали бы пациента без
+ * оплаты.
+ */
+export const discountPercentOf = (
+  total: number | string | null | undefined,
+  discount: number | string | null | undefined,
+): number | null => {
+  const t = Number(total ?? 0);
+  const d = Number(discount ?? 0);
+  if (!(d > 0) || !(t > 0)) return null;
+  if (d >= t) return 100;
+  return Math.min(99, Math.round((d / t) * 100));
+};
+
+/**
  * Форматирует дату в вид `дд.мм.гггг`.
  * Принимает `Date` или строку (ISO "YYYY-MM-DD" / "YYYY-MM-DDTHH:MM[:SS]" и т.п.).
  * В случае некорректного значения возвращает пустую строку, чтобы не ломать интерфейс.

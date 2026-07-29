@@ -131,7 +131,7 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
         useFlexGap
         sx={{ mt: 1 }}
       >
-        <AppointmentStatusChips appointment={statusSource} alwaysShowStatus />
+        <AppointmentStatusChips appointment={statusSource} />
         {hasBankConfirmation && (
           <Tooltip title={t("details.paymentConfirmedByBank")}>
             <Chip

@@ -16,7 +16,6 @@ import {
 import { useTheme, alpha } from "@mui/material/styles";
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
-import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
 // Иконки SMS-уведомлений — те же импорты, что в старом фронте (home/AppointmentsList).
@@ -34,11 +33,32 @@ import {
   isCancelledStatus,
   isSlotCovered,
 } from "./slotAvailability";
-import { formatKGS } from "../../../utility/format";
+import { formatKGS, discountPercentOf } from "../../../utility/format";
 import { formatPhoneDisplay } from "../../../utility/phone";
 import { useT } from "../../../i18n/VerticalProvider";
 import { agree } from "../../../i18n/formatters";
 import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
+import {
+  getStatusAccent,
+  getStatusLabel,
+  resolveStatusCode,
+} from "../../../config/appointmentStatuses";
+import type { StatusCode } from "../../../config/appointmentStatuses";
+
+/**
+ * Статусы визита, по которым можно отфильтровать день. Порядок — ход визита,
+ * а не алфавит: регистратор читает ленту слева направо как шкалу времени.
+ * Показываем только те, что в этом дне действительно есть.
+ */
+const VISIT_FILTER_CODES: StatusCode[] = [
+  "scheduled",
+  "confirmed",
+  "arrived",
+  "in_progress",
+  "completed",
+  "canceled",
+  "no_show",
+];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -286,13 +306,45 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [items, groupEmployeeIds]);
 
+  // ── Фильтр по статусу визита ──────────────────────────────────────────────
+  // Главный вопрос стойки — «кто уже в холле»: раньше отобрать таких можно было
+  // только глазами по всему списку. Фильтруем по каноническому коду, а не по
+  // метке: метка зависит от вертикали бизнеса.
+  const [statusFilter, setStatusFilter] = React.useState<StatusCode | null>(null);
+
+  React.useEffect(() => {
+    setStatusFilter(null);
+  }, [titleDate]);
+
+  // Отбираем только статусы, которые сегодня реально встречаются: пустой чип
+  // «Неявка · 0» занимал бы место и ничего не сообщал.
+  const statusCounts = React.useMemo(() => {
+    const counts = new Map<StatusCode, number>();
+    for (const appt of items) {
+      const code = resolveStatusCode(appt.status);
+      if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+    return counts;
+  }, [items]);
+
+  const statusChips = React.useMemo(
+    () => VISIT_FILTER_CODES.filter((code) => (statusCounts.get(code) ?? 0) > 0),
+    [statusCounts],
+  );
+
   // ── Filter items by selected doctor ──────────────────────────────────────
   const filteredItems = React.useMemo(() => {
-    if (!selectedDoctor) return items;
-    return items.filter((appt) =>
-      appt.services.some((sl) => sl.employee?.fullName === selectedDoctor),
-    );
-  }, [items, selectedDoctor]);
+    let list = items;
+    if (selectedDoctor) {
+      list = list.filter((appt) =>
+        appt.services.some((sl) => sl.employee?.fullName === selectedDoctor),
+      );
+    }
+    if (statusFilter) {
+      list = list.filter((appt) => resolveStatusCode(appt.status) === statusFilter);
+    }
+    return list;
+  }, [items, selectedDoctor, statusFilter]);
 
   // ── Group by doctor name → list of appointments ───────────────────────────
   // Mirrors оригинал: каждый приём попадает в группу каждого участвующего врача
@@ -552,6 +604,40 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                 <Box sx={{ minWidth: 16, flexShrink: 0 }} />
               </Box>
             )}
+
+            {/* Фильтр по статусу визита: «Пациент здесь · 3» и т.п. Цвета —
+                из той же палитры, что и чипы в строках, иначе клик по фильтру
+                приводил бы к списку другого цвета. */}
+            {statusChips.length > 0 && (
+              <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mt: -1 }}>
+                {statusChips.map((code) => {
+                  const active = statusFilter === code;
+                  const accent = getStatusAccent(code, theme);
+                  return (
+                    <Chip
+                      key={code}
+                      size="small"
+                      clickable
+                      onClick={() => setStatusFilter(active ? null : code)}
+                      label={`${getStatusLabel(code)} · ${statusCounts.get(code) ?? 0}`}
+                      sx={(th) => ({
+                        height: 24,
+                        fontWeight: 500,
+                        border: 1,
+                        borderColor: active ? alpha(accent.main, 0.4) : "divider",
+                        color: active ? accent.text : "text.secondary",
+                        bgcolor: active
+                          ? alpha(accent.main, th.palette.mode === "dark" ? 0.16 : 0.08)
+                          : "transparent",
+                        "&:hover": {
+                          bgcolor: alpha(accent.main, th.palette.mode === "dark" ? 0.22 : 0.12),
+                        },
+                      })}
+                    />
+                  );
+                })}
+              </Stack>
+            )}
           </Stack>
         }
         action={
@@ -635,8 +721,13 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       const a = item as DjangoAppointment;
                       const isSelected = selectedId === a.id;
 
+                      // totalAmount с бэка — сумма ДО скидки. Пациент платит
+                      // разницу, поэтому в «Итого» показываем её, а исходную
+                      // сумму — зачёркнутой рядом.
                       const totalAmount = Number(a.totalAmount ?? 0);
                       const discountAmount = Number(a.discountAmount ?? 0);
+                      const discountPercent = discountPercentOf(totalAmount, discountAmount);
+                      const payableAmount = Math.max(0, totalAmount - discountAmount);
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
                       const hasConclusion = (a.services ?? []).some(
@@ -697,46 +788,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                             {/* Right: чипы статуса + иконки оплаты + сумма */}
                             <Stack alignItems="flex-end">
                               <Stack direction="row" alignItems="center" gap={1}>
-                                {/* Статус приёма + статус оплаты + «Скидка 100%» —
-                                    общий компонент. Та же логика применяется в
-                                    истории пациента и карточках врача/пациента:
-                                    иначе оплаченный приём выглядел там как
-                                    «Ожидаем», и врач с регистратором видели по
-                                    одному приёму разное.
+                                {/* Статус приёма + деньги (оплата / долг / скидка /
+                                    страховка) — общий компонент. Та же логика
+                                    применяется в истории пациента и карточках
+                                    врача/пациента: иначе оплаченный приём
+                                    выглядел там как «Ожидаем», и врач с
+                                    регистратором видели по одному приёму разное.
                                     Факт оплаты — операционный статус, виден всем
                                     ролям (врачу важно знать, закрыт ли чек);
                                     финансовые действия остаются под правами. */}
                                 <AppointmentStatusChips appointment={a} />
-
-                                {/* Бейдж «Страховка» — визит (со)оплачен страховой
-                                    компанией; синий тинт, отличим от зелёного
-                                    чипа оплаты в обеих темах. */}
-                                {(a.paymentMethods ?? []).includes("insurance") && (
-                                    <Tooltip title={t("list.insurancePayment")}>
-                                      <Chip
-                                        label={
-                                          <Stack direction="row" alignItems="center" gap={0.5}>
-                                            <HealthAndSafetyOutlined sx={{ fontSize: 14 }} />
-                                            <span>{t("list.insurance")}</span>
-                                          </Stack>
-                                        }
-                                        size="small"
-                                        sx={(t) => ({
-                                          height: 24,
-                                          borderRadius: "7px",
-                                          fontWeight: 500,
-                                          bgcolor: alpha(
-                                            t.palette.info.main,
-                                            t.palette.mode === "dark" ? 0.2 : 0.14,
-                                          ),
-                                          color:
-                                            t.palette.mode === "dark"
-                                              ? t.palette.info.light
-                                              : t.palette.info.dark,
-                                        })}
-                                      />
-                                    </Tooltip>
-                                  )}
 
                                 {/* Иконка принтера = есть заключение (приём
                                     фактически завершён врачом). Род термина
@@ -785,11 +846,25 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   color="text.secondary"
                                   sx={{ mt: 0.5 }}
                                 >
-                                  {t("list.total")} {formatKGS(totalAmount)}
-                                  {/* Скидка видна и при частичной (чек оплачен
-                                      с дисконтом — чип этого не показывает). */}
-                                  {discountAmount > 0 &&
-                                    t("list.discountSuffix", { amount: formatKGS(discountAmount) })}
+                                  {t("list.total")}{" "}
+                                  {/* При скидке «Итого» — это то, что человек
+                                      платит по кассе; сумма до скидки остаётся
+                                      рядом зачёркнутой, иначе непонятно, от чего
+                                      считался процент. Скидка процентом: у
+                                      оплаченного приёма чипа скидки нет (там
+                                      «Оплачено»), и эта строка — единственное
+                                      место, где дисконт виден. */}
+                                  {discountPercent != null && (
+                                    <Box
+                                      component="span"
+                                      sx={{ textDecoration: "line-through", opacity: 0.6, mr: 0.5 }}
+                                    >
+                                      {formatKGS(totalAmount)}
+                                    </Box>
+                                  )}
+                                  {formatKGS(discountPercent != null ? payableAmount : totalAmount)}
+                                  {discountPercent != null &&
+                                    t("list.discountPercentSuffix", { percent: discountPercent })}
                                 </Typography>
                               )}
 

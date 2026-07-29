@@ -12,10 +12,13 @@
     "paid_cashless": "Оплачено",
     "discounted": "Со скидкой",
     "free": "Бесплатно",
-    "debt": "Долг"
+    "debt": "Долг",
+    "insurance": "Страховка"
   },
   "chips": {
     "debt": "Долг {{amount}}",
+    "debtOfTotal": "Долг {{amount}} из {{total}}",
+    "discountPercent": "Скидка {{percent}}%",
     "overdue": "Время {{visit.gen}} прошло — статус не обновляли"
   },
   "paymentStatus": {
@@ -85,6 +88,7 @@
     "fullDiscount": "Скидка 100%",
     "discounted": "Со скидкой",
     "discountSuffix": " · скидка {{amount}}",
+    "discountPercentSuffix": " · скидка {{percent}}%",
     "total": "Итого:",
     "insurance": "Страховка",
     "insurancePayment": "Оплата страховкой",
