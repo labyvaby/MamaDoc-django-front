@@ -18,7 +18,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
-import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useActiveScope } from "../../../hooks/useActiveScope";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch";
@@ -88,8 +88,11 @@ const DjangoSalesPage: React.FC = () => {
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const { open: notify } = useNotification();
     const { loading: permLoading } = usePermissions();
-    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
-    const orgId = useApiOrgId();
+    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту: без него
+    // /warehouse/sales/ отвечает 400. Одного permLoading мало — при
+    // перезагрузке сессии он снимается раньше, чем приезжает активная
+    // организация, и страница показывала «Ошибка загрузки продаж».
+    const { organizationId: orgId, orgReady } = useActiveScope();
     const canView = useCan(["warehouse.sales.view", "warehouse.view"]);
     const canManageSales = useCan("warehouse.sales.manage");
 
@@ -288,22 +291,23 @@ const DjangoSalesPage: React.FC = () => {
     }, [orgId]);
 
     useEffect(() => {
-        if (!permLoading && canView) fetchProducts();
+        if (!permLoading && orgReady && canView) fetchProducts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [permLoading, canView]);
+    }, [permLoading, orgReady, canView]);
 
     // Главный эффект загрузки: KPI всегда + активный вид. Реагирует на фильтры/вид.
+    // orgReady обязателен: без организации запрос гарантированно вернёт 400.
     useEffect(() => {
-        if (permLoading || !canView || !rangeReady) return;
+        if (permLoading || !orgReady || !canView || !rangeReady) return;
         fetchStats();
         if (view === "list") fetchSales(true);
         else if (view === "product") fetchByProduct();
         else fetchByDay();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [permLoading, canView, rangeReady, filtersKey, view]);
+    }, [permLoading, orgReady, canView, rangeReady, filtersKey, view]);
 
     useFocusRefetch(() => {
-        if (permLoading || !canView || !rangeReady) return;
+        if (permLoading || !orgReady || !canView || !rangeReady) return;
         fetchStats();
         if (view === "list") fetchSales(true);
         else if (view === "product") fetchByProduct();
@@ -335,6 +339,9 @@ const DjangoSalesPage: React.FC = () => {
     const [saleToEdit, setSaleToEdit] = useState<DjangoSale | null>(null);
 
     const refetchCurrent = () => {
+        // Событие realtime может прийти в момент, когда организация ещё
+        // неизвестна — такой запрос вернул бы 400 вместо данных.
+        if (!orgReady) return;
         fetchStats();
         if (view === "list") fetchSales(true);
         else if (view === "product") fetchByProduct();
