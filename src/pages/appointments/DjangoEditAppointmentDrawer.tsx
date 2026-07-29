@@ -50,6 +50,7 @@ import {
   type DjangoAppointment,
 } from "../../api/appointments";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
+import ServiceConsumptionsPreview from "./components/ServiceConsumptionsPreview";
 import { getStatusLabel } from "../../config/appointmentStatuses";
 import { useT } from "../../i18n/VerticalProvider";
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -1299,7 +1300,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     {/* Расходники правим только у сохранённой
                                         строки: у новой (и у пересозданной после
                                         смены услуги) состав соберёт бэк из
-                                        справочника, а id расходов ещё нет. */}
+                                        справочника, а id расходов ещё нет —
+                                        показываем состав справочника как есть. */}
+                                    {row.lineId == null && selectedService && (
+                                      <ServiceConsumptionsPreview
+                                        products={selectedService.relatedProducts}
+                                        serviceQuantity={row.quantity}
+                                      />
+                                    )}
                                     {APPOINTMENT_CONSUMPTIONS_ENABLED && row.lineId != null && (
                                       <ConsumptionRowsEditor
                                         rows={row.consumptions}

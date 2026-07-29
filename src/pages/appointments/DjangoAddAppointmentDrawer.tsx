@@ -53,6 +53,7 @@ import {
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
+import ServiceConsumptionsPreview from "./components/ServiceConsumptionsPreview";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import {
@@ -1214,6 +1215,16 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                         ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
                                         : ""}
                                     </Typography>
+                                  )}
+
+                                  {/* Состав расходников из справочника: снапшот
+                                      строк расхода соберёт бэк после сохранения,
+                                      до этого показать нечего кроме справочника. */}
+                                  {selectedService && (
+                                    <ServiceConsumptionsPreview
+                                      products={selectedService.relatedProducts}
+                                      serviceQuantity={row.quantity}
+                                    />
                                   )}
 
                                   {duplicate && (
