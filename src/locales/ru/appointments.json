@@ -134,10 +134,14 @@
     "cancelSubmit": "Подтвердить отмену"
   },
   "serviceRow": {
-    "pickSpecialist": "Выберите {{specialist.acc}}",
-    "sameSpecialist": "{{specialist.nom, capitalize}} из строки выше",
-    "filteredServices": "Показано {{count}} — фильтр по {{specialist.dat}}",
-    "filteredSpecialists": "Показано {{count}} — фильтр по {{service.dat}}"
+    "addSpecialist": "+ Добавить {{specialist.acc}}",
+    "deleteGroup": "Удалить {{specialist.acc}} вместе с {{service.insPl}}",
+    "noEmployeeForService": "Эту {{service.acc}} никто не оказывает. Назначьте исполнителей в настройках {{service.gen}}.",
+    "noEmployeeForAllServices": "Никто не оказывает все {{service.accPl}} блока сразу. Добавьте второго {{specialist.acc}} и разнесите {{service.accPl}} по блокам.",
+    "noEmployeeMatches": "Никого не найдено",
+    "noServiceForEmployee": "У этого {{specialist.gen}} нет назначенных {{service.genPl}}. Назначьте их в настройках {{service.gen}}.",
+    "noServiceMatches": "{{service.nomPl, capitalize}} не найдены",
+    "duplicateService": "{{service.nom, capitalize}} уже есть в списке этого специалиста"
   },
   "addDrawer": {
     "title": "Добавить {{visit.acc}}",
@@ -164,6 +168,7 @@
     "specialistMismatch": "Этот специалист не оказывает выбранную {{service.acc}}",
     "addService": "+ Добавить {{service.acc}}",
     "totalCost": "Общая стоимость",
+    "servicesSubtotal": "{{service.nomPl, capitalize}}",
     "productsSection": "Товары",
     "productOverStock": "Количество превышает остаток на складе",
     "addProduct": "+ Добавить товар",
@@ -198,6 +203,9 @@
     "patientDebt": "У {{patient.gen}} задолженность:",
     "priceAmount": "{{amount}} с",
     "priceLabel": "Цена:",
+    "discountSuffix": " · скидка {{amount}}",
+    "durationTotal": "Длительность",
+    "minutesValue": "{{minutes}} мин",
     "sumLabel": "Сумма:",
     "productStock": "{{price}} · в наличии: {{stock}} {{unit}}",
     "adminCommentLabel": "Комментарий администратора{{required}}",

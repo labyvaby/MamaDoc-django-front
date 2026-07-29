@@ -15,12 +15,11 @@ import {
   DialogTitle,
   Divider,
   Drawer,
-  FormControlLabel,
   Grid,
   IconButton,
   Stack,
-  Switch,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { ToggleButton, ToggleButtonGroup } from "@mui/material";
@@ -67,7 +66,10 @@ import type {
   DjangoCatalogServiceWithEmployees,
 } from "../../hooks/useDjangoAppointmentData";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
-import ServiceRowShell from "../../components/appointments/ServiceRowShell";
+import ServiceGroupShell, {
+  ServiceBranch,
+} from "../../components/appointments/ServiceGroupShell";
+import { groupServiceRowsByEmployee } from "../../components/appointments/serviceRowGroups";
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -90,10 +92,37 @@ function nowRounded(): string {
 }
 
 type ServiceRow = {
+  /**
+   * Ключ строки для React. Индекс массива не годится: услуга добавляется в
+   * середину списка (следующей услугой того же специалиста), и по индексу
+   * React переиспользовал бы поля соседней строки.
+   */
+  uid: string;
+  /**
+   * Блок, в котором живёт строка. Пока исполнитель выбран, блок опознаётся по
+   * нему; когда исполнителя сняли — по этому полю, иначе услуги блока
+   * рассыпались бы на отдельные блоки с пустым исполнителем.
+   */
+  groupId: string;
   serviceId: number | null;
   employeeId: number | null;
   quantity: number;
 };
+
+let serviceRowSeq = 0;
+
+function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
+  serviceRowSeq += 1;
+  const uid = `row-${serviceRowSeq}`;
+  return {
+    uid,
+    groupId: uid,
+    serviceId: null,
+    employeeId: null,
+    quantity: 1,
+    ...patch,
+  };
+}
 
 type ProductRow = {
   productId: number | null;
@@ -194,9 +223,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [isBooking, setIsBooking] = React.useState(false);
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
-  const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
-    { serviceId: null, employeeId: null, quantity: 1 },
-  ]);
+  const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([newServiceRow()]);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
@@ -225,7 +252,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       setIsBooking(false);
       setSelectedPatient(null);
       setPatientSearch("");
-      setServiceRows([{ serviceId: null, employeeId: null, quantity: 1 }]);
+      setServiceRows([newServiceRow()]);
       setProductRows([]);
       setComplaints("");
       setAdminComment("");
@@ -254,11 +281,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     if (isSlotPrefill) {
       setIsBooking(true); // раскрыть секцию услуг сразу (без обязательного пациента)
       setServiceRows([
-        {
+        newServiceRow({
           serviceId: initialServiceId ?? null,
           employeeId: initialEmployeeId ?? null,
-          quantity: 1,
-        },
+        }),
       ]);
     }
     // Инициализация — только в момент открытия. initialDate у вызывающей
@@ -388,6 +414,13 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     [serviceRows, theme.palette.mode],
   );
 
+  // Услуги одного специалиста показываем одним блоком: он выбирается однажды,
+  // услуги висят ветками на его оси.
+  const serviceGroups = React.useMemo(
+    () => groupServiceRowsByEmployee(serviceRows),
+    [serviceRows],
+  );
+
   // ── validation ────────────────────────────────────────────────────────────
   const validRows = serviceRows.filter((r) => r.serviceId !== null && r.employeeId !== null);
   const incompatibleRows = validRows.filter(
@@ -419,52 +452,33 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const touched = form.attempted;
 
   // ── totals (services + goods share one bill) ───────────────────────────────
-  const totalCost = React.useMemo(() => {
-    const servicesSum = validRows.reduce((sum, r) => {
-      const svc = data.services.find((s) => s.id === r.serviceId);
-      return sum + (svc ? Number(svc.basePrice) * r.quantity : 0);
-    }, 0);
-    const productsSum = validProductRows.reduce((sum, r) => {
-      const p = products.find((x) => x.id === r.productId);
-      return sum + (p ? p.price * parseQty(r.quantity) : 0);
-    }, 0);
-    return servicesSum + productsSum;
-  }, [validRows, data.services, validProductRows, products]);
+  const servicesTotal = React.useMemo(
+    () =>
+      validRows.reduce((sum, r) => {
+        const svc = data.services.find((s) => s.id === r.serviceId);
+        return sum + (svc ? Number(svc.basePrice) * r.quantity : 0);
+      }, 0),
+    [validRows, data.services],
+  );
+  const productsTotal = React.useMemo(
+    () =>
+      validProductRows.reduce((sum, r) => {
+        const p = products.find((x) => x.id === r.productId);
+        return sum + (p ? p.price * parseQty(r.quantity) : 0);
+      }, 0),
+    [validProductRows, products],
+  );
+  const totalCost = servicesTotal + productsTotal;
 
-  // Итог по исполнителям для превью: услуги одного специалиста идут вместе,
-  // цвет точки совпадает с осью его строк в форме.
-  const previewByEmployee = React.useMemo(() => {
-    const groups = new Map<
-      number,
-      {
-        employeeId: number;
-        employeeName: string;
-        accent: string;
-        services: { name: string; quantity: number; amount: number }[];
-        total: number;
-      }
-    >();
-    for (const r of validRows) {
-      const svc = data.services.find((s) => s.id === r.serviceId);
-      if (!svc || r.employeeId === null) continue;
-      let group = groups.get(r.employeeId);
-      if (!group) {
-        const emp = data.employees.find((e) => e.id === r.employeeId);
-        group = {
-          employeeId: r.employeeId,
-          employeeName: emp?.fullName ?? t("serviceRow.pickSpecialist"),
-          accent: employeeAccents.get(r.employeeId) ?? theme.palette.text.disabled,
-          services: [],
-          total: 0,
-        };
-        groups.set(r.employeeId, group);
-      }
-      const amount = Number(svc.basePrice) * r.quantity;
-      group.services.push({ name: svc.name, quantity: r.quantity, amount });
-      group.total += amount;
-    }
-    return [...groups.values()];
-  }, [validRows, data.services, data.employees, employeeAccents, theme.palette.text.disabled, t]);
+  // Суммарная длительность услуг — по ней видно, на сколько занят слот.
+  const totalDuration = React.useMemo(
+    () =>
+      validRows.reduce((sum, r) => {
+        const svc = data.services.find((s) => s.id === r.serviceId);
+        return sum + (svc?.durationMinutes ?? 0) * (r.quantity > 0 ? r.quantity : 1);
+      }, 0),
+    [validRows, data.services],
+  );
 
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSave = () => {
@@ -563,6 +577,43 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       const updated = [...prev];
       updated[index] = { ...updated[index], ...patch };
       return updated;
+    });
+  };
+
+  // Специалист выбирается один раз на блок, поэтому смена применяется ко всем
+  // его услугам сразу; услуги, которых новый специалист не оказывает, сбрасываем.
+  const applyEmployeeToRows = (
+    indexes: number[],
+    employee: DjangoEmployeeWithServices | null,
+  ) => {
+    const targets = new Set(indexes);
+    setServiceRows((prev) => {
+      // Общий groupId на все строки блока: если исполнителя снимут, услуги
+      // останутся одним блоком, а не превратятся в несколько пустых.
+      const groupId = prev.find((_, i) => targets.has(i))?.groupId;
+      return prev.map((row, i) => {
+        if (!targets.has(i)) return row;
+        const keepService =
+          row.serviceId === null ||
+          !employee ||
+          data.canEmployeeProvideService(employee.id, row.serviceId);
+        return {
+          ...row,
+          groupId: groupId ?? row.groupId,
+          employeeId: employee?.id ?? null,
+          serviceId: keepService ? row.serviceId : null,
+        };
+      });
+    });
+  };
+
+  // Ещё одна услуга того же блока — сразу после его последней услуги, чтобы
+  // блок не перескакивал в конец списка.
+  const addRowAfter = (index: number, employeeId: number | null, groupId: string) => {
+    setServiceRows((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, newServiceRow({ employeeId, groupId }));
+      return next;
     });
   };
 
@@ -778,7 +829,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
               {!isBooking && (
                 <Autocomplete<DjangoPatient>
                   options={filteredPatients}
-                  loading={data.loading}
+                  // Спиннер про поиск пациента, а не про загрузку справочников.
+                  loading={patientsLoading}
                   value={selectedPatient}
                   inputValue={patientSearch}
                   onInputChange={(_, v) => setPatientSearch(v)}
@@ -920,97 +972,111 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         </Alert>
                       )}
 
-                      {serviceRows.map((row, index) => {
-                        const availableEmployees = data.getEmployeesForService(row.serviceId);
-                        const availableServices = data.getServicesForEmployee(row.employeeId);
-
+                      {serviceGroups.map((group, groupIndex) => {
+                        const groupIndexes = group.rows.map((r) => r.index);
+                        const lastIndex = groupIndexes[groupIndexes.length - 1];
+                        const groupServiceIds = group.rows
+                          .map(({ row }) => row.serviceId)
+                          .filter((id): id is number => id !== null);
+                        // Специалист блока должен оказывать все его услуги —
+                        // иначе смена исполнителя обнулила бы часть строк.
+                        const employeeOptions = groupServiceIds.length
+                          ? data.employees.filter((e) =>
+                              groupServiceIds.every((id) =>
+                                data.canEmployeeProvideService(e.id, id),
+                              ),
+                            )
+                          : data.employees;
                         const selectedEmployee =
-                          availableEmployees.find((e) => e.id === row.employeeId) ??
-                          data.employees.find((e) => e.id === row.employeeId) ??
-                          null;
-                        const selectedService =
-                          availableServices.find((s) => s.id === row.serviceId) ??
-                          data.services.find((s) => s.id === row.serviceId) ??
-                          null;
-
-                        const incompatible =
-                          row.serviceId !== null &&
-                          row.employeeId !== null &&
-                          !data.canEmployeeProvideService(row.employeeId, row.serviceId);
+                          data.employees.find((e) => e.id === group.employeeId) ?? null;
+                        const availableServices = data.getServicesForEmployee(group.employeeId);
+                        const accent =
+                          group.employeeId !== null
+                            ? (employeeAccents.get(group.employeeId) ?? null)
+                            : null;
+                        const groupHasError = group.rows.some(
+                          ({ row }) =>
+                            row.serviceId !== null &&
+                            !data.canEmployeeProvideService(group.employeeId, row.serviceId),
+                        );
+                        // Блок целиком удаляем только когда услуг в нём больше
+                        // одной (иначе хватает кнопки у самой услуги) и когда
+                        // после удаления в форме останется хотя бы одна строка.
+                        const canDeleteGroup =
+                          group.rows.length > 1 && serviceRows.length > group.rows.length;
 
                         return (
-                          <ServiceRowShell
-                            key={index}
-                            index={index}
-                            accentColor={
-                              row.employeeId !== null
-                                ? (employeeAccents.get(row.employeeId) ?? null)
-                                : null
-                            }
+                          <ServiceGroupShell
+                            key={group.key}
+                            index={groupIndex}
+                            accentColor={accent}
                             employeeName={selectedEmployee?.fullName ?? null}
-                            continuesEmployee={
-                              index > 0 &&
-                              row.employeeId !== null &&
-                              serviceRows[index - 1].employeeId === row.employeeId
-                            }
-                            hasError={incompatible}
-                            deleteButton={
-                              serviceRows.length > 1 ? (
-                                <IconButton
-                                  size="small"
-                                  color="error"
-                                  onClick={() =>
-                                    setServiceRows((prev) =>
-                                      prev.filter((_, i) => i !== index),
-                                    )
-                                  }
-                                  sx={{ p: 0.25 }}
-                                >
-                                  <DeleteOutlined fontSize="small" />
-                                </IconButton>
-                              ) : undefined
-                            }
-                            employeeHint={
-                              row.serviceId !== null && !data.loading ? (
-                                <Typography variant="caption" color="text.secondary">
-                                  {t("serviceRow.filteredSpecialists", {
-                                    count: availableEmployees.length,
-                                  })}
-                                </Typography>
+                            hasError={groupHasError}
+                            headerAction={
+                              canDeleteGroup ? (
+                                <Tooltip title={t("serviceRow.deleteGroup")}>
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() =>
+                                      setServiceRows((prev) =>
+                                        prev.filter((_, i) => !groupIndexes.includes(i)),
+                                      )
+                                    }
+                                    sx={{ p: 0.25 }}
+                                  >
+                                    <DeleteOutlined fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
                               ) : undefined
                             }
                             employeeField={
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
                                 disabled={isWorkplaceNurse}
-                                options={
-                                  row.serviceId !== null ? availableEmployees : data.employees
-                                }
+                                options={employeeOptions}
                                 loading={data.loading}
                                 filterOptions={employeeFilter}
                                 value={selectedEmployee}
-                                onChange={(_, v) => {
-                                  updateRow(index, {
-                                    employeeId: v?.id ?? null,
-                                    serviceId:
-                                      row.serviceId !== null && v
-                                        ? data.canEmployeeProvideService(v.id, row.serviceId)
-                                          ? row.serviceId
-                                          : null
-                                        : row.serviceId,
-                                  });
-                                }}
+                                onChange={(_, v) => applyEmployeeToRows(groupIndexes, v)}
                                 getOptionLabel={(e) => e.fullName}
                                 isOptionEqualToValue={(a, b) => a.id === b.id}
+                                // Пустой список — почти всегда настройки, а не
+                                // сбой: у услуги нет исполнителей либо нет
+                                // никого на все услуги блока сразу. Объясняем,
+                                // иначе регистратор упирается в «Ничего не
+                                // найдено». Если варианты есть, а фильтр по
+                                // введённому тексту пуст — обычный текст.
+                                noOptionsText={
+                                  employeeOptions.length === 0
+                                    ? groupServiceIds.length > 1
+                                      ? t("serviceRow.noEmployeeForAllServices")
+                                      : t("serviceRow.noEmployeeForService")
+                                    : t("serviceRow.noEmployeeMatches")
+                                }
+                                // Специализация видна в списке, а не только в
+                                // поиске: помогает выбрать нужного из однофамильцев.
+                                renderOption={(props, e) => (
+                                  <li {...props} key={e.id}>
+                                    <Stack>
+                                      <Typography variant="body2">{e.fullName}</Typography>
+                                      {(e.specializations ?? []).length > 0 && (
+                                        <Typography variant="caption" color="text.secondary">
+                                          {(e.specializations ?? []).join(", ")}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </li>
+                                )}
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
                                     placeholder={t("addDrawer.performer")}
                                     size="small"
                                     fullWidth
-                                    error={touched && !row.employeeId}
+                                    error={touched && group.employeeId === null}
                                     helperText={
-                                      touched && !row.employeeId
+                                      touched && group.employeeId === null
                                         ? t("addDrawer.performerPlaceholder")
                                         : ""
                                     }
@@ -1018,115 +1084,173 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 )}
                               />
                             }
-                            serviceField={
-                                <Autocomplete<DjangoCatalogServiceWithEmployees>
-                                  fullWidth
-                                  options={
-                                    row.employeeId !== null ? availableServices : data.services
-                                  }
-                                  loading={data.loading}
-                                  value={selectedService}
-                                  onChange={(_, v) => {
-                                    updateRow(index, {
-                                      serviceId: v?.id ?? null,
-                                      employeeId:
-                                        row.employeeId !== null && v
-                                          ? data.canEmployeeProvideService(
-                                              row.employeeId,
-                                              v.id,
-                                            )
-                                            ? row.employeeId
-                                            : null
-                                          : row.employeeId,
-                                    });
-                                  }}
-                                  getOptionLabel={(s) =>
-                                    t("addDrawer.serviceOption", {
-                                      name: s.name,
-                                      price: Number(s.basePrice),
-                                    })
-                                  }
-                                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                                  renderOption={(props, s) => (
-                                    <li {...props} key={s.id}>
-                                      <Stack>
-                                        <Typography variant="body2">{s.name}</Typography>
-                                        <Typography
-                                          variant="caption"
-                                          color="text.secondary"
-                                        >
-                                          {t("addDrawer.priceAmount", { amount: Number(s.basePrice) })}
-                                          {s.durationMinutes
-                                            ? t("addDrawer.durationSuffix", { minutes: s.durationMinutes })
-                                            : ""}
-                                        </Typography>
-                                      </Stack>
-                                    </li>
-                                  )}
-                                  renderInput={(params) => (
-                                    <TextField
-                                      {...params}
-                                      placeholder={t("addDrawer.service")}
-                                      size="small"
-                                      fullWidth
-                                      error={touched && !row.serviceId}
-                                      helperText={
-                                        touched && !row.serviceId ? t("addDrawer.servicePlaceholder") : ""
-                                      }
-                                    />
-                                  )}
-                                />
+                            footer={
+                              <Button
+                                size="small"
+                                onClick={() =>
+                                  addRowAfter(lastIndex, group.employeeId, group.groupId)
+                                }
+                                disabled={data.loading}
+                              >
+                                {t("addDrawer.addService")}
+                              </Button>
                             }
                           >
-                              {row.employeeId !== null && !data.loading && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {t("serviceRow.filteredServices", {
-                                    count: availableServices.length,
-                                  })}
-                                </Typography>
-                              )}
+                            {group.rows.map(({ row, index }, rowIndex) => {
+                              const selectedService =
+                                availableServices.find((s) => s.id === row.serviceId) ??
+                                data.services.find((s) => s.id === row.serviceId) ??
+                                null;
+                              const incompatible =
+                                row.serviceId !== null &&
+                                row.employeeId !== null &&
+                                !data.canEmployeeProvideService(row.employeeId, row.serviceId);
+                              // Та же услуга уже есть выше у этого специалиста:
+                              // не запрещаем (бывает две процедуры за приём),
+                              // но предупреждаем — чаще это случайный дубль.
+                              const duplicate =
+                                row.serviceId !== null &&
+                                group.rows
+                                  .slice(0, rowIndex)
+                                  .some(({ row: prev }) => prev.serviceId === row.serviceId);
 
-                              {selectedService && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {t("addDrawer.priceLabel")}{" "}
-                                  <strong>
-                                    {formatKGS(selectedService.basePrice)}
-                                  </strong>
-                                  {selectedService.durationMinutes
-                                    ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
-                                    : ""}
-                                </Typography>
-                              )}
+                              return (
+                                <ServiceBranch
+                                  key={row.uid}
+                                  accentColor={accent}
+                                  isLast={rowIndex === group.rows.length - 1}
+                                  deleteButton={
+                                    serviceRows.length > 1 ? (
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        onClick={() =>
+                                          setServiceRows((prev) =>
+                                            prev.filter((_, i) => i !== index),
+                                          )
+                                        }
+                                        sx={{ p: 0.25, mt: 0.75 }}
+                                      >
+                                        <DeleteOutlined fontSize="small" />
+                                      </IconButton>
+                                    ) : undefined
+                                  }
+                                  field={
+                                    <Autocomplete<DjangoCatalogServiceWithEmployees>
+                                      fullWidth
+                                      options={
+                                        row.employeeId !== null
+                                          ? availableServices
+                                          : data.services
+                                      }
+                                      loading={data.loading}
+                                      value={selectedService}
+                                      // Симметрично исполнителю: у выбранного
+                                      // специалиста может не быть назначенных услуг.
+                                      noOptionsText={
+                                        row.employeeId !== null && availableServices.length === 0
+                                          ? t("serviceRow.noServiceForEmployee")
+                                          : t("serviceRow.noServiceMatches")
+                                      }
+                                      onChange={(_, v) => {
+                                        updateRow(index, {
+                                          serviceId: v?.id ?? null,
+                                          employeeId:
+                                            row.employeeId !== null && v
+                                              ? data.canEmployeeProvideService(
+                                                  row.employeeId,
+                                                  v.id,
+                                                )
+                                                ? row.employeeId
+                                                : null
+                                              : row.employeeId,
+                                        });
+                                      }}
+                                      getOptionLabel={(s) =>
+                                        t("addDrawer.serviceOption", {
+                                          name: s.name,
+                                          price: Number(s.basePrice),
+                                        })
+                                      }
+                                      isOptionEqualToValue={(a, b) => a.id === b.id}
+                                      renderOption={(props, s) => (
+                                        <li {...props} key={s.id}>
+                                          <Stack>
+                                            <Typography variant="body2">{s.name}</Typography>
+                                            <Typography
+                                              variant="caption"
+                                              color="text.secondary"
+                                            >
+                                              {t("addDrawer.priceAmount", { amount: Number(s.basePrice) })}
+                                              {s.durationMinutes
+                                                ? t("addDrawer.durationSuffix", { minutes: s.durationMinutes })
+                                                : ""}
+                                            </Typography>
+                                          </Stack>
+                                        </li>
+                                      )}
+                                      renderInput={(params) => (
+                                        <TextField
+                                          {...params}
+                                          placeholder={t("addDrawer.service")}
+                                          size="small"
+                                          fullWidth
+                                          error={touched && !row.serviceId}
+                                          helperText={
+                                            touched && !row.serviceId
+                                              ? t("addDrawer.servicePlaceholder")
+                                              : ""
+                                          }
+                                        />
+                                      )}
+                                    />
+                                  }
+                                >
+                                  {selectedService && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      {t("addDrawer.priceLabel")}{" "}
+                                      <strong>{formatKGS(selectedService.basePrice)}</strong>
+                                      {selectedService.durationMinutes
+                                        ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
+                                        : ""}
+                                    </Typography>
+                                  )}
 
-                              {incompatible && (
-                                <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
-                                  {t("addDrawer.specialistMismatch")}
-                                </Alert>
-                              )}
-                          </ServiceRowShell>
+                                  {duplicate && (
+                                    <Typography variant="caption" color="warning.main">
+                                      {t("serviceRow.duplicateService")}
+                                    </Typography>
+                                  )}
+
+                                  {incompatible && (
+                                    <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                      {t("addDrawer.specialistMismatch")}
+                                    </Alert>
+                                  )}
+                                </ServiceBranch>
+                              );
+                            })}
+                          </ServiceGroupShell>
                         );
                       })}
 
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          setServiceRows((prev) => [
-                            ...prev,
-                            {
-                              serviceId: null,
-                              employeeId:
-                                nurseEmployeeId ??
-                                prev[prev.length - 1]?.employeeId ??
-                                null,
-                              quantity: 1,
-                            },
-                          ])
-                        }
-                        disabled={data.loading}
-                        sx={{ alignSelf: "flex-start" }}
-                      >
-                        {t("addDrawer.addService")}
-                      </Button>
+                      {/* Сестра процедурного кабинета исполнителя не меняет —
+                          новый блок специалиста ей не нужен. */}
+                      {!isWorkplaceNurse && (
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            setServiceRows((prev) => [
+                              ...prev,
+                              newServiceRow(),
+                            ])
+                          }
+                          disabled={data.loading}
+                          sx={{ alignSelf: "flex-start" }}
+                        >
+                          {t("serviceRow.addSpecialist")}
+                        </Button>
+                      )}
 
                       {form.errorOf("services") && (
                         <Alert severity="error" sx={{ py: 0 }}>
@@ -1134,79 +1258,6 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         </Alert>
                       )}
 
-                      {/* ── Список выбранных услуг (preview), сгруппированный
-                             по исполнителям: те же цвета, что у строк выше ── */}
-                      {validRows.length > 0 && (
-                        <>
-                          <Divider />
-                          <Stack spacing={1}>
-                            {previewByEmployee.map((group) => (
-                              <Stack key={group.employeeId} spacing={0.25}>
-                                <Stack
-                                  direction="row"
-                                  alignItems="center"
-                                  spacing={0.75}
-                                  justifyContent="space-between"
-                                >
-                                  <Stack
-                                    direction="row"
-                                    alignItems="center"
-                                    spacing={0.75}
-                                    sx={{ minWidth: 0 }}
-                                  >
-                                    <Box
-                                      sx={{
-                                        width: 8,
-                                        height: 8,
-                                        borderRadius: "50%",
-                                        flexShrink: 0,
-                                        bgcolor: group.accent,
-                                      }}
-                                    />
-                                    <Typography variant="caption" fontWeight={600} noWrap>
-                                      {group.employeeName}
-                                    </Typography>
-                                  </Stack>
-                                  <Typography variant="caption" fontWeight={700} sx={{ flexShrink: 0 }}>
-                                    {formatKGS(group.total)}
-                                  </Typography>
-                                </Stack>
-                                {group.services.map((s, i) => (
-                                  <Stack
-                                    key={i}
-                                    direction="row"
-                                    justifyContent="space-between"
-                                    sx={{ pl: 2.25 }}
-                                  >
-                                    <Typography
-                                      variant="caption"
-                                      color="text.secondary"
-                                      noWrap
-                                      sx={{ maxWidth: "70%" }}
-                                    >
-                                      {s.name}
-                                      {s.quantity > 1 ? ` × ${s.quantity}` : ""}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                      {formatKGS(s.amount)}
-                                    </Typography>
-                                  </Stack>
-                                ))}
-                              </Stack>
-                            ))}
-                          </Stack>
-
-                          <Divider />
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                              {t("addDrawer.totalCost")}
-                            </Typography>
-                            <Typography variant="h6" sx={{ fontWeight: 700, color: "primary.onSurface" }}>
-                              {formatKGS(totalCost)}
-                            </Typography>
-                          </Stack>
-                        </>
-                      )}
                     </Stack>
                   </CardContent>
                 </Card>
@@ -1370,6 +1421,59 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     </Stack>
                   </CardContent>
                 </Card>
+
+                {/* ── 3c. Итог: после обеих секций, иначе сумма меняется выше
+                       того, что на неё влияет (товары) ── */}
+                {(validRows.length > 0 || validProductRows.length > 0) && (
+                  <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
+                    <CardContent sx={{ p: 2 }}>
+                      <Stack spacing={1}>
+                        {validRows.length > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("addDrawer.servicesSubtotal")}
+                            </Typography>
+                            <Typography variant="body2">{formatKGS(servicesTotal)}</Typography>
+                          </Stack>
+                        )}
+                        {validProductRows.length > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("addDrawer.productsSection")}
+                            </Typography>
+                            <Typography variant="body2">{formatKGS(productsTotal)}</Typography>
+                          </Stack>
+                        )}
+                        {totalDuration > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("addDrawer.durationTotal")}
+                            </Typography>
+                            <Typography variant="body2">
+                              {t("addDrawer.minutesValue", { minutes: totalDuration })}
+                            </Typography>
+                          </Stack>
+                        )}
+                        <Divider />
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="center"
+                        >
+                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            {t("addDrawer.totalCost")}
+                          </Typography>
+                          <Typography
+                            variant="h6"
+                            sx={{ fontWeight: 700, color: "primary.onSurface" }}
+                          >
+                            {formatKGS(totalCost)}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* ── 4. Текстовые поля ── */}
                 <Stack spacing={0.5}>
