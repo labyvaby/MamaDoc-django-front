@@ -42,6 +42,7 @@ import {
   type DjangoAppointment,
   type AppointmentServiceLine,
 } from "../../../api/appointments";
+import { formatConsumptionWarnings } from "../../../components/appointments/consumptionWarnings";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentListPanel from "./AppointmentListPanel";
 import AppointmentDetailsPanel from "./AppointmentDetailsPanel";
@@ -258,28 +259,42 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   // ── Handlers ────────────────────────────────────────────────────────────────
   // Status-only PATCH: бэк с 23.07.2026 не проверяет overlap на смене статуса,
   // allowOverlap не нужен (frontend-backend-tickets-2026-07-23.md, п.2).
+  // Списание/возврат расходников склада приходит в consumptionWarnings ответа —
+  // показываем тостом, операцию это не отменяет.
+  const notifyConsumptionWarnings = React.useCallback(
+    (updated: DjangoAppointment) => {
+      const message = formatConsumptionWarnings(updated.consumptionWarnings);
+      if (message) notify?.({ type: "error", message });
+    },
+    [notify],
+  );
+
   const handleConfirmVisit = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "confirmed" });
+        notifyConsumptionWarnings(
+          await updateAppointment(appt.id, { status: "confirmed" }),
+        );
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [fetchData, notify],
+    [fetchData, notify, notifyConsumptionWarnings],
   );
 
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "arrived" });
+        notifyConsumptionWarnings(
+          await updateAppointment(appt.id, { status: "arrived" }),
+        );
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [fetchData, notify],
+    [fetchData, notify, notifyConsumptionWarnings],
   );
 
   const isLoading = loading || extraLoading;

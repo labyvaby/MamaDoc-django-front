@@ -28,7 +28,7 @@ import {
   SERVICE_RELATED_PRODUCTS_MULTI_ENABLED,
 } from "../../api/catalog";
 import type { Service } from "../../api/catalog";
-import { formatKGS } from "../../utility/format";
+import { formatKGS, formatQuantity } from "../../utility/format";
 import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
 
@@ -348,14 +348,14 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               </Box>
             )}
 
-            {/* Сопутствующие товары */}
+            {/* Состав расходников услуги */}
             {SERVICE_RELATED_PRODUCT_ENABLED && service.relatedProducts.length > 0 && (
               <Box>
                 <SectionHeader
                   icon={<Inventory2OutlinedIcon />}
                   title={
                     SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                      ? "Сопутствующие товары"
+                      ? "Расходники услуги"
                       : "Сопутствующий товар"
                   }
                 />
@@ -370,8 +370,18 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                     <InfoTile
                       key={p.id}
                       icon={<Inventory2OutlinedIcon />}
-                      label={p.name}
-                      value={`${formatKGS(p.price)} · остаток ${p.stock}`}
+                      label={
+                        SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
+                          ? `${p.name} × ${formatQuantity(p.quantity)}${p.unit ? ` ${p.unit}` : ""}`
+                          : p.name
+                      }
+                      // Остаток здесь — по всей организации: в справочнике услуги
+                      // филиала нет, склад филиала считается в приёме.
+                      value={
+                        SERVICE_RELATED_PRODUCTS_MULTI_ENABLED && !p.autoWriteOff
+                          ? `${formatKGS(p.price)} · остаток ${formatQuantity(p.stock)} · не списывается`
+                          : `${formatKGS(p.price)} · остаток ${formatQuantity(p.stock)}`
+                      }
                       active
                     />
                   ))}

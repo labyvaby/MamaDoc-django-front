@@ -24,6 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
 import RelatedProductsPicker from "./RelatedProductsPicker";
+import { hasInvalidQuantity, type RelatedProductRow } from "./relatedProductRows";
 import {
   deleteServiceImage,
   relatedProductsPayload,
@@ -85,17 +86,18 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
-  const [relatedProducts, setRelatedProducts] = React.useState<DjangoProduct[]>([]);
+  const [relatedProducts, setRelatedProducts] = React.useState<RelatedProductRow[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
-  // Ключ вместо массива в deps — иначе эффект перезапускается на каждый рефетч услуг.
-  const linkedProductIds = React.useMemo(
-    () => record.relatedProducts.map((p) => p.id),
-    [record.relatedProducts],
-  );
-  const linkedProductIdsKey = linkedProductIds.join(",");
+  // Ключ вместо массива в deps — иначе эффект перезапускается на каждый рефетч
+  // услуг. В ключ входят количество и автосписание: правка состава меняет их
+  // без смены набора товаров.
+  const linkedComposition = record.relatedProducts;
+  const linkedCompositionKey = linkedComposition
+    .map((p) => `${p.id}:${p.quantity}:${p.autoWriteOff ? 1 : 0}`)
+    .join(",");
 
   // Загружаем товары и подставляем уже привязанные (по record.relatedProducts).
   React.useEffect(() => {
@@ -108,12 +110,23 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         const active = list.filter((p) => p.isActive);
         // Привязанный товар мог быть деактивирован — держим его в опциях,
         // иначе пикер покажет пусто и сохранение молча очистит связь.
-        const linked = linkedProductIds
-          .map((id) => list.find((p) => p.id === id))
-          .filter((p): p is DjangoProduct => Boolean(p));
-        const inactiveLinked = linked.filter((p) => !p.isActive);
+        const linkedRows = linkedComposition
+          .map((item) => {
+            const product = list.find((p) => p.id === item.id);
+            return product
+              ? {
+                  product,
+                  quantity: String(item.quantity),
+                  autoWriteOff: item.autoWriteOff,
+                }
+              : null;
+          })
+          .filter((row): row is RelatedProductRow => row !== null);
+        const inactiveLinked = linkedRows
+          .map((row) => row.product)
+          .filter((p) => !p.isActive);
         setProducts(inactiveLinked.length > 0 ? [...inactiveLinked, ...active] : active);
-        setRelatedProducts(linked);
+        setRelatedProducts(linkedRows);
       })
       .catch(() => {})
       .finally(() => {
@@ -121,7 +134,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, linkedProductIdsKey, orgId]);
+  }, [open, linkedCompositionKey, orgId]);
 
   // Sync selectedBranches from record.branches when drawer opens.
   React.useEffect(() => {
@@ -186,6 +199,15 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       notify?.({ type: "error", message: "Выберите хотя бы один филиал" });
       return;
     }
+    // Количество расходника валидируем до запроса: бэк на ≤ 0 отвечает 400 и
+    // откатывает PATCH целиком — вместе с названием и ценой.
+    if (hasInvalidQuantity(relatedProducts)) {
+      notify?.({
+        type: "error",
+        message: "Количество расходника должно быть больше 0 (до 3 знаков)",
+      });
+      return;
+    }
     setBusy(true);
     setSubmitError(null);
     try {
@@ -197,7 +219,13 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         isActive,
         branchIds: selectedBranches.map((b) => b.id),
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
-        ...relatedProductsPayload(relatedProducts.map((p) => p.id)),
+        ...relatedProductsPayload(
+          relatedProducts.map((row) => ({
+            productId: row.product.id,
+            quantity: row.quantity,
+            autoWriteOff: row.autoWriteOff,
+          })),
+        ),
       });
       if (photoFile) {
         await uploadServiceImage(record.id, photoFile);
@@ -402,6 +430,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                 value={relatedProducts}
                 onChange={setRelatedProducts}
                 disabled={busy}
+                showErrors={touched}
               />
             )}
 

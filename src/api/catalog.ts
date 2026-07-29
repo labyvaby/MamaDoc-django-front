@@ -49,17 +49,27 @@ export const SERVICE_CATEGORY_OPTIONS = Object.keys(
 export const SERVICE_RELATED_PRODUCT_ENABLED = true;
 
 /**
- * Несколько сопутствующих товаров на услугу (заказчик 29.07.2026). Бэк пока
- * держит один FK — проверено на живом API 29.07.2026 (услуга «Тест услуга 4с»,
- * id 35): `PATCH {relatedProductIds:[43]}` → 200, но поле **молча
- * игнорируется** (в ответе только `relatedProductId`/`relatedProduct`, связь не
- * создана), плюрального `relatedProducts` в GET нет. Тикет —
- * MamaDoc/backend_ticket_service_related_products_multi.md.
+ * Состав расходников услуги — несколько товаров с количеством (заказчик
+ * 29.07.2026). Бэк закрыл тикет
+ * MamaDoc/backend_ticket_service_related_products_multi.md — гайд
+ * `frontend-service-related-products.md`:
+ *   - GET отдаёт `relatedProducts: [{id, name, unit, price, stock, quantity,
+ *     autoWriteOff}]` (`id` — товар, не строка состава), пустой массив без состава;
+ *   - запись — `relatedProducts: [{productId, quantity, autoWriteOff}]`, полная
+ *     синхронизация как у `branchIds`; `[]` очищает; отсутствие поля не трогает;
+ *   - `relatedProductId`/`relatedProduct` остались алиасом первого элемента и
+ *     помечены deprecated (снесём отдельным тикетом, когда уберём одиночную ветку);
+ *   - два поля записи одновременно → 400, поэтому payload шлёт ровно одно.
  *
- * ⚠ Молчаливое игнорирование значит, что «нет ошибки» ≠ «бэк готов»:
- * переключать флаг только после того, как GET начнёт отдавать `relatedProducts`.
+ * ⚠ Флаг включён по решению 29.07.2026 одновременно с деплоем бэка. Пока
+ * деплой не докатился, прод отвечает по старому контракту и молча игнорирует
+ * `relatedProducts` — состав из формы не сохранится (одиночное поле мы уже не
+ * шлём). E2E-проверка — после деплоя.
  */
-export const SERVICE_RELATED_PRODUCTS_MULTI_ENABLED = false;
+export const SERVICE_RELATED_PRODUCTS_MULTI_ENABLED = true;
+
+/** Максимум товаров в составе услуги — лимит бэка (400 при превышении). */
+export const SERVICE_RELATED_PRODUCTS_MAX = 20;
 
 export interface RelatedProductRef {
   id: number;
@@ -68,6 +78,23 @@ export interface RelatedProductRef {
   price: number;
   /** Нормализовано из строки-decimal бэка ("10.000"). */
   stock: number;
+}
+
+/**
+ * Строка состава услуги. `id` — id **товара** (бэк сделал так намеренно, чтобы
+ * старый нормализатор `{id, name, price, stock}` продолжал работать).
+ *
+ * ⚠ `stock` — остаток по всей организации: в справочнике услуги филиала нет.
+ * Остаток склада филиала приходит в API приёма (`consumptions[].stockOnHand`) и
+ * законно отличается от этого числа.
+ */
+export interface ServiceRelatedProduct extends RelatedProductRef {
+  /** Единица измерения товара; пустая строка, если бэк её не отдал. */
+  unit: string;
+  /** Сколько товара уходит на одну услугу (decimal, до 3 знаков; > 0). */
+  quantity: number;
+  /** Списывать ли со склада при завершении приёма. */
+  autoWriteOff: boolean;
 }
 
 export interface Service {
@@ -83,15 +110,19 @@ export interface Service {
   sortOrder: number;
   /** Категория услуги; null — без категории. */
   category: ServiceCategory | null;
-  /** Сопутствующий товар склада (одиночный контракт бэка); null — не привязан. */
+  /**
+   * @deprecated Алиас первого элемента `relatedProducts` (бэк гарантирует
+   * `relatedProductId == relatedProducts[0].id`). Удалим вместе с полем на бэке.
+   */
   relatedProductId: number | null;
+  /** @deprecated См. `relatedProductId`. */
   relatedProduct: RelatedProductRef | null;
   /**
-   * Все сопутствующие товары. Пока бэк отдаёт один товар — нормализуется из
-   * `relatedProduct` (пустой массив, если привязки нет), поэтому UI можно писать
-   * сразу под список.
+   * Состав расходников услуги; пустой массив — состава нет. До появления
+   * плюрального поля на бэке нормализуется из одиночной привязки, поэтому
+   * фолбэк остаётся рабочим на не-обновлённом окружении.
    */
-  relatedProducts: RelatedProductRef[];
+  relatedProducts: ServiceRelatedProduct[];
   /** Branches visible to the current user. */
   branches: BranchRef[];
   /** True when the service is also assigned to branches outside the caller's scope. */
@@ -101,6 +132,16 @@ export interface Service {
 }
 
 // ── Payloads ───────────────────────────────────────────────────────────────
+
+/**
+ * Строка состава на запись. `quantity` — строка-decimal (бэк принимает и число,
+ * по умолчанию 1, до 3 знаков, > 0); `autoWriteOff` по умолчанию true.
+ */
+export interface ServiceRelatedProductPayload {
+  productId: number;
+  quantity?: string;
+  autoWriteOff?: boolean;
+}
 
 export interface ServiceCreatePayload {
   name: string;
@@ -114,10 +155,12 @@ export interface ServiceCreatePayload {
   sortOrder?: number;
   /** Категория; null/отсутствие — без категории. */
   category?: ServiceCategory | null;
-  /** Сопутствующий товар; null/отсутствие — без привязки. */
+  /** @deprecated Одиночная привязка; null/отсутствие — без привязки. */
   relatedProductId?: number | null;
-  /** Список сопутствующих товаров; пустой массив — без привязок (нужен M2M на бэке). */
+  /** @deprecated Набор товаров с `quantity = 1` и `autoWriteOff = true`. */
   relatedProductIds?: number[];
+  /** Состав расходников; `[]` — без состава. Взаимоисключающе с полями выше (400). */
+  relatedProducts?: ServiceRelatedProductPayload[];
 }
 
 export interface ServiceUpdatePayload {
@@ -136,23 +179,64 @@ export interface ServiceUpdatePayload {
   branchIds?: number[];
   /** Категория; null очищает (тикет: PATCH category=null → без категории). */
   category?: ServiceCategory | null;
-  /** Сопутствующий товар; null очищает привязку. */
+  /** @deprecated Одиночная привязка; null очищает. */
   relatedProductId?: number | null;
-  /** Список сопутствующих товаров; пустой массив очищает все привязки. */
+  /** @deprecated Набор товаров с `quantity = 1` и `autoWriteOff = true`. */
   relatedProductIds?: number[];
+  /**
+   * Состав расходников — полная синхронизация: массив заменяет текущий набор,
+   * `[]` очищает, отсутствие поля не трогает состав. Не отправлять «на всякий
+   * случай»: пустой массив стирает состав.
+   */
+  relatedProducts?: ServiceRelatedProductPayload[];
+}
+
+/** Строка состава как её держит форма (количество — строка из поля ввода). */
+export interface RelatedProductInput {
+  productId: number;
+  /** Введённое количество; пусто/невалидно → 1 (значение по умолчанию бэка). */
+  quantity?: string;
+  autoWriteOff?: boolean;
 }
 
 /**
- * Тело запроса для привязки товаров: пока бэк принимает один FK — отправляем
- * `relatedProductId` (первый выбранный), после M2M — `relatedProductIds`.
- * Одно место, чтобы после переключения флага не искать все формы услуги.
+ * Количество из поля ввода в строку-decimal бэка: запятая как разделитель,
+ * не больше `RELATED_QUANTITY_SCALE` знаков, строго > 0. Null — невалидно
+ * (форма не даёт сохранить и показывает ошибку, вместо молчаливой замены на 1).
+ */
+export const RELATED_QUANTITY_SCALE = 3;
+
+export function parseRelatedQuantity(input: string | undefined): number | null {
+  const raw = (input ?? "").trim().replace(",", ".");
+  if (raw === "") return null;
+  if (!/^\d*(\.\d*)?$/.test(raw)) return null;
+  const decimals = raw.split(".")[1] ?? "";
+  if (decimals.length > RELATED_QUANTITY_SCALE) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
+/**
+ * Тело запроса для состава услуги. Шлём **ровно одно** поле: два поля записи
+ * одновременно бэк отклоняет с 400 (см. гайд §1), поэтому одиночный алиас
+ * `relatedProductId` уходит только в выключенном мульти-режиме — и количество
+ * там передать нечем, оно всегда 1.
  */
 export function relatedProductsPayload(
-  productIds: number[],
-): Pick<ServiceUpdatePayload, "relatedProductId" | "relatedProductIds"> {
+  items: RelatedProductInput[],
+): Pick<ServiceUpdatePayload, "relatedProductId" | "relatedProducts"> {
   if (!SERVICE_RELATED_PRODUCT_ENABLED) return {};
-  if (SERVICE_RELATED_PRODUCTS_MULTI_ENABLED) return { relatedProductIds: productIds };
-  return { relatedProductId: productIds[0] ?? null };
+  if (!SERVICE_RELATED_PRODUCTS_MULTI_ENABLED) {
+    return { relatedProductId: items[0]?.productId ?? null };
+  }
+  return {
+    relatedProducts: items.map((item) => ({
+      productId: item.productId,
+      quantity: String(parseRelatedQuantity(item.quantity) ?? 1),
+      autoWriteOff: item.autoWriteOff !== false,
+    })),
+  };
 }
 
 /** Бэк отдаёт price/stock товара строками-decimal — приводим к числам (как mapProduct в api/warehouse.ts). */
@@ -168,18 +252,31 @@ function normalizeRelatedProduct(
 }
 
 /**
- * Список товаров: плюральное поле бэка, если оно появилось, иначе — одиночная
- * привязка как массив из одного элемента.
+ * Состав услуги: плюральное поле бэка, если оно есть, иначе — одиночная
+ * привязка как массив из одного элемента (окружение без деплоя).
+ *
+ * `quantity` бэка — строка-decimal; при фолбэке из одиночного поля количество
+ * неизвестно, поэтому 1 (то же, что подразумевает старый контракт).
+ * `autoWriteOff` по умолчанию true — как на бэке.
  */
-function normalizeRelatedProducts(service: Service): RelatedProductRef[] {
-  const list = Array.isArray(service.relatedProducts) ? service.relatedProducts : null;
-  if (list) {
-    return list
-      .map((p) => normalizeRelatedProduct(p))
-      .filter((p): p is RelatedProductRef => p !== null);
+function normalizeRelatedProducts(service: Service): ServiceRelatedProduct[] {
+  const raw = Array.isArray(service.relatedProducts) ? service.relatedProducts : null;
+  if (raw) {
+    return raw
+      .map((item): ServiceRelatedProduct | null => {
+        const base = normalizeRelatedProduct(item);
+        if (!base) return null;
+        return {
+          ...base,
+          unit: item.unit ?? "",
+          quantity: parseFloat(String(item.quantity)) || 1,
+          autoWriteOff: item.autoWriteOff !== false,
+        };
+      })
+      .filter((p): p is ServiceRelatedProduct => p !== null);
   }
   const single = normalizeRelatedProduct(service.relatedProduct);
-  return single ? [single] : [];
+  return single ? [{ ...single, unit: "", quantity: 1, autoWriteOff: true }] : [];
 }
 
 function normalizeService(service: Service): Service {

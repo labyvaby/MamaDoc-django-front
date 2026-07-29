@@ -149,6 +149,44 @@ export interface AppointmentServiceShort {
   imageUrl: string | null;
 }
 
+/**
+ * Расходники услуги в приёме и их автосписание при завершении (фазы 2–3 гайда
+ * `frontend-service-related-products.md`). Включён 29.07.2026 одновременно с
+ * деплоем бэка: до него `consumptions` в ответе просто нет, блок скрывается
+ * сам, но правка расходников уйдёт в никуда (бэк приёмов молча игнорирует
+ * неизвестные ключи — «нет ошибки» ≠ «сохранилось»). E2E — после деплоя.
+ */
+export const APPOINTMENT_CONSUMPTIONS_ENABLED = true;
+
+/**
+ * Расходник строки услуги (фазы 2–3 состава услуги, гайд
+ * `frontend-service-related-products.md` §4). Это **не** товар чека:
+ * `totalAmount` от расходников не меняется, пациент за них отдельно не платит —
+ * их стоимость уже внутри цены услуги.
+ *
+ * ⚠ `id` — id строки расхода, НЕ id товара (в справочнике услуги наоборот).
+ */
+export interface AppointmentConsumption {
+  id: number;
+  productId: number;
+  name: string;
+  unit: string;
+  /** Количество из состава услуги × quantity строки услуги (decimal-строка). */
+  quantity: string;
+  autoWriteOff: boolean;
+  /**
+   * `service_template` — количество следует строке услуги (автопересчёт);
+   * `manual` — оператор правил строку, автопересчёт для неё выключен.
+   */
+  source: "service_template" | "manual";
+  /** Остаток склада филиала приёма; null — у филиала склада нет (не ноль!). */
+  stockOnHand: string | null;
+  /** true только когда строка будет списана и не влезает в остаток. */
+  shortage: boolean;
+  /** stockOnHand − quantity; null, когда списания не будет или остаток неизвестен. */
+  resultingStock: string | null;
+}
+
 export interface AppointmentServiceLine {
   id: number;
   service: AppointmentServiceShort | null;
@@ -168,6 +206,11 @@ export interface AppointmentServiceLine {
   conclusionState?: "not_required" | "not_created" | "draft" | "completed";
   /** id заключения, если оно создано. */
   conclusionId?: number | null;
+  /**
+   * Расходники строки (снапшот состава услуги на момент записи: правка
+   * справочника уже созданный приём не меняет). Нормализуется в массив.
+   */
+  consumptions: AppointmentConsumption[];
 }
 
 /** Compact product reference embedded in an appointment product line. */
@@ -219,11 +262,17 @@ interface RawAppointment {
 function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
   // field renames
   const scheduledAt: string = raw.scheduledAt ?? raw.startsAt ?? "";
-  const services: AppointmentServiceLine[] = Array.isArray(raw.services)
+  const rawServices: RawAppointment[] = Array.isArray(raw.services)
     ? raw.services
     : Array.isArray(raw.serviceLines)
     ? raw.serviceLines
     : [];
+  // consumptions нормализуем в массив: на окружении без деплоя состава поля нет,
+  // и UI не должен проверять Array.isArray на каждой строке услуги.
+  const services: AppointmentServiceLine[] = rawServices.map((line) => ({
+    ...(line as AppointmentServiceLine),
+    consumptions: Array.isArray(line.consumptions) ? line.consumptions : [],
+  }));
   const productLines: AppointmentProductLine[] = Array.isArray(raw.productLines)
     ? raw.productLines
     : [];
@@ -240,7 +289,32 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     productLines,
     status,
     paymentMethods,
+    consumptionWarnings: Array.isArray(raw.consumptionWarnings)
+      ? raw.consumptionWarnings
+      : [],
   } as DjangoAppointment;
+}
+
+/**
+ * Предупреждение автосписания расходников (гайд §4a). Заполняется только тем,
+ * что натворил **этот** запрос: на обычном GET всегда пусто.
+ *
+ * `insufficient_stock` — списали всё равно, остаток ушёл в минус; `required` —
+ * сколько реально списалось операцией (может быть разницей, если приём правили
+ * после завершения). `warehouse_not_found` — у филиала нет склада: заполнен
+ * только branchId, ранее списанное возвращено, приём остаётся completed.
+ *
+ * Нехватка никогда не блокирует завершение — показываем тостом, не ошибкой.
+ */
+export interface AppointmentConsumptionWarning {
+  code: "insufficient_stock" | "warehouse_not_found";
+  branchId: number | null;
+  productId: number | null;
+  name: string | null;
+  warehouseId: number | null;
+  required: string | null;
+  stockOnHand: string | null;
+  resultingStock: string | null;
 }
 
 export interface DjangoAppointment {
@@ -277,9 +351,29 @@ export interface DjangoAppointment {
   paymentMethods?: string[];
   // Medical conclusion flag — true if the appointment has at least one conclusion
   hasMedicalConclusion?: boolean;
+  /**
+   * Что натворило списание расходников в этом запросе (см.
+   * AppointmentConsumptionWarning). На GET — всегда пустой массив.
+   */
+  consumptionWarnings: AppointmentConsumptionWarning[];
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
+
+/**
+ * Расходник строки услуги на запись. `id` есть → обновить строку (должна
+ * принадлежать этой же строке услуги, иначе 400); `id` нет → создать.
+ * Один товар дважды в одной строке услуги → 400 (в приёме это ошибка формы,
+ * в отличие от справочника, где дубли схлопываются).
+ */
+export interface AppointmentConsumptionCreate {
+  id?: number | null;
+  productId: number;
+  /** decimal-строка; > 0. По умолчанию 1. */
+  quantity?: string;
+  /** По умолчанию true. */
+  autoWriteOff?: boolean;
+}
 
 export interface AppointmentServiceLineCreate {
   /** When set, identifies an existing line to update in-place (diff semantics). */
@@ -289,6 +383,18 @@ export interface AppointmentServiceLineCreate {
   quantity?: number;
   unitPrice?: string;
   discountAmount?: string;
+  /**
+   * Расходники строки. ⚠ Семантика бэка: **отсутствие ключа — не трогаем**,
+   * `[]` — удалить все, присутствие — полная синхронизация (строк, которых нет
+   * в массиве, не станет). Поэтому поле отправляется только когда пользователь
+   * реально правил расходники: иначе обычное сохранение формы, которая всегда
+   * шлёт `services` целиком, стирало бы состав.
+   *
+   * Правка значения переводит строку в `source: "manual"` — автопересчёт по
+   * количеству услуги для неё выключается; эхо неизменённых значений
+   * безопасно (бэк сравнивает и оставляет `service_template`).
+   */
+  consumptions?: AppointmentConsumptionCreate[];
 }
 
 /** Frontend product line (write path). Goods sold within the visit. */
@@ -343,6 +449,14 @@ export interface UpdateAppointmentPayload {
 
 // ── Request denormalization ───────────────────────────────────────────────────
 
+/** Backend consumption shape (write path). */
+interface BackendConsumption {
+  id?: number;
+  productId: number;
+  quantity?: string;
+  autoWriteOff?: boolean;
+}
+
 /** Backend service line shape (write path). */
 interface BackendServiceLine {
   id?: number;
@@ -351,6 +465,7 @@ interface BackendServiceLine {
   quantity?: number;
   unitPrice?: string;
   discountAmount?: string;
+  consumptions?: BackendConsumption[];
 }
 
 /** Backend product line shape (write path). */
@@ -399,14 +514,27 @@ interface BackendUpdateBody {
 }
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
-  return services.map(({ id, serviceId, employeeId, quantity, unitPrice, discountAmount }) => {
-    const line: BackendServiceLine = { serviceId, employeeId: employeeId ?? null };
-    if (id != null) line.id = id;
-    if (quantity !== undefined) line.quantity = quantity;
-    if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
-    if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
-    return line;
-  });
+  return services.map(
+    ({ id, serviceId, employeeId, quantity, unitPrice, discountAmount, consumptions }) => {
+      const line: BackendServiceLine = { serviceId, employeeId: employeeId ?? null };
+      if (id != null) line.id = id;
+      if (quantity !== undefined) line.quantity = quantity;
+      if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
+      if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
+      // Ключ доходит до бэка только когда он задан явно: undefined значит
+      // «расходники не трогаем», а [] — «удалить все» (разная семантика).
+      if (consumptions !== undefined) {
+        line.consumptions = consumptions.map((item) => {
+          const out: BackendConsumption = { productId: item.productId };
+          if (item.id != null) out.id = item.id;
+          if (item.quantity !== undefined && item.quantity !== "") out.quantity = item.quantity;
+          if (item.autoWriteOff !== undefined) out.autoWriteOff = item.autoWriteOff;
+          return out;
+        });
+      }
+      return line;
+    },
+  );
 }
 
 function toBackendProducts(products: AppointmentProductLineCreate[]): BackendProductLine[] {

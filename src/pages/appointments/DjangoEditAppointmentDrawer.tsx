@@ -37,9 +37,11 @@ import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { orgWide } from "../../api/scope";
+import { parseRelatedQuantity } from "../../api/catalog";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
+  APPOINTMENT_CONSUMPTIONS_ENABLED,
   updateAppointment,
   parseBackendError,
   parseOverlapConflict,
@@ -64,6 +66,13 @@ import ServiceGroupShell, {
 } from "../../components/appointments/ServiceGroupShell";
 import { groupServiceRowsByEmployee } from "../../components/appointments/serviceRowGroups";
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
+import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import {
+  hasInvalidConsumptionQuantity,
+  toConsumptionRow,
+  type ConsumptionRow,
+} from "../../components/appointments/consumptionRows";
+import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -100,6 +109,15 @@ type ServiceRow = {
    * сохранением id (без пересоздания) и явным unitPrice.
    */
   hasConclusion: boolean;
+  /** Расходники строки — снапшот из приёма плюс правки пользователя. */
+  consumptions: ConsumptionRow[];
+  /**
+   * Пользователь правил расходники этой строки. Только тогда `consumptions`
+   * уходит в PATCH: отсутствие ключа значит «не трогаем», а присутствие —
+   * полную синхронизацию, поэтому форма, которая всегда шлёт `services`
+   * целиком, иначе стирала бы состав.
+   */
+  consumptionsDirty: boolean;
 };
 
 type ProductRow = {
@@ -202,6 +220,8 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     unitPrice: "",
     discountAmount: "",
     hasConclusion: false,
+    consumptions: [],
+    consumptionsDirty: false,
     ...patch,
   };
 }
@@ -256,6 +276,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   ]);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+  /** Каталог для расходников — без фильтров продажи и остатка. */
+  const [consumableProducts, setConsumableProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
   const [complaints, setComplaints] = React.useState("");
   const [doctorComplaints, setDoctorComplaints] = React.useState("");
@@ -332,6 +354,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
             unitPrice: line.unitPrice ?? "",
             discountAmount: line.discountAmount ?? "",
             hasConclusion: lineHasConclusion(line),
+            consumptions: (line.consumptions ?? []).map(toConsumptionRow),
           }),
         ),
       );
@@ -394,7 +417,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   // Нужен только когда редактирование товаров включено; на чтение хватает
   // данных из productLines самого приёма.
   React.useEffect(() => {
-    if (!open || !EDIT_APPOINTMENT_PRODUCTS_ENABLED) return;
+    if (!open) return;
+    if (!EDIT_APPOINTMENT_PRODUCTS_ENABLED && !APPOINTMENT_CONSUMPTIONS_ENABLED) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
     getProducts(ctrl.signal, { organizationId: orgId })
@@ -402,6 +426,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         if (ctrl.signal.aborted) return;
         // Только товары на продажу и с остатком.
         setProducts(list.filter((p) => p.isActive && p.isForSale && p.stock > 0));
+        // Расходники — не продажа: ни «на продажу», ни «остаток > 0» к ним не
+        // применимы (гель не продаётся, а минусовой остаток бэк разрешает).
+        setConsumableProducts(list.filter((p) => p.isActive));
       })
       .catch(() => {
         /* товары опциональны; ошибку загрузки молча игнорируем */
@@ -538,6 +565,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (!appointment) return;
     // Показывает ошибки и уводит фокус в первое незаполненное поле.
     if (!form.validate()) return;
+    // Количество расходника бэк отбивает 400-м и откатывает весь PATCH —
+    // ловим до запроса (поле лежит внутри свёрнутого блока, фокус туда не ведём).
+    if (serviceRows.some((r) => hasInvalidConsumptionQuantity(r.consumptions))) {
+      notify?.({ type: "error", message: t("consumptions.quantityError") });
+      return;
+    }
     void performSave();
   };
 
@@ -560,6 +593,20 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           quantity: r.quantity > 0 ? r.quantity : 1,
           ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
           ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
+          // Расходники шлём только когда их правили руками и строка услуги
+          // существует: у пересозданной строки (lineId сброшен) id расходов
+          // принадлежат старой строке — бэк ответил бы 400, а состав он и так
+          // соберёт из справочника новой услуги.
+          ...(APPOINTMENT_CONSUMPTIONS_ENABLED && r.consumptionsDirty && r.lineId != null
+            ? {
+                consumptions: r.consumptions.map((c) => ({
+                  ...(c.lineId != null ? { id: c.lineId } : {}),
+                  productId: c.productId,
+                  quantity: String(parseRelatedQuantity(c.quantity) ?? 1),
+                  autoWriteOff: c.autoWriteOff,
+                })),
+              }
+            : {}),
         })),
         // Пока флаг выключен, products в PATCH не шлём вовсе: бэкенд поле
         // игнорирует, а слать «глухие» данные — маскировать проблему.
@@ -578,6 +625,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       });
       setOverlapConflict(null);
       notify?.({ type: "success", message: t("editDrawer.updated") });
+      // Списание расходников могло увести остаток в минус — сообщаем отдельным
+      // тостом, но сохранение это не отменяет (нехватка не блокирует).
+      const warning = formatConsumptionWarnings(updated.consumptionWarnings);
+      if (warning) notify?.({ type: "error", message: warning });
       // Панель деталей показывает сумму из кэша платежей (pay?.totalAmount
       // приоритетнее appt.totalAmount) — сбрасываем, иначе до staleTime видна
       // старая сумма после смены услуг.
@@ -1188,6 +1239,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                           ? { unitPrice: v ? String(v.basePrice) : "", discountAmount: "" }
                                           : { lineId: null, unitPrice: "", discountAmount: "" }
                                         : {}),
+                                      // Другая услуга — другой состав: бэк
+                                      // пересобирает расходники из её справочника,
+                                      // а прежние правки к новым строкам не
+                                      // относятся (их id принадлежат старым).
+                                      ...((v?.id ?? null) !== row.serviceId
+                                        ? { consumptions: [], consumptionsDirty: false }
+                                        : {}),
                                     })
                                   }
                                   getOptionLabel={(s) =>
@@ -1237,6 +1295,27 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       <Alert severity="error" sx={{ py: 0 }}>
                                         {t("editDrawer.specialistMismatch")}
                                       </Alert>
+                                    )}
+                                    {/* Расходники правим только у сохранённой
+                                        строки: у новой (и у пересозданной после
+                                        смены услуги) состав соберёт бэк из
+                                        справочника, а id расходов ещё нет. */}
+                                    {APPOINTMENT_CONSUMPTIONS_ENABLED && row.lineId != null && (
+                                      <ConsumptionRowsEditor
+                                        rows={row.consumptions}
+                                        options={consumableProducts}
+                                        disabled={saving}
+                                        showErrors={form.attempted}
+                                        onChange={(next) => {
+                                          // touched — сигнал CloseGuard: правку
+                                          // расходников нельзя потерять молча.
+                                          setTouched(true);
+                                          updateRow(index, {
+                                            consumptions: next,
+                                            consumptionsDirty: true,
+                                          });
+                                        }}
+                                      />
                                     )}
                                   </ServiceBranch>
                                 );

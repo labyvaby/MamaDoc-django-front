@@ -162,6 +162,23 @@
     "notFound": "Товар не найден в справочнике",
     "noAccess": "Нет доступа к справочнику товаров"
   },
+  "consumptions": {
+    "title": "Расходники",
+    "hint": "Списываются со склада при завершении, в чек не входят",
+    "quantity": "× {{quantity}}{{unit}}",
+    "stock": "остаток {{stock}}",
+    "stockUnknown": "остаток неизвестен — у филиала нет склада",
+    "afterCompletion": "после завершения {{resulting}}",
+    "shortage": "Не хватает",
+    "shortageLine": "{{name}} — нужно {{required}}, остаток {{stock}}, после завершения станет {{resulting}}",
+    "noWriteOff": "Не списывается",
+    "manual": "Изменено вручную",
+    "addProduct": "Добавить расходник",
+    "limitReached": "Максимум {{max}} расходников",
+    "quantityError": "Больше 0, до 3 знаков",
+    "remove": "Убрать расходник",
+    "duplicate": "Товар уже есть в расходниках этой {{service.gen}}"
+  },
   "serviceLine": {
     "conclusionReady": "{{conclusion.nom, capitalize}}: готово",
     "conclusionDraft": "{{conclusion.nom, capitalize}}: черновик"

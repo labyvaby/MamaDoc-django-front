@@ -69,6 +69,7 @@ import ProductQuickViewDrawer from "../../../components/products/DjangoProductQu
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
 import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
 import AppointmentProductLines from "./details/AppointmentProductLines";
+import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 
 /** Сколько действий шапки показывать кнопками; остальные уходят в меню «⋯». */
@@ -779,6 +780,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 />
               )}
             </Box>
+
+            {/* Расходники услуг — что уйдёт со склада при завершении. Перед
+                товарами: это часть услуги, а не отдельная продажа. */}
+            <AppointmentConsumptions services={appt.services} />
 
             {/* Товары, проданные в рамках визита. */}
             <AppointmentProductLines

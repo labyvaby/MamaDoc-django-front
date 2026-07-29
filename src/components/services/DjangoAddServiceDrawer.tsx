@@ -24,6 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
 import RelatedProductsPicker from "./RelatedProductsPicker";
+import { hasInvalidQuantity, type RelatedProductRow } from "./relatedProductRows";
 import {
   createService,
   relatedProductsPayload,
@@ -81,7 +82,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
-  const [relatedProducts, setRelatedProducts] = React.useState<DjangoProduct[]>([]);
+  const [relatedProducts, setRelatedProducts] = React.useState<RelatedProductRow[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
@@ -157,6 +158,15 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       notify?.({ type: "error", message: "Заполните название и положительную стоимость услуги" });
       return;
     }
+    // Количество расходника валидируем до запроса: бэк на ≤ 0 отвечает 400 и
+    // откатывает PATCH целиком — вместе с названием и ценой.
+    if (hasInvalidQuantity(relatedProducts)) {
+      notify?.({
+        type: "error",
+        message: "Количество расходника должно быть больше 0 (до 3 знаков)",
+      });
+      return;
+    }
 
     let effectiveBranchIds: number[];
     if (selectedBranches.length > 0) {
@@ -179,7 +189,13 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         isActive,
         branchIds: effectiveBranchIds,
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
-        ...relatedProductsPayload(relatedProducts.map((p) => p.id)),
+        ...relatedProductsPayload(
+          relatedProducts.map((row) => ({
+            productId: row.product.id,
+            quantity: row.quantity,
+            autoWriteOff: row.autoWriteOff,
+          })),
+        ),
       });
       if (photoFile) {
         try {
@@ -387,6 +403,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                 value={relatedProducts}
                 onChange={setRelatedProducts}
                 disabled={busy}
+                showErrors={touched}
               />
             )}
 
