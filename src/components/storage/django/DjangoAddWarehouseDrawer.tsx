@@ -34,6 +34,7 @@ import {
 import { getBranches, DjangoBranch } from "../../../api/organization";
 import { ApiError } from "../../../api/client";
 import { useFormValidation } from "../../../hooks/useFormValidation";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 
 type DrawerMode = "create" | "link";
 
@@ -54,6 +55,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
     activeBranchId,
 }) => {
     const { open: notify } = useNotification();
+    const orgId = useApiOrgId();
     const [mode, setMode] = useState<DrawerMode>("create");
     const [name, setName] = useState("");
     const [address, setAddress] = useState("");
@@ -107,7 +109,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
     useEffect(() => {
         if (open && mode === "link" && !editItem) {
             setLoadingLinkable(true);
-            getLinkableWarehouses()
+            getLinkableWarehouses(undefined, orgId)
                 .then(setLinkable)
                 .catch((e) => {
                     console.error(e);
@@ -115,7 +117,7 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
                 })
                 .finally(() => setLoadingLinkable(false));
         }
-    }, [open, mode, editItem, notify]);
+    }, [open, mode, editItem, notify, orgId]);
 
     const handleSubmitCreate = async () => {
         if (!form.validate()) return;

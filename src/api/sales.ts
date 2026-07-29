@@ -66,6 +66,8 @@ export type SaleListFilters = {
     search?: string | null;
     paymentMethod?: SalePaymentFilter | null;
     status?: SaleStatusFilter | null;
+    /** Обязателен суперпользователю: без него бэк отдаёт 400 (фикс 29.07.2026). */
+    organizationId?: number | null;
 };
 
 /** KPI-сводка за период (GET /warehouse/sales/stats/). */
@@ -158,6 +160,7 @@ function appendSaleFilters(q: URLSearchParams, f: SaleListFilters): void {
     if (f.search) q.set("search", f.search);
     if (f.paymentMethod) q.set("paymentMethod", f.paymentMethod);
     if (f.status) q.set("status", f.status);
+    if (f.organizationId != null) q.set("organizationId", String(f.organizationId));
 }
 
 export async function getSales(

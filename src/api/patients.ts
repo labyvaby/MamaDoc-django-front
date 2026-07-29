@@ -238,10 +238,14 @@ export function mergePatients(
 export function getSimilarPatients(
   phone: string,
   signal?: AbortSignal,
+  /** Обязателен суперпользователю: без него бэк отдаёт 400 (фикс 29.07.2026). */
+  scope: Scope = {},
 ): Promise<DjangoPatient[]> {
   const last9 = phone.replace(/\D/g, "").slice(-9);
   if (last9.length < 7) return Promise.resolve([]);
-  return apiRequest<DjangoPatient[]>(`/patients/?search=${encodeURIComponent(last9)}`, {
+  const q = scopeParams(scope);
+  q.set("search", last9);
+  return apiRequest<DjangoPatient[]>(`/patients/?${q.toString()}`, {
     signal,
   });
 }

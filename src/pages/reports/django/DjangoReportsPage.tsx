@@ -16,6 +16,7 @@ import {
   Card,
   CardContent,
   Avatar,
+  Chip,
   CircularProgress,
   Alert,
   alpha,
@@ -43,7 +44,9 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { getActiveMonths, getMonthlyReport } from "../../../api/reports";
-import { ReportsSummaryCards, type SummaryCard } from "./ReportsSummaryCards";
+import { SummaryCards, type SummaryCardGroup } from "../components/SummaryCards";
+import { ReportTableCard } from "../components/ReportTableCard";
+import { compactTableSx } from "../components/reportTableStyles";
 
 dayjs.locale("ru");
 
@@ -122,76 +125,93 @@ const DjangoReportsPage: React.FC = () => {
     );
   }, [report?.daily]);
 
-  const cards: SummaryCard[] = useMemo(() => {
+  // Две смысловые группы: количества и деньги. Цвет оставлен только тому, что
+  // требует реакции (ожидание, отмены, долги) — остальные плитки нейтральные.
+  //
+  // Плитки «Приёмы / Процедуры» и «День / Ночь» убраны: `totals.appointmentsCount`
+  // / `proceduresCount` дублируют `summary.apptPaidCount` / `procPaidCount`, а
+  // `dayCount + nightCount` совпадает с `apptPaidCount` — то есть это разбивка
+  // оплаченных приёмов по времени, и она ушла в подпись плитки оплаченных
+  // (совпадение проверено на данных за фев–июль 2026, бэком не задокументировано).
+  const groups: SummaryCardGroup[] = useMemo(() => {
     if (!summary || !totals) return [];
     return [
       {
-        title: t("cards.paidVisits"),
-        primaryValue: String(summary.apptPaidCount),
-        secondaryText: `Всего: ${summary.apptTotalCount} · Отменено: ${summary.apptCancelledCount}`,
-        color: "success",
+        title: t("groups.flow"),
+        cards: [
+          {
+            title: t("cards.paidVisits"),
+            primaryValue: String(summary.apptPaidCount),
+            secondaryText: t("cards.paidVisitsHint", {
+              total: summary.apptTotalCount,
+              day: totals.dayCount,
+              night: totals.nightCount,
+            }),
+          },
+          {
+            title: t("cards.paidProcedures"),
+            primaryValue: String(summary.procPaidCount),
+            // Числа отменённых процедур бэк не отдаёт, поэтому показываем
+            // «не оплачено» = всего − оплачено (раньше здесь был литерал «0»).
+            secondaryText: t("cards.paidProceduresHint", {
+              total: summary.procTotalCount,
+              unpaid: Math.max(summary.procTotalCount - summary.procPaidCount, 0),
+            }),
+          },
+          {
+            title: t("cards.discounted"),
+            primaryValue: String(summary.discountedCount),
+            secondaryText: t("cards.discountedHint", { sum: formatKGS(summary.discountSum) }),
+          },
+          // Цвет — сигнал «здесь есть на что смотреть», поэтому нулевые
+          // ожидание/отмены/долги остаются нейтральными.
+          {
+            title: t("cards.waiting"),
+            primaryValue: String(summary.waitingCount),
+            secondaryText: t("cards.waitingHint"),
+            color: summary.waitingCount > 0 ? "warning" : undefined,
+          },
+          {
+            title: t("cards.cancelled"),
+            primaryValue: String(summary.cancelledCount),
+            secondaryText: t("cards.cancelledHint"),
+            color: summary.cancelledCount > 0 ? "error" : undefined,
+          },
+        ],
       },
       {
-        title: "Оплачено процедур",
-        primaryValue: String(summary.procPaidCount),
-        secondaryText: `Всего: ${summary.procTotalCount} · Отменено: 0`,
-        color: "success",
-      },
-      {
-        title: "Со скидкой",
-        primaryValue: String(summary.discountedCount),
-        secondaryText: `Сумма скидок: ${formatKGS(summary.discountSum)}`,
-        color: "info",
-      },
-      {
-        title: "Ожидание",
-        primaryValue: String(summary.waitingCount),
-        secondaryText: "Ожидают или здесь",
-        color: "warning",
-      },
-      {
-        title: "Отменены",
-        primaryValue: String(summary.cancelledCount),
-        secondaryText: "Не пришли или отменены",
-        color: "error",
-      },
-      {
-        title: t("cards.visitsSlashProcedures"),
-        primaryValue: `${totals.appointmentsCount} / ${totals.proceduresCount}`,
-        secondaryText: t("cards.visitsSlashProcedures"),
-        color: "primary",
-      },
-      {
-        title: "День / Ночь",
-        primaryValue: `${totals.dayCount} / ${totals.nightCount}`,
-        secondaryText: "до 18:00 / с 18:00",
-        color: "info",
-      },
-      {
-        title: "Мед. услуги",
-        primaryValue: formatKGS(totals.services),
-        secondaryText: "Без товаров",
-        color: "primary",
-      },
-      {
-        title: t("productsInVisits"),
-        primaryValue: formatKGS(totals.products),
-        secondaryText: t("soldInVisits"),
-        color: "secondary",
-      },
-      {
-        title: "Нал + Безнал",
-        primaryValue: formatKGS(num(totals.cash) + num(totals.card)),
-        secondaryText:
-          `Нал: ${formatKGS(totals.cash)} · Безнал: ${formatKGS(totals.card)}` +
-          (num(totals.insurance) > 0 ? ` · Страховка: ${formatKGS(totals.insurance)}` : ""),
-        color: "success",
-      },
-      {
-        title: "Долги",
-        primaryValue: formatKGS(totals.debt),
-        secondaryText: "Не оплачено",
-        color: "warning",
+        title: t("groups.money"),
+        cards: [
+          {
+            title: t("cards.medServices"),
+            primaryValue: formatKGS(totals.services),
+            secondaryText: t("cards.medServicesHint"),
+          },
+          {
+            title: t("productsInVisits"),
+            primaryValue: formatKGS(totals.products),
+            secondaryText: t("soldInVisits"),
+          },
+          {
+            title: t("cards.received"),
+            primaryValue: formatKGS(num(totals.cash) + num(totals.card)),
+            secondaryText: t("cards.receivedHint", {
+              cash: formatKGS(totals.cash),
+              card: formatKGS(totals.card),
+            }),
+          },
+          {
+            title: t("cards.insurance"),
+            primaryValue: formatKGS(totals.insurance),
+            secondaryText: t("cards.insuranceHint"),
+          },
+          {
+            title: t("cards.debt"),
+            primaryValue: formatKGS(totals.debt),
+            secondaryText: t("cards.debtHint"),
+            color: num(totals.debt) > 0 ? "warning" : undefined,
+          },
+        ],
       },
     ];
   }, [summary, totals, t]);
@@ -244,7 +264,7 @@ const DjangoReportsPage: React.FC = () => {
               pb: { xs: 15, md: t.appLayout.page.paddingY },
             })}
           >
-            <ReportsSummaryCards cards={cards} loading={loading && cards.length === 0} />
+            <SummaryCards groups={groups} loading={loading && groups.length === 0} />
 
             {reportQuery.isError ? (
               <Alert severity="error">
@@ -379,12 +399,24 @@ const DjangoReportsPage: React.FC = () => {
                 )}
               </Stack>
             ) : (
-              <Paper
-                variant="outlined"
-                sx={{ borderRadius: 3, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
+              <ReportTableCard
+                title={t("table.byDays")}
+                scrollable
+                headerActions={
+                  totals ? (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={t("table.summaryChip", {
+                        days: daily.length,
+                        sum: formatKGS(num(totals.cash) + num(totals.card)),
+                      })}
+                    />
+                  ) : undefined
+                }
               >
                 <TableContainer sx={{ flex: 1, overflowY: "auto" }}>
-                  <Table stickyHeader size="small">
+                  <Table stickyHeader size="small" sx={compactTableSx}>
                     <TableHead>
                       <TableRow>
                         {(
@@ -405,7 +437,15 @@ const DjangoReportsPage: React.FC = () => {
                             <TableCell
                               key={h.key}
                               align={h.align}
-                              sx={{ fontWeight: 800, ...(h.key === "waiting" ? { color: "error.main" } : {}) }}
+                              // Цветом помечаем только колонки-сигналы, как в отчёте по ЗП
+                              // (там так подсвечены «Аванс» и «К выплате»).
+                              sx={
+                                h.key === "waiting"
+                                  ? { color: "error.onSurface" }
+                                  : h.key === "debt"
+                                    ? { color: "warning.onSurface" }
+                                    : undefined
+                              }
                             >
                               {h.label}
                             </TableCell>
@@ -436,51 +476,53 @@ const DjangoReportsPage: React.FC = () => {
                             {day.waitingCount > 0 ? day.waitingCount : "-"}
                           </TableCell>
                           <TableCell align="right">{formatKGS(day.servicesSum)}</TableCell>
-                          <TableCell align="right" sx={{ color: "secondary.main" }}>
+                          <TableCell align="right">
                             {num(day.productsSum) > 0 ? formatKGS(day.productsSum) : "-"}
                           </TableCell>
-                          <TableCell align="right" sx={{ color: "success.main", fontWeight: 600 }}>
+                          <TableCell align="right" sx={{ fontWeight: 600 }}>
                             {formatKGS(day.cashSum)}
                           </TableCell>
-                          <TableCell align="right" sx={{ color: "info.main", fontWeight: 600 }}>
+                          <TableCell align="right" sx={{ fontWeight: 600 }}>
                             {formatKGS(day.cardSum)}
                           </TableCell>
-                          <TableCell align="right" sx={{ color: "info.dark" }}>
+                          <TableCell align="right">
                             {num(day.insuranceSum) > 0 ? formatKGS(day.insuranceSum) : "-"}
                           </TableCell>
-                          <TableCell align="right" sx={{ color: "warning.main" }}>
+                          <TableCell align="right" sx={{ color: "warning.onSurface" }}>
                             {num(day.debtSum) > 0 ? formatKGS(day.debtSum) : "-"}
                           </TableCell>
                         </TableRow>
                       ))}
                       {totals && (
-                        <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                          <TableCell sx={{ fontWeight: 800 }}>ИТОГО</TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 800 }}>
-                            {totals.appointmentsCount}
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 800 }}>
-                            {totals.proceduresCount}
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 800, color: "error.main" }}>
+                        // Итог липнет к низу таблицы: месяц длинный, а сумма нужна
+                        // без прокрутки в конец.
+                        <TableRow
+                          sx={(t) => ({
+                            "& .MuiTableCell-root": {
+                              position: "sticky",
+                              bottom: 0,
+                              fontWeight: 700,
+                              // Фон непрозрачный: сквозь тинт просвечивала бы
+                              // строка, над которой стоит липкий итог.
+                              bgcolor: "background.paper",
+                              borderTop: `2px solid ${alpha(t.palette.primary.main, 0.35)}`,
+                            },
+                          })}
+                        >
+                          <TableCell>{t("table.totalRow")}</TableCell>
+                          <TableCell align="center">{totals.appointmentsCount}</TableCell>
+                          <TableCell align="center">{totals.proceduresCount}</TableCell>
+                          <TableCell align="center" sx={{ color: "error.onSurface" }}>
                             {totals.waitingCount > 0 ? totals.waitingCount : "-"}
                           </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800 }}>
-                            {formatKGS(totals.services)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, color: "secondary.main" }}>
-                            {formatKGS(totals.products)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, color: "success.main" }}>
-                            {formatKGS(totals.cash)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, color: "info.main" }}>
-                            {formatKGS(totals.card)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, color: "info.dark" }}>
+                          <TableCell align="right">{formatKGS(totals.services)}</TableCell>
+                          <TableCell align="right">{formatKGS(totals.products)}</TableCell>
+                          <TableCell align="right">{formatKGS(totals.cash)}</TableCell>
+                          <TableCell align="right">{formatKGS(totals.card)}</TableCell>
+                          <TableCell align="right">
                             {num(totals.insurance) > 0 ? formatKGS(totals.insurance) : "-"}
                           </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, color: "warning.main" }}>
+                          <TableCell align="right" sx={{ color: "warning.onSurface" }}>
                             {formatKGS(totals.debt)}
                           </TableCell>
                         </TableRow>
@@ -488,7 +530,7 @@ const DjangoReportsPage: React.FC = () => {
                     </TableBody>
                   </Table>
                 </TableContainer>
-              </Paper>
+              </ReportTableCard>
             )}
           </Stack>
         </Box>

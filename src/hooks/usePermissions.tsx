@@ -530,11 +530,18 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
       if (!state.role) return false;
 
       const rolesToCheck = Array.isArray(roleName) ? roleName : [roleName];
-      const currentRoleName = state.role.name?.toLowerCase().trim();
+      // У владельца организации roleName выше схлопывается в 'owner' и
+      // затирает выданную ему роль (isOwner проверяется раньше role.code) —
+      // из-за этого все роль-гейты видели его как «никого»: ни admin, ни
+      // accountant. Матчим обе: и 'owner', и реальный код роли membership.
+      const currentRoleNames = [
+        state.role.name?.toLowerCase().trim(),
+        state.activeMembership?.role?.code?.toLowerCase().trim(),
+      ].filter(Boolean);
 
-      return rolesToCheck.some(r => r.toLowerCase() === currentRoleName);
+      return rolesToCheck.some((r) => currentRoleNames.includes(r.toLowerCase()));
     },
-    [state.loading, state.role]
+    [state.loading, state.role, state.activeMembership]
   );
 
   const isSuperAdmin = useCallback(() => state.role?.name === 'superadmin', [state.role]);

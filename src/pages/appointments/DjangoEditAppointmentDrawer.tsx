@@ -37,9 +37,11 @@ import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { orgWide } from "../../api/scope";
+import { parseRelatedQuantity } from "../../api/catalog";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
+  APPOINTMENT_CONSUMPTIONS_ENABLED,
   updateAppointment,
   parseBackendError,
   parseOverlapConflict,
@@ -59,8 +61,18 @@ import type {
   DjangoCatalogServiceWithEmployees,
 } from "../../hooks/useDjangoAppointmentData";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
-import ServiceRowShell from "../../components/appointments/ServiceRowShell";
+import ServiceGroupShell, {
+  ServiceBranch,
+} from "../../components/appointments/ServiceGroupShell";
+import { groupServiceRowsByEmployee } from "../../components/appointments/serviceRowGroups";
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
+import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import {
+  hasInvalidConsumptionQuantity,
+  toConsumptionRow,
+  type ConsumptionRow,
+} from "../../components/appointments/consumptionRows";
+import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -72,6 +84,18 @@ export type DjangoEditAppointmentDrawerProps = {
 };
 
 type ServiceRow = {
+  /**
+   * Ключ строки для React. Индекс массива не годится: услуга добавляется в
+   * середину списка (следующей услугой того же специалиста), и по индексу
+   * React переиспользовал бы поля соседней строки.
+   */
+  uid: string;
+  /**
+   * Блок, в котором живёт строка. Пока исполнитель выбран, блок опознаётся по
+   * нему; когда исполнителя сняли — по этому полю, иначе услуги блока
+   * рассыпались бы на отдельные блоки с пустым исполнителем.
+   */
+  groupId: string;
   /** id of the existing AppointmentServiceLine, null for new rows */
   lineId: number | null;
   serviceId: number | null;
@@ -85,6 +109,15 @@ type ServiceRow = {
    * сохранением id (без пересоздания) и явным unitPrice.
    */
   hasConclusion: boolean;
+  /** Расходники строки — снапшот из приёма плюс правки пользователя. */
+  consumptions: ConsumptionRow[];
+  /**
+   * Пользователь правил расходники этой строки. Только тогда `consumptions`
+   * уходит в PATCH: отсутствие ключа значит «не трогаем», а присутствие —
+   * полную синхронизацию, поэтому форма, которая всегда шлёт `services`
+   * целиком, иначе стирала бы состав.
+   */
+  consumptionsDirty: boolean;
 };
 
 type ProductRow = {
@@ -152,15 +185,46 @@ function lineHasConclusion(line: AppointmentServiceLine): boolean {
   );
 }
 
-const EMPTY_SERVICE_ROW: ServiceRow = {
-  lineId: null,
-  serviceId: null,
-  employeeId: null,
-  quantity: 1,
-  unitPrice: "",
-  discountAmount: "",
-  hasConclusion: false,
-};
+/** Цена единицы строки: своя (сохранённая/правленая) либо цена каталога. */
+function rowUnitPrice(
+  row: Pick<ServiceRow, "serviceId" | "unitPrice">,
+  services: DjangoCatalogServiceWithEmployees[],
+): number {
+  if (row.unitPrice.trim()) return Number(row.unitPrice) || 0;
+  const svc = services.find((s) => s.id === row.serviceId);
+  return svc ? Number(svc.basePrice) : 0;
+}
+
+/** Сумма строки: цена × количество − скидка (не уходит ниже нуля). */
+function rowAmount(
+  row: Pick<ServiceRow, "serviceId" | "unitPrice" | "discountAmount" | "quantity">,
+  services: DjangoCatalogServiceWithEmployees[],
+): number {
+  const gross = rowUnitPrice(row, services) * (row.quantity > 0 ? row.quantity : 1);
+  const discount = Number(row.discountAmount) || 0;
+  return Math.max(0, gross - discount);
+}
+
+let serviceRowSeq = 0;
+
+function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
+  serviceRowSeq += 1;
+  const uid = `row-${serviceRowSeq}`;
+  return {
+    uid,
+    groupId: uid,
+    lineId: null,
+    serviceId: null,
+    employeeId: null,
+    quantity: 1,
+    unitPrice: "",
+    discountAmount: "",
+    hasConclusion: false,
+    consumptions: [],
+    consumptionsDirty: false,
+    ...patch,
+  };
+}
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -208,10 +272,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([
-    { ...EMPTY_SERVICE_ROW },
+    newServiceRow(),
   ]);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+  /** Каталог для расходников — без фильтров продажи и остатка. */
+  const [consumableProducts, setConsumableProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
   const [complaints, setComplaints] = React.useState("");
   const [doctorComplaints, setDoctorComplaints] = React.useState("");
@@ -256,7 +322,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       setIsBooking(false);
       setSelectedPatient(null);
       setPatientSearch("");
-      setServiceRows([{ ...EMPTY_SERVICE_ROW }]);
+      setServiceRows([newServiceRow()]);
       setProductRows([]);
       setComplaints("");
       setDoctorComplaints("");
@@ -279,18 +345,21 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
 
     if (appointment.services.length > 0) {
       setServiceRows(
-        appointment.services.map((line) => ({
-          lineId: line.id ?? null,
-          serviceId: line.service?.id ?? null,
-          employeeId: line.employee?.id ?? null,
-          quantity: line.quantity ?? 1,
-          unitPrice: line.unitPrice ?? "",
-          discountAmount: line.discountAmount ?? "",
-          hasConclusion: lineHasConclusion(line),
-        })),
+        appointment.services.map((line) =>
+          newServiceRow({
+            lineId: line.id ?? null,
+            serviceId: line.service?.id ?? null,
+            employeeId: line.employee?.id ?? null,
+            quantity: line.quantity ?? 1,
+            unitPrice: line.unitPrice ?? "",
+            discountAmount: line.discountAmount ?? "",
+            hasConclusion: lineHasConclusion(line),
+            consumptions: (line.consumptions ?? []).map(toConsumptionRow),
+          }),
+        ),
       );
     } else {
-      setServiceRows([{ ...EMPTY_SERVICE_ROW }]);
+      setServiceRows([newServiceRow()]);
     }
 
     setProductRows(
@@ -348,7 +417,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   // Нужен только когда редактирование товаров включено; на чтение хватает
   // данных из productLines самого приёма.
   React.useEffect(() => {
-    if (!open || !EDIT_APPOINTMENT_PRODUCTS_ENABLED) return;
+    if (!open) return;
+    if (!EDIT_APPOINTMENT_PRODUCTS_ENABLED && !APPOINTMENT_CONSUMPTIONS_ENABLED) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
     getProducts(ctrl.signal, { organizationId: orgId })
@@ -356,6 +426,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         if (ctrl.signal.aborted) return;
         // Только товары на продажу и с остатком.
         setProducts(list.filter((p) => p.isActive && p.isForSale && p.stock > 0));
+        // Расходники — не продажа: ни «на продажу», ни «остаток > 0» к ним не
+        // применимы (гель не продаётся, а минусовой остаток бэк разрешает).
+        setConsumableProducts(list.filter((p) => p.isActive));
       })
       .catch(() => {
         /* товары опциональны; ошибку загрузки молча игнорируем */
@@ -407,6 +480,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     [serviceRows, theme.palette.mode],
   );
 
+  // Услуги одного специалиста показываем одним блоком: он выбирается однажды,
+  // услуги висят ветками на его оси.
+  const serviceGroups = React.useMemo(
+    () => groupServiceRowsByEmployee(serviceRows),
+    [serviceRows],
+  );
+
   // ── validation ───────────────────────────────────────────────────────────
   const validRows = serviceRows.filter(
     (r) => r.serviceId !== null && r.employeeId !== null,
@@ -429,11 +509,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   });
 
   // ── total ────────────────────────────────────────────────────────────────
-  const servicesTotal = React.useMemo(() =>
-    validRows.reduce((sum, r) => {
-      const svc = data.services.find((s) => s.id === r.serviceId);
-      return sum + (svc ? Number(svc.basePrice) * r.quantity : 0);
-    }, 0),
+  // У сохранённой строки своя цена и скидка (старая цена услуги, ручная
+  // правка) — считаем по ним, иначе форма показала бы цену каталога, а приём
+  // стоит другое. Цена каталога нужна только новым строкам, у которых
+  // unitPrice ещё пустой.
+  const servicesTotal = React.useMemo(
+    () => validRows.reduce((sum, r) => sum + rowAmount(r, data.services), 0),
     [validRows, data.services],
   );
   const productsTotal = React.useMemo(
@@ -441,6 +522,15 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     [productRows],
   );
   const grandTotal = servicesTotal + productsTotal;
+  // Суммарная длительность услуг — по ней видно, на сколько занят слот.
+  const totalDuration = React.useMemo(
+    () =>
+      validRows.reduce((sum, r) => {
+        const svc = data.services.find((s) => s.id === r.serviceId);
+        return sum + (svc?.durationMinutes ?? 0) * (r.quantity > 0 ? r.quantity : 1);
+      }, 0),
+    [validRows, data.services],
+  );
 
   // Каталог + товары существующих строк, выпавшие из каталога (кончился
   // остаток / сняты с продажи) — чтобы Autocomplete не терял значение строки.
@@ -475,6 +565,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (!appointment) return;
     // Показывает ошибки и уводит фокус в первое незаполненное поле.
     if (!form.validate()) return;
+    // Количество расходника бэк отбивает 400-м и откатывает весь PATCH —
+    // ловим до запроса (поле лежит внутри свёрнутого блока, фокус туда не ведём).
+    if (serviceRows.some((r) => hasInvalidConsumptionQuantity(r.consumptions))) {
+      notify?.({ type: "error", message: t("consumptions.quantityError") });
+      return;
+    }
     void performSave();
   };
 
@@ -497,6 +593,20 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           quantity: r.quantity > 0 ? r.quantity : 1,
           ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
           ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
+          // Расходники шлём только когда их правили руками и строка услуги
+          // существует: у пересозданной строки (lineId сброшен) id расходов
+          // принадлежат старой строке — бэк ответил бы 400, а состав он и так
+          // соберёт из справочника новой услуги.
+          ...(APPOINTMENT_CONSUMPTIONS_ENABLED && r.consumptionsDirty && r.lineId != null
+            ? {
+                consumptions: r.consumptions.map((c) => ({
+                  ...(c.lineId != null ? { id: c.lineId } : {}),
+                  productId: c.productId,
+                  quantity: String(parseRelatedQuantity(c.quantity) ?? 1),
+                  autoWriteOff: c.autoWriteOff,
+                })),
+              }
+            : {}),
         })),
         // Пока флаг выключен, products в PATCH не шлём вовсе: бэкенд поле
         // игнорирует, а слать «глухие» данные — маскировать проблему.
@@ -515,6 +625,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       });
       setOverlapConflict(null);
       notify?.({ type: "success", message: t("editDrawer.updated") });
+      // Списание расходников могло увести остаток в минус — сообщаем отдельным
+      // тостом, но сохранение это не отменяет (нехватка не блокирует).
+      const warning = formatConsumptionWarnings(updated.consumptionWarnings);
+      if (warning) notify?.({ type: "error", message: warning });
       // Панель деталей показывает сумму из кэша платежей (pay?.totalAmount
       // приоритетнее appt.totalAmount) — сбрасываем, иначе до staleTime видна
       // старая сумма после смены услуг.
@@ -542,6 +656,53 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       const updated = [...prev];
       updated[index] = { ...updated[index], ...patch };
       return updated;
+    });
+  };
+
+  // Специалист выбирается один раз на блок, поэтому смена применяется ко всем
+  // его услугам сразу. Строки с медзаключением бэк не отдаёт менять
+  // (400-й «Нельзя сменить или убрать исполнителя…») — они остаются на прежнем
+  // специалисте и выделяются в свой блок.
+  const applyEmployeeToRows = (
+    indexes: number[],
+    employee: DjangoEmployeeWithServices | null,
+  ) => {
+    const targets = new Set(indexes);
+    setServiceRows((prev) => {
+      // Общий groupId на все строки блока: если исполнителя снимут, услуги
+      // останутся одним блоком, а не превратятся в несколько пустых.
+      const groupId = prev.find((_, i) => targets.has(i))?.groupId;
+      return prev.map((row, i) => {
+        if (!targets.has(i) || row.hasConclusion) return row;
+        const employeeId = employee?.id ?? null;
+        if (employeeId === row.employeeId) return row;
+        const keepService =
+          row.serviceId === null ||
+          !employee ||
+          data.canEmployeeProvideService(employee.id, row.serviceId);
+        return {
+          ...row,
+          groupId: groupId ?? row.groupId,
+          employeeId,
+          serviceId: keepService ? row.serviceId : null,
+          // Цена строки зафиксирована для старой пары услуга/исполнитель, и
+          // PATCH с id её не пересчитывает — пересоздаём строку, чтобы бэк взял
+          // актуальную цену новой пары.
+          lineId: null,
+          unitPrice: "",
+          discountAmount: "",
+        };
+      });
+    });
+  };
+
+  // Ещё одна услуга того же блока — сразу после его последней услуги, чтобы
+  // блок не перескакивал в конец списка.
+  const addRowAfter = (index: number, employeeId: number | null, groupId: string) => {
+    setServiceRows((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, newServiceRow({ employeeId, groupId }));
+      return next;
     });
   };
 
@@ -837,56 +998,65 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                         </Typography>
                         <Divider />
 
-                        {/* ── Строки услуг ── */}
-                        {serviceRows.map((row, index) => {
-                          const availableEmployees = data.getEmployeesForService(row.serviceId);
-                          const availableServices = data.getServicesForEmployee(row.employeeId);
+                        {/* ── Блоки «специалист → его услуги» ── */}
+                        {serviceGroups.map((group, groupIndex) => {
+                          const groupIndexes = group.rows.map((r) => r.index);
+                          const lastIndex = groupIndexes[groupIndexes.length - 1];
+                          const groupServiceIds = group.rows
+                            .map(({ row }) => row.serviceId)
+                            .filter((id): id is number => id !== null);
+                          // Специалист блока должен оказывать все его услуги —
+                          // иначе смена исполнителя обнулила бы часть строк.
+                          const employeeOptions = groupServiceIds.length
+                            ? data.employees.filter((e) =>
+                                groupServiceIds.every((id) =>
+                                  data.canEmployeeProvideService(e.id, id),
+                                ),
+                              )
+                            : data.employees;
                           const selectedEmployee =
-                            availableEmployees.find((e) => e.id === row.employeeId) ??
-                            data.employees.find((e) => e.id === row.employeeId) ??
-                            null;
-                          const selectedService =
-                            availableServices.find((s) => s.id === row.serviceId) ??
-                            data.services.find((s) => s.id === row.serviceId) ??
-                            null;
-                          const incompatible =
-                            row.serviceId !== null &&
-                            row.employeeId !== null &&
-                            !data.canEmployeeProvideService(row.employeeId, row.serviceId);
+                            data.employees.find((e) => e.id === group.employeeId) ?? null;
+                          const availableServices = data.getServicesForEmployee(group.employeeId);
+                          const accent =
+                            group.employeeId !== null
+                              ? (employeeAccents.get(group.employeeId) ?? null)
+                              : null;
+                          const groupHasError = group.rows.some(
+                            ({ row }) =>
+                              row.serviceId !== null &&
+                              !data.canEmployeeProvideService(group.employeeId, row.serviceId),
+                          );
+                          // Блок целиком удаляем только когда услуг в нём больше
+                          // одной (иначе хватает кнопки у самой услуги) и когда
+                          // после удаления в приёме останется хотя бы одна строка.
+                          const groupLocked = group.rows.some(({ row }) => row.hasConclusion);
+                          const canDeleteGroup =
+                            group.rows.length > 1 && serviceRows.length > group.rows.length;
 
                           return (
-                            <ServiceRowShell
-                              key={index}
-                              index={index}
-                              accentColor={
-                                row.employeeId !== null
-                                  ? (employeeAccents.get(row.employeeId) ?? null)
-                                  : null
-                              }
+                            <ServiceGroupShell
+                              key={group.key}
+                              index={groupIndex}
+                              accentColor={accent}
                               employeeName={selectedEmployee?.fullName ?? null}
-                              continuesEmployee={
-                                index > 0 &&
-                                row.employeeId !== null &&
-                                serviceRows[index - 1].employeeId === row.employeeId
-                              }
-                              hasError={incompatible}
-                              deleteButton={
-                                serviceRows.length > 1 ? (
+                              hasError={groupHasError}
+                              headerAction={
+                                canDeleteGroup ? (
                                   <Tooltip
                                     title={
-                                      row.hasConclusion
+                                      groupLocked
                                         ? t("editDrawer.cannotDeleteHasConclusion")
-                                        : t("editDrawer.deleteService")
+                                        : t("serviceRow.deleteGroup")
                                     }
                                   >
                                     <span>
                                       <IconButton
                                         size="small"
                                         color="error"
-                                        disabled={row.hasConclusion}
+                                        disabled={groupLocked}
                                         onClick={() =>
                                           setServiceRows((prev) =>
-                                            prev.filter((_, i) => i !== index),
+                                            prev.filter((_, i) => !groupIndexes.includes(i)),
                                           )
                                         }
                                         sx={{ p: 0.25 }}
@@ -897,60 +1067,130 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   </Tooltip>
                                 ) : undefined
                               }
-                              employeeHint={
-                                row.serviceId !== null && !data.loading ? (
-                                  <Typography variant="caption" color="text.secondary">
-                                    {t("serviceRow.filteredSpecialists", {
-                                      count: availableEmployees.length,
-                                    })}
-                                  </Typography>
-                                ) : undefined
-                              }
                               employeeField={
                               <Autocomplete<DjangoEmployeeWithServices>
                                 fullWidth
                                 // Смену исполнителя у строки с медзаключением бэк
                                 // отбивает 400-й «Нельзя сменить или убрать
                                 // исполнителя…» (проверено на живом API
-                                // 17.07.2026) — блокируем поле сразу.
-                                disabled={isWorkplaceNurse || row.hasConclusion}
-                                options={row.serviceId !== null ? availableEmployees : data.employees}
+                                // 17.07.2026) — если все услуги блока с
+                                // заключением, поле блокируем сразу; при
+                                // частичном совпадении такие строки останутся на
+                                // прежнем специалисте (см. applyEmployeeToRows).
+                                disabled={
+                                  isWorkplaceNurse ||
+                                  group.rows.every(({ row }) => row.hasConclusion)
+                                }
+                                options={employeeOptions}
                                 loading={data.loading}
                                 filterOptions={employeeFilter}
                                 value={selectedEmployee}
-                                onChange={(_, v) =>
-                                  updateRow(index, {
-                                    employeeId: v?.id ?? null,
-                                    serviceId:
-                                      row.serviceId !== null && v
-                                        ? data.canEmployeeProvideService(v.id, row.serviceId)
-                                          ? row.serviceId
-                                          : null
-                                        : row.serviceId,
-                                    // Цена строки зафиксирована для старой пары
-                                    // услуга/исполнитель, и PATCH с id её не
-                                    // пересчитывает — пересоздаём строку, чтобы
-                                    // бэк взял актуальную цену новой пары.
-                                    ...((v?.id ?? null) !== row.employeeId
-                                      ? { lineId: null, unitPrice: "", discountAmount: "" }
-                                      : {}),
-                                  })
-                                }
+                                onChange={(_, v) => applyEmployeeToRows(groupIndexes, v)}
                                 getOptionLabel={(e) => e.fullName}
                                 isOptionEqualToValue={(a, b) => a.id === b.id}
+                                // Пустой список — почти всегда настройки, а не
+                                // сбой: у услуги нет исполнителей либо нет
+                                // никого на все услуги блока сразу. Объясняем,
+                                // иначе регистратор упирается в «Ничего не
+                                // найдено». Если варианты есть, а фильтр по
+                                // введённому тексту пуст — обычный текст.
+                                noOptionsText={
+                                  employeeOptions.length === 0
+                                    ? groupServiceIds.length > 1
+                                      ? t("serviceRow.noEmployeeForAllServices")
+                                      : t("serviceRow.noEmployeeForService")
+                                    : t("serviceRow.noEmployeeMatches")
+                                }
+                                // Специализация видна в списке, а не только в
+                                // поиске: помогает выбрать нужного из однофамильцев.
+                                renderOption={(props, e) => (
+                                  <li {...props} key={e.id}>
+                                    <Stack>
+                                      <Typography variant="body2">{e.fullName}</Typography>
+                                      {(e.specializations ?? []).length > 0 && (
+                                        <Typography variant="caption" color="text.secondary">
+                                          {(e.specializations ?? []).join(", ")}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </li>
+                                )}
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
                                     placeholder={t("addDrawer.performer")}
                                     size="small"
                                     fullWidth
-                                    error={form.attempted && !row.employeeId}
-                                    helperText={form.attempted && !row.employeeId ? t("addDrawer.performerPlaceholder") : ""}
+                                    error={form.attempted && group.employeeId === null}
+                                    helperText={form.attempted && group.employeeId === null ? t("addDrawer.performerPlaceholder") : ""}
                                   />
                                 )}
                               />
                               }
-                              serviceField={
+                              footer={
+                                <Button
+                                  size="small"
+                                  onClick={() =>
+                                    addRowAfter(lastIndex, group.employeeId, group.groupId)
+                                  }
+                                  disabled={data.loading}
+                                >
+                                  {t("addDrawer.addService")}
+                                </Button>
+                              }
+                            >
+                              {group.rows.map(({ row, index }, rowIndex) => {
+                                const selectedService =
+                                  availableServices.find((s) => s.id === row.serviceId) ??
+                                  data.services.find((s) => s.id === row.serviceId) ??
+                                  null;
+                                const incompatible =
+                                  row.serviceId !== null &&
+                                  row.employeeId !== null &&
+                                  !data.canEmployeeProvideService(row.employeeId, row.serviceId);
+                                // Та же услуга уже есть выше у этого специалиста:
+                                // не запрещаем (бывает две процедуры за приём),
+                                // но предупреждаем — чаще это случайный дубль.
+                                const duplicate =
+                                  row.serviceId !== null &&
+                                  group.rows
+                                    .slice(0, rowIndex)
+                                    .some(({ row: prev }) => prev.serviceId === row.serviceId);
+                                const discount = Number(row.discountAmount) || 0;
+
+                                return (
+                                  <ServiceBranch
+                                    key={row.uid}
+                                    accentColor={accent}
+                                    isLast={rowIndex === group.rows.length - 1}
+                                    deleteButton={
+                                      serviceRows.length > 1 ? (
+                                        <Tooltip
+                                          title={
+                                            row.hasConclusion
+                                              ? t("editDrawer.cannotDeleteHasConclusion")
+                                              : t("editDrawer.deleteService")
+                                          }
+                                        >
+                                          <span>
+                                            <IconButton
+                                              size="small"
+                                              color="error"
+                                              disabled={row.hasConclusion}
+                                              onClick={() =>
+                                                setServiceRows((prev) =>
+                                                  prev.filter((_, i) => i !== index),
+                                                )
+                                              }
+                                              sx={{ p: 0.25, mt: 0.75 }}
+                                            >
+                                              <DeleteOutlined fontSize="small" />
+                                            </IconButton>
+                                          </span>
+                                        </Tooltip>
+                                      ) : undefined
+                                    }
+                                    field={
                                 <Autocomplete<DjangoCatalogServiceWithEmployees>
                                   fullWidth
                                   // Смену услуги на строке с медзаключением бэк
@@ -964,6 +1204,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   options={row.employeeId !== null ? availableServices : data.services}
                                   loading={data.loading}
                                   value={selectedService}
+                                  // Симметрично исполнителю: у выбранного
+                                  // специалиста может не быть назначенных услуг.
+                                  noOptionsText={
+                                    row.employeeId !== null && availableServices.length === 0
+                                      ? t("serviceRow.noServiceForEmployee")
+                                      : t("serviceRow.noServiceMatches")
+                                  }
                                   onChange={(_, v) =>
                                     updateRow(index, {
                                       serviceId: v?.id ?? null,
@@ -992,6 +1239,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                           ? { unitPrice: v ? String(v.basePrice) : "", discountAmount: "" }
                                           : { lineId: null, unitPrice: "", discountAmount: "" }
                                         : {}),
+                                      // Другая услуга — другой состав: бэк
+                                      // пересобирает расходники из её справочника,
+                                      // а прежние правки к новым строкам не
+                                      // относятся (их id принадлежат старым).
+                                      ...((v?.id ?? null) !== row.serviceId
+                                        ? { consumptions: [], consumptionsDirty: false }
+                                        : {}),
                                     })
                                   }
                                   getOptionLabel={(s) =>
@@ -1009,49 +1263,83 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     />
                                   )}
                                 />
-                              }
-                            >
-                              {row.employeeId !== null && !data.loading && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {t("serviceRow.filteredServices", {
-                                    count: availableServices.length,
-                                  })}
-                                </Typography>
-                              )}
-                              {row.hasConclusion && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {canEditLocked
-                                    ? t("editDrawer.hasConclusionHint")
-                                    : t("editDrawer.hasConclusionLocked")}
-                                </Typography>
-                              )}
-                              {incompatible && (
-                                <Alert severity="error" sx={{ py: 0 }}>
-                                  {t("editDrawer.specialistMismatch")}
-                                </Alert>
-                              )}
-                            </ServiceRowShell>
+                                    }
+                                  >
+                                    {selectedService && (
+                                      <Typography variant="caption" color="text.secondary">
+                                        {t("addDrawer.priceLabel")}{" "}
+                                        <strong>{formatKGS(rowAmount(row, data.services))}</strong>
+                                        {discount > 0
+                                          ? t("addDrawer.discountSuffix", {
+                                              amount: formatKGS(discount),
+                                            })
+                                          : ""}
+                                        {selectedService.durationMinutes
+                                          ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
+                                          : ""}
+                                      </Typography>
+                                    )}
+                                    {duplicate && (
+                                      <Typography variant="caption" color="warning.main">
+                                        {t("serviceRow.duplicateService")}
+                                      </Typography>
+                                    )}
+                                    {row.hasConclusion && (
+                                      <Typography variant="caption" color="text.secondary">
+                                        {canEditLocked
+                                          ? t("editDrawer.hasConclusionHint")
+                                          : t("editDrawer.hasConclusionLocked")}
+                                      </Typography>
+                                    )}
+                                    {incompatible && (
+                                      <Alert severity="error" sx={{ py: 0 }}>
+                                        {t("editDrawer.specialistMismatch")}
+                                      </Alert>
+                                    )}
+                                    {/* Расходники правим только у сохранённой
+                                        строки: у новой (и у пересозданной после
+                                        смены услуги) состав соберёт бэк из
+                                        справочника, а id расходов ещё нет. */}
+                                    {APPOINTMENT_CONSUMPTIONS_ENABLED && row.lineId != null && (
+                                      <ConsumptionRowsEditor
+                                        rows={row.consumptions}
+                                        options={consumableProducts}
+                                        disabled={saving}
+                                        showErrors={form.attempted}
+                                        onChange={(next) => {
+                                          // touched — сигнал CloseGuard: правку
+                                          // расходников нельзя потерять молча.
+                                          setTouched(true);
+                                          updateRow(index, {
+                                            consumptions: next,
+                                            consumptionsDirty: true,
+                                          });
+                                        }}
+                                      />
+                                    )}
+                                  </ServiceBranch>
+                                );
+                              })}
+                            </ServiceGroupShell>
                           );
                         })}
 
-                        <Button
-                          size="small"
-                          onClick={() =>
-                            setServiceRows((prev) => [
-                              ...prev,
-                              {
-                                ...EMPTY_SERVICE_ROW,
-                                employeeId:
-                                  nurseEmployeeId ??
-                                  prev[prev.length - 1]?.employeeId ??
-                                  null,
-                              },
-                            ])
-                          }
-                          sx={{ alignSelf: "flex-start" }}
-                        >
-                          {t("addDrawer.addService")}
-                        </Button>
+                        {/* Сестра процедурного кабинета исполнителя не меняет —
+                            новый блок специалиста ей не нужен. */}
+                        {!isWorkplaceNurse && (
+                          <Button
+                            size="small"
+                            onClick={() =>
+                              setServiceRows((prev) => [
+                                ...prev,
+                                newServiceRow(),
+                              ])
+                            }
+                            sx={{ alignSelf: "flex-start" }}
+                          >
+                            {t("serviceRow.addSpecialist")}
+                          </Button>
+                        )}
 
                         <Divider />
 
@@ -1245,7 +1533,33 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
 
                         <Divider />
 
-                        {/* ── Общая стоимость ── */}
+                        {/* ── Итог: из чего складывается сумма ── */}
+                        {validRows.length > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("addDrawer.servicesSubtotal")}
+                            </Typography>
+                            <Typography variant="body2">{formatKGS(servicesTotal)}</Typography>
+                          </Stack>
+                        )}
+                        {productRows.length > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("addDrawer.productsSection")}
+                            </Typography>
+                            <Typography variant="body2">{formatKGS(productsTotal)}</Typography>
+                          </Stack>
+                        )}
+                        {totalDuration > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("addDrawer.durationTotal")}
+                            </Typography>
+                            <Typography variant="body2">
+                              {t("addDrawer.minutesValue", { minutes: totalDuration })}
+                            </Typography>
+                          </Stack>
+                        )}
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="body2" color="text.secondary">
                             {t("addDrawer.totalCost")}

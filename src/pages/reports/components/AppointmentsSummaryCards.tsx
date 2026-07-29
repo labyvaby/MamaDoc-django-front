@@ -1,16 +1,6 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-    Grid2,
-    Card,
-    CardContent,
-    Typography,
-    Skeleton,
-    Stack,
-    Box,
-    alpha,
-    useTheme
-} from '@mui/material';
+import { SummaryCards, type SummaryCard } from './SummaryCards';
 import { supabase } from '../../../utility/supabaseClient';
 import { formatKGS } from '../../../utility/format';
 import { IS_DJANGO_BACKEND } from '../../../config/backend';
@@ -18,12 +8,7 @@ import { getMonthlyReport } from '../../../api/reports';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { useT } from '../../../i18n/VerticalProvider';
 
-interface ExtraCard {
-    title: string;
-    primaryValue: string;
-    secondaryText: string;
-    color: 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info';
-}
+type ExtraCard = SummaryCard;
 
 interface AppointmentsSummaryCardsProps {
     dateFrom: string;
@@ -46,7 +31,6 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
     extraCards = [],
     showBaseCards = true,
 }) => {
-    const theme = useTheme();
     const { t } = useT('appointments');
     const { activeOrganization } = usePermissions();
 
@@ -197,139 +181,10 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
         ...extraCards,
     ];
 
-    const totalCards = baseCards.length;
-    const useFlex = totalCards > 6;
-    const lgSize = useFlex ? undefined : Math.floor(12 / totalCards) as any;
-
-    if (!providedAppointments && isFetching) {
-        return (
-            <Box sx={{ display: 'flex', gap: { xs: 1, md: 2 }, flexWrap: 'wrap' }}>
-                {Array.from({ length: totalCards }).map((_, i) => (
-                    <Box key={i} sx={{ flex: '1 1 140px', minWidth: 0 }}>
-                        <Skeleton variant="rectangular" height={80} sx={{ borderRadius: "10px" }} />
-                    </Box>
-                ))}
-            </Box>
-        );
-    }
-
-    if (useFlex) {
-        return (
-            <Box sx={{ display: 'flex', gap: { xs: 1, md: 1.5 }, flexWrap: { xs: 'wrap', lg: 'nowrap' } }}>
-                {baseCards.map((card, idx) => (
-                    <Box key={idx} sx={{ flex: '1 1 0', minWidth: { xs: 'calc(50% - 4px)', lg: 0 } }}>
-                        <Card
-                            variant="outlined"
-                            sx={{
-                                bgcolor: alpha(theme.palette[card.color].main, theme.palette.mode === 'dark' ? 0.16 : 0.1),
-                                borderColor: alpha(theme.palette[card.color].main, 0.2),
-                                height: '100%'
-                            }}
-                        >
-                            <CardContent sx={{ p: { xs: 1, md: 1.5 }, '&:last-child': { pb: { xs: 1, md: 1.5 } } }}>
-                                <Stack spacing={0}>
-                                    <Typography
-                                        sx={{
-                                            color: `${card.color}.onSurface`,
-                                            fontWeight: 700,
-                                            fontSize: { xs: '0.6rem', md: '0.65rem' },
-                                            letterSpacing: 0.5,
-                                            lineHeight: 1.3
-                                        }}
-                                    >
-                                        {card.title}
-                                    </Typography>
-                                    <Box>
-                                        <Typography
-                                            fontWeight={700}
-                                            noWrap
-                                            sx={{
-                                                color: `${card.color}.onSurface`,
-                                                fontSize: { xs: '1rem', sm: '1.1rem', md: '1.2rem' },
-                                                lineHeight: 1.1
-                                            }}
-                                        >
-                                            {card.primaryValue}
-                                        </Typography>
-                                    </Box>
-                                    <Typography
-                                        variant="caption"
-                                        noWrap
-                                        sx={{
-                                            color: 'text.secondary',
-                                            fontWeight: 500,
-                                            display: 'block',
-                                            fontSize: { xs: '0.55rem', md: '0.6rem' },
-                                            lineHeight: 1.3
-                                        }}
-                                    >
-                                        {card.secondaryText}
-                                    </Typography>
-                                </Stack>
-                            </CardContent>
-                        </Card>
-                    </Box>
-                ))}
-            </Box>
-        );
-    }
-
     return (
-        <Grid2 container spacing={{ xs: 1, md: 2 }}>
-            {baseCards.map((card, idx) => (
-                <Grid2 key={idx} size={{ xs: 6, lg: lgSize }}>
-                    <Card
-                        variant="outlined"
-                        sx={{
-                            bgcolor: alpha(theme.palette[card.color].main, 0.06),
-                            border: `1px solid ${alpha(theme.palette[card.color].main, 0.2)}`,
-                            height: '100%'
-                        }}
-                    >
-                        <CardContent sx={{ p: { xs: 1, md: 1.5 }, '&:last-child': { pb: { xs: 1, md: 1.5 } } }}>
-                            <Stack spacing={0}>
-                                <Typography
-                                    sx={{
-                                        color: `${card.color}.main`,
-                                        fontWeight: 700,
-                                        fontSize: { xs: '0.6rem', md: '0.7rem' },
-                                        letterSpacing: 0.5,
-                                        
-                                        lineHeight: 1.3
-                                    }}
-                                >
-                                    {card.title}
-                                </Typography>
-                                <Box>
-                                    <Typography
-                                        fontWeight={700}
-                                        noWrap
-                                        sx={{
-                                            color: `${card.color}.dark`,
-                                            fontSize: { xs: '1.1rem', sm: '1.3rem', md: '1.5rem' },
-                                            lineHeight: 1.1
-                                        }}
-                                    >
-                                        {card.primaryValue}
-                                    </Typography>
-                                </Box>
-                                <Typography
-                                    variant="caption"
-                                    sx={{
-                                        color: 'text.secondary',
-                                        fontWeight: 500,
-                                        display: 'block',
-                                        fontSize: { xs: '0.6rem', md: '0.7rem' },
-                                        lineHeight: 1.3
-                                    }}
-                                >
-                                    {card.secondaryText}
-                                </Typography>
-                            </Stack>
-                        </CardContent>
-                    </Card>
-                </Grid2>
-            ))}
-        </Grid2>
+        <SummaryCards
+            cards={baseCards}
+            loading={!providedAppointments && isFetching}
+        />
     );
 };

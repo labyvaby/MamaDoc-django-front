@@ -1,7 +1,32 @@
 {
+  "groups": {
+    "flow": "{{visit.nomPl, capitalize}} и процедуры",
+    "money": "Деньги"
+  },
   "cards": {
     "paidVisits": "Оплачено {{visit.genPl}}",
-    "visitsSlashProcedures": "{{visit.nomPl, capitalize}} / Процедуры"
+    "paidVisitsHint": "Всего: {{total}} · День {{day}} / Ночь {{night}}",
+    "paidProcedures": "Оплачено процедур",
+    "paidProceduresHint": "Всего: {{total}} · Не оплачено: {{unpaid}}",
+    "discounted": "Со скидкой",
+    "discountedHint": "Сумма скидок: {{sum}}",
+    "waiting": "Ожидание",
+    "waitingHint": "Ожидают или здесь",
+    "cancelled": "Отменены",
+    "cancelledHint": "Не пришли или отменены",
+    "medServices": "Мед. услуги",
+    "medServicesHint": "Без товаров",
+    "received": "Поступило",
+    "receivedHint": "Нал: {{cash}} · Безнал: {{card}}",
+    "insurance": "Страховка",
+    "insuranceHint": "Покрыто страховыми",
+    "debt": "Долги",
+    "debtHint": "Не оплачено"
+  },
+  "table": {
+    "byDays": "По дням",
+    "summaryChip": "{{days}} дн. · {{sum}}",
+    "totalRow": "Итого"
   },
   "productsInVisits": "Товары в {{visit.prePl}}",
   "soldInVisits": "Продано в {{visit.prePl}}",

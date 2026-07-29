@@ -60,6 +60,17 @@ export function formatPhoneLocalDisplay(countryCode: PhoneCountryCode, local: st
 }
 
 /**
+ * Форматирует полный номер для показа в UI: «+996702122762» → «+996 702 122 762».
+ * Нераспознанный номер возвращается как есть (лучше сырой, чем пустой).
+ */
+export function formatPhoneDisplay(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const { countryCode, local } = parsePhone(raw);
+  const grouped = formatPhoneLocalDisplay(countryCode, local);
+  return grouped ? `${countryCode} ${grouped}` : String(raw);
+}
+
+/**
  * Парсит полный номер телефона в формате E.164 (+кодСтраны + локальная часть)
  * в структуру { countryCode, local }.
  * Поддерживает коды +996 и +7. Для остальных вариантов

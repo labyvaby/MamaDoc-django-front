@@ -44,6 +44,7 @@ export const djangoQueryKeys = {
   },
 
   patients: {
+    detail: (patientId: number) => ["django", "patients", patientId] as const,
     balance: (patientId: number) =>
       ["django", "patients", patientId, "balance"] as const,
     // Root key — use for invalidateQueries to bust all pages.

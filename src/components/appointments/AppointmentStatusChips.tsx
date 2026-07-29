@@ -8,27 +8,34 @@
  * приёма не меняет, поэтому оплаченный приём выглядел там как «Ожидаем» —
  * врач и регистратор видели по одному приёму разное.
  *
+ * Две дорожки (StatusTrack в appointmentStatuses.tsx): ход визита рисуется
+ * контуром, деньги — заливкой. Раньше обе дорожки делили палитру, и в строке
+ * регистратуры «Подтверждён» совпадал цветом с «Оплачено картой», а «Пациент
+ * здесь» — с «Оплачено наличными».
+ *
  * Эталон — строка списка на странице «Приёмы» (AppointmentListPanel):
+ *   • статус визита виден всегда — регистратуре важно знать, пришёл человек
+ *     или нет, независимо от того, закрыт ли чек. Раньше статус прятался за
+ *     платёжными чипами, потому что они сливались по цвету; после разделения
+ *     дорожек прятать нечего;
  *   • чип оплаты («Оплачено» / «Частично оплачено») показываем всем ролям:
  *     факт оплаты — операционный статус (закрыт ли чек), а не финансовая
  *     деталь. Финансовые ДЕЙСТВИЯ и суммы остаются под правами у вызывающего;
- *   • «Оплачено» только картой → синий чип (безнал), метка та же;
- *   • статус приёма 100% скидки бэк оставляет неоплаченным, а чек закрывает
- *     (paymentStatus=discounted без оплат) → отдельный чип «Скидка 100%»;
+ *   • «Оплачено» картой и наличными — один факт (чек закрыт), поэтому цвет
+ *     один; способ различает иконка внутри чипа;
+ *   • скидка без оплат → отдельный чип с ФАКТИЧЕСКИМ процентом («Скидка 50%»),
+ *     посчитанным из discountAmount/totalAmount: приём со скидкой иначе
+ *     выглядит просто неоплаченным. Процент не берём из paymentStatus —
+ *     чип с жёсткой подписью «Скидка 100%» подписывал так и половинные скидки;
  *   • при частичной оплате рядом чип с остатком («Долг 500 сом») — сумма
- *     остатка и есть операционный вопрос регистратуры;
- *   • статус-чип прячем, когда состояние уже понятно по другим меткам:
- *     завершён, оплачен/частично/скидка, есть заключение;
- *   • но «Отменено»/«Неявка» не прячем никогда — оплаченный отменённый приём
- *     иначе выглядел как обычное «Оплачено»;
- *   • если по правилам выше не осталось ни одного чипа, статус всё же
- *     показываем — иначе строка вообще без статуса (так было у «Завершено»
- *     без оплаты).
+ *     остатка и есть операционный вопрос регистратуры.
  *
  * Просроченный статус: бэк не закрывает приёмы (на проде 0 completed из 477 за
  * три недели, 199 приёмов остались in_progress спустя час+ после окончания).
- * Такой чип приглушаем и объясняем тултипом, иначе «На приёме» на вчерашнем
- * визите читается как «пациент в кабинете».
+ * Такой чип помечаем пунктирным контуром и иконкой часов, объясняя тултипом:
+ * иначе «На приёме» на вчерашнем визите читается как «пациент в кабинете».
+ * Раньше вместо этого чип гасился opacity — метка теряла контраст и хуже
+ * читалась, хотя приглушить требовалось значимость, а не сам текст.
  *
  * Правила видимости — в statusChipState.ts (чистая функция + тесты).
  */
@@ -40,6 +47,7 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 
 import {
   getStatusConfig,
@@ -61,9 +69,6 @@ export interface AppointmentStatusChipsProps {
   showPaymentMethodIcons?: boolean;
   /** Раскладка: строка списка — row, узкая колонка — column. */
   direction?: "row" | "column";
-  /** Не прятать статус-чип рядом с чипом оплаты. Для открытой карточки приёма:
-   *  места хватает, а врачу нужны оба факта — и «В работе», и «Оплачено». */
-  alwaysShowStatus?: boolean;
 }
 
 const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
@@ -71,7 +76,6 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   chipHeight,
   showPaymentMethodIcons = true,
   direction = "row",
-  alwaysShowStatus = false,
 }) => {
   const { t } = useT("appointments");
   const methods = appt.paymentMethods ?? [];
@@ -80,10 +84,12 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
     showStatusChip,
     showPayChip,
     showDiscountChip,
+    discountPercent,
     debtAmount,
+    totalAmount,
     isOverdue,
     paymentStyleStatus,
-  } = getStatusChipState(appt, { alwaysShowStatus });
+  } = getStatusChipState(appt);
 
   const statusCfg = getStatusConfig(appt.status);
 
@@ -97,12 +103,14 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       ...extra,
     });
 
+  // Просроченный: пунктирный контур + часы вместо иконки статуса. Текст
+  // остаётся в полном контрасте — гасим значимость, а не читаемость.
   const statusChip = (
     <Chip
       label={statusCfg.label}
-      icon={statusCfg.icon}
+      icon={isOverdue ? <ScheduleOutlined fontSize="small" /> : statusCfg.icon}
       size="small"
-      sx={chipSx(appt.status, isOverdue ? { opacity: 0.6 } : undefined)}
+      sx={chipSx(appt.status, isOverdue ? { borderStyle: "dashed" } : undefined)}
     />
   );
 
@@ -151,21 +159,57 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
         />
       )}
 
-      {/* Остаток при частичной оплате — главный операционный вопрос кассы. */}
+      {/* Остаток при частичной оплате — главный операционный вопрос кассы.
+          Заменяет собой чип «Частично оплачено»: «Долг 1100 из 1600» несёт
+          оба факта сразу. */}
       {debtAmount != null && (
         <Chip
-          label={t("chips.debt", { amount: formatKGS(debtAmount) })}
+          label={
+            totalAmount != null
+              ? t("chips.debtOfTotal", {
+                  amount: formatKGS(debtAmount),
+                  total: formatKGS(totalAmount),
+                })
+              : t("chips.debt", { amount: formatKGS(debtAmount) })
+          }
           size="small"
           sx={chipSx("debt")}
         />
       )}
 
+      {/* Процент берём из сумм приёма. Если сумм нет (укороченные формы приёма
+          в дроверах), показываем нейтральное «Со скидкой» — врать про процент
+          нельзя, на этом и ловилась прежняя жёсткая подпись «Скидка 100%». */}
       {showDiscountChip && (
         <Chip
-          label={t("list.fullDiscount")}
+          label={
+            discountPercent != null
+              ? t("chips.discountPercent", { percent: discountPercent })
+              : getStatusLabel("discounted")
+          }
           size="small"
           sx={chipSx("discounted")}
         />
+      )}
+
+      {/* «Страховка» — визит (со)оплачен страховой компанией. Живёт здесь, а
+          не в списке приёмов: раньше чип рисовался только там, и в карточке
+          приёма с историей пациента признак страховки пропадал. */}
+      {methods.includes("insurance") && (
+        <Tooltip title={t("list.insurancePayment")}>
+          <span>
+            <Chip
+              label={
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                  <HealthAndSafetyOutlined sx={{ fontSize: 16 }} />
+                  <span>{t("list.insurance")}</span>
+                </Stack>
+              }
+              size="small"
+              sx={chipSx("insurance")}
+            />
+          </span>
+        </Tooltip>
       )}
     </Stack>
   );

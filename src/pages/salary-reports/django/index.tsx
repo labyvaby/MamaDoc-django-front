@@ -43,6 +43,8 @@ import SalaryReportRow, {
 import { DjangoAddExpenseDrawer } from "../../../components/expenses/DjangoAddExpenseDrawer";
 import { PageHeader, MonthNavigation } from "../../../components/ui";
 import { AppointmentsSummaryCards } from "../../reports/components/AppointmentsSummaryCards";
+import { ReportTableCard } from "../../reports/components/ReportTableCard";
+import { compactTableSx } from "../../reports/components/reportTableStyles";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useT } from "../../../i18n/VerticalProvider";
 import { useCan } from "../../../hooks/useCan";
@@ -672,54 +674,44 @@ const DjangoSalaryReportsPage: React.FC = () => {
                     if (rows.length === 0) return;
 
                     const cols = group.cols;
+                    const groupNet = rows.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
                     rendered.push(
-                      <Paper
+                      <ReportTableCard
                         key={group.label}
-                        variant="outlined"
-                        sx={{
-                          borderRadius: 3,
-                          border: `1px solid ${theme.palette.divider}`,
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-                          overflow: "hidden",
-                        }}
+                        title={group.label}
+                        headerActions={
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`${rows.length} · ${formatKGS(groupNet)}`}
+                          />
+                        }
                       >
-                        <Box
-                          sx={{
-                            px: 2,
-                            py: 1,
-                            bgcolor: alpha(theme.palette.primary.main, 0.05),
-                            borderBottom: `1px solid ${theme.palette.divider}`,
-                          }}
-                        >
-                          <Typography variant="subtitle2" fontWeight={800} color="primary.main">
-                            {group.label}
-                          </Typography>
-                        </Box>
-                        <Table size="small" sx={{ fontSize: "0.75rem", "& .MuiTableCell-root": { fontSize: "0.75rem", py: 0.6, px: 1 } }}>
+                        <Table size="small" sx={compactTableSx}>
                           <TableHead>
                             <TableRow>
-                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.employee")}</TableCell>
+                              <TableCell>{t("columns.employee")}</TableCell>
                               {cols.hours && !report?.settings?.merge_night_into_day && (
                                 <>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.dayHours")}</TableCell>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.nightHours")}</TableCell>
+                                  <TableCell align="center">{t("columns.dayHours")}</TableCell>
+                                  <TableCell align="center">{t("columns.nightHours")}</TableCell>
                                 </>
                               )}
                               {cols.hours && (
-                                <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.hours")}</TableCell>
+                                <TableCell align="right">{t("columns.hours")}</TableCell>
                               )}
-                              {cols.appointments && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{cols.appointmentsLabel ?? t("columns.allAppointments")}</TableCell>}
-                              {cols.distributed && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "info.main" }}>{t("columns.distributed")}</TableCell>}
-                              {cols.createdBy && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "success.main" }}>{t("columns.createdBy")}</TableCell>}
-                              {cols.statusWaiting && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.waiting")}</TableCell>}
-                              {cols.statusCancelled && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.cancelled")}</TableCell>}
-                              {cols.statusDiscount && <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.discount")}</TableCell>}
-                              {cols.appointmentPay && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.forAppointments")}</TableCell>}
-                              {cols.bonuses && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.bonusesColumn")}</TableCell>}
-                              {cols.percent && <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.salary")}</TableCell>}
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>{t("columns.advance")}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>{t("columns.netSalary")}</TableCell>
-                              {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}
+                              {cols.appointments && <TableCell align="center">{cols.appointmentsLabel ?? t("columns.allAppointments")}</TableCell>}
+                              {cols.distributed && <TableCell align="center" sx={{ color: "info.onSurface" }}>{t("columns.distributed")}</TableCell>}
+                              {cols.createdBy && <TableCell align="center" sx={{ color: "success.onSurface" }}>{t("columns.createdBy")}</TableCell>}
+                              {cols.statusWaiting && <TableCell align="center">{t("columns.waiting")}</TableCell>}
+                              {cols.statusCancelled && <TableCell align="center">{t("columns.cancelled")}</TableCell>}
+                              {cols.statusDiscount && <TableCell align="center">{t("columns.discount")}</TableCell>}
+                              {cols.appointmentPay && <TableCell align="right">{t("columns.forAppointments")}</TableCell>}
+                              {cols.bonuses && <TableCell align="right">{t("columns.bonusesColumn")}</TableCell>}
+                              {cols.percent && <TableCell align="right">{t("columns.salary")}</TableCell>}
+                              <TableCell align="right" sx={{ color: "error.onSurface" }}>{t("columns.advance")}</TableCell>
+                              <TableCell align="right" sx={{ color: "primary.onSurface" }}>{t("columns.netSalary")}</TableCell>
+                              {canCreateExpense && <TableCell sx={{ width: 0 }} />}
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -738,50 +730,42 @@ const DjangoSalaryReportsPage: React.FC = () => {
                             ))}
                           </TableBody>
                         </Table>
-                      </Paper>
+                      </ReportTableCard>
                     );
                   });
 
                   // Rest
                   const rest = (report?.rows ?? []).filter((r) => !seen.has(r.employeeId));
                   if (rest.length > 0) {
+                    const restNet = rest.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
                     rendered.push(
-                      <Paper
+                      <ReportTableCard
                         key="other"
-                        variant="outlined"
-                        sx={{
-                          borderRadius: 3,
-                          border: `1px solid ${theme.palette.divider}`,
-                          overflow: "hidden",
-                        }}
+                        title={t("roleGroups.other")}
+                        muted
+                        headerActions={
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`${rest.length} · ${formatKGS(restNet)}`}
+                          />
+                        }
                       >
-                        <Box
-                          sx={{
-                            px: 2,
-                            py: 1,
-                            bgcolor: alpha(theme.palette.grey[500], 0.08),
-                            borderBottom: `1px solid ${theme.palette.divider}`,
-                          }}
-                        >
-                          <Typography variant="subtitle2" fontWeight={800} color="text.secondary">
-                            {t("roleGroups.other")}
-                          </Typography>
-                        </Box>
-                        <Table size="small" sx={{ fontSize: "0.75rem", "& .MuiTableCell-root": { fontSize: "0.75rem", py: 0.6, px: 1 } }}>
+                        <Table size="small" sx={compactTableSx}>
                           <TableHead>
                             <TableRow>
-                              <TableCell sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.employee")}</TableCell>
+                              <TableCell>{t("columns.employee")}</TableCell>
                               {!report?.settings?.merge_night_into_day && (
                                 <>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.dayHours")}</TableCell>
-                                  <TableCell align="center" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.nightHours")}</TableCell>
+                                  <TableCell align="center">{t("columns.dayHours")}</TableCell>
+                                  <TableCell align="center">{t("columns.nightHours")}</TableCell>
                                 </>
                               )}
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.hours")}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper" }}>{t("columns.salary")}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "error.main" }}>{t("columns.advance")}</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 800, bgcolor: "background.paper", color: "primary.main" }}>{t("columns.netSalary")}</TableCell>
-                              {canCreateExpense && <TableCell sx={{ bgcolor: "background.paper", width: 0 }} />}
+                              <TableCell align="right">{t("columns.hours")}</TableCell>
+                              <TableCell align="right">{t("columns.salary")}</TableCell>
+                              <TableCell align="right" sx={{ color: "error.onSurface" }}>{t("columns.advance")}</TableCell>
+                              <TableCell align="right" sx={{ color: "primary.onSurface" }}>{t("columns.netSalary")}</TableCell>
+                              {canCreateExpense && <TableCell sx={{ width: 0 }} />}
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -800,7 +784,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                             ))}
                           </TableBody>
                         </Table>
-                      </Paper>
+                      </ReportTableCard>
                     );
                   }
 

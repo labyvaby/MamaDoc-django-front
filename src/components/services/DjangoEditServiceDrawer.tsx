@@ -19,33 +19,28 @@ import {
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import { createFilterOptions } from "@mui/material/Autocomplete";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ServicePhotoUploader from "./ServicePhotoUploader";
+import RelatedProductsPicker from "./RelatedProductsPicker";
+import { hasInvalidQuantity, type RelatedProductRow } from "./relatedProductRows";
 import {
-  updateService,
-  uploadServiceImage,
   deleteServiceImage,
+  relatedProductsPayload,
   SERVICE_CATEGORIES_ENABLED,
   SERVICE_CATEGORY_LABELS,
   SERVICE_CATEGORY_OPTIONS,
   SERVICE_RELATED_PRODUCT_ENABLED,
+  updateService,
+  uploadServiceImage,
   type Service,
   type ServiceCategory,
 } from "../../api/catalog";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
-import { formatKGS } from "../../utility/format";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
-
-// Поиск товара по названию, штрихкоду и цене (как в форме приёма).
-const productFilter = createFilterOptions<DjangoProduct>({
-  matchFrom: "any",
-  stringify: (p) => `${p.name} ${p.barcode} ${p.price}`,
-});
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -91,12 +86,20 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
-  const [relatedProduct, setRelatedProduct] = React.useState<DjangoProduct | null>(null);
+  const [relatedProducts, setRelatedProducts] = React.useState<RelatedProductRow[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
-  // Загружаем товары и подставляем уже привязанный (по record.relatedProductId).
+  // Ключ вместо массива в deps — иначе эффект перезапускается на каждый рефетч
+  // услуг. В ключ входят количество и автосписание: правка состава меняет их
+  // без смены набора товаров.
+  const linkedComposition = record.relatedProducts;
+  const linkedCompositionKey = linkedComposition
+    .map((p) => `${p.id}:${p.quantity}:${p.autoWriteOff ? 1 : 0}`)
+    .join(",");
+
+  // Загружаем товары и подставляем уже привязанные (по record.relatedProducts).
   React.useEffect(() => {
     if (!open || !SERVICE_RELATED_PRODUCT_ENABLED) return;
     const ctrl = new AbortController();
@@ -107,19 +110,31 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         const active = list.filter((p) => p.isActive);
         // Привязанный товар мог быть деактивирован — держим его в опциях,
         // иначе пикер покажет пусто и сохранение молча очистит связь.
-        const linked =
-          record.relatedProductId != null
-            ? list.find((p) => p.id === record.relatedProductId) ?? null
-            : null;
-        setProducts(linked && !linked.isActive ? [linked, ...active] : active);
-        setRelatedProduct(linked);
+        const linkedRows = linkedComposition
+          .map((item) => {
+            const product = list.find((p) => p.id === item.id);
+            return product
+              ? {
+                  product,
+                  quantity: String(item.quantity),
+                  autoWriteOff: item.autoWriteOff,
+                }
+              : null;
+          })
+          .filter((row): row is RelatedProductRow => row !== null);
+        const inactiveLinked = linkedRows
+          .map((row) => row.product)
+          .filter((p) => !p.isActive);
+        setProducts(inactiveLinked.length > 0 ? [...inactiveLinked, ...active] : active);
+        setRelatedProducts(linkedRows);
       })
       .catch(() => {})
       .finally(() => {
         if (!ctrl.signal.aborted) setProductsLoading(false);
       });
     return () => ctrl.abort();
-  }, [open, record.relatedProductId, orgId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, linkedCompositionKey, orgId]);
 
   // Sync selectedBranches from record.branches when drawer opens.
   React.useEffect(() => {
@@ -144,7 +159,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setPhotoPreview(record.imageUrl ?? null);
       setRemovePhoto(false);
       setSelectedBranches([]);
-      setRelatedProduct(null);
+      setRelatedProducts([]);
       setBusy(false);
       setTouched(false);
       setSubmitError(null);
@@ -184,6 +199,15 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       notify?.({ type: "error", message: "Выберите хотя бы один филиал" });
       return;
     }
+    // Количество расходника валидируем до запроса: бэк на ≤ 0 отвечает 400 и
+    // откатывает PATCH целиком — вместе с названием и ценой.
+    if (hasInvalidQuantity(relatedProducts)) {
+      notify?.({
+        type: "error",
+        message: "Количество расходника должно быть больше 0 (до 3 знаков)",
+      });
+      return;
+    }
     setBusy(true);
     setSubmitError(null);
     try {
@@ -195,9 +219,13 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         isActive,
         branchIds: selectedBranches.map((b) => b.id),
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
-        ...(SERVICE_RELATED_PRODUCT_ENABLED
-          ? { relatedProductId: relatedProduct?.id ?? null }
-          : {}),
+        ...relatedProductsPayload(
+          relatedProducts.map((row) => ({
+            productId: row.product.id,
+            quantity: row.quantity,
+            autoWriteOff: row.autoWriteOff,
+          })),
+        ),
       });
       if (photoFile) {
         await uploadServiceImage(record.id, photoFile);
@@ -394,41 +422,16 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
               </Stack>
             )}
 
-            {/* Сопутствующий товар (со склада) */}
+            {/* Сопутствующие товары (со склада) */}
             {SERVICE_RELATED_PRODUCT_ENABLED && (
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Сопутствующий товар
-                </Typography>
-                <Autocomplete
-                  options={products}
-                  loading={productsLoading}
-                  filterOptions={productFilter}
-                  value={relatedProduct}
-                  onChange={(_, v) => setRelatedProduct(v)}
-                  getOptionLabel={(p) => `${p.name} — ${formatKGS(p.price)}`}
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  noOptionsText="Товары не найдены"
-                  disabled={busy}
-                  renderOption={(props, p) => (
-                    <li {...props} key={p.id}>
-                      <Stack>
-                        <Typography variant="body2">{p.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatKGS(p.price)} · остаток {p.stock} {p.unit}
-                        </Typography>
-                      </Stack>
-                    </li>
-                  )}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Например: Гель для УЗИ"
-                      helperText="Необязательно: товар со склада, связанный с услугой"
-                    />
-                  )}
-                />
-              </Stack>
+              <RelatedProductsPicker
+                options={products}
+                loading={productsLoading}
+                value={relatedProducts}
+                onChange={setRelatedProducts}
+                disabled={busy}
+                showErrors={touched}
+              />
             )}
 
             {/* Описание */}

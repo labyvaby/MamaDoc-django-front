@@ -42,6 +42,7 @@ import {
   type DjangoAppointment,
   type AppointmentServiceLine,
 } from "../../../api/appointments";
+import { formatConsumptionWarnings } from "../../../components/appointments/consumptionWarnings";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentListPanel from "./AppointmentListPanel";
 import AppointmentDetailsPanel from "./AppointmentDetailsPanel";
@@ -53,26 +54,37 @@ import RegistryFilterDrawer, {
   defaultRegistryFilters,
 } from "./RegistryFilterDrawer";
 import { useT } from "../../../i18n/VerticalProvider";
+import { getStatusAccent } from "../../../config/appointmentStatuses";
+import type { StatusCode } from "../../../config/appointmentStatuses";
 
 type PaymentFilter = "all" | PaymentStatus;
 
 /**
  * Чипы-сводки по оплате. «Оплачено» = paid, «Со скидкой» = discounted —
  * конвенция как в PaymentInfoBlock (старые статусы «Оплачено»/«Со скидкой»);
- * partial показываем как «Долг». Тона — как в DjangoPaymentDrawer.
+ * partial показываем как «Долг».
+ *
+ * Цвет берём не своей таблицей тонов, а через код статуса из
+ * appointmentStatuses: раньше фильтр «Со скидкой» был синим, а строки под ним
+ * — фиолетовыми, и «Долг» желтел в фильтре при красном чипе в строке.
+ *
+ * «Не оплачено» и «Возврат» своего чипа в строке не имеют, поэтому остаются
+ * нейтральными: красить треть списка красным как ошибку не за что — приём
+ * просто ещё не оплачен.
  */
 const PAYMENT_CHIPS: {
   value: PaymentFilter;
-  tone: "success" | "info" | "warning" | "error" | null;
+  /** Код статуса, из которого берётся цвет; null — нейтральный чип. */
+  statusCode: StatusCode | null;
   /** Показывать чип, только когда есть такие записи (редкие статусы). */
   onlyIfPresent?: boolean;
 }[] = [
-  { value: "all", tone: null },
-  { value: "paid", tone: "success" },
-  { value: "discounted", tone: "info" },
-  { value: "partial", tone: "warning" },
-  { value: "unpaid", tone: "error" },
-  { value: "refunded", tone: null, onlyIfPresent: true },
+  { value: "all", statusCode: null },
+  { value: "paid", statusCode: "paid" },
+  { value: "discounted", statusCode: "discounted" },
+  { value: "partial", statusCode: "debt" },
+  { value: "unpaid", statusCode: null },
+  { value: "refunded", statusCode: null, onlyIfPresent: true },
 ];
 
 type Props = {
@@ -258,28 +270,42 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   // ── Handlers ────────────────────────────────────────────────────────────────
   // Status-only PATCH: бэк с 23.07.2026 не проверяет overlap на смене статуса,
   // allowOverlap не нужен (frontend-backend-tickets-2026-07-23.md, п.2).
+  // Списание/возврат расходников склада приходит в consumptionWarnings ответа —
+  // показываем тостом, операцию это не отменяет.
+  const notifyConsumptionWarnings = React.useCallback(
+    (updated: DjangoAppointment) => {
+      const message = formatConsumptionWarnings(updated.consumptionWarnings);
+      if (message) notify?.({ type: "error", message });
+    },
+    [notify],
+  );
+
   const handleConfirmVisit = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "confirmed" });
+        notifyConsumptionWarnings(
+          await updateAppointment(appt.id, { status: "confirmed" }),
+        );
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [fetchData, notify],
+    [fetchData, notify, notifyConsumptionWarnings],
   );
 
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "arrived" });
+        notifyConsumptionWarnings(
+          await updateAppointment(appt.id, { status: "arrived" }),
+        );
         void fetchData();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [fetchData, notify],
+    [fetchData, notify, notifyConsumptionWarnings],
   );
 
   const isLoading = loading || extraLoading;
@@ -414,12 +440,11 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                   const count = paymentCounts.get(o.value) ?? 0;
                   if (o.onlyIfPresent && count === 0) return null;
                   const active = paymentFilter === o.value;
-                  const accent = o.tone ? theme.palette[o.tone].main : theme.palette.primary.main;
-                  const accentText = o.tone
-                    ? theme.palette.mode === "dark"
-                      ? theme.palette[o.tone].light
-                      : theme.palette[o.tone].dark
-                    : "primary.onSurface";
+                  const statusAccent = o.statusCode
+                    ? getStatusAccent(o.statusCode, theme)
+                    : null;
+                  const accent = statusAccent?.main ?? theme.palette.primary.main;
+                  const accentText = statusAccent?.text ?? "primary.onSurface";
                   return (
                     <Chip
                       key={o.value}

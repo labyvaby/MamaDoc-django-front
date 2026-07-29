@@ -26,7 +26,7 @@ import { useNotification } from "@refinedev/core";
 import { PageHeader } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
-import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useActiveScope } from "../../../hooks/useActiveScope";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
@@ -72,7 +72,10 @@ const DjangoWarehousesPage: React.FC = () => {
     const { activeBranch, loading: permLoading } = usePermissions();
     // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту: иначе склады
     // и товары приходят из организации, определённой бэком по сессии.
-    const orgId = useApiOrgId();
+    // orgReady, а не только permLoading: при перезагрузке сессии загрузка прав
+    // завершается раньше, чем приезжает активная организация, и запрос уходит
+    // без organizationId — а на такой бэк отвечает 400.
+    const { organizationId: orgId, orgReady } = useActiveScope();
     const activeBranchId = activeBranch?.id ?? null;
 
     // Data State
@@ -136,14 +139,14 @@ const DjangoWarehousesPage: React.FC = () => {
     }, [notify, canView, orgId]);
 
     React.useEffect(() => {
-        if (!permLoading && canView) loadInitialData();
-    }, [permLoading, canView, loadInitialData]);
+        if (!permLoading && orgReady && canView) loadInitialData();
+    }, [permLoading, orgReady, canView, loadInitialData]);
 
     // 2. Fetch Stock when Warehouse changes (с отменой предыдущего запроса).
     const stockAbortRef = React.useRef<AbortController | null>(null);
     const fetchStock = React.useCallback(async () => {
         stockAbortRef.current?.abort();
-        if (!selectedWarehouseId) {
+        if (!selectedWarehouseId || !orgReady) {
             setStock([]);
             return [];
         }
@@ -162,14 +165,14 @@ const DjangoWarehousesPage: React.FC = () => {
         } finally {
             if (stockAbortRef.current === controller) setLoadingStock(false);
         }
-    }, [selectedWarehouseId, notify, orgId]);
+    }, [selectedWarehouseId, notify, orgId, orgReady]);
 
     React.useEffect(() => {
         fetchStock();
     }, [fetchStock]);
 
     useFocusRefetch(() => {
-        if (!permLoading && canView) {
+        if (!permLoading && orgReady && canView) {
             loadInitialData();
             fetchStock();
         }
@@ -177,7 +180,7 @@ const DjangoWarehousesPage: React.FC = () => {
 
     // 3. Fetch Movements when Item Selected
     React.useEffect(() => {
-        if (selectedItem && (isDetailsOpen || !isMobile)) {
+        if (selectedItem && orgReady && (isDetailsOpen || !isMobile)) {
             const controller = new AbortController();
             const loadMoves = async () => {
                 try {
@@ -185,6 +188,7 @@ const DjangoWarehousesPage: React.FC = () => {
                     const data = await getStockMovements({
                         productId: selectedItem.productId,
                         warehouseId: selectedItem.warehouseId,
+                        organizationId: orgId,
                     }, controller.signal);
                     setMovements(data);
                 } catch (e) {
@@ -198,7 +202,7 @@ const DjangoWarehousesPage: React.FC = () => {
             return () => controller.abort();
         }
         return undefined;
-    }, [selectedItem, isDetailsOpen, isMobile]);
+    }, [selectedItem, isDetailsOpen, isMobile, orgId, orgReady]);
 
     // Auto-select first item on desktop
     React.useEffect(() => {
@@ -304,7 +308,7 @@ const DjangoWarehousesPage: React.FC = () => {
 
             const refreshProductId = updated?.productId ?? targetProductId;
             if (refreshProductId) {
-                const moves = await getStockMovements({ productId: refreshProductId, warehouseId: wId });
+                const moves = await getStockMovements({ productId: refreshProductId, warehouseId: wId, organizationId: orgId });
                 setMovements(moves);
             }
             if (newProductName) {
@@ -345,6 +349,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 const moves = await getStockMovements({
                     productId: updated.productId,
                     warehouseId: updated.warehouseId,
+                    organizationId: orgId,
                 });
                 setMovements(moves);
             }

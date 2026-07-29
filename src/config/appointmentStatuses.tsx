@@ -1,14 +1,19 @@
 import React from "react";
 import {
-  Cancel as CancelIcon,
-  CheckCircle as CheckCircleIcon,
-  HourglassEmpty as HourglassEmptyIcon,
-  Done as DoneIcon,
-  EventAvailable as EventAvailableIcon,
-  Build as BuildIcon,
-  Paid as PaidIcon,
-  PieChart as PieChartIcon,
-  CardGiftcard as CardGiftcardIcon,
+  CancelOutlined as CancelIcon,
+  PersonOffOutlined as PersonOffIcon,
+  HowToRegOutlined as HowToRegIcon,
+  HourglassEmptyOutlined as HourglassEmptyIcon,
+  FlagOutlined as FlagIcon,
+  EventAvailableOutlined as EventAvailableIcon,
+  PlayCircleOutlined as PlayCircleIcon,
+  PaymentsOutlined as PaymentsIcon,
+  CreditCardOutlined as CreditCardIcon,
+  PercentOutlined as PercentIcon,
+  WarningAmberOutlined as WarningAmberIcon,
+  HealthAndSafetyOutlined as HealthAndSafetyIcon,
+  PieChartOutlined as PieChartIcon,
+  CardGiftcardOutlined as CardGiftcardIcon,
 } from "@mui/icons-material";
 import type { SxProps, Theme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -50,10 +55,25 @@ export type AppointmentStatus =
  * Конфигурация цветов и иконок для каждого статуса
  */
 export interface StatusConfig {
-  color: "error" | "success" | "info" | "warning" | "default" | "secondary" | "purple";
+  color: "error" | "success" | "info" | "warning" | "default" | "secondary" | "purple" | "teal";
   icon: React.ReactElement;
   label: string;
+  /** Смысловая дорожка статуса — определяет стиль чипа (см. StatusTrack). */
+  track: StatusTrack;
 }
+
+/**
+ * Две смысловые дорожки чипов.
+ *
+ * В строке регистратуры рядом стоят метки о совершенно разном: как далеко
+ * продвинулся визит («Подтверждён», «Пациент здесь») и что с деньгами
+ * («Оплачено», «Долг 500 сом»). Раньше обе дорожки делили одну палитру, и
+ * пары совпадали цвет в цвет: подтверждён = оплачено картой (синий), пациент
+ * здесь = оплачено наличными (зелёный). Теперь дорожки различаются не только
+ * оттенком, но и формой чипа — визит рисуется контуром, деньги заливкой. Форма
+ * читается даже при близких оттенках и при дальтонизме, где цвет не помогает.
+ */
+export type StatusTrack = "visit" | "money";
 
 /**
  * Базовая конфигурация статуса (без цветов, т.к. они зависят от темы)
@@ -77,8 +97,10 @@ export type StatusCode =
   | "paid_cashless"
   | "discounted"
   | "free"
-  /** Остаток к оплате — чип «Долг N» рядом с «Частично оплачено». */
-  | "debt";
+  /** Остаток к оплате — чип «Долг N из M». */
+  | "debt"
+  /** Визит (со)оплачен страховой компанией. */
+  | "insurance";
 
 /**
  * Всё, что может прийти в статусе, → канонический код.
@@ -104,6 +126,7 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   discounted: "discounted",
   free: "free",
   debt: "debt",
+  insurance: "insurance",
   // legacy-значения Supabase (русские строки, приходят из старых данных)
   "ожидаем": "scheduled",
   "подтверждён": "confirmed",
@@ -127,23 +150,51 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   "со скидкой": "discounted",
   "бесплатно": "free",
   "долг": "debt",
+  "страховка": "insurance",
 };
 
-/** Цвет и иконка на код статуса. */
-const STATUS_VISUAL: Record<StatusCode, { color: StatusConfig["color"]; icon: React.ReactElement }> = {
-  scheduled: { color: "warning", icon: <HourglassEmptyIcon fontSize="small" /> },
-  confirmed: { color: "info", icon: <EventAvailableIcon fontSize="small" /> },
-  arrived: { color: "success", icon: <CheckCircleIcon fontSize="small" /> },
-  in_progress: { color: "warning", icon: <BuildIcon fontSize="small" /> },
-  completed: { color: "default", icon: <DoneIcon fontSize="small" /> },
-  canceled: { color: "error", icon: <CancelIcon fontSize="small" /> },
-  no_show: { color: "default", icon: <CancelIcon fontSize="small" /> },
-  paid: { color: "success", icon: <DoneIcon fontSize="small" /> },
-  partially_paid: { color: "purple", icon: <PieChartIcon fontSize="small" /> },
-  paid_cashless: { color: "info", icon: <DoneIcon fontSize="small" /> },
-  discounted: { color: "secondary", icon: <DoneIcon fontSize="small" /> },
-  free: { color: "success", icon: <CardGiftcardIcon fontSize="small" /> },
-  debt: { color: "warning", icon: <PaidIcon fontSize="small" /> },
+/**
+ * Цвет, иконка и дорожка на код статуса.
+ *
+ * Внутри дорожки цвета не повторяются — иначе два разных состояния снова
+ * станут неразличимы (тест `appointmentStatuses.test.ts` это фиксирует).
+ * Дорожка «визит» идёт шкалой прогресса: ничего не произошло (серый) →
+ * подтверждён (синий) → человек в холле (бирюзовый) → идёт приём (янтарный) →
+ * закрыт (серый), плюс два негативных исхода красным. Дорожка «деньги»
+ * оставляет зелёный только за фактом оплаты.
+ *
+ * Иконки у всех разные: раньше «Завершено», «Оплачено», «Оплачено картой» и
+ * «Со скидкой» несли одну галочку, и иконка не добавляла информации к цвету.
+ */
+const STATUS_VISUAL: Record<
+  StatusCode,
+  { color: StatusConfig["color"]; icon: React.ReactElement; track: StatusTrack }
+> = {
+  // ── Дорожка «ход визита» (контурные чипы) ──
+  scheduled: { color: "default", icon: <HourglassEmptyIcon fontSize="small" />, track: "visit" },
+  confirmed: { color: "info", icon: <EventAvailableIcon fontSize="small" />, track: "visit" },
+  arrived: { color: "teal", icon: <HowToRegIcon fontSize="small" />, track: "visit" },
+  in_progress: { color: "warning", icon: <PlayCircleIcon fontSize="small" />, track: "visit" },
+  completed: { color: "default", icon: <FlagIcon fontSize="small" />, track: "visit" },
+  canceled: { color: "error", icon: <CancelIcon fontSize="small" />, track: "visit" },
+  // Неявка — тоже неудачный исход, а не нейтральный: серым она не отличалась
+  // от «Завершено». Отличаем от отмены иконкой (человек, который не пришёл).
+  no_show: { color: "error", icon: <PersonOffIcon fontSize="small" />, track: "visit" },
+
+  // ── Дорожка «деньги» (чипы с заливкой) ──
+  // Оплата картой и наличными — один факт: чек закрыт. Способ показывает
+  // иконка, тратить на него отдельный цвет незачем (и синий нужен «Подтверждён»).
+  paid: { color: "success", icon: <PaymentsIcon fontSize="small" />, track: "money" },
+  paid_cashless: { color: "success", icon: <CreditCardIcon fontSize="small" />, track: "money" },
+  partially_paid: { color: "purple", icon: <PieChartIcon fontSize="small" />, track: "money" },
+  // Долг — не «предупреждение», а недостача денег: красный, как и было бы у
+  // кассира в голове. Янтарный он делил с «На приёме».
+  debt: { color: "error", icon: <WarningAmberIcon fontSize="small" />, track: "money" },
+  // Чек закрыт без денег — скидка 100% и «бесплатно» об одном и том же.
+  discounted: { color: "secondary", icon: <PercentIcon fontSize="small" />, track: "money" },
+  free: { color: "secondary", icon: <CardGiftcardIcon fontSize="small" />, track: "money" },
+  // Платит страховая: синий свободен в дорожке денег (у визита он контурный).
+  insurance: { color: "info", icon: <HealthAndSafetyIcon fontSize="small" />, track: "money" },
 };
 
 const ALL_STATUS_CODES = Object.keys(STATUS_VISUAL) as StatusCode[];
@@ -224,66 +275,99 @@ export const getStatusConfig = (status: unknown): StatusConfig => {
     color: visual.color,
     icon: visual.icon,
     label: getStatusLabel(status),
+    track: visual.track,
   };
 };
 
-/**
- * Получить цвета для статуса с учётом темы
- */
-const getStatusColors = (status: string, theme: Theme): { backgroundColor: string; textColor: string } => {
-  const config = getStatusConfig(status);
-  const isDark = theme.palette.mode === 'dark';
+/** Дорожка статуса. Неизвестный статус с бэка — про ход визита, не про деньги. */
+export const getStatusTrack = (status: unknown): StatusTrack => getStatusConfig(status).track;
 
-  switch (config.color) {
+/**
+ * Базовый тон статуса в палитре темы.
+ * `onSurface` — контраст-безопасный вариант цвета как текста на поверхности
+ * (см. theme.ts). У secondary и grey его нет, поэтому фолбэк на light/dark.
+ */
+const getStatusPalette = (
+  color: StatusConfig["color"],
+  theme: Theme,
+): { main: string; text: string } => {
+  const isDark = theme.palette.mode === "dark";
+  const from = (p: { main: string; light: string; dark: string; onSurface?: string }) => ({
+    main: p.main,
+    text: p.onSurface ?? (isDark ? p.light : p.dark),
+  });
+
+  switch (color) {
     case "error":
-      return {
-        backgroundColor: alpha(theme.palette.error.main, isDark ? 0.2 : 0.12),
-        textColor: isDark ? theme.palette.error.light : theme.palette.error.dark,
-      };
+      return from(theme.palette.error);
     case "success":
-      return {
-        backgroundColor: alpha(theme.palette.success.main, isDark ? 0.2 : 0.12),
-        textColor: isDark ? theme.palette.success.light : theme.palette.success.dark,
-      };
+      return from(theme.palette.success);
     case "warning":
-      return {
-        backgroundColor: alpha(theme.palette.warning.main, isDark ? 0.2 : 0.12),
-        textColor: isDark ? theme.palette.warning.light : theme.palette.warning.dark,
-      };
+      return from(theme.palette.warning);
     case "info":
-      return {
-        backgroundColor: alpha(theme.palette.info.main, isDark ? 0.2 : 0.12),
-        textColor: isDark ? theme.palette.info.light : theme.palette.info.dark,
-      };
+      return from(theme.palette.info);
     case "secondary":
-      return {
-        backgroundColor: alpha(theme.palette.secondary.main, isDark ? 0.2 : 0.12),
-        textColor: isDark ? theme.palette.secondary.light : theme.palette.secondary.dark,
-      };
+      return from(theme.palette.secondary);
     case "purple":
-      return {
-        backgroundColor: alpha(theme.palette.purple.main, isDark ? 0.25 : 0.15),
-        textColor: isDark ? theme.palette.purple.light : theme.palette.purple.dark,
-      };
+      return from(theme.palette.purple);
+    case "teal":
+      return from(theme.palette.teal);
     case "default":
     default:
       return {
-        backgroundColor: alpha(theme.palette.grey[500], isDark ? 0.2 : 0.12),
-        textColor: isDark ? theme.palette.grey[300] : theme.palette.grey[700],
+        main: theme.palette.grey[500],
+        text: isDark ? theme.palette.grey[300] : theme.palette.grey[700],
       };
   }
 };
 
 /**
+ * Акцент статуса для нестандартных элементов (кликабельные чипы-фильтры,
+ * подсветка строк) — там нужен сам цвет, а не готовый sx чипа.
+ *
+ * Экспортируется, чтобы фильтры и строки списка не расходились: фильтр «Со
+ * скидкой» был синим, пока чип в строке — фиолетовым, и клик по фильтру
+ * приводил к списку другого цвета.
+ */
+export const getStatusAccent = (
+  status: unknown,
+  theme: Theme,
+): { main: string; text: string } => getStatusPalette(getStatusConfig(status).color, theme);
+
+/**
+ * Получить цвета для статуса с учётом темы
+ */
+const getStatusColors = (
+  status: string,
+  theme: Theme,
+): { backgroundColor: string; textColor: string; borderColor: string } => {
+  const config = getStatusConfig(status);
+  const isDark = theme.palette.mode === "dark";
+  const { main, text } = getStatusPalette(config.color, theme);
+
+  return {
+    backgroundColor: alpha(main, isDark ? 0.2 : 0.12),
+    textColor: text,
+    borderColor: alpha(main, isDark ? 0.5 : 0.4),
+  };
+};
+
+/**
  * Получить sx prop для Chip компонента с кастомными цветами
  * Использует функцию от темы для поддержки светлой/тёмной темы
+ *
+ * Стиль зависит от дорожки статуса (StatusTrack): ход визита — контур на
+ * прозрачном фоне, деньги — заливка. Так «Подтверждён» и «Оплачено картой»
+ * различаются, даже если однажды снова сойдутся в оттенке.
  */
 export const getStatusChipSx = (status: string): SxProps<Theme> => {
   return (theme: Theme) => {
-    const { backgroundColor, textColor } = getStatusColors(status, theme);
+    const { backgroundColor, textColor, borderColor } = getStatusColors(status, theme);
+    const isVisit = getStatusTrack(status) === "visit";
 
     return {
-      backgroundColor,
+      backgroundColor: isVisit ? "transparent" : backgroundColor,
+      border: isVisit ? `1px solid ${borderColor}` : "1px solid transparent",
       color: textColor,
       fontWeight: 500,
       fontSize: "0.75rem",
@@ -293,8 +377,7 @@ export const getStatusChipSx = (status: string): SxProps<Theme> => {
       },
       // Hover effect для лучшей интерактивности
       "&:hover": {
-        backgroundColor,
-        opacity: 0.9,
+        backgroundColor: isVisit ? alpha(borderColor, 0.12) : backgroundColor,
       },
     };
   };

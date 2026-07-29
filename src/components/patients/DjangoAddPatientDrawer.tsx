@@ -54,6 +54,8 @@ import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
 import AddressAutocomplete from "./AddressAutocomplete";
 import { useT } from "../../i18n/VerticalProvider";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { orgWide } from "../../api/scope";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -76,6 +78,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
 }) => {
   const { t } = useT("patients");
   const { open: notify } = useNotification();
+  const orgId = useApiOrgId();
   const canManageBlacklist = useCan("patients.manage");
 
   // ── fields ─────────────────────────────────────────────────────────────────
@@ -148,7 +151,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       try {
         const { getSimilarPatients } = await import("../../api/patients");
         const fullPhone = composePhone(phoneCountryCode, phone) ?? "";
-        const list = await getSimilarPatients(fullPhone, ctrl.signal);
+        const list = await getSimilarPatients(fullPhone, ctrl.signal, orgWide(orgId));
         if (!ctrl.signal.aborted) setDuplicates(list);
       } catch {
         // ignore
@@ -158,7 +161,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
       clearTimeout(id);
       ctrl.abort();
     };
-  }, [phone, phoneCountryCode, open]);
+  }, [phone, phoneCountryCode, open, orgId]);
 
   // ── валидация ─────────────────────────────────────────────────────────────
   const v = useFormValidation({

@@ -114,11 +114,17 @@ declare module "@mui/material/styles" {
   // Кастомный акцент «purple/indigo» — единый токен вместо расползшихся по
   // коду хексов (#7c6af7, #6366f1, #4f46e5 и т.п.). Используется для ночных
   // смен, процентных надбавок и фиолетового статуса.
+  //
+  // «teal» — шестой акцент, введён под статус приёма «Пациент здесь». Раньше он
+  // делил зелёный с «Оплачено», и в строке регистратуры два разных смысла
+  // (человек в холле / чек закрыт) выглядели одинаково.
   interface Palette {
     purple: PaletteColor;
+    teal: PaletteColor;
   }
   interface PaletteOptions {
     purple?: SimplePaletteColorOptions;
+    teal?: SimplePaletteColorOptions;
   }
 }
 
@@ -175,7 +181,7 @@ export const UI_SCALE_FACTORS: Record<UiScale, number> = {
 };
 
 /** Плотность сайдбара — расстояние между пунктами меню. */
-export type SidebarDensity = "compact" | "normal" | "spacious";
+export type SidebarDensity = "compact" | "normal" | "comfortable" | "spacious";
 export const DEFAULT_SIDEBAR_DENSITY: SidebarDensity = "normal";
 /** Вертикальный padding пункта и зазор между пунктами (spacing-юниты MUI). */
 export const SIDEBAR_DENSITY_TOKENS: Record<
@@ -184,8 +190,10 @@ export const SIDEBAR_DENSITY_TOKENS: Record<
 > = {
   compact: { itemPaddingY: 0.25, itemGap: 0 },
   normal: { itemPaddingY: 0.5, itemGap: 0 },
+  comfortable: { itemPaddingY: 0.625, itemGap: 0.25 },
   spacious: { itemPaddingY: 0.75, itemGap: 0.5 },
 };
+export const SIDEBAR_DENSITIES = Object.keys(SIDEBAR_DENSITY_TOKENS) as SidebarDensity[];
 
 export type ThemeCustomization = {
   primaryColor?: string;
@@ -329,6 +337,14 @@ export function getAppTheme(
       ? "#fff"
       : "rgba(0, 0, 0, 0.87)";
 
+  // Единый кастомный токен teal. Взят между info (синий) и success (зелёный),
+  // но заметно холоднее зелёного — чтобы «Пациент здесь» не читался как оплата.
+  const tealMain = "#0d9488";
+  const tealContrastText =
+    getContrastRatio(tealMain, "#ffffff") >= getContrastRatio(tealMain, "#000000")
+      ? "#fff"
+      : "rgba(0, 0, 0, 0.87)";
+
   let theme = createTheme({
     ...base,
     appLayout,
@@ -353,6 +369,9 @@ export function getAppTheme(
       secondary: {
         ...base.palette.secondary,
         main: base.palette.secondary.main,
+        // lighter/onSurface были undefined — а secondary носит чипы «Скидка
+        // 100%» и «Бесплатно», где цвет идёт текстом по поверхности.
+        ...accent(base.palette.secondary.main),
       },
       // Статусным цветам добавляем lighter/onSurface (были undefined).
       error: { ...base.palette.error, ...accent(base.palette.error.main) },
@@ -366,6 +385,14 @@ export function getAppTheme(
         dark: darken(purpleMain, 0.2),
         contrastText: purpleContrastText,
         ...accent(purpleMain),
+      },
+      // Кастомный акцент teal — статус «Пациент здесь».
+      teal: {
+        main: tealMain,
+        light: lighten(tealMain, 0.25),
+        dark: darken(tealMain, 0.2),
+        contrastText: tealContrastText,
+        ...accent(tealMain),
       },
       background: {
         default: backgroundDefault,

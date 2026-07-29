@@ -49,6 +49,7 @@ import {
   type DjangoAppointment,
   type HomeDashboard,
 } from "../../api/appointments";
+import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
 import { getDjangoEmployees } from "../../api/staff";
 import { getScheduleRules, getScheduleExceptions } from "../../api/scheduling";
 import { computeDayOccurrences } from "../schedule/django/occurrences";
@@ -556,32 +557,45 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setPaymentTarget(appt);
   }, []);
 
+  // Списание/возврат расходников склада: бэк складывает результат операции в
+  // consumptionWarnings любого ответа по приёму. Показываем тостом — нехватка
+  // не отменяет ни сохранение, ни смену статуса.
+  const notifyConsumptionWarnings = React.useCallback(
+    (updated: DjangoAppointment) => {
+      const message = formatConsumptionWarnings(updated.consumptionWarnings);
+      if (message) notify?.({ type: "error", message });
+    },
+    [notify],
+  );
+
   // «Подтвердить»: пациент подтвердил визит по телефону, scheduled → confirmed.
   // Бэк с 23.07.2026 не запускает overlap-проверку на status-only PATCH, поэтому
   // allowOverlap здесь больше не нужен (frontend-backend-tickets-2026-07-23.md, п.2).
   const handleConfirmVisit = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "confirmed" });
+        const updated = await updateAppointment(appt.id, { status: "confirmed" });
+        notifyConsumptionWarnings(updated);
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [refresh, notify],
+    [refresh, notify, notifyConsumptionWarnings],
   );
 
   // "Пациент здесь": scheduled → arrived (status-only, overlap не проверяется).
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
-        await updateAppointment(appt.id, { status: "arrived" });
+        const updated = await updateAppointment(appt.id, { status: "arrived" });
+        notifyConsumptionWarnings(updated);
         void refresh();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [refresh, notify],
+    [refresh, notify, notifyConsumptionWarnings],
   );
 
   // Врач начинает приём → статус in_progress («На приёме»). Используем
@@ -606,7 +620,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     try {
       if (confirm.mode === "cancel") {
         // status-only PATCH: бэк не проверяет overlap, отмена дубля проходит.
-        await updateAppointment(confirm.appt.id, { status: "canceled" });
+        // Отмена завершённого приёма возвращает расходники на склад — возврат
+        // тоже приходит с предупреждениями (например, склада у филиала нет).
+        notifyConsumptionWarnings(
+          await updateAppointment(confirm.appt.id, { status: "canceled" }),
+        );
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
@@ -618,7 +636,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     } finally {
       setConfirmBusy(false);
     }
-  }, [confirm, refresh, notify]);
+  }, [confirm, refresh, notify, notifyConsumptionWarnings]);
 
   const handleCreated = React.useCallback(() => {
     setCreateOpen(false);

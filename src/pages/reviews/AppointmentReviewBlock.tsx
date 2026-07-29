@@ -1,11 +1,11 @@
 import React from "react";
 import {
-  Box,
   Button,
   Chip,
   CircularProgress,
   Rating,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
@@ -31,6 +31,10 @@ interface Props {
  * Индикатор статуса отзыва + кнопка «Запросить отзыв» / «Переотправить»
  * внутри карточки приёма. Самогейтится по правам reviews.view/manage —
  * для ролей без доступа не рендерит ничего.
+ *
+ * Рендерится одной строкой (без заголовка и обёртки), чтобы вставать в общий
+ * ряд чипов статуса карточки: отдельный блок тратил три строки на «Отзыв /
+ * не запрашивался / кнопка».
  */
 const AppointmentReviewBlock: React.FC<Props> = ({ appointmentId }) => {
   const canView = useCan("reviews.view");
@@ -67,18 +71,21 @@ const AppointmentReviewBlock: React.FC<Props> = ({ appointmentId }) => {
   const showButton = canManage && !isActive && !mutation.isPending;
   const statusMeta = latest ? REQUEST_STATUS_META[latest.status] : null;
 
+  // Отзыва нет и запросить его некому — строку не занимаем (раньше здесь
+  // висело бесполезное «Отзыв не запрашивался»).
+  if (!query.isLoading && !latest && !showButton) return null;
+
   return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-        Отзыв
-      </Typography>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        {query.isLoading ? (
-          <CircularProgress size={16} />
-        ) : latest ? (
+    <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+      {query.isLoading ? (
+        <CircularProgress size={16} />
+      ) : (
+        latest && (
           <>
             {statusMeta && (
-              <Chip label={statusMeta.label} color={statusMeta.color} size="small" />
+              <Tooltip title="Отзыв">
+                <Chip label={statusMeta.label} color={statusMeta.color} size="small" />
+              </Tooltip>
             )}
             {latest.rating != null && (
               <Rating value={latest.rating} readOnly size="small" />
@@ -90,35 +97,31 @@ const AppointmentReviewBlock: React.FC<Props> = ({ appointmentId }) => {
             )}
             {latest.sentAt && (
               <Typography variant="caption" color="text.disabled">
-                · {dayjs(latest.sentAt).format("DD.MM HH:mm")}
+                {dayjs(latest.sentAt).format("DD.MM HH:mm")}
               </Typography>
             )}
           </>
-        ) : (
-          <Typography variant="caption" color="text.disabled">
-            Отзыв не запрашивался
-          </Typography>
-        )}
+        )
+      )}
 
-        {showButton && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={
-              mutation.isPending ? (
-                <CircularProgress size={14} />
-              ) : (
-                <StarOutlineRounded />
-              )
-            }
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
-          >
-            {latest ? "Переотправить" : "Запросить отзыв"}
-          </Button>
-        )}
-      </Stack>
-    </Box>
+      {showButton && (
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={
+            mutation.isPending ? (
+              <CircularProgress size={14} />
+            ) : (
+              <StarOutlineRounded />
+            )
+          }
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending}
+        >
+          {latest ? "Переотправить" : "Запросить отзыв"}
+        </Button>
+      )}
+    </Stack>
   );
 };
 

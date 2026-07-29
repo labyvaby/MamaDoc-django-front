@@ -9,7 +9,7 @@ import { useNotification } from "@refinedev/core";
 import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
-import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useActiveScope } from "../../../hooks/useActiveScope";
 import { useCan } from "../../../hooks/useCan";
 import { useFocusRefetch } from "../../../hooks/useFocusRefetch";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
@@ -44,8 +44,10 @@ const DjangoStoragePage: React.FC = () => {
     const canView = useCan("warehouse.view");
     const canManage = useCan("warehouse.manage");
     const { loading: permLoading, activeBranch } = usePermissions();
-    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
-    const orgId = useApiOrgId();
+    // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту: без него
+    // остатки, товары и склады отвечают 400. Гейт по orgReady, а не только по
+    // permLoading: права успевают загрузиться раньше активной организации.
+    const { organizationId: orgId, orgReady } = useActiveScope();
 
     // State
     const [warehouses, setWarehouses] = React.useState<DjangoWarehouse[]>([]);
@@ -113,16 +115,16 @@ const DjangoStoragePage: React.FC = () => {
     }, [orgId]);
 
     React.useEffect(() => {
-        if (!permLoading && canView) {
+        if (!permLoading && orgReady && canView) {
             fetchInventory();
             fetchProductsForSelector();
             fetchWarehouses();
         }
-    }, [permLoading, canView, fetchInventory, fetchProductsForSelector, fetchWarehouses]);
+    }, [permLoading, orgReady, canView, fetchInventory, fetchProductsForSelector, fetchWarehouses]);
 
     // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
     useFocusRefetch(() => {
-        if (!permLoading && canView) {
+        if (!permLoading && orgReady && canView) {
             fetchInventory();
             fetchProductsForSelector();
             fetchWarehouses();
@@ -131,7 +133,7 @@ const DjangoStoragePage: React.FC = () => {
 
     // Fetch Movements when Item Selected
     React.useEffect(() => {
-        if (selectedItem) {
+        if (selectedItem && orgReady) {
             const controller = new AbortController();
             const loadMovements = async () => {
                 try {
@@ -139,6 +141,7 @@ const DjangoStoragePage: React.FC = () => {
                     const data = await getStockMovements({
                         productId: selectedItem.productId,
                         warehouseId: selectedItem.warehouseId,
+                        organizationId: orgId,
                     }, controller.signal);
                     setMovements(data);
                 } catch (e) {
@@ -153,7 +156,7 @@ const DjangoStoragePage: React.FC = () => {
         }
         setMovements([]);
         return undefined;
-    }, [selectedItem]);
+    }, [selectedItem, orgId, orgReady]);
 
     // Auto-select first item on desktop
     React.useEffect(() => {
@@ -252,6 +255,7 @@ const DjangoStoragePage: React.FC = () => {
                 const updatedMovements = await getStockMovements({
                     productId: updated.productId,
                     warehouseId,
+                    organizationId: orgId,
                 });
                 setMovements(updatedMovements);
             }
@@ -293,6 +297,7 @@ const DjangoStoragePage: React.FC = () => {
                 const updatedMovements = await getStockMovements({
                     productId: updated.productId,
                     warehouseId: updated.warehouseId,
+                    organizationId: orgId,
                 });
                 setMovements(updatedMovements);
             }
