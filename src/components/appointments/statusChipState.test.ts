@@ -21,14 +21,31 @@ const appt = (over: Partial<AppointmentStatusSource>): AppointmentStatusSource =
 const state = (over: Partial<AppointmentStatusSource>) =>
   getStatusChipState(appt(over), { now: NOW });
 
-describe("статус визита виден рядом с деньгами", () => {
-  // Регистратуре нужны оба факта сразу: пришёл ли человек и закрыт ли чек.
-  // Пока чипы сливались по цвету, статус прятали за платёжными — и по
-  // оплаченной строке нельзя было понять, ждёт пациент в холле или нет.
-  it("оплаченный приём показывает и статус, и оплату", () => {
-    const s = state({ status: "arrived", paymentStatus: "paid", paidTotal: "1600.00" });
+describe("статус визита виден, пока чек не закрыт", () => {
+  // Пока деньги не собраны, регистратуре нужны оба факта: пришёл ли человек и
+  // сколько осталось внести. После закрытия чека статус хода визита прячем.
+  it("неоплаченный приём показывает статус", () => {
+    const s = state({ status: "arrived", paymentStatus: "unpaid" });
     expect(s.showStatusChip).toBe(true);
+    expect(s.showPayChip).toBe(false);
+  });
+
+  it("полностью оплаченный приём статуса визита не показывает", () => {
+    const s = state({ status: "arrived", paymentStatus: "paid", paidTotal: "1600.00" });
+    expect(s.showStatusChip).toBe(false);
     expect(s.showPayChip).toBe(true);
+  });
+
+  it("частичная оплата чек не закрывает — статус остаётся", () => {
+    const s = state({
+      status: "arrived",
+      paymentStatus: "partial",
+      paidTotal: "500.00",
+      debt: "1100.00",
+      totalAmount: "1600.00",
+    });
+    expect(s.showStatusChip).toBe(true);
+    expect(s.debtAmount).toBe(1100);
   });
 
   it("«Завершено» без оплаты не остаётся вообще без чипа", () => {
@@ -36,10 +53,34 @@ describe("статус визита виден рядом с деньгами", 
     expect(s.showStatusChip).toBe(true);
   });
 
+  it("скидка на всю сумму закрывает чек — статус прячем", () => {
+    const s = state({
+      status: "arrived",
+      paymentStatus: "discounted",
+      paidTotal: "0.00",
+      totalAmount: "1600.00",
+      discountAmount: "1600.00",
+    });
+    expect(s.showDiscountChip).toBe(true);
+    expect(s.showStatusChip).toBe(false);
+  });
+
+  it("частичная скидка без оплаты чек не закрывает", () => {
+    const s = state({
+      status: "arrived",
+      paymentStatus: "discounted",
+      paidTotal: "0.00",
+      totalAmount: "1600.00",
+      discountAmount: "800.00",
+    });
+    expect(s.showStatusChip).toBe(true);
+  });
+
   it("100% скидка даёт отдельный чип вместо чипа оплаты", () => {
     const s = state({ status: "scheduled", paymentStatus: "discounted", paidTotal: "0.00" });
     expect(s.showDiscountChip).toBe(true);
     expect(s.showPayChip).toBe(false);
+    // Сумм нет — полноту скидки не утверждаем, статус на месте.
     expect(s.showStatusChip).toBe(true);
   });
 });
@@ -111,7 +152,7 @@ describe("процент скидки", () => {
     expect(s.showDiscountChip).toBe(false);
   });
 
-  it("заключение не скрывает статус", () => {
+  it("заключение само по себе статус не скрывает", () => {
     const s = state({
       status: "in_progress",
       services: [{ conclusionState: "completed" }] as AppointmentStatusSource["services"],
