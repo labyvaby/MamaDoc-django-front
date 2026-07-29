@@ -170,6 +170,7 @@
     "title": "Расходники",
     "hint": "Списываются со склада при завершении, в чек не входят",
     "quantity": "× {{quantity}}{{unit}}",
+    "previewLabel": "Расходники:",
     "stock": "остаток {{stock}}",
     "stockUnknown": "остаток неизвестен — у филиала нет склада",
     "afterCompletion": "после завершения {{resulting}}",
