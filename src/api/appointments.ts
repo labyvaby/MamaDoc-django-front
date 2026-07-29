@@ -160,9 +160,12 @@ export const APPOINTMENT_CONSUMPTIONS_ENABLED = true;
 
 /**
  * Расходник строки услуги (фазы 2–3 состава услуги, гайд
- * `frontend-service-related-products.md` §4). Это **не** товар чека:
- * `totalAmount` от расходников не меняется, пациент за них отдельно не платит —
- * их стоимость уже внутри цены услуги.
+ * `frontend-service-related-products.md` §4).
+ *
+ * Бесплатный расходник (`billable: false`) в деньги не идёт — его стоимость
+ * считается внутри цены услуги. Платный (`billable: true`, тикет
+ * `backend_ticket_service_consumptions_billable.md`, кейс «Импланон»)
+ * оплачивается сверх услуги: его `lineTotal` бэк включает в `totalAmount`.
  *
  * ⚠ `id` — id строки расхода, НЕ id товара (в справочнике услуги наоборот).
  */
@@ -174,6 +177,16 @@ export interface AppointmentConsumption {
   /** Количество из состава услуги × quantity строки услуги (decimal-строка). */
   quantity: string;
   autoWriteOff: boolean;
+  /** Оплачивается сверх цены услуги; false — включён в цену услуги. */
+  billable?: boolean;
+  /**
+   * Снапшот цены товара на момент создания строки (decimal-строка): смена
+   * прайса не меняет сумму уже созданного приёма. Приходит и у бесплатных
+   * строк — справочно.
+   */
+  unitPrice?: string;
+  /** `unitPrice × quantity`; "0.00" (или отсутствует) у бесплатной строки. */
+  lineTotal?: string;
   /**
    * `service_template` — количество следует строке услуги (автопересчёт);
    * `manual` — оператор правил строку, автопересчёт для неё выключен.
@@ -211,6 +224,28 @@ export interface AppointmentServiceLine {
    * справочника уже созданный приём не меняет). Нормализуется в массив.
    */
   consumptions: AppointmentConsumption[];
+}
+
+/**
+ * Сумма платного расходника. Берём `lineTotal` бэка, а если его нет (старый
+ * ответ) — считаем сами из `unitPrice × quantity`. У бесплатной строки — 0.
+ */
+export function consumptionLineTotal(c: AppointmentConsumption): number {
+  if (!c.billable) return 0;
+  const lineTotal = parseFloat(String(c.lineTotal ?? ""));
+  if (Number.isFinite(lineTotal) && lineTotal > 0) return lineTotal;
+  const unitPrice = parseFloat(String(c.unitPrice ?? "")) || 0;
+  const quantity = parseFloat(String(c.quantity)) || 0;
+  return unitPrice * quantity;
+}
+
+/** Сколько платные расходники добавляют к сумме приёма (по всем строкам услуг). */
+export function billableConsumptionsTotal(services: AppointmentServiceLine[]): number {
+  return services.reduce(
+    (sum, line) =>
+      sum + (line.consumptions ?? []).reduce((s, c) => s + consumptionLineTotal(c), 0),
+    0,
+  );
 }
 
 /** Compact product reference embedded in an appointment product line. */
@@ -373,6 +408,11 @@ export interface AppointmentConsumptionCreate {
   quantity?: string;
   /** По умолчанию true. */
   autoWriteOff?: boolean;
+  /**
+   * Платность строки. По умолчанию берётся из состава услуги; цену не
+   * передаём — `unitPrice` бэк снапшотит сам из прайса товара.
+   */
+  billable?: boolean;
 }
 
 export interface AppointmentServiceLineCreate {
@@ -455,6 +495,7 @@ interface BackendConsumption {
   productId: number;
   quantity?: string;
   autoWriteOff?: boolean;
+  billable?: boolean;
 }
 
 /** Backend service line shape (write path). */
@@ -529,6 +570,7 @@ function toBackendServiceLines(services: AppointmentServiceLineCreate[]): Backen
           if (item.id != null) out.id = item.id;
           if (item.quantity !== undefined && item.quantity !== "") out.quantity = item.quantity;
           if (item.autoWriteOff !== undefined) out.autoWriteOff = item.autoWriteOff;
+          if (item.billable !== undefined) out.billable = item.billable;
           return out;
         });
       }

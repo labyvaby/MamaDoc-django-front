@@ -194,6 +194,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             productId: row.product.id,
             quantity: row.quantity,
             autoWriteOff: row.autoWriteOff,
+            billable: row.billable,
           })),
         ),
       });

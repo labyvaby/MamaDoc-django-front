@@ -106,6 +106,16 @@ const ServiceDetailsPanel: React.FC<Props> = ({
     };
   }, [serviceId, refreshToken]);
 
+  // Сколько платные позиции состава добавят к цене услуги в приёме.
+  const billableExtra = React.useMemo(
+    () =>
+      (service?.relatedProducts ?? []).reduce(
+        (sum, p) => (p.billable ? sum + p.price * p.quantity : sum),
+        0,
+      ),
+    [service],
+  );
+
   return (
     <Card
       variant="outlined"
@@ -377,15 +387,36 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                       }
                       // Остаток здесь — по всей организации: в справочнике услуги
                       // филиала нет, склад филиала считается в приёме.
-                      value={
-                        SERVICE_RELATED_PRODUCTS_MULTI_ENABLED && !p.autoWriteOff
-                          ? `${formatKGS(p.price)} · остаток ${formatQuantity(p.stock)} · не списывается`
-                          : `${formatKGS(p.price)} · остаток ${formatQuantity(p.stock)}`
-                      }
+                      value={[
+                        `${formatKGS(p.price)} · остаток ${formatQuantity(p.stock)}`,
+                        ...(SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
+                          ? [
+                              p.billable
+                                ? `+ ${formatKGS(p.price * p.quantity)} к цене`
+                                : "в цене услуги",
+                              ...(p.autoWriteOff ? [] : ["не списывается"]),
+                            ]
+                          : []),
+                      ].join(" · ")}
                       active
                     />
                   ))}
                 </Box>
+                {billableExtra > 0 && (
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="baseline"
+                    sx={{ mt: 1.25 }}
+                  >
+                    <Typography variant="caption" color="text.secondary">
+                      Оплачивается сверх услуги
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      + {formatKGS(billableExtra)}
+                    </Typography>
+                  </Stack>
+                )}
               </Box>
             )}
 

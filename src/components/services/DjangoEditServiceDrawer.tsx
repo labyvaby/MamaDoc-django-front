@@ -92,11 +92,11 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
   // Ключ вместо массива в deps — иначе эффект перезапускается на каждый рефетч
-  // услуг. В ключ входят количество и автосписание: правка состава меняет их
-  // без смены набора товаров.
+  // услуг. В ключ входят количество, автосписание и платность: правка состава
+  // меняет их без смены набора товаров.
   const linkedComposition = record.relatedProducts;
   const linkedCompositionKey = linkedComposition
-    .map((p) => `${p.id}:${p.quantity}:${p.autoWriteOff ? 1 : 0}`)
+    .map((p) => `${p.id}:${p.quantity}:${p.autoWriteOff ? 1 : 0}:${p.billable ? 1 : 0}`)
     .join(",");
 
   // Загружаем товары и подставляем уже привязанные (по record.relatedProducts).
@@ -118,6 +118,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                   product,
                   quantity: String(item.quantity),
                   autoWriteOff: item.autoWriteOff,
+                  billable: item.billable,
                 }
               : null;
           })
@@ -224,6 +225,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
             productId: row.product.id,
             quantity: row.quantity,
             autoWriteOff: row.autoWriteOff,
+            billable: row.billable,
           })),
         ),
       });

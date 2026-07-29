@@ -53,7 +53,9 @@ import {
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
-import ServiceConsumptionsPreview from "./components/ServiceConsumptionsPreview";
+import ServiceConsumptionsPreview, {
+  previewBillableTotal,
+} from "./components/ServiceConsumptionsPreview";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import {
@@ -469,7 +471,19 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       }, 0),
     [validProductRows, products],
   );
-  const totalCost = servicesTotal + productsTotal;
+  // Платные позиции состава услуги (billable) бэк включает в сумму приёма —
+  // значит и в итоге формы они должны быть, иначе регистратор назовёт пациенту
+  // сумму меньше той, что попадёт в чек.
+  const consumptionsTotal = React.useMemo(
+    () =>
+      validRows.reduce((sum, r) => {
+        const svc = data.services.find((s) => s.id === r.serviceId);
+        if (!svc) return sum;
+        return sum + previewBillableTotal(svc.relatedProducts, r.quantity);
+      }, 0),
+    [validRows, data.services],
+  );
+  const totalCost = servicesTotal + productsTotal + consumptionsTotal;
 
   // Суммарная длительность услуг — по ней видно, на сколько занят слот.
   const totalDuration = React.useMemo(
@@ -1453,6 +1467,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                               {t("addDrawer.productsSection")}
                             </Typography>
                             <Typography variant="body2">{formatKGS(productsTotal)}</Typography>
+                          </Stack>
+                        )}
+                        {consumptionsTotal > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("consumptions.billableTotal")}
+                            </Typography>
+                            <Typography variant="body2">{formatKGS(consumptionsTotal)}</Typography>
                           </Stack>
                         )}
                         {totalDuration > 0 && (
