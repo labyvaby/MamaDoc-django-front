@@ -132,8 +132,16 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const canManageSpecs = useCan("staff.specializations.manage");
   const canViewDocs = useCan("staff.documents.view");
   const canManageDocs = useCan("staff.documents.manage");
-  const canViewServices = useCan("staff.services.view");
-  const canManageServices = useCan("staff.services.manage");
+  // Привязка услуг к сотруднику. Кодов staff.services.* на бэке НЕ существует
+  // (проверено по /api/rbac/permissions/ 29.07.2026) — гейт на них скрывал
+  // секцию у всех, кроме суперюзера. Реальные права: каталог услуг —
+  // catalog.view, изменение карточки сотрудника — staff.update. Тот же гейт,
+  // что в EmployeeServicesDrawer, который ходит в те же эндпоинты
+  // /staff/employees/{id}/services/.
+  const canViewCatalog = useCan("catalog.view");
+  const canUpdateStaff = useCan("staff.update");
+  const canViewServices = canViewCatalog;
+  const canManageServices = canViewCatalog && canUpdateStaff;
   const canViewPayroll = useCan("payroll.view");
   const canManagePayroll = useCan("payroll.manage");
 
@@ -490,11 +498,17 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           assignments.filter((a) => a.isActive).map((a) => a.service.id),
         );
 
+        // Ошибки привязки нельзя глотать молча: при 403 (роли не выдано право
+        // на эндпоинт) пользователь иначе видит «Сохранено», а услуги не
+        // изменились.
+        let servicesFailed = 0;
+
         for (const a of assignments) {
           if (a.isActive && !selectedIds.has(a.service.id)) {
             try {
               await updateEmployeeService(empId, a.id, { isActive: false });
             } catch (e) {
+              servicesFailed += 1;
               console.warn("Could not deactivate service assignment:", e);
             }
           }
@@ -507,16 +521,25 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
               try {
                 await updateEmployeeService(empId, existing.id, { isActive: true });
               } catch (e) {
+                servicesFailed += 1;
                 console.warn("Could not reactivate service assignment:", e);
               }
             } else {
               try {
                 await assignEmployeeService(empId, { serviceId: svc.id });
               } catch (e) {
+                servicesFailed += 1;
                 console.warn("Could not assign service:", e);
               }
             }
           }
+        }
+
+        if (servicesFailed > 0) {
+          notify?.({
+            type: "error",
+            message: "Данные сохранены, но услуги сотрудника не удалось обновить",
+          });
         }
 
         // Справочники формы приёма (исполнители + матрица услуга↔сотрудник)
