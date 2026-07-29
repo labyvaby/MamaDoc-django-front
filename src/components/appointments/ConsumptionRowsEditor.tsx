@@ -3,6 +3,7 @@ import {
   Autocomplete,
   Box,
   ButtonBase,
+  Chip,
   Collapse,
   IconButton,
   Stack,
@@ -20,9 +21,9 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 // у расходника приёма та же семантика, что у состава услуги в справочнике.
 import { parseRelatedQuantity } from "../../api/catalog";
 import type { DjangoProduct } from "../../api/warehouse";
-import { formatQuantity } from "../../utility/format";
+import { formatKGS, formatQuantity } from "../../utility/format";
 import { useT } from "../../i18n/VerticalProvider";
-import type { ConsumptionRow } from "./consumptionRows";
+import { billableRowsTotal, type ConsumptionRow } from "./consumptionRows";
 
 const productFilter = createFilterOptions<DjangoProduct>({
   matchFrom: "any",
@@ -79,6 +80,10 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
           )
           .join(", ");
 
+  // Доплата за платные расходники — видна и в свёрнутом виде: она меняет сумму
+  // приёма, а свёрнутая сводка иначе про деньги не сказала бы ничего.
+  const extraCharge = billableRowsTotal(rows);
+
   return (
     <Box>
       <ButtonBase
@@ -100,6 +105,16 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
         >
           {summary}
         </Typography>
+        {extraCharge > 0 && (
+          <Typography
+            variant="caption"
+            color="primary.onSurface"
+            fontWeight={600}
+            sx={{ flexShrink: 0, mr: 0.5 }}
+          >
+            {t("consumptions.extra", { amount: formatKGS(extraCharge) })}
+          </Typography>
+        )}
         <ExpandMoreOutlined
           sx={{
             fontSize: 16,
@@ -114,7 +129,9 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
       <Collapse in={expanded} unmountOnExit>
         <Stack spacing={0.5} sx={{ pt: 0.5 }}>
           {rows.map((row, index) => {
-            const invalid = showErrors && parseRelatedQuantity(row.quantity) === null;
+            const quantity = parseRelatedQuantity(row.quantity);
+            const invalid = showErrors && quantity === null;
+            const lineTotal = row.billable ? row.unitPrice * (quantity ?? 0) : 0;
             return (
               <Stack
                 key={row.lineId ?? `new-${row.productId}`}
@@ -133,7 +150,36 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                           stock: formatQuantity(row.stockOnHand),
                         })}
                   </Typography>
+                  {lineTotal > 0 && (
+                    <Typography
+                      variant="caption"
+                      color="primary.onSurface"
+                      fontWeight={600}
+                      display="block"
+                    >
+                      {t("consumptions.extra", { amount: formatKGS(lineTotal) })}
+                    </Typography>
+                  )}
                 </Box>
+                <Tooltip
+                  title={
+                    row.billable
+                      ? t("consumptions.billableToggle")
+                      : t("consumptions.includedToggle")
+                  }
+                >
+                  <Chip
+                    label={
+                      row.billable ? t("consumptions.billable") : t("consumptions.included")
+                    }
+                    size="small"
+                    onClick={() => patchRow(index, { billable: !row.billable })}
+                    disabled={disabled}
+                    color={row.billable ? "primary" : "default"}
+                    variant={row.billable ? "filled" : "outlined"}
+                    sx={{ flexShrink: 0, borderRadius: "7px" }}
+                  />
+                </Tooltip>
                 <TextField
                   value={row.quantity}
                   onChange={(e) => patchRow(index, { quantity: e.target.value })}
@@ -196,6 +242,10 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                   unit: p.unit,
                   quantity: "1",
                   autoWriteOff: true,
+                  // Платность включают чипом осознанно: расходник, добавленный
+                  // руками, по умолчанию идёт в цену услуги, как из справочника.
+                  billable: false,
+                  unitPrice: p.price,
                   // Остаток филиала знает только бэк — до перезагрузки приёма
                   // не выдумываем число (ноль читался бы как нехватка).
                   stockOnHand: null,

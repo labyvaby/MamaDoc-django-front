@@ -95,6 +95,15 @@ export interface ServiceRelatedProduct extends RelatedProductRef {
   quantity: number;
   /** Списывать ли со склада при завершении приёма. */
   autoWriteOff: boolean;
+  /**
+   * Оплачивается сверх цены услуги: `price × quantity` попадает в сумму приёма
+   * (кейс «Импланон» — имплант дороже самой услуги). `false` — стоимость товара
+   * считается включённой в цену услуги, как было до 30.07.2026.
+   *
+   * Независим от `autoWriteOff`: платный товар может не списываться (принёс
+   * пациент), а бесплатный — списываться.
+   */
+  billable: boolean;
 }
 
 export interface Service {
@@ -141,6 +150,8 @@ export interface ServiceRelatedProductPayload {
   productId: number;
   quantity?: string;
   autoWriteOff?: boolean;
+  /** Оплачивается сверх цены услуги; по умолчанию на бэке false. */
+  billable?: boolean;
 }
 
 export interface ServiceCreatePayload {
@@ -197,6 +208,8 @@ export interface RelatedProductInput {
   /** Введённое количество; пусто/невалидно → 1 (значение по умолчанию бэка). */
   quantity?: string;
   autoWriteOff?: boolean;
+  /** Оплачивается сверх цены услуги. */
+  billable?: boolean;
 }
 
 /**
@@ -221,7 +234,7 @@ export function parseRelatedQuantity(input: string | undefined): number | null {
  * Тело запроса для состава услуги. Шлём **ровно одно** поле: два поля записи
  * одновременно бэк отклоняет с 400 (см. гайд §1), поэтому одиночный алиас
  * `relatedProductId` уходит только в выключенном мульти-режиме — и количество
- * там передать нечем, оно всегда 1.
+ * с платностью там передать нечем: количество всегда 1, товар — в цене услуги.
  */
 export function relatedProductsPayload(
   items: RelatedProductInput[],
@@ -235,6 +248,7 @@ export function relatedProductsPayload(
       productId: item.productId,
       quantity: String(parseRelatedQuantity(item.quantity) ?? 1),
       autoWriteOff: item.autoWriteOff !== false,
+      billable: item.billable === true,
     })),
   };
 }
@@ -271,12 +285,17 @@ function normalizeRelatedProducts(service: Service): ServiceRelatedProduct[] {
           unit: item.unit ?? "",
           quantity: parseFloat(String(item.quantity)) || 1,
           autoWriteOff: item.autoWriteOff !== false,
+          // По умолчанию false, в отличие от autoWriteOff: пока бэк поля не
+          // отдаёт, состав не должен внезапно начать добавлять деньги в чек.
+          billable: item.billable === true,
         };
       })
       .filter((p): p is ServiceRelatedProduct => p !== null);
   }
   const single = normalizeRelatedProduct(service.relatedProduct);
-  return single ? [{ ...single, unit: "", quantity: 1, autoWriteOff: true }] : [];
+  return single
+    ? [{ ...single, unit: "", quantity: 1, autoWriteOff: true, billable: false }]
+    : [];
 }
 
 function normalizeService(service: Service): Service {

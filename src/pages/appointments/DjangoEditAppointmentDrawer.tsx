@@ -50,7 +50,9 @@ import {
   type DjangoAppointment,
 } from "../../api/appointments";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
-import ServiceConsumptionsPreview from "./components/ServiceConsumptionsPreview";
+import ServiceConsumptionsPreview, {
+  previewBillableTotal,
+} from "./components/ServiceConsumptionsPreview";
 import { getStatusLabel } from "../../config/appointmentStatuses";
 import { useT } from "../../i18n/VerticalProvider";
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -69,6 +71,7 @@ import { groupServiceRowsByEmployee } from "../../components/appointments/servic
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
 import {
+  billableRowsTotal,
   hasInvalidConsumptionQuantity,
   toConsumptionRow,
   type ConsumptionRow,
@@ -522,7 +525,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     () => productRows.reduce((sum, r) => sum + r.unitPrice * parseQty(r.quantity), 0),
     [productRows],
   );
-  const grandTotal = servicesTotal + productsTotal;
+  // Платные расходники (billable) бэк включает в сумму приёма. У сохранённой
+  // строки считаем по её снапшоту расходов, у новой — по составу справочника
+  // (строк расхода ещё нет, их соберёт бэк).
+  const consumptionsTotal = React.useMemo(
+    () =>
+      validRows.reduce((sum, r) => {
+        if (r.lineId != null) return sum + billableRowsTotal(r.consumptions);
+        const svc = data.services.find((s) => s.id === r.serviceId);
+        return svc ? sum + previewBillableTotal(svc.relatedProducts, r.quantity) : sum;
+      }, 0),
+    [validRows, data.services],
+  );
+  const grandTotal = servicesTotal + productsTotal + consumptionsTotal;
   // Суммарная длительность услуг — по ней видно, на сколько занят слот.
   const totalDuration = React.useMemo(
     () =>
@@ -605,6 +620,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                   productId: c.productId,
                   quantity: String(parseRelatedQuantity(c.quantity) ?? 1),
                   autoWriteOff: c.autoWriteOff,
+                  // Цену не шлём — её снапшотит бэк из прайса товара.
+                  billable: c.billable,
                 })),
               }
             : {}),
@@ -1556,6 +1573,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               {t("addDrawer.productsSection")}
                             </Typography>
                             <Typography variant="body2">{formatKGS(productsTotal)}</Typography>
+                          </Stack>
+                        )}
+                        {consumptionsTotal > 0 && (
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">
+                              {t("consumptions.billableTotal")}
+                            </Typography>
+                            <Typography variant="body2">{formatKGS(consumptionsTotal)}</Typography>
                           </Stack>
                         )}
                         {totalDuration > 0 && (
