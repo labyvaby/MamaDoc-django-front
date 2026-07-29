@@ -30,6 +30,7 @@ import PaletteOutlined from "@mui/icons-material/PaletteOutlined";
 import DensitySmallOutlined from "@mui/icons-material/DensitySmallOutlined";
 import DensityMediumOutlined from "@mui/icons-material/DensityMediumOutlined";
 import DensityLargeOutlined from "@mui/icons-material/DensityLargeOutlined";
+import ViewAgendaOutlined from "@mui/icons-material/ViewAgendaOutlined";
 
 import {
   ColorModeContext,
@@ -69,7 +70,8 @@ const SCALE_OPTIONS: { value: UiScale; label: string; letterSize: number }[] = [
 const DENSITY_OPTIONS: { value: SidebarDensity; label: string; icon: React.ReactNode }[] = [
   { value: "compact", label: "Плотно", icon: <DensitySmallOutlined fontSize="small" /> },
   { value: "normal", label: "Обычно", icon: <DensityMediumOutlined fontSize="small" /> },
-  { value: "spacious", label: "Просторно", icon: <DensityLargeOutlined fontSize="small" /> },
+  { value: "comfortable", label: "Свободно", icon: <DensityLargeOutlined fontSize="small" /> },
+  { value: "spacious", label: "Просторно", icon: <ViewAgendaOutlined fontSize="small" /> },
 ];
 
 const SectionTitle: React.FC<{ children: React.ReactNode; first?: boolean }> = ({
@@ -491,9 +493,17 @@ const ThemeCustomizerContent: React.FC<{
           onChange={(_, val) => val && handleUpdate({ sidebarDensity: val as SidebarDensity })}
         >
           {DENSITY_OPTIONS.map((o) => (
-            <ToggleButton key={o.value} value={o.value} sx={{ flexDirection: "column", gap: 0.5, py: 1 }}>
+            <ToggleButton
+              key={o.value}
+              value={o.value}
+              sx={{ flexDirection: "column", gap: 0.5, py: 1, px: 0.5 }}
+            >
               {o.icon}
-              <Typography variant="caption" fontWeight={600}>
+              <Typography
+                variant="caption"
+                fontWeight={600}
+                sx={{ fontSize: 10.5, lineHeight: 1.2, whiteSpace: "nowrap" }}
+              >
                 {o.label}
               </Typography>
             </ToggleButton>

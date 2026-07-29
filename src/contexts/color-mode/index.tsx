@@ -8,6 +8,7 @@ import {
   DEFAULT_CARD_SKIN,
   DEFAULT_UI_SCALE,
   DEFAULT_SIDEBAR_DENSITY,
+  SIDEBAR_DENSITIES,
   type CardSkin,
   type UiScale,
   type SidebarDensity,
@@ -153,9 +154,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     }
     if (
       themeConfig.sidebarDensity &&
-      (themeConfig.sidebarDensity === "compact" ||
-        themeConfig.sidebarDensity === "normal" ||
-        themeConfig.sidebarDensity === "spacious")
+      SIDEBAR_DENSITIES.includes(themeConfig.sidebarDensity as SidebarDensity)
     ) {
       setSidebarDensityState(themeConfig.sidebarDensity as SidebarDensity);
     }
