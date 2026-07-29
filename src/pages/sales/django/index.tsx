@@ -155,8 +155,9 @@ const DjangoSalesPage: React.FC = () => {
             search: debouncedSearch || null,
             paymentMethod: paymentUI === "all" ? null : paymentUI,
             status: statusUI === "all" ? null : statusUI,
+            organizationId: orgId ?? null,
         }),
-        [range, debouncedSearch, paymentUI, statusUI],
+        [range, debouncedSearch, paymentUI, statusUI, orgId],
     );
     const filtersKey = useMemo(() => JSON.stringify(apiFilters), [apiFilters]);
 

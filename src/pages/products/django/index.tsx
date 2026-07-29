@@ -144,13 +144,13 @@ const DjangoProductsPage: React.FC = () => {
 
   const fetchCategories = React.useCallback(async () => {
     try {
-      setServerCategories(await getProductCategories());
+      setServerCategories(await getProductCategories(undefined, orgId));
     } catch (e) {
       if (isAbortError(e)) return;
       // Не критично: фильтр откатится на категории из загруженных товаров.
       console.error("Failed to load categories:", e);
     }
-  }, []);
+  }, [orgId]);
 
   React.useEffect(() => {
     if (!permLoading && canView) {

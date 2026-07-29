@@ -139,6 +139,7 @@ const DjangoStoragePage: React.FC = () => {
                     const data = await getStockMovements({
                         productId: selectedItem.productId,
                         warehouseId: selectedItem.warehouseId,
+                        organizationId: orgId,
                     }, controller.signal);
                     setMovements(data);
                 } catch (e) {
@@ -153,7 +154,7 @@ const DjangoStoragePage: React.FC = () => {
         }
         setMovements([]);
         return undefined;
-    }, [selectedItem]);
+    }, [selectedItem, orgId]);
 
     // Auto-select first item on desktop
     React.useEffect(() => {
@@ -252,6 +253,7 @@ const DjangoStoragePage: React.FC = () => {
                 const updatedMovements = await getStockMovements({
                     productId: updated.productId,
                     warehouseId,
+                    organizationId: orgId,
                 });
                 setMovements(updatedMovements);
             }
@@ -293,6 +295,7 @@ const DjangoStoragePage: React.FC = () => {
                 const updatedMovements = await getStockMovements({
                     productId: updated.productId,
                     warehouseId: updated.warehouseId,
+                    organizationId: orgId,
                 });
                 setMovements(updatedMovements);
             }

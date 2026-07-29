@@ -153,8 +153,11 @@ export function getWarehouses(
 /** Склады других филиалов, доступные для подключения в текущий филиал. */
 export function getLinkableWarehouses(
     signal?: AbortSignal,
+    /** Обязателен суперпользователю: без него бэк отдаёт 400 (фикс 29.07.2026). */
+    organizationId?: number,
 ): Promise<DjangoWarehouse[]> {
-    return apiRequest<DjangoWarehouse[]>("/warehouse/warehouses/linkable/", {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoWarehouse[]>(`/warehouse/warehouses/linkable/${qs}`, {
         signal,
     });
 }
@@ -241,8 +244,13 @@ export async function getProducts(
  * Уникальные непустые категории товаров, отсортированные по алфавиту.
  * Права: warehouse.view или warehouse.sales.view.
  */
-export function getProductCategories(signal?: AbortSignal): Promise<string[]> {
-    return apiRequest<string[]>("/warehouse/products/categories/", { signal });
+export function getProductCategories(
+    signal?: AbortSignal,
+    /** Обязателен суперпользователю: без него бэк отдаёт 400 (фикс 29.07.2026). */
+    organizationId?: number,
+): Promise<string[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<string[]>(`/warehouse/products/categories/${qs}`, { signal });
 }
 
 export type ProductWriteData = {

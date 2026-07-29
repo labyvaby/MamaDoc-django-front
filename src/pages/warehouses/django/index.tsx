@@ -185,6 +185,7 @@ const DjangoWarehousesPage: React.FC = () => {
                     const data = await getStockMovements({
                         productId: selectedItem.productId,
                         warehouseId: selectedItem.warehouseId,
+                        organizationId: orgId,
                     }, controller.signal);
                     setMovements(data);
                 } catch (e) {
@@ -198,7 +199,7 @@ const DjangoWarehousesPage: React.FC = () => {
             return () => controller.abort();
         }
         return undefined;
-    }, [selectedItem, isDetailsOpen, isMobile]);
+    }, [selectedItem, isDetailsOpen, isMobile, orgId]);
 
     // Auto-select first item on desktop
     React.useEffect(() => {
@@ -304,7 +305,7 @@ const DjangoWarehousesPage: React.FC = () => {
 
             const refreshProductId = updated?.productId ?? targetProductId;
             if (refreshProductId) {
-                const moves = await getStockMovements({ productId: refreshProductId, warehouseId: wId });
+                const moves = await getStockMovements({ productId: refreshProductId, warehouseId: wId, organizationId: orgId });
                 setMovements(moves);
             }
             if (newProductName) {
@@ -345,6 +346,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 const moves = await getStockMovements({
                     productId: updated.productId,
                     warehouseId: updated.warehouseId,
+                    organizationId: orgId,
                 });
                 setMovements(moves);
             }
