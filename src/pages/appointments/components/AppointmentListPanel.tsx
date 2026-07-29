@@ -35,6 +35,7 @@ import {
   isSlotCovered,
 } from "./slotAvailability";
 import { formatKGS } from "../../../utility/format";
+import { formatPhoneDisplay } from "../../../utility/phone";
 import { useT } from "../../../i18n/VerticalProvider";
 import { agree } from "../../../i18n/formatters";
 import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
@@ -683,8 +684,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                 {t("list.patientLabel")} {a.patient?.fullName ?? "—"}
                               </Typography>
                               {a.patient?.phone && (
-                                <Typography variant="caption" color="text.disabled">
-                                  {a.patient.phone}
+                                <Typography
+                                  variant="caption"
+                                  color="text.disabled"
+                                  sx={{ fontVariantNumeric: "tabular-nums" }}
+                                >
+                                  {formatPhoneDisplay(a.patient.phone)}
                                 </Typography>
                               )}
                             </Stack>

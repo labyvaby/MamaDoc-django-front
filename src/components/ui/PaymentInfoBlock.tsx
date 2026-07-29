@@ -44,12 +44,20 @@ export interface PaymentInfoBlockProps {
   variant?: "summary" | "detailed";
   showIcons?: boolean;
   actionButton?: React.ReactNode;
+  /**
+   * Плотная раскладка detailed-варианта: те же данные, но без крупных
+   * заголовочных сумм и лишних отступов. Для боковых карточек (приём), где
+   * блок конкурирует за высоту с услугами и текстами; на отдельных страницах
+   * (расходы, продажи) остаётся обычный размер.
+   */
+  dense?: boolean;
 }
 
 export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
   payment,
   variant = "detailed",
   actionButton,
+  dense = false,
 }) => {
   const theme = useTheme();
   const {
@@ -140,6 +148,14 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
     return new Intl.NumberFormat("ru-RU").format(amount);
   };
 
+  // Неоплаченный визит: «Остаток к оплате» повторял «Общую сумму» цифра в цифру
+  // и занимал вторую половину блока. В плотном режиме такую плашку скрываем, а
+  // кнопку оплаты поднимаем в строку с суммой.
+  const hasAnyPayment = cash > 0 || card > 0 || balance > 0 || bonuses > 0 || insurance > 0;
+  const debtEqualsTotal =
+    dense && debt > 0 && !hasAnyPayment && Math.abs(debt - finalTotal) < 0.5;
+  const showBreakdownBody = hasAnyPayment || !debtEqualsTotal;
+
   if (variant === "summary") {
     return (
       <Paper
@@ -184,30 +200,53 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
         }}
       >
         {/* Header - Total and Status */}
-        <Box sx={{ p: 2, bgcolor: alpha(theme.palette.primary.main, 0.03), borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1, display: 'block', mb: 0.5 }}>
-                Общая сумма
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                {formatAmount(baseTotal || finalTotal)}
-                <Typography component="span" variant="h6" color="text.secondary" sx={{ fontWeight: 700 }}>сом</Typography>
-              </Typography>
-            </Box>
-            <Chip
-              label={statusConfig.label}
-              icon={statusConfig.icon}
-              color={statusConfig.color}
-              sx={{ fontWeight: 700, height: 28, borderRadius: "7px" }}
-            />
+        <Box sx={{ p: dense ? 1.25 : 2, bgcolor: alpha(theme.palette.primary.main, 0.03), borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems={dense ? "center" : "flex-start"}
+          >
+            {dense ? (
+              // Плотный режим: подпись и сумма одной строкой — заголовочная
+              // «Общая сумма» в h4 занимала полкарточки приёма.
+              <Stack direction="row" alignItems="baseline" spacing={0.75}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                  Общая сумма
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                  {formatAmount(baseTotal || finalTotal)}
+                  <Typography component="span" variant="body2" color="text.secondary" sx={{ fontWeight: 700, ml: 0.5 }}>сом</Typography>
+                </Typography>
+              </Stack>
+            ) : (
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1, display: 'block', mb: 0.5 }}>
+                  Общая сумма
+                </Typography>
+                <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+                  {formatAmount(baseTotal || finalTotal)}
+                  <Typography component="span" variant="h6" color="text.secondary" sx={{ fontWeight: 700 }}>сом</Typography>
+                </Typography>
+              </Box>
+            )}
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
+              <Chip
+                label={statusConfig.label}
+                icon={statusConfig.icon}
+                color={statusConfig.color}
+                size={dense ? "small" : "medium"}
+                sx={{ fontWeight: 700, height: dense ? 24 : 28, borderRadius: "7px" }}
+              />
+              {debtEqualsTotal && actionButton}
+            </Stack>
           </Stack>
         </Box>
 
-        <Box sx={{ p: 2 }}>
-          <Stack spacing={2}>
+        {showBreakdownBody && (
+        <Box sx={{ p: dense ? 1.25 : 2 }}>
+          <Stack spacing={dense ? 1.25 : 2}>
             {/* Payment Details Table-like Breakdown */}
-            <Stack spacing={1.5}>
+            <Stack spacing={dense ? 1 : 1.5}>
               {/* Cash */}
               {cash > 0 && (
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -284,30 +323,43 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
 
             </Stack>
 
-            <Divider sx={{ borderStyle: 'dashed' }} />
+            {/* Разделитель нужен только когда выше есть строки способов оплаты */}
+            {hasAnyPayment && <Divider sx={{ borderStyle: 'dashed' }} />}
 
             {/* Final Balance / Debt Section */}
             <Box sx={{
-              p: 1.5,
+              p: dense ? 1 : 1.5,
               borderRadius: "14px",
               bgcolor: debt > 0 ? alpha(theme.palette.error.main, 0.04) : alpha(theme.palette.success.main, 0.04),
               border: '1px solid',
               borderColor: debt > 0 ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.success.main, 0.1),
             }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 700, letterSpacing: 0.5, display: 'block', mb: 0.2 }}>
-                    {debt > 0 ? "Остаток к оплате" : "Итого оплачено"}
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: debt > 0 ? "error.main" : "success.main" }}>
-                    {formatAmount(debt > 0 ? debt : totalPaid)} сом
-                  </Typography>
-                </Box>
-                {actionButton && <Box>{actionButton}</Box>}
+              <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                {dense ? (
+                  <Stack direction="row" alignItems="baseline" spacing={0.75} sx={{ minWidth: 0 }}>
+                    <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 700 }}>
+                      {debt > 0 ? "Остаток к оплате" : "Итого оплачено"}
+                    </Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: debt > 0 ? "error.main" : "success.main" }}>
+                      {formatAmount(debt > 0 ? debt : totalPaid)} сом
+                    </Typography>
+                  </Stack>
+                ) : (
+                  <Box>
+                    <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 700, letterSpacing: 0.5, display: 'block', mb: 0.2 }}>
+                      {debt > 0 ? "Остаток к оплате" : "Итого оплачено"}
+                    </Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: debt > 0 ? "error.main" : "success.main" }}>
+                      {formatAmount(debt > 0 ? debt : totalPaid)} сом
+                    </Typography>
+                  </Box>
+                )}
+                {actionButton && <Box sx={{ flexShrink: 0 }}>{actionButton}</Box>}
               </Stack>
             </Box>
           </Stack>
         </Box>
+        )}
       </Paper>
     </Box>
   );

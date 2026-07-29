@@ -2,6 +2,8 @@ import React from "react";
 import { Avatar, Box, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
+import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
+import EditNoteOutlined from "@mui/icons-material/EditNoteOutlined";
 
 import { useT } from "../../i18n/VerticalProvider";
 import { buildEmployeeAccentMap, employeeInitials } from "./employeeAccent";
@@ -17,6 +19,12 @@ export interface ServiceGroupLine {
   quantity: number;
   /** Отформатированная сумма строки; null — не показывать (нет права на финансы). */
   amount: string | null;
+  /**
+   * Состояние заключения по строке (бэк шлёт его в каждой строке услуги).
+   * Показываем значком: врач видит, по какой услуге он уже отписался, а по
+   * какой ещё нет — раньше это было только в логике кнопок шапки.
+   */
+  conclusionState?: "not_required" | "not_created" | "draft" | "completed";
 }
 
 /** Исполнитель и его услуги в рамках одного приёма. */
@@ -27,6 +35,31 @@ export interface ServiceEmployeeGroup {
   lines: ServiceGroupLine[];
   /** Отформатированная сумма по исполнителю; null — не показывать. */
   total: string | null;
+}
+
+/**
+ * Значок состояния заключения рядом с названием услуги. «Не требуется» и
+ * «не создано» не помечаем: первое — шум, второе видно по отсутствию значка.
+ */
+function conclusionMark(
+  state: ServiceGroupLine["conclusionState"],
+  t: (key: string) => string,
+): React.ReactNode {
+  if (state === "completed") {
+    return (
+      <Tooltip title={t("serviceLine.conclusionReady")}>
+        <TaskAltOutlined sx={{ fontSize: 15, color: "success.main", flexShrink: 0 }} />
+      </Tooltip>
+    );
+  }
+  if (state === "draft") {
+    return (
+      <Tooltip title={t("serviceLine.conclusionDraft")}>
+        <EditNoteOutlined sx={{ fontSize: 16, color: "warning.main", flexShrink: 0 }} />
+      </Tooltip>
+    );
+  }
+  return null;
 }
 
 interface ServiceEmployeeGroupsProps {
@@ -200,11 +233,14 @@ const ServiceEmployeeGroups: React.FC<ServiceEmployeeGroupsProps> = ({
                     </Avatar>
 
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Tooltip title={line.name} enterDelay={600}>
-                        <Typography variant="body2" fontWeight={600} noWrap>
-                          {line.name}
-                        </Typography>
-                      </Tooltip>
+                      <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+                        <Tooltip title={line.name} enterDelay={600}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {line.name}
+                          </Typography>
+                        </Tooltip>
+                        {conclusionMark(line.conclusionState, t)}
+                      </Stack>
                       {line.quantity > 1 && (
                         <Typography variant="caption" color="text.secondary">
                           × {line.quantity}

@@ -1,13 +1,10 @@
 import React from "react";
 import {
-  Avatar,
   Box,
   Button,
   Card,
   CardContent,
   CardHeader,
-  Checkbox,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -16,6 +13,10 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   Stack,
   Tooltip,
@@ -23,12 +24,10 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
-import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
-import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
-import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PersonOffOutlined from "@mui/icons-material/PersonOffOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
@@ -44,6 +43,8 @@ dayjs.locale("ru");
 
 import type { DjangoAppointment } from "../../../api/appointments";
 import { getAppointmentPayments } from "../../../api/payments";
+import { getPatient } from "../../../api/patients";
+import { formatPatientAge } from "../../../utility/age";
 import { getPatientSchedule } from "../../../api/vaccinations";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import {
@@ -51,8 +52,6 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../../api/queryKeys";
-import { scheduleDateInfo } from "../../vaccinations/meta";
-import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
 import ServiceEmployeeGroups, {
   type ServiceEmployeeGroup,
 } from "../../../components/appointments/ServiceEmployeeGroups";
@@ -60,13 +59,32 @@ import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useCan } from "../../../hooks/useCan";
 import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
-import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
-import AppointmentReviewBlock from "../../reviews/AppointmentReviewBlock";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
 import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
+import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
+import AppointmentPatientCard from "./details/AppointmentPatientCard";
+import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
+import AppointmentProductLines from "./details/AppointmentProductLines";
+import AppointmentDueDoses from "./details/AppointmentDueDoses";
+
+/** Сколько действий шапки показывать кнопками; остальные уходят в меню «⋯». */
+const INLINE_ACTIONS_LIMIT = 3;
+
+/** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
+interface HeaderAction {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  color?: "primary" | "info" | "success" | "error";
+  /** Действие включено (кнопка залита) — например, открытая колонка заключения. */
+  active?: boolean;
+  disabled?: boolean;
+}
 import DoctorQuickViewDrawer from "../../../components/employees/DjangoDoctorQuickViewDrawer";
 
 interface AppointmentDetailsPanelProps {
@@ -107,13 +125,6 @@ interface AppointmentDetailsPanelProps {
   onClose?: () => void;
 }
 
-function initials(name?: string | null): string {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
 function som(value?: string | number | null): string {
   const n = Number(value ?? 0);
   return tt("appointments:details.amountWithCurrency", {
@@ -146,6 +157,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const theme = useTheme();
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
+  // Клик по товару открывает карточку из справочника — только при праве на него.
+  const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
 
   // Кто создал/изменил приём: бэк отдаёт только auth-user id, имя — из
   // справочника сотрудников (authUserId → ФИО).
@@ -161,8 +174,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   }, [isConclusionVisible, onToggleConclusion]);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<"cancel" | "delete" | null>(null);
+  const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
 
-  // Quick-view drawers (краткая информация по клику: пациент / врач / услуга)
+  // Quick-view drawers (краткая информация по клику: пациент / врач / услуга / товар)
   const [patientDrawerOpen, setPatientDrawerOpen] = React.useState(false);
   const [doctorDrawerOpen, setDoctorDrawerOpen] = React.useState(false);
   const [selectedDoctorId, setSelectedDoctorId] = React.useState<number | null>(null);
@@ -170,6 +184,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const [selectedDoctorPhotoUrl, setSelectedDoctorPhotoUrl] = React.useState<string | null>(null);
   const [serviceDrawerOpen, setServiceDrawerOpen] = React.useState(false);
   const [selectedServiceId, setSelectedServiceId] = React.useState<number | null>(null);
+  const [productDrawerOpen, setProductDrawerOpen] = React.useState(false);
+  const [selectedProductId, setSelectedProductId] = React.useState<number | null>(null);
+  const [selectedProductName, setSelectedProductName] = React.useState<string | null>(null);
 
   const payQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.payments(appt.id),
@@ -177,6 +194,22 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     enabled: canViewFinance || canManageFinance,
   });
+
+  /**
+   * Карта пациента отдельным запросом: приём отдаёт только id/ФИО/телефон/фото,
+   * а регистратуре нужны возраст (педиатрия — доза и тон разговора) и метка
+   * чёрного списка. Запрос лёгкий и кэшируется react-query на все приёмы этого
+   * пациента; ошибку глотаем — карточка приёма из-за неё падать не должна.
+   */
+  const patientCardQuery = useQuery({
+    queryKey: djangoQueryKeys.patients.detail(appt.patient?.id ?? 0),
+    queryFn: () => getPatient(appt.patient!.id),
+    enabled: appt.patient?.id != null,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    retry: false,
+  });
+  const patientCard = patientCardQuery.data;
+  const patientAge = formatPatientAge(patientCard?.birthDate);
 
   // Прогноз календаря пациента: положенные (planned/overdue) дозы — чтобы ввести
   // прививку в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
@@ -194,23 +227,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate)),
     [scheduleQuery.data],
   );
-  // Мульти-ввод: чекбоксы показываем при ≥2 положенных дозах, по умолчанию все
-  // выбраны (как в зрелых системах — снимаешь лишнее). Сброс при смене прогноза.
-  const multiDue = dueDoses.length >= 2;
-  const [selectedDoseIds, setSelectedDoseIds] = React.useState<Set<number>>(new Set());
-  React.useEffect(() => {
-    setSelectedDoseIds(new Set(dueDoses.map((d) => d.id)));
-  }, [dueDoses]);
-  const toggleDose = (id: number) =>
-    setSelectedDoseIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const selectedDoseInputs = dueDoses
-    .filter((d) => selectedDoseIds.has(d.id))
-    .map((d) => ({ vaccineId: d.vaccineId, vaccineName: d.vaccineName, doseNumber: d.doseNumber }));
+
 
   const pay = payQuery.data;
   const isCancelled =
@@ -224,8 +241,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const refundedTotal = pay?.refundedTotal;
   const payStatus = pay?.paymentStatus ?? appt.paymentStatus;
 
+  // Подтверждение банка бэк шлёт не на всех эндпоинтах, в типе приёма поля нет.
+  const hasBankConfirmation = (appt as DjangoAppointment & { hasBankConfirmation?: boolean })
+    .hasBankConfirmation;
+
   const hasFinanceInfo = !!(totalAmount && totalAmount !== "0.00" && totalAmount !== "0");
-  const hasDebt = !!(debt && debt !== "0.00" && debt !== "0");
   const hasDiscount = !!(discountAmount && discountAmount !== "0.00" && discountAmount !== "0");
   const hasPaid = !!(paidTotal && paidTotal !== "0.00" && paidTotal !== "0");
   const hasRefund = !!(refundedTotal && refundedTotal !== "0.00" && refundedTotal !== "0");
@@ -362,6 +382,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         imageUrl: sl.service?.imageUrl ?? null,
         quantity: sl.quantity,
         amount: som(lineAmount),
+        conclusionState: sl.conclusionState,
       });
       group.rawTotal += Number(lineAmount) || 0;
     }
@@ -413,9 +434,141 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         payment={payment}
         variant="detailed"
         showIcons
+        dense
         actionButton={actionBtn}
       />
     );
+  };
+
+  /**
+   * Действия шапки одним списком в порядке важности. Раньше они рисовались
+   * подряд шестью кнопками: у админа на активном приёме шапка переносилась на
+   * вторую строку и толкала содержимое вниз. Теперь первые INLINE_ACTIONS_LIMIT
+   * видны кнопками, остальное — в меню «⋯».
+   */
+  const actions: HeaderAction[] = [];
+
+  // Подтвердить — пациент подтвердил визит по телефону, но ещё не пришёл.
+  if (canUpdate && onConfirmVisit && appt.status === "scheduled") {
+    actions.push({
+      key: "confirm",
+      label: t("details.confirm"),
+      icon: <EventAvailableOutlined fontSize="small" />,
+      color: "info",
+      onClick: () => onConfirmVisit(appt),
+    });
+  }
+
+  // Пациент здесь — пока пациента не отметили пришедшим.
+  if (canUpdate && onArrived && (appt.status === "scheduled" || appt.status === "confirmed")) {
+    actions.push({
+      key: "arrived",
+      label: t("details.patientArrived"),
+      icon: <DirectionsWalkOutlined fontSize="small" />,
+      color: "success",
+      onClick: () => onArrived(appt),
+    });
+  }
+
+  // Начать приём — врач-исполнитель с незавершёнными услугами, при любом
+  // активном статусе: регистратор мог не отметить «Пациент здесь», а врач всё
+  // равно должен мочь начать приём.
+  if (isDoctorRole && hasIncompleteServices && isAppointmentActive && canViewConclusions) {
+    actions.push({
+      key: "start",
+      label: t("details.startVisit"),
+      icon: startBusy ? (
+        <CircularProgress size={14} color="inherit" />
+      ) : (
+        <MedicalServicesOutlined fontSize="small" />
+      ),
+      color: "primary",
+      disabled: startBusy,
+      onClick: handleStartAppointment,
+    });
+  }
+
+  // Изменить заключение — врач-исполнитель, у которого заключение уже есть.
+  if (isDoctorRole && !hasIncompleteServices && isPerformer && canViewConclusions) {
+    actions.push({
+      key: "edit-conclusion",
+      label: t("details.editConclusion"),
+      icon: <EditOutlined fontSize="small" />,
+      onClick: openConclusions,
+    });
+  }
+
+  if (canUpdate && (isAdminRole || isRegistratorRole)) {
+    actions.push({
+      key: "edit",
+      label: t("details.edit"),
+      icon: <EditOutlined fontSize="small" />,
+      onClick: () => onEdit(appt),
+    });
+  }
+
+  // Ввести прививку — право vaccinations.record, приём с пациентом и активный.
+  if (canRecordVaccination && onRecordVaccination && appt.patient && isAppointmentActive) {
+    actions.push({
+      key: "vaccine",
+      label: t("details.recordVaccine"),
+      icon: <VaccinesOutlined fontSize="small" />,
+      color: "primary",
+      onClick: () => onRecordVaccination(appt),
+    });
+  }
+
+  // Заключение — только просмотр уже существующего (создание идёт через «Начать приём»).
+  if (canViewConclusions && hasConclusion) {
+    actions.push({
+      key: "conclusion",
+      label: showConclusions ? t("details.hideConclusion") : t("details.conclusion"),
+      icon: showConclusions ? (
+        <VisibilityOutlined fontSize="small" />
+      ) : (
+        <DescriptionOutlined fontSize="small" />
+      ),
+      active: showConclusions,
+      onClick: () => onToggleConclusion?.(),
+    });
+  }
+
+  /**
+   * Отмена и удаление — только в меню и отделены разделителем. Раньше это были
+   * две одинаковые красные иконки рядом: промах на шаг превращал отмену визита
+   * в удаление записи.
+   */
+  const dangerActions: HeaderAction[] = [];
+  if (canUpdate && onCancelAppt && !isCancelled && (isAdminRole || isRegistratorRole)) {
+    dangerActions.push({
+      key: "cancel",
+      label: t("details.cancelRecord"),
+      icon: <PersonOffOutlined fontSize="small" />,
+      onClick: () => {
+        setConfirmAction("cancel");
+        setConfirmOpen(true);
+      },
+    });
+  }
+  if (canDelete && onDelete && (isAdminRole || isRegistratorRole)) {
+    dangerActions.push({
+      key: "delete",
+      label: t("details.delete"),
+      icon: <DeleteOutlineOutlined fontSize="small" />,
+      onClick: () => {
+        setConfirmAction("delete");
+        setConfirmOpen(true);
+      },
+    });
+  }
+
+  const inlineActions = actions.slice(0, INLINE_ACTIONS_LIMIT);
+  const overflowActions = actions.slice(INLINE_ACTIONS_LIMIT);
+  const hasMenu = overflowActions.length > 0 || dangerActions.length > 0;
+
+  const runFromMenu = (action: HeaderAction) => {
+    setMenuAnchor(null);
+    action.onClick();
   };
 
   const handleConfirm = () => {
@@ -458,7 +611,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 flexWrap: "wrap",
               }}
             >
-              {/* Left: main action buttons */}
+              {/* Основные действия — кнопками, остальное в меню «⋯».
+                  Печать/Справка живут в самой карточке заключения. */}
               <Stack
                 direction="row"
                 spacing={{ xs: 0.5, sm: 1 }}
@@ -467,154 +621,31 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 useFlexGap
                 sx={{ gap: { xs: 0.5, sm: 1 } }}
               >
-                {/* Подтвердить — пациент подтвердил визит по телефону, но ещё
-                    не пришёл. Только до подтверждения (scheduled). */}
-                {canUpdate && onConfirmVisit && appt.status === "scheduled" && (
+                {inlineActions.map((action) => (
                   <Button
+                    key={action.key}
                     size="small"
-                    variant="outlined"
-                    color="info"
-                    startIcon={<EventAvailableOutlined />}
-                    onClick={() => onConfirmVisit(appt)}
+                    variant={action.active ? "contained" : "outlined"}
+                    color={action.color ?? "primary"}
+                    startIcon={action.icon}
+                    onClick={action.onClick}
+                    disabled={action.disabled}
                   >
-                    {t("details.confirm")}
+                    {action.label}
                   </Button>
-                )}
-
-                {/* Пациент здесь — пока пациента не отметили пришедшим */}
-                {canUpdate &&
-                  onArrived &&
-                  (appt.status === "scheduled" || appt.status === "confirmed") && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="success"
-                    startIcon={<DirectionsWalkOutlined />}
-                    onClick={() => onArrived(appt)}
-                  >
-                    {t("details.patientArrived")}
-                  </Button>
-                )}
-
-                {/* Начать приём — врач-исполнитель + есть незавершённые услуги,
-                    при ЛЮБОМ активном статусе (не отменён/неявка/завершён). Не
-                    зависит от «Пациент здесь»: регистратор мог не отметить, а
-                    врач всё равно должен мочь начать приём. */}
-                {isDoctorRole && hasIncompleteServices && isAppointmentActive && canViewConclusions && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="primary"
-                    startIcon={
-                      startBusy ? (
-                        <CircularProgress size={14} color="inherit" />
-                      ) : (
-                        <MedicalServicesOutlined />
-                      )
-                    }
-                    onClick={handleStartAppointment}
-                    disabled={startBusy}
-                  >
-                    {t("details.startVisit")}
-                  </Button>
-                )}
-
-                {/* Изменить заключение — врач + нет незавершённых + он исполнитель */}
-                {isDoctorRole && !hasIncompleteServices && isPerformer && canViewConclusions && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<EditOutlined />}
-                    onClick={openConclusions}
-                  >
-                    {t("details.editConclusion")}
-                  </Button>
-                )}
-
-                {/* Изменить — только для адм/рег */}
-                {canUpdate && (isAdminRole || isRegistratorRole) && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<EditOutlined />}
-                    onClick={() => onEdit(appt)}
-                  >
-                    {t("details.edit")}
-                  </Button>
-                )}
-
-                {/* Ввести прививку — регистратура (право vaccinations.record),
-                    только для приёма с пациентом и активного статуса. Пациент и
-                    appointmentId уйдут в дровер, строка вакцины — в счёт приёма. */}
-                {canRecordVaccination && onRecordVaccination && appt.patient && isAppointmentActive && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="primary"
-                    startIcon={<VaccinesOutlined />}
-                    onClick={() => onRecordVaccination(appt)}
-                  >
-                    {t("details.recordVaccine")}
-                  </Button>
-                )}
-
-                {/* Заключение toggle — только если заключение реально есть.
-                    Создание заключения врачом идёт отдельным потоком выше
-                    (hasIncompleteServices); эта кнопка — лишь просмотр. */}
-                {canViewConclusions && hasConclusion && (
-                  <Button
-                    size="small"
-                    variant={showConclusions ? "contained" : "outlined"}
-                    startIcon={showConclusions ? <VisibilityOutlined /> : <DescriptionOutlined />}
-                    onClick={() => onToggleConclusion?.()}
-                  >
-                    {showConclusions ? t("details.hideConclusion") : t("details.conclusion")}
-                  </Button>
-                )}
-
-                {/* Печать/Справка перенесены в саму карточку заключения
-                    (третья колонка), как в оригинале. */}
+                ))}
               </Stack>
 
-              {/* Right: cancel/delete — адм/рег only */}
-              {(isAdminRole || isRegistratorRole) && (
-                <Stack direction="row" spacing={0.5}>
-                  {canUpdate && onCancelAppt && !isCancelled && (
-                    <Tooltip title={t("details.cancelRecord")}>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => { setConfirmAction("cancel"); setConfirmOpen(true); }}
-                        sx={{
-                          border: "1px solid",
-                          borderColor: "error.main",
-                          "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.08) },
-                        }}
-                      >
-                        <PersonOffOutlined fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  )}
-                  {canDelete && onDelete && (
-                    <Tooltip title={t("details.delete")}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => { setConfirmAction("delete"); setConfirmOpen(true); }}
-                          sx={{
-                            border: "1px solid",
-                            borderColor: "error.main",
-                            color: "error.main",
-                            "&:hover": { bgcolor: alpha(theme.palette.error.main, 0.08) },
-                          }}
-                        >
-                          <DeleteOutlineOutlined fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  )}
-                </Stack>
+              {hasMenu && (
+                <Tooltip title={t("details.moreActions")}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => setMenuAnchor(e.currentTarget)}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    <MoreVertOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               )}
             </Box>
           }
@@ -647,78 +678,50 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           }}
         >
           <Stack spacing={3}>
-            {/* ── Date row ── */}
-            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" sx={{ mt: 0.5 }}>
-              <CalendarMonthOutlined fontSize="medium" sx={{ color: "primary.onSurface" }} />
-              <Typography variant="h6" fontWeight={700} color="text.primary">
-                {dayjs(appt.scheduledAt).format("D MMMM YYYY, HH:mm")}
-              </Typography>
-              {appt.isNight && (
-                <NightlightOutlined sx={{ fontSize: 22, color: "primary.onSurface" }} />
-              )}
-              <Stack direction="column" spacing={0} sx={{ ml: "auto" }}>
-                {appt.createdAt && (
-                  <Typography
-                    variant="caption"
-                    color="text.disabled"
-                    sx={{ fontSize: "0.725rem", lineHeight: 1.2, textAlign: "right" }}
-                  >
-                    {t("details.createdAt", {
-                      when: dayjs(appt.createdAt).format("DD.MM HH:mm"),
-                      author: createdByName ? ` · ${createdByName}` : "",
-                    })}
-                  </Typography>
-                )}
-                {appt.updatedAt && appt.updatedAt !== appt.createdAt && (
-                  <Typography
-                    variant="caption"
-                    color="text.disabled"
-                    sx={{ fontSize: "0.725rem", lineHeight: 1.2, textAlign: "right" }}
-                  >
-                    {t("details.updatedAt", {
-                      when: dayjs(appt.updatedAt).format("DD.MM HH:mm"),
-                      author: updatedByName ? ` · ${updatedByName}` : "",
-                    })}
-                  </Typography>
-                )}
-              </Stack>
-            </Stack>
+            {/* Пациент, возраст, телефон + предупреждения (чёрный список,
+                комментарий администратора) — первым блоком карточки. */}
+            <AppointmentPatientCard
+              patient={appt.patient}
+              age={patientAge}
+              isBlacklisted={patientCard?.isBlacklisted}
+              blacklistReason={patientCard?.blacklistReason}
+              adminComment={appt.adminComment}
+              onOpenPatient={appt.patient ? () => setPatientDrawerOpen(true) : undefined}
+            />
 
-            {/* ── Status ──
-                Статус приёма + факт оплаты одним компонентом (как в списке
-                приёмов): бэк при оплате статус приёма не меняет, и раньше
-                открытый приём показывал врачу «Ожидаем» на оплачённом визите —
-                финансовый блок ниже врачу недоступен. Факт оплаты виден всем
-                ролям, суммы и действия остаются под правами. */}
-            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-              <AppointmentStatusChips appointment={statusChipsSource} alwaysShowStatus />
-              {/* bank confirmation double-check chip */}
-              {(appt as any).hasBankConfirmation && (
-                <Tooltip title={t("details.paymentConfirmedByBank")}>
-                  <Chip
-                    size="small"
-                    label="✓✓"
-                    sx={{
-                      bgcolor: "primary.main",
-                      color: "primary.contrastText",
-                      fontWeight: 700,
-                      fontSize: "0.75rem",
-                      letterSpacing: 1,
-                    }}
-                  />
-                </Tooltip>
-              )}
-              {payQuery.isLoading && <CircularProgress size={14} />}
-            </Stack>
-
-            {/* ── Review status + request (self-gated by reviews.* perms) ── */}
-            <AppointmentReviewBlock appointmentId={appt.id} />
+            {/* Когда приём, относительный день, статусы и отзыв. */}
+            <AppointmentWhenBlock
+              appointmentId={appt.id}
+              scheduledAt={appt.scheduledAt}
+              endsAt={appt.endsAt}
+              isNight={appt.isNight}
+              createdAt={appt.createdAt}
+              updatedAt={appt.updatedAt}
+              createdByName={createdByName}
+              updatedByName={updatedByName}
+              hasBankConfirmation={hasBankConfirmation}
+              statusSource={statusChipsSource}
+              paymentsLoading={payQuery.isLoading}
+            />
 
             {/* ── Payment block — non-doctor/nurse ── */}
             {isNonDoctor && (canViewFinance || canManageFinance) && (
               <>
                 {hasFinanceInfo ? (
-                  paymentBlock(true)
+                  // Сумма и кнопка оплаты закреплены: на приёме с несколькими
+                  // услугами и жалобами блок уезжал вверх, и касса теряла из
+                  // виду и остаток, и кнопку.
+                  <Box
+                    sx={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 2,
+                      bgcolor: "background.paper",
+                      pb: 0.5,
+                    }}
+                  >
+                    {paymentBlock(true)}
+                  </Box>
                 ) : (
                   canManageFinance && !isCancelled && (
                     <Button
@@ -740,174 +743,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 )}
                 <Divider />
               </>
-            )}
-
-            {/* ── Patient card ── */}
-            {appt.patient ? (
-              <Box>
-                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  {t("details.patient")}
-                </Typography>
-                <Paper
-                  variant="outlined"
-                  onClick={() => setPatientDrawerOpen(true)}
-                  sx={{
-                    p: 2,
-                    bgcolor: alpha(theme.palette.primary.main, 0.04),
-                    display: "flex",
-                    alignItems: "center",
-                    borderRadius: "10px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    "&:hover": {
-                      bgcolor: alpha(theme.palette.primary.main, 0.06),
-                      borderColor: "primary.main",
-                    },
-                  }}
-                >
-                  <Avatar
-                    src={appt.patient.photoUrl ?? undefined}
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      mr: 2,
-                      bgcolor: "primary.light",
-                      color: "primary.contrastText",
-                      fontWeight: 700,
-                      fontSize: "1.1rem",
-                    }}
-                  >
-                    {initials(appt.patient.fullName)}
-                  </Avatar>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="body1" fontWeight={600} noWrap>
-                      {appt.patient.fullName}
-                    </Typography>
-                    {appt.patient.phone && (
-                      <Typography
-                        variant="body2"
-                        color="primary"
-                        component="a"
-                        href={`tel:${appt.patient.phone}`}
-                        onClick={(e) => e.stopPropagation()}
-                        sx={{
-                          textDecoration: "none",
-                          "&:hover": { textDecoration: "underline" },
-                          fontWeight: 500,
-                        }}
-                        noWrap
-                      >
-                        {appt.patient.phone}
-                      </Typography>
-                    )}
-                  </Box>
-                </Paper>
-              </Box>
-            ) : (
-              <Box>
-                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  {t("details.patient")}
-                </Typography>
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    p: 2,
-                    bgcolor: alpha(theme.palette.warning.main, 0.04),
-                    borderRadius: "10px",
-                  }}
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    {t("details.bookingWithoutPatient")}
-                  </Typography>
-                </Paper>
-              </Box>
-            )}
-
-            {/* ── Прогноз календаря: положенные дозы (ввод в 1–2 клика) ── */}
-            {canRecordVaccination && appt.patient && dueDoses.length > 0 && isAppointmentActive && (
-              <Box>
-                <Stack direction="row" alignItems="center" gap={1} mb={0.75}>
-                  <VaccinesOutlined sx={{ fontSize: 18, color: "primary.onSurface" }} />
-                  <Typography variant="caption" color="text.secondary">
-                    {t("details.byCalendar")}
-                  </Typography>
-                  <Box sx={{ flex: 1 }} />
-                  {multiDue && (
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={selectedDoseInputs.length === 0}
-                      startIcon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
-                      onClick={() => onRecordVaccinationMulti?.(appt, selectedDoseInputs)}
-                      sx={{ boxShadow: "none", textTransform: "none", borderRadius: "8px" }}
-                    >
-                      {t("details.recordSelected", { count: selectedDoseInputs.length })}
-                    </Button>
-                  )}
-                </Stack>
-                <Stack spacing={1}>
-                  {dueDoses.map((slot) => {
-                    const info = scheduleDateInfo(slot.scheduledDate, slot.status);
-                    return (
-                      <Paper
-                        key={slot.id}
-                        variant="outlined"
-                        sx={{
-                          p: 1.25,
-                          pl: multiDue ? 1 : 1.75,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                          borderRadius: "10px",
-                          bgcolor: info.overdue
-                            ? alpha(theme.palette.error.main, 0.05)
-                            : "background.paper",
-                          borderColor: info.overdue
-                            ? alpha(theme.palette.error.main, 0.3)
-                            : "divider",
-                        }}
-                      >
-                        {multiDue && (
-                          <Checkbox
-                            size="small"
-                            checked={selectedDoseIds.has(slot.id)}
-                            onChange={() => toggleDose(slot.id)}
-                            sx={{ p: 0.5 }}
-                          />
-                        )}
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="body2" fontWeight={600} noWrap>
-                            {t("details.vaccineDose", { vaccine: slot.vaccineName, dose: slot.doseNumber })}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              color: info.overdue ? "error.main" : info.soon ? "warning.main" : "text.secondary",
-                              fontWeight: info.overdue || info.soon ? 600 : 400,
-                            }}
-                          >
-                            {info.text}
-                          </Typography>
-                        </Box>
-                        <Button
-                          size="small"
-                          variant={multiDue ? "outlined" : "contained"}
-                          startIcon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
-                          onClick={() =>
-                            onRecordVaccination?.(appt, {
-                              vaccineId: slot.vaccineId,
-                              doseNumber: slot.doseNumber,
-                            })
-                          }
-                          sx={{ boxShadow: "none", textTransform: "none", flexShrink: 0, borderRadius: "8px" }}
-                        >
-                          {t("details.record")}
-                        </Button>
-                      </Paper>
-                    );
-                  })}
-                </Stack>
-              </Box>
             )}
 
             {/* ── Services grouped by doctor ── */}
@@ -945,61 +780,30 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               )}
             </Box>
 
-            {/* ── Products (goods sold within the visit) ── */}
-            {(appt.productLines ?? []).filter((pl) => pl.status !== "canceled").length > 0 && (
-              <Box>
-                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  {t("details.products")}
-                </Typography>
-                <Stack spacing={1}>
-                  {(appt.productLines ?? [])
-                    .filter((pl) => pl.status !== "canceled")
-                    .map((pl) => (
-                      <Paper
-                        key={pl.id}
-                        variant="outlined"
-                        sx={{
-                          p: 1.5,
-                          pl: 2,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 2,
-                          bgcolor: "background.paper",
-                          borderRadius: 1.5,
-                        }}
-                      >
-                        <Avatar
-                          variant="rounded"
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            bgcolor: "action.selected",
-                            color: "text.secondary",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Inventory2Outlined fontSize="small" />
-                        </Avatar>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography variant="body2" fontWeight={600} noWrap>
-                            {pl.product?.name ?? "—"}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            × {pl.quantity}
-                            {pl.product?.unit ? ` ${pl.product.unit}` : ""}
-                          </Typography>
-                        </Box>
-                        <Typography variant="body2" fontWeight={700} sx={{ flexShrink: 0 }}>
-                          {som(pl.lineTotal)}
-                        </Typography>
-                      </Paper>
-                    ))}
-                </Stack>
-              </Box>
+            {/* Товары, проданные в рамках визита. */}
+            <AppointmentProductLines
+              lines={appt.productLines ?? []}
+              formatAmount={som}
+              clickable={canViewProducts}
+              onProductClick={(id, name) => {
+                setSelectedProductId(id);
+                setSelectedProductName(name);
+                setProductDrawerOpen(true);
+              }}
+            />
+
+            {/* Положенные дозы — ПОСЛЕ услуг и товаров: это подсказка «заодно
+                можно ввести», а не содержание визита. */}
+            {canRecordVaccination && appt.patient && isAppointmentActive && (
+              <AppointmentDueDoses
+                dueDoses={dueDoses}
+                onRecord={(prefill) => onRecordVaccination?.(appt, prefill)}
+                onRecordMulti={(doses) => onRecordVaccinationMulti?.(appt, doses)}
+              />
             )}
 
             {/* ── Text blocks ── */}
-            {(appt.complaints || appt.doctorComplaints || appt.adminComment) && (
+            {(appt.complaints || appt.doctorComplaints) && (
               <>
                 <Divider />
                 <Stack spacing={2}>
@@ -1049,26 +853,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                       </Typography>
                     </Box>
                   )}
-                  {appt.adminComment && (
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        {t("details.adminComment")}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          bgcolor: "background.paper",
-                          p: 1,
-                          borderRadius: 1,
-                          border: "1px solid",
-                          borderColor: "divider",
-                          whiteSpace: "pre-wrap",
-                        }}
-                      >
-                        {appt.adminComment}
-                      </Typography>
-                    </Box>
-                  )}
+                  {/* adminComment показан вверху, рядом с пациентом. */}
                 </Stack>
               </>
             )}
@@ -1090,6 +875,42 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         </CardContent>
       </Card>
 
+      {/* ── Меню дополнительных действий ── */}
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        {overflowActions.map((action) => (
+          <MenuItem
+            key={action.key}
+            onClick={() => runFromMenu(action)}
+            disabled={action.disabled}
+            selected={action.active}
+          >
+            <ListItemIcon sx={{ color: action.color ? `${action.color}.main` : undefined }}>
+              {action.icon}
+            </ListItemIcon>
+            <ListItemText>{action.label}</ListItemText>
+          </MenuItem>
+        ))}
+
+        {overflowActions.length > 0 && dangerActions.length > 0 && <Divider />}
+
+        {dangerActions.map((action) => (
+          <MenuItem
+            key={action.key}
+            onClick={() => runFromMenu(action)}
+            sx={{ color: "error.main" }}
+          >
+            <ListItemIcon sx={{ color: "error.main" }}>{action.icon}</ListItemIcon>
+            <ListItemText>{action.label}</ListItemText>
+          </MenuItem>
+        ))}
+      </Menu>
+
       {/* ── Quick-view drawers (краткая инфо по клику) ── */}
       <PatientQuickViewDrawer
         open={patientDrawerOpen}
@@ -1103,6 +924,15 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           setSelectedServiceId(null);
         }}
         serviceId={selectedServiceId}
+      />
+      <ProductQuickViewDrawer
+        open={productDrawerOpen}
+        onClose={() => {
+          setProductDrawerOpen(false);
+          setSelectedProductId(null);
+        }}
+        productId={selectedProductId}
+        fallbackName={selectedProductName}
       />
       <DoctorQuickViewDrawer
         open={doctorDrawerOpen}
