@@ -75,6 +75,7 @@ import ServiceGroupShell, {
 } from "../../components/appointments/ServiceGroupShell";
 import { groupServiceRowsByEmployee } from "../../components/appointments/serviceRowGroups";
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
+import { attentionFieldSx } from "../../theme/uiHelpers";
 import type { RbacBranch } from "../../api/auth";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -460,8 +461,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           : null,
     products:
       overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
-    adminComment:
-      isBooking && !adminComment.trim() ? t("addDrawer.errors.bookingReasonRequired") : null,
+    // Комментарий к брони необязателен: часто бронируют по звонку, когда
+    // сказать про неё пока нечего, а пустое поле блокировало сохранение.
   });
   const touched = form.attempted;
 
@@ -1564,7 +1565,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
                 <Stack spacing={0.5}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    {t("addDrawer.adminCommentLabel", { required: isBooking ? " *" : "" })}
+                    {t("addDrawer.adminCommentLabel")}
                   </Typography>
                   <TextField
                     value={adminComment}
@@ -1576,7 +1577,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     placeholder={
                       isBooking ? t("addDrawer.bookingReason") : t("addDrawer.optional")
                     }
-                    {...form.field("adminComment")}
+                    // У брони поле подсвечено янтарным (как тумблер брони):
+                    // без пациента только комментарий и объясняет, чьё время
+                    // занято. Подсказка, а не обязательное поле.
+                    helperText={isBooking ? t("addDrawer.bookingReasonHint") : undefined}
+                    sx={isBooking ? attentionFieldSx : undefined}
                   />
                 </Stack>
               </>

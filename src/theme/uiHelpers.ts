@@ -11,3 +11,21 @@ export const subtleBg = (t: Theme, strong = false): string =>
   t.palette.mode === "dark"
     ? alpha("#ffffff", strong ? 0.06 : 0.03)
     : alpha("#0b0d0f", strong ? 0.04 : 0.018);
+
+/**
+ * Подсветка поля «просим заполнить, но не обязаны» — янтарный тон, тот же,
+ * которым помечена сама бронь (тумблер «Бронирование без пациента»).
+ *
+ * Отличается от обязательного поля намеренно: красный контур `error` означает
+ * «сохранить нельзя», а этот — «лучше заполни». Поэтому не трогаем состояние
+ * валидации, только цвета.
+ */
+export const attentionFieldSx = {
+  "& .MuiOutlinedInput-root": {
+    bgcolor: "warning.lighter",
+    "& fieldset": { borderColor: "warning.light" },
+    "&:hover fieldset": { borderColor: "warning.main" },
+    "&.Mui-focused fieldset": { borderColor: "warning.main", borderWidth: 2 },
+  },
+  "& .MuiFormHelperText-root": { color: "warning.onSurface" },
+} as const;

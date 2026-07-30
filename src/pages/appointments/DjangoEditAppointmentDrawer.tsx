@@ -69,6 +69,7 @@ import ServiceGroupShell, {
 } from "../../components/appointments/ServiceGroupShell";
 import { groupServiceRowsByEmployee } from "../../components/appointments/serviceRowGroups";
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
+import { attentionFieldSx } from "../../theme/uiHelpers";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
 import {
   billableRowsTotal,
@@ -641,8 +642,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         : incompatibleRows.length > 0
           ? t("addDrawer.errors.performerMismatch")
           : null,
-    adminComment:
-      isBooking && !adminComment.trim() ? t("addDrawer.errors.bookingReasonRequired") : null,
+    // Комментарий к брони необязателен и при создании — иначе бронь без
+    // комментария нельзя было бы сохранить при первой же правке.
   });
 
   // ── total ────────────────────────────────────────────────────────────────
@@ -1771,17 +1772,16 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                     minRows={2}
                   />
                   <TextField
-                    placeholder={
-                      isBooking
-                        ? t("editDrawer.adminCommentRequired")
-                        : t("editDrawer.adminComment")
-                    }
+                    placeholder={t("editDrawer.adminComment")}
                     value={adminComment}
                     onChange={(e) => setAdminComment(e.target.value)}
                     fullWidth
                     multiline
                     minRows={2}
-                    {...form.field("adminComment")}
+                    // Бронь без пациента: подсвечиваем — комментарий здесь
+                    // единственное объяснение, чьё время занято. Не обязателен.
+                    helperText={isBooking ? t("addDrawer.bookingReasonHint") : undefined}
+                    sx={isBooking ? attentionFieldSx : undefined}
                   />
                 </>
               )}
