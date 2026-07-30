@@ -922,7 +922,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                         : undefined
                                     }
                                     sx={{
-                                      maxWidth: 260,
                                       width: "100%",
                                       px: 1,
                                       py: 0.5,
