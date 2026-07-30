@@ -25,8 +25,11 @@ import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
 import dayjs from "dayjs";
 
+import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useProfileCompleteness } from "../../hooks/useProfileCompleteness";
 import { useCan, useCanChecker } from "../../hooks/useCan";
 import { PageHeader, AppCard, UserAvatar, InfoTile } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -399,6 +402,7 @@ const HeroCard: React.FC<{
   // «телефон ↔ десктоп» переключаем по md (768), иначе все телефоны попадают в sm.
   const isMobile = useMediaQuery((t: Theme) => t.breakpoints.down("md"));
   const subline = email || phone || "";
+  const { hasCriticalMissing, criticalLabelsFormatted } = useProfileCompleteness();
 
   return (
     <AppCard variant="outlined">
@@ -415,12 +419,50 @@ const HeroCard: React.FC<{
           sx={{ minWidth: 0, flex: 1, width: "100%", textAlign: { xs: "center", md: "left" } }}
         >
           <Box sx={{ position: "relative", flexShrink: 0 }}>
-            <UserAvatar
-              src={photoUrl}
-              name={displayName}
-              size={isMobile ? 64 : 76}
-              sx={{ borderRadius: "18px" }}
-            />
+            <Tooltip title={!photoUrl ? "Загрузите фото профиля (декор)" : ""} arrow>
+              <Box
+                sx={(t) => ({
+                  p: !photoUrl ? "3px" : 0,
+                  borderRadius: "21px",
+                  border: !photoUrl ? `2px dashed ${alpha(t.palette.primary.main, 0.45)}` : "none",
+                  transition: "border-color .2s ease",
+                  "&:hover": !photoUrl ? { borderColor: t.palette.primary.main } : undefined,
+                })}
+              >
+                <UserAvatar
+                  src={photoUrl}
+                  name={displayName}
+                  size={isMobile ? 64 : 76}
+                  sx={{ borderRadius: "18px" }}
+                />
+              </Box>
+            </Tooltip>
+            {!photoUrl && (
+              <Tooltip title="Загрузить фото" arrow>
+                <Box
+                  onClick={onEdit}
+                  sx={(t) => ({
+                    position: "absolute",
+                    top: -4,
+                    right: -4,
+                    width: 24,
+                    height: 24,
+                    borderRadius: "50%",
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: onEdit ? "pointer" : "default",
+                    border: `2px solid ${t.palette.background.paper}`,
+                    boxShadow: 1,
+                    "& .MuiSvgIcon-root": { fontSize: 13 },
+                  })}
+                >
+                  <AddAPhotoOutlined />
+                </Box>
+              </Tooltip>
+            )}
             {status && (
               <Tooltip title={isActive ? "Работает" : "Неактивен"} arrow>
                 <Box
@@ -466,6 +508,23 @@ const HeroCard: React.FC<{
                   bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
                 })}
               />
+              {hasCriticalMissing && (
+                <Tooltip title={`Необходимо заполнить: ${criticalLabelsFormatted}`} arrow>
+                  <Chip
+                    size="small"
+                    icon={<WarningAmberOutlined fontSize="small" />}
+                    label="Профиль не до конца настроен"
+                    sx={(t) => ({
+                      fontWeight: 500,
+                      height: 24,
+                      borderRadius: "7px",
+                      color: t.palette.warning.dark || t.palette.warning.main,
+                      bgcolor: alpha(t.palette.warning.main, t.palette.mode === "dark" ? 0.22 : 0.14),
+                      "& .MuiChip-icon": { color: "inherit", fontSize: 15, ml: 0.75 },
+                    })}
+                  />
+                </Tooltip>
+              )}
               {status && (
                 <Chip
                   size="small"

@@ -29,6 +29,7 @@ import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
+import { ProfileCompletionBanner } from "./components/profile/ProfileCompletionBanner";
 import { AttendanceReminder } from "./components/attendance/AttendanceReminder";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
@@ -536,6 +537,7 @@ function App() {
                                 <DjangoContextRemount>
                                   <>
                                     {IS_DJANGO_BACKEND && <AnnouncementBanner />}
+                                    {IS_DJANGO_BACKEND && <ProfileCompletionBanner />}
                                     <Outlet />
                                     {IS_DJANGO_BACKEND && <AttendanceReminder />}
                                   </>
