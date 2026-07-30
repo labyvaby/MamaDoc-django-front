@@ -11,6 +11,7 @@ import {
   Autocomplete,
   Box,
   CircularProgress,
+  InputAdornment,
   TextField,
   Typography,
 } from "@mui/material";
@@ -133,10 +134,16 @@ const AddressAutocomplete: React.FC<Props> = ({
         <TextField
           {...params}
           fullWidth
+          size="small"
           disabled={disabled}
           placeholder={placeholder ?? "Город, улица, дом"}
           InputProps={{
             ...params.InputProps,
+            startAdornment: (
+              <InputAdornment position="start">
+                <PlaceOutlined fontSize="small" color="disabled" />
+              </InputAdornment>
+            ),
             endAdornment: (
               <>
                 {loading ? <CircularProgress color="inherit" size={16} /> : null}

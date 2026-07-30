@@ -11,7 +11,13 @@
     "patientRequired": "Выберите {{patient.acc}}",
     "visitIdLabel": "ID {{visit.gen}} (необязательно)",
     "visitIdHelperLinked": "Указан — строка вакцины попадёт в счёт этого {{visit.gen}}",
-    "visitIdHelperExternal": "Для внешней прививки необязателен"
+    "visitIdHelperExternal": "Для внешней прививки необязателен",
+    "sectionVaccine": "Вакцина",
+    "sectionBatch": "Партия и стоимость",
+    "sectionExternal": "Со слов {{patient.gen}}",
+    "sectionDetails": "Детали введения",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить"
   },
   "page": {
     "patientColumn": "{{patient.nom, capitalize}}",

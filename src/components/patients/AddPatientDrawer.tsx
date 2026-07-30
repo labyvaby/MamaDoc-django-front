@@ -25,6 +25,7 @@ import {
   Alert,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import { useNotification } from "@refinedev/core";
 import { CustomDatePicker } from "../ui";
 import dayjs from "dayjs";
@@ -39,6 +40,8 @@ import { PhoneCountryCodeSelect } from "../ui";
 import { useHasRole } from "../../hooks/usePermissions";
 import { createPatient, type DjangoPatient } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { orgWide } from "../../api/scope";
 
 export type CreatedPatient = {
   id: string;
@@ -59,6 +62,7 @@ type Props = {
 
 const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPhone }) => {
   const { open: notify } = useNotification();
+  const orgId = useApiOrgId();
 
   const [fio, setFio] = React.useState("");
   const [phone, setPhone] = React.useState("");
@@ -69,6 +73,8 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
   const [notes, setNotes] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [duplicates, setDuplicates] = React.useState<DjangoPatient[]>([]);
+  const [duplicateCheckError, setDuplicateCheckError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) {
@@ -80,6 +86,8 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
       setNotes("");
       setBusy(false);
       setSaveError(null);
+      setDuplicates([]);
+      setDuplicateCheckError(null);
       return;
     }
     if (initialPhone) {
@@ -88,6 +96,53 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
       setPhoneCountryCode(parsed.countryCode);
     }
   }, [open, initialPhone]);
+
+  // ── duplicate check on phone ───────────────────────────────────────────────
+  React.useEffect(() => {
+    if (!open) return;
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 7) {
+      setDuplicates([]);
+      setDuplicateCheckError(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    const id = setTimeout(async () => {
+      try {
+        const { getSimilarPatients } = await import("../../api/patients");
+        const fullPhone = composePhone(phoneCountryCode, phone) ?? "";
+        const list = await getSimilarPatients(fullPhone, ctrl.signal, orgWide(orgId));
+        if (!ctrl.signal.aborted) {
+          setDuplicates(list);
+          setDuplicateCheckError(null);
+        }
+      } catch {
+        if (!ctrl.signal.aborted) {
+          setDuplicates([]);
+          setDuplicateCheckError("Не удалось проверить дубли");
+        }
+      }
+    }, 500);
+    return () => {
+      clearTimeout(id);
+      ctrl.abort();
+    };
+  }, [phone, phoneCountryCode, open, orgId]);
+
+  const handleUseDuplicate = (patient: DjangoPatient) => {
+    onCreated?.({
+      id: String(patient.id),
+      fio: patient.fullName,
+      phone: patient.phone,
+      birth_date: patient.birthDate,
+      photo: null,
+      is_blacklisted: null,
+      blacklist_reason: null,
+    });
+    onClose();
+  };
+
+  const hasDuplicates = duplicates.length > 0;
 
   const handleSubmit = async () => {
     const fioTrim = fio.trim();
@@ -120,7 +175,6 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
     } catch (err: unknown) {
       const msg = parseBackendError(err);
       setSaveError(msg);
-      notify?.({ type: "error", message: msg });
     } finally {
       setBusy(false);
     }
@@ -264,6 +318,54 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
         </Box>
 
         <Box sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
+          {/* duplicate warning */}
+          <Collapse in={hasDuplicates}>
+            <Box sx={{ px: 2, pt: 1.5 }}>
+              <Alert
+                severity="warning"
+                icon={<WarningAmberOutlined fontSize="small" />}
+                sx={{ py: 0.5 }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Возможный дубль
+                </Typography>
+                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                  {duplicates.slice(0, 3).map((d) => (
+                    <Stack
+                      key={d.id}
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={1}
+                    >
+                      <Typography variant="body2">
+                        {d.fullName}
+                        {d.phone ? ` · ${d.phone}` : ""}
+                        {d.birthDate ? ` · ${dayjs(d.birthDate).format("DD.MM.YYYY")}` : ""}
+                      </Typography>
+                      <Button
+                        size="small"
+                        onClick={() => handleUseDuplicate(d)}
+                        disabled={busy}
+                        sx={{ flexShrink: 0 }}
+                      >
+                        Использовать этого пациента
+                      </Button>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Alert>
+            </Box>
+          </Collapse>
+
+          {duplicateCheckError && (
+            <Box sx={{ px: 2, pt: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                {duplicateCheckError}
+              </Typography>
+            </Box>
+          )}
+
           <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ p: 2 }}>
             <Button onClick={onClose} disabled={busy}>
               Отмена

@@ -503,7 +503,7 @@ const DjangoPatientsPage: React.FC = () => {
         onClose={() => setAddOpen(false)}
         onCreated={(p) => {
           setAddOpen(false);
-          setPatients((prev) => [p, ...prev]);
+          setPatients((prev) => (prev.some((row) => row.id === p.id) ? prev : [p, ...prev]));
           setSelected(p);
         }}
         branchId={defaultBranchId}

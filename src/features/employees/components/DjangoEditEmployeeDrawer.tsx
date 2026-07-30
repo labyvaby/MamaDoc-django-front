@@ -6,16 +6,25 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  IconButton,
   InputAdornment,
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import EmailOutlined from "@mui/icons-material/EmailOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
+import NumbersOutlined from "@mui/icons-material/NumbersOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -56,7 +65,7 @@ import type { EmployesRow } from "../types";
 import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
-import { CustomDatePicker } from "../../../components/ui";
+import { CustomDatePicker, cascadeContainer, cascadeItem } from "../../../components/ui";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import SpecializationBlock from "./SpecializationBlock";
 import DocumentsBlock from "./DocumentsBlock";
@@ -67,6 +76,7 @@ import {
   getPhoneLocalMaxLength,
   type PhoneCountryCode,
 } from "../../../utility/phone";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import {
   validateFullName,
   validatePhoneLocal,
@@ -84,6 +94,9 @@ export type DjangoEditEmployeeDrawerProps = {
   onClose: () => void;
   onUpdated: (updated: EmployesRow) => void;
 };
+
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
 
 const isImageFile = (f: File | null) => Boolean(f && f.type.startsWith("image/"));
 const isImageUrl = (u: string | null) =>
@@ -116,6 +129,73 @@ function serializeSalary(v: SalarySettingsValue): string {
     rules,
     productRules,
   });
+}
+
+const serializeBranchIds = (list: DjangoEmployeeBranch[]) =>
+  JSON.stringify(list.map((b) => b.id).sort((a, b) => a - b));
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Форма редактирования существующего сотрудника — поля стартуют не пустыми, а
+// из загруженных данных сотрудника (baseline), поэтому черновик пишется, только
+// если текущие значения отличаются от baseline (иначе «черновиком» считалась бы
+// любая открытая карточка), а «Очистить» откатывает к baseline, а не к пустой
+// форме. Ключ включает id сотрудника — черновик одного сотрудника не должен
+// всплывать в форме другого. Услуги/зарплата/специализации/документы в черновик
+// не входят — это отдельные сущности со своим собственным сохранением (услуги и
+// зарплата диффятся против серверного baseline при сабмите, специализации и
+// документы пишутся в API сразу же дочерними блоками). Фото/elQR — File, не
+// сериализуется.
+
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type EditableDraftFields = {
+  fullName: string;
+  nickname: string;
+  phoneCountry: PhoneCountryCode;
+  phoneLocal: string;
+  email: string;
+  status: "active" | "inactive";
+  clinicalRole: "doctor" | "nurse" | "other";
+  telegramId: string;
+  instagram: string;
+  birthDate: string;
+  hiredAt: string;
+  bankAccountNumber: string;
+  inn: string;
+  address: string;
+  notes: string;
+  bank: string;
+  bik: string;
+  operationalBranches: DjangoEmployeeBranch[];
+};
+
+type EditEmployeeDraft = EditableDraftFields & { savedAt: number };
+
+function draftKeyFor(employeeId: number): string {
+  return `mamadoc:employees:edit-draft:${employeeId}`;
+}
+
+function sameAsBaseline(a: EditableDraftFields, b: EditableDraftFields): boolean {
+  return (
+    a.fullName === b.fullName &&
+    a.nickname === b.nickname &&
+    a.phoneCountry === b.phoneCountry &&
+    a.phoneLocal === b.phoneLocal &&
+    a.email === b.email &&
+    a.status === b.status &&
+    a.clinicalRole === b.clinicalRole &&
+    a.telegramId === b.telegramId &&
+    a.instagram === b.instagram &&
+    a.birthDate === b.birthDate &&
+    a.hiredAt === b.hiredAt &&
+    a.bankAccountNumber === b.bankAccountNumber &&
+    a.inn === b.inn &&
+    a.address === b.address &&
+    a.notes === b.notes &&
+    a.bank === b.bank &&
+    a.bik === b.bik &&
+    serializeBranchIds(a.operationalBranches) === serializeBranchIds(b.operationalBranches)
+  );
 }
 
 const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
@@ -173,6 +253,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [elqrExisting, setElqrExisting] = React.useState<string | null>(null);
   const [specializations, setSpecializations] = React.useState<DjangoSpecializationShort[]>([]);
 
+  // ── Черновик (localStorage) ─────────────────────────────────────────────────
+  const [draftRestored, setDraftRestored] = React.useState(false);
+  const baselineRef = React.useRef<EditableDraftFields | null>(null);
+
   // ── Операционные филиалы (карточка видна в каждом из набора) ──────────────
   const { activeBranch } = usePermissions();
   const orgId = useApiOrgId();
@@ -183,9 +267,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [operationalBranches, setOperationalBranches] = React.useState<DjangoEmployeeBranch[]>([]);
   // Исходный набор id — чтобы не слать поле, если его не трогали.
   const initialBranchIdsRef = React.useRef<string>("[]");
-
-  const serializeBranchIds = (list: DjangoEmployeeBranch[]) =>
-    JSON.stringify(list.map((b) => b.id).sort((a, b) => a - b));
 
   // ── Services ──────────────────────────────────────────────────────────────
   const [allServices, setAllServices] = React.useState<Service[]>([]);
@@ -230,6 +311,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
 
   const touch = (field: string) =>
     setTouched((prev) => ({ ...prev, [field]: true }));
+
+  const submitOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void handleSubmit();
+    }
+  };
 
   // ── Photo / elQR pick ───────────────────────────────────────────────────────
   const handlePickPhoto = React.useCallback((f: File | null) => {
@@ -304,6 +392,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setSelectedServices([]);
     setSalary(EMPTY_SALARY);
     initialSalaryRef.current = serializeSalary(EMPTY_SALARY);
+    baselineRef.current = null;
+    setDraftRestored(false);
 
     if (isNaN(empId) || empId <= 0) return;
 
@@ -333,6 +423,56 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         const parsedFull = parsePhone(full.phone || "");
         setPhoneCountry(parsedFull.countryCode);
         setPhoneLocal(parsedFull.local);
+
+        // Полностью загруженные данные — baseline для черновика. Затем, если
+        // есть непросроченный черновик по этому сотруднику, применяем его
+        // поверх baseline (восстановление несохранённого ввода).
+        const baseline: EditableDraftFields = {
+          fullName: record.full_name || "",
+          nickname: full.nickname || "",
+          phoneCountry: parsedFull.countryCode,
+          phoneLocal: parsedFull.local,
+          email: record.email || "",
+          status: record.status === "inactive" ? "inactive" : "active",
+          clinicalRole: full.clinicalRole ?? "other",
+          telegramId: full.telegramId || "",
+          instagram: full.instagram || "",
+          birthDate: full.birthDate || "",
+          hiredAt: full.hiredAt || "",
+          bankAccountNumber: full.bankAccountNumber || "",
+          inn: full.inn || "",
+          address: full.address || "",
+          notes: full.notes || "",
+          bank: full.bank || "",
+          bik: full.bik || "",
+          operationalBranches: full.operationalBranches ?? [],
+        };
+        baselineRef.current = baseline;
+
+        const draft = readFormDraft<EditEmployeeDraft>(draftKeyFor(empId), DRAFT_TTL_MS);
+        if (draft) {
+          setFullName(draft.fullName);
+          setNickname(draft.nickname);
+          setPhoneCountry(draft.phoneCountry);
+          setPhoneLocal(draft.phoneLocal);
+          setEmail(draft.email);
+          setStatus(draft.status);
+          setClinicalRole(draft.clinicalRole);
+          setTelegramId(draft.telegramId);
+          setInstagram(draft.instagram);
+          setBirthDate(draft.birthDate);
+          setHiredAt(draft.hiredAt);
+          setBankAccountNumber(draft.bankAccountNumber);
+          setInn(draft.inn);
+          setAddress(draft.address);
+          setNotes(draft.notes);
+          setBank(draft.bank);
+          setBik(draft.bik);
+          setOperationalBranches(draft.operationalBranches);
+          setDraftRestored(true);
+        } else {
+          setDraftRestored(false);
+        }
       })
       .catch((e) => {
         if ((e as Error)?.name !== "AbortError")
@@ -425,6 +565,76 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     return () => ctrl.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
+
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  React.useEffect(() => {
+    if (!record) return;
+    const empId = Number(record.id);
+    if (isNaN(empId) || empId <= 0) return;
+    if (!baselineRef.current) return; // ждём загрузки baseline
+
+    const id = setTimeout(() => {
+      const current: EditableDraftFields = {
+        fullName,
+        nickname,
+        phoneCountry,
+        phoneLocal,
+        email,
+        status,
+        clinicalRole,
+        telegramId,
+        instagram,
+        birthDate,
+        hiredAt,
+        bankAccountNumber,
+        inn,
+        address,
+        notes,
+        bank,
+        bik,
+        operationalBranches,
+      };
+      const key = draftKeyFor(empId);
+      if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+        clearFormDraft(key);
+      } else {
+        writeFormDraft(key, current);
+      }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [
+    record, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
+    telegramId, instagram, birthDate, hiredAt, bankAccountNumber, inn, address, notes,
+    bank, bik, operationalBranches,
+  ]);
+
+  const handleDiscardDraft = () => {
+    if (!record) return;
+    const empId = Number(record.id);
+    if (!isNaN(empId) && empId > 0) clearFormDraft(draftKeyFor(empId));
+    const b = baselineRef.current;
+    if (b) {
+      setFullName(b.fullName);
+      setNickname(b.nickname);
+      setPhoneCountry(b.phoneCountry);
+      setPhoneLocal(b.phoneLocal);
+      setEmail(b.email);
+      setStatus(b.status);
+      setClinicalRole(b.clinicalRole);
+      setTelegramId(b.telegramId);
+      setInstagram(b.instagram);
+      setBirthDate(b.birthDate);
+      setHiredAt(b.hiredAt);
+      setBankAccountNumber(b.bankAccountNumber);
+      setInn(b.inn);
+      setAddress(b.address);
+      setNotes(b.notes);
+      setBank(b.bank);
+      setBik(b.bik);
+      setOperationalBranches(b.operationalBranches);
+    }
+    setDraftRestored(false);
+  };
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -594,6 +804,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         _fullDetailsLoaded: true,
       };
 
+      clearFormDraft(draftKeyFor(empId));
       notify?.({ type: "success", message: "Данные сотрудника обновлены" });
       onUpdated(updatedRow);
       onClose();
@@ -653,402 +864,434 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       onSubmit={handleSubmit}
       submitLabel="Сохранить"
       submitDisabled={submitAttempted && hasErrors}
+      headerExtra={
+        draftRestored ? (
+          <Tooltip title="Черновик восстановлен — очистить?">
+            <IconButton onClick={handleDiscardDraft} aria-label="Очистить черновик">
+              <RestoreOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : undefined
+      }
     >
-      <Stack spacing={2.5}>
+      <MotionStack spacing={2.5} variants={cascadeContainer} initial="hidden" animate="show">
         {serverError && <Alert severity="error">{serverError}</Alert>}
 
         {/* ── Личная информация ── */}
-        <SectionLabel title="Личная информация" />
-        <PhotoHero
-          photoPreview={photoPreview}
-          name={fullName}
-          inputId="edit-employee-photo"
-          onPickPhoto={handlePickPhoto}
-          disabled={busy}
-          footer={
-            <Stack spacing={1.75}>
-              <Grid2>
-                <Field label="Дата рождения">
-                  <CustomDatePicker
-                    value={birthDate ? dayjs(birthDate) : null}
-                    onChange={(val) => {
-                      setBirthDate(val ? val.format("YYYY-MM-DD") : "");
-                      touch("birthDate");
-                    }}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        size: "small",
-                        InputLabelProps: { shrink: true },
-                        placeholder: "дд.мм.гггг",
-                        disabled: busy,
-                        onBlur: () => touch("birthDate"),
-                        error: Boolean(showError("birthDate")),
-                        helperText: showError("birthDate"),
-                      },
-                    }}
-                  />
-                </Field>
-                {canManagePrivate && (
-                  <Field label="ИНН">
+        <MotionBox variants={cascadeItem}>
+          <Stack spacing={2.5}>
+            <SectionLabel title="Личная информация" />
+            <PhotoHero
+              photoPreview={photoPreview}
+              name={fullName}
+              inputId="edit-employee-photo"
+              onPickPhoto={handlePickPhoto}
+              disabled={busy}
+              footer={
+                <Stack spacing={1.75}>
+                  <Grid2>
+                    <Field label="Дата рождения">
+                      <CustomDatePicker
+                        value={birthDate ? dayjs(birthDate) : null}
+                        onChange={(val) => {
+                          setBirthDate(val ? val.format("YYYY-MM-DD") : "");
+                          touch("birthDate");
+                        }}
+                        slotProps={{
+                          textField: {
+                            fullWidth: true,
+                            size: "small",
+                            InputLabelProps: { shrink: true },
+                            placeholder: "дд.мм.гггг",
+                            disabled: busy,
+                            onBlur: () => touch("birthDate"),
+                            error: Boolean(showError("birthDate")),
+                            helperText: showError("birthDate"),
+                          },
+                        }}
+                      />
+                    </Field>
+                    {canManagePrivate && (
+                      <Field label="ИНН">
+                        <TextField
+                          value={inn}
+                          onChange={(e) => { setInn(e.target.value.replace(/\D/g, "").slice(0, 14)); setServerError(null); }}
+                          onBlur={() => touch("inn")}
+                          onKeyDown={submitOnEnter}
+                          fullWidth
+                          size="small"
+                          placeholder="00000000000000"
+                          disabled={busy}
+                          inputProps={{ inputMode: "numeric" }}
+                          error={Boolean(showError("inn"))}
+                          helperText={showError("inn")}
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <NumbersOutlined fontSize="small" color="disabled" />
+                              </InputAdornment>
+                            ),
+                            endAdornment: !errors.inn && inn.length === 14 ? (
+                              <InputAdornment position="end">
+                                <CheckCircleOutlined fontSize="small" color="success" />
+                              </InputAdornment>
+                            ) : undefined,
+                          }}
+                        />
+                      </Field>
+                    )}
+                  </Grid2>
+                  <Grid2>
+                    <Field label="Дата приёма на работу">
+                      <CustomDatePicker
+                        value={hiredAt ? dayjs(hiredAt) : null}
+                        onChange={(val) => setHiredAt(val ? val.format("YYYY-MM-DD") : "")}
+                        slotProps={{
+                          textField: {
+                            fullWidth: true,
+                            size: "small",
+                            InputLabelProps: { shrink: true },
+                            placeholder: "дд.мм.гггг",
+                            disabled: busy,
+                          },
+                        }}
+                      />
+                    </Field>
+                  </Grid2>
+                  <Field label="Описание">
                     <TextField
-                      value={inn}
-                      onChange={(e) => { setInn(e.target.value.replace(/\D/g, "").slice(0, 14)); setServerError(null); }}
-                      onBlur={() => touch("inn")}
+                      value={notes}
+                      onChange={(e) => { setNotes(e.target.value); setServerError(null); }}
                       fullWidth
                       size="small"
-                      placeholder="00000000000000"
+                      multiline
+                      minRows={2}
+                      placeholder="Короткое описание сотрудника"
                       disabled={busy}
-                      inputProps={{ inputMode: "numeric" }}
-                      error={Boolean(showError("inn"))}
-                      helperText={showError("inn")}
+                      inputProps={{ maxLength: 500 }}
                     />
                   </Field>
-                )}
-              </Grid2>
-              <Grid2>
-                <Field label="Дата приёма на работу">
-                  <CustomDatePicker
-                    value={hiredAt ? dayjs(hiredAt) : null}
-                    onChange={(val) => setHiredAt(val ? val.format("YYYY-MM-DD") : "")}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        size: "small",
-                        InputLabelProps: { shrink: true },
-                        placeholder: "дд.мм.гггг",
-                        disabled: busy,
-                      },
-                    }}
-                  />
-                </Field>
-              </Grid2>
-              <Field label="Описание">
-                <TextField
-                  value={notes}
-                  onChange={(e) => { setNotes(e.target.value); setServerError(null); }}
-                  fullWidth
-                  size="small"
-                  multiline
-                  minRows={2}
-                  placeholder="Короткое описание сотрудника"
-                  disabled={busy}
-                  inputProps={{ maxLength: 500 }}
-                />
-              </Field>
-              {canManagePrivate && (
-                <Field label="Адрес проживания">
-                  <TextField
-                    value={address}
-                    onChange={(e) => { setAddress(e.target.value); setServerError(null); }}
-                    fullWidth
-                    size="small"
-                    multiline
-                    minRows={2}
-                    placeholder="Город, улица, дом, кв."
-                    disabled={busy}
-                    inputProps={{ maxLength: 255 }}
-                  />
-                </Field>
-              )}
-            </Stack>
-          }
-        >
-          <Field label="ФИО" required>
-            <TextField
-              value={fullName}
-              onChange={(e) => { setFullName(e.target.value); setServerError(null); }}
-              onBlur={() => touch("fullName")}
-              required
-              fullWidth
-              size="small"
-              placeholder="Иванов Иван Иванович"
-              disabled={busy}
-              error={Boolean(showError("fullName"))}
-              helperText={showError("fullName")}
-              inputProps={{ maxLength: 255 }}
-            />
-          </Field>
-          <Field label="Псевдоним">
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TextField
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                fullWidth
-                size="small"
-                placeholder="Как в расписании"
-                disabled={busy}
-                inputProps={{ maxLength: 100 }}
-              />
-              <Box sx={{ flexShrink: 0 }}>
-                <StatusBadge
-                  value={status}
-                  onChange={setStatus}
-                  options={["active", "inactive"]}
-                  disabled={busy}
-                />
-              </Box>
-            </Stack>
-          </Field>
-        </PhotoHero>
-
-        {/* ── Контакты ── */}
-        <SectionLabel title="Контакты" />
-
-        <Field label="Телефон">
-          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-            <PhoneCountryCodeSelect
-              value={phoneCountry}
-              onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
-              disabled={busy}
-            />
-            <TextField
-              value={phoneLocal}
-              onChange={(e) => {
-                const maxLen = getPhoneLocalMaxLength(phoneCountry);
-                setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
-                setServerError(null);
-              }}
-              onBlur={() => touch("phone")}
-              fullWidth
-              placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
-              disabled={busy}
-              inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
-              error={Boolean(showError("phone"))}
-              helperText={showError("phone")}
-            />
-          </Box>
-        </Field>
-
-        <Field label="Email">
-          <TextField
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setServerError(null); }}
-            onBlur={() => touch("email")}
-            fullWidth
-            placeholder="example@mail.com"
-            type="email"
-            disabled={busy}
-            error={Boolean(showError("email") && !showError("email")?.startsWith("Опечатка"))}
-            helperText={showError("email")}
-            FormHelperTextProps={{
-              sx: showError("email")?.startsWith("Опечатка") ? { color: "warning.main" } : undefined,
-            }}
-          />
-        </Field>
-
-        <Grid2>
-          <Field label="Telegram ID">
-            <TextField
-              value={telegramId}
-              onChange={(e) => { setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20)); setServerError(null); }}
-              onBlur={() => touch("telegramId")}
-              fullWidth
-              placeholder="Числовой ID"
-              disabled={busy}
-              inputProps={{ inputMode: "numeric" }}
-              error={Boolean(showError("telegramId"))}
-              helperText={showError("telegramId")}
-            />
-          </Field>
-          <Field label="Instagram">
-            <TextField
-              value={instagram}
-              onChange={(e) => { setInstagram(e.target.value); setServerError(null); }}
-              onBlur={() => touch("instagram")}
-              fullWidth
-              placeholder="username"
-              disabled={busy}
-              InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
-              error={Boolean(showError("instagram"))}
-              helperText={showError("instagram")}
-            />
-          </Field>
-        </Grid2>
-
-        {/* ── Реквизиты (под staff.private.manage) ── */}
-        {canManagePrivate && (
-          <>
-            <SectionLabel
-              title="Реквизиты"
-              trailing={
-                <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
-                  <LockOutlined sx={{ fontSize: 13 }} />
-                  <Box component="span" sx={{ fontSize: "0.68rem" }}>приватно</Box>
+                  {canManagePrivate && (
+                    <Field label="Адрес проживания">
+                      <TextField
+                        value={address}
+                        onChange={(e) => { setAddress(e.target.value); setServerError(null); }}
+                        fullWidth
+                        size="small"
+                        placeholder="Город, улица, дом, кв."
+                        disabled={busy}
+                        inputProps={{ maxLength: 255 }}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <PlaceOutlined fontSize="small" color="disabled" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Field>
+                  )}
                 </Stack>
               }
-            />
-            <Field label="Банк">
-              <TextField
-                select
-                value={bank}
-                onChange={(e) => handleBankChange(e.target.value)}
-                fullWidth
-                disabled={busy}
-                SelectProps={{ displayEmpty: true }}
-                helperText={
-                  banks.length === 0
-                    ? "Справочник пуст — добавьте банки в Настройки → Банки"
-                    : undefined
-                }
-              >
-                <MenuItem value="">
-                  <Box component="span" sx={{ color: "text.disabled" }}>Не выбран</Box>
-                </MenuItem>
-                {bank && !banks.some((b) => b.name === bank) && (
-                  <MenuItem value={bank}>{bank}</MenuItem>
-                )}
-                {banks.map((b) => (
-                  <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
-                ))}
-              </TextField>
-            </Field>
-            <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 2fr" } }}>
-              <Field label="БИК">
+            >
+              <Field label="ФИО" required>
                 <TextField
-                  value={bik}
-                  onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  onBlur={() => touch("bik")}
+                  value={fullName}
+                  onChange={(e) => { setFullName(e.target.value); setServerError(null); }}
+                  onBlur={() => touch("fullName")}
+                  onKeyDown={submitOnEnter}
+                  required
                   fullWidth
-                  placeholder="000000"
+                  size="small"
+                  placeholder="Иванов Иван Иванович"
                   disabled={busy}
-                  inputProps={{ inputMode: "numeric" }}
-                  error={Boolean(showError("bik"))}
-                  helperText={showError("bik")}
-                />
-              </Field>
-              <Field label="Расчётный счёт">
-                <TextField
-                  value={bankAccountNumber}
-                  onChange={(e) => { setBankAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 16)); setServerError(null); }}
-                  onBlur={() => touch("bankAccountNumber")}
-                  fullWidth
-                  placeholder="0000000000000000"
-                  disabled={busy}
-                  inputProps={{ inputMode: "numeric" }}
+                  error={Boolean(showError("fullName"))}
+                  helperText={showError("fullName")}
+                  inputProps={{ maxLength: 255 }}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
-                        <CreditCardOutlined fontSize="small" />
+                        <PersonOutlineOutlined fontSize="small" color="disabled" />
                       </InputAdornment>
                     ),
+                    endAdornment: !errors.fullName && fullName.trim() ? (
+                      <InputAdornment position="end">
+                        <CheckCircleOutlined fontSize="small" color="success" />
+                      </InputAdornment>
+                    ) : undefined,
                   }}
-                  error={Boolean(showError("bankAccountNumber"))}
-                  helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
                 />
               </Field>
-            </Box>
-            <Field label="elQR (реквизиты QR)">
-              <ElqrUploader
-                previewUrl={elqrPreview}
-                isImage={elqrIsImage}
-                fileName={elqrFile?.name ?? (elqrPreview ? "elQR" : null)}
-                inputId="edit-employee-elqr"
-                onPick={handlePickElqr}
-                onRemove={() => handlePickElqr(null)}
+              <Field label="Псевдоним">
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    onKeyDown={submitOnEnter}
+                    fullWidth
+                    size="small"
+                    placeholder="Как в расписании"
+                    disabled={busy}
+                    inputProps={{ maxLength: 100 }}
+                  />
+                  <Box sx={{ flexShrink: 0 }}>
+                    <StatusBadge
+                      value={status}
+                      onChange={setStatus}
+                      options={["active", "inactive"]}
+                      disabled={busy}
+                    />
+                  </Box>
+                </Stack>
+              </Field>
+            </PhotoHero>
+          </Stack>
+        </MotionBox>
+
+        {/* ── Контакты ── */}
+        <MotionBox variants={cascadeItem}>
+          <Stack spacing={2.5}>
+            <SectionLabel title="Контакты" />
+
+            <Field label="Телефон">
+              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                <PhoneCountryCodeSelect
+                  value={phoneCountry}
+                  onChange={(code) => { setPhoneCountry(code); setPhoneLocal(""); }}
+                  disabled={busy}
+                />
+                <TextField
+                  value={phoneLocal}
+                  onChange={(e) => {
+                    const maxLen = getPhoneLocalMaxLength(phoneCountry);
+                    setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
+                    setServerError(null);
+                  }}
+                  onBlur={() => touch("phone")}
+                  onKeyDown={submitOnEnter}
+                  fullWidth
+                  size="small"
+                  placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
+                  disabled={busy}
+                  inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
+                  error={Boolean(showError("phone"))}
+                  helperText={showError("phone")}
+                />
+              </Box>
+            </Field>
+
+            <Field label="Email">
+              <TextField
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setServerError(null); }}
+                onBlur={() => touch("email")}
+                onKeyDown={submitOnEnter}
+                fullWidth
+                size="small"
+                placeholder="example@mail.com"
+                type="email"
                 disabled={busy}
+                error={Boolean(showError("email") && !showError("email")?.startsWith("Опечатка"))}
+                helperText={showError("email")}
+                FormHelperTextProps={{
+                  sx: showError("email")?.startsWith("Опечатка") ? { color: "warning.main" } : undefined,
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <EmailOutlined fontSize="small" color="disabled" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: !errors.email && email.trim() ? (
+                    <InputAdornment position="end">
+                      <CheckCircleOutlined fontSize="small" color="success" />
+                    </InputAdornment>
+                  ) : undefined,
+                }}
               />
             </Field>
-          </>
+
+            <Grid2>
+              <Field label="Telegram ID">
+                <TextField
+                  value={telegramId}
+                  onChange={(e) => { setTelegramId(e.target.value.replace(/\D/g, "").slice(0, 20)); setServerError(null); }}
+                  onBlur={() => touch("telegramId")}
+                  onKeyDown={submitOnEnter}
+                  fullWidth
+                  size="small"
+                  placeholder="Числовой ID"
+                  disabled={busy}
+                  inputProps={{ inputMode: "numeric" }}
+                  error={Boolean(showError("telegramId"))}
+                  helperText={showError("telegramId")}
+                />
+              </Field>
+              <Field label="Instagram">
+                <TextField
+                  value={instagram}
+                  onChange={(e) => { setInstagram(e.target.value); setServerError(null); }}
+                  onBlur={() => touch("instagram")}
+                  onKeyDown={submitOnEnter}
+                  fullWidth
+                  size="small"
+                  placeholder="username"
+                  disabled={busy}
+                  InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
+                  error={Boolean(showError("instagram"))}
+                  helperText={showError("instagram")}
+                />
+              </Field>
+            </Grid2>
+          </Stack>
+        </MotionBox>
+
+        {/* ── Реквизиты (под staff.private.manage) ── */}
+        {canManagePrivate && (
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={2.5}>
+              <SectionLabel
+                title="Реквизиты"
+                trailing={
+                  <Stack direction="row" alignItems="center" gap={0.5} sx={{ color: "text.disabled" }}>
+                    <LockOutlined sx={{ fontSize: 13 }} />
+                    <Box component="span" sx={{ fontSize: "0.68rem" }}>приватно</Box>
+                  </Stack>
+                }
+              />
+              <Field label="Банк">
+                <TextField
+                  select
+                  value={bank}
+                  onChange={(e) => handleBankChange(e.target.value)}
+                  fullWidth
+                  size="small"
+                  disabled={busy}
+                  SelectProps={{ displayEmpty: true }}
+                  helperText={
+                    banks.length === 0
+                      ? "Справочник пуст — добавьте банки в Настройки → Банки"
+                      : undefined
+                  }
+                >
+                  <MenuItem value="">
+                    <Box component="span" sx={{ color: "text.disabled" }}>Не выбран</Box>
+                  </MenuItem>
+                  {bank && !banks.some((b) => b.name === bank) && (
+                    <MenuItem value={bank}>{bank}</MenuItem>
+                  )}
+                  {banks.map((b) => (
+                    <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
+                  ))}
+                </TextField>
+              </Field>
+              <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 2fr" } }}>
+                <Field label="БИК">
+                  <TextField
+                    value={bik}
+                    onChange={(e) => setBik(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onBlur={() => touch("bik")}
+                    onKeyDown={submitOnEnter}
+                    fullWidth
+                    size="small"
+                    placeholder="000000"
+                    disabled={busy}
+                    inputProps={{ inputMode: "numeric" }}
+                    error={Boolean(showError("bik"))}
+                    helperText={showError("bik")}
+                    InputProps={{
+                      endAdornment: !errors.bik && bik.length === 6 ? (
+                        <InputAdornment position="end">
+                          <CheckCircleOutlined fontSize="small" color="success" />
+                        </InputAdornment>
+                      ) : undefined,
+                    }}
+                  />
+                </Field>
+                <Field label="Расчётный счёт">
+                  <TextField
+                    value={bankAccountNumber}
+                    onChange={(e) => { setBankAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 16)); setServerError(null); }}
+                    onBlur={() => touch("bankAccountNumber")}
+                    onKeyDown={submitOnEnter}
+                    fullWidth
+                    size="small"
+                    placeholder="0000000000000000"
+                    disabled={busy}
+                    inputProps={{ inputMode: "numeric" }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <CreditCardOutlined fontSize="small" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: !errors.bankAccountNumber && bankAccountNumber.length === 16 ? (
+                        <InputAdornment position="end">
+                          <CheckCircleOutlined fontSize="small" color="success" />
+                        </InputAdornment>
+                      ) : undefined,
+                    }}
+                    error={Boolean(showError("bankAccountNumber"))}
+                    helperText={showError("bankAccountNumber") || `${bankAccountNumber.length}/16`}
+                  />
+                </Field>
+              </Box>
+              <Field label="elQR (реквизиты QR)">
+                <ElqrUploader
+                  previewUrl={elqrPreview}
+                  isImage={elqrIsImage}
+                  fileName={elqrFile?.name ?? (elqrPreview ? "elQR" : null)}
+                  inputId="edit-employee-elqr"
+                  onPick={handlePickElqr}
+                  onRemove={() => handlePickElqr(null)}
+                  disabled={busy}
+                />
+              </Field>
+            </Stack>
+          </MotionBox>
         )}
 
         {/* ── Тип сотрудника ── */}
-        <SectionLabel title="Тип сотрудника" />
+        <MotionBox variants={cascadeItem}>
+          <Stack spacing={2.5}>
+            <SectionLabel title="Тип сотрудника" />
 
-        <Field label="Тип" hint="Клинический тип — влияет на расписание и специализации">
-          <TextField
-            select
-            value={clinicalRole}
-            onChange={(e) => setClinicalRole(e.target.value as "doctor" | "nurse" | "other")}
-            fullWidth
-            disabled={busy}
-          >
-            <MenuItem value="doctor">{t("clinicalRole.doctor")}</MenuItem>
-            <MenuItem value="nurse">{t("clinicalRole.nurse")}</MenuItem>
-            <MenuItem value="other">{t("clinicalRole.other")}</MenuItem>
-          </TextField>
-        </Field>
-
-        {/* ── Операционные филиалы ── */}
-        <Field
-          label="Филиалы (операционно)"
-          hint={
-            branchScoped
-              ? "Меняется только в режиме «все филиалы»"
-              : "Где сотрудник принимает — карточка видна в каждом из этих филиалов"
-          }
-        >
-          <Autocomplete
-            multiple
-            options={allBranches}
-            value={operationalBranches}
-            disableCloseOnSelect
-            disabled={busy || branchScoped}
-            getOptionLabel={(b) => b.name}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
-            onChange={(_, v) => setOperationalBranches(v)}
-            renderOption={(props, option, { selected }) => (
-              <li {...props} key={option.id}>
-                <Checkbox
-                  icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
-                  checkedIcon={<CheckBoxIcon fontSize="small" />}
-                  style={{ marginRight: 8 }}
-                  checked={selected}
-                />
-                {option.name}
-              </li>
-            )}
-            renderTags={(value, getTagProps) =>
-              value.map((option, index) => (
-                <Chip
-                  {...getTagProps({ index })}
-                  key={option.id}
-                  label={option.name}
-                  size="small"
-                />
-              ))
-            }
-            renderInput={(params) => (
+            <Field label="Тип" hint="Клинический тип — влияет на расписание и специализации">
               <TextField
-                {...params}
-                placeholder={operationalBranches.length === 0 ? "Только основной филиал" : undefined}
-              />
-            )}
-          />
-        </Field>
+                select
+                value={clinicalRole}
+                onChange={(e) => setClinicalRole(e.target.value as "doctor" | "nurse" | "other")}
+                fullWidth
+                size="small"
+                disabled={busy}
+              >
+                <MenuItem value="doctor">{t("clinicalRole.doctor")}</MenuItem>
+                <MenuItem value="nurse">{t("clinicalRole.nurse")}</MenuItem>
+                <MenuItem value="other">{t("clinicalRole.other")}</MenuItem>
+              </TextField>
+            </Field>
 
-        {/* ── Специализации (только для врача) ── */}
-        {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
-          <SpecializationBlock
-            employeeId={Number(record.id)}
-            currentSpecializations={specializations}
-            onSpecializationsChange={setSpecializations}
-            canView={canViewSpecs}
-            canManage={canManageSpecs}
-            disabled={busy}
-          />
-        )}
-
-        {/* ── Услуги ── */}
-        {(canViewServices || canManageServices) && (
-          <>
-            <SectionLabel title="Услуги" />
-            <Field label="Услуги сотрудника">
+            {/* ── Операционные филиалы ── */}
+            <Field
+              label="Филиалы (операционно)"
+              hint={
+                branchScoped
+                  ? "Меняется только в режиме «все филиалы»"
+                  : "Где сотрудник принимает — карточка видна в каждом из этих филиалов"
+              }
+            >
               <Autocomplete
                 multiple
-                limitTags={3}
-                loading={servicesLoading}
-                options={allServices}
-                value={selectedServices}
+                size="small"
+                options={allBranches}
+                value={operationalBranches}
                 disableCloseOnSelect
-                disabled={!canManageServices || busy}
-                getOptionLabel={(s) =>
-                  s.basePrice ? `${s.name} (${Number(s.basePrice)} с)` : s.name
-                }
+                disabled={busy || branchScoped}
+                getOptionLabel={(b) => b.name}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
-                onChange={(_, newVal) => setSelectedServices(newVal)}
+                onChange={(_, v) => setOperationalBranches(v)}
                 renderOption={(props, option, { selected }) => (
-                  <li {...props}>
+                  <li {...props} key={option.id}>
                     <Checkbox
                       icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
                       checkedIcon={<CheckBoxIcon fontSize="small" />}
@@ -1056,87 +1299,158 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                       checked={selected}
                     />
                     {option.name}
-                    {option.basePrice ? ` (${Number(option.basePrice)} с)` : ""}
                   </li>
                 )}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip
+                      {...getTagProps({ index })}
+                      key={option.id}
+                      label={option.name}
+                      size="small"
+                    />
+                  ))
+                }
                 renderInput={(params) => (
-                  <TextField {...params} placeholder={canManageServices ? "Выберите услуги" : ""} />
+                  <TextField
+                    {...params}
+                    placeholder={operationalBranches.length === 0 ? "Только основной филиал" : undefined}
+                  />
                 )}
               />
             </Field>
+          </Stack>
+        </MotionBox>
 
-            {inactiveAssignments.length > 0 && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Неактивные услуги
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={0.5} mt={0.5}>
-                  {inactiveAssignments.map((a) => (
-                    <Chip
-                      key={a.id}
-                      label={a.service.name}
-                      size="small"
-                      variant="outlined"
-                      color="default"
-                      sx={{
-                        opacity: 0.7,
-                        textDecoration: "line-through",
-                        textDecorationColor: "text.disabled",
-                      }}
-                    />
-                  ))}
-                </Stack>
-              </Box>
-            )}
-          </>
+        {/* ── Специализации (только для врача) ── */}
+        {clinicalRole === "doctor" && (canViewSpecs || canManageSpecs) && record && (
+          <MotionBox variants={cascadeItem}>
+            <SpecializationBlock
+              employeeId={Number(record.id)}
+              currentSpecializations={specializations}
+              onSpecializationsChange={setSpecializations}
+              canView={canViewSpecs}
+              canManage={canManageSpecs}
+              disabled={busy}
+            />
+          </MotionBox>
+        )}
+
+        {/* ── Услуги ── */}
+        {(canViewServices || canManageServices) && (
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={2.5}>
+              <SectionLabel title="Услуги" />
+              <Field label="Услуги сотрудника">
+                <Autocomplete
+                  multiple
+                  size="small"
+                  limitTags={3}
+                  loading={servicesLoading}
+                  options={allServices}
+                  value={selectedServices}
+                  disableCloseOnSelect
+                  disabled={!canManageServices || busy}
+                  getOptionLabel={(s) =>
+                    s.basePrice ? `${s.name} (${Number(s.basePrice)} с)` : s.name
+                  }
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  onChange={(_, newVal) => setSelectedServices(newVal)}
+                  renderOption={(props, option, { selected }) => (
+                    <li {...props}>
+                      <Checkbox
+                        icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                        checkedIcon={<CheckBoxIcon fontSize="small" />}
+                        style={{ marginRight: 8 }}
+                        checked={selected}
+                      />
+                      {option.name}
+                      {option.basePrice ? ` (${Number(option.basePrice)} с)` : ""}
+                    </li>
+                  )}
+                  renderInput={(params) => (
+                    <TextField {...params} placeholder={canManageServices ? "Выберите услуги" : ""} />
+                  )}
+                />
+              </Field>
+
+              {inactiveAssignments.length > 0 && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Неактивные услуги
+                  </Typography>
+                  <Stack direction="row" flexWrap="wrap" gap={0.5} mt={0.5}>
+                    {inactiveAssignments.map((a) => (
+                      <Chip
+                        key={a.id}
+                        label={a.service.name}
+                        size="small"
+                        variant="outlined"
+                        color="default"
+                        sx={{
+                          opacity: 0.7,
+                          textDecoration: "line-through",
+                          textDecorationColor: "text.disabled",
+                        }}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+            </Stack>
+          </MotionBox>
         )}
 
         {/* ── Зарплата ── */}
         {canViewPayroll && (
-          <>
-            <SectionLabel title="Зарплата" />
-            <Box
-              sx={{
-                bgcolor: "action.hover",
-                p: 2,
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "divider",
-              }}
-            >
-              {salaryLoading ? (
-                <Stack alignItems="center" py={3}>
-                  <CircularProgress size={24} />
-                </Stack>
-              ) : (
-                <DjangoSalarySettings
-                  value={salary}
-                  onChange={setSalary}
-                  services={salaryServices}
-                  servicesHint={salaryServicesHint}
-                  loadingServices={salaryLoading}
-                  products={allProducts}
-                  loadingProducts={productsLoading}
-                  disabled={busy || !canManagePayroll}
-                />
-              )}
-            </Box>
-          </>
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={2.5}>
+              <SectionLabel title="Зарплата" />
+              <Box
+                sx={{
+                  bgcolor: "action.hover",
+                  p: 2,
+                  borderRadius: 2,
+                  border: "1px solid",
+                  borderColor: "divider",
+                }}
+              >
+                {salaryLoading ? (
+                  <Stack alignItems="center" py={3}>
+                    <CircularProgress size={24} />
+                  </Stack>
+                ) : (
+                  <DjangoSalarySettings
+                    value={salary}
+                    onChange={setSalary}
+                    services={salaryServices}
+                    servicesHint={salaryServicesHint}
+                    loadingServices={salaryLoading}
+                    products={allProducts}
+                    loadingProducts={productsLoading}
+                    disabled={busy || !canManagePayroll}
+                  />
+                )}
+              </Box>
+            </Stack>
+          </MotionBox>
         )}
 
         {/* ── Документы / паспортные фото ── */}
         {(canViewDocs || canManageDocs) && record && (
-          <>
-            <SectionLabel title="Документы" />
-            <DocumentsBlock
-              employeeId={Number(record.id)}
-              canView={canViewDocs}
-              canManage={canManageDocs}
-              disabled={busy}
-            />
-          </>
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={2.5}>
+              <SectionLabel title="Документы" />
+              <DocumentsBlock
+                employeeId={Number(record.id)}
+                canView={canViewDocs}
+                canManage={canManageDocs}
+                disabled={busy}
+              />
+            </Stack>
+          </MotionBox>
         )}
-      </Stack>
+      </MotionStack>
     </DrawerBase>
   );
 };

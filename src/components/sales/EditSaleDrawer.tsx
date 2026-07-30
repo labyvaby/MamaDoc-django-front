@@ -13,15 +13,22 @@ import {
     Paper,
     alpha,
     Tooltip,
+    InputAdornment,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import { motion } from "framer-motion";
+import { cascadeContainer, cascadeItem } from "../ui";
 
 import { Sale, updateSale } from "../../services/sales";
 import { supabase } from "../../utility/supabaseClient";
 import { useNotification } from "@refinedev/core";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
 // CSS to hide spin buttons
 const noSpinnersSx = {
@@ -46,6 +53,49 @@ type Props = {
     availableProducts: { id: string; label: string; price: number; image?: string; barcode?: string; is_active?: boolean }[];
 };
 
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых правок при закрытии дровера. Как и в
+// редактировании пациента, поля стартуют не пустыми, а из данных продажи —
+// черновик пишется, только если текущие значения отличаются от исходных, а
+// «Очистить» откатывает к исходным данным продажи, а не к пустой форме.
+// Ключ включает id продажи. Список товаров (lines) сюда намеренно НЕ входит —
+// это динамический массив, завязанный на актуальный каталог/остатки, риск
+// восстановить рассинхронизированные позиции выше пользы черновика для него;
+// защищаем только поля шапки продажи (клиент, скидка, оплата, комментарий).
+
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type SaleEditDraft = {
+    savedAt: number;
+    patientId: string | null;
+    patientLabel: string | null;
+    cash: number | "";
+    card: number | "";
+    discountPercent: number;
+    userComment: string;
+};
+
+function draftKeyFor(saleId: string): string {
+    return `mamadoc:sales:edit-draft:${saleId}`;
+}
+
+function sameAsBaseline(
+    a: Omit<SaleEditDraft, "savedAt">,
+    b: Omit<SaleEditDraft, "savedAt">,
+): boolean {
+    return (
+        a.patientId === b.patientId &&
+        a.patientLabel === b.patientLabel &&
+        a.cash === b.cash &&
+        a.card === b.card &&
+        a.discountPercent === b.discountPercent &&
+        a.userComment === b.userComment
+    );
+}
+
 export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated, availableProducts }) => {
     const { open: notify } = useNotification();
     const [loading, setLoading] = useState(false);
@@ -64,22 +114,13 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
     const [patients, setPatients] = useState<{ id: string; label: string }[]>([]);
     const [patientInput, setPatientInput] = useState("");
     const [patientsLoading, setPatientsLoading] = useState(false);
+    const [draftRestored, setDraftRestored] = useState(false);
+
+    const baselineRef = React.useRef<Omit<SaleEditDraft, "savedAt"> | null>(null);
 
     useEffect(() => {
         if (open && sale) {
-            setPatientId(sale.patient_id || null);
-
-            // Инициализируем поиск пациента текущим значением
-            if (sale.patient_id && sale.patient_name) {
-                const opt = { id: sale.patient_id, label: sale.patient_name };
-                setPatients([opt]);
-                setPatientInput(sale.patient_name);
-            } else {
-                setPatients([]);
-                setPatientInput("");
-            }
-
-            // Map existing lines
+            // Map existing lines (не входят в черновик — восстанавливаются только из продажи)
             if (sale.lines) {
                 setLines(sale.lines.map(l => ({
                     sellable_item_id: l.sellable_item_id,
@@ -97,25 +138,58 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
             const paymentRegex = /Оплата: Наличные (\d+), Карта (\d+), Скидка (\d+)%/;
             const match = rawComment.match(paymentRegex);
 
+            let parsedCash: number;
+            let parsedCard: number;
+            let parsedDiscount: number;
+            let parsedComment: string;
+
             if (match) {
-                setCash(Number(match[1]) || 0);
-                setCard(Number(match[2]) || 0);
-                setDiscountPercent(Number(match[3]) || 0);
+                parsedCash = Number(match[1]) || 0;
+                parsedCard = Number(match[2]) || 0;
+                parsedDiscount = Number(match[3]) || 0;
                 const splitIndex = rawComment.indexOf("Оплата:");
-                setUserComment(splitIndex > -1 ? rawComment.substring(0, splitIndex).trim() : "");
+                parsedComment = splitIndex > -1 ? rawComment.substring(0, splitIndex).trim() : "";
             } else {
                 // Нет блока "Оплата:" в комментарии — берём из полей БД
-                setUserComment(rawComment);
-                setCash(sale.paid_cash ?? 0);
-                setCard(sale.paid_card ?? 0);
-                setDiscountPercent(0);
+                parsedComment = rawComment;
+                parsedCash = sale.paid_cash ?? 0;
+                parsedCard = sale.paid_card ?? 0;
+                parsedDiscount = 0;
             }
+
+            const baseline: Omit<SaleEditDraft, "savedAt"> = {
+                patientId: sale.patient_id || null,
+                patientLabel: sale.patient_name || null,
+                cash: parsedCash,
+                card: parsedCard,
+                discountPercent: parsedDiscount,
+                userComment: parsedComment,
+            };
+            baselineRef.current = baseline;
+
+            const draft = readFormDraft<SaleEditDraft>(draftKeyFor(sale.id), DRAFT_TTL_MS);
+            const next = draft ?? baseline;
+
+            setPatientId(next.patientId);
+            if (next.patientId && next.patientLabel) {
+                const opt = { id: next.patientId, label: next.patientLabel };
+                setPatients([opt]);
+                setPatientInput(next.patientLabel);
+            } else {
+                setPatients([]);
+                setPatientInput("");
+            }
+            setCash(next.cash);
+            setCard(next.card);
+            setDiscountPercent(next.discountPercent);
+            setUserComment(next.userComment);
+            setDraftRestored(Boolean(draft));
         }
     }, [open, sale]);
 
-    // 10 последних пациентов при открытии (если нет текущего пациента — они уже установлены выше)
+    // 10 последних пациентов при открытии (если пациент ещё не выбран — ни исходный, ни из черновика)
     useEffect(() => {
-        if (!open || (sale?.patient_id && sale?.patient_name)) return;
+        if (!open || patientId) return;
         const load = async () => {
             const { data } = await supabase
                 .from("Patients")
@@ -125,6 +199,7 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
             setPatients((data || []).map(p => ({ id: p.id, label: p.full_name || "Без имени" })));
         };
         load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     // Серверный поиск пациентов по вводу
@@ -169,6 +244,52 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
     const totalPaid = paidCash + paidCard;
     const debt = Math.max(0, finalTotal - totalPaid);
 
+    const selectedPatientOption = patients.find(p => p.id === patientId) || null;
+
+    // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+    useEffect(() => {
+        if (!open || !sale) return;
+        const id = setTimeout(() => {
+            const current: Omit<SaleEditDraft, "savedAt"> = {
+                patientId,
+                patientLabel: selectedPatientOption?.label ?? null,
+                cash,
+                card,
+                discountPercent,
+                userComment,
+            };
+            const key = draftKeyFor(sale.id);
+            if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+                clearFormDraft(key);
+            } else {
+                writeFormDraft(key, current);
+            }
+        }, 400);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, sale, patientId, selectedPatientOption, cash, card, discountPercent, userComment]);
+
+    const handleDiscardDraft = () => {
+        if (!sale) return;
+        clearFormDraft(draftKeyFor(sale.id));
+        const b = baselineRef.current;
+        if (b) {
+            setPatientId(b.patientId);
+            if (b.patientId && b.patientLabel) {
+                setPatients([{ id: b.patientId, label: b.patientLabel }]);
+                setPatientInput(b.patientLabel);
+            } else {
+                setPatients([]);
+                setPatientInput("");
+            }
+            setCash(b.cash);
+            setCard(b.card);
+            setDiscountPercent(b.discountPercent);
+            setUserComment(b.userComment);
+        }
+        setDraftRestored(false);
+    };
+
     const handleSubmit = async () => {
         if (!sale) return;
 
@@ -189,6 +310,7 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
                 totalAmount: finalTotal
             });
 
+            clearFormDraft(draftKeyFor(sale.id));
             notify?.({ type: "success", message: "Продажа обновлена" });
             onUpdated(sale.id);
             onClose();
@@ -199,8 +321,6 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
             setLoading(false);
         }
     };
-
-    const selectedPatientOption = patients.find(p => p.id === patientId) || null;
 
     const handleAddProduct = (product: { id: string; label: string; price: number }) => {
         if (!product) return;
@@ -235,12 +355,24 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
         >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
                 <Typography variant="h6">Изменить продажу</Typography>
-                <IconButton onClick={loading ? undefined : onClose}><CloseOutlined /></IconButton>
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                    {draftRestored && (
+                        <Tooltip title="Восстановлен черновик — очистить?">
+                            <IconButton onClick={handleDiscardDraft} aria-label="Очистить черновик">
+                                <RestoreOutlined fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    <IconButton onClick={loading ? undefined : onClose}><CloseOutlined /></IconButton>
+                </Stack>
             </Box>
             <Divider />
 
-            <Stack
+            <MotionStack
                 spacing={3}
+                variants={cascadeContainer}
+                initial="hidden"
+                animate="show"
                 sx={{
                     p: 3,
                     flex: 1,
@@ -252,400 +384,444 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
                     },
                 }}
             >
-                {/* Patient */}
-                <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        Пациент
-                    </Typography>
-                    <Autocomplete
-                        options={patients}
-                        getOptionLabel={(option) => option.label}
-                        value={selectedPatientOption}
-                        onChange={(_, newValue) => setPatientId(newValue?.id || null)}
-                        inputValue={patientInput}
-                        onInputChange={(_, val) => setPatientInput(val)}
-                        filterOptions={(x) => x}
-                        loading={patientsLoading}
-                        noOptionsText={patientInput.length < 2 ? "Введите имя или телефон" : "Не найдено"}
-                        renderInput={(params) => <TextField {...params} placeholder="Поиск пациента..." />}
-                    />
-                </Stack>
-
-                {/* Products List - Товары */}
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mb: 1 }}>
-                    Товары *
-                </Typography>
-
-                {lines.map((line, index) => {
-                    const product = availableProducts.find(p => p.id === line.sellable_item_id);
-                    const isProductActive = product?.is_active !== false;
-
-                    return (
-                        <React.Fragment key={line.sellable_item_id}>
-                            <Stack spacing={1.5}>
-                                {/* Название товара и цена */}
-                                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                                    <Typography variant="body2" fontWeight={600}>
-                                        {line.product_name || product?.label || "Товар"}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {line.price} сом
-                                    </Typography>
-                                </Stack>
-
-                                {/* Количество и Штрихкод */}
-                                <Stack direction="row" spacing={1.5} alignItems="flex-end">
-                                    <Stack spacing={0.5} sx={{ minWidth: 120 }}>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Количество
-                                        </Typography>
-                                        <Box
-                                            sx={{
-                                                border: 1,
-                                                borderColor: 'divider',
-                                                borderRadius: 1,
-                                                bgcolor: 'background.paper',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                height: 40,
-                                            }}
-                                        >
-                                            <Button
-                                                size="small"
-                                                onClick={() => {
-                                                    setLines(lines.map(l =>
-                                                        l.sellable_item_id === line.sellable_item_id
-                                                            ? { ...l, quantity: Math.max(1, l.quantity - 1) }
-                                                            : l
-                                                    ));
-                                                }}
-                                                sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
-                                                disabled={!isProductActive || line.quantity <= 1}
-                                            >
-                                                −
-                                            </Button>
-                                            <TextField
-                                                size="small"
-                                                type="number"
-                                                value={line.quantity}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    const newQty = val === '' ? 1 : Number(val);
-                                                    if (newQty >= 1) {
-                                                        setLines(lines.map(l =>
-                                                            l.sellable_item_id === line.sellable_item_id
-                                                                ? { ...l, quantity: newQty }
-                                                                : l
-                                                        ));
-                                                    }
-                                                }}
-                                                disabled={!isProductActive}
-                                                inputProps={{
-                                                    style: { textAlign: 'center', padding: '8px 4px' },
-                                                    min: 1
-                                                }}
-                                                sx={{
-                                                    width: 40,
-                                                    ...noSpinnersSx,
-                                                    '& .MuiOutlinedInput-root': {
-                                                        '& fieldset': { border: 'none' }
-                                                    }
-                                                }}
-                                            />
-                                            <Button
-                                                size="small"
-                                                onClick={() => {
-                                                    setLines(lines.map(l =>
-                                                        l.sellable_item_id === line.sellable_item_id
-                                                            ? { ...l, quantity: l.quantity + 1 }
-                                                            : l
-                                                    ));
-                                                }}
-                                                sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
-                                                disabled={!isProductActive}
-                                            >
-                                                +
-                                            </Button>
-                                        </Box>
-                                    </Stack>
-
-                                    <Stack spacing={0.5} sx={{ flex: 1 }}>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Штрихкод
-                                        </Typography>
-                                        <TextField
-                                            size="small"
-                                            fullWidth
-                                            value={product?.barcode || ''}
-                                            disabled
-                                        />
-                                    </Stack>
-                                </Stack>
-
-                                {/* Стоимость */}
-                                <Box>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Стоимость
-                                    </Typography>
-                                    <Typography variant="body1" fontWeight={600}>
-                                        {(line.quantity * line.price).toLocaleString()} сом
-                                    </Typography>
-                                </Box>
-
-                                {/* Удалить */}
-                                {lines.length > 1 && (
-                                    <Tooltip title="Удалить товар">
-                                        <IconButton
-                                            size="small"
-                                            color="error"
-                                            onClick={() => handleRemoveLine(line.sellable_item_id)}
-                                            sx={{
-                                                alignSelf: 'flex-start',
-                                                border: '1px solid',
-                                                borderColor: 'error.main',
-                                                '&:hover': {
-                                                    backgroundColor: (theme) => alpha(theme.palette.error.main, 0.08),
-                                                }
-                                            }}
-                                        >
-                                            <DeleteOutlined fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                            </Stack>
-
-                            {index < lines.length - 1 && <Divider sx={{ my: 1 }} />}
-                        </React.Fragment>
-                    );
-                })}
-
-                {/* Add Product Control */}
-                <Autocomplete
-                    fullWidth
-                    options={availableProducts}
-                    value={null}
-                    onChange={(_, newProduct) => {
-                        if (newProduct) {
-                            handleAddProduct(newProduct);
-                        }
-                    }}
-                    getOptionLabel={(o) => `${o.label} — ${o.price || 0} сом`}
-                    getOptionDisabled={(o) => o.is_active === false}
-                    isOptionEqualToValue={(o, v) => o.id === v.id}
-                    renderInput={(params) => (
-                        <TextField
-                            {...params}
-                            placeholder="Добавить товар..."
-                            size="small"
-                            fullWidth
-                        />
-                    )}
-                    renderOption={(props, option) => (
-                        <li {...props}>
-                            <Stack direction="row" spacing={1} alignItems="center" width="100%">
-                                <Typography variant="body2" flex={1}>
-                                    {option.label} — {option.price || 0} сом
-                                </Typography>
-                                {option.is_active === false && (
-                                    <Chip label="Не доступен" size="small" color="error" />
-                                )}
-                            </Stack>
-                        </li>
-                    )}
-                />
-
-
-                <Divider />
-
-                {/* Payment Card - Integrated from CreateSaleDrawer */}
-                <Paper
-                    elevation={0}
-                    sx={{
-                        p: 2.5,
-                        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: "14px",
-                    }}
-                >
-                    <Stack spacing={2}>
-                        {/* Стоимость и Скидка */}
-                        <Stack direction="row" spacing={2} alignItems="flex-start">
-                            <Box flex={1}>
-                                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                    Стоимость
-                                </Typography>
-                                <Typography variant="h6" fontWeight={600}>
-                                    {baseTotal.toLocaleString()} сом
-                                </Typography>
-                            </Box>
-                            <Box flex={1}>
-                                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                    Скидка, %
-                                </Typography>
+                {/* ── Клиент ── */}
+                <MotionBox variants={cascadeItem}>
+                    <Stack spacing={0.5}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                            Пациент
+                        </Typography>
+                        <Autocomplete
+                            options={patients}
+                            getOptionLabel={(option) => option.label}
+                            value={selectedPatientOption}
+                            onChange={(_, newValue) => setPatientId(newValue?.id || null)}
+                            inputValue={patientInput}
+                            onInputChange={(_, val) => setPatientInput(val)}
+                            filterOptions={(x) => x}
+                            loading={patientsLoading}
+                            noOptionsText={patientInput.length < 2 ? "Введите имя или телефон" : "Не найдено"}
+                            renderInput={(params) => (
                                 <TextField
-                                    type="number"
+                                    {...params}
+                                    placeholder="Поиск пациента..."
+                                    size="small"
+                                    InputProps={{
+                                        ...params.InputProps,
+                                        startAdornment: (
+                                            <>
+                                                <InputAdornment position="start">
+                                                    <PersonOutlineOutlined fontSize="small" color="disabled" />
+                                                </InputAdornment>
+                                                {params.InputProps.startAdornment}
+                                            </>
+                                        ),
+                                    }}
+                                />
+                            )}
+                        />
+                    </Stack>
+                </MotionBox>
+
+                {/* ── Товары ── */}
+                {/* Динамический список позиций — без per-item анимации (тормозит/дублируется при добавлении строк) */}
+                <MotionBox variants={cascadeItem}>
+                    <Stack spacing={1.5}>
+                        <Divider />
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                            Товары *
+                        </Typography>
+
+                        {lines.map((line, index) => {
+                            const product = availableProducts.find(p => p.id === line.sellable_item_id);
+                            const isProductActive = product?.is_active !== false;
+
+                            return (
+                                <React.Fragment key={line.sellable_item_id}>
+                                    <Stack spacing={1.5}>
+                                        {/* Название товара и цена */}
+                                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                                            <Typography variant="body2" fontWeight={600}>
+                                                {line.product_name || product?.label || "Товар"}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {line.price} сом
+                                            </Typography>
+                                        </Stack>
+
+                                        {/* Количество и Штрихкод */}
+                                        <Stack direction="row" spacing={1.5} alignItems="flex-end">
+                                            <Stack spacing={0.5} sx={{ minWidth: 120 }}>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Количество
+                                                </Typography>
+                                                <Box
+                                                    sx={{
+                                                        border: 1,
+                                                        borderColor: 'divider',
+                                                        borderRadius: 1,
+                                                        bgcolor: 'background.paper',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        height: 40,
+                                                    }}
+                                                >
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setLines(lines.map(l =>
+                                                                l.sellable_item_id === line.sellable_item_id
+                                                                    ? { ...l, quantity: Math.max(1, l.quantity - 1) }
+                                                                    : l
+                                                            ));
+                                                        }}
+                                                        sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
+                                                        disabled={!isProductActive || line.quantity <= 1}
+                                                    >
+                                                        −
+                                                    </Button>
+                                                    <TextField
+                                                        size="small"
+                                                        type="number"
+                                                        value={line.quantity}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            const newQty = val === '' ? 1 : Number(val);
+                                                            if (newQty >= 1) {
+                                                                setLines(lines.map(l =>
+                                                                    l.sellable_item_id === line.sellable_item_id
+                                                                        ? { ...l, quantity: newQty }
+                                                                        : l
+                                                                ));
+                                                            }
+                                                        }}
+                                                        disabled={!isProductActive}
+                                                        inputProps={{
+                                                            style: { textAlign: 'center', padding: '8px 4px' },
+                                                            min: 1
+                                                        }}
+                                                        sx={{
+                                                            width: 40,
+                                                            ...noSpinnersSx,
+                                                            '& .MuiOutlinedInput-root': {
+                                                                '& fieldset': { border: 'none' }
+                                                            }
+                                                        }}
+                                                    />
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setLines(lines.map(l =>
+                                                                l.sellable_item_id === line.sellable_item_id
+                                                                    ? { ...l, quantity: l.quantity + 1 }
+                                                                    : l
+                                                            ));
+                                                        }}
+                                                        sx={{ minWidth: 32, px: 0.5, minHeight: 34 }}
+                                                        disabled={!isProductActive}
+                                                    >
+                                                        +
+                                                    </Button>
+                                                </Box>
+                                            </Stack>
+
+                                            <Stack spacing={0.5} sx={{ flex: 1 }}>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Штрихкод
+                                                </Typography>
+                                                <TextField
+                                                    size="small"
+                                                    fullWidth
+                                                    value={product?.barcode || ''}
+                                                    disabled
+                                                />
+                                            </Stack>
+                                        </Stack>
+
+                                        {/* Стоимость */}
+                                        <Box>
+                                            <Typography variant="caption" color="text.secondary">
+                                                Стоимость
+                                            </Typography>
+                                            <Typography variant="body1" fontWeight={600}>
+                                                {(line.quantity * line.price).toLocaleString()} сом
+                                            </Typography>
+                                        </Box>
+
+                                        {/* Удалить */}
+                                        {lines.length > 1 && (
+                                            <Tooltip title="Удалить товар">
+                                                <IconButton
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => handleRemoveLine(line.sellable_item_id)}
+                                                    sx={{
+                                                        alignSelf: 'flex-start',
+                                                        border: '1px solid',
+                                                        borderColor: 'error.main',
+                                                        '&:hover': {
+                                                            backgroundColor: (theme) => alpha(theme.palette.error.main, 0.08),
+                                                        }
+                                                    }}
+                                                >
+                                                    <DeleteOutlined fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
+                                    </Stack>
+
+                                    {index < lines.length - 1 && <Divider sx={{ my: 1 }} />}
+                                </React.Fragment>
+                            );
+                        })}
+
+                        {/* Add Product Control */}
+                        <Autocomplete
+                            fullWidth
+                            options={availableProducts}
+                            value={null}
+                            onChange={(_, newProduct) => {
+                                if (newProduct) {
+                                    handleAddProduct(newProduct);
+                                }
+                            }}
+                            getOptionLabel={(o) => `${o.label} — ${o.price || 0} сом`}
+                            getOptionDisabled={(o) => o.is_active === false}
+                            isOptionEqualToValue={(o, v) => o.id === v.id}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    placeholder="Добавить товар..."
                                     size="small"
                                     fullWidth
-                                    value={discountPercent}
-                                    onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-                                    inputProps={{ min: 0, max: 100, style: { textAlign: 'center' } }}
-                                    sx={{ ...noSpinnersSx }}
                                 />
-                            </Box>
-                        </Stack>
-
-                        {/* Наличные и Безналичные */}
-                        <Stack direction="row" spacing={2}>
-                            <Stack flex={1} spacing={0.5}>
-                                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                    <Typography variant="caption" color="text.secondary" display="block">
-                                        Наличные
-                                    </Typography>
-                                    <Button
-                                        size="small"
-                                        variant="text"
-                                        onClick={() => {
-                                            setCash(finalTotal);
-                                            setCard(0);
-                                        }}
-                                        sx={{ minWidth: 'auto', px: 1, fontSize: '0.7rem', textTransform: 'none' }}
-                                    >
-                                        100%
-                                    </Button>
-                                </Stack>
-                                <Stack direction="row" alignItems="center" spacing={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
-                                    <Box px={1}><AccountBalanceWalletOutlined color="action" fontSize="small" /></Box>
-                                    <TextField
-                                        variant="standard"
-                                        fullWidth
-                                        type="number"
-                                        value={cash}
-                                        onChange={(e) => {
-                                            if (e.target.value === "") {
-                                                setCash("");
-                                            } else {
-                                                const val = Number(e.target.value);
-                                                const cardValue = Number(card || 0);
-                                                const maxCash = Math.max(0, finalTotal - cardValue);
-                                                setCash(Math.min(val, maxCash));
-                                            }
-                                        }}
-                                        InputProps={{ disableUnderline: true }}
-                                        sx={{ py: 0.5, ...noSpinnersSx }}
-                                        placeholder="0"
-                                    />
-                                </Stack>
-                            </Stack>
-
-                            <Stack flex={1} spacing={0.5}>
-                                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                    <Typography variant="caption" color="text.secondary" display="block">
-                                        Безналичные
-                                    </Typography>
-                                    <Button
-                                        size="small"
-                                        variant="text"
-                                        onClick={() => {
-                                            setCard(finalTotal);
-                                            setCash(0);
-                                        }}
-                                        sx={{ minWidth: 'auto', px: 1, fontSize: '0.7rem', textTransform: 'none' }}
-                                    >
-                                        100%
-                                    </Button>
-                                </Stack>
-                                <Stack direction="row" alignItems="center" spacing={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
-                                    <Box px={1}><CreditCardOutlined color="action" fontSize="small" /></Box>
-                                    <TextField
-                                        variant="standard"
-                                        fullWidth
-                                        type="number"
-                                        value={card}
-                                        onChange={(e) => {
-                                            if (e.target.value === "") {
-                                                setCard("");
-                                            } else {
-                                                const val = Number(e.target.value);
-                                                const cashValue = Number(cash || 0);
-                                                const maxCard = Math.max(0, finalTotal - cashValue);
-                                                setCard(Math.min(val, maxCard));
-                                            }
-                                        }}
-                                        InputProps={{ disableUnderline: true }}
-                                        sx={{ py: 0.5, ...noSpinnersSx }}
-                                        placeholder="0"
-                                    />
-                                </Stack>
-                            </Stack>
-                        </Stack>
-
-                        <Divider sx={{ my: 1 }} />
-
-                        {/* Итого к оплате */}
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                                Итого к оплате
-                            </Typography>
-                            <Typography variant="h5" fontWeight={700} color="success.main">
-                                {finalTotal.toLocaleString()} сом
-                            </Typography>
-                        </Stack>
-
-                        {/* Статус и Долг */}
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" color="text.secondary">
-                                Статус
-                            </Typography>
-                            <Chip
-                                label={debt <= 0 ? "Оплачено" : "Долг"}
-                                size="small"
-                                color={debt <= 0 ? "success" : "error"}
-                                sx={{ fontWeight: 600 }}
-                            />
-                        </Stack>
-
-                        {debt > 0 && (
-                            <Paper
-                                elevation={0}
-                                sx={{
-                                    p: 1.5,
-                                    bgcolor: (theme) => alpha(theme.palette.error.main, 0.08),
-                                    border: '1px solid',
-                                    borderColor: (theme) => alpha(theme.palette.error.main, 0.3),
-                                    borderRadius: 1,
-                                }}
-                            >
-                                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                    <Typography variant="body2" color="error.main" fontWeight={600}>
-                                        Долг
-                                    </Typography>
-                                    <Typography variant="h6" color="error.main" fontWeight={700}>
-                                        {debt.toLocaleString()} сом
-                                    </Typography>
-                                </Stack>
-                            </Paper>
-                        )}
+                            )}
+                            renderOption={(props, option) => (
+                                <li {...props}>
+                                    <Stack direction="row" spacing={1} alignItems="center" width="100%">
+                                        <Typography variant="body2" flex={1}>
+                                            {option.label} — {option.price || 0} сом
+                                        </Typography>
+                                        {option.is_active === false && (
+                                            <Chip label="Не доступен" size="small" color="error" />
+                                        )}
+                                    </Stack>
+                                </li>
+                            )}
+                        />
                     </Stack>
-                </Paper>
+                </MotionBox>
 
-                {/* Comment */}
-                <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        Комментарий
-                    </Typography>
-                    <TextField
-                        fullWidth
-                        multiline
-                        rows={2}
-                        value={userComment}
-                        onChange={(e) => setUserComment(e.target.value)}
-                        placeholder="Комментарий к заказу"
-                    />
-                </Stack>
+                {/* ── Оплата ── */}
+                <MotionBox variants={cascadeItem}>
+                    <Stack spacing={1.5}>
+                        <Divider />
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                            Оплата
+                        </Typography>
 
-            </Stack>
+                        <Paper
+                            elevation={0}
+                            sx={{
+                                p: 2.5,
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: "14px",
+                            }}
+                        >
+                            <Stack spacing={2}>
+                                {/* Стоимость и Скидка */}
+                                <Stack direction="row" spacing={2} alignItems="flex-start">
+                                    <Box flex={1}>
+                                        <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                                            Стоимость
+                                        </Typography>
+                                        <Typography variant="h6" fontWeight={600}>
+                                            {baseTotal.toLocaleString()} сом
+                                        </Typography>
+                                    </Box>
+                                    <Box flex={1}>
+                                        <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                                            Скидка, %
+                                        </Typography>
+                                        <TextField
+                                            type="number"
+                                            size="small"
+                                            fullWidth
+                                            value={discountPercent}
+                                            onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                                            inputProps={{ min: 0, max: 100, style: { textAlign: 'center' } }}
+                                            InputProps={{
+                                                startAdornment: (
+                                                    <InputAdornment position="start">
+                                                        <PaymentsOutlined fontSize="small" color="disabled" />
+                                                    </InputAdornment>
+                                                ),
+                                            }}
+                                            sx={{ ...noSpinnersSx }}
+                                        />
+                                    </Box>
+                                </Stack>
+
+                                {/* Наличные и Безналичные */}
+                                <Stack direction="row" spacing={2}>
+                                    <Stack flex={1} spacing={0.5}>
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                            <Typography variant="caption" color="text.secondary" display="block">
+                                                Наличные
+                                            </Typography>
+                                            <Button
+                                                size="small"
+                                                variant="text"
+                                                onClick={() => {
+                                                    setCash(finalTotal);
+                                                    setCard(0);
+                                                }}
+                                                sx={{ minWidth: 'auto', px: 1, fontSize: '0.7rem', textTransform: 'none' }}
+                                            >
+                                                100%
+                                            </Button>
+                                        </Stack>
+                                        <Stack direction="row" alignItems="center" spacing={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
+                                            <Box px={1}><AccountBalanceWalletOutlined color="action" fontSize="small" /></Box>
+                                            <TextField
+                                                variant="standard"
+                                                size="small"
+                                                fullWidth
+                                                type="number"
+                                                value={cash}
+                                                onChange={(e) => {
+                                                    if (e.target.value === "") {
+                                                        setCash("");
+                                                    } else {
+                                                        const val = Number(e.target.value);
+                                                        const cardValue = Number(card || 0);
+                                                        const maxCash = Math.max(0, finalTotal - cardValue);
+                                                        setCash(Math.min(val, maxCash));
+                                                    }
+                                                }}
+                                                InputProps={{ disableUnderline: true }}
+                                                sx={{ py: 0.5, ...noSpinnersSx }}
+                                                placeholder="0"
+                                            />
+                                        </Stack>
+                                    </Stack>
+
+                                    <Stack flex={1} spacing={0.5}>
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                            <Typography variant="caption" color="text.secondary" display="block">
+                                                Безналичные
+                                            </Typography>
+                                            <Button
+                                                size="small"
+                                                variant="text"
+                                                onClick={() => {
+                                                    setCard(finalTotal);
+                                                    setCash(0);
+                                                }}
+                                                sx={{ minWidth: 'auto', px: 1, fontSize: '0.7rem', textTransform: 'none' }}
+                                            >
+                                                100%
+                                            </Button>
+                                        </Stack>
+                                        <Stack direction="row" alignItems="center" spacing={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
+                                            <Box px={1}><CreditCardOutlined color="action" fontSize="small" /></Box>
+                                            <TextField
+                                                variant="standard"
+                                                size="small"
+                                                fullWidth
+                                                type="number"
+                                                value={card}
+                                                onChange={(e) => {
+                                                    if (e.target.value === "") {
+                                                        setCard("");
+                                                    } else {
+                                                        const val = Number(e.target.value);
+                                                        const cashValue = Number(cash || 0);
+                                                        const maxCard = Math.max(0, finalTotal - cashValue);
+                                                        setCard(Math.min(val, maxCard));
+                                                    }
+                                                }}
+                                                InputProps={{ disableUnderline: true }}
+                                                sx={{ py: 0.5, ...noSpinnersSx }}
+                                                placeholder="0"
+                                            />
+                                        </Stack>
+                                    </Stack>
+                                </Stack>
+
+                                <Divider sx={{ my: 1 }} />
+
+                                {/* Итого к оплате */}
+                                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                                        Итого к оплате
+                                    </Typography>
+                                    <Typography variant="h5" fontWeight={700} color="success.main">
+                                        {finalTotal.toLocaleString()} сом
+                                    </Typography>
+                                </Stack>
+
+                                {/* Статус и Долг */}
+                                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                    <Typography variant="body2" color="text.secondary">
+                                        Статус
+                                    </Typography>
+                                    <Chip
+                                        label={debt <= 0 ? "Оплачено" : "Долг"}
+                                        size="small"
+                                        color={debt <= 0 ? "success" : "error"}
+                                        sx={{ fontWeight: 600 }}
+                                    />
+                                </Stack>
+
+                                {debt > 0 && (
+                                    <Paper
+                                        elevation={0}
+                                        sx={{
+                                            p: 1.5,
+                                            bgcolor: (theme) => alpha(theme.palette.error.main, 0.08),
+                                            border: '1px solid',
+                                            borderColor: (theme) => alpha(theme.palette.error.main, 0.3),
+                                            borderRadius: 1,
+                                        }}
+                                    >
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                            <Typography variant="body2" color="error.main" fontWeight={600}>
+                                                Долг
+                                            </Typography>
+                                            <Typography variant="h6" color="error.main" fontWeight={700}>
+                                                {debt.toLocaleString()} сом
+                                            </Typography>
+                                        </Stack>
+                                    </Paper>
+                                )}
+                            </Stack>
+                        </Paper>
+                    </Stack>
+                </MotionBox>
+
+                {/* ── Комментарий ── */}
+                <MotionBox variants={cascadeItem}>
+                    <Stack spacing={1.5}>
+                        <Divider />
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                            Комментарий
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            multiline
+                            size="small"
+                            rows={2}
+                            value={userComment}
+                            onChange={(e) => setUserComment(e.target.value)}
+                            placeholder="Комментарий к заказу"
+                        />
+                    </Stack>
+                </MotionBox>
+
+            </MotionStack>
 
             {/* Footer */}
             <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
