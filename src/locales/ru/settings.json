@@ -21,7 +21,8 @@
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
       "tasks": "Задачи",
       "cleaning": "Уборка",
-      "skud": "СКУД"
+      "skud": "СКУД",
+      "announcements": "Объявления"
     }
   },
   "placeholder": {
