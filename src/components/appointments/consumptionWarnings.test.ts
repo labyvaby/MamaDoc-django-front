@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AppointmentConsumptionWarning } from "../../api/appointments";
 import { formatConsumptionWarnings } from "./consumptionWarnings";
 
+/** Формат гайда §4a (списание по завершению приёма). */
 const warning = (
   patch: Partial<AppointmentConsumptionWarning>,
 ): AppointmentConsumptionWarning => ({
@@ -14,6 +15,20 @@ const warning = (
   required: "2.000",
   stockOnHand: "1.000",
   resultingStock: "-1.000",
+  ...patch,
+});
+
+/** Формат front_consumables_integration.md §1.3 (списание по оплате). */
+const shortage = (
+  patch: Partial<AppointmentConsumptionWarning>,
+): AppointmentConsumptionWarning => ({
+  code: "SHORTAGE",
+  productId: 45,
+  productName: "Шприц 5мл",
+  warehouseId: 3,
+  warehouseName: "Основной склад",
+  requested: "10.000",
+  available: "2.000",
   ...patch,
 });
 
@@ -46,9 +61,9 @@ describe("formatConsumptionWarnings", () => {
   });
 
   it("остаток неизвестен — упоминаем только списание", () => {
-    expect(formatConsumptionWarnings([warning({ resultingStock: null })])).toBe(
-      "Гель: списано 2",
-    );
+    expect(
+      formatConsumptionWarnings([warning({ resultingStock: null, stockOnHand: null })]),
+    ).toBe("Гель: списано 2");
   });
 
   it("несколько предупреждений — одной строкой", () => {
@@ -57,5 +72,22 @@ describe("formatConsumptionWarnings", () => {
       warning({ name: "Перчатки", required: "4.000", resultingStock: "-2.000" }),
     ]);
     expect(out).toBe("Гель: списано 2, остаток -1; Перчатки: списано 4, остаток -2");
+  });
+
+  // Второй формат бэка: другие имена полей и code = SHORTAGE. Остатка «после»
+  // в нём нет — считаем сами из available − requested, иначе не сказать
+  // главного: остаток ушёл в минус.
+  it("формат оплаты: SHORTAGE с productName/requested/available", () => {
+    expect(formatConsumptionWarnings([shortage({})])).toBe(
+      "Шприц 5мл: списано 10, остаток -8, склад «Основной склад»",
+    );
+  });
+
+  it("формат оплаты: без имени товара — обезличенно, без падения", () => {
+    expect(
+      formatConsumptionWarnings([
+        shortage({ productName: null, warehouseName: null, available: null }),
+      ]),
+    ).toBe("Расходник: списано 10");
   });
 });

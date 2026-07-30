@@ -150,11 +150,17 @@ export interface AppointmentServiceShort {
 }
 
 /**
- * Расходники услуги в приёме и их автосписание при завершении (фазы 2–3 гайда
- * `frontend-service-related-products.md`). Включён 29.07.2026 одновременно с
- * деплоем бэка: до него `consumptions` в ответе просто нет, блок скрывается
- * сам, но правка расходников уйдёт в никуда (бэк приёмов молча игнорирует
- * неизвестные ключи — «нет ошибки» ≠ «сохранилось»). E2E — после деплоя.
+ * Расходники услуги в приёме и их автосписание (фазы 2–3 гайда
+ * `frontend-service-related-products.md`). Бэк задеплоен — проверено на живом
+ * API 30.07.2026: `serviceLines[].consumptions` приходит, справочник услуги
+ * отдаёт `billable`.
+ *
+ * Когда бэк списывает (`front_consumables_integration.md`, ответы 1–5):
+ *   - `status == completed` ИЛИ `paymentStatus IN (paid, discounted)` — то есть
+ *     закрытие чека списывает само, отдельный перевод в completed не нужен;
+ *   - `partial` не списывает; `canceled`/`no_show` и возврат, уводящий приём из
+ *     оплаченных, возвращают товар на склад;
+ *   - правка состава у уже оплаченного приёма списывает/возвращает дельту.
  */
 export const APPOINTMENT_CONSUMPTIONS_ENABLED = true;
 
@@ -165,7 +171,10 @@ export const APPOINTMENT_CONSUMPTIONS_ENABLED = true;
  * Бесплатный расходник (`billable: false`) в деньги не идёт — его стоимость
  * считается внутри цены услуги. Платный (`billable: true`, тикет
  * `backend_ticket_service_consumptions_billable.md`, кейс «Импланон»)
- * оплачивается сверх услуги: его `lineTotal` бэк включает в `totalAmount`.
+ * оплачивается сверх услуги: его `lineTotal` бэк включает в `totalAmount`, а
+ * значит и в `payableAmount` со скидкой приёма (скидка общая на чек) и в долг.
+ * В процентную базу врача за услугу платный расходник НЕ входит — процент
+ * считается только от `lineTotal` строки услуги (гайд, ответы 6–8).
  *
  * ⚠ `id` — id строки расхода, НЕ id товара (в справочнике услуги наоборот).
  */
@@ -331,25 +340,42 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
 }
 
 /**
- * Предупреждение автосписания расходников (гайд §4a). Заполняется только тем,
- * что натворил **этот** запрос: на обычном GET всегда пусто.
+ * Предупреждение автосписания расходников. Заполняется только тем, что натворил
+ * **этот** запрос: на обычном GET всегда пусто (проверено на живом API
+ * 30.07.2026 — поле есть и в приёме, и в `PaymentSummary`).
  *
- * `insufficient_stock` — списали всё равно, остаток ушёл в минус; `required` —
- * сколько реально списалось операцией (может быть разницей, если приём правили
- * после завершения). `warehouse_not_found` — у филиала нет склада: заполнен
- * только branchId, ранее списанное возвращено, приём остаётся completed.
+ * ⚠ Бэк описал структуру дважды и по-разному, поэтому читаем оба набора имён:
+ *   - гайд §4a (списание по завершению): `code: "insufficient_stock"`, `name`,
+ *     `required`, `stockOnHand`, `resultingStock`, `branchId`;
+ *   - `front_consumables_integration.md` §1.3 (списание по оплате, 30.07.2026):
+ *     `code: "SHORTAGE"`, `productName`, `warehouseName`, `requested`,
+ *     `available`.
+ * Живьём ни один вариант ещё не наблюдался (нужен приём с нехваткой остатка),
+ * поэтому форматтер работает по обоим — см. `components/appointments/
+ * consumptionWarnings.ts`. `warehouse_not_found` — у филиала нет склада:
+ * заполнен только `branchId`, ранее списанное возвращено.
  *
- * Нехватка никогда не блокирует завершение — показываем тостом, не ошибкой.
+ * Нехватка никогда не блокирует оплату/завершение — показываем тостом, не
+ * ошибкой (гайд, ответ 11: списание неблокирующее, остаток уходит в минус).
  */
 export interface AppointmentConsumptionWarning {
-  code: "insufficient_stock" | "warehouse_not_found";
-  branchId: number | null;
-  productId: number | null;
-  name: string | null;
-  warehouseId: number | null;
-  required: string | null;
-  stockOnHand: string | null;
-  resultingStock: string | null;
+  /** `SHORTAGE` == `insufficient_stock`; матчим оба, регистр не важен. */
+  code: string;
+  branchId?: number | null;
+  productId?: number | null;
+  /** Имя товара: `name` (§4a) или `productName` (гайд 30.07). */
+  name?: string | null;
+  productName?: string | null;
+  warehouseId?: number | null;
+  warehouseName?: string | null;
+  /** Сколько требовалось списать: `required` (§4a) или `requested`. */
+  required?: string | null;
+  requested?: string | null;
+  /** Остаток до списания: `stockOnHand` (§4a) или `available`. */
+  stockOnHand?: string | null;
+  available?: string | null;
+  /** Остаток после списания; в формате 30.07 бэк его не присылает. */
+  resultingStock?: string | null;
 }
 
 export interface DjangoAppointment {

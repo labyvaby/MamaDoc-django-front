@@ -18,14 +18,18 @@ import {
 } from "@mui/material";
 import UndoOutlined from "@mui/icons-material/UndoOutlined";
 
+import { useNotification } from "@refinedev/core";
+
 import {
   createAppointmentRefund,
   parseBackendError,
+  refundConsumptionWarnings,
   type AppointmentPayment,
   type AppointmentRefund,
   type PaymentSummary,
   type RefundPayload,
 } from "../../api/payments";
+import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
@@ -82,6 +86,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
 }) => {
   const { t } = useT("appointments");
   const queryClient = useQueryClient();
+  const { open: notify } = useNotification();
   const [amountStr, setAmountStr] = React.useState("");
   const [reason, setReason] = React.useState("");
   const [localError, setLocalError] = React.useState<string | null>(null);
@@ -127,6 +132,10 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
           queryKey: djangoQueryKeys.patients.transactions(patientId),
         });
       }
+      // Возврат, уводящий приём из оплаченных, возвращает списанные расходники
+      // на склад — бэк сообщает об этом теми же consumptionWarnings.
+      const warning = formatConsumptionWarnings(refundConsumptionWarnings(res));
+      if (warning) notify?.({ type: "error", message: warning });
       onSuccess(res.paymentSummary);
       onClose();
     },
