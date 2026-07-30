@@ -635,54 +635,39 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             "& .MuiCardHeader-action": { mt: 0, alignSelf: "center", ml: 1 },
           }}
           title={
-            <Box
+            /* Основные действия — кнопками, остальное в меню «⋯».
+               Кнопки переносятся на следующую строку. Раньше строка не
+               переносилась, а скроллилась вбок — и в узкой карточке
+               «Изменить» обрезалось на полуслове, из-за чего было не видно,
+               что кнопка вообще есть. Сознательный обмен: лишний ряд в шапке
+               лучше спрятанного действия. */
+            <Stack
+              direction="row"
+              alignItems="center"
+              useFlexGap
               sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: { xs: 0.5, sm: 2 },
-                flexWrap: "nowrap",
+                gap: { xs: 0.5, sm: 1 },
+                flexWrap: "wrap",
+                minWidth: 0,
+                // Место под крестик закрытия — он висит абсолютом в правом
+                // верхнем углу шапки, первый ряд не должен под него заезжать.
+                pr: 4,
               }}
             >
-              {/* Основные действия — кнопками, остальное в меню «⋯». На узких
-                  экранах кнопок иногда больше, чем помещается в строку
-                  («Подтвердить» + «Пациент здесь» + «Изменить» и т.п.) — раньше
-                  они переносились по одной и шапка растягивалась на три ряда.
-                  Теперь строка не переносится, а скроллится вбок: высота шапки
-                  постоянна, лишние кнопки просто уезжают за край. */}
-              <Stack
-                direction="row"
-                spacing={{ xs: 0.5, sm: 1 }}
-                alignItems="center"
-                flexWrap="nowrap"
-                useFlexGap
-                sx={{
-                  gap: { xs: 0.5, sm: 1 },
-                  flex: "1 1 auto",
-                  minWidth: 0,
-                  overflowX: "auto",
-                  scrollbarWidth: "none",
-                  msOverflowStyle: "none",
-                  "&::-webkit-scrollbar": { display: "none" },
-                  // Чуть воздуха в конце — последняя кнопка не липнет к «⋯».
-                  pr: 0.5,
-                }}
-              >
-                {inlineActions.map((action) => (
-                  <Button
-                    key={action.key}
-                    size="small"
-                    variant={action.active ? "contained" : "outlined"}
-                    color={action.color ?? "primary"}
-                    startIcon={action.icon}
-                    onClick={action.onClick}
-                    disabled={action.disabled}
-                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                  >
-                    {action.label}
-                  </Button>
-                ))}
-              </Stack>
+              {inlineActions.map((action) => (
+                <Button
+                  key={action.key}
+                  size="small"
+                  variant={action.active ? "contained" : "outlined"}
+                  color={action.color ?? "primary"}
+                  startIcon={action.icon}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                >
+                  {action.label}
+                </Button>
+              ))}
 
               {cancelAction && (
                 <Button
@@ -708,7 +693,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </IconButton>
                 </Tooltip>
               )}
-            </Box>
+            </Stack>
           }
           action={
             onClose ? (

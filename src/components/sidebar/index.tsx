@@ -30,7 +30,6 @@ import { useT } from "../../i18n/VerticalProvider";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
-import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
@@ -70,7 +69,6 @@ import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
 import { useMobileSidebar } from "./mobile-context";
-import { SettingsModal } from "./SettingsModal";
 import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -1020,12 +1018,10 @@ const SidebarFooter: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isCollapsed = siderCollapsed && !isMobile; // Always expanded on mobile
 
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
   const appVersion = useAppVersion();
 
   const handleLogoutClick = () => {
-    setSettingsOpen(false); // Close settings if open (though they are different modals)
     setLogoutOpen(true);
   };
 
@@ -1054,11 +1050,6 @@ const SidebarFooter: React.FC = () => {
         {isCollapsed ? (
           <Stack spacing={1} alignItems="center">
             <ThemeCustomizerButton tooltipPlacement="right" />
-            <Tooltip title="Настройки" placement="right">
-              <IconButton onClick={() => setSettingsOpen(true)} size="small">
-                <SettingsOutlined fontSize="small" />
-              </IconButton>
-            </Tooltip>
             <Tooltip title="Выйти" placement="right">
               <IconButton onClick={handleLogoutClick} size="small" color="error">
                 <LogoutOutlined fontSize="small" />
@@ -1087,11 +1078,6 @@ const SidebarFooter: React.FC = () => {
 
             <Stack direction="row" spacing={0.5}>
               <ThemeCustomizerButton tooltipPlacement="top" />
-              <Tooltip title="Настройки" placement="top">
-                <IconButton onClick={() => setSettingsOpen(true)} size="small">
-                  <SettingsOutlined fontSize="small" />
-                </IconButton>
-              </Tooltip>
               <Tooltip title="Выйти" placement="top">
                 <IconButton onClick={handleLogoutClick} size="small" color="error">
                   <LogoutOutlined fontSize="small" />
@@ -1101,8 +1087,6 @@ const SidebarFooter: React.FC = () => {
           </>
         )}
       </Stack>
-
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* Confirmation Dialog */}
       <Dialog

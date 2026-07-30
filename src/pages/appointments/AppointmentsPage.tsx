@@ -1022,8 +1022,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                   borderTopRightRadius: 16,
                 }
               : {
+                  // 760px — чтобы весь ряд действий шапки («Подтвердить»,
+                  // «Пациент здесь», «Изменить», «Отменить запись», «⋯»)
+                  // помещался в одну строку; на 620px он не влезал.
                   // Заключение открывается второй колонкой — дровер расширяется.
-                  width: conclusionOpen ? { xs: "100%", md: 1080 } : { xs: "100%", sm: 620 },
+                  width: conclusionOpen ? { xs: "100%", md: 1240 } : { xs: "100%", sm: 760 },
                   maxWidth: "100vw",
                 }),
             overflow: "hidden",
