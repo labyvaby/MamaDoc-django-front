@@ -21,6 +21,7 @@ import {
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -35,6 +36,7 @@ import DirectionsWalkOutlined from "@mui/icons-material/DirectionsWalkOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
+import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -71,6 +73,7 @@ import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
 import AppointmentProductLines from "./details/AppointmentProductLines";
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
+import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
 /** Сколько действий шапки показывать кнопками; остальные уходят в меню «⋯». */
 const INLINE_ACTIONS_LIMIT = 3;
@@ -156,6 +159,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
+  // На узком экране кнопкам шапки не хватает места даже вдвоём — держим
+  // инлайн только самые частые действия, остальное уходит в «⋯» (там уже
+  // живут отмена/удаление, паттерн знакомый).
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
   // Клик по товару открывает карточку из справочника — только при праве на него.
@@ -230,6 +237,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   );
 
 
+  // Запрос отзыва — статус виден в AppointmentWhenBlock, кнопка живёт в
+  // общем списке действий шапки (см. ниже, actions.push key "review").
+  const review = useAppointmentReview(appt.id);
+
   const pay = payQuery.data;
   const isCancelled =
     appt.status === "canceled" ||
@@ -265,6 +276,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const isAdminRole = isAdmin();
   const isRegistratorRole = isRegistrator();
   const isNonDoctor = !isDoctorRole && !isNurseRole;
+
+  // Ниже покажется PaymentInfoBlock со своим статусом крупно (см. paymentBlock) —
+  // чип «Оплачено» в шапке для этого зрителя будет дублем, прячем его там.
+  const financeBlockVisible = (canViewFinance || canManageFinance) && hasFinanceInfo;
 
   const activeEmployeeId = activeEmployee?.id ?? null;
   const isPerformer = React.useMemo(
@@ -511,6 +526,22 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
+  // Запросить отзыв — низкоприоритетное действие, обычно уходит в меню «⋯»;
+  // если запрос уже был, кнопка предлагает переотправить.
+  if (review.showButton) {
+    actions.push({
+      key: "review",
+      label: review.latest ? "Переотправить отзыв" : "Запросить отзыв",
+      icon: review.isPending ? (
+        <CircularProgress size={14} color="inherit" />
+      ) : (
+        <StarOutlineRounded fontSize="small" />
+      ),
+      disabled: review.isPending,
+      onClick: review.requestReview,
+    });
+  }
+
   // Ввести прививку — право vaccinations.record, приём с пациентом и активный.
   if (canRecordVaccination && onRecordVaccination && appt.patient && isAppointmentActive) {
     actions.push({
@@ -566,8 +597,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  const inlineActions = actions.slice(0, INLINE_ACTIONS_LIMIT);
-  const overflowActions = actions.slice(INLINE_ACTIONS_LIMIT);
+  const inlineLimit = isMobile ? 2 : INLINE_ACTIONS_LIMIT;
+  const inlineActions = actions.slice(0, inlineLimit);
+  const overflowActions = actions.slice(inlineLimit);
   const hasMenu = overflowActions.length > 0 || dangerActions.length > 0;
 
   const runFromMenu = (action: HeaderAction) => {
@@ -611,19 +643,33 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: { xs: 1, sm: 2 },
-                flexWrap: "wrap",
+                gap: { xs: 0.5, sm: 2 },
+                flexWrap: "nowrap",
               }}
             >
-              {/* Основные действия — кнопками, остальное в меню «⋯».
-                  Печать/Справка живут в самой карточке заключения. */}
+              {/* Основные действия — кнопками, остальное в меню «⋯». На узких
+                  экранах кнопок иногда больше, чем помещается в строку
+                  («Подтвердить» + «Пациент здесь» + «Изменить» и т.п.) — раньше
+                  они переносились по одной и шапка растягивалась на три ряда.
+                  Теперь строка не переносится, а скроллится вбок: высота шапки
+                  постоянна, лишние кнопки просто уезжают за край. */}
               <Stack
                 direction="row"
                 spacing={{ xs: 0.5, sm: 1 }}
                 alignItems="center"
-                flexWrap="wrap"
+                flexWrap="nowrap"
                 useFlexGap
-                sx={{ gap: { xs: 0.5, sm: 1 } }}
+                sx={{
+                  gap: { xs: 0.5, sm: 1 },
+                  flex: "1 1 auto",
+                  minWidth: 0,
+                  overflowX: "auto",
+                  scrollbarWidth: "none",
+                  msOverflowStyle: "none",
+                  "&::-webkit-scrollbar": { display: "none" },
+                  // Чуть воздуха в конце — последняя кнопка не липнет к «⋯».
+                  pr: 0.5,
+                }}
               >
                 {inlineActions.map((action) => (
                   <Button
@@ -634,6 +680,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                     startIcon={action.icon}
                     onClick={action.onClick}
                     disabled={action.disabled}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                   >
                     {action.label}
                   </Button>
@@ -706,6 +753,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               hasBankConfirmation={hasBankConfirmation}
               statusSource={statusChipsSource}
               paymentsLoading={payQuery.isLoading}
+              hidePaymentChip={financeBlockVisible}
             />
 
             {/* ── Payment block — non-doctor/nurse ── */}
