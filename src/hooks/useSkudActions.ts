@@ -8,6 +8,7 @@ import { useWorkShift } from "./useWorkShift";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { IS_DJANGO_BACKEND } from "../config/backend";
 import { isIpInCidr } from "../utility/network";
+import { notifyRateLimited } from "../api/client";
 
 
 dayjs.extend(duration);
@@ -45,6 +46,8 @@ export const useSkudActions = (
         queryKey: ['common', 'userIp'],
         queryFn: async () => {
             const response = await fetch('https://api.ipify.org?format=json');
+            if (response.status === 429) notifyRateLimited();
+            if (!response.ok) throw new Error("Не удалось определить внешний IP");
             const data = await response.json();
             return data.ip as string;
         },

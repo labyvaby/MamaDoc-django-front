@@ -151,6 +151,39 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
   const [selDay, setSelDay] = React.useState<string | null>(null);
   const stripRef = React.useRef<HTMLDivElement>(null);
 
+  // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
+  const matrixScrollRef = React.useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragStartX, setDragStartX] = React.useState(0);
+  const [dragScrollLeft, setDragScrollLeft] = React.useState(0);
+  const isDragMovedRef = React.useRef(false);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const container = matrixScrollRef.current;
+    if (!container) return;
+    setIsDragging(true);
+    isDragMovedRef.current = false;
+    setDragStartX(e.pageX - container.offsetLeft);
+    setDragScrollLeft(container.scrollLeft);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const container = matrixScrollRef.current;
+    if (!container) return;
+    const x = e.pageX - container.offsetLeft;
+    const walk = (x - dragStartX) * 1.5;
+    if (Math.abs(x - dragStartX) > 4) {
+      isDragMovedRef.current = true;
+    }
+    container.scrollLeft = dragScrollLeft - walk;
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setIsDragging(false);
+  };
+
   // Справочник специализаций — левый рельс.
   const specsQuery = useQuery({
     queryKey: ["django", "scheduling", "specs", organizationId ?? null],
@@ -714,6 +747,19 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
               </Stack>
 
               {(() => {
+                const isMatrixLoading = (availQuery.isLoading || summaryQuery.isLoading) && !availQuery.data;
+
+                if (isMatrixLoading) {
+                  return (
+                    <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ py: 12, flex: 1 }}>
+                      <CircularProgress size={36} />
+                      <Typography variant="body2" color="text.secondary">
+                        Загрузка расписания врачей…
+                      </Typography>
+                    </Stack>
+                  );
+                }
+
                 const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
                 const activeDocsOnDay = docs.filter(({ emp }) => {
                   const d = emp.days.find((x) => x.date === activeDayDate);
@@ -744,14 +790,23 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                   );
                 }
 
+                const isFewDocs = activeDocsOnDay.length <= 4;
+
                 return (
                   <Box
+                    ref={matrixScrollRef}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUpOrLeave}
+                    onMouseLeave={handleMouseUpOrLeave}
                     sx={{
                       flex: 1,
                       minHeight: 0,
                       display: "flex",
                       flexDirection: "row",
                       overflowX: "auto",
+                      cursor: isDragging ? "grabbing" : "grab",
+                      userSelect: isDragging ? "none" : "auto",
                       "&::-webkit-scrollbar": { height: 6 },
                     }}
                   >
@@ -763,8 +818,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                       <Box
                         key={emp.employeeId}
                         sx={{
-                          flex: "0 0 280px",
-                          minWidth: 250,
+                          flex: isFewDocs ? "1 1 0px" : "0 0 210px",
+                          minWidth: 175,
                           height: "100%",
                           display: "flex",
                           flexDirection: "column",
@@ -780,11 +835,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                           direction="row"
                           alignItems="center"
                           justifyContent="space-between"
-                          spacing={1.25}
-                          onClick={() => setSelDocId(emp.employeeId)}
+                          spacing={1}
+                          onClick={() => {
+                            if (isDragMovedRef.current) return;
+                            setSelDocId(emp.employeeId);
+                          }}
                           sx={(t) => ({
-                            px: 1.5,
-                            py: 1.25,
+                            px: 1.25,
+                            py: 1,
                             borderBottom: "1px solid",
                             borderColor: "divider",
                             bgcolor: subtleBg(t),
@@ -793,18 +851,18 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                             "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.06) },
                           })}
                         >
-                          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                             <Box sx={{ position: "relative", flexShrink: 0 }}>
                               <Box
                                 sx={{
-                                  width: 34,
-                                  height: 34,
-                                  borderRadius: "10px",
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: "9px",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
                                   color: "#fff",
-                                  fontSize: "0.775rem",
+                                  fontSize: "0.75rem",
                                   fontWeight: 600,
                                   bgcolor: avatarColor(emp.fullName),
                                 }}
@@ -834,19 +892,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                               </Typography>
                             </Box>
                           </Stack>
-                          {docDay && docDay.scheduled && (
-                            <Chip
-                              label={docDay.freeCount > 0 ? `${docDay.freeCount} окон` : "нет окон"}
-                              size="small"
-                              color={docDay.freeCount > 0 ? "success" : "default"}
-                              variant={docDay.freeCount > 0 ? "outlined" : "filled"}
-                              sx={{ height: 20, fontSize: "0.625rem", fontWeight: 600, px: 0.25, flexShrink: 0 }}
-                            />
-                          )}
                         </Stack>
 
                         {/* Таймлайн окон за день */}
-                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.25 }}>
+                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}>
                           {!docDay || !docDay.scheduled ? (
                             <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
                           ) : docDay.dayOff ? (
@@ -863,17 +912,21 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                     key={slot.start}
                                     direction="row"
                                     alignItems="center"
-                                    justifyContent="space-between"
-                                    spacing={1}
+                                    spacing={0.75}
                                     onClick={
                                       slot.free
-                                        ? () => onBook(emp.employeeId, `${docDay.date}T${slot.start}`)
+                                        ? () => {
+                                            if (isDragMovedRef.current) return;
+                                            onBook(emp.employeeId, `${docDay.date}T${slot.start}`);
+                                          }
                                         : undefined
                                     }
                                     sx={{
-                                      px: 1.25,
-                                      py: 0.75,
-                                      borderRadius: "8px",
+                                      maxWidth: 260,
+                                      width: "100%",
+                                      px: 1,
+                                      py: 0.5,
+                                      borderRadius: "7px",
                                       border: "1px solid",
                                       borderStyle: past ? "dashed" : "solid",
                                       borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
@@ -891,8 +944,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                       sx={{
                                         fontFamily: "monospace",
                                         fontWeight: 600,
-                                        fontSize: "0.8rem",
-                                        width: 44,
+                                        fontSize: "0.775rem",
                                         flexShrink: 0,
                                         color: slot.free ? "success.main" : "text.disabled",
                                       }}
@@ -903,21 +955,35 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                       <Stack
                                         direction="row"
                                         alignItems="center"
-                                        spacing={0.5}
+                                        justifyContent="center"
+                                        spacing={0.4}
                                         sx={(t) => ({
-                                          px: 1,
-                                          height: 24,
-                                          borderRadius: "6px",
+                                          ml: "auto",
+                                          px: 0.85,
+                                          height: 22,
+                                          borderRadius: "5px",
                                           border: "1px solid",
                                           borderColor: alpha(t.palette.success.main, 0.32),
                                           color: "success.dark",
                                           fontWeight: 600,
-                                          fontSize: "0.7rem",
+                                          fontSize: "0.6875rem",
+                                          lineHeight: 1,
+                                          flexShrink: 0,
                                           ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
                                         })}
                                       >
-                                        <AddOutlined sx={{ fontSize: 13 }} />
-                                        {t("slots.book")}
+                                        <AddOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
+                                        <Typography
+                                          component="span"
+                                          sx={{
+                                            fontSize: "0.6875rem",
+                                            fontWeight: 600,
+                                            lineHeight: 1,
+                                            display: "inline-block",
+                                          }}
+                                        >
+                                          {t("slots.book")}
+                                        </Typography>
                                       </Stack>
                                     ) : busy ? (
                                       <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>

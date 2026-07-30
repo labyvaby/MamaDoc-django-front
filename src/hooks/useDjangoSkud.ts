@@ -15,6 +15,7 @@ import {
   type WorkShiftRow,
 } from "../api/attendance";
 import { djangoQueryKeys } from "../api/queryKeys";
+import { notifyRateLimited } from "../api/client";
 import { useCan } from "./useCan";
 import { useActiveScope } from "./useActiveScope";
 import { isIpInCidr, parseIpList } from "../utility/network";
@@ -48,6 +49,8 @@ export function useDjangoSkudActions(
     queryKey: IP_QUERY_KEY,
     queryFn: async () => {
       const response = await fetch("https://api.ipify.org?format=json");
+      if (response.status === 429) notifyRateLimited();
+      if (!response.ok) throw new Error("Не удалось определить внешний IP");
       const data = await response.json();
       return data.ip as string;
     },

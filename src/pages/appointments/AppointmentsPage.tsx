@@ -292,8 +292,15 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const handleSetDate = React.useCallback((s: string) => setDate(dayjs(s)), []);
 
   const [createOpen, setCreateOpen] = React.useState(false);
-  // Вид регистратуры: список приёмов или свободные окна врачей.
-  const [viewMode, setViewMode] = React.useState<"list" | "slots">("list");
+  // Вид регистратуры: список приёмов или свободные окна врачей (сохраняется в localStorage).
+  const [viewMode, setViewModeState] = React.useState<"list" | "slots">(() => {
+    const saved = localStorage.getItem("mamadoc_appointments_view_mode");
+    return saved === "slots" || saved === "list" ? saved : "list";
+  });
+  const handleViewModeChange = React.useCallback((mode: "list" | "slots") => {
+    setViewModeState(mode);
+    localStorage.setItem("mamadoc_appointments_view_mode", mode);
+  }, []);
   // Предзаполнение создания приёма из клика по свободному окну.
   // employeeId/serviceId заполнены из вида «Окна» (врач+услуга известны);
   // клик по «Есть окно на HH:mm» в списке передаёт только время.
@@ -711,7 +718,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                     size="small"
                     exclusive
                     value={viewMode}
-                    onChange={(_, v) => v && setViewMode(v)}
+                    onChange={(_, v) => v && handleViewModeChange(v)}
                   >
                     <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
                       <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
@@ -759,7 +766,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                     size="small"
                     exclusive
                     value={viewMode}
-                    onChange={(_, v) => v && setViewMode(v)}
+                    onChange={(_, v) => v && handleViewModeChange(v)}
                   >
                     <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
                       <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />

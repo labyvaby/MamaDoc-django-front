@@ -65,6 +65,13 @@ describe("extractErrorMessage", () => {
     );
   });
 
+  it("replaces a technical 429 with an apology and reload instruction", () => {
+    const message = extractErrorMessage({ detail: "Too Many Requests" }, 429);
+    expect(message).toContain("Приносим извинения");
+    expect(message).toContain("Обновите страницу");
+    expect(message).not.toContain("429");
+  });
+
   it("gives friendly fallbacks by status code when the body has no message", () => {
     expect(extractErrorMessage(null, 403)).toBe("Недостаточно прав для этого действия.");
     expect(extractErrorMessage(null, 404)).toBe("Запрашиваемые данные не найдены.");

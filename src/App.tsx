@@ -49,6 +49,7 @@ import {
   SETTINGS_TAB_PERMISSIONS,
 } from "./config/accessPermissions";
 import { CallNotification } from "./components/CallNotification";
+import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
 import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
@@ -505,9 +506,9 @@ function App() {
                               staleTime: 5 * 60 * 1000, // 5 minutes
                               gcTime: 10 * 60 * 1000, // 10 minutes
                               refetchOnWindowFocus: false,
-                              // Повторяем один раз только временные сбои. 429 уже
-                              // содержит Retry-After; мгновенный retry лишь сильнее
-                              // перегружает лимитер.
+                              // Повторяем один раз только временные сбои. 429
+                              // обрабатывается единым диалогом; мгновенный retry
+                              // лишь создаст ещё один отклонённый запрос.
                               retry: (failureCount, error) =>
                                 !(
                                   IS_DJANGO_BACKEND &&
@@ -1316,6 +1317,7 @@ function App() {
 
                     <AuthHelper />
                     <DjangoQueryCacheReset />
+                    <RateLimitDialog />
                     <CallNotification />
                     <RefineKbar />
                     <UnsavedChangesNotifier />

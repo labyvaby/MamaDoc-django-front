@@ -26,6 +26,21 @@ export class ApiError extends Error {
 export const NETWORK_ERROR_MESSAGE =
   "Нет связи с сервером. Проверьте подключение к интернету и попробуйте снова.";
 
+/** Глобальное событие для единого диалога вместо технической ошибки 429. */
+export const API_RATE_LIMIT_EVENT = "mamadoc:api-rate-limited";
+
+let lastRateLimitEventAt = 0;
+
+export function notifyRateLimited(): void {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  // Несколько параллельных запросов могут одновременно получить 429.
+  // Одного события достаточно, чтобы открыть единый диалог.
+  if (now - lastRateLimitEventAt < 1_000) return;
+  lastRateLimitEventAt = now;
+  window.dispatchEvent(new Event(API_RATE_LIMIT_EVENT));
+}
+
 /**
  * Человеко-понятные подписи технических имён полей. Ключи бэкенда приходят
  * то в snake_case, то в camelCase — normalizeFieldKey приводит их к единому
@@ -156,7 +171,7 @@ function fallbackByStatus(status: number): string {
  */
 export function extractErrorMessage(payload: unknown, status: number): string {
   if (status === 429) {
-    return "Слишком много запросов. Подождите немного и повторите попытку.";
+    return "Приносим извинения: запрос временно не выполнился. Обновите страницу и попробуйте снова.";
   }
   if (status === 0) return NETWORK_ERROR_MESSAGE;
   if (!payload || typeof payload !== "object") {
@@ -267,6 +282,9 @@ export async function apiRequest<T>(
   if (response.status === 403) {
     window.dispatchEvent(new Event("mamadoc:api-forbidden"));
   }
+  if (response.status === 429) {
+    notifyRateLimited();
+  }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -319,6 +337,9 @@ export async function apiRequestWithHeaders<T>(
   }
   if (response.status === 403) {
     window.dispatchEvent(new Event("mamadoc:api-forbidden"));
+  }
+  if (response.status === 429) {
+    notifyRateLimited();
   }
 
   const payload = await response.json().catch(() => null);
