@@ -903,7 +903,7 @@ const RolesSettingsPage: React.FC = () => {
     return t("roles.unknownError");
   }
 
-  const { activeOrganization, isSuperAdmin } = usePermissions();
+  const { activeOrganization } = usePermissions();
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -1172,16 +1172,26 @@ const RolesSettingsPage: React.FC = () => {
               {t("roles.systemRolesSection")}
             </Typography>
             <Stack spacing={1}>
-              {/* Бэкенд разрешает менять системные роли только Django-суперпользователю
-                  (rbac/api/views.py: System roles can only be edited by a superuser). */}
               {systemRoles.map((role) => (
-                <RoleRow
+                <CanAccess
                   key={role.id}
-                  role={role}
-                  allPermissions={permissions}
-                  onEdit={() => handleOpenEdit(role)}
-                  canEdit={isSuperAdmin()}
-                />
+                  permissions="rbac.roles.update"
+                  fallback={
+                    <RoleRow
+                      role={role}
+                      allPermissions={permissions}
+                      onEdit={() => handleOpenEdit(role)}
+                      canEdit={false}
+                    />
+                  }
+                >
+                  <RoleRow
+                    role={role}
+                    allPermissions={permissions}
+                    onEdit={() => handleOpenEdit(role)}
+                    canEdit
+                  />
+                </CanAccess>
               ))}
             </Stack>
           </Box>
