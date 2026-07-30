@@ -490,7 +490,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
     const dateTo = gridStart.add(6 * 7, "day").format("YYYY-MM-DD");
     setLoading(true);
     try {
-      const rows = await getShifts({ dateFrom, dateTo });
+      const rows = await getShifts({ dateFrom, dateTo, organizationId: orgId });
       const mapped: Shift[] = rows.map((r: WorkShiftRow) => {
         const clockIn = dayjs(r.clockIn);
         const clockOut = r.clockOut ? dayjs(r.clockOut) : clockIn;
@@ -662,7 +662,7 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
     if (!confirmed) return;
 
     try {
-      await deleteShift(shiftId);
+      await deleteShift(shiftId, { organizationId: orgId });
       setShifts(prev => prev.filter(s => s.id !== shiftId));
       notify?.({
         type: "success",
@@ -696,14 +696,16 @@ const ScheduleCalendar = React.forwardRef<ScheduleCalendarHandle, ScheduleCalend
       if (Array.isArray(formData)) {
         // Пакетное создание (при выборе дней недели) — один POST на смену.
         for (const f of formData) {
-          await createShift(toShiftWriteData(f));
+          await createShift(toShiftWriteData(f), { organizationId: orgId });
         }
       } else if (editingShift) {
         // Редактирование одной записи.
-        await updateShift(editingShift.id, toShiftWriteData(formData));
+        await updateShift(editingShift.id, toShiftWriteData(formData), {
+          organizationId: orgId,
+        });
       } else {
         // Создание одной смены (один диапазон дат).
-        await createShift(toShiftWriteData(formData));
+        await createShift(toShiftWriteData(formData), { organizationId: orgId });
       }
 
       // Обновляем UI

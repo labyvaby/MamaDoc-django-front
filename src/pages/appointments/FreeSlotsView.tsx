@@ -763,8 +763,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                       <Box
                         key={emp.employeeId}
                         sx={{
-                          flex: "0 0 360px",
-                          minWidth: 320,
+                          flex: "0 0 280px",
+                          minWidth: 250,
                           height: "100%",
                           display: "flex",
                           flexDirection: "column",
@@ -780,11 +780,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                           direction="row"
                           alignItems="center"
                           justifyContent="space-between"
-                          spacing={1.5}
+                          spacing={1.25}
                           onClick={() => setSelDocId(emp.employeeId)}
                           sx={(t) => ({
-                            px: 2,
-                            py: 1.5,
+                            px: 1.5,
+                            py: 1.25,
                             borderBottom: "1px solid",
                             borderColor: "divider",
                             bgcolor: subtleBg(t),
@@ -793,18 +793,18 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                             "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.06) },
                           })}
                         >
-                          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+                          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                             <Box sx={{ position: "relative", flexShrink: 0 }}>
                               <Box
                                 sx={{
-                                  width: 38,
-                                  height: 38,
-                                  borderRadius: "11px",
+                                  width: 34,
+                                  height: 34,
+                                  borderRadius: "10px",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
                                   color: "#fff",
-                                  fontSize: "0.8125rem",
+                                  fontSize: "0.775rem",
                                   fontWeight: 600,
                                   bgcolor: avatarColor(emp.fullName),
                                 }}
@@ -816,8 +816,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                   position: "absolute",
                                   right: -2,
                                   bottom: -2,
-                                  width: 12,
-                                  height: 12,
+                                  width: 10,
+                                  height: 10,
                                   borderRadius: "50%",
                                   border: "2px solid",
                                   borderColor: "background.paper",
@@ -825,37 +825,28 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                 }}
                               />
                             </Box>
-                            <Box sx={{ minWidth: 0 }}>
-                              <Typography variant="body2" fontWeight={600} noWrap>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}>
                                 {emp.fullName}
                               </Typography>
-                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: "0.6875rem" }}>
                                 {specName ?? t("slots.specialist")}
                               </Typography>
                             </Box>
                           </Stack>
                           {docDay && docDay.scheduled && (
                             <Chip
-                              label={
-                                docDay.freeCount > 0
-                                  ? t("slots.slotsCount", { count: docDay.freeCount })
-                                  : t("slots.noSlots")
-                              }
+                              label={docDay.freeCount > 0 ? `${docDay.freeCount} окон` : "нет окон"}
                               size="small"
                               color={docDay.freeCount > 0 ? "success" : "default"}
                               variant={docDay.freeCount > 0 ? "outlined" : "filled"}
-                              sx={{ height: 22, fontSize: "0.6875rem", fontWeight: 600, flexShrink: 0 }}
+                              sx={{ height: 20, fontSize: "0.625rem", fontWeight: 600, px: 0.25, flexShrink: 0 }}
                             />
                           )}
                         </Stack>
 
                         {/* Таймлайн окон за день */}
-                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 2 }}>
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25, fontWeight: 500 }}>
-                            {WEEKDAY_SHORT[mondayIndex(dayjs(activeDayDate))]},{" "}
-                            {dayjs(activeDayDate).date()} {MONTHS_GEN[dayjs(activeDayDate).month()]}
-                          </Typography>
-
+                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.25 }}>
                           {!docDay || !docDay.scheduled ? (
                             <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
                           ) : docDay.dayOff ? (
@@ -863,7 +854,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                           ) : docDay.slots.length === 0 ? (
                             <Alert severity="info" icon={false}>{t("slots.noFreeSlots")}</Alert>
                           ) : (
-                            <Stack spacing={0.75}>
+                            <Stack spacing={0.5}>
                               {docDay.slots.map((slot: AvailabilitySlot) => {
                                 const busy = !slot.free && slot.appointmentId != null;
                                 const past = !slot.free && slot.appointmentId == null;
@@ -872,16 +863,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                     key={slot.start}
                                     direction="row"
                                     alignItems="center"
-                                    spacing={1.25}
+                                    justifyContent="space-between"
+                                    spacing={1}
                                     onClick={
                                       slot.free
                                         ? () => onBook(emp.employeeId, `${docDay.date}T${slot.start}`)
                                         : undefined
                                     }
                                     sx={{
-                                      px: 1.5,
-                                      py: 1,
-                                      borderRadius: "10px",
+                                      px: 1.25,
+                                      py: 0.75,
+                                      borderRadius: "8px",
                                       border: "1px solid",
                                       borderStyle: past ? "dashed" : "solid",
                                       borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
@@ -899,47 +891,39 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                       sx={{
                                         fontFamily: "monospace",
                                         fontWeight: 600,
-                                        fontSize: "0.85rem",
-                                        width: 48,
+                                        fontSize: "0.8rem",
+                                        width: 44,
+                                        flexShrink: 0,
                                         color: slot.free ? "success.main" : "text.disabled",
                                       }}
                                     >
                                       {slot.start}
                                     </Typography>
                                     {slot.free ? (
-                                      <>
-                                        <Typography variant="caption" color="success.main" sx={{ flex: 1, fontWeight: 500 }}>
-                                          {t("slots.free")}
-                                        </Typography>
-                                        <Stack
-                                          direction="row"
-                                          alignItems="center"
-                                          spacing={0.5}
-                                          sx={(t) => ({
-                                            px: 1.25,
-                                            height: 28,
-                                            borderRadius: "8px",
-                                            border: "1px solid",
-                                            borderColor: alpha(t.palette.success.main, 0.32),
-                                            color: "success.dark",
-                                            fontWeight: 600,
-                                            fontSize: "0.75rem",
-                                            ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
-                                          })}
-                                        >
-                                          <AddOutlined sx={{ fontSize: 15 }} />
-                                          {t("slots.book")}
-                                        </Stack>
-                                      </>
+                                      <Stack
+                                        direction="row"
+                                        alignItems="center"
+                                        spacing={0.5}
+                                        sx={(t) => ({
+                                          px: 1,
+                                          height: 24,
+                                          borderRadius: "6px",
+                                          border: "1px solid",
+                                          borderColor: alpha(t.palette.success.main, 0.32),
+                                          color: "success.dark",
+                                          fontWeight: 600,
+                                          fontSize: "0.7rem",
+                                          ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
+                                        })}
+                                      >
+                                        <AddOutlined sx={{ fontSize: 13 }} />
+                                        {t("slots.book")}
+                                      </Stack>
                                     ) : busy ? (
-                                      <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
-                                        {t("slots.busy")}{slot.patientName ? ` · ${slot.patientName}` : ""}
+                                      <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
+                                        {slot.patientName ?? ""}
                                       </Typography>
-                                    ) : (
-                                      <Typography variant="caption" color="text.disabled" sx={{ flex: 1 }}>
-                                        {t("slots.timePassed")}
-                                      </Typography>
-                                    )}
+                                    ) : null}
                                   </Stack>
                                 );
                               })}
@@ -1004,15 +988,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
               </Stack>
 
               {/* Таймлайн окон выбранного дня */}
-              <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 2 }}>
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.5 }}>
                 {!selectedDay ? (
                   <Alert severity="info" icon={false}>{t("slots.noShiftsForSpecialist")}</Alert>
                 ) : (
                   <>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
-                      {WEEKDAY_SHORT[mondayIndex(dayjs(selectedDay.date))]}, {dayjs(selectedDay.date).date()}{" "}
-                      {MONTHS_GEN[dayjs(selectedDay.date).month()]}
-                    </Typography>
                     {selectedDay.dayOff ? (
                       <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>
                     ) : !selectedDay.scheduled ? (
@@ -1020,7 +1000,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                     ) : selectedDay.slots.length === 0 ? (
                       <Alert severity="info" icon={false}>{t("slots.noSlotsShort")}</Alert>
                     ) : (
-                      <Stack spacing={0.75}>
+                      <Stack spacing={0.5}>
                         {selectedDay.slots.map((slot) => {
                           const busy = !slot.free && slot.appointmentId != null;
                           const past = !slot.free && slot.appointmentId == null;
@@ -1029,16 +1009,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                               key={slot.start}
                               direction="row"
                               alignItems="center"
-                              spacing={1.25}
+                              justifyContent="space-between"
+                              spacing={1}
                               onClick={
                                 slot.free
                                   ? () => onBook(selectedDoc.emp.employeeId, `${selectedDay.date}T${slot.start}`)
                                   : undefined
                               }
                               sx={{
-                                px: 1.5,
-                                py: 1,
-                                borderRadius: "10px",
+                                px: 1.25,
+                                py: 0.75,
+                                borderRadius: "8px",
                                 border: "1px solid",
                                 borderStyle: past ? "dashed" : "solid",
                                 borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
@@ -1056,47 +1037,39 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                 sx={{
                                   fontFamily: "monospace",
                                   fontWeight: 600,
-                                  fontSize: "0.85rem",
-                                  width: 48,
+                                  fontSize: "0.8rem",
+                                  width: 44,
+                                  flexShrink: 0,
                                   color: slot.free ? "success.main" : "text.disabled",
                                 }}
                               >
                                 {slot.start}
                               </Typography>
                               {slot.free ? (
-                                <>
-                                  <Typography variant="caption" color="success.main" sx={{ flex: 1, fontWeight: 500 }}>
-                                    {t("slots.free")}
-                                  </Typography>
-                                  <Stack
-                                    direction="row"
-                                    alignItems="center"
-                                    spacing={0.5}
-                                    sx={(t) => ({
-                                      px: 1.25,
-                                      height: 28,
-                                      borderRadius: "8px",
-                                      border: "1px solid",
-                                      borderColor: alpha(t.palette.success.main, 0.32),
-                                      color: "success.dark",
-                                      fontWeight: 600,
-                                      fontSize: "0.75rem",
-                                      ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
-                                    })}
-                                  >
-                                    <AddOutlined sx={{ fontSize: 15 }} />
-                                    {t("slots.book")}
-                                  </Stack>
-                                </>
+                                <Stack
+                                  direction="row"
+                                  alignItems="center"
+                                  spacing={0.5}
+                                  sx={(t) => ({
+                                    px: 1,
+                                    height: 24,
+                                    borderRadius: "6px",
+                                    border: "1px solid",
+                                    borderColor: alpha(t.palette.success.main, 0.32),
+                                    color: "success.dark",
+                                    fontWeight: 600,
+                                    fontSize: "0.7rem",
+                                    ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
+                                  })}
+                                >
+                                  <AddOutlined sx={{ fontSize: 13 }} />
+                                  {t("slots.book")}
+                                </Stack>
                               ) : busy ? (
-                                <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
-                                  {t("slots.busy")}{slot.patientName ? ` · ${slot.patientName}` : ""}
+                                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
+                                  {slot.patientName ?? ""}
                                 </Typography>
-                              ) : (
-                                <Typography variant="caption" color="text.disabled" sx={{ flex: 1 }}>
-                                  {t("slots.timePassed")}
-                                </Typography>
-                              )}
+                              ) : null}
                             </Stack>
                           );
                         })}

@@ -79,6 +79,7 @@ import { useSkudActions } from "../../hooks/useSkudActions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { SETTINGS_TAB_PERMISSIONS } from "../../config/settingsPermissions";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import { AccountBalanceWalletOutlined } from "@mui/icons-material";
@@ -348,6 +349,13 @@ const SidebarSecondary: React.FC = () => {
   const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, activeEmployee, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
+  const hasVisibleSettingsTab = Object.entries(
+    SETTINGS_TAB_PERMISSIONS,
+  ).some(([key, permission]) =>
+    key === "cleaning"
+      ? moduleGate("cleaning", [permission])
+      : can(permission),
+  );
   const orgId = useApiOrgId();
   const isNurse = isNurseFunc();
   const isSuper = isSuperAdmin();
@@ -416,13 +424,7 @@ const SidebarSecondary: React.FC = () => {
     cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
     load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
     notifications: isSuper,
-    settings: IS_DJANGO_BACKEND && (
-      isSuper
-      || can("organization.view")
-      || can("branches.view")
-      || can("rbac.roles.view")
-      || can("rbac.memberships.view")
-    ),
+    settings: IS_DJANGO_BACKEND && hasVisibleSettingsTab,
   };
 
   // Бейдж «Задачи»: счётчик + срочность цветом.
@@ -588,7 +590,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* СКУД */}
-        {show("my-work") && can_.skud && (
+        {can_.skud && (
           <SidebarSkudItem collapsed={siderCollapsed} />
         )}
 

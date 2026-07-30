@@ -29,34 +29,20 @@ import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOu
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
+import RouterOutlined from "@mui/icons-material/RouterOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
+import {
+  SETTINGS_TAB_PERMISSIONS,
+  type SettingsTabKey,
+} from "../../config/settingsPermissions";
 
-/**
- * Permission codes that gate each tab.  Kept in sync with the
- * Django-side permission registry — the wiring lives in the
- * sync_permissions management command.
- */
-export const SETTINGS_TAB_PERMISSIONS = {
-  organization: "organization.view",
-  branches: "branches.view",
-  roles: "rbac.roles.view",
-  memberships: "rbac.memberships.view",
-  specializations: "staff.specializations.view",
-  banks: "staff.banks.view",
-  insurers: "finance.view",
-  expenseCategories: "finance.expense.manage",
-  diagnoses: "medical.diagnoses.manage",
-  tasks: "tasks.manage",
-  cleaning: "cleaning.manage",
-  announcements: "announcements.view",
-} as const;
-
-export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
+export { SETTINGS_TAB_PERMISSIONS };
+export type { SettingsTabKey };
 
 /**
  * Group keys for the mobile hub (hub-and-spoke navigation).  Order
@@ -149,6 +135,12 @@ const TAB_DEFS: TabDef[] = [
     key: "cleaning",
     to: "/settings/cleaning",
     icon: <CleaningServicesOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "skud",
+    to: "/settings/skud",
+    icon: <RouterOutlined fontSize="small" />,
     group: "operations",
   },
   {

@@ -13,6 +13,7 @@ import dayjs from "dayjs";
 import { getShifts } from "../../../api/attendance";
 import { getExpenses } from "../../../api/expenses";
 import { getPayrollReport } from "../../../api/payroll";
+import { useActiveScope } from "../../../hooks/useActiveScope";
 
 /** Якорь текущего месяца в формате "YYYY-MM-DD" — дефолт для хуков. */
 export const currentMonthAnchor = () => dayjs().format("YYYY-MM-DD");
@@ -25,10 +26,10 @@ const monthKey = (anchor: string) => dayjs(anchor).format("YYYY-MM");
 /** Смены сотрудника за выбранный месяц (СКУД). */
 export function useEmployeeShiftsMonth(
   employeeId: number,
-  organizationId: number | undefined,
   enabled: boolean,
   monthAnchor: string = currentMonthAnchor(),
 ) {
+  const scope = useActiveScope();
   return useQuery({
     queryKey: [
       "django",
@@ -36,15 +37,19 @@ export function useEmployeeShiftsMonth(
       "shifts",
       employeeId,
       monthKey(monthAnchor),
-      organizationId ?? null,
+      scope.organizationId ?? null,
     ],
     queryFn: ({ signal }) =>
       getShifts(
-        { employeeId, dateFrom: monthStart(monthAnchor), dateTo: monthEnd(monthAnchor) },
-        organizationId,
+        {
+          employeeId,
+          dateFrom: monthStart(monthAnchor),
+          dateTo: monthEnd(monthAnchor),
+          organizationId: scope.organizationId,
+        },
         signal,
       ),
-    enabled,
+    enabled: enabled && scope.orgReady,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });

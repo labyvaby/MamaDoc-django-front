@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
@@ -16,12 +17,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 
 import { usePageTitle } from "../../../hooks/usePageTitle";
+import { useActiveScope } from "../../../hooks/useActiveScope";
 import { getOfficeIp, setOfficeIp } from "../../../api/attendance";
 import { djangoQueryKeys } from "../../../api/queryKeys";
-import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { parseIpList } from "../../../utility/network";
-import { PageHeader, AppCard } from "../../../components/ui";
+import { AppCard } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
+import { SettingsLayout } from "../SettingsLayout";
 
 /** Разбивает вставленный/введённый текст на отдельные IP и мержит с текущим списком. */
 function mergeIpText(current: string[], text: string): string[] {
@@ -113,24 +115,30 @@ const DjangoSkudSettingsPage: React.FC = () => {
   usePageTitle(t("skud.pageTitle"));
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
-  const orgId = useApiOrgId();
+  const scope = useActiveScope();
 
   const query = useQuery({
-    queryKey: djangoQueryKeys.attendance.officeIp(orgId),
-    queryFn: ({ signal }) => getOfficeIp(orgId, signal),
+    queryKey: [
+      ...djangoQueryKeys.attendance.officeIp,
+      scope.organizationId ?? null,
+    ],
+    queryFn: ({ signal }) =>
+      getOfficeIp({ organizationId: scope.organizationId }, signal),
     staleTime: 5 * 60 * 1000,
+    enabled: scope.orgReady,
   });
 
   const [ips, setIps] = React.useState<string[]>([]);
   const [branchIps, setBranchIps] = React.useState<Record<number, string[]>>({});
   const [saving, setSaving] = React.useState(false);
-  const loadedRef = React.useRef(false);
-  const loading = query.isLoading;
+  const loadedScopeRef = React.useRef<number | "session" | null>(null);
+  const loading = query.isLoading || !scope.orgReady;
 
   const branches = query.data?.branches ?? [];
 
   React.useEffect(() => {
-    if (query.data && !loadedRef.current) {
+    const scopeKey = scope.organizationId ?? "session";
+    if (query.data && loadedScopeRef.current !== scopeKey) {
       setIps(parseIpList(query.data.officeIp ?? ""));
       setBranchIps(
         Object.fromEntries(
@@ -140,27 +148,35 @@ const DjangoSkudSettingsPage: React.FC = () => {
           ]),
         ),
       );
-      loadedRef.current = true;
+      loadedScopeRef.current = scopeKey;
     }
-  }, [query.data]);
+  }, [query.data, scope.organizationId]);
 
   const handleSave = async () => {
-    if (!query.data) return;
+    if (!query.data) {
+      notify?.({ type: "error", message: t("skud.loadError") });
+      return;
+    }
     setSaving(true);
     try {
       // Сохраняем только изменённые значения (общий IP + IP филиалов).
       const nextOrgIp = ips.join(", ");
       if (nextOrgIp !== (query.data.officeIp ?? "")) {
-        await setOfficeIp(nextOrgIp, undefined, orgId);
+        await setOfficeIp(nextOrgIp, {
+          organizationId: scope.organizationId,
+        });
       }
       for (const b of query.data.branches ?? []) {
         const next = (branchIps[b.branchId] ?? []).join(", ");
         if (next !== (b.officeIp ?? "")) {
-          await setOfficeIp(next, b.branchId, orgId);
+          await setOfficeIp(next, {
+            organizationId: scope.organizationId,
+            branchId: b.branchId,
+          });
         }
       }
       await queryClient.invalidateQueries({
-        queryKey: djangoQueryKeys.attendance.officeIp(orgId),
+        queryKey: djangoQueryKeys.attendance.officeIp,
       });
       notify?.({ type: "success", message: t("skud.saveSuccess") });
     } catch (e) {
@@ -174,30 +190,8 @@ const DjangoSkudSettingsPage: React.FC = () => {
   };
 
   return (
-    <Box
-      sx={(theme) => ({
-        height: {
-          xs: `calc(100dvh - ${theme.appLayout.header.height.mobile}px)`,
-          md: `calc(100dvh - ${theme.appLayout.header.height.desktop}px)`,
-        },
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        overflow: "hidden",
-      })}
-    >
-      <PageHeader title={t("skud.pageTitle")} showTitle={false} />
-
-      <Box
-        sx={(theme) => ({
-          px: theme.appLayout.page.paddingX,
-          pb: theme.appLayout.page.paddingY,
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-        })}
-      >
-        <Box sx={{ maxWidth: 720, mx: "auto" }}>
+    <SettingsLayout>
+      <Box sx={{ maxWidth: 720, mx: "auto" }}>
           <AppCard
             variant="outlined"
             sx={{ borderRadius: "14px", "&:hover": { boxShadow: "none" } }}
@@ -237,12 +231,27 @@ const DjangoSkudSettingsPage: React.FC = () => {
 
             <Box sx={{ p: 2.5 }}>
               <Box component="form" noValidate autoComplete="off">
+                {query.isError && (
+                  <Alert
+                    severity="error"
+                    action={
+                      <Button color="inherit" size="small" onClick={() => query.refetch()}>
+                        {t("common:actions.retry")}
+                      </Button>
+                    }
+                    sx={{ mb: 2 }}
+                  >
+                    {query.error instanceof Error
+                      ? query.error.message
+                      : t("skud.loadError")}
+                  </Alert>
+                )}
                 <IpListField
                   label={t("skud.orgIpLabel")}
                   placeholder={t("skud.ipPlaceholder")}
                   value={ips}
                   onChange={setIps}
-                  disabled={loading || saving}
+                  disabled={loading || saving || query.isError}
                   loading={loading}
                   helperText={t("skud.orgIpHelper")}
                 />
@@ -275,7 +284,7 @@ const DjangoSkudSettingsPage: React.FC = () => {
                               [b.branchId]: next,
                             }))
                           }
-                          disabled={loading || saving}
+                          disabled={loading || saving || query.isError}
                           helperText={t("skud.branchIpHelper")}
                         />
                       ))}
@@ -294,7 +303,7 @@ const DjangoSkudSettingsPage: React.FC = () => {
                       )
                     }
                     onClick={handleSave}
-                    disabled={loading || saving}
+                    disabled={loading || saving || query.isError}
                     sx={(theme) => ({ minHeight: theme.appLayout.controls.buttonHeight })}
                   >
                     {saving ? t("common:state.saving") : t("common:actions.save")}
@@ -303,9 +312,8 @@ const DjangoSkudSettingsPage: React.FC = () => {
               </Box>
             </Box>
           </AppCard>
-        </Box>
       </Box>
-    </Box>
+    </SettingsLayout>
   );
 };
 
