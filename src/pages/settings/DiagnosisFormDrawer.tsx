@@ -12,16 +12,16 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { useSnackbar } from "notistack";
 
-import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { useFormValidation } from "../../hooks/useFormValidation";
-import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
 import {
   createDiagnosis,
@@ -30,10 +30,34 @@ import {
 } from "../../api/medical";
 import { useT } from "../../i18n/VerticalProvider";
 import { agree } from "../../i18n/formatters";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
 const CODE_MAX = 20;
 const TITLE_MAX = 500;
 const DISPLAY_NAME_MAX = 500;
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Создание — один глобальный ключ (поля стартуют пустыми);
+// редактирование — ключ на конкретную запись, т.к. поля стартуют не пустыми,
+// а из данных диагноза (черновик пишется, только если текущие значения
+// отличаются от исходных — иначе «черновиком» считалась бы любая открытая
+// карточка), а «Очистить» откатывает к исходным данным записи.
+
+const DRAFT_ADD_KEY = "mamadoc:settings:diagnosis-add-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type DiagnosisDraft = {
+  savedAt: number;
+  code: string;
+  title: string;
+  displayName: string;
+  isActive: boolean;
+};
+
+function draftEditKeyFor(id: number): string {
+  return `mamadoc:settings:diagnosis-edit-draft:${id}`;
+}
 
 /** Target opening the drawer: a diagnosis to edit, or "new" to create one. */
 export type DiagnosisFormTarget = CatalogDiagnosis | "new" | null;
@@ -89,26 +113,44 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
   const [isActive, setIsActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = React.useState(false);
 
   const codeRef = React.useRef<HTMLInputElement>(null);
+  const baselineRef = React.useRef<{
+    code: string;
+    title: string;
+    displayName: string;
+    isActive: boolean;
+  } | null>(null);
 
-  // Reset whenever the drawer opens (or switches between create/edit targets).
+  // Reset whenever the drawer opens (or switches between create/edit targets),
+  // then restore a pending localStorage draft on top of the baseline if present.
   React.useEffect(() => {
     if (!open) return;
     setError(null);
     setBusy(false);
     form.reset();
-    if (editing) {
-      setCode(editing.code);
-      setTitle(editing.title);
-      setDisplayName(editing.displayName ?? "");
-      setIsActive(editing.isActive);
-    } else {
-      setCode("");
-      setTitle("");
-      setDisplayName("");
-      setIsActive(true);
-    }
+
+    const baseline = editing
+      ? {
+          code: editing.code,
+          title: editing.title,
+          displayName: editing.displayName ?? "",
+          isActive: editing.isActive,
+        }
+      : { code: "", title: "", displayName: "", isActive: true };
+    baselineRef.current = baseline;
+
+    const draftKey = editing ? draftEditKeyFor(editing.id) : DRAFT_ADD_KEY;
+    const draft = readFormDraft<DiagnosisDraft>(draftKey, DRAFT_TTL_MS);
+    const next = draft ?? baseline;
+
+    setCode(next.code);
+    setTitle(next.title);
+    setDisplayName(next.displayName);
+    setIsActive(next.isActive);
+    setDraftRestored(Boolean(draft));
+
     // Focus the first field shortly after the drawer transition starts.
     const t = setTimeout(() => codeRef.current?.focus(), 120);
     return () => clearTimeout(t);
@@ -130,11 +172,45 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
       isActive !== editing!.isActive
     : Boolean(trimmedCode || trimmedTitle || trimmedDisplayName);
 
-  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
-    isDirty,
-    isOpen: open,
-    onClose,
-  });
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  // isDirty — уже готовый компаратор «текущее отличается от исходного/непусто»,
+  // переиспользуем его как условие записи/очистки черновика.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const draftKey = editing ? draftEditKeyFor(editing.id) : DRAFT_ADD_KEY;
+    if (isDirty) {
+      writeFormDraft(draftKey, { code, title, displayName, isActive });
+    } else {
+      clearFormDraft(draftKey);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [open, code, title, displayName, isActive]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    const draftKey = editing ? draftEditKeyFor(editing.id) : DRAFT_ADD_KEY;
+    clearFormDraft(draftKey);
+    const baseline = baselineRef.current;
+    if (baseline) {
+      setCode(baseline.code);
+      setTitle(baseline.title);
+      setDisplayName(baseline.displayName);
+      setIsActive(baseline.isActive);
+    }
+    setDraftRestored(false);
+  };
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
@@ -164,6 +240,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
           isActive,
         });
       }
+      clearFormDraft(editing ? draftEditKeyFor(editing.id) : DRAFT_ADD_KEY);
       onSaved(saved);
       enqueueSnackbar(
         isEdit ? t("diagnosisForm.updated") : t("diagnosisForm.created"),
@@ -225,13 +302,26 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
             )}
           </Box>
         </Stack>
-        <IconButton
-          onClick={busy ? undefined : guardedClose}
-          aria-label={t("common:actions.close")}
-          edge="end"
-        >
-          <CloseOutlined />
-        </IconButton>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {draftRestored && (
+            <Tooltip
+              title={`${t("diagnosisForm.draftRestored")} — ${t(
+                "diagnosisForm.draftDiscard",
+              ).toLowerCase()}?`}
+            >
+              <IconButton onClick={handleDiscardDraft} aria-label={t("diagnosisForm.draftDiscard")}>
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton
+            onClick={busy ? undefined : handleClose}
+            aria-label={t("common:actions.close")}
+            edge="end"
+          >
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
       </Box>
       <Divider />
 
@@ -364,7 +454,7 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
       <Divider />
       <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
         <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-          <Button variant="outlined" onClick={guardedClose} disabled={busy}>
+          <Button variant="outlined" onClick={handleClose} disabled={busy}>
             {t("common:actions.cancel")}
           </Button>
           <Button
@@ -381,30 +471,21 @@ export const DiagnosisFormDrawer: React.FC<DiagnosisFormDrawerProps> = ({
   );
 
   return (
-    <>
-      <Drawer
-        anchor="right"
-        open={open}
-        onClose={busy ? undefined : guardedClose}
-        PaperProps={{
-          sx: {
-            width: { xs: 320, sm: 440 },
-            maxWidth: "100vw",
-            display: "flex",
-            flexDirection: "column",
-          },
-        }}
-      >
-        {content}
-      </Drawer>
-
-      <CloseGuardDialog
-        open={confirmOpen}
-        title={isEdit ? t("diagnosisForm.editTitleLower") : t("diagnosisForm.createTitleLower")}
-        onConfirm={confirmClose}
-        onCancel={cancelClose}
-      />
-    </>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : handleClose}
+      PaperProps={{
+        sx: {
+          width: { xs: 320, sm: 440 },
+          maxWidth: "100vw",
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
+      {content}
+    </Drawer>
   );
 };
 

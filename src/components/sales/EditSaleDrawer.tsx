@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
     Box,
     Button,
@@ -247,27 +247,38 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
     const selectedPatientOption = patients.find(p => p.id === patientId) || null;
 
     // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+    // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+    // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+    // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+    const flushDraftRef = useRef<() => void>(() => {});
+    flushDraftRef.current = () => {
+        if (!sale) return;
+        const current: Omit<SaleEditDraft, "savedAt"> = {
+            patientId,
+            patientLabel: selectedPatientOption?.label ?? null,
+            cash,
+            card,
+            discountPercent,
+            userComment,
+        };
+        const key = draftKeyFor(sale.id);
+        if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+            clearFormDraft(key);
+        } else {
+            writeFormDraft(key, current);
+        }
+    };
+
     useEffect(() => {
         if (!open || !sale) return;
-        const id = setTimeout(() => {
-            const current: Omit<SaleEditDraft, "savedAt"> = {
-                patientId,
-                patientLabel: selectedPatientOption?.label ?? null,
-                cash,
-                card,
-                discountPercent,
-                userComment,
-            };
-            const key = draftKeyFor(sale.id);
-            if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
-                clearFormDraft(key);
-            } else {
-                writeFormDraft(key, current);
-            }
-        }, 400);
+        const id = setTimeout(() => flushDraftRef.current(), 400);
         return () => clearTimeout(id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, sale, patientId, selectedPatientOption, cash, card, discountPercent, userComment]);
+
+    const handleClose = () => {
+        flushDraftRef.current();
+        onClose();
+    };
 
     const handleDiscardDraft = () => {
         if (!sale) return;
@@ -350,7 +361,7 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
         <Drawer
             anchor="right"
             open={open}
-            onClose={loading ? undefined : onClose}
+            onClose={loading ? undefined : handleClose}
             PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
         >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
@@ -363,7 +374,7 @@ export const EditSaleDrawer: React.FC<Props> = ({ open, onClose, sale, onUpdated
                             </IconButton>
                         </Tooltip>
                     )}
-                    <IconButton onClick={loading ? undefined : onClose}><CloseOutlined /></IconButton>
+                    <IconButton onClick={loading ? undefined : handleClose}><CloseOutlined /></IconButton>
                 </Stack>
             </Box>
             <Divider />

@@ -24,14 +24,14 @@ import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import dayjs from "dayjs";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AppCard, CustomDateTimePicker } from "../../components/ui";
-import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
-import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { formatKGS } from "../../utility/format";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import { roundDateTimeLocalToStep } from "../../utility/time";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -230,6 +230,58 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
   };
 }
 
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Заменяет прежний useCloseGuard (confirm-диалог «закрыть без сохранения?»):
+// вместо блокирующего диалога правки тихо сохраняются в localStorage и
+// подхватываются при повторном открытии того же приёма. Ключ включает id
+// приёма — форма только для редактирования существующей записи, черновик
+// одного приёма не должен всплывать в форме другого.
+
+const APPOINTMENT_EDIT_DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type AppointmentEditDraft = {
+  savedAt: number;
+  scheduledAt: string;
+  workMode: "day" | "night";
+  isBooking: boolean;
+  selectedPatient: DjangoPatient | null;
+  serviceRows: ServiceRow[];
+  productRows: ProductRow[];
+  complaints: string;
+  doctorComplaints: string;
+  adminComment: string;
+};
+
+function appointmentEditDraftKey(appointmentId: number): string {
+  return `mamadoc:appointments:edit-draft:${appointmentId}`;
+}
+
+// Заглушка пациента из данных самого приёма (полный список не запрашивается) —
+// используется и для заполнения формы, и для baseline-снэпшота черновика.
+function patientStubFromAppointment(appointment: DjangoAppointment): DjangoPatient | null {
+  if (!appointment.patient) return null;
+  return {
+    id: appointment.patient.id,
+    fullName: appointment.patient.fullName,
+    phone: appointment.patient.phone,
+    organizationId: 0,
+    branch: null,
+    secondaryPhone: null,
+    birthDate: null,
+    gender: "unknown",
+    address: null,
+    notes: null,
+    source: null,
+    photoUrl: null,
+    inn: "",
+    isBlacklisted: false,
+    blacklistReason: "",
+    isActive: true,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = ({
@@ -292,6 +344,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   const [overlapConflict, setOverlapConflict] =
     React.useState<AppointmentOverlapConflict | null>(null);
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
+  const [draftRestored, setDraftRestored] = React.useState(false);
   // Чтобы ошибка была видна, даже если пользователь прокрутил вниз к «Сохранить».
   const errorRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -300,7 +353,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     }
   }, [saveError]);
 
-  // ── isDirty для CloseGuard ───────────────────────────────────────────────
+  // Baseline-снэпшот формы (исходные данные приёма) — используется решением
+  // «писать ли черновик» (через isDirty ниже) и откатом «Очистить» к исходным
+  // значениям, а не к пустой форме.
+  const baselineRef = React.useRef<Omit<AppointmentEditDraft, "savedAt"> | null>(null);
+
+  // ── isDirty — отличаются ли текущие значения формы от исходных данных приёма.
+  // Тот же компаратор раньше решал, показывать ли CloseGuard-диалог; теперь он
+  // решает, писать ли черновик в localStorage (см. flushDraftRef ниже).
   const isDirty = React.useMemo(() => {
     if (saving || !appointment) return false;
     const initAt = appointment.scheduledAt ?? "";
@@ -313,9 +373,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     if (adminComment !== (appointment.adminComment ?? "")) return true;
     return touched;
   }, [saving, appointment, scheduledAt, workMode, isBooking, complaints, doctorComplaints, adminComment, touched]);
-
-  const { guardedClose, confirmOpen: guardConfirmOpen, confirmClose, cancelClose } =
-    useCloseGuard({ isDirty, isOpen: open, onClose });
 
   // ── populate form from appointment ──────────────────────────────────────
   React.useEffect(() => {
@@ -335,6 +392,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       form.reset();
       setSaving(false);
       setSaveError(null);
+      baselineRef.current = null;
+      setDraftRestored(false);
       return;
     }
 
@@ -347,37 +406,47 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     setDoctorComplaints(appointment.doctorComplaints ?? "");
     setAdminComment(appointment.adminComment ?? "");
 
-    if (appointment.services.length > 0) {
-      setServiceRows(
-        appointment.services.map((line) =>
-          newServiceRow({
-            lineId: line.id ?? null,
-            serviceId: line.service?.id ?? null,
-            employeeId: line.employee?.id ?? null,
-            quantity: line.quantity ?? 1,
-            unitPrice: line.unitPrice ?? "",
-            discountAmount: line.discountAmount ?? "",
-            hasConclusion: lineHasConclusion(line),
-            consumptions: (line.consumptions ?? []).map(toConsumptionRow),
-          }),
-        ),
-      );
-    } else {
-      setServiceRows([newServiceRow()]);
-    }
+    const initialServiceRows =
+      appointment.services.length > 0
+        ? appointment.services.map((line) =>
+            newServiceRow({
+              lineId: line.id ?? null,
+              serviceId: line.service?.id ?? null,
+              employeeId: line.employee?.id ?? null,
+              quantity: line.quantity ?? 1,
+              unitPrice: line.unitPrice ?? "",
+              discountAmount: line.discountAmount ?? "",
+              hasConclusion: lineHasConclusion(line),
+              consumptions: (line.consumptions ?? []).map(toConsumptionRow),
+            }),
+          )
+        : [newServiceRow()];
+    setServiceRows(initialServiceRows);
 
-    setProductRows(
-      (appointment.productLines ?? [])
-        .filter((line) => line.status !== "canceled")
-        .map((line) => ({
-          lineId: line.id,
-          productId: line.product.id,
-          quantity: String(line.quantity),
-          unitPrice: Number(line.unitPrice) || Number(line.product.price) || 0,
-          name: line.product.name,
-          unit: line.product.unit,
-        })),
-    );
+    const initialProductRows = (appointment.productLines ?? [])
+      .filter((line) => line.status !== "canceled")
+      .map((line) => ({
+        lineId: line.id,
+        productId: line.product.id,
+        quantity: String(line.quantity),
+        unitPrice: Number(line.unitPrice) || Number(line.product.price) || 0,
+        name: line.product.name,
+        unit: line.product.unit,
+      }));
+    setProductRows(initialProductRows);
+
+    // Baseline — исходные данные приёма, до наложения черновика.
+    baselineRef.current = {
+      scheduledAt: base,
+      workMode: appointment.isNight ? "night" : inferWorkMode(base),
+      isBooking: !appointment.patient,
+      selectedPatient: patientStubFromAppointment(appointment),
+      serviceRows: initialServiceRows,
+      productRows: initialProductRows,
+      complaints: appointment.complaints ?? "",
+      doctorComplaints: appointment.doctorComplaints ?? "",
+      adminComment: appointment.adminComment ?? "",
+    };
   }, [open, appointment]);
 
   // Если зашла медсестра — фиксируем её как исполнителя в пустых строках
@@ -395,27 +464,92 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   // ── populate patient from the appointment itself (no full list needed) ──────
   React.useEffect(() => {
     if (!open || !appointment?.patient) return;
-    setSelectedPatient({
-      id: appointment.patient.id,
-      fullName: appointment.patient.fullName,
-      phone: appointment.patient.phone,
-      organizationId: 0,
-      branch: null,
-      secondaryPhone: null,
-      birthDate: null,
-      gender: "unknown",
-      address: null,
-      notes: null,
-      source: null,
-      photoUrl: null,
-      inn: "",
-      isBlacklisted: false,
-      blacklistReason: "",
-      isActive: true,
-      createdAt: "",
-      updatedAt: "",
-    });
+    setSelectedPatient(patientStubFromAppointment(appointment));
   }, [open, appointment]);
+
+  // ── восстановление черновика ─────────────────────────────────────────────
+  // Идёт последним эффектом популяции формы (после baseline-эффекта выше,
+  // эффекта-фиксации медсестры и эффекта, заполняющего пациента приёма) —
+  // если черновик есть, он должен перекрыть значения, которые эти эффекты
+  // только что выставили из baseline.
+  React.useEffect(() => {
+    if (!open || !appointment) return;
+    const draft = readFormDraft<AppointmentEditDraft>(
+      appointmentEditDraftKey(appointment.id),
+      APPOINTMENT_EDIT_DRAFT_TTL_MS,
+    );
+    if (!draft) {
+      setDraftRestored(false);
+      return;
+    }
+    setScheduledAt(draft.scheduledAt);
+    setWorkMode(draft.workMode);
+    setIsBooking(draft.isBooking);
+    setSelectedPatient(draft.selectedPatient);
+    setServiceRows(draft.serviceRows);
+    setProductRows(draft.productRows);
+    setComplaints(draft.complaints);
+    setDoctorComplaints(draft.doctorComplaints);
+    setAdminComment(draft.adminComment);
+    setDraftRestored(true);
+  }, [open, appointment]);
+
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    if (!appointment) return;
+    const key = appointmentEditDraftKey(appointment.id);
+    if (!isDirty) {
+      clearFormDraft(key);
+      return;
+    }
+    writeFormDraft(key, {
+      scheduledAt,
+      workMode,
+      isBooking,
+      selectedPatient,
+      serviceRows,
+      productRows,
+      complaints,
+      doctorComplaints,
+      adminComment,
+    });
+  };
+
+  React.useEffect(() => {
+    if (!open || !appointment) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [
+    open, appointment, scheduledAt, workMode, isBooking, selectedPatient,
+    serviceRows, productRows, complaints, doctorComplaints, adminComment,
+  ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    if (!appointment) return;
+    clearFormDraft(appointmentEditDraftKey(appointment.id));
+    const b = baselineRef.current;
+    if (b) {
+      setScheduledAt(b.scheduledAt);
+      setWorkMode(b.workMode);
+      setIsBooking(b.isBooking);
+      setSelectedPatient(b.selectedPatient);
+      setServiceRows(b.serviceRows);
+      setProductRows(b.productRows);
+      setComplaints(b.complaints);
+      setDoctorComplaints(b.doctorComplaints);
+      setAdminComment(b.adminComment);
+    }
+    setDraftRestored(false);
+  };
 
   // ── каталог товаров для секции «Товары» ────────────────────────────────────
   // Нужен только когда редактирование товаров включено; на чтение хватает
@@ -653,6 +787,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.payments(appointment.id),
       });
+      clearFormDraft(appointmentEditDraftKey(appointment.id));
       onSaved?.(updated);
       onClose();
     } catch (err: unknown) {
@@ -732,7 +867,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       <Drawer
         anchor="right"
         open={open}
-        onClose={saving ? undefined : guardedClose}
+        onClose={saving ? undefined : handleClose}
         PaperProps={{
           sx: {
             width: { xs: 320, sm: 480, md: 520 },
@@ -768,9 +903,18 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                 />
               )}
             </Stack>
-            <IconButton onClick={saving ? undefined : guardedClose} size="small">
-              <CloseOutlined />
-            </IconButton>
+            <Stack direction="row" alignItems="center" gap={0.5}>
+              {draftRestored && (
+                <Tooltip title={`${t("editDrawer.draftRestored")} — ${t("editDrawer.draftDiscard").toLowerCase()}?`}>
+                  <IconButton onClick={handleDiscardDraft} aria-label={t("editDrawer.draftDiscard")} size="small">
+                    <RestoreOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <IconButton onClick={saving ? undefined : handleClose} size="small">
+                <CloseOutlined />
+              </IconButton>
+            </Stack>
           </Stack>
           <Divider />
 
@@ -1655,7 +1799,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
             alignItems="center"
             gap={1.5}
           >
-            <Button variant="outlined" onClick={saving ? undefined : guardedClose} disabled={saving}>
+            <Button variant="outlined" onClick={saving ? undefined : handleClose} disabled={saving}>
               {t("addDrawer.cancel")}
             </Button>
             <Button
@@ -1675,14 +1819,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           </Box>
         </Box>
       </Drawer>
-
-      {/* CloseGuard диалог */}
-      <CloseGuardDialog
-        open={guardConfirmOpen}
-        title={t("editDrawer.titleLower")}
-        onConfirm={confirmClose}
-        onCancel={cancelClose}
-      />
 
       {/* Быстрое добавление пациента */}
       <DjangoAddPatientDrawer

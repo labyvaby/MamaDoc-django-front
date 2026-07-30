@@ -413,45 +413,56 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   }, [open]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const draft = {
+      fullName,
+      nickname,
+      phoneCountry,
+      phoneLocal,
+      email,
+      status,
+      clinicalRole,
+      telegramId,
+      instagram,
+      birthDate,
+      hiredAt,
+      bankAccountNumber,
+      inn,
+      address,
+      notes,
+      bank,
+      bik,
+      roleId,
+      employeeBranches,
+      userAccessBranches,
+      overrideUserAccess,
+      selectedSpecializations,
+    };
+    if (isDraftEmpty(draft)) {
+      clearOnboardDraft();
+    } else {
+      writeOnboardDraft(draft);
+    }
+  };
+
   React.useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => {
-      const draft = {
-        fullName,
-        nickname,
-        phoneCountry,
-        phoneLocal,
-        email,
-        status,
-        clinicalRole,
-        telegramId,
-        instagram,
-        birthDate,
-        hiredAt,
-        bankAccountNumber,
-        inn,
-        address,
-        notes,
-        bank,
-        bik,
-        roleId,
-        employeeBranches,
-        userAccessBranches,
-        overrideUserAccess,
-        selectedSpecializations,
-      };
-      if (isDraftEmpty(draft)) {
-        clearOnboardDraft();
-      } else {
-        writeOnboardDraft(draft);
-      }
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [
     open, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
     telegramId, instagram, birthDate, hiredAt, bankAccountNumber, inn, address, notes,
     bank, bik, roleId, employeeBranches, userAccessBranches, overrideUserAccess, selectedSpecializations,
   ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     clearOnboardDraft();
@@ -609,7 +620,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     <DrawerBase
       open={open}
       title="Создать сотрудника"
-      onClose={onClose}
+      onClose={handleClose}
       busy={busy}
       onSubmit={handleSubmit}
       submitLabel="Создать"

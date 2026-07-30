@@ -13,6 +13,7 @@ import {
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -21,14 +22,14 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 import { useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
 import { CustomDatePicker, AppBottomSheet } from "../ui";
-import { useCloseGuard } from "../../hooks/useCloseGuard";
-import { CloseGuardDialog } from "../common/CloseGuardDialog";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import {
   createExpense,
   uploadExpensePhoto,
@@ -57,6 +58,38 @@ function formatKGS(value: number): string {
 }
 
 const KIND_NEEDS_EMPLOYEE: ExpenseCategoryKind[] = ["advance", "salary"];
+
+// ── Черновик формы (localStorage) ───────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Форма только создания — ключ общий (не зависит от id).
+// Фото не сохраняем (File не сериализуется).
+
+const ADD_DRAFT_KEY = "mamadoc:expenses:add-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type ExpenseDraftValues = {
+  expenseDate: string | null;
+  categoryId: number | "";
+  name: string;
+  cashAmount: string;
+  cardAmount: string;
+  description: string;
+  employeeId: number | null;
+  employeeFullName: string | null;
+};
+
+type ExpenseDraft = ExpenseDraftValues & { savedAt: number };
+
+function isDraftEmpty(d: ExpenseDraftValues): boolean {
+  return (
+    !d.name.trim() &&
+    !d.cashAmount.trim() &&
+    !d.cardAmount.trim() &&
+    !d.description.trim() &&
+    !d.categoryId &&
+    !d.employeeId
+  );
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -128,43 +161,107 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   const needsEmployee =
     selectedCategory != null && KIND_NEEDS_EMPLOYEE.includes(selectedCategory.kind);
 
-  // ── Dirty check ───────────────────────────────────────────────────────────────
-  const isDirty = Boolean(
-    name || cashAmount || cardAmount || description || photoFile || categoryId || employeeValue,
-  );
+  // ── Черновик формы ────────────────────────────────────────────────────────────
+  const [draftRestored, setDraftRestored] = React.useState(false);
 
-  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
-    isDirty,
-    isOpen: open,
-    onClose,
-  });
-
-  // ── Reset on open ─────────────────────────────────────────────────────────────
+  // ── Reset / восстановление черновика на открытии ─────────────────────────────
   const prefillCategoryAppliedRef = React.useRef(false);
   React.useEffect(() => {
     if (open) {
-      setExpenseDate(dayjs());
-      setCategoryId("");
-      setName(prefill?.name ?? "");
-      setCashAmount(prefill?.cashAmount ?? "");
-      setCardAmount(prefill?.cardAmount ?? "");
-      setDescription("");
+      const draft = readFormDraft<ExpenseDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
+      if (draft) {
+        setExpenseDate(draft.expenseDate ? dayjs(draft.expenseDate) : dayjs());
+        setCategoryId(draft.categoryId);
+        setName(draft.name);
+        setCashAmount(draft.cashAmount);
+        setCardAmount(draft.cardAmount);
+        setDescription(draft.description);
+        setEmployeeInput(draft.employeeFullName ?? "");
+        const emp =
+          draft.employeeId != null
+            ? ({ id: draft.employeeId, fullName: draft.employeeFullName ?? "" } as DjangoEmployeeListItem)
+            : null;
+        setEmployeeValue(emp);
+        setEmployeeOptions(emp ? [emp] : []);
+        setDraftRestored(true);
+        // Категория уже восстановлена из черновика — не даём эффекту префилла
+        // категории (ниже) перетереть её после загрузки списка категорий.
+        prefillCategoryAppliedRef.current = true;
+      } else {
+        setExpenseDate(dayjs());
+        setCategoryId("");
+        setName(prefill?.name ?? "");
+        setCashAmount(prefill?.cashAmount ?? "");
+        setCardAmount(prefill?.cardAmount ?? "");
+        setDescription("");
+        setEmployeeInput("");
+        const emp = prefill?.employee
+          ? ({ id: prefill.employee.id, fullName: prefill.employee.fullName } as DjangoEmployeeListItem)
+          : null;
+        setEmployeeValue(emp);
+        setEmployeeOptions(emp ? [emp] : []);
+        setDraftRestored(false);
+        prefillCategoryAppliedRef.current = false;
+      }
       setPhotoFile(null);
       setPhotoPreview(null);
-      setEmployeeInput("");
-      const emp = prefill?.employee
-        ? ({ id: prefill.employee.id, fullName: prefill.employee.fullName } as DjangoEmployeeListItem)
-        : null;
-      setEmployeeValue(emp);
-      setEmployeeOptions(emp ? [emp] : []);
       setError(null);
       setBusy(false);
-      prefillCategoryAppliedRef.current = false;
     }
     // Read `prefill` from closure at open time — don't reset the form mid-edit
     // if the parent re-creates the prefill object on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const snapshot: ExpenseDraftValues = {
+      expenseDate: expenseDate && expenseDate.isValid() ? expenseDate.toISOString() : null,
+      categoryId,
+      name,
+      cashAmount,
+      cardAmount,
+      description,
+      employeeId: employeeValue?.id ?? null,
+      employeeFullName: employeeValue?.fullName ?? null,
+    };
+    if (isDraftEmpty(snapshot)) {
+      clearFormDraft(ADD_DRAFT_KEY);
+    } else {
+      writeFormDraft(ADD_DRAFT_KEY, snapshot);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [open, expenseDate, categoryId, name, cashAmount, cardAmount, description, employeeValue]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    clearFormDraft(ADD_DRAFT_KEY);
+    setExpenseDate(dayjs());
+    setCategoryId("");
+    setName(prefill?.name ?? "");
+    setCashAmount(prefill?.cashAmount ?? "");
+    setCardAmount(prefill?.cardAmount ?? "");
+    setDescription("");
+    setEmployeeInput("");
+    const emp = prefill?.employee
+      ? ({ id: prefill.employee.id, fullName: prefill.employee.fullName } as DjangoEmployeeListItem)
+      : null;
+    setEmployeeValue(emp);
+    setEmployeeOptions(emp ? [emp] : []);
+    setDraftRestored(false);
+  };
 
   // Prefill the category once the categories list has loaded (async).
   React.useEffect(() => {
@@ -240,6 +337,8 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
         employeeId: employeeValue?.id ?? null,
       });
 
+      clearFormDraft(ADD_DRAFT_KEY);
+
       if (photoFile) {
         try {
           const withPhoto = await uploadExpensePhoto(created.id, photoFile);
@@ -296,9 +395,18 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
         <Typography variant="h6" fontWeight={600}>
           Добавить расход
         </Typography>
-        <IconButton onClick={busy ? undefined : guardedClose} aria-label="Закрыть" edge="end">
-          <CloseOutlined />
-        </IconButton>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {draftRestored && (
+            <Tooltip title="Восстановлен черновик — очистить?">
+              <IconButton onClick={handleDiscardDraft} aria-label="Очистить черновик">
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton onClick={busy ? undefined : handleClose} aria-label="Закрыть" edge="end">
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
       </Box>
       <Divider />
 
@@ -588,7 +696,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       <Divider />
       <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
         <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-          <Button variant="outlined" onClick={guardedClose} disabled={busy}>
+          <Button variant="outlined" onClick={handleClose} disabled={busy}>
             Отмена
           </Button>
           <Button
@@ -605,30 +713,21 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   );
 
   return (
-    <>
-      <Drawer
-        anchor="right"
-        open={open}
-        onClose={busy ? undefined : guardedClose}
-        PaperProps={{
-          sx: {
-            width: { xs: 320, sm: 480, md: 520 },
-            maxWidth: "100vw",
-            display: "flex",
-            flexDirection: "column",
-          },
-        }}
-      >
-        {drawerContent}
-      </Drawer>
-
-      <CloseGuardDialog
-        open={confirmOpen}
-        title="добавление расхода"
-        onConfirm={confirmClose}
-        onCancel={cancelClose}
-      />
-    </>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : handleClose}
+      PaperProps={{
+        sx: {
+          width: { xs: 320, sm: 480, md: 520 },
+          maxWidth: "100vw",
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
+      {drawerContent}
+    </Drawer>
   );
 };
 

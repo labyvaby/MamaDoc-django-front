@@ -78,11 +78,14 @@ const MotionBox = motion(Box);
 
 // ── черновик формы (localStorage) ────────────────────────────────────────────
 // Защита от случайной потери введённых данных при закрытии дровера (крестик,
-// клик по фону, Esc). Актуален только для сценария «новое движение с нуля»
-// (страница «Движение товара», товар выбирается прямо в дровере) — если
-// дровер открыт для конкретного товара (`product`) или редактирования
-// (`editingMovement`), это уже предзаполненный контекст, черновик из другого
-// открытия туда подсовывать нельзя.
+// клик по фону, Esc). Ключ черновика зависит от контекста открытия — черновик
+// одного товара/движения не должен всплывать в форме для другого:
+//  - редактирование движения (`editingMovement`) → ключ по id движения,
+//    сравнение с исходными данными движения (baseline-diff), как в Edit-формах;
+//  - открыто для конкретного товара (`product`, приход/списание) → ключ по id
+//    товара, ничего не предзаполнено с сервера — обычная isDraftEmpty-проверка;
+//  - «с нуля» (страница «Движение товара», товар выбирается в дровере) →
+//    общий ключ, тоже isDraftEmpty-проверка.
 
 const DRAFT_STORAGE_KEY = "mamadoc:warehouse:movement-draft";
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
@@ -97,16 +100,13 @@ type MovementDraft = {
     selectedWarehouse: MovementWarehouseOption | null;
 };
 
-function readMovementDraft(): MovementDraft | null {
-    return readFormDraft<MovementDraft>(DRAFT_STORAGE_KEY, DRAFT_TTL_MS);
-}
-
-function writeMovementDraft(draft: Omit<MovementDraft, "savedAt">): void {
-    writeFormDraft(DRAFT_STORAGE_KEY, draft);
-}
-
-function clearMovementDraft(): void {
-    clearFormDraft(DRAFT_STORAGE_KEY);
+function movementDraftKeyFor(
+    product: DjangoStockItem | null,
+    editingMovement: DjangoStockMovement | null,
+): string {
+    if (editingMovement) return `${DRAFT_STORAGE_KEY}:edit:${editingMovement.id}`;
+    if (product) return `${DRAFT_STORAGE_KEY}:product:${product.warehouseId}:${product.productId}`;
+    return `${DRAFT_STORAGE_KEY}:new`;
 }
 
 function isDraftEmpty(d: Omit<MovementDraft, "savedAt">): boolean {
@@ -117,6 +117,18 @@ function isDraftEmpty(d: Omit<MovementDraft, "savedAt">): boolean {
         d.paymentMethod === "cash" &&
         !d.selectedProduct &&
         !d.selectedWarehouse
+    );
+}
+
+function sameAsMovementBaseline(
+    a: Omit<MovementDraft, "savedAt">,
+    b: Omit<MovementDraft, "savedAt">,
+): boolean {
+    return (
+        a.quantity === b.quantity &&
+        a.amount === b.amount &&
+        a.comment === b.comment &&
+        a.paymentMethod === b.paymentMethod
     );
 }
 
@@ -144,65 +156,99 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     // страница передала список (на странице «Склад» склад задан колонкой).
     const showWarehouseSelect = !product && !editingMovement && !!warehouses;
 
-    // Есть предзаполнение из внешнего контекста (конкретный товар или
-    // редактируемое движение) — открытие «не с чистого листа», черновик не трогаем.
-    const hasPrefillContext = !!product || !!editingMovement;
+    // Baseline нужен только для editingMovement (там поля предзаполнены с
+    // сервера) — для product/blank-сценариев ничего не предзаполнено, черновик
+    // там просто сравнивается с «пусто» (isDraftEmpty).
+    const baselineRef = React.useRef<Omit<MovementDraft, "savedAt"> | null>(null);
 
     useEffect(() => {
         if (open) {
-            setQuantity(editingMovement ? String(Math.abs(editingMovement.quantity || 0)) : "");
-            setAmount(
-                editingMovement?.totalCost !== undefined && editingMovement?.totalCost !== null
-                    ? String(editingMovement.totalCost)
-                    : "",
-            );
-            setComment(editingMovement?.comment ?? "");
+            const baseline: Omit<MovementDraft, "savedAt"> = {
+                quantity: editingMovement ? String(Math.abs(editingMovement.quantity || 0)) : "",
+                amount:
+                    editingMovement?.totalCost !== undefined && editingMovement?.totalCost !== null
+                        ? String(editingMovement.totalCost)
+                        : "",
+                comment: editingMovement?.comment ?? "",
+                paymentMethod: editingMovement?.paymentMethod ?? "cash",
+                selectedProduct: null,
+                selectedWarehouse: warehouses?.find((w) => w.id === defaultWarehouseId) ?? null,
+            };
+            baselineRef.current = editingMovement ? baseline : null;
+
+            setQuantity(baseline.quantity);
+            setAmount(baseline.amount);
+            setComment(baseline.comment);
             setLoading(false);
             setSelectedProduct(null);
-            setPaymentMethod(editingMovement?.paymentMethod ?? "cash");
-            setSelectedWarehouse(
-                warehouses?.find((w) => w.id === defaultWarehouseId) ?? null,
-            );
+            setPaymentMethod(baseline.paymentMethod);
+            setSelectedWarehouse(baseline.selectedWarehouse);
             setDraftRestored(false);
 
-            if (!hasPrefillContext) {
-                const draft = readMovementDraft();
-                if (draft) {
-                    setQuantity(draft.quantity);
-                    setAmount(draft.amount);
-                    setComment(draft.comment);
-                    setPaymentMethod(draft.paymentMethod);
-                    setSelectedProduct(draft.selectedProduct);
-                    if (draft.selectedWarehouse) setSelectedWarehouse(draft.selectedWarehouse);
-                    setDraftRestored(true);
-                }
+            const draft = readFormDraft<MovementDraft>(
+                movementDraftKeyFor(product, editingMovement),
+                DRAFT_TTL_MS,
+            );
+            if (draft) {
+                setQuantity(draft.quantity);
+                setAmount(draft.amount);
+                setComment(draft.comment);
+                setPaymentMethod(draft.paymentMethod);
+                setSelectedProduct(draft.selectedProduct);
+                if (draft.selectedWarehouse) setSelectedWarehouse(draft.selectedWarehouse);
+                setDraftRestored(true);
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, product, editingMovement, defaultWarehouseId]);
 
-    // ── сохранение черновика в localStorage (только сценарий «с нуля») ─────────
+    // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+    // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+    // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+    // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+    const flushDraftRef = React.useRef<() => void>(() => {});
+    flushDraftRef.current = () => {
+        const current: Omit<MovementDraft, "savedAt"> = {
+            quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse,
+        };
+        const key = movementDraftKeyFor(product, editingMovement);
+        const isUnchanged = editingMovement
+            ? baselineRef.current !== null && sameAsMovementBaseline(current, baselineRef.current)
+            : isDraftEmpty(current);
+        if (isUnchanged) {
+            clearFormDraft(key);
+        } else {
+            writeFormDraft(key, current);
+        }
+    };
+
     useEffect(() => {
-        if (!open || hasPrefillContext) return;
-        const id = setTimeout(() => {
-            const draft = { quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse };
-            if (isDraftEmpty(draft)) {
-                clearMovementDraft();
-            } else {
-                writeMovementDraft(draft);
-            }
-        }, 400);
+        if (!open) return;
+        const id = setTimeout(() => flushDraftRef.current(), 400);
         return () => clearTimeout(id);
-    }, [open, hasPrefillContext, quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse]);
+    }, [open, product, editingMovement, quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse]);
+
+    const handleClose = () => {
+        flushDraftRef.current();
+        onClose();
+    };
 
     const handleDiscardDraft = () => {
-        clearMovementDraft();
-        setQuantity("");
-        setAmount("");
-        setComment("");
-        setPaymentMethod("cash");
-        setSelectedProduct(null);
-        setSelectedWarehouse(warehouses?.find((w) => w.id === defaultWarehouseId) ?? null);
+        clearFormDraft(movementDraftKeyFor(product, editingMovement));
+        const b = baselineRef.current;
+        if (b) {
+            setQuantity(b.quantity);
+            setAmount(b.amount);
+            setComment(b.comment);
+            setPaymentMethod(b.paymentMethod);
+        } else {
+            setQuantity("");
+            setAmount("");
+            setComment("");
+            setPaymentMethod("cash");
+            setSelectedProduct(null);
+            setSelectedWarehouse(warehouses?.find((w) => w.id === defaultWarehouseId) ?? null);
+        }
         setDraftRestored(false);
     };
 
@@ -240,7 +286,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                 mode === "in" ? paymentMethod : undefined,
                 selectedWarehouse?.id,
             );
-            clearMovementDraft();
+            clearFormDraft(movementDraftKeyFor(product, editingMovement));
             onClose();
         } catch (e) {
             console.error(e);
@@ -276,7 +322,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
         <Drawer
             anchor="right"
             open={open}
-            onClose={loading ? undefined : onClose}
+            onClose={loading ? undefined : handleClose}
             PaperProps={{
                 sx: { width: { xs: 320, sm: 400 }, display: "flex", flexDirection: "column" },
             }}
@@ -292,7 +338,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                             </IconButton>
                         </Tooltip>
                     )}
-                    <IconButton onClick={loading ? undefined : onClose} aria-label="Закрыть">
+                    <IconButton onClick={loading ? undefined : handleClose} aria-label="Закрыть">
                         <CloseOutlined />
                     </IconButton>
                 </Stack>

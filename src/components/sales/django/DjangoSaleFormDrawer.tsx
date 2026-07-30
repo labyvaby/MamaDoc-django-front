@@ -1,6 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { useCloseGuard } from "../../../hooks/useCloseGuard";
-import { CloseGuardDialog } from "../../common/CloseGuardDialog";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
     Box,
     Button,
@@ -21,6 +19,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { DjangoSale, SaleWriteData, createSale, updateSale } from "../../../api/sales";
@@ -32,6 +31,7 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useT } from "../../../i18n/VerticalProvider";
 import { DiscountInput } from "../../ui";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 
 // CSS to hide spin buttons
 const noSpinnersSx = {
@@ -58,6 +58,64 @@ export type SaleProductOption = {
 };
 
 type PatientOption = { id: number; fullName: string; phone?: string };
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Компонент работает в двух режимах:
+//  - создание: черновик по общему ключу, очищается после успешного сабмита,
+//    «Очистить» сбрасывает форму к пустым значениям;
+//  - редактирование: ключ включает id продажи, черновик пишется только если
+//    текущие значения отличаются от исходных данных продажи (baseline),
+//    «Очистить» откатывает к baseline, а не к пустой форме.
+// Список позиций товара (productLines) сюда намеренно НЕ входит — это
+// динамический массив, завязанный на актуальный каталог/остатки, риск
+// восстановить рассинхронизированные позиции выше пользы черновика для него;
+// защищаем только простые top-level поля (пациент, филиал, скидка, оплата,
+// комментарий).
+
+const ADD_DRAFT_KEY = "mamadoc:sales:add-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type SaleDraftFields = {
+    patientId: number | null;
+    patientLabel: string | null;
+    branchId: number | null;
+    branchLabel: string | null;
+    cash: number | "";
+    card: number | "";
+    discountPercent: number;
+    comment: string;
+};
+
+type SaleDraft = SaleDraftFields & { savedAt: number };
+
+function editDraftKeyFor(saleId: number): string {
+    return `mamadoc:sales:edit-draft:${saleId}`;
+}
+
+function isDraftEmpty(d: SaleDraftFields): boolean {
+    return (
+        !d.patientId &&
+        !d.branchId &&
+        !d.cash &&
+        !d.card &&
+        !d.discountPercent &&
+        !d.comment.trim()
+    );
+}
+
+function sameAsBaseline(a: SaleDraftFields, b: SaleDraftFields): boolean {
+    return (
+        a.patientId === b.patientId &&
+        a.patientLabel === b.patientLabel &&
+        a.branchId === b.branchId &&
+        a.branchLabel === b.branchLabel &&
+        a.cash === b.cash &&
+        a.card === b.card &&
+        a.discountPercent === b.discountPercent &&
+        a.comment === b.comment
+    );
+}
 
 interface DjangoSaleFormDrawerProps {
     open: boolean;
@@ -106,8 +164,8 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     const [discountPercent, setDiscountPercent] = useState<number>(0);
     const [comment, setComment] = useState("");
 
-    const isDirty = touched || !!selectedPatient || productLines.some((l) => l.productId) || !!cash || !!card || !!comment;
-    const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({ isDirty: isDirty && !isEdit, isOpen: open, onClose });
+    const [draftRestored, setDraftRestored] = useState(false);
+    const baselineRef = useRef<SaleDraftFields | null>(null);
 
     // Серверный поиск пациентов (debounce + отмена) — всю базу на клиент
     // не тянем; пустой запрос отдаёт первые 10 для подсказки.
@@ -154,36 +212,142 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             .catch((e) => console.error("Failed to load branches", e));
     }, [open, showBranchSelect]);
 
-    // Reset / prefill on open
+    // Reset / prefill on open + восстановление черновика. Список позиций
+    // (productLines) не входит в черновик — восстанавливается только из
+    // данных продажи (либо пустая строка при создании).
     useEffect(() => {
-        if (open) {
-            if (sale) {
-                setSelectedPatient(
-                    sale.patientId
-                        ? { id: sale.patientId, fullName: sale.patientName || t("form.noName") }
-                        : null,
-                );
-                setProductLines(
-                    sale.lines.length > 0
-                        ? sale.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }))
-                        : [{ productId: null, quantity: 1 }],
-                );
-                setCash(sale.paidCash || "");
-                setCard(sale.paidCard || "");
-                setDiscountPercent(sale.discountPercent || 0);
-                setComment(sale.comment || "");
+        if (!open) return;
+        setProductLines(
+            sale && sale.lines.length > 0
+                ? sale.lines.map((l) => ({ productId: l.productId, quantity: l.quantity }))
+                : [{ productId: null, quantity: 1 }],
+        );
+        setSelectedBranch(null);
+        setTouched(false);
+
+        if (sale) {
+            const baseline: SaleDraftFields = {
+                patientId: sale.patientId ?? null,
+                patientLabel: sale.patientId ? (sale.patientName || t("form.noName")) : null,
+                branchId: null,
+                branchLabel: null,
+                cash: sale.paidCash || "",
+                card: sale.paidCard || "",
+                discountPercent: sale.discountPercent || 0,
+                comment: sale.comment || "",
+            };
+            baselineRef.current = baseline;
+
+            const draft = readFormDraft<SaleDraft>(editDraftKeyFor(sale.id), DRAFT_TTL_MS);
+            const next = draft ?? baseline;
+
+            if (next.patientId && next.patientLabel) {
+                setSelectedPatient({ id: next.patientId, fullName: next.patientLabel });
+                setPatientInput(next.patientLabel);
             } else {
                 setSelectedPatient(null);
-                setProductLines([{ productId: null, quantity: 1 }]);
-                setCash("");
-                setCard("");
-                setDiscountPercent(0);
-                setComment("");
+                setPatientInput("");
             }
-            setSelectedBranch(null);
-            setTouched(false);
+            setCash(next.cash);
+            setCard(next.card);
+            setDiscountPercent(next.discountPercent);
+            setComment(next.comment);
+            setDraftRestored(Boolean(draft));
+        } else {
+            baselineRef.current = null;
+            const draft = readFormDraft<SaleDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
+
+            if (draft?.patientId && draft.patientLabel) {
+                setSelectedPatient({ id: draft.patientId, fullName: draft.patientLabel });
+                setPatientInput(draft.patientLabel);
+            } else {
+                setSelectedPatient(null);
+                setPatientInput("");
+            }
+            if (draft?.branchId && draft.branchLabel) {
+                setSelectedBranch({ id: draft.branchId, name: draft.branchLabel } as unknown as DjangoBranch);
+            }
+            setCash(draft?.cash ?? "");
+            setCard(draft?.card ?? "");
+            setDiscountPercent(draft?.discountPercent ?? 0);
+            setComment(draft?.comment ?? "");
+            setDraftRestored(Boolean(draft));
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, sale]);
+
+    // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
+    // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+    // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+    // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+    const flushDraftRef = useRef<() => void>(() => {});
+    flushDraftRef.current = () => {
+        const current: SaleDraftFields = {
+            patientId: selectedPatient?.id ?? null,
+            patientLabel: selectedPatient?.fullName ?? null,
+            branchId: selectedBranch?.id ?? null,
+            branchLabel: selectedBranch?.name ?? null,
+            cash,
+            card,
+            discountPercent,
+            comment,
+        };
+        if (isEdit && sale) {
+            const key = editDraftKeyFor(sale.id);
+            if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+                clearFormDraft(key);
+            } else {
+                writeFormDraft(key, current);
+            }
+        } else if (!isEdit) {
+            if (isDraftEmpty(current)) {
+                clearFormDraft(ADD_DRAFT_KEY);
+            } else {
+                writeFormDraft(ADD_DRAFT_KEY, current);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        const id = setTimeout(() => flushDraftRef.current(), 400);
+        return () => clearTimeout(id);
+    }, [open, sale, isEdit, selectedPatient, selectedBranch, cash, card, discountPercent, comment]);
+
+    const handleClose = () => {
+        flushDraftRef.current();
+        onClose();
+    };
+
+    const handleDiscardDraft = () => {
+        if (isEdit && sale) {
+            clearFormDraft(editDraftKeyFor(sale.id));
+            const b = baselineRef.current;
+            if (b) {
+                if (b.patientId && b.patientLabel) {
+                    setSelectedPatient({ id: b.patientId, fullName: b.patientLabel });
+                    setPatientInput(b.patientLabel);
+                } else {
+                    setSelectedPatient(null);
+                    setPatientInput("");
+                }
+                setCash(b.cash);
+                setCard(b.card);
+                setDiscountPercent(b.discountPercent);
+                setComment(b.comment);
+            }
+        } else {
+            clearFormDraft(ADD_DRAFT_KEY);
+            setSelectedPatient(null);
+            setPatientInput("");
+            setSelectedBranch(null);
+            setCash("");
+            setCard("");
+            setDiscountPercent(0);
+            setComment("");
+        }
+        setDraftRestored(false);
+    };
 
     // Calculations - based on all product lines
     const baseTotal = useMemo(() => {
@@ -239,6 +403,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 await createSale(data);
                 notify?.({ type: "success", message: t("form.created") });
             }
+            clearFormDraft(isEdit && sale ? editDraftKeyFor(sale.id) : ADD_DRAFT_KEY);
             onSaved();
             onClose();
         } catch (e) {
@@ -251,16 +416,24 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     };
 
     return (
-        <>
         <Drawer
             anchor="right"
             open={open}
-            onClose={loading ? undefined : guardedClose}
+            onClose={loading ? undefined : handleClose}
             PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
         >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
                 <Typography variant="h6">{isEdit ? t("form.editTitle") : t("form.createTitle")}</Typography>
-                <IconButton onClick={loading ? undefined : guardedClose}><CloseOutlined /></IconButton>
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                    {draftRestored && (
+                        <Tooltip title={`${t("form.draftRestored")} — ${t("form.draftDiscard").toLowerCase()}?`}>
+                            <IconButton onClick={handleDiscardDraft} aria-label={t("form.draftDiscard")}>
+                                <RestoreOutlined fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    <IconButton onClick={loading ? undefined : handleClose}><CloseOutlined /></IconButton>
+                </Stack>
             </Box>
             <Divider />
 
@@ -725,7 +898,5 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 </Button>
             </Box>
         </Drawer>
-        <CloseGuardDialog open={confirmOpen} title={t("form.closeGuardTitle")} onConfirm={confirmClose} onCancel={cancelClose} />
-        </>
     );
 };

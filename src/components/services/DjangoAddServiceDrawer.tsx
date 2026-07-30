@@ -192,26 +192,37 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   }, [open, activeBranch, availableBranches]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const draft: Omit<ServiceAddDraft, "savedAt"> = {
+      name,
+      price,
+      durationMinutes,
+      category,
+      description,
+      isActive,
+      selectedBranchIds: selectedBranches.map((b) => b.id),
+    };
+    if (isDraftEmpty(draft)) {
+      clearFormDraft(DRAFT_STORAGE_KEY);
+    } else {
+      writeFormDraft(DRAFT_STORAGE_KEY, draft);
+    }
+  };
+
   React.useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => {
-      const draft: Omit<ServiceAddDraft, "savedAt"> = {
-        name,
-        price,
-        durationMinutes,
-        category,
-        description,
-        isActive,
-        selectedBranchIds: selectedBranches.map((b) => b.id),
-      };
-      if (isDraftEmpty(draft)) {
-        clearFormDraft(DRAFT_STORAGE_KEY);
-      } else {
-        writeFormDraft(DRAFT_STORAGE_KEY, draft);
-      }
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [open, name, price, durationMinutes, category, description, isActive, selectedBranches]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     clearFormDraft(DRAFT_STORAGE_KEY);
@@ -359,7 +370,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
+      onClose={busy ? undefined : handleClose}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },
@@ -381,7 +392,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                 </IconButton>
               </Tooltip>
             )}
-            <IconButton onClick={busy ? undefined : onClose} aria-label={t("common.close")}>
+            <IconButton onClick={busy ? undefined : handleClose} aria-label={t("common.close")}>
               <CloseOutlined />
             </IconButton>
           </Stack>
@@ -657,7 +668,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         {/* Footer */}
         <Divider />
         <Box px={2} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={handleClose} disabled={busy}>
             {t("common.cancel")}
           </Button>
           <Button variant="contained" onClick={handleSubmit} disabled={busy || submitDisabled}>

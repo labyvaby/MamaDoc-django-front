@@ -244,30 +244,37 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   }, [open, hasPrefillContext]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    if (hasPrefillContext) return;
+    const draft: Omit<RecordDraft, "savedAt"> = {
+      scenario,
+      patient,
+      vaccineId,
+      batchId,
+      doseNumber,
+      administeredAt: administeredAt ? administeredAt.toISOString() : null,
+      injectionSite,
+      administeredById,
+      unitPrice,
+      batchNumberManual,
+      expiresAtManual: expiresAtManual ? expiresAtManual.format("YYYY-MM-DD") : null,
+      appointmentId,
+      notes,
+    };
+    if (isDraftEmpty(draft)) {
+      clearRecordDraft();
+    } else {
+      writeRecordDraft(draft);
+    }
+  };
+
   React.useEffect(() => {
     if (!open || hasPrefillContext) return;
-    const id = setTimeout(() => {
-      const draft: Omit<RecordDraft, "savedAt"> = {
-        scenario,
-        patient,
-        vaccineId,
-        batchId,
-        doseNumber,
-        administeredAt: administeredAt ? administeredAt.toISOString() : null,
-        injectionSite,
-        administeredById,
-        unitPrice,
-        batchNumberManual,
-        expiresAtManual: expiresAtManual ? expiresAtManual.format("YYYY-MM-DD") : null,
-        appointmentId,
-        notes,
-      };
-      if (isDraftEmpty(draft)) {
-        clearRecordDraft();
-      } else {
-        writeRecordDraft(draft);
-      }
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [
     open,
@@ -286,6 +293,11 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     appointmentId,
     notes,
   ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     clearRecordDraft();
@@ -452,7 +464,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={mutation.isPending ? undefined : onClose}
+      onClose={mutation.isPending ? undefined : handleClose}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 540 },
@@ -474,7 +486,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
               </IconButton>
             </Tooltip>
           )}
-          <IconButton size="small" onClick={onClose} aria-label="Закрыть" disabled={mutation.isPending}>
+          <IconButton size="small" onClick={handleClose} aria-label="Закрыть" disabled={mutation.isPending}>
             <CloseOutlined fontSize="small" />
           </IconButton>
         </Stack>
@@ -763,7 +775,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       </Box>
 
       <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: "divider", display: "flex", gap: 1.5 }}>
-        <AppButton variant="outlined" onClick={onClose} sx={{ flex: 1 }} disabled={mutation.isPending}>
+        <AppButton variant="outlined" onClick={handleClose} sx={{ flex: 1 }} disabled={mutation.isPending}>
           Отмена
         </AppButton>
         <AppButton

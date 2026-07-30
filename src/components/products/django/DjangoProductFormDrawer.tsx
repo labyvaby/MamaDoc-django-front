@@ -215,24 +215,35 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     }, [open, product]);
 
     // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
+    // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+    // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+    // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+    const flushDraftRef = React.useRef<() => void>(() => {});
+    flushDraftRef.current = () => {
+        if (product) {
+            const key = editDraftKeyFor(product.id);
+            if (baselineRef.current && sameAsBaseline(values, baselineRef.current)) {
+                clearFormDraft(key);
+            } else {
+                writeFormDraft(key, values);
+            }
+        } else if (isDraftEmpty(values)) {
+            clearFormDraft(ADD_DRAFT_KEY);
+        } else {
+            writeFormDraft(ADD_DRAFT_KEY, values);
+        }
+    };
+
     React.useEffect(() => {
         if (!open) return;
-        const id = setTimeout(() => {
-            if (product) {
-                const key = editDraftKeyFor(product.id);
-                if (baselineRef.current && sameAsBaseline(values, baselineRef.current)) {
-                    clearFormDraft(key);
-                } else {
-                    writeFormDraft(key, values);
-                }
-            } else if (isDraftEmpty(values)) {
-                clearFormDraft(ADD_DRAFT_KEY);
-            } else {
-                writeFormDraft(ADD_DRAFT_KEY, values);
-            }
-        }, 400);
+        const id = setTimeout(() => flushDraftRef.current(), 400);
         return () => clearTimeout(id);
     }, [open, product, values]);
+
+    const handleClose = () => {
+        flushDraftRef.current();
+        onClose();
+    };
 
     const handleDiscardDraft = () => {
         if (product) {
@@ -310,7 +321,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
         <Drawer
             anchor="right"
             open={open}
-            onClose={busy ? undefined : onClose}
+            onClose={busy ? undefined : handleClose}
             PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
         >
             <Box sx={{ width: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
@@ -332,7 +343,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 </IconButton>
                             </Tooltip>
                         )}
-                        <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+                        <IconButton onClick={busy ? undefined : handleClose} aria-label="Закрыть">
                             <CloseOutlined />
                         </IconButton>
                     </Stack>
@@ -648,7 +659,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                 </Box>
                 <Box sx={{ p: 2, borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
                     <Stack direction="row" gap={1} justifyContent="flex-end">
-                        <Button onClick={onClose} disabled={busy}>
+                        <Button onClick={handleClose} disabled={busy}>
                             Отмена
                         </Button>
                         <Button

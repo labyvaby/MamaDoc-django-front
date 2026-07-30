@@ -268,38 +268,44 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   }, [endDateOvernight, startDate]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const current: ShiftDraftFields = {
+      employeeId,
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      isNightShift,
+      manuallySetNight,
+      endDateOvernight,
+      hasLunch,
+      lunchStart,
+      selectedWeekdays,
+    };
+    if (isEdit && shiftToEdit) {
+      const key = editDraftKeyFor(shiftToEdit.id);
+      if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+        clearFormDraft(key);
+      } else {
+        writeFormDraft(key, current);
+      }
+    } else {
+      const today = dayjs().format("YYYY-MM-DD");
+      if (isDraftEmpty(current, today)) {
+        clearFormDraft(ADD_DRAFT_KEY);
+      } else {
+        writeFormDraft(ADD_DRAFT_KEY, current);
+      }
+    }
+  };
+
   React.useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => {
-      const current: ShiftDraftFields = {
-        employeeId,
-        startDate,
-        endDate,
-        startTime,
-        endTime,
-        isNightShift,
-        manuallySetNight,
-        endDateOvernight,
-        hasLunch,
-        lunchStart,
-        selectedWeekdays,
-      };
-      if (isEdit && shiftToEdit) {
-        const key = editDraftKeyFor(shiftToEdit.id);
-        if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
-          clearFormDraft(key);
-        } else {
-          writeFormDraft(key, current);
-        }
-      } else {
-        const today = dayjs().format("YYYY-MM-DD");
-        if (isDraftEmpty(current, today)) {
-          clearFormDraft(ADD_DRAFT_KEY);
-        } else {
-          writeFormDraft(ADD_DRAFT_KEY, current);
-        }
-      }
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [
     open,
@@ -317,6 +323,11 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
     lunchStart,
     selectedWeekdays,
   ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     if (isEdit && shiftToEdit) {
@@ -421,7 +432,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={saving ? undefined : onClose}
+      onClose={saving ? undefined : handleClose}
       PaperProps={{ sx: { width: { xs: 320, sm: 560 }, maxWidth: "100vw" } }}
     >
       <Box
@@ -444,7 +455,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
               </IconButton>
             </Tooltip>
           )}
-          <IconButton onClick={onClose} aria-label="Закрыть" disabled={saving}>
+          <IconButton onClick={handleClose} aria-label="Закрыть" disabled={saving}>
             <CloseOutlined />
           </IconButton>
         </Stack>
@@ -826,7 +837,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
 
           {/* Кнопки */}
           <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 3 }}>
-            <Button onClick={onClose} color="inherit" disabled={saving}>
+            <Button onClick={handleClose} color="inherit" disabled={saving}>
               Отмена
             </Button>
             <Button

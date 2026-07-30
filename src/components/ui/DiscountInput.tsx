@@ -64,6 +64,19 @@ export const DiscountInput: React.FC<DiscountInputProps> = ({
     if (!touchedRef.current) setType(defaultType);
   }, [defaultType]);
 
+  // amount, который мы сами передали наружу через onAmountChange — если пришедший
+  // проп совпадает с ним, значит проп обновился «эхом» нашего же ввода и percentStr
+  // трогать не нужно (иначе обрежется недопечатанное значение вида "12."). Если не
+  // совпадает — значит проп изменился извне (восстановление черновика, загрузка
+  // существующей скидки при открытии формы) и отображаемый процент нужно пересчитать.
+  const lastEmittedAmountRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (amount === lastEmittedAmountRef.current) return;
+    const pct = total > 0 ? round2((amount / total) * 100) : 0;
+    setPercentStr(pct > 0 ? String(pct) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amount]);
+
   const currencyStr = amount > 0 ? String(round2(amount)) : "";
 
   const handleTypeChange = (next: DiscountType | null) => {
@@ -83,10 +96,13 @@ export const DiscountInput: React.FC<DiscountInputProps> = ({
     if (type === "percent") {
       setPercentStr(raw);
       const pct = Math.max(0, Number(raw) || 0);
-      onAmountChange(round2((total * pct) / 100));
+      const computed = round2((total * pct) / 100);
+      lastEmittedAmountRef.current = computed;
+      onAmountChange(computed);
     } else {
-      const next = Math.max(0, Number(raw) || 0);
-      onAmountChange(round2(next));
+      const next = round2(Math.max(0, Number(raw) || 0));
+      lastEmittedAmountRef.current = next;
+      onAmountChange(next);
     }
   };
 

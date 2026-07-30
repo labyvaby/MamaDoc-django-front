@@ -297,7 +297,9 @@
     "doctorComplaints": "{{complaint.nomPl, capitalize}} ({{specialist.nom}})",
     "adminCommentRequired": "Комментарий администратора (обязательно)",
     "adminComment": "Комментарий администратора",
-    "updated": "{{visit.nom, capitalize}} обновлён"
+    "updated": "{{visit.nom, capitalize}} обновлён",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить"
   },
   "servicePicker": {
     "title": "Выберите {{service.acc}} и специалиста",

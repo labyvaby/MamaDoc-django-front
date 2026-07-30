@@ -374,39 +374,51 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // Пишем, только если пользователь реально что-то ввёл — иначе значения,
   // молча подтянутые эффектами выше (скидка/суммы из summary), выглядели бы
   // как «черновик» уже при первом открытии дровера.
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    if (appointmentId === null) return;
+    const hasUserInput =
+      discountTouchedRef.current ||
+      paymentsTouchedRef.current ||
+      note.trim().length > 0 ||
+      parseDecimal(balanceStr) > 0 ||
+      parseDecimal(bonusStr) > 0 ||
+      policyNumber.trim().length > 0;
+    if (!hasUserInput) {
+      clearPaymentDraft(appointmentId);
+      return;
+    }
+    writePaymentDraft(appointmentId, {
+      discountStr,
+      discountTouched: discountTouchedRef.current,
+      cash,
+      card,
+      insurance,
+      insurerId,
+      policyNumber,
+      balanceStr,
+      bonusStr,
+      note,
+      paymentsTouched: paymentsTouchedRef.current,
+    });
+  };
+
   React.useEffect(() => {
     if (!open || appointmentId === null) return;
-    const id = setTimeout(() => {
-      const hasUserInput =
-        discountTouchedRef.current ||
-        paymentsTouchedRef.current ||
-        note.trim().length > 0 ||
-        parseDecimal(balanceStr) > 0 ||
-        parseDecimal(bonusStr) > 0 ||
-        policyNumber.trim().length > 0;
-      if (!hasUserInput) {
-        clearPaymentDraft(appointmentId);
-        return;
-      }
-      writePaymentDraft(appointmentId, {
-        discountStr,
-        discountTouched: discountTouchedRef.current,
-        cash,
-        card,
-        insurance,
-        insurerId,
-        policyNumber,
-        balanceStr,
-        bonusStr,
-        note,
-        paymentsTouched: paymentsTouchedRef.current,
-      });
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [
     open, appointmentId, discountStr, cash, card, insurance,
     insurerId, policyNumber, balanceStr, bonusStr, note,
   ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     if (appointmentId !== null) clearPaymentDraft(appointmentId);
@@ -657,7 +669,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={applyMutation.isPending ? undefined : onClose}
+      onClose={applyMutation.isPending ? undefined : handleClose}
       PaperProps={{
         // sm в теме проекта = 360px, поэтому на телефонах страхуемся maxWidth.
         sx: { width: { xs: "100%", sm: 420 }, maxWidth: "100%", display: "flex", flexDirection: "column" },
@@ -686,7 +698,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               </IconButton>
             </Tooltip>
           )}
-          <IconButton onClick={onClose} disabled={applyMutation.isPending}>
+          <IconButton onClick={handleClose} disabled={applyMutation.isPending}>
             <CloseOutlined />
           </IconButton>
         </Stack>

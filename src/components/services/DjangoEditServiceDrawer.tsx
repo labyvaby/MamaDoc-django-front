@@ -249,27 +249,38 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   }, [open, record.branches, availableBranches]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const current: Omit<ServiceEditDraft, "savedAt"> = {
+      name,
+      price,
+      durationMinutes,
+      category,
+      description,
+      isActive,
+      selectedBranchIds: selectedBranches.map((b) => b.id),
+    };
+    const key = draftKeyFor(record.id);
+    if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+      clearFormDraft(key);
+    } else {
+      writeFormDraft(key, current);
+    }
+  };
+
   React.useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => {
-      const current: Omit<ServiceEditDraft, "savedAt"> = {
-        name,
-        price,
-        durationMinutes,
-        category,
-        description,
-        isActive,
-        selectedBranchIds: selectedBranches.map((b) => b.id),
-      };
-      const key = draftKeyFor(record.id);
-      if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
-        clearFormDraft(key);
-      } else {
-        writeFormDraft(key, current);
-      }
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [open, record.id, name, price, durationMinutes, category, description, isActive, selectedBranches]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     clearFormDraft(draftKeyFor(record.id));
@@ -411,7 +422,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
+      onClose={busy ? undefined : handleClose}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },
@@ -433,7 +444,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                 </IconButton>
               </Tooltip>
             )}
-            <IconButton onClick={busy ? undefined : onClose} aria-label={t("common.close")}>
+            <IconButton onClick={busy ? undefined : handleClose} aria-label={t("common.close")}>
               <CloseOutlined />
             </IconButton>
           </Stack>
@@ -709,7 +720,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         {/* Footer */}
         <Divider />
         <Box px={2} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={handleClose} disabled={busy}>
             {t("common.cancel")}
           </Button>
           <Button variant="contained" onClick={handleSubmit} disabled={busy || submitDisabled}>

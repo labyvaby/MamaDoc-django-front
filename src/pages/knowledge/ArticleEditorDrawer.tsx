@@ -28,6 +28,7 @@ import Youtube from "@tiptap/extension-youtube";
 import Image from "@tiptap/extension-image";
 
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import UndoOutlined from "@mui/icons-material/UndoOutlined";
 import RedoOutlined from "@mui/icons-material/RedoOutlined";
 import FormatBoldOutlined from "@mui/icons-material/FormatBoldOutlined";
@@ -49,9 +50,8 @@ import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import { getErrorMessage } from "../../api/client";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
-import { useCloseGuard } from "../../hooks/useCloseGuard";
-import { ConfirmDialog } from "../../components/ui";
 import { compressImage } from "../../utility/imageCompression";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import {
   KNOWLEDGE_IMAGE_UPLOAD_ENABLED,
   createKnowledgeSeries,
@@ -66,11 +66,86 @@ import {
   type KnowledgeCategory,
   type KnowledgeSeries,
 } from "../../api/knowledge";
-import { useArticleDraft, type ArticleDraftInput } from "./useArticleDraft";
 
 /** Отбирает из FileList только картинки (paste/drop приносят и текст, и файлы). */
 const imageFiles = (list: FileList | null | undefined): File[] =>
   Array.from(list ?? []).filter((f) => f.type.startsWith("image/"));
+
+/** Пустой документ TipTap сериализуется в этот HTML — не считаем его текстом. */
+const isEmptyContent = (html: string): boolean => {
+  const trimmed = html.trim();
+  return trimmed === "" || trimmed === "<p></p>";
+};
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от потери набранного текста при закрытии дровера (крестик, клик по
+// фону, Esc, кнопка «Отмена») — заменяет собой прежний useCloseGuard
+// (confirm-диалог «закрыть без сохранения?» + перехват beforeunload/back).
+// Два режима, как в DjangoProductFormDrawer:
+//  - создание: черновик по общему ключу, очищается после успешного сабмита,
+//    иконка «восстановлен черновик» у крестика откатывает к пустой форме;
+//  - редактирование: ключ включает id статьи, черновик пишется только если
+//    текущие значения отличаются от исходных данных статьи (baseline),
+//    иконка откатывает к baseline.
+// Картинки/обложка хранятся как URL внутри HTML-контента (строка) — это
+// сериализуется штатно; File-объекты (пока идёт загрузка) в стейте формы не
+// живут, поэтому проблемы сериализации File здесь нет.
+const ADD_DRAFT_KEY = "mamadoc:knowledge:add-draft";
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // статья длинная — черновик живёт неделю
+
+type ArticleFormValues = {
+  title: string;
+  content: string;
+  categoryId: number | "";
+  isPublished: boolean;
+  coverUrl: string;
+  seriesOn: boolean;
+  seriesName: string;
+  partNumber: string;
+};
+
+type ArticleDraft = ArticleFormValues & { savedAt: number };
+
+const defaultArticleValues: ArticleFormValues = {
+  title: "",
+  content: "",
+  categoryId: "",
+  isPublished: false,
+  coverUrl: "",
+  seriesOn: false,
+  seriesName: "",
+  partNumber: "",
+};
+
+function editDraftKeyFor(articleId: number): string {
+  return `mamadoc:knowledge:edit-draft:${articleId}`;
+}
+
+function isDraftEmpty(v: ArticleFormValues): boolean {
+  return (
+    v.title === defaultArticleValues.title &&
+    isEmptyContent(v.content) &&
+    v.categoryId === defaultArticleValues.categoryId &&
+    v.isPublished === defaultArticleValues.isPublished &&
+    v.coverUrl === defaultArticleValues.coverUrl &&
+    v.seriesOn === defaultArticleValues.seriesOn &&
+    v.seriesName === defaultArticleValues.seriesName &&
+    v.partNumber === defaultArticleValues.partNumber
+  );
+}
+
+function sameAsBaseline(a: ArticleFormValues, b: ArticleFormValues): boolean {
+  return (
+    a.title === b.title &&
+    a.content === b.content &&
+    a.categoryId === b.categoryId &&
+    a.isPublished === b.isPublished &&
+    a.coverUrl === b.coverUrl &&
+    a.seriesOn === b.seriesOn &&
+    a.seriesName === b.seriesName &&
+    a.partNumber === b.partNumber
+  );
+}
 
 interface ArticleEditorDrawerProps {
   open: boolean;
@@ -206,25 +281,21 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     },
   });
 
+  // baseline — снимок исходных значений на открытие: defaultArticleValues при
+  // создании, данные статьи при редактировании. Используется и для индикатора
+  // несохранённых правок, и для отката черновика («Очистить»).
+  const baselineRef = React.useRef<ArticleFormValues>(defaultArticleValues);
+  const [draftRestored, setDraftRestored] = React.useState(false);
+
   React.useEffect(() => {
     if (!open || !editor) return;
     const hasSeries = article?.seriesId != null && article?.partNumber != null;
-    setSeriesOn(hasSeries);
-    setSeriesName(hasSeries ? article?.seriesName ?? "" : "");
-    setPartNumber(hasSeries ? String(article?.partNumber) : "");
-    setTitle(article?.title ?? "");
-    setCategoryId(article?.categoryId ?? "");
-    setIsPublished(article?.isPublished ?? false);
-    setUploadHint(false);
-    setFullscreen(false);
-    setSeriesError(null);
     // Обложку показываем отдельным полем, поэтому в редактор идёт тело без неё.
     const { coverUrl: cover, body } = splitCover(article?.content ?? "");
-    setCoverUrl(cover ?? "");
-    setCoverBroken(false);
-    editor.commands.setContent(body);
-    initialFields.current = {
+
+    const baseline: ArticleFormValues = {
       title: article?.title ?? "",
+      content: body,
       categoryId: article?.categoryId ?? "",
       isPublished: article?.isPublished ?? false,
       coverUrl: cover ?? "",
@@ -232,98 +303,145 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
       seriesName: hasSeries ? article?.seriesName ?? "" : "",
       partNumber: hasSeries ? String(article?.partNumber) : "",
     };
+    baselineRef.current = baseline;
+
+    const draftKey = article ? editDraftKeyFor(article.id) : ADD_DRAFT_KEY;
+    const draft = readFormDraft<ArticleDraft>(draftKey, DRAFT_TTL_MS);
+    const values: ArticleFormValues = draft ?? baseline;
+
+    setTitle(values.title);
+    setCategoryId(values.categoryId);
+    setIsPublished(values.isPublished);
+    setCoverUrl(values.coverUrl);
+    setCoverBroken(false);
+    setSeriesOn(values.seriesOn);
+    setSeriesName(values.seriesName);
+    setPartNumber(values.partNumber);
+    editor.commands.setContent(values.content);
+    setDraftRestored(Boolean(draft));
+
+    setUploadHint(false);
+    setFullscreen(false);
+    setSeriesError(null);
     setContentDirty(false);
   }, [open, article, editor]);
 
   // ── Несохранённые правки ──────────────────────────────────────────────────
   // Поля сравниваем со снимком на открытие, текст — по событию редактора:
   // дёргать getHTML() на каждый рендер ради сравнения строк слишком дорого
-  // для длинной статьи.
-  const initialFields = React.useRef({
-    title: "",
-    categoryId: "" as number | "",
-    isPublished: false,
-    coverUrl: "",
-    seriesOn: false,
-    seriesName: "",
-    partNumber: "",
-  });
+  // для длинной статьи (полное сравнение содержимого делаем только внутри
+  // flushDraftRef — он вызывается дебаунсом/на закрытии, а не на каждый рендер).
   const [contentDirty, setContentDirty] = React.useState(false);
 
   const fieldsDirty =
-    title !== initialFields.current.title ||
-    categoryId !== initialFields.current.categoryId ||
-    isPublished !== initialFields.current.isPublished ||
-    coverUrl !== initialFields.current.coverUrl ||
-    seriesOn !== initialFields.current.seriesOn ||
-    seriesName !== initialFields.current.seriesName ||
-    partNumber !== initialFields.current.partNumber;
+    title !== baselineRef.current.title ||
+    categoryId !== baselineRef.current.categoryId ||
+    isPublished !== baselineRef.current.isPublished ||
+    coverUrl !== baselineRef.current.coverUrl ||
+    seriesOn !== baselineRef.current.seriesOn ||
+    seriesName !== baselineRef.current.seriesName ||
+    partNumber !== baselineRef.current.partNumber;
   const dirty = (contentDirty || fieldsDirty) && !busy;
 
   // ── Черновик в браузере ───────────────────────────────────────────────────
-  const draft = useArticleDraft(article?.id ?? null, open);
-
-  // Пишем черновик на любое изменение формы. Содержимое берём из редактора
-  // по событию update — состояние React о наборе текста не знает.
-  const snapshot = React.useCallback(
-    (): ArticleDraftInput => ({
+  // flushDraftRef переприсваивается на каждый рендер, поэтому всегда видит
+  // актуальные значения полей — вызывается и из debounce-таймера, и синхронно
+  // из handleClose (иначе последние введённые символы теряются вместе с ещё
+  // не сработавшим таймером при быстром «напечатал и закрыл»).
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    if (!editor) return;
+    const snapshot: ArticleFormValues = {
       title,
-      content: editor?.getHTML() ?? "",
-      categoryId: categoryId === "" ? null : categoryId,
+      content: editor.getHTML(),
+      categoryId,
       isPublished,
       coverUrl,
+      seriesOn,
       seriesName: seriesOn ? seriesName : "",
       partNumber: seriesOn ? partNumber : "",
-    }),
-    [title, editor, categoryId, isPublished, coverUrl, seriesOn, seriesName, partNumber],
-  );
+    };
+    if (article) {
+      const key = editDraftKeyFor(article.id);
+      if (sameAsBaseline(snapshot, baselineRef.current)) {
+        clearFormDraft(key);
+      } else {
+        writeFormDraft(key, snapshot);
+      }
+    } else if (isDraftEmpty(snapshot)) {
+      clearFormDraft(ADD_DRAFT_KEY);
+    } else {
+      writeFormDraft(ADD_DRAFT_KEY, snapshot);
+    }
+  };
 
-  // Зависимость — draft.save (стабильна по ключу), а не весь draft: объект
-  // хука новый на каждый рендер и переподписывал бы редактор впустую.
-  const saveDraft = draft.save;
+  const draftTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDraftFlush = React.useCallback(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => flushDraftRef.current(), 600);
+  }, []);
+
+  // Реакция на изменения обычных полей формы.
+  React.useEffect(() => {
+    if (!open) return;
+    scheduleDraftFlush();
+  }, [open, title, categoryId, isPublished, coverUrl, seriesOn, seriesName, partNumber, scheduleDraftFlush]);
+
+  // Реакция на изменения текста статьи — состояние React о наборе текста
+  // внутри TipTap не знает, поэтому слушаем событие редактора напрямую.
   React.useEffect(() => {
     if (!open || !editor) return;
-    saveDraft(snapshot());
     const onUpdate = () => {
       setContentDirty(true);
-      saveDraft(snapshot());
+      scheduleDraftFlush();
     };
     editor.on("update", onUpdate);
     return () => {
       editor.off("update", onUpdate);
     };
-  }, [open, editor, snapshot, saveDraft]);
+  }, [open, editor, scheduleDraftFlush]);
 
-  const restoreDraft = () => {
-    const saved = draft.restorable;
-    if (!saved || !editor) return;
-    setTitle(saved.title);
-    setCategoryId(saved.categoryId ?? "");
-    setIsPublished(saved.isPublished);
-    setCoverUrl(saved.coverUrl);
-    setSeriesOn(Boolean(saved.seriesName));
-    setSeriesName(saved.seriesName);
-    setPartNumber(saved.partNumber);
-    editor.commands.setContent(saved.content);
-    draft.dismiss();
+  React.useEffect(
+    () => () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    },
+    [],
+  );
+
+  const handleDiscardDraft = () => {
+    const key = article ? editDraftKeyFor(article.id) : ADD_DRAFT_KEY;
+    clearFormDraft(key);
+    const target = article ? baselineRef.current : defaultArticleValues;
+    setTitle(target.title);
+    setCategoryId(target.categoryId);
+    setIsPublished(target.isPublished);
+    setCoverUrl(target.coverUrl);
+    setCoverBroken(false);
+    setSeriesOn(target.seriesOn);
+    setSeriesName(target.seriesName);
+    setPartNumber(target.partNumber);
+    editor?.commands.setContent(target.content);
+    setContentDirty(false);
+    setDraftRestored(false);
   };
 
   // Сохранилось на сервере — черновик больше не нужен. Признак успеха:
   // busy сняли, а ошибку не показали (родитель ставит error именно при сбое).
   const wasBusy = React.useRef(false);
-  const clearDraft = draft.clear;
   React.useEffect(() => {
-    if (wasBusy.current && !busy && !error) clearDraft();
+    if (wasBusy.current && !busy && !error) {
+      clearFormDraft(article ? editDraftKeyFor(article.id) : ADD_DRAFT_KEY);
+      setDraftRestored(false);
+    }
     wasBusy.current = busy;
-  }, [busy, error, clearDraft]);
+  }, [busy, error, article]);
 
-  // Закрытие с несохранёнными правками — только по подтверждению (крестик,
-  // клик мимо дровера, кнопка «назад», закрытие вкладки).
-  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
-    isDirty: dirty,
-    isOpen: open,
-    onClose,
-  });
+  // Закрытие (крестик, клик мимо дровера, кнопка «Отмена») — черновик пишется
+  // синхронно перед вызовом onClose, никакого confirm-диалога больше нет.
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   // ── Ссылки ────────────────────────────────────────────────────────────────
   const [linkOpen, setLinkOpen] = React.useState(false);
@@ -535,7 +653,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy || seriesBusy ? undefined : guardedClose}
+      onClose={busy || seriesBusy ? undefined : handleClose}
       PaperProps={{ sx: { width: fullscreen ? "100%" : { xs: "100%", md: 720 } } }}
     >
       <Stack sx={{ height: "100%" }}>
@@ -552,7 +670,14 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               {fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
             </IconButton>
           </Tooltip>
-          <IconButton onClick={guardedClose} disabled={busy || seriesBusy}>
+          {draftRestored && (
+            <Tooltip title="Восстановлен черновик — очистить?">
+              <IconButton onClick={handleDiscardDraft} aria-label="Очистить черновик">
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton onClick={handleClose} disabled={busy || seriesBusy}>
             <CloseOutlined />
           </IconButton>
         </Stack>
@@ -571,30 +696,6 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
             ...(fullscreen && { maxWidth: 980, width: "100%", mx: "auto" }),
           }}
         >
-          {draft.restorable && (
-            <Alert
-              severity="info"
-              action={
-                <Stack direction="row" gap={0.5}>
-                  <Button size="small" onClick={restoreDraft}>
-                    Восстановить
-                  </Button>
-                  <Button size="small" color="inherit" onClick={draft.clear}>
-                    Удалить
-                  </Button>
-                </Stack>
-              }
-            >
-              Остался несохранённый черновик от{" "}
-              {new Date(draft.restorable.savedAt).toLocaleString("ru-RU", {
-                day: "2-digit",
-                month: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Alert>
-          )}
-
           {/* Серия: несколько статей, которые читают по порядку */}
           <Stack
             sx={{
@@ -918,7 +1019,7 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
               sx={{ borderRadius: "7px" }}
             />
           )}
-          <Button onClick={guardedClose} disabled={busy || seriesBusy} sx={{ ml: "auto" }}>
+          <Button onClick={handleClose} disabled={busy || seriesBusy} sx={{ ml: "auto" }}>
             Отмена
           </Button>
           <Button
@@ -1070,15 +1171,6 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Закрыть без сохранения?"
-        message="Правки не отправлены на сервер. Черновик останется в этом браузере — при следующем открытии предложим его восстановить."
-        confirmText="Закрыть"
-        onConfirm={confirmClose}
-        onClose={cancelClose}
-      />
     </Drawer>
   );
 };

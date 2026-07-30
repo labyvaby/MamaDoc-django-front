@@ -567,46 +567,61 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   }, [record?.id]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
-  React.useEffect(() => {
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
     if (!record) return;
     const empId = Number(record.id);
     if (isNaN(empId) || empId <= 0) return;
     if (!baselineRef.current) return; // ждём загрузки baseline
 
-    const id = setTimeout(() => {
-      const current: EditableDraftFields = {
-        fullName,
-        nickname,
-        phoneCountry,
-        phoneLocal,
-        email,
-        status,
-        clinicalRole,
-        telegramId,
-        instagram,
-        birthDate,
-        hiredAt,
-        bankAccountNumber,
-        inn,
-        address,
-        notes,
-        bank,
-        bik,
-        operationalBranches,
-      };
-      const key = draftKeyFor(empId);
-      if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
-        clearFormDraft(key);
-      } else {
-        writeFormDraft(key, current);
-      }
-    }, 400);
+    const current: EditableDraftFields = {
+      fullName,
+      nickname,
+      phoneCountry,
+      phoneLocal,
+      email,
+      status,
+      clinicalRole,
+      telegramId,
+      instagram,
+      birthDate,
+      hiredAt,
+      bankAccountNumber,
+      inn,
+      address,
+      notes,
+      bank,
+      bik,
+      operationalBranches,
+    };
+    const key = draftKeyFor(empId);
+    if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+      clearFormDraft(key);
+    } else {
+      writeFormDraft(key, current);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!record) return;
+    const empId = Number(record.id);
+    if (isNaN(empId) || empId <= 0) return;
+    if (!baselineRef.current) return; // ждём загрузки baseline
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [
     record, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
     telegramId, instagram, birthDate, hiredAt, bankAccountNumber, inn, address, notes,
     bank, bik, operationalBranches,
   ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     if (!record) return;
@@ -859,7 +874,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     <DrawerBase
       open={open}
       title="Редактирование"
-      onClose={onClose}
+      onClose={handleClose}
       busy={busy}
       onSubmit={handleSubmit}
       submitLabel="Сохранить"

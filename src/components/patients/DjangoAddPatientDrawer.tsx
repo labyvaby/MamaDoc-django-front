@@ -218,29 +218,40 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   }, [open, initialPhone]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const draft = {
+      fio,
+      phone,
+      phoneCountryCode,
+      birth,
+      gender,
+      address,
+      inn,
+      family,
+      isBlacklisted,
+      blacklistReason,
+    };
+    if (isDraftEmpty(draft)) {
+      clearPatientDraft();
+    } else {
+      writePatientDraft(draft);
+    }
+  };
+
   React.useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => {
-      const draft = {
-        fio,
-        phone,
-        phoneCountryCode,
-        birth,
-        gender,
-        address,
-        inn,
-        family,
-        isBlacklisted,
-        blacklistReason,
-      };
-      if (isDraftEmpty(draft)) {
-        clearPatientDraft();
-      } else {
-        writePatientDraft(draft);
-      }
-    }, 400);
+    const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
   }, [open, fio, phone, phoneCountryCode, birth, gender, address, inn, family, isBlacklisted, blacklistReason]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
 
   const handleDiscardDraft = () => {
     clearPatientDraft();
@@ -367,7 +378,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
+      onClose={busy ? undefined : handleClose}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },
@@ -405,7 +416,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 </IconButton>
               </Tooltip>
             )}
-            <IconButton onClick={busy ? undefined : onClose} aria-label={t("form.close")}>
+            <IconButton onClick={busy ? undefined : handleClose} aria-label={t("form.close")}>
               <CloseOutlined />
             </IconButton>
           </Stack>
@@ -739,7 +750,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
           )}
 
           <Stack direction="row" gap={1} justifyContent="flex-end" sx={{ p: 2 }}>
-            <Button onClick={onClose} disabled={busy}>
+            <Button onClick={handleClose} disabled={busy}>
               {t("form.cancel")}
             </Button>
             <Button
