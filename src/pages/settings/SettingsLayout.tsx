@@ -29,6 +29,7 @@ import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOu
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
+import RouterOutlined from "@mui/icons-material/RouterOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { useModuleGate } from "../../hooks/useModuleGate";
@@ -53,6 +54,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   diagnoses: "medical.diagnoses.manage",
   tasks: "tasks.manage",
   cleaning: "cleaning.manage",
+  skud: "attendance.manage",
   announcements: "announcements.view",
 } as const;
 
@@ -149,6 +151,12 @@ const TAB_DEFS: TabDef[] = [
     key: "cleaning",
     to: "/settings/cleaning",
     icon: <CleaningServicesOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "skud",
+    to: "/settings/skud",
+    icon: <RouterOutlined fontSize="small" />,
     group: "operations",
   },
   {

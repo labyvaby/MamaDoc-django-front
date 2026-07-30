@@ -16,6 +16,7 @@ import {
 } from "../api/attendance";
 import { djangoQueryKeys } from "../api/queryKeys";
 import { useCan } from "./useCan";
+import { useActiveScope } from "./useActiveScope";
 import { isIpInCidr, parseIpList } from "../utility/network";
 
 
@@ -38,6 +39,7 @@ export function useDjangoSkudActions(
   const canView = useCan("attendance.view");
   const canClock = useCan("attendance.clock");
   const canManage = useCan("attendance.manage");
+  const scope = useActiveScope();
 
   const [actionLoading, setActionLoading] = React.useState(false);
 
@@ -57,10 +59,14 @@ export function useDjangoSkudActions(
 
   // 2. Allowed office IP from the backend (cached 5 min).
   const { data: officeIpData, isLoading: officeIpLoading } = useQuery({
-    queryKey: djangoQueryKeys.attendance.officeIp,
-    queryFn: ({ signal }) => getOfficeIp(signal),
+    queryKey: [
+      ...djangoQueryKeys.attendance.officeIp,
+      scope.organizationId ?? null,
+    ],
+    queryFn: ({ signal }) =>
+      getOfficeIp({ organizationId: scope.organizationId }, signal),
     staleTime: 5 * 60 * 1000,
-    enabled: enabled && canView,
+    enabled: enabled && canView && scope.orgReady,
   });
 
   const envIp = import.meta.env.VITE_OFFICE_IP as string | undefined;
@@ -84,10 +90,14 @@ export function useDjangoSkudActions(
 
   // 3. Current active shift.
   const activeQuery = useQuery({
-    queryKey: djangoQueryKeys.attendance.active,
-    queryFn: ({ signal }) => getActiveShift(signal),
+    queryKey: [
+      ...djangoQueryKeys.attendance.active,
+      scope.organizationId ?? null,
+    ],
+    queryFn: ({ signal }) =>
+      getActiveShift({ organizationId: scope.organizationId }, signal),
     staleTime: 60 * 1000,
-    enabled: enabled && canView,
+    enabled: enabled && canView && scope.orgReady,
   });
   const currentShift = activeQuery.data?.shift ?? null;
 
@@ -97,6 +107,7 @@ export function useDjangoSkudActions(
       employeeId: canManage ? filterEmployeeId ?? null : "self",
       from: filterStartDate ?? null,
       to: filterEndDate ?? null,
+      organizationId: scope.organizationId ?? null,
     }),
     queryFn: ({ signal }) =>
       getShifts(
@@ -107,10 +118,11 @@ export function useDjangoSkudActions(
               : undefined,
           dateFrom: filterStartDate ?? undefined,
           dateTo: filterEndDate ?? undefined,
+          organizationId: scope.organizationId,
         },
         signal,
       ),
-    enabled: enabled && enableHistory && canView,
+    enabled: enabled && enableHistory && canView && scope.orgReady,
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
   });
@@ -131,7 +143,7 @@ export function useDjangoSkudActions(
     }
     setActionLoading(true);
     try {
-      await apiClockIn();
+      await apiClockIn({ organizationId: scope.organizationId });
       notify?.({ type: "success", message: "Смена началась" });
       invalidate();
     } catch (e) {
@@ -147,7 +159,7 @@ export function useDjangoSkudActions(
   const handleEndShift = async () => {
     setActionLoading(true);
     try {
-      await apiClockOut();
+      await apiClockOut({ organizationId: scope.organizationId });
       notify?.({ type: "success", message: "Смена завершена" });
       invalidate();
     } catch (e) {

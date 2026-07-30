@@ -20,7 +20,8 @@
       "expenseCategories": "Категории расходов",
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
       "tasks": "Задачи",
-      "cleaning": "Уборка"
+      "cleaning": "Уборка",
+      "skud": "СКУД"
     }
   },
   "placeholder": {
@@ -163,6 +164,7 @@
     "branchIpsTitle": "Wi-Fi IP по {{branch.datPl}}",
     "branchIpsDescription": "{{employee.nom, capitalize}} сможет начать смену, если его внешний IP совпадает с любым из IP {{branch.gen}} или с общим IP {{org.gen}}. У {{branch.gen}} может быть несколько адресов (например, разные Wi-Fi роутеры) — добавляйте их по одному или вставьте списком.",
     "branchIpHelper": "Например, IP основного и резервного Wi-Fi роутера {{branch.gen}}.",
+    "loadError": "Не удалось загрузить настройки СКУД для выбранной организации",
     "saveSuccess": "Настройки успешно сохранены",
     "saveError": "Ошибка при сохранении настроек"
   },
