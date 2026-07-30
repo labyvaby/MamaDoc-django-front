@@ -373,6 +373,8 @@
     "notSelected": "не выбрана",
     "cashDateSuffix": " · касса {{date}}",
     "cashDateInline": "Дата кассы:",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить",
     "errors": {
       "balanceAlreadyUsed": "Этот {{visit.nom}} уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.",
       "notEnoughBonuses": "Недостаточно бонусов на счёте {{patient.gen}}.",

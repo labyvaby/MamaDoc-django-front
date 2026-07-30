@@ -92,7 +92,12 @@
     "categoryNone": "Без категории",
     "descriptionLabel": "Описание",
     "descriptionPlaceholder": "Добавьте описание {{service.gen}} (необязательно)",
-    "statusLabel": "Статус {{service.gen}}"
+    "statusLabel": "Статус {{service.gen}}",
+    "sectionPricing": "Стоимость и филиалы",
+    "sectionComposition": "Расходники",
+    "sectionExtra": "Дополнительно",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить"
   },
   "add": {
     "title": "Добавление {{service.gen}}",

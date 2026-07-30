@@ -9,6 +9,7 @@ import {
   Divider,
   Drawer,
   IconButton,
+  InputAdornment,
   Paper,
   Stack,
   TextField,
@@ -23,6 +24,9 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import ConfirmationNumberOutlined from "@mui/icons-material/ConfirmationNumberOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
@@ -38,7 +42,7 @@ import {
 import { getInsurers } from "../../api/insurers";
 import type { DjangoAppointment } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
-import { DiscountInput } from "../../components/ui";
+import { DiscountInput, cascadeContainer, cascadeItem } from "../../components/ui";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -50,6 +54,7 @@ import CashDateConfirmDialog, {
 } from "./components/CashDateConfirmDialog";
 import { tt } from "../../i18n/t";
 import { useT } from "../../i18n/VerticalProvider";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
 // ── Payment status display ─────────────────────────────────────────────────────
 
@@ -126,6 +131,51 @@ const CANCELLED_STATUSES = new Set(["canceled", "cancelled", "no_show"]);
 const methodLabel = (method: string): string =>
   tt(`common:paymentMethods.${method}`, { defaultValue: method });
 
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых сумм/полиса/комментария при закрытии
+// дровера. Ключ включает appointmentId, чтобы черновик одной оплаты не
+// всплывал у другой. Пишем, только если пользователь реально что-то ввёл
+// (иначе автозаполненные из summary/appointment значения выглядели бы как
+// «черновик» уже при открытии). discountTouched/paymentsTouched сохраняем
+// вместе с данными, чтобы восстановление не путало уже существующие эффекты
+// «подтянуть скидку/суммы из summary, пока пользователь их не тронул».
+
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
+
+const PAYMENT_DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type PaymentDraft = {
+  savedAt: number;
+  discountStr: string;
+  discountTouched: boolean;
+  cash: number | "";
+  card: number | "";
+  insurance: number | "";
+  insurerId: number | "";
+  policyNumber: string;
+  balanceStr: string;
+  bonusStr: string;
+  note: string;
+  paymentsTouched: boolean;
+};
+
+function paymentDraftKey(appointmentId: number): string {
+  return `mamadoc:appointments:payment-draft:${appointmentId}`;
+}
+
+function readPaymentDraft(appointmentId: number): PaymentDraft | null {
+  return readFormDraft<PaymentDraft>(paymentDraftKey(appointmentId), PAYMENT_DRAFT_TTL_MS);
+}
+
+function writePaymentDraft(appointmentId: number, draft: Omit<PaymentDraft, "savedAt">): void {
+  writeFormDraft(paymentDraftKey(appointmentId), draft);
+}
+
+function clearPaymentDraft(appointmentId: number): void {
+  clearFormDraft(paymentDraftKey(appointmentId));
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export type DjangoPaymentDrawerProps = {
@@ -188,6 +238,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const [cashDateChoice, setCashDateChoice] = React.useState<CashDateChoice>("today");
   const [cashDateConfirmed, setCashDateConfirmed] = React.useState(false);
   const [showCashDateDialog, setShowCashDateDialog] = React.useState(false);
+  const [draftRestored, setDraftRestored] = React.useState(false);
 
   // Справочник страховых (для строки «Страховка»); только активные.
   const insurersQuery = useQuery({
@@ -219,6 +270,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       prevAppointmentIdRef.current = null;
       paymentsTouchedRef.current = false;
       seededPaymentsForRef.current = null;
+      setDraftRestored(false);
       return;
     }
     if (appointmentId !== prevAppointmentIdRef.current) {
@@ -238,6 +290,28 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setShowCashDateDialog(false);
       prevAppointmentIdRef.current = appointmentId;
       paymentsTouchedRef.current = false;
+
+      // Черновик — только если пользователь реально что-то вводил в прошлый
+      // раз (см. условие записи ниже); подтягиваем поверх только что
+      // выставленных дефолтов и восстанавливаем touched-флаги, чтобы эффекты
+      // «подтянуть скидку/суммы из summary» их не перетёрли.
+      const draft = readPaymentDraft(appointmentId);
+      if (draft) {
+        setDiscountStr(draft.discountStr);
+        setCash(draft.cash);
+        setCard(draft.card);
+        setInsurance(draft.insurance);
+        setInsurerId(draft.insurerId);
+        setPolicyNumber(draft.policyNumber);
+        setBalanceStr(draft.balanceStr);
+        setBonusStr(draft.bonusStr);
+        setNote(draft.note);
+        discountTouchedRef.current = draft.discountTouched;
+        paymentsTouchedRef.current = draft.paymentsTouched;
+        setDraftRestored(true);
+      } else {
+        setDraftRestored(false);
+      }
     }
   }, [open, appointmentId, appointment?.discountAmount]);
 
@@ -295,6 +369,96 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCashDateConfirmed(false);
     }
   }, [summary, appointmentId, appointment?.scheduledAt]);
+
+  // Сохранение черновика в localStorage (защита от случайного закрытия).
+  // Пишем, только если пользователь реально что-то ввёл — иначе значения,
+  // молча подтянутые эффектами выше (скидка/суммы из summary), выглядели бы
+  // как «черновик» уже при первом открытии дровера.
+  React.useEffect(() => {
+    if (!open || appointmentId === null) return;
+    const id = setTimeout(() => {
+      const hasUserInput =
+        discountTouchedRef.current ||
+        paymentsTouchedRef.current ||
+        note.trim().length > 0 ||
+        parseDecimal(balanceStr) > 0 ||
+        parseDecimal(bonusStr) > 0 ||
+        policyNumber.trim().length > 0;
+      if (!hasUserInput) {
+        clearPaymentDraft(appointmentId);
+        return;
+      }
+      writePaymentDraft(appointmentId, {
+        discountStr,
+        discountTouched: discountTouchedRef.current,
+        cash,
+        card,
+        insurance,
+        insurerId,
+        policyNumber,
+        balanceStr,
+        bonusStr,
+        note,
+        paymentsTouched: paymentsTouchedRef.current,
+      });
+    }, 400);
+    return () => clearTimeout(id);
+  }, [
+    open, appointmentId, discountStr, cash, card, insurance,
+    insurerId, policyNumber, balanceStr, bonusStr, note,
+  ]);
+
+  const handleDiscardDraft = () => {
+    if (appointmentId !== null) clearPaymentDraft(appointmentId);
+    discountTouchedRef.current = false;
+    setDiscountStr(appointment?.discountAmount ?? "0");
+    setBalanceStr("0");
+    setBonusStr("0");
+    setNote("");
+    paymentsTouchedRef.current = false;
+    setDraftRestored(false);
+
+    // Черновик перекрывал уже сохранённые на бэке платежи (см. эффект сидинга
+    // выше) — раз мы его отбрасываем, восстанавливаем суммы из summary напрямую
+    // (тот эффект повторно не сработает: summary не меняется), а не из пустой формы.
+    if (summary) {
+      const sumByMethod = (method: string) =>
+        (summary.payments ?? [])
+          .filter((p) => p.method === method)
+          .reduce((acc, p) => acc + parseDecimal(p.amount), 0);
+      const cashSum = sumByMethod("cash");
+      const cardSum = sumByMethod("card");
+      const insuranceSum = sumByMethod("insurance");
+      setCash(cashSum > 0 ? cashSum : "");
+      setCard(cardSum > 0 ? cardSum : "");
+      setInsurance(insuranceSum > 0 ? insuranceSum : "");
+      const insurancePayment = (summary.payments ?? []).find((p) => p.method === "insurance");
+      setInsurerId(insurancePayment?.insurerId ?? "");
+      setPolicyNumber(insurancePayment?.policyNumber ?? "");
+      const dateSourcePayment = (summary.payments ?? []).find(
+        (p) => (p.method === "card" || p.method === "insurance") && p.cashDate,
+      );
+      if (dateSourcePayment && appointment?.scheduledAt) {
+        const isApptDate = dayjs(dateSourcePayment.cashDate).isSame(
+          dayjs(appointment.scheduledAt), "day",
+        );
+        setCashDateChoice(isApptDate ? "appointment" : "today");
+        setCashDateConfirmed(true);
+      } else {
+        setCashDateChoice("today");
+        setCashDateConfirmed(false);
+      }
+    } else {
+      setCash("");
+      setCard("");
+      setInsurance("");
+      setInsurerId("");
+      setPolicyNumber("");
+      setCashDateChoice("today");
+      setCashDateConfirmed(false);
+    }
+    setShowCashDateDialog(false);
+  };
 
   // Derived
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount);
@@ -479,6 +643,16 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     [queryClient],
   );
 
+  // Enter только на одиночном хвостовом поле (номер полиса) — суммы
+  // наличных/безналичных/страховки трогать нельзя: пользователь ещё
+  // переключается между ними табом, случайный сабмит отправит неполную оплату.
+  const submitOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (submitDisabled || applyMutation.isPending || isCancelled) return;
+    handleSave();
+  };
+
   return (
     <Drawer
       anchor="right"
@@ -504,14 +678,26 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           <PaymentsOutlined color="primary" />
           <Typography variant="h6">{t("payment.title")}</Typography>
         </Stack>
-        <IconButton onClick={onClose} disabled={applyMutation.isPending}>
-          <CloseOutlined />
-        </IconButton>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {draftRestored && (
+            <Tooltip title={`${t("payment.draftRestored")} — ${t("payment.draftDiscard").toLowerCase()}?`}>
+              <IconButton onClick={handleDiscardDraft} aria-label={t("payment.draftDiscard")}>
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton onClick={onClose} disabled={applyMutation.isPending}>
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
       </Box>
 
       {/* Body */}
-      <Stack
+      <MotionStack
         spacing={3}
+        variants={cascadeContainer}
+        initial="hidden"
+        animate="show"
         sx={{
           p: 3,
           flex: 1,
@@ -521,7 +707,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         }}
       >
         {/* Patient balance panel */}
-        {hasPatient && <PatientBalancePanel patientId={patientId!} />}
+        {hasPatient && (
+          <MotionBox variants={cascadeItem}>
+            <PatientBalancePanel patientId={patientId!} />
+          </MotionBox>
+        )}
 
         {isCancelled && (
           <Alert severity="warning">
@@ -541,6 +731,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
         {/* ── Main payment card ── */}
         {!paymentQuery.isLoading && !isCancelled && (
+          <MotionBox variants={cascadeItem}>
           <Paper
             elevation={0}
             sx={{
@@ -713,6 +904,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                       </Box>
                       <TextField
                         variant="standard"
+                        size="small"
                         fullWidth
                         type="number"
                         value={cash}
@@ -765,6 +957,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                       </Box>
                       <TextField
                         variant="standard"
+                        size="small"
                         fullWidth
                         type="number"
                         value={card}
@@ -822,6 +1015,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     </Box>
                     <TextField
                       variant="standard"
+                      size="small"
                       fullWidth
                       type="number"
                       value={insurance}
@@ -885,8 +1079,16 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                           fullWidth
                           value={policyNumber}
                           onChange={(e) => setPolicyNumber(e.target.value)}
+                          onKeyDown={submitOnEnter}
                           placeholder={t("payment.optional")}
                           disabled={isCancelled}
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <ConfirmationNumberOutlined fontSize="small" color="disabled" />
+                              </InputAdornment>
+                            ),
+                          }}
                         />
                       </Stack>
                     </Stack>
@@ -1015,24 +1217,31 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               </Stack>
             </Stack>
           </Paper>
+          </MotionBox>
         )}
 
         {/* Refund / bonus block guards */}
-        {applyBlockedByRefund && (
-          <Alert severity="info" icon={false}>
-            {t("payment.lockedRefund")}
-          </Alert>
-        )}
-        {!applyBlockedByRefund && applyBlockedByBonus && (
-          <Alert severity="info" icon={false}>
-            {t("payment.lockedBonuses")}
-          </Alert>
+        {(applyBlockedByRefund || applyBlockedByBonus) && (
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={1.5}>
+              {applyBlockedByRefund && (
+                <Alert severity="info" icon={false}>
+                  {t("payment.lockedRefund")}
+                </Alert>
+              )}
+              {!applyBlockedByRefund && applyBlockedByBonus && (
+                <Alert severity="info" icon={false}>
+                  {t("payment.lockedBonuses")}
+                </Alert>
+              )}
+            </Stack>
+          </MotionBox>
         )}
 
         {/* Payment history */}
         {summary && summary.payments.length > 0 && !hasRefunds && !isCancelled && (
-          <>
-            <Divider />
+          <MotionBox variants={cascadeItem}>
+            <Divider sx={{ mb: 1.5 }} />
             <Stack spacing={0.75}>
               <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
                 {t("payment.history")}
@@ -1051,39 +1260,44 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 </Stack>
               ))}
             </Stack>
-          </>
+          </MotionBox>
         )}
 
         {/* Refunds panel */}
         {!paymentQuery.isLoading && summary && appointmentId !== null && (
-          <AppointmentRefundsPanel
-            appointmentId={appointmentId}
-            patientId={patientId}
-            summary={summary}
-            onSummaryUpdated={handleSummaryUpdated}
-          />
+          <MotionBox variants={cascadeItem}>
+            <AppointmentRefundsPanel
+              appointmentId={appointmentId}
+              patientId={patientId}
+              summary={summary}
+              onSummaryUpdated={handleSummaryUpdated}
+            />
+          </MotionBox>
         )}
 
         {/* Comment */}
         {!isCancelled && (
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-              {t("payment.adminComment")}
-            </Typography>
-            <TextField
-              fullWidth
-              multiline
-              rows={2}
-              size="small"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={t("payment.commentPlaceholder")}
-            />
-          </Stack>
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={1.5}>
+              <Divider />
+              <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                {t("payment.adminComment")}
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                size="small"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={t("payment.commentPlaceholder")}
+              />
+            </Stack>
+          </MotionBox>
         )}
 
         {saveError && <Alert severity="error">{saveError}</Alert>}
-      </Stack>
+      </MotionStack>
 
       {/* Footer */}
       <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider", flexShrink: 0 }}>
