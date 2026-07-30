@@ -19,6 +19,7 @@ import { supabase } from "../../utility/supabaseClient";
 import { ColorModeContext } from "../../contexts/color-mode";
 import { CanAccess } from "../rbac/CanAccess";
 import { Link as RouterLink } from "react-router";
+import { useCan } from "../../hooks/useCan";
 
 type SettingsModalProps = {
   open: boolean;
@@ -31,6 +32,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const { mode, setScheme } = React.useContext(ColorModeContext);
   const appVersion = useAppVersion();
+  const canManageSkud = useCan("attendance.manage");
 
   const handleLogout = async () => {
     try {
@@ -49,24 +51,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setScheme(mode === "dark" ? "light" : "dark");
   };
 
+  const skudSettingsButton = (
+    <Button
+      variant="outlined"
+      fullWidth
+      component={RouterLink}
+      to="/settings/skud"
+      onClick={onClose}
+      startIcon={<SettingsSystemDaydreamOutlined />}
+    >
+      Настройка СКУД
+    </Button>
+  );
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Настройки</DialogTitle>
       <Divider />
       <DialogContent sx={{ pb: 3 }}>
         <Stack spacing={2}>
-          <CanAccess roles={['admin', 'superadmin']}>
-            <Button
-              variant="outlined"
-              fullWidth
-              component={RouterLink}
-              to="/settings/skud"
-              onClick={onClose}
-              startIcon={<SettingsSystemDaydreamOutlined />}
-            >
-              Настройка СКУД
-            </Button>
-          </CanAccess>
+          {IS_DJANGO_BACKEND ? (
+            canManageSkud ? skudSettingsButton : null
+          ) : (
+            <CanAccess roles={['admin', 'superadmin']}>
+              {skudSettingsButton}
+            </CanAccess>
+          )}
 
           <CanAccess roles={['superadmin']}>
             <Button

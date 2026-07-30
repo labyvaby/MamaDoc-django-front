@@ -5,11 +5,15 @@
 const PREFIX_TO_MODULE: Record<string, string> = {
   patients: 'patients',
   appointments: 'appointments',
+  medical: 'appointments',
   staff: 'staff',
+  users: 'staff',
   catalog: 'catalog',
   finance: 'finance',
   warehouse: 'warehouse',
+  payroll: 'payroll',
   attendance: 'attendance',
+  schedule: 'schedule',
   reports: 'reports',
   organization: 'organization',
   branches: 'organization',
@@ -21,6 +25,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   cleaning: 'cleaning',
   knowledge: 'knowledge',
   vaccinations: 'vaccinations',
+  announcements: 'announcements',
 };
 
 /**
