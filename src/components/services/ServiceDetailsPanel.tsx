@@ -31,6 +31,8 @@ import type { Service } from "../../api/catalog";
 import { formatKGS, formatQuantity } from "../../utility/format";
 import { AppButton, InfoTile } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
+import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
 
 type Props = {
   serviceId: number | null;
@@ -45,9 +47,9 @@ function formatDuration(min: number): string {
   if (!min || min <= 0) return "—";
   const h = Math.floor(min / 60);
   const m = min % 60;
-  if (h === 0) return `${m} мин`;
-  if (m === 0) return `${h} ч`;
-  return `${h} ч ${m} мин`;
+  if (h === 0) return tt("services:details.durationMin", { minutes: m });
+  if (m === 0) return tt("services:details.durationHour", { hours: h });
+  return tt("services:details.durationHourMin", { hours: h, minutes: m });
 }
 
 /** Заголовок секции: иконка-акцент + приглушённая подпись (как в карточке сотрудника). */
@@ -81,6 +83,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
   onEdit,
   onDelete,
 }) => {
+  const { t } = useT("services");
   const [loading, setLoading] = React.useState(false);
   const [service, setService] = React.useState<Service | null>(null);
 
@@ -133,7 +136,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               }}
             />
             <Typography variant="subtitle1" fontWeight={600}>
-              Карточка услуги
+              {t("details.cardTitle")}
             </Typography>
           </Stack>
         }
@@ -146,11 +149,12 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                   startIcon={<EditOutlinedIcon fontSize="small" />}
                   onClick={() => onEdit(service)}
                 >
-                  Редактировать
+                  {t("details.editButton")}
                 </AppButton>
               )}
               {onDelete && (
-                <Tooltip title="Удалить услугу">
+                <Tooltip title={t("details.deleteTooltip")}>
+
                   <IconButton
                     size="small"
                     color="error"
@@ -180,7 +184,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               sx={{ fontSize: 64, mb: 2, color: "text.secondary" }}
             />
             <Typography variant="body1" color="text.secondary">
-              Выберите услугу из списка
+              {t("details.emptySelect")}
             </Typography>
           </Box>
         ) : loading ? (
@@ -246,7 +250,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                   sx={{ mt: 1, flexWrap: "wrap", rowGap: 0.75 }}
                 >
                   <Chip
-                    label="Услуга"
+                    label={t("common.chip")}
                     size="small"
                     sx={(t) => ({
                       fontWeight: 500,
@@ -261,7 +265,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                   />
                   <Chip
                     size="small"
-                    label={service.isActive ? "Активна" : "Неактивна"}
+                    label={service.isActive ? t("common.active") : t("common.inactive")}
                     icon={
                       <Box
                         component="span"
@@ -300,7 +304,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
 
             {/* Основное: стоимость + длительность */}
             <Box>
-              <SectionHeader icon={<PaymentsOutlinedIcon />} title="Основное" />
+              <SectionHeader icon={<PaymentsOutlinedIcon />} title={t("details.sectionMain")} />
               <Box
                 sx={{
                   display: "grid",
@@ -310,7 +314,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
               >
                 <InfoTile
                   icon={<PaymentsOutlinedIcon />}
-                  label="Стоимость"
+                  label={t("details.price")}
                   value={
                     service.basePrice
                       ? formatKGS(Number(service.basePrice))
@@ -320,7 +324,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                 />
                 <InfoTile
                   icon={<AccessTimeIcon />}
-                  label="Длительность"
+                  label={t("details.duration")}
                   value={
                     service.durationMinutes > 0
                       ? formatDuration(service.durationMinutes)
@@ -334,7 +338,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
             {/* Филиалы */}
             {service.branches.length > 0 && (
               <Box>
-                <SectionHeader icon={<PlaceOutlinedIcon />} title="Филиалы" />
+                <SectionHeader icon={<PlaceOutlinedIcon />} title={t("details.sectionBranches")} />
                 <Stack direction="row" flexWrap="wrap" gap={1}>
                   {service.branches.map((b) => (
                     <Chip
@@ -365,8 +369,8 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                   icon={<Inventory2OutlinedIcon />}
                   title={
                     SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
-                      ? "Расходники услуги"
-                      : "Сопутствующий товар"
+                      ? t("details.sectionComposition")
+                      : t("details.sectionCompositionSingle")
                   }
                 />
                 <Box
@@ -388,13 +392,13 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                       // Остаток здесь — по всей организации: в справочнике услуги
                       // филиала нет, склад филиала считается в приёме.
                       value={[
-                        `${formatKGS(p.price)} · остаток ${formatQuantity(p.stock)}`,
+                        `${formatKGS(p.price)} · ${t("details.stock", { stock: formatQuantity(p.stock) })}`,
                         ...(SERVICE_RELATED_PRODUCTS_MULTI_ENABLED
                           ? [
                               p.billable
-                                ? `+ ${formatKGS(p.price * p.quantity)} к цене`
-                                : "в цене услуги",
-                              ...(p.autoWriteOff ? [] : ["не списывается"]),
+                                ? t("details.extraToPrice", { amount: formatKGS(p.price * p.quantity) })
+                                : t("details.included"),
+                              ...(p.autoWriteOff ? [] : [t("details.noWriteOff")]),
                             ]
                           : []),
                       ].join(" · ")}
@@ -410,7 +414,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
                     sx={{ mt: 1.25 }}
                   >
                     <Typography variant="caption" color="text.secondary">
-                      Оплачивается сверх услуги
+                      {t("details.billableFooter")}
                     </Typography>
                     <Typography variant="body2" fontWeight={600}>
                       + {formatKGS(billableExtra)}
@@ -423,7 +427,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
             {/* Описание */}
             {service.description && (
               <Box>
-                <SectionHeader icon={<NotesOutlinedIcon />} title="Описание" />
+                <SectionHeader icon={<NotesOutlinedIcon />} title={t("details.sectionDescription")} />
                 <Box
                   sx={(t) => ({
                     p: 1.75,
@@ -451,7 +455,7 @@ const ServiceDetailsPanel: React.FC<Props> = ({
             align="center"
             sx={{ py: 4 }}
           >
-            Услуга не найдена
+            {t("common.notFound")}
           </Typography>
         )}
       </CardContent>

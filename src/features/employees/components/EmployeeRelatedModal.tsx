@@ -66,10 +66,10 @@ const StateBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 // ── СКУД ────────────────────────────────────────────────────────────────────────
-const SkudContent: React.FC<{ employeeId: number; monthAnchor?: string }> = ({
-  employeeId,
-  monthAnchor,
-}) => {
+const SkudContent: React.FC<{
+  employeeId: number;
+  monthAnchor?: string;
+}> = ({ employeeId, monthAnchor }) => {
   const q = useEmployeeShiftsMonth(employeeId, true, monthAnchor);
   if (q.isFetching) return <StateBox><CircularProgress size={24} /></StateBox>;
   if (q.error) return <StateBox>{parseBackendError(q.error)}</StateBox>;
@@ -261,7 +261,9 @@ const EmployeeRelatedModal: React.FC<Props> = ({
       </Stack>
 
       <Box sx={{ p: 2.5, maxHeight: "70vh", overflowY: "auto" }}>
-        {type === "skud" && <SkudContent employeeId={employeeId} monthAnchor={monthAnchor} />}
+        {type === "skud" && (
+          <SkudContent employeeId={employeeId} monthAnchor={monthAnchor} />
+        )}
         {type === "exp" && (
           <ExpensesContent employeeId={employeeId} organizationId={organizationId} monthAnchor={monthAnchor} />
         )}

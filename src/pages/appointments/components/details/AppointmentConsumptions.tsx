@@ -44,12 +44,19 @@ const AppointmentConsumptions: React.FC<AppointmentConsumptionsProps> = ({ servi
 
   return (
     <Box>
-      <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 0.5 }}>
+      {/* Заголовок и цена — своей строкой; поясняющий текст — под ними на всю
+          ширину. Раньше все три жили в одной row-Stack: цена (flexShrink: 0)
+          отжимала подсказку до полоски в 85px, и предложение переносилось по
+          одному-два слова — на узких экранах читалось как каша из строк. */}
+      <Stack
+        direction="row"
+        alignItems="baseline"
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ mb: 0.25 }}
+      >
         <Typography variant="caption" color="text.secondary">
           {t("consumptions.title")}
-        </Typography>
-        <Typography variant="caption" color="text.disabled" sx={{ flex: 1, minWidth: 0 }}>
-          {t("consumptions.hint")}
         </Typography>
         {extraCharge > 0 && (
           <Typography variant="caption" fontWeight={600} sx={{ flexShrink: 0 }}>
@@ -58,6 +65,9 @@ const AppointmentConsumptions: React.FC<AppointmentConsumptionsProps> = ({ servi
           </Typography>
         )}
       </Stack>
+      <Typography variant="caption" color="text.disabled" display="block" sx={{ mb: 0.5 }}>
+        {t("consumptions.hint")}
+      </Typography>
 
       {shortages.length > 0 && (
         <Paper
@@ -98,6 +108,7 @@ const AppointmentConsumptions: React.FC<AppointmentConsumptionsProps> = ({ servi
             <Stack spacing={0.75}>
               {sl.consumptions.map((c) => {
                 const lineTotal = consumptionLineTotal(c);
+                const hasChips = c.billable || !c.autoWriteOff || c.resultingStock !== null;
                 return (
                   <Paper
                     key={c.id}
@@ -105,95 +116,109 @@ const AppointmentConsumptions: React.FC<AppointmentConsumptionsProps> = ({ servi
                     sx={{
                       p: 1.25,
                       pl: 1.5,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1.5,
                       borderRadius: 1.5,
                       bgcolor: "background.paper",
                       ...(c.shortage && { borderColor: "warning.main" }),
                     }}
                   >
-                    <Avatar
-                      variant="rounded"
-                      sx={{
-                        width: 32,
-                        height: 32,
-                        bgcolor: "action.selected",
-                        color: "text.secondary",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <ScienceOutlined sx={{ fontSize: 18 }} />
-                    </Avatar>
+                    {/* Аватар+текст своей строкой, чипы — под ними отдельной
+                        строкой с переносом. Раньше чипы (фикс. ширины) стояли
+                        справа в одной row с текстом: на узком экране текстовому
+                        блоку оставалось ~60px, и название/количество/сумма
+                        разваливались по одному слову на строку. */}
+                    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                      <Avatar
+                        variant="rounded"
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          bgcolor: "action.selected",
+                          color: "text.secondary",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <ScienceOutlined sx={{ fontSize: 18 }} />
+                      </Avatar>
 
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" fontWeight={600} noWrap>
-                          {c.name}
-                        </Typography>
-                        {c.source === "manual" && (
-                          <Tooltip title={t("consumptions.manual")}>
-                            <EditNoteOutlined
-                              sx={{ fontSize: 16, color: "text.disabled", flexShrink: 0 }}
-                            />
-                          </Tooltip>
-                        )}
-                      </Stack>
-                      <Typography variant="caption" color="text.secondary">
-                        {t("consumptions.quantity", {
-                          quantity: formatQuantity(c.quantity),
-                          unit: c.unit ? ` ${c.unit}` : "",
-                        })}
-                        {" · "}
-                        {c.stockOnHand === null
-                          ? t("consumptions.stockUnknown")
-                          : t("consumptions.stock", { stock: formatQuantity(c.stockOnHand) })}
-                      </Typography>
-                      {/* Сумму показываем только когда цена известна: у платной
-                          строки без unitPrice «+ 0 сом» врал бы про чек. */}
-                      {lineTotal > 0 && (
-                        <Typography
-                          variant="caption"
-                          color="primary.onSurface"
-                          fontWeight={600}
-                          display="block"
-                        >
-                          {t("consumptions.extra", { amount: formatKGS(lineTotal) })}
-                        </Typography>
-                      )}
-                    </Box>
-
-                    {c.billable && (
-                      <Tooltip title={t("consumptions.billableHint")}>
-                        <Chip
-                          label={t("consumptions.billable")}
-                          size="small"
-                          color="primary"
-                          sx={{ flexShrink: 0, borderRadius: "7px" }}
-                        />
-                      </Tooltip>
-                    )}
-
-                    {!c.autoWriteOff ? (
-                      <Chip
-                        label={t("consumptions.noWriteOff")}
-                        size="small"
-                        variant="outlined"
-                        sx={{ flexShrink: 0, borderRadius: "7px" }}
-                      />
-                    ) : (
-                      c.resultingStock !== null && (
-                        <Chip
-                          label={t("consumptions.afterCompletion", {
-                            resulting: formatQuantity(c.resultingStock),
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {c.name}
+                          </Typography>
+                          {c.source === "manual" && (
+                            <Tooltip title={t("consumptions.manual")}>
+                              <EditNoteOutlined
+                                sx={{ fontSize: 16, color: "text.disabled", flexShrink: 0 }}
+                              />
+                            </Tooltip>
+                          )}
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary">
+                          {t("consumptions.quantity", {
+                            quantity: formatQuantity(c.quantity),
+                            unit: c.unit ? ` ${c.unit}` : "",
                           })}
-                          size="small"
-                          variant="outlined"
-                          color={c.shortage ? "warning" : "default"}
-                          sx={{ flexShrink: 0, borderRadius: "7px" }}
-                        />
-                      )
-                    )}
+                          {" · "}
+                          {c.stockOnHand === null
+                            ? t("consumptions.stockUnknown")
+                            : t("consumptions.stock", { stock: formatQuantity(c.stockOnHand) })}
+                        </Typography>
+                        {/* Сумму показываем только когда цена известна: у платной
+                            строки без unitPrice «+ 0 сом» врал бы про чек. */}
+                        {lineTotal > 0 && (
+                          <Typography
+                            variant="caption"
+                            color="primary.onSurface"
+                            fontWeight={600}
+                            display="block"
+                          >
+                            {t("consumptions.extra", { amount: formatKGS(lineTotal) })}
+                          </Typography>
+                        )}
+
+                        {hasChips && (
+                          <Stack
+                            direction="row"
+                            spacing={0.75}
+                            flexWrap="wrap"
+                            useFlexGap
+                            sx={{ mt: 0.75 }}
+                          >
+                            {c.billable && (
+                              <Tooltip title={t("consumptions.billableHint")}>
+                                <Chip
+                                  label={t("consumptions.billable")}
+                                  size="small"
+                                  color="primary"
+                                  sx={{ borderRadius: "7px" }}
+                                />
+                              </Tooltip>
+                            )}
+
+                            {!c.autoWriteOff ? (
+                              <Chip
+                                label={t("consumptions.noWriteOff")}
+                                size="small"
+                                variant="outlined"
+                                sx={{ borderRadius: "7px" }}
+                              />
+                            ) : (
+                              c.resultingStock !== null && (
+                                <Chip
+                                  label={t("consumptions.afterCompletion", {
+                                    resulting: formatQuantity(c.resultingStock),
+                                  })}
+                                  size="small"
+                                  variant="outlined"
+                                  color={c.shortage ? "warning" : "default"}
+                                  sx={{ borderRadius: "7px" }}
+                                />
+                              )
+                            )}
+                          </Stack>
+                        )}
+                      </Box>
+                    </Stack>
                   </Paper>
                 );
               })}

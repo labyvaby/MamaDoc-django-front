@@ -84,7 +84,7 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
         getOptionLabel={(option) => option.name}
         isOptionEqualToValue={(option, selected) => option.id === selected.id}
         renderInput={(params) => (
-          <TextField {...params} label="Семья" placeholder="Выберите семью" disabled={disabled} />
+          <TextField {...params} label="Семья" placeholder="Выберите семью" disabled={disabled} size="small" />
         )}
         disabled={disabled}
         noOptionsText="Семьи не найдены"

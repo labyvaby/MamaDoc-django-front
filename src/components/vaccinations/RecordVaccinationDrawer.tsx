@@ -3,6 +3,7 @@ import {
   Alert,
   Autocomplete,
   Box,
+  Divider,
   Drawer,
   IconButton,
   InputAdornment,
@@ -11,13 +12,18 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import NumbersOutlined from "@mui/icons-material/NumbersOutlined";
+import LinkOutlined from "@mui/icons-material/LinkOutlined";
+import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
-import { AppButton, CustomDatePicker } from "../ui";
+import { AppButton, CustomDatePicker, cascadeContainer, cascadeItem } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { orgWide } from "../../api/scope";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -36,6 +42,7 @@ import { searchPatients, type DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
 import { useT } from "../../i18n/VerticalProvider";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
 type Scenario = "ours" | "external";
 
@@ -62,6 +69,60 @@ type RecordVaccinationDrawerProps = {
   initialDoseNumber?: number | null;
   initialInjectionSite?: string | null;
 };
+
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Дровер открывается почти всегда с уже заданным пациентом/контекстом
+// (карточка пациента, приём) — в этих случаях черновик не восстанавливаем,
+// чтобы данные из чужого контекста не «всплыли» поверх текущего. Восстановление
+// имеет смысл только для действительно пустого открытия (нет ни initialPatient,
+// ни другого предзаполнения).
+
+const DRAFT_STORAGE_KEY = "mamadoc:vaccinations:record-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type RecordDraft = {
+  savedAt: number;
+  scenario: Scenario;
+  patient: DjangoPatient | null;
+  vaccineId: number | "";
+  batchId: number | "";
+  doseNumber: string;
+  administeredAt: string | null;
+  injectionSite: string;
+  administeredById: number | "";
+  unitPrice: string;
+  batchNumberManual: string;
+  expiresAtManual: string | null;
+  appointmentId: string;
+  notes: string;
+};
+
+function readRecordDraft(): RecordDraft | null {
+  return readFormDraft<RecordDraft>(DRAFT_STORAGE_KEY, DRAFT_TTL_MS);
+}
+
+function writeRecordDraft(draft: Omit<RecordDraft, "savedAt">): void {
+  writeFormDraft(DRAFT_STORAGE_KEY, draft);
+}
+
+function clearRecordDraft(): void {
+  clearFormDraft(DRAFT_STORAGE_KEY);
+}
+
+function isDraftEmpty(d: Omit<RecordDraft, "savedAt">): boolean {
+  return (
+    !d.patient &&
+    d.vaccineId === "" &&
+    d.batchId === "" &&
+    !d.unitPrice.trim() &&
+    !d.batchNumberManual.trim() &&
+    !d.appointmentId.trim() &&
+    !d.notes.trim()
+  );
+}
 
 const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   open,
@@ -105,6 +166,16 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     initialAppointmentId != null ? String(initialAppointmentId) : "",
   );
   const [notes, setNotes] = React.useState("");
+  const [draftRestored, setDraftRestored] = React.useState(false);
+
+  // Есть предзаполнение из внешнего контекста (карточка пациента, приём,
+  // прогноз календаря) — открытие «не с чистого листа», черновик не трогаем.
+  const hasPrefillContext =
+    initialPatient != null ||
+    initialAppointmentId != null ||
+    initialVaccineId != null ||
+    initialDoseNumber != null ||
+    initialInjectionSite != null;
 
   const resetForm = React.useCallback(() => {
     setScenario(lockedScenario ?? "ours");
@@ -124,6 +195,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     setAppointmentId(initialAppointmentId != null ? String(initialAppointmentId) : "");
     setNotes("");
     setError(null);
+    setDraftRestored(false);
   }, [
     initialPatient,
     initialAppointmentId,
@@ -137,6 +209,100 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   React.useEffect(() => {
     if (open) resetForm();
   }, [open, resetForm]);
+
+  // Черновик восстанавливаем ОДИН раз за сессию открытия дровера (флаг на ref) —
+  // resetForm() выше пересоздаётся и при смене meEmployeeId (подгрузка «своего»
+  // сотрудника), но повторный проход не должен повторно накатывать черновик
+  // поверх того, что пользователь уже мог начать менять.
+  const draftRestoredForOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!open) {
+      draftRestoredForOpenRef.current = false;
+      return;
+    }
+    if (draftRestoredForOpenRef.current || hasPrefillContext) return;
+    draftRestoredForOpenRef.current = true;
+    const draft = readRecordDraft();
+    if (!draft) return;
+    setScenario(lockedScenario ?? draft.scenario);
+    setPatient(draft.patient);
+    setVaccineId(draft.vaccineId);
+    setBatchId(draft.batchId);
+    setBatchTouched(draft.batchId !== "");
+    setDoseNumber(draft.doseNumber);
+    setAdministeredAt(draft.administeredAt ? dayjs(draft.administeredAt) : dayjs());
+    setInjectionSite(draft.injectionSite);
+    setAdministeredById(draft.administeredById);
+    setUnitPrice(draft.unitPrice);
+    setPriceTouched(draft.unitPrice.trim() !== "");
+    setBatchNumberManual(draft.batchNumberManual);
+    setExpiresAtManual(draft.expiresAtManual ? dayjs(draft.expiresAtManual) : null);
+    setAppointmentId(draft.appointmentId);
+    setNotes(draft.notes);
+    setDraftRestored(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, hasPrefillContext]);
+
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    if (hasPrefillContext) return;
+    const draft: Omit<RecordDraft, "savedAt"> = {
+      scenario,
+      patient,
+      vaccineId,
+      batchId,
+      doseNumber,
+      administeredAt: administeredAt ? administeredAt.toISOString() : null,
+      injectionSite,
+      administeredById,
+      unitPrice,
+      batchNumberManual,
+      expiresAtManual: expiresAtManual ? expiresAtManual.format("YYYY-MM-DD") : null,
+      appointmentId,
+      notes,
+    };
+    if (isDraftEmpty(draft)) {
+      clearRecordDraft();
+    } else {
+      writeRecordDraft(draft);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!open || hasPrefillContext) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [
+    open,
+    hasPrefillContext,
+    scenario,
+    patient,
+    vaccineId,
+    batchId,
+    doseNumber,
+    administeredAt,
+    injectionSite,
+    administeredById,
+    unitPrice,
+    batchNumberManual,
+    expiresAtManual,
+    appointmentId,
+    notes,
+  ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    clearRecordDraft();
+    resetForm();
+  };
 
   // ── Поиск пациента (серверный, дебаунс) ──
   const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
@@ -265,6 +431,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       return createRecord(payload, orgId);
     },
     onSuccess: () => {
+      clearRecordDraft();
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
       onClose();
     },
@@ -286,11 +453,18 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     mutation.mutate();
   };
 
+  const submitOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
   return (
     <Drawer
       anchor="right"
       open={open}
-      onClose={mutation.isPending ? undefined : onClose}
+      onClose={mutation.isPending ? undefined : handleClose}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 540 },
@@ -304,229 +478,304 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
         <Typography variant="h6" fontWeight={600} sx={{ flex: 1, letterSpacing: -0.15 }}>
           {lockedScenario === "external" ? "Внешняя прививка" : "Ввод прививки"}
         </Typography>
-        <IconButton size="small" onClick={onClose} aria-label="Закрыть" disabled={mutation.isPending}>
-          <CloseOutlined fontSize="small" />
-        </IconButton>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {draftRestored && (
+            <Tooltip title={`${t("recordDrawer.draftRestored")} — ${t("recordDrawer.draftDiscard").toLowerCase()}?`}>
+              <IconButton size="small" onClick={handleDiscardDraft} aria-label={t("recordDrawer.draftDiscard")}>
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton size="small" onClick={handleClose} aria-label="Закрыть" disabled={mutation.isPending}>
+            <CloseOutlined fontSize="small" />
+          </IconButton>
+        </Stack>
       </Box>
 
-      <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5, display: "flex", flexDirection: "column", gap: 2 }}>
-        {error && <Alert severity="error">{error}</Alert>}
-        {branchId == null && (
-          <Alert severity="warning">
-            Не выбран активный филиал — ввод прививки недоступен. Переключите филиал вверху.
-          </Alert>
-        )}
-
-        {/* ── Сценарий (скрыт, если сценарий заблокирован снаружи) ── */}
-        {lockedScenario == null && (
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={scenario}
-            onChange={(_, v) => v && setScenario(v)}
-            fullWidth
-          >
-            <ToggleButton value="ours" sx={{ textTransform: "none" }}>
-              У нас (со склада)
-            </ToggleButton>
-            <ToggleButton value="external" sx={{ textTransform: "none" }}>
-              Внешняя (со слов)
-            </ToggleButton>
-          </ToggleButtonGroup>
-        )}
-
-        {/* ── Пациент ── */}
-        <Autocomplete<DjangoPatient>
-          options={patientChoices}
-          value={patient}
-          loading={patientsLoading}
-          filterOptions={(x) => x}
-          onChange={(_, v) => setPatient(v)}
-          inputValue={patientSearch}
-          onInputChange={(_, v) => setPatientSearch(v)}
-          getOptionLabel={(p) => `${p.fullName} — ${p.phone}`}
-          isOptionEqualToValue={(a, b) => a.id === b.id}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="Пациент"
-              required
-              placeholder="ФИО или телефон"
-              {...form.field("patient")}
-            />
-          )}
-        />
-
-        {/* ── Вакцина ── */}
-        <TextField
-          select
-          label="Вакцина"
-          required
-          fullWidth
-          value={vaccineId === "" ? "" : String(vaccineId)}
-          onChange={(e) => {
-            setVaccineId(e.target.value === "" ? "" : Number(e.target.value));
-            setBatchId("");
-            setBatchTouched(false);
-            setUnitPrice("");
-            setPriceTouched(false);
-          }}
-          {...form.field("vaccineId")}
-        >
-          {(vaccinesQuery.data ?? []).map((v) => (
-            <MenuItem key={v.id} value={String(v.id)}>
-              {v.name}
-              {v.manufacturer ? ` · ${v.manufacturer}` : ""}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        {/* ── Доза / дата ── */}
-        <Stack direction="row" gap={2}>
-          <TextField
-            label="Доза №"
-            type="number"
-            value={doseNumber}
-            onChange={(e) => setDoseNumber(e.target.value)}
-            sx={{ width: 120 }}
-            inputProps={{ min: 1 }}
-          />
-          <CustomDatePicker
-            label="Дата введения"
-            value={administeredAt}
-            onChange={(v) => setAdministeredAt(v as Dayjs | null)}
-            format="DD.MM.YYYY"
-            maxDate={dayjs()}
-            slotProps={{ textField: { fullWidth: true } }}
-          />
-        </Stack>
-
-        {/* ── Сценарий «у нас» ── */}
-        {scenario === "ours" && (
-          <>
-            <TextField
-              select
-              label="Партия"
-              required
-              fullWidth
-              value={batchId === "" ? "" : String(batchId)}
-              onChange={(e) => {
-                setBatchId(e.target.value === "" ? "" : Number(e.target.value));
-                setBatchTouched(true);
-              }}
-              disabled={vaccineId === ""}
-              {...form.field(
-                "batchId",
-                vaccineId === ""
-                  ? "Сначала выберите вакцину"
-                  : (batchesQuery.data ?? []).length === 0
-                    ? "Нет партий этой вакцины на складе филиала"
-                    : "Выбрана партия с ближайшим сроком (можно изменить)",
-              )}
-            >
-              {(batchesQuery.data ?? []).map((b) => (
-                <MenuItem key={b.id} value={String(b.id)} disabled={b.remaining <= 0}>
-                  №{b.batchNumber} · остаток {b.remaining} · до {dayjs(b.expiresAt).format("DD.MM.YYYY")}
-                  {b.productId == null ? " · без склада" : ""}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <TextField
-              label="Цена, KGS"
-              value={unitPrice}
-              onChange={(e) => {
-                setUnitPrice(e.target.value.replace(/[^\d.]/g, ""));
-                setPriceTouched(true);
-              }}
-              fullWidth
-              helperText={
-                priceTouched
-                  ? "Цена изменена вручную"
-                  : "Подтянута со склада — можно изменить; строка появится в счёте осмотра"
-              }
-              InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
-            />
-          </>
-        )}
-
-        {/* ── Сценарий «внешняя» ── */}
-        {scenario === "external" && (
-          <>
-            <TextField
-              label="Номер партии (со слов)"
-              value={batchNumberManual}
-              onChange={(e) => setBatchNumberManual(e.target.value)}
-              fullWidth
-              helperText="Можно оставить пустым, если не помнят"
-            />
-            <CustomDatePicker
-              label="Срок годности (со слов)"
-              value={expiresAtManual}
-              onChange={(v) => setExpiresAtManual(v as Dayjs | null)}
-              format="DD.MM.YYYY"
-              slotProps={{ textField: { fullWidth: true } }}
-            />
-            <Alert severity="info" sx={{ py: 0.5 }}>
-              Внешняя прививка: склад не трогается, строка в счёт не добавляется.
+      <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5 }}>
+        <MotionStack spacing={2} variants={cascadeContainer} initial="hidden" animate="show">
+          {error && <Alert severity="error">{error}</Alert>}
+          {branchId == null && (
+            <Alert severity="warning">
+              Не выбран активный филиал — ввод прививки недоступен. Переключите филиал вверху.
             </Alert>
-          </>
-        )}
+          )}
 
-        {/* ── Общие поля ── */}
-        <TextField
-          select
-          label="Место укола"
-          fullWidth
-          value={injectionSite}
-          onChange={(e) => setInjectionSite(e.target.value)}
-        >
-          {INJECTION_SITE_OPTIONS.map((o) => (
-            <MenuItem key={o.value} value={o.value}>
-              {o.label}
-            </MenuItem>
-          ))}
-        </TextField>
+          {/* ── Сценарий (скрыт, если сценарий заблокирован снаружи) ── */}
+          {lockedScenario == null && (
+            <MotionBox variants={cascadeItem}>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={scenario}
+                onChange={(_, v) => v && setScenario(v)}
+                fullWidth
+              >
+                <ToggleButton value="ours" sx={{ textTransform: "none" }}>
+                  У нас (со склада)
+                </ToggleButton>
+                <ToggleButton value="external" sx={{ textTransform: "none" }}>
+                  Внешняя (со слов)
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </MotionBox>
+          )}
 
-        <TextField
-          select
-          label="Кто вводил"
-          fullWidth
-          value={administeredById === "" ? "" : String(administeredById)}
-          onChange={(e) => setAdministeredById(e.target.value === "" ? "" : Number(e.target.value))}
-        >
-          <MenuItem value="">Не указывать</MenuItem>
-          {(employeesQuery.data?.results ?? []).map((e) => (
-            <MenuItem key={e.id} value={String(e.id)}>
-              {e.fullName}
-            </MenuItem>
-          ))}
-        </TextField>
+          {/* ── Пациент ── */}
+          <MotionBox variants={cascadeItem}>
+            <Autocomplete<DjangoPatient>
+              size="small"
+              options={patientChoices}
+              value={patient}
+              loading={patientsLoading}
+              filterOptions={(x) => x}
+              onChange={(_, v) => setPatient(v)}
+              inputValue={patientSearch}
+              onInputChange={(_, v) => setPatientSearch(v)}
+              getOptionLabel={(p) => `${p.fullName} — ${p.phone}`}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Пациент"
+                  required
+                  placeholder="ФИО или телефон"
+                  {...form.field("patient")}
+                />
+              )}
+            />
+          </MotionBox>
 
-        <TextField
-          label={t("recordDrawer.visitIdLabel")}
-          value={appointmentId}
-          onChange={(e) => setAppointmentId(e.target.value.replace(/[^\d]/g, ""))}
-          fullWidth
-          helperText={
-            scenario === "ours"
-              ? t("recordDrawer.visitIdHelperLinked")
-              : t("recordDrawer.visitIdHelperExternal")
-          }
-        />
+          {/* ── Вакцина ── */}
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={2}>
+              <Divider />
+              <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                {t("recordDrawer.sectionVaccine")}
+              </Typography>
 
-        <TextField
-          label="Заметка"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          fullWidth
-          multiline
-          minRows={2}
-        />
+              <TextField
+                select
+                label="Вакцина"
+                required
+                fullWidth
+                size="small"
+                value={vaccineId === "" ? "" : String(vaccineId)}
+                onChange={(e) => {
+                  setVaccineId(e.target.value === "" ? "" : Number(e.target.value));
+                  setBatchId("");
+                  setBatchTouched(false);
+                  setUnitPrice("");
+                  setPriceTouched(false);
+                }}
+                {...form.field("vaccineId")}
+              >
+                {(vaccinesQuery.data ?? []).map((v) => (
+                  <MenuItem key={v.id} value={String(v.id)}>
+                    {v.name}
+                    {v.manufacturer ? ` · ${v.manufacturer}` : ""}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              {/* ── Доза / дата ── */}
+              <Stack direction="row" gap={2}>
+                <TextField
+                  label="Доза №"
+                  type="number"
+                  size="small"
+                  value={doseNumber}
+                  onChange={(e) => setDoseNumber(e.target.value)}
+                  onKeyDown={submitOnEnter}
+                  sx={{ width: 120 }}
+                  inputProps={{ min: 1 }}
+                />
+                <CustomDatePicker
+                  label="Дата введения"
+                  value={administeredAt}
+                  onChange={(v) => setAdministeredAt(v as Dayjs | null)}
+                  format="DD.MM.YYYY"
+                  maxDate={dayjs()}
+                  slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                />
+              </Stack>
+            </Stack>
+          </MotionBox>
+
+          {/* ── Сценарий «у нас» ── */}
+          {scenario === "ours" && (
+            <MotionBox variants={cascadeItem}>
+              <Stack spacing={2}>
+                <Divider />
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                  {t("recordDrawer.sectionBatch")}
+                </Typography>
+
+                <TextField
+                  select
+                  label="Партия"
+                  required
+                  fullWidth
+                  size="small"
+                  value={batchId === "" ? "" : String(batchId)}
+                  onChange={(e) => {
+                    setBatchId(e.target.value === "" ? "" : Number(e.target.value));
+                    setBatchTouched(true);
+                  }}
+                  disabled={vaccineId === ""}
+                  {...form.field(
+                    "batchId",
+                    vaccineId === ""
+                      ? "Сначала выберите вакцину"
+                      : (batchesQuery.data ?? []).length === 0
+                        ? "Нет партий этой вакцины на складе филиала"
+                        : "Выбрана партия с ближайшим сроком (можно изменить)",
+                  )}
+                >
+                  {(batchesQuery.data ?? []).map((b) => (
+                    <MenuItem key={b.id} value={String(b.id)} disabled={b.remaining <= 0}>
+                      №{b.batchNumber} · остаток {b.remaining} · до {dayjs(b.expiresAt).format("DD.MM.YYYY")}
+                      {b.productId == null ? " · без склада" : ""}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  label="Цена, KGS"
+                  value={unitPrice}
+                  onChange={(e) => {
+                    setUnitPrice(e.target.value.replace(/[^\d.]/g, ""));
+                    setPriceTouched(true);
+                  }}
+                  onKeyDown={submitOnEnter}
+                  fullWidth
+                  size="small"
+                  helperText={
+                    priceTouched
+                      ? "Цена изменена вручную"
+                      : "Подтянута со склада — можно изменить; строка появится в счёте осмотра"
+                  }
+                  InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
+                />
+              </Stack>
+            </MotionBox>
+          )}
+
+          {/* ── Сценарий «внешняя» ── */}
+          {scenario === "external" && (
+            <MotionBox variants={cascadeItem}>
+              <Stack spacing={2}>
+                <Divider />
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                  {t("recordDrawer.sectionExternal")}
+                </Typography>
+
+                <TextField
+                  label="Номер партии (со слов)"
+                  value={batchNumberManual}
+                  onChange={(e) => setBatchNumberManual(e.target.value)}
+                  onKeyDown={submitOnEnter}
+                  fullWidth
+                  size="small"
+                  helperText="Можно оставить пустым, если не помнят"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <NumbersOutlined fontSize="small" color="disabled" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <CustomDatePicker
+                  label="Срок годности (со слов)"
+                  value={expiresAtManual}
+                  onChange={(v) => setExpiresAtManual(v as Dayjs | null)}
+                  format="DD.MM.YYYY"
+                  slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                />
+                <Alert severity="info" sx={{ py: 0.5 }}>
+                  Внешняя прививка: склад не трогается, строка в счёт не добавляется.
+                </Alert>
+              </Stack>
+            </MotionBox>
+          )}
+
+          {/* ── Общие поля ── */}
+          <MotionBox variants={cascadeItem}>
+            <Stack spacing={2}>
+              <Divider />
+              <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                {t("recordDrawer.sectionDetails")}
+              </Typography>
+
+              <TextField
+                select
+                label="Место укола"
+                fullWidth
+                size="small"
+                value={injectionSite}
+                onChange={(e) => setInjectionSite(e.target.value)}
+              >
+                {INJECTION_SITE_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>
+                    {o.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                select
+                label="Кто вводил"
+                fullWidth
+                size="small"
+                value={administeredById === "" ? "" : String(administeredById)}
+                onChange={(e) => setAdministeredById(e.target.value === "" ? "" : Number(e.target.value))}
+              >
+                <MenuItem value="">Не указывать</MenuItem>
+                {(employeesQuery.data?.results ?? []).map((e) => (
+                  <MenuItem key={e.id} value={String(e.id)}>
+                    {e.fullName}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                label={t("recordDrawer.visitIdLabel")}
+                value={appointmentId}
+                onChange={(e) => setAppointmentId(e.target.value.replace(/[^\d]/g, ""))}
+                onKeyDown={submitOnEnter}
+                fullWidth
+                size="small"
+                helperText={
+                  scenario === "ours"
+                    ? t("recordDrawer.visitIdHelperLinked")
+                    : t("recordDrawer.visitIdHelperExternal")
+                }
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LinkOutlined fontSize="small" color="disabled" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+
+              <TextField
+                label="Заметка"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                fullWidth
+                size="small"
+                multiline
+                minRows={2}
+              />
+            </Stack>
+          </MotionBox>
+        </MotionStack>
       </Box>
 
       <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: "divider", display: "flex", gap: 1.5 }}>
-        <AppButton variant="outlined" onClick={onClose} sx={{ flex: 1 }} disabled={mutation.isPending}>
+        <AppButton variant="outlined" onClick={handleClose} sx={{ flex: 1 }} disabled={mutation.isPending}>
           Отмена
         </AppButton>
         <AppButton

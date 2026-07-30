@@ -229,6 +229,9 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
             direction="row"
             justifyContent="space-between"
             alignItems={dense ? "center" : "flex-start"}
+            flexWrap="wrap"
+            useFlexGap
+            rowGap={1}
           >
             {dense ? (
               // Плотный режим: подпись и сумма одной строкой — заголовочная

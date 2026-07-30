@@ -297,7 +297,9 @@
     "doctorComplaints": "{{complaint.nomPl, capitalize}} ({{specialist.nom}})",
     "adminCommentRequired": "Комментарий администратора (обязательно)",
     "adminComment": "Комментарий администратора",
-    "updated": "{{visit.nom, capitalize}} обновлён"
+    "updated": "{{visit.nom, capitalize}} обновлён",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить"
   },
   "servicePicker": {
     "title": "Выберите {{service.acc}} и специалиста",
@@ -373,6 +375,8 @@
     "notSelected": "не выбрана",
     "cashDateSuffix": " · касса {{date}}",
     "cashDateInline": "Дата кассы:",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить",
     "errors": {
       "balanceAlreadyUsed": "Этот {{visit.nom}} уже оплачивался с баланса или бонусами. Изменение состава оплаты недоступно без возврата.",
       "notEnoughBonuses": "Недостаточно бонусов на счёте {{patient.gen}}.",

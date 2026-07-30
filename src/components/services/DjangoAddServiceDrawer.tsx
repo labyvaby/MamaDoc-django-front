@@ -16,9 +16,17 @@ import {
   Tab,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import SellOutlined from "@mui/icons-material/SellOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -39,6 +47,9 @@ import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
+import { useT } from "../../i18n/VerticalProvider";
+import { cascadeContainer, cascadeItem } from "../ui";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -60,7 +71,45 @@ type Props = {
   onCreated?: () => void;
 };
 
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Фото и состав расходников не сохраняем: фото (File) не
+// сериализуется, а состав расходников зависит от асинхронно загруженного
+// списка товаров склада — восстановление рискует показать несуществующие
+// связи. Филиалы храним по id, а не объектами — список филиалов сам грузится
+// асинхронно.
+
+const DRAFT_STORAGE_KEY = "mamadoc:services:add-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type ServiceAddDraft = {
+  savedAt: number;
+  name: string;
+  price: string;
+  durationMinutes: string;
+  category: ServiceCategory | "";
+  description: string;
+  isActive: boolean;
+  selectedBranchIds: number[];
+};
+
+function isDraftEmpty(d: Omit<ServiceAddDraft, "savedAt">): boolean {
+  return (
+    !d.name.trim() &&
+    !d.price &&
+    d.durationMinutes === "30" &&
+    !d.category &&
+    !d.description.trim() &&
+    d.isActive === true &&
+    d.selectedBranchIds.length === 0
+  );
+}
+
 const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
+  const { t } = useT("services");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const { activeMembership, activeBranch } = usePermissions();
@@ -86,6 +135,9 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const [busy, setBusy] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = React.useState(false);
+
+  const draftRef = React.useRef<ServiceAddDraft | null>(null);
 
   React.useEffect(() => {
     if (!open || !SERVICE_RELATED_PRODUCT_ENABLED) return;
@@ -103,15 +155,89 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     return () => ctrl.abort();
   }, [open, orgId]);
 
-  // Pre-select activeBranch when drawer opens (not all branches).
+  // ── восстановление черновика (простые поля) ─────────────────────────────
   React.useEffect(() => {
-    if (open) {
-      const preselected = activeBranch
-        ? availableBranches.filter((b) => b.id === activeBranch.id)
-        : [];
-      setSelectedBranches(preselected);
+    if (!open) return;
+    const draft = readFormDraft<ServiceAddDraft>(DRAFT_STORAGE_KEY, DRAFT_TTL_MS);
+    draftRef.current = draft;
+    if (draft) {
+      setName(draft.name);
+      setPrice(draft.price);
+      setDurationMinutes(draft.durationMinutes);
+      setCategory(draft.category);
+      setDescription(draft.description);
+      setIsActive(draft.isActive);
+      setDraftRestored(true);
+    } else {
+      setDraftRestored(false);
     }
+  }, [open]);
+
+  // Pre-select activeBranch when drawer opens (not all branches), либо
+  // восстанавливаем филиалы из черновика, если он был.
+  React.useEffect(() => {
+    if (!open) {
+      setSelectedBranches([]);
+      return;
+    }
+    const draftIds = draftRef.current?.selectedBranchIds;
+    if (draftIds && draftIds.length > 0) {
+      setSelectedBranches(availableBranches.filter((b) => draftIds.includes(b.id)));
+      return;
+    }
+    const preselected = activeBranch
+      ? availableBranches.filter((b) => b.id === activeBranch.id)
+      : [];
+    setSelectedBranches(preselected);
   }, [open, activeBranch, availableBranches]);
+
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const draft: Omit<ServiceAddDraft, "savedAt"> = {
+      name,
+      price,
+      durationMinutes,
+      category,
+      description,
+      isActive,
+      selectedBranchIds: selectedBranches.map((b) => b.id),
+    };
+    if (isDraftEmpty(draft)) {
+      clearFormDraft(DRAFT_STORAGE_KEY);
+    } else {
+      writeFormDraft(DRAFT_STORAGE_KEY, draft);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [open, name, price, durationMinutes, category, description, isActive, selectedBranches]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    clearFormDraft(DRAFT_STORAGE_KEY);
+    draftRef.current = null;
+    setName("");
+    setPrice("");
+    setDurationMinutes("30");
+    setCategory("");
+    setDescription("");
+    setIsActive(true);
+    setSelectedBranches(
+      activeBranch ? availableBranches.filter((b) => b.id === activeBranch.id) : [],
+    );
+    setDraftRestored(false);
+  };
 
   React.useEffect(() => {
     if (!open) {
@@ -128,6 +254,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       setBusy(false);
       setTouched(false);
       setSubmitError(null);
+      setDraftRestored(false);
     }
   }, [open]);
 
@@ -155,7 +282,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     const priceNum = Number(price);
     const durNum = Number(durationMinutes);
     if (!name.trim() || !price || !Number.isFinite(priceNum) || priceNum <= 0) {
-      notify?.({ type: "error", message: "Заполните название и положительную стоимость услуги" });
+      notify?.({ type: "error", message: t("add.validationRequired") });
       return;
     }
     // Количество расходника валидируем до запроса: бэк на ≤ 0 отвечает 400 и
@@ -163,7 +290,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     if (hasInvalidQuantity(relatedProducts)) {
       notify?.({
         type: "error",
-        message: "Количество расходника должно быть больше 0 (до 3 знаков)",
+        message: t("add.quantityError"),
       });
       return;
     }
@@ -174,7 +301,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     } else if (activeBranch && availableBranches.some((b) => b.id === activeBranch.id)) {
       effectiveBranchIds = [activeBranch.id];
     } else {
-      notify?.({ type: "error", message: "Выберите филиал в сайдбаре или укажите филиалы вручную" });
+      notify?.({ type: "error", message: t("add.branchRequired") });
       return;
     }
 
@@ -205,7 +332,9 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
           // image upload failure is non-fatal
         }
       }
-      notify?.({ type: "success", message: "Услуга создана" });
+      clearFormDraft(DRAFT_STORAGE_KEY);
+      draftRef.current = null;
+      notify?.({ type: "success", message: t("add.created") });
       // Список услуг формы приёма кэшируется на 10 минут — обновляем,
       // чтобы новая услуга сразу была доступна при создании приёма.
       void queryClient.invalidateQueries({
@@ -214,10 +343,17 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       onCreated?.();
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Не удалось создать услугу";
+      const msg = e instanceof Error ? e.message : t("add.createError");
       setSubmitError(msg);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const submitOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void handleSubmit();
     }
   };
 
@@ -227,12 +363,14 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const nameError = touched && !name.trim();
   const priceError = touched && (!price || Number(price) <= 0);
   const branchError = touched && !hasEffectiveBranch;
+  const nameValid = !!name.trim();
+  const priceValid = !!price && Number(price) > 0;
 
   return (
     <Drawer
       anchor="right"
       open={open}
-      onClose={busy ? undefined : onClose}
+      onClose={busy ? undefined : handleClose}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },
@@ -245,10 +383,19 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       <Box sx={{ width: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
         {/* Header */}
         <Stack direction="row" alignItems="center" justifyContent="space-between" px={2} py={1.5}>
-          <Typography variant="h6">Добавление услуги</Typography>
-          <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
-            <CloseOutlined />
-          </IconButton>
+          <Typography variant="h6">{t("add.title")}</Typography>
+          <Stack direction="row" alignItems="center" gap={0.5}>
+            {draftRestored && (
+              <Tooltip title={`${t("form.draftRestored")} — ${t("form.draftDiscard").toLowerCase()}?`}>
+                <IconButton onClick={handleDiscardDraft} aria-label={t("form.draftDiscard")}>
+                  <RestoreOutlined fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+            <IconButton onClick={busy ? undefined : handleClose} aria-label={t("common.close")}>
+              <CloseOutlined />
+            </IconButton>
+          </Stack>
         </Stack>
         <Divider />
 
@@ -264,196 +411,274 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             "&::-webkit-scrollbar": { display: "none" },
           }}
         >
-          <Stack spacing={2.5}>
+          <MotionStack spacing={2.5} variants={cascadeContainer} initial="hidden" animate="show">
             {submitError && (
               <Alert severity="error" onClose={() => setSubmitError(null)}>
                 {submitError}
               </Alert>
             )}
 
-            <ServicePhotoUploader
-              photoFile={photoFile}
-              photoPreview={photoPreview}
-              onPickPhoto={onPickPhoto}
-              inputId="django-add-service-photo"
-            />
-
-            {/* Название */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Название услуги *
-              </Typography>
-              <TextField
-                placeholder="Например: УЗИ брюшной полости"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                fullWidth
-                error={nameError}
-                helperText={nameError ? "Обязательное поле" : ""}
-                disabled={busy}
+            {/* ── Фото + название ── */}
+            <MotionBox variants={cascadeItem}>
+              <ServicePhotoUploader
+                photoFile={photoFile}
+                photoPreview={photoPreview}
+                onPickPhoto={onPickPhoto}
+                inputId="django-add-service-photo"
               />
-            </Stack>
+            </MotionBox>
 
-            {/* Филиалы */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Филиалы
-              </Typography>
-              {noBranches ? (
-                <Alert severity="warning">Сначала создайте филиал</Alert>
-              ) : (
-                <Autocomplete
-                  multiple
-                  options={availableBranches}
-                  getOptionLabel={(o) => o.name}
-                  value={selectedBranches}
-                  onChange={(_, val) => setSelectedBranches(val)}
-                  disabled={busy}
-                  renderTags={(val, getTagProps) =>
-                    val.map((opt, idx) => (
-                      <Chip
-                        {...getTagProps({ index: idx })}
-                        key={opt.id}
-                        label={opt.name}
-                        size="small"
-                      />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder={
-                        selectedBranches.length === 0
-                          ? activeBranch
-                            ? `По умолчанию: ${activeBranch.name}. Можно выбрать несколько филиалов.`
-                            : "Выберите один или несколько филиалов"
-                          : ""
-                      }
-                      error={branchError}
-                      helperText={branchError ? "Выберите филиал в сайдбаре или укажите филиалы вручную" : ""}
-                    />
-                  )}
-                />
-              )}
-            </Stack>
-
-            {/* Стоимость + Длительность */}
-            <Stack direction="row" spacing={1.5}>
-              <Stack spacing={0.5} sx={{ flex: 1 }}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Стоимость *
-                </Typography>
-                <TextField
-                  type="text"
-                  inputMode="numeric"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value.replace(/[^\d]/g, ""))}
-                  InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
-                  fullWidth
-                  placeholder="0"
-                  error={priceError}
-                  helperText={priceError ? "Введите положительную стоимость" : ""}
-                  disabled={busy}
-                />
-              </Stack>
-              <Stack spacing={0.5} sx={{ flex: 1 }}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Длительность
-                </Typography>
-                <TextField
-                  type="text"
-                  inputMode="numeric"
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(e.target.value.replace(/[^\d]/g, ""))}
-                  InputProps={{ endAdornment: <InputAdornment position="end">мин</InputAdornment> }}
-                  fullWidth
-                  placeholder="30"
-                  disabled={busy}
-                />
-              </Stack>
-            </Stack>
-
-            {/* Категория (для фильтра на странице услуг) */}
-            {SERVICE_CATEGORIES_ENABLED && (
+            <MotionBox variants={cascadeItem}>
               <Stack spacing={0.5}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Категория
+                  {t("form.nameLabel")}
                 </Typography>
                 <TextField
-                  select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as ServiceCategory | "")}
+                  placeholder={t("form.namePlaceholder")}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={submitOnEnter}
                   fullWidth
+                  size="small"
+                  autoFocus
+                  error={nameError}
+                  helperText={nameError ? t("form.nameRequired") : ""}
                   disabled={busy}
-                >
-                  <MenuItem value="">Без категории</MenuItem>
-                  {SERVICE_CATEGORY_OPTIONS.map((c) => (
-                    <MenuItem key={c} value={c}>
-                      {SERVICE_CATEGORY_LABELS[c]}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SellOutlined fontSize="small" color="disabled" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: nameValid ? (
+                      <InputAdornment position="end">
+                        <CheckCircleOutlined fontSize="small" color="success" />
+                      </InputAdornment>
+                    ) : undefined,
+                  }}
+                />
               </Stack>
-            )}
+            </MotionBox>
 
-            {/* Сопутствующие товары (со склада) */}
+            {/* ── Стоимость и филиалы ── */}
+            <MotionBox variants={cascadeItem}>
+              <Stack spacing={1.5}>
+                <Divider />
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                  {t("form.sectionPricing")}
+                </Typography>
+
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    {t("form.branchesLabel")}
+                  </Typography>
+                  {noBranches ? (
+                    <Alert severity="warning">{t("form.noBranches")}</Alert>
+                  ) : (
+                    <Autocomplete
+                      multiple
+                      size="small"
+                      options={availableBranches}
+                      getOptionLabel={(o) => o.name}
+                      value={selectedBranches}
+                      onChange={(_, val) => setSelectedBranches(val)}
+                      disabled={busy}
+                      renderTags={(val, getTagProps) =>
+                        val.map((opt, idx) => (
+                          <Chip
+                            {...getTagProps({ index: idx })}
+                            key={opt.id}
+                            label={opt.name}
+                            size="small"
+                          />
+                        ))
+                      }
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          placeholder={
+                            selectedBranches.length === 0
+                              ? activeBranch
+                                ? t("form.branchesPlaceholderDefault", { branch: activeBranch.name })
+                                : t("form.branchesPlaceholderEmpty")
+                              : ""
+                          }
+                          error={branchError}
+                          helperText={branchError ? t("form.branchesError") : ""}
+                        />
+                      )}
+                    />
+                  )}
+                </Stack>
+
+                <Stack direction="row" spacing={1.5}>
+                  <Stack spacing={0.5} sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      {t("form.priceLabel")}
+                    </Typography>
+                    <TextField
+                      type="text"
+                      inputMode="numeric"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value.replace(/[^\d]/g, ""))}
+                      onKeyDown={submitOnEnter}
+                      size="small"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PaymentsOutlined fontSize="small" color="disabled" />
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <Stack direction="row" alignItems="center" spacing={0.5}>
+                              <Typography variant="body2" color="text.secondary">
+                                {t("form.priceCurrency")}
+                              </Typography>
+                              {priceValid && <CheckCircleOutlined fontSize="small" color="success" />}
+                            </Stack>
+                          </InputAdornment>
+                        ),
+                      }}
+                      fullWidth
+                      placeholder={t("form.pricePlaceholder")}
+                      error={priceError}
+                      helperText={priceError ? t("form.priceError") : ""}
+                      disabled={busy}
+                    />
+                  </Stack>
+                  <Stack spacing={0.5} sx={{ flex: 1 }}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      {t("form.durationLabel")}
+                    </Typography>
+                    <TextField
+                      type="text"
+                      inputMode="numeric"
+                      value={durationMinutes}
+                      onChange={(e) => setDurationMinutes(e.target.value.replace(/[^\d]/g, ""))}
+                      onKeyDown={submitOnEnter}
+                      size="small"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <AccessTimeOutlined fontSize="small" color="disabled" />
+                          </InputAdornment>
+                        ),
+                        endAdornment: <InputAdornment position="end">{t("form.durationUnit")}</InputAdornment>,
+                      }}
+                      fullWidth
+                      placeholder={t("form.durationPlaceholder")}
+                      disabled={busy}
+                    />
+                  </Stack>
+                </Stack>
+
+                {SERVICE_CATEGORIES_ENABLED && (
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      {t("form.categoryLabel")}
+                    </Typography>
+                    <TextField
+                      select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value as ServiceCategory | "")}
+                      fullWidth
+                      size="small"
+                      disabled={busy}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <CategoryOutlined fontSize="small" color="disabled" />
+                          </InputAdornment>
+                        ),
+                      }}
+                    >
+                      <MenuItem value="">{t("form.categoryNone")}</MenuItem>
+                      {SERVICE_CATEGORY_OPTIONS.map((c) => (
+                        <MenuItem key={c} value={c}>
+                          {SERVICE_CATEGORY_LABELS[c]}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+                )}
+              </Stack>
+            </MotionBox>
+
+            {/* ── Расходники ── */}
             {SERVICE_RELATED_PRODUCT_ENABLED && (
-              <RelatedProductsPicker
-                options={products}
-                loading={productsLoading}
-                value={relatedProducts}
-                onChange={setRelatedProducts}
-                disabled={busy}
-                showErrors={touched}
-              />
+              <MotionBox variants={cascadeItem}>
+                <Stack spacing={1.5}>
+                  <Divider />
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                    {t("form.sectionComposition")}
+                  </Typography>
+                  <RelatedProductsPicker
+                    options={products}
+                    loading={productsLoading}
+                    value={relatedProducts}
+                    onChange={setRelatedProducts}
+                    disabled={busy}
+                    showErrors={touched}
+                  />
+                </Stack>
+              </MotionBox>
             )}
 
-            {/* Описание */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Описание
-              </Typography>
-              <TextField
-                placeholder="Добавьте описание услуги (необязательно)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                fullWidth
-                multiline
-                rows={3}
-                disabled={busy}
-              />
-            </Stack>
+            {/* ── Дополнительно ── */}
+            <MotionBox variants={cascadeItem}>
+              <Stack spacing={1.5}>
+                <Divider />
+                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                  {t("form.sectionExtra")}
+                </Typography>
 
-            {/* Статус */}
-            <Paper elevation={0} variant="outlined" sx={{ p: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <Typography variant="body2">Статус услуги</Typography>
-              <Tabs
-                value={isActive ? 0 : 1}
-                onChange={(_, v) => setIsActive(v === 0)}
-                sx={{ minHeight: 32 }}
-                TabIndicatorProps={{ style: { display: "none" } }}
-              >
-                <Tab label="Активна" sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })} />
-                <Tab label="Неактивна" sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
-              </Tabs>
-            </Paper>
-          </Stack>
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    {t("form.descriptionLabel")}
+                  </Typography>
+                  <TextField
+                    placeholder={t("form.descriptionPlaceholder")}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    fullWidth
+                    multiline
+                    rows={3}
+                    disabled={busy}
+                  />
+                </Stack>
+
+                <Paper elevation={0} variant="outlined" sx={{ p: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <Typography variant="body2">{t("form.statusLabel")}</Typography>
+                  <Tabs
+                    value={isActive ? 0 : 1}
+                    onChange={(_, v) => setIsActive(v === 0)}
+                    sx={{ minHeight: 32 }}
+                    TabIndicatorProps={{ style: { display: "none" } }}
+                  >
+                    <Tab label={t("common.active")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })} />
+                    <Tab label={t("common.inactive")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
+                  </Tabs>
+                </Paper>
+              </Stack>
+            </MotionBox>
+          </MotionStack>
         </Box>
 
         {/* Footer */}
         <Divider />
         <Box px={2} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
-          <Button onClick={onClose} disabled={busy}>
-            Отмена
+          <Button onClick={handleClose} disabled={busy}>
+            {t("common.cancel")}
           </Button>
           <Button variant="contained" onClick={handleSubmit} disabled={busy || submitDisabled}>
             {busy ? (
               <Stack direction="row" alignItems="center" spacing={1}>
                 <CircularProgress size={18} />
-                <span>Сохранение…</span>
+                <span>{t("common.saving")}</span>
               </Stack>
             ) : (
-              "Сохранить"
+              t("common.save")
             )}
           </Button>
         </Box>

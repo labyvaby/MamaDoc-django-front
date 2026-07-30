@@ -12,6 +12,8 @@ type DrawerBaseProps = {
   onSubmit?: () => void;
   submitLabel?: string;
   submitDisabled?: boolean;
+  /** Доп. контрол в шапке слева от крестика закрытия (например, кнопка «Очистить черновик»). */
+  headerExtra?: React.ReactNode;
 };
 
 const DrawerBase: React.FC<DrawerBaseProps> = ({
@@ -23,6 +25,7 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
   onSubmit,
   submitLabel = "Сохранить",
   submitDisabled,
+  headerExtra,
 }) => {
   return (
     <Drawer
@@ -43,9 +46,12 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
       <Box sx={{ width: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" px={2} py={1.5}>
           <Typography variant="h6">{title}</Typography>
-          <IconButton onClick={busy ? undefined : onClose}>
-            <CloseOutlined />
-          </IconButton>
+          <Stack direction="row" alignItems="center" gap={0.5}>
+            {headerExtra}
+            <IconButton onClick={busy ? undefined : onClose}>
+              <CloseOutlined />
+            </IconButton>
+          </Stack>
         </Stack>
         <Divider />
         <Box

@@ -71,6 +71,13 @@ export interface AppointmentStatusChipsProps {
   showPaymentMethodIcons?: boolean;
   /** Раскладка: строка списка — row, узкая колонка — column. */
   direction?: "row" | "column";
+  /**
+   * Скрыть чип «Оплачено/Частично оплачено» — вызывающий сам покажет тот же
+   * статус крупно (например, заголовок PaymentInfoBlock в карточке приёма),
+   * дублировать его тут для этого зрителя не нужно. Долг и скидка остаются:
+   * они несут доп. цифры, а не просто повторяют факт оплаты.
+   */
+  hidePayChip?: boolean;
 }
 
 const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
@@ -78,6 +85,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   chipHeight,
   showPaymentMethodIcons = true,
   direction = "row",
+  hidePayChip = false,
 }) => {
   const { t } = useT("appointments");
   const methods = appt.paymentMethods ?? [];
@@ -133,7 +141,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
           statusChip
         ))}
 
-      {showPayChip && (
+      {showPayChip && !hidePayChip && (
         <Chip
           label={
             <Stack direction="row" alignItems="center" gap={0.5}>

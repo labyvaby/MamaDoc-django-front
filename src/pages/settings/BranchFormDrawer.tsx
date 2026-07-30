@@ -14,6 +14,7 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -22,12 +23,11 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import MapOutlined from "@mui/icons-material/MapOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import { useSnackbar } from "notistack";
 
-import { useCloseGuard } from "../../hooks/useCloseGuard";
 import { useFormValidation } from "../../hooks/useFormValidation";
-import { CloseGuardDialog } from "../../components/common/CloseGuardDialog";
 import { retryAuth } from "../../hooks/usePermissions";
 import { ApiError, extractErrorMessage as extractApiError } from "../../api/client";
 import {
@@ -38,6 +38,7 @@ import {
   type DjangoBranch,
 } from "../../api/organization";
 import { useT } from "../../i18n/VerticalProvider";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
 const NAME_MAX = 255;
 const PHONE_MAX = 50;
@@ -69,6 +70,56 @@ function isValidMapUrl(value: string): boolean {
 /** Убирает пустые строки и лишние пробелы, сохраняя порядок. */
 function normalizePhones(phones: string[]): string[] {
   return phones.map((p) => p.trim()).filter(Boolean);
+}
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Создание использует один общий ключ (isDraftEmpty решает,
+// когда черновик пуст), редактирование — ключ с id филиала и сравнение с
+// исходными данными (baseline-diff), иначе «черновиком» считалась бы любая
+// просто открытая карточка. Логотип не входит в черновик — он уходит на бэк
+// отдельным запросом сразу при выборе файла.
+
+const DRAFT_ADD_KEY = "mamadoc:settings:branch-add-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type BranchDraft = {
+  savedAt: number;
+  name: string;
+  address: string;
+  phones: string[];
+  mapLinks: MapLinks;
+  timezone: string;
+  isActive: boolean;
+};
+
+function draftKeyFor(branchId: number): string {
+  return `mamadoc:settings:branch-edit-draft:${branchId}`;
+}
+
+function sameAsBaseline(
+  a: Omit<BranchDraft, "savedAt">,
+  b: Omit<BranchDraft, "savedAt">,
+): boolean {
+  return (
+    a.name === b.name &&
+    a.address === b.address &&
+    a.phones.join("\n") === b.phones.join("\n") &&
+    MAP_LINKS.every(({ key }) => a.mapLinks[key] === b.mapLinks[key]) &&
+    a.timezone === b.timezone &&
+    a.isActive === b.isActive
+  );
+}
+
+function isDraftEmpty(d: Omit<BranchDraft, "savedAt">): boolean {
+  return (
+    !d.name.trim() &&
+    !d.address.trim() &&
+    normalizePhones(d.phones).length === 0 &&
+    MAP_LINKS.every(({ key }) => !d.mapLinks[key].trim()) &&
+    d.timezone === DEFAULT_TZ &&
+    d.isActive === true
+  );
 }
 
 // Часовые пояса, актуальные для региона. Значение по умолчанию совпадает с
@@ -142,14 +193,17 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   const [error, setError] = React.useState<string | null>(null);
 
   // Логотип живёт отдельно от формы: загрузка/удаление уходят на бэк сразу
-  // (PUT/DELETE .../logo/), поэтому в isDirty/handleSubmit не участвуют.
+  // (PUT/DELETE .../logo/), поэтому в черновике/handleSubmit не участвуют.
   const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
   const [logoBusy, setLogoBusy] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string | null>(null);
   const logoInputRef = React.useRef<HTMLInputElement>(null);
+  const [draftRestored, setDraftRestored] = React.useState(false);
 
   const nameRef = React.useRef<HTMLInputElement>(null);
+  const baselineRef = React.useRef<Omit<BranchDraft, "savedAt"> | null>(null);
 
+  // ── загрузка данных филиала + восстановление черновика ──────────────────────
   React.useEffect(() => {
     if (!open) return;
     setError(null);
@@ -158,24 +212,50 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     setLogoUrl(editing?.logoUrl ?? null);
     setLogoBusy(false);
     setLogoError(null);
+    setDraftRestored(false);
+
     if (editing) {
-      setName(editing.name);
-      setAddress(editing.address);
-      setPhones(editing.phones.length > 0 ? editing.phones : [""]);
-      setMapLinks({
-        twoGisUrl: editing.twoGisUrl,
-        yandexMapsUrl: editing.yandexMapsUrl,
-        googleMapsUrl: editing.googleMapsUrl,
-      });
-      setTimezone(editing.timezone || DEFAULT_TZ);
-      setIsActive(editing.isActive);
+      const baseline: Omit<BranchDraft, "savedAt"> = {
+        name: editing.name,
+        address: editing.address,
+        phones: editing.phones.length > 0 ? editing.phones : [""],
+        mapLinks: {
+          twoGisUrl: editing.twoGisUrl,
+          yandexMapsUrl: editing.yandexMapsUrl,
+          googleMapsUrl: editing.googleMapsUrl,
+        },
+        timezone: editing.timezone || DEFAULT_TZ,
+        isActive: editing.isActive,
+      };
+      baselineRef.current = baseline;
+      const draft = readFormDraft<BranchDraft>(draftKeyFor(editing.id), DRAFT_TTL_MS);
+      const next = draft ?? baseline;
+      setName(next.name);
+      setAddress(next.address);
+      setPhones(next.phones);
+      setMapLinks(next.mapLinks);
+      setTimezone(next.timezone);
+      setIsActive(next.isActive);
+      setDraftRestored(Boolean(draft));
     } else {
-      setName("");
-      setAddress("");
-      setPhones([""]);
-      setMapLinks(EMPTY_MAP_LINKS);
-      setTimezone(DEFAULT_TZ);
-      setIsActive(true);
+      baselineRef.current = null;
+      const draft = readFormDraft<BranchDraft>(DRAFT_ADD_KEY, DRAFT_TTL_MS);
+      if (draft) {
+        setName(draft.name);
+        setAddress(draft.address);
+        setPhones(draft.phones.length > 0 ? draft.phones : [""]);
+        setMapLinks(draft.mapLinks);
+        setTimezone(draft.timezone);
+        setIsActive(draft.isActive);
+        setDraftRestored(true);
+      } else {
+        setName("");
+        setAddress("");
+        setPhones([""]);
+        setMapLinks(EMPTY_MAP_LINKS);
+        setTimezone(DEFAULT_TZ);
+        setIsActive(true);
+      }
     }
     const t = setTimeout(() => nameRef.current?.focus(), 120);
     return () => clearTimeout(t);
@@ -189,25 +269,68 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
     ({ key }) => !isValidMapUrl(mapLinks[key]),
   ).map(({ key }) => key);
 
-  const isDirty = isEdit
-    ? trimmedName !== editing!.name ||
-      address.trim() !== editing!.address ||
-      cleanPhones.join("\n") !== editing!.phones.join("\n") ||
-      MAP_LINKS.some(({ key }) => mapLinks[key].trim() !== editing![key]) ||
-      timezone !== editing!.timezone ||
-      isActive !== editing!.isActive
-    : Boolean(
-        trimmedName ||
-          address.trim() ||
-          cleanPhones.length > 0 ||
-          MAP_LINKS.some(({ key }) => mapLinks[key].trim()),
-      );
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const current: Omit<BranchDraft, "savedAt"> = {
+      name,
+      address,
+      phones,
+      mapLinks,
+      timezone,
+      isActive,
+    };
+    if (editing) {
+      const key = draftKeyFor(editing.id);
+      if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+        clearFormDraft(key);
+      } else {
+        writeFormDraft(key, current);
+      }
+    } else if (isDraftEmpty(current)) {
+      clearFormDraft(DRAFT_ADD_KEY);
+    } else {
+      writeFormDraft(DRAFT_ADD_KEY, current);
+    }
+  };
 
-  const { guardedClose, confirmOpen, confirmClose, cancelClose } = useCloseGuard({
-    isDirty,
-    isOpen: open,
-    onClose,
-  });
+  React.useEffect(() => {
+    if (!open) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [open, editing, name, address, phones, mapLinks, timezone, isActive]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    if (editing) {
+      clearFormDraft(draftKeyFor(editing.id));
+      const b = baselineRef.current;
+      if (b) {
+        setName(b.name);
+        setAddress(b.address);
+        setPhones(b.phones);
+        setMapLinks(b.mapLinks);
+        setTimezone(b.timezone);
+        setIsActive(b.isActive);
+      }
+    } else {
+      clearFormDraft(DRAFT_ADD_KEY);
+      setName("");
+      setAddress("");
+      setPhones([""]);
+      setMapLinks(EMPTY_MAP_LINKS);
+      setTimezone(DEFAULT_TZ);
+      setIsActive(true);
+    }
+    setDraftRestored(false);
+  };
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const schema: Record<string, string | null> = {
@@ -266,6 +389,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
           isActive,
         });
       }
+      clearFormDraft(editing ? draftKeyFor(editing.id) : DRAFT_ADD_KEY);
       onSaved(saved);
       enqueueSnackbar(isEdit ? t("branchForm.updated") : t("branchForm.created"), {
         variant: "success",
@@ -369,13 +493,24 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
             )}
           </Box>
         </Stack>
-        <IconButton
-          onClick={busy ? undefined : guardedClose}
-          aria-label={t("common:actions.close")}
-          edge="end"
-        >
-          <CloseOutlined />
-        </IconButton>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {draftRestored && (
+            <Tooltip
+              title={`${t("branchForm.draftRestored")} — ${t("branchForm.draftDiscard").toLowerCase()}?`}
+            >
+              <IconButton onClick={handleDiscardDraft} aria-label={t("branchForm.draftDiscard")}>
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton
+            onClick={busy ? undefined : handleClose}
+            aria-label={t("common:actions.close")}
+            edge="end"
+          >
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
       </Box>
       <Divider />
 
@@ -639,7 +774,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
       <Divider />
       <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
         <Stack direction="row" spacing={1.5} justifyContent="flex-end">
-          <Button variant="outlined" onClick={guardedClose} disabled={busy}>
+          <Button variant="outlined" onClick={handleClose} disabled={busy}>
             {t("common:actions.cancel")}
           </Button>
           <Button
@@ -656,30 +791,21 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
   );
 
   return (
-    <>
-      <Drawer
-        anchor="right"
-        open={open}
-        onClose={busy ? undefined : guardedClose}
-        PaperProps={{
-          sx: {
-            width: { xs: 320, sm: 440 },
-            maxWidth: "100vw",
-            display: "flex",
-            flexDirection: "column",
-          },
-        }}
-      >
-        {content}
-      </Drawer>
-
-      <CloseGuardDialog
-        open={confirmOpen}
-        title={isEdit ? t("branchForm.editTitleLower") : t("branchForm.createTitleLower")}
-        onConfirm={confirmClose}
-        onCancel={cancelClose}
-      />
-    </>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={busy ? undefined : handleClose}
+      PaperProps={{
+        sx: {
+          width: { xs: 320, sm: 440 },
+          maxWidth: "100vw",
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
+      {content}
+    </Drawer>
   );
 };
 

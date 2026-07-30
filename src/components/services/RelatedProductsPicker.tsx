@@ -23,6 +23,7 @@ import type { DjangoProduct } from "../../api/warehouse";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme";
 import { billableTotal, type RelatedProductRow } from "./relatedProductRows";
+import { useT } from "../../i18n/VerticalProvider";
 
 // Поиск товара по названию, штрихкоду и цене (как в форме приёма).
 const productFilter = createFilterOptions<DjangoProduct>({
@@ -59,6 +60,7 @@ const RelatedProductsPicker: React.FC<Props> = ({
   disabled,
   showErrors,
 }) => {
+  const { t } = useT("services");
   const multi = SERVICE_RELATED_PRODUCTS_MULTI_ENABLED;
 
   const shared = {
@@ -66,14 +68,14 @@ const RelatedProductsPicker: React.FC<Props> = ({
     filterOptions: productFilter,
     getOptionLabel: (p: DjangoProduct) => `${p.name} — ${formatKGS(p.price)}`,
     isOptionEqualToValue: (a: DjangoProduct, b: DjangoProduct) => a.id === b.id,
-    noOptionsText: "Товары не найдены",
+    noOptionsText: t("relatedProducts.noOptions"),
     disabled,
     renderOption: (props: React.HTMLAttributes<HTMLLIElement>, p: DjangoProduct) => (
       <li {...props} key={p.id}>
         <Stack>
           <Typography variant="body2">{p.name}</Typography>
           <Typography variant="caption" color="text.secondary">
-            {formatKGS(p.price)} · остаток {p.stock} {p.unit}
+            {t("relatedProducts.optionCaption", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
           </Typography>
         </Stack>
       </li>
@@ -84,7 +86,7 @@ const RelatedProductsPicker: React.FC<Props> = ({
     return (
       <Stack spacing={0.5}>
         <Typography variant="body2" color="text.secondary" fontWeight={600}>
-          Сопутствующий товар
+          {t("relatedProducts.singleLabel")}
         </Typography>
         <Autocomplete
           {...shared}
@@ -98,8 +100,8 @@ const RelatedProductsPicker: React.FC<Props> = ({
           renderInput={(params) => (
             <TextField
               {...params}
-              placeholder="Например: Гель для УЗИ"
-              helperText="Необязательно: товар со склада, связанный с услугой"
+              placeholder={t("relatedProducts.singlePlaceholder")}
+              helperText={t("relatedProducts.singleHelper")}
             />
           )}
         />
@@ -128,11 +130,11 @@ const RelatedProductsPicker: React.FC<Props> = ({
     <Stack spacing={1}>
       <Stack direction="row" alignItems="baseline" justifyContent="space-between">
         <Typography variant="body2" color="text.secondary" fontWeight={600}>
-          Расходники услуги
+          {t("relatedProducts.multiLabel")}
         </Typography>
         {value.length > 0 && (
           <Typography variant="caption" color={limitReached ? "warning.main" : "text.secondary"}>
-            {value.length} из {SERVICE_RELATED_PRODUCTS_MAX}
+            {t("relatedProducts.counter", { count: value.length, max: SERVICE_RELATED_PRODUCTS_MAX })}
           </Typography>
         )}
       </Stack>
@@ -153,26 +155,29 @@ const RelatedProductsPicker: React.FC<Props> = ({
                   {row.product.name}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block">
-                  {formatKGS(row.product.price)} · остаток {row.product.stock}{" "}
-                  {row.product.unit}
+                  {t("relatedProducts.rowCaption", {
+                    price: formatKGS(row.product.price),
+                    stock: row.product.stock,
+                    unit: row.product.unit,
+                  })}
                 </Typography>
                 {/* Платность видна суммой, а не только чипом: «+9 000 сом»
                     читается однозначнее, чем слово «Платно». */}
                 {row.billable && quantity !== null && (
                   <Typography variant="caption" color="primary.onSurface" fontWeight={600}>
-                    + {formatKGS(lineTotal)} к цене услуги
+                    {t("relatedProducts.extraToPrice", { amount: formatKGS(lineTotal) })}
                   </Typography>
                 )}
               </Box>
               <Tooltip
                 title={
                   row.billable
-                    ? "Оплачивается сверх цены услуги — нажмите, чтобы включить в цену"
-                    : "Стоимость включена в цену услуги — нажмите, чтобы брать плату сверху"
+                    ? t("relatedProducts.billableToggleOn")
+                    : t("relatedProducts.billableToggleOff")
                 }
               >
                 <Chip
-                  label={row.billable ? "Платно" : "В цене"}
+                  label={row.billable ? t("relatedProducts.billableChip") : t("relatedProducts.includedChip")}
                   size="small"
                   onClick={() => patchRow(index, { billable: !row.billable })}
                   disabled={disabled}
@@ -187,15 +192,15 @@ const RelatedProductsPicker: React.FC<Props> = ({
                 disabled={disabled}
                 size="small"
                 error={invalid}
-                helperText={invalid ? "Больше 0, до 3 знаков" : row.product.unit || " "}
+                helperText={invalid ? t("relatedProducts.quantityError") : row.product.unit || " "}
                 inputProps={{ inputMode: "decimal", style: { textAlign: "right" } }}
                 sx={{ width: 104, flexShrink: 0 }}
               />
               <Tooltip
                 title={
                   row.autoWriteOff
-                    ? "Списывать со склада при оплате или завершении приёма"
-                    : "Не списывать со склада"
+                    ? t("relatedProducts.autoWriteOffOn")
+                    : t("relatedProducts.autoWriteOffOff")
                 }
               >
                 <Switch
@@ -211,7 +216,7 @@ const RelatedProductsPicker: React.FC<Props> = ({
                 disabled={disabled}
                 size="small"
                 sx={{ mt: 0.5 }}
-                aria-label={`Убрать ${row.product.name} из состава`}
+                aria-label={t("relatedProducts.remove", { name: row.product.name })}
               >
                 <DeleteOutlineIcon fontSize="small" />
               </IconButton>
@@ -237,13 +242,13 @@ const RelatedProductsPicker: React.FC<Props> = ({
             {...params}
             placeholder={
               limitReached
-                ? `Максимум ${SERVICE_RELATED_PRODUCTS_MAX} товаров`
-                : "Добавить товар — например: Гель для УЗИ"
+                ? t("relatedProducts.limitReached", { max: SERVICE_RELATED_PRODUCTS_MAX })
+                : t("relatedProducts.addPlaceholder")
             }
             helperText={
               value.length === 0
-                ? "Необязательно: товары со склада, которые расходуются на услугу"
-                : "Чип — платный товар или в цене услуги, тумблер — списывать ли со склада"
+                ? t("relatedProducts.addHelperEmpty")
+                : t("relatedProducts.addHelperNonEmpty")
             }
           />
         )}
@@ -252,7 +257,7 @@ const RelatedProductsPicker: React.FC<Props> = ({
       {extraCharge > 0 && (
         <Stack direction="row" justifyContent="space-between" alignItems="baseline">
           <Typography variant="caption" color="text.secondary">
-            Платные товары в приёме
+            {t("relatedProducts.extraInVisit")}
           </Typography>
           <Typography variant="body2" fontWeight={600}>
             + {formatKGS(extraCharge)}

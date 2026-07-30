@@ -21,7 +21,8 @@
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
       "tasks": "Задачи",
       "cleaning": "Уборка",
-      "skud": "СКУД"
+      "skud": "СКУД",
+      "announcements": "Объявления"
     }
   },
   "placeholder": {
@@ -200,8 +201,6 @@
   "diagnosisForm": {
     "editTitle": "Редактирование {{diagnosis.gen}}",
     "createTitle": "Добавление {{diagnosis.gen}}",
-    "editTitleLower": "редактирование {{diagnosis.gen}}",
-    "createTitleLower": "добавление {{diagnosis.gen}}",
     "codeLabel": "Код МКБ-10 *",
     "codePlaceholder": "Например: A09",
     "codeRequired": "Укажите код МКБ-10",
@@ -216,7 +215,9 @@
     "captionHidden": "{{diagnosis.nom, capitalize}} не отображается {{specialist.datPl}} при заполнении заключения, но уже выданные заключения сохранят {{diagnosis.acc}}.",
     "updated": "Изменения сохранены",
     "created": "Добавлено в справочник",
-    "unknownError": "Неизвестная ошибка"
+    "unknownError": "Неизвестная ошибка",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить"
   },
   "notifications": {
     "pageTitle": "Уведомления",
@@ -404,7 +405,9 @@
     "inactiveCaption": "{{branch.nom, capitalize}} скрыт из выбора; существующие данные сохраняются.",
     "updated": "{{branch.nom, capitalize}} обновлён",
     "created": "{{branch.nom, capitalize}} создан",
-    "unknownError": "Неизвестная ошибка"
+    "unknownError": "Неизвестная ошибка",
+    "draftRestored": "Восстановлены несохранённые данные",
+    "draftDiscard": "Очистить"
   },
   "cleaning": {
     "pageTitle": "Настройки · Уборка",

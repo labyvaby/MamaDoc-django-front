@@ -221,14 +221,7 @@ const DjangoReportsPage: React.FC = () => {
   const loading = reportQuery.isLoading || (reportQuery.isFetching && !report);
 
   return (
-    <Box
-      sx={{
-        height: { xs: "calc(100dvh - 56px)", md: "calc(100vh - 64px)" },
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
         title="Отчеты"
         showTitle={false}
@@ -248,19 +241,13 @@ const DjangoReportsPage: React.FC = () => {
             px: t.appLayout.page.paddingX,
             pt: 2,
             flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            overflow: { xs: "auto", lg: "hidden" },
+            overflowY: "auto",
             minHeight: 0,
           })}
         >
           <Stack
             spacing={3}
             sx={(t) => ({
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 0,
               pb: { xs: 15, md: t.appLayout.page.paddingY },
             })}
           >
@@ -273,11 +260,11 @@ const DjangoReportsPage: React.FC = () => {
                   : "Ошибка загрузки отчёта"}
               </Alert>
             ) : loading ? (
-              <Box sx={{ textAlign: "center", py: 5, flex: 1 }}>
+              <Box sx={{ textAlign: "center", py: 5 }}>
                 <CircularProgress />
               </Box>
             ) : isMobile ? (
-              <Stack spacing={1.5} sx={{ flex: 1 }}>
+              <Stack spacing={1.5}>
                 {daily
                   .map((day) => (
                     <Card
@@ -401,7 +388,6 @@ const DjangoReportsPage: React.FC = () => {
             ) : (
               <ReportTableCard
                 title={t("table.byDays")}
-                scrollable
                 headerActions={
                   totals ? (
                     <Chip
@@ -415,8 +401,8 @@ const DjangoReportsPage: React.FC = () => {
                   ) : undefined
                 }
               >
-                <TableContainer sx={{ flex: 1, overflowY: "auto" }}>
-                  <Table stickyHeader size="small" sx={compactTableSx}>
+                <TableContainer>
+                  <Table size="small" sx={compactTableSx}>
                     <TableHead>
                       <TableRow>
                         {(
@@ -494,17 +480,10 @@ const DjangoReportsPage: React.FC = () => {
                         </TableRow>
                       ))}
                       {totals && (
-                        // Итог липнет к низу таблицы: месяц длинный, а сумма нужна
-                        // без прокрутки в конец.
                         <TableRow
                           sx={(t) => ({
                             "& .MuiTableCell-root": {
-                              position: "sticky",
-                              bottom: 0,
                               fontWeight: 700,
-                              // Фон непрозрачный: сквозь тинт просвечивала бы
-                              // строка, над которой стоит липкий итог.
-                              bgcolor: "background.paper",
                               borderTop: `2px solid ${alpha(t.palette.primary.main, 0.35)}`,
                             },
                           })}

@@ -14,11 +14,19 @@ import {
     Chip,
     alpha,
     CircularProgress,
+    InputAdornment,
+    Tooltip,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import { motion } from "framer-motion";
+import { cascadeContainer, cascadeItem } from "../../ui";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import { DjangoStockItem, DjangoStockMovement } from "../../../api/warehouse";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 
@@ -65,6 +73,65 @@ interface DjangoAddMovementDrawerProps {
     defaultWarehouseId?: number | null;
 }
 
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Ключ черновика зависит от контекста открытия — черновик
+// одного товара/движения не должен всплывать в форме для другого:
+//  - редактирование движения (`editingMovement`) → ключ по id движения,
+//    сравнение с исходными данными движения (baseline-diff), как в Edit-формах;
+//  - открыто для конкретного товара (`product`, приход/списание) → ключ по id
+//    товара, ничего не предзаполнено с сервера — обычная isDraftEmpty-проверка;
+//  - «с нуля» (страница «Движение товара», товар выбирается в дровере) →
+//    общий ключ, тоже isDraftEmpty-проверка.
+
+const DRAFT_STORAGE_KEY = "mamadoc:warehouse:movement-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type MovementDraft = {
+    savedAt: number;
+    quantity: string;
+    amount: string;
+    comment: string;
+    paymentMethod: "cash" | "cashless";
+    selectedProduct: MovementProductOption | null;
+    selectedWarehouse: MovementWarehouseOption | null;
+};
+
+function movementDraftKeyFor(
+    product: DjangoStockItem | null,
+    editingMovement: DjangoStockMovement | null,
+): string {
+    if (editingMovement) return `${DRAFT_STORAGE_KEY}:edit:${editingMovement.id}`;
+    if (product) return `${DRAFT_STORAGE_KEY}:product:${product.warehouseId}:${product.productId}`;
+    return `${DRAFT_STORAGE_KEY}:new`;
+}
+
+function isDraftEmpty(d: Omit<MovementDraft, "savedAt">): boolean {
+    return (
+        !d.quantity.trim() &&
+        !d.amount.trim() &&
+        !d.comment.trim() &&
+        d.paymentMethod === "cash" &&
+        !d.selectedProduct &&
+        !d.selectedWarehouse
+    );
+}
+
+function sameAsMovementBaseline(
+    a: Omit<MovementDraft, "savedAt">,
+    b: Omit<MovementDraft, "savedAt">,
+): boolean {
+    return (
+        a.quantity === b.quantity &&
+        a.amount === b.amount &&
+        a.comment === b.comment &&
+        a.paymentMethod === b.paymentMethod
+    );
+}
+
 export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = ({
     open,
     onClose,
@@ -83,29 +150,107 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     const [selectedProduct, setSelectedProduct] = useState<MovementProductOption | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<"cash" | "cashless">("cash");
     const [selectedWarehouse, setSelectedWarehouse] = useState<MovementWarehouseOption | null>(null);
+    const [draftRestored, setDraftRestored] = useState(false);
 
     // Селект склада показываем только в режиме нового товара и только если
     // страница передала список (на странице «Склад» склад задан колонкой).
     const showWarehouseSelect = !product && !editingMovement && !!warehouses;
 
+    // Baseline нужен только для editingMovement (там поля предзаполнены с
+    // сервера) — для product/blank-сценариев ничего не предзаполнено, черновик
+    // там просто сравнивается с «пусто» (isDraftEmpty).
+    const baselineRef = React.useRef<Omit<MovementDraft, "savedAt"> | null>(null);
+
     useEffect(() => {
         if (open) {
-            setQuantity(editingMovement ? String(Math.abs(editingMovement.quantity || 0)) : "");
-            setAmount(
-                editingMovement?.totalCost !== undefined && editingMovement?.totalCost !== null
-                    ? String(editingMovement.totalCost)
-                    : "",
-            );
-            setComment(editingMovement?.comment ?? "");
+            const baseline: Omit<MovementDraft, "savedAt"> = {
+                quantity: editingMovement ? String(Math.abs(editingMovement.quantity || 0)) : "",
+                amount:
+                    editingMovement?.totalCost !== undefined && editingMovement?.totalCost !== null
+                        ? String(editingMovement.totalCost)
+                        : "",
+                comment: editingMovement?.comment ?? "",
+                paymentMethod: editingMovement?.paymentMethod ?? "cash",
+                selectedProduct: null,
+                selectedWarehouse: warehouses?.find((w) => w.id === defaultWarehouseId) ?? null,
+            };
+            baselineRef.current = editingMovement ? baseline : null;
+
+            setQuantity(baseline.quantity);
+            setAmount(baseline.amount);
+            setComment(baseline.comment);
             setLoading(false);
             setSelectedProduct(null);
-            setPaymentMethod(editingMovement?.paymentMethod ?? "cash");
-            setSelectedWarehouse(
-                warehouses?.find((w) => w.id === defaultWarehouseId) ?? null,
+            setPaymentMethod(baseline.paymentMethod);
+            setSelectedWarehouse(baseline.selectedWarehouse);
+            setDraftRestored(false);
+
+            const draft = readFormDraft<MovementDraft>(
+                movementDraftKeyFor(product, editingMovement),
+                DRAFT_TTL_MS,
             );
+            if (draft) {
+                setQuantity(draft.quantity);
+                setAmount(draft.amount);
+                setComment(draft.comment);
+                setPaymentMethod(draft.paymentMethod);
+                setSelectedProduct(draft.selectedProduct);
+                if (draft.selectedWarehouse) setSelectedWarehouse(draft.selectedWarehouse);
+                setDraftRestored(true);
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, product, editingMovement, defaultWarehouseId]);
+
+    // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+    // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+    // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+    // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+    const flushDraftRef = React.useRef<() => void>(() => {});
+    flushDraftRef.current = () => {
+        const current: Omit<MovementDraft, "savedAt"> = {
+            quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse,
+        };
+        const key = movementDraftKeyFor(product, editingMovement);
+        const isUnchanged = editingMovement
+            ? baselineRef.current !== null && sameAsMovementBaseline(current, baselineRef.current)
+            : isDraftEmpty(current);
+        if (isUnchanged) {
+            clearFormDraft(key);
+        } else {
+            writeFormDraft(key, current);
+        }
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        const id = setTimeout(() => flushDraftRef.current(), 400);
+        return () => clearTimeout(id);
+    }, [open, product, editingMovement, quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse]);
+
+    const handleClose = () => {
+        flushDraftRef.current();
+        onClose();
+    };
+
+    const handleDiscardDraft = () => {
+        clearFormDraft(movementDraftKeyFor(product, editingMovement));
+        const b = baselineRef.current;
+        if (b) {
+            setQuantity(b.quantity);
+            setAmount(b.amount);
+            setComment(b.comment);
+            setPaymentMethod(b.paymentMethod);
+        } else {
+            setQuantity("");
+            setAmount("");
+            setComment("");
+            setPaymentMethod("cash");
+            setSelectedProduct(null);
+            setSelectedWarehouse(warehouses?.find((w) => w.id === defaultWarehouseId) ?? null);
+        }
+        setDraftRestored(false);
+    };
 
     // Приход (закуп) можно проводить по 0 сом — бесплатные/бонусные поставки;
     // пустое поле суммы трактуем как 0. Для списания сумма обязательна.
@@ -141,6 +286,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                 mode === "in" ? paymentMethod : undefined,
                 selectedWarehouse?.id,
             );
+            clearFormDraft(movementDraftKeyFor(product, editingMovement));
             onClose();
         } catch (e) {
             console.error(e);
@@ -165,11 +311,18 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
 
     const accentColor = mode === "in" ? "success" : "error";
 
+    const submitOnEnter = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            void handleSubmit();
+        }
+    };
+
     return (
         <Drawer
             anchor="right"
             open={open}
-            onClose={loading ? undefined : onClose}
+            onClose={loading ? undefined : handleClose}
             PaperProps={{
                 sx: { width: { xs: 320, sm: 400 }, display: "flex", flexDirection: "column" },
             }}
@@ -177,13 +330,25 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
             {/* Header */}
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, py: 1.5 }}>
                 <Typography variant="h6">{getTitle()}</Typography>
-                <IconButton onClick={loading ? undefined : onClose} aria-label="Закрыть">
-                    <CloseOutlined />
-                </IconButton>
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                    {draftRestored && (
+                        <Tooltip title="Восстановлен черновик — сбросить?">
+                            <IconButton onClick={handleDiscardDraft} aria-label="Сбросить черновик">
+                                <RestoreOutlined fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    <IconButton onClick={loading ? undefined : handleClose} aria-label="Закрыть">
+                        <CloseOutlined />
+                    </IconButton>
+                </Stack>
             </Box>
 
-            <Stack
+            <MotionStack
                 spacing={3}
+                variants={cascadeContainer}
+                initial="hidden"
+                animate="show"
                 sx={{
                     p: 3,
                     flex: 1,
@@ -194,6 +359,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                 }}
             >
                 {/* Main Card */}
+                <MotionBox variants={cascadeItem}>
                 <Paper
                     elevation={0}
                     sx={{
@@ -205,6 +371,10 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                     }}
                 >
                     <Stack spacing={2}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                            Товар и склад
+                        </Typography>
+
                         {/* Product Section */}
                         <Box>
                             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5, fontWeight: 600, letterSpacing: 0.5 }}>
@@ -290,6 +460,9 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                         )}
 
                         <Divider />
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                            Количество и сумма
+                        </Typography>
 
                         {/* Quantity & Amount */}
                         <Stack spacing={2}>
@@ -315,6 +488,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                             type="number"
                                             value={quantity}
                                             onChange={(e) => setQuantity(e.target.value)}
+                                            onKeyDown={submitOnEnter}
                                             variant="standard"
                                             placeholder="0"
                                             autoFocus={!!product}
@@ -347,14 +521,27 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                         type="number"
                                         value={amount}
                                         onChange={(e) => setAmount(e.target.value)}
+                                        onKeyDown={submitOnEnter}
                                         size="small"
                                         fullWidth
                                         placeholder="0"
                                         InputProps={{
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <PriceChangeOutlined fontSize="small" color="disabled" />
+                                                </InputAdornment>
+                                            ),
                                             endAdornment: (
-                                                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                                                    сом
-                                                </Typography>
+                                                <InputAdornment position="end">
+                                                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                                                        {amount.trim() !== "" && amtValid && (
+                                                            <CheckCircleOutlined fontSize="small" color="success" />
+                                                        )}
+                                                        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                                                            сом
+                                                        </Typography>
+                                                    </Stack>
+                                                </InputAdornment>
                                             ),
                                         }}
                                         sx={{ ...noSpinnersSx }}
@@ -436,10 +623,13 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                         </Stack>
                     </Stack>
                 </Paper>
+                </MotionBox>
 
                 {/* Комментарий */}
-                <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                <MotionBox variants={cascadeItem}>
+                <Stack spacing={1.5}>
+                    <Divider />
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
                         Комментарий
                     </Typography>
                     <TextField
@@ -451,7 +641,8 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                         placeholder={mode === "out" ? "Укажите причину списания" : "Укажите источник или комментарий"}
                     />
                 </Stack>
-            </Stack>
+                </MotionBox>
+            </MotionStack>
 
             {/* Footer */}
             <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>

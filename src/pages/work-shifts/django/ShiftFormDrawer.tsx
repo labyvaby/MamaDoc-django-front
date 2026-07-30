@@ -17,19 +17,28 @@ import {
   FormControlLabel,
   Checkbox,
   Autocomplete,
+  Tooltip,
+  InputAdornment,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { SaveOutlined as Save, RestaurantMenuOutlined as RestaurantMenu, CloseOutlined as Close, DeleteOutline as Delete } from "@mui/icons-material";
 import { subtleBg } from "../../../theme";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
+import { cascadeContainer, cascadeItem } from "../../../components/ui";
+import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import type { ShiftWriteData, WorkShiftRow } from "../../../api/attendance";
 
 export interface EmployeeOption {
@@ -69,6 +78,73 @@ function inferNightFromTime(timeStr: string): boolean {
   return h < 8 || h >= 20;
 }
 
+const MotionStack = motion(Stack);
+const MotionBox = motion(Box);
+
+// ── черновик формы (localStorage) ────────────────────────────────────────────
+// Защита от случайной потери введённых данных при закрытии дровера (крестик,
+// клик по фону, Esc). Компонент работает в двух режимах:
+//  - создание: черновик по общему ключу, очищается после сабмита,
+//    «Очистить» сбрасывает форму к пустым значениям;
+//  - редактирование: ключ включает id смены, черновик пишется только если
+//    текущие значения отличаются от исходных данных смены (baseline),
+//    «Очистить» откатывает к baseline, а не к пустой форме.
+
+const ADD_DRAFT_KEY = "mamadoc:work-shifts:add-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
+
+type ShiftDraftFields = {
+  employeeId: number | null;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  isNightShift: boolean;
+  manuallySetNight: boolean;
+  endDateOvernight: boolean;
+  hasLunch: boolean;
+  lunchStart: string;
+  selectedWeekdays: string[];
+};
+
+type ShiftDraft = ShiftDraftFields & { savedAt: number };
+
+function editDraftKeyFor(shiftId: number): string {
+  return `mamadoc:work-shifts:edit-draft:${shiftId}`;
+}
+
+function isDraftEmpty(d: ShiftDraftFields, today: string): boolean {
+  return (
+    d.employeeId == null &&
+    d.startDate === today &&
+    d.endDate === today &&
+    d.startTime === "09:00" &&
+    d.endTime === "18:00" &&
+    !d.isNightShift &&
+    !d.manuallySetNight &&
+    !d.endDateOvernight &&
+    !d.hasLunch &&
+    d.lunchStart === "13:00" &&
+    d.selectedWeekdays.length === 0
+  );
+}
+
+function sameAsBaseline(a: ShiftDraftFields, b: ShiftDraftFields): boolean {
+  return (
+    a.employeeId === b.employeeId &&
+    a.startDate === b.startDate &&
+    a.endDate === b.endDate &&
+    a.startTime === b.startTime &&
+    a.endTime === b.endTime &&
+    a.isNightShift === b.isNightShift &&
+    a.manuallySetNight === b.manuallySetNight &&
+    a.endDateOvernight === b.endDateOvernight &&
+    a.hasLunch === b.hasLunch &&
+    a.lunchStart === b.lunchStart &&
+    a.selectedWeekdays.join(",") === b.selectedWeekdays.join(",")
+  );
+}
+
 const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   open,
   shiftToEdit,
@@ -93,6 +169,9 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   const [selectedWeekdays, setSelectedWeekdays] = React.useState<string[]>([]);
   const [touched, setTouched] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [draftRestored, setDraftRestored] = React.useState(false);
+
+  const baselineRef = React.useRef<ShiftDraftFields | null>(null);
 
   // Lunch always ends exactly one hour after it starts.
   const lunchEnd = React.useMemo(() => {
@@ -101,36 +180,72 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
     return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }, [lunchStart]);
 
-  // Reset form whenever the drawer opens (for create or a specific edit target).
+  // Reset form whenever the drawer opens (for create or a specific edit
+  // target) — restoring a saved draft (or, for edit, falling back to the
+  // shift's own baseline values) when one exists.
   React.useEffect(() => {
     if (!open) return;
     if (shiftToEdit) {
       const start = dayjs(shiftToEdit.clockIn);
       const end = shiftToEdit.clockOut ? dayjs(shiftToEdit.clockOut) : start;
-      setEmployeeId(shiftToEdit.employeeId);
-      setStartDate(start.format("YYYY-MM-DD"));
-      setEndDate(end.format("YYYY-MM-DD"));
-      setEndDateOvernight(!start.isSame(end, "day"));
-      setStartTime(start.format("HH:mm"));
-      setEndTime(shiftToEdit.clockOut ? end.format("HH:mm") : "18:00");
-      setIsNightShift(shiftToEdit.isNightShift);
-      setManuallySetNight(true);
-      setHasLunch(shiftToEdit.hasLunch);
-      setLunchStart(shiftToEdit.lunchStart ?? "13:00");
-      setSelectedWeekdays([]);
+      const baseline: ShiftDraftFields = {
+        employeeId: shiftToEdit.employeeId,
+        startDate: start.format("YYYY-MM-DD"),
+        endDate: end.format("YYYY-MM-DD"),
+        startTime: start.format("HH:mm"),
+        endTime: shiftToEdit.clockOut ? end.format("HH:mm") : "18:00",
+        isNightShift: shiftToEdit.isNightShift,
+        manuallySetNight: true,
+        endDateOvernight: !start.isSame(end, "day"),
+        hasLunch: shiftToEdit.hasLunch,
+        lunchStart: shiftToEdit.lunchStart ?? "13:00",
+        selectedWeekdays: [],
+      };
+      baselineRef.current = baseline;
+      const draft = readFormDraft<ShiftDraft>(editDraftKeyFor(shiftToEdit.id), DRAFT_TTL_MS);
+      const next = draft ?? baseline;
+      setEmployeeId(next.employeeId);
+      setStartDate(next.startDate);
+      setEndDate(next.endDate);
+      setEndDateOvernight(next.endDateOvernight);
+      setStartTime(next.startTime);
+      setEndTime(next.endTime);
+      setIsNightShift(next.isNightShift);
+      setManuallySetNight(next.manuallySetNight);
+      setHasLunch(next.hasLunch);
+      setLunchStart(next.lunchStart);
+      setSelectedWeekdays(next.selectedWeekdays);
+      setDraftRestored(Boolean(draft));
     } else {
+      baselineRef.current = null;
       const today = dayjs().format("YYYY-MM-DD");
-      setEmployeeId(null);
-      setStartDate(today);
-      setEndDate(today);
-      setEndDateOvernight(false);
-      setStartTime("09:00");
-      setEndTime("18:00");
-      setIsNightShift(false);
-      setManuallySetNight(false);
-      setHasLunch(false);
-      setLunchStart("13:00");
-      setSelectedWeekdays([]);
+      const defaults: ShiftDraftFields = {
+        employeeId: null,
+        startDate: today,
+        endDate: today,
+        startTime: "09:00",
+        endTime: "18:00",
+        isNightShift: false,
+        manuallySetNight: false,
+        endDateOvernight: false,
+        hasLunch: false,
+        lunchStart: "13:00",
+        selectedWeekdays: [],
+      };
+      const draft = readFormDraft<ShiftDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
+      const next = draft ?? defaults;
+      setEmployeeId(next.employeeId);
+      setStartDate(next.startDate);
+      setEndDate(next.endDate);
+      setEndDateOvernight(next.endDateOvernight);
+      setStartTime(next.startTime);
+      setEndTime(next.endTime);
+      setIsNightShift(next.isNightShift);
+      setManuallySetNight(next.manuallySetNight);
+      setHasLunch(next.hasLunch);
+      setLunchStart(next.lunchStart);
+      setSelectedWeekdays(next.selectedWeekdays);
+      setDraftRestored(Boolean(draft));
     }
     setTouched(false);
   }, [open, shiftToEdit]);
@@ -151,6 +266,103 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
         : startDate,
     );
   }, [endDateOvernight, startDate]);
+
+  // ── сохранение черновика в localStorage (защита от случайного закрытия) ────
+  // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
+  // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
+  // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
+  const flushDraftRef = React.useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    const current: ShiftDraftFields = {
+      employeeId,
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      isNightShift,
+      manuallySetNight,
+      endDateOvernight,
+      hasLunch,
+      lunchStart,
+      selectedWeekdays,
+    };
+    if (isEdit && shiftToEdit) {
+      const key = editDraftKeyFor(shiftToEdit.id);
+      if (baselineRef.current && sameAsBaseline(current, baselineRef.current)) {
+        clearFormDraft(key);
+      } else {
+        writeFormDraft(key, current);
+      }
+    } else {
+      const today = dayjs().format("YYYY-MM-DD");
+      if (isDraftEmpty(current, today)) {
+        clearFormDraft(ADD_DRAFT_KEY);
+      } else {
+        writeFormDraft(ADD_DRAFT_KEY, current);
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    const id = setTimeout(() => flushDraftRef.current(), 400);
+    return () => clearTimeout(id);
+  }, [
+    open,
+    isEdit,
+    shiftToEdit,
+    employeeId,
+    startDate,
+    endDate,
+    startTime,
+    endTime,
+    isNightShift,
+    manuallySetNight,
+    endDateOvernight,
+    hasLunch,
+    lunchStart,
+    selectedWeekdays,
+  ]);
+
+  const handleClose = () => {
+    flushDraftRef.current();
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    if (isEdit && shiftToEdit) {
+      clearFormDraft(editDraftKeyFor(shiftToEdit.id));
+      const b = baselineRef.current;
+      if (b) {
+        setEmployeeId(b.employeeId);
+        setStartDate(b.startDate);
+        setEndDate(b.endDate);
+        setEndDateOvernight(b.endDateOvernight);
+        setStartTime(b.startTime);
+        setEndTime(b.endTime);
+        setIsNightShift(b.isNightShift);
+        setManuallySetNight(b.manuallySetNight);
+        setHasLunch(b.hasLunch);
+        setLunchStart(b.lunchStart);
+        setSelectedWeekdays(b.selectedWeekdays);
+      }
+    } else {
+      clearFormDraft(ADD_DRAFT_KEY);
+      const today = dayjs().format("YYYY-MM-DD");
+      setEmployeeId(null);
+      setStartDate(today);
+      setEndDate(today);
+      setEndDateOvernight(false);
+      setStartTime("09:00");
+      setEndTime("18:00");
+      setIsNightShift(false);
+      setManuallySetNight(false);
+      setHasLunch(false);
+      setLunchStart("13:00");
+      setSelectedWeekdays([]);
+    }
+    setDraftRestored(false);
+  };
 
   const workMode = isNightShift ? "night" : "day";
 
@@ -210,6 +422,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
     setSaving(true);
     try {
       await onSubmit({ editId: isEdit ? shiftToEdit!.id : null, rows });
+      clearFormDraft(isEdit && shiftToEdit ? editDraftKeyFor(shiftToEdit.id) : ADD_DRAFT_KEY);
     } finally {
       setSaving(false);
     }
@@ -219,7 +432,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
     <Drawer
       anchor="right"
       open={open}
-      onClose={saving ? undefined : onClose}
+      onClose={saving ? undefined : handleClose}
       PaperProps={{ sx: { width: { xs: 320, sm: 560 }, maxWidth: "100vw" } }}
     >
       <Box
@@ -234,280 +447,204 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
         <Typography variant="h6">
           {isEdit ? "Редактировать смену" : "Добавить смену"}
         </Typography>
-        <IconButton onClick={onClose} aria-label="Закрыть" disabled={saving}>
-          <CloseOutlined />
-        </IconButton>
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          {draftRestored && (
+            <Tooltip title="Восстановлен черновик — очистить?">
+              <IconButton onClick={handleDiscardDraft} aria-label="Очистить черновик" disabled={saving}>
+                <RestoreOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton onClick={handleClose} aria-label="Закрыть" disabled={saving}>
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
       </Box>
       <Divider />
 
       <LocalizationProvider dateAdapter={AdapterDayjs}>
         <Box px={2} py={2} sx={{ overflowY: "auto" }}>
-          <Stack spacing={2}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Информация о смене
-            </Typography>
-
-            {/* Сотрудник */}
-            <Stack spacing={0.5}>
-              <Typography variant="body2" color="text.secondary">
-                Сотрудник *
-              </Typography>
-              {isEdit ? (
-                <TextField
-                  value={shiftToEdit?.employeeName ?? ""}
-                  size="small"
-                  fullWidth
-                  disabled
-                />
-              ) : (
-                <Autocomplete
-                  options={employees}
-                  value={employees.find((e) => e.id === employeeId) ?? null}
-                  onChange={(_, v) => setEmployeeId(v?.id ?? null)}
-                  getOptionLabel={(o) => o.fullName}
-                  isOptionEqualToValue={(o, v) => o.id === v.id}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Выберите сотрудника"
-                      fullWidth
-                      size="small"
-                      error={touched && employeeId == null}
-                      helperText={
-                        touched && employeeId == null
-                          ? "Выберите сотрудника"
-                          : ""
-                      }
-                    />
-                  )}
-                />
-              )}
-            </Stack>
+          <MotionStack spacing={2} variants={cascadeContainer} initial="hidden" animate="show">
+            {/* ── Сотрудник ── */}
+            <MotionBox variants={cascadeItem}>
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary">
+                  Сотрудник *
+                </Typography>
+                {isEdit ? (
+                  <TextField
+                    value={shiftToEdit?.employeeName ?? ""}
+                    size="small"
+                    fullWidth
+                    disabled
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <PersonOutlineOutlined fontSize="small" color="disabled" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: shiftToEdit?.employeeName ? (
+                        <InputAdornment position="end">
+                          <CheckCircleOutlined fontSize="small" color="success" />
+                        </InputAdornment>
+                      ) : undefined,
+                    }}
+                  />
+                ) : (
+                  <Autocomplete
+                    options={employees}
+                    value={employees.find((e) => e.id === employeeId) ?? null}
+                    onChange={(_, v) => setEmployeeId(v?.id ?? null)}
+                    getOptionLabel={(o) => o.fullName}
+                    isOptionEqualToValue={(o, v) => o.id === v.id}
+                    size="small"
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Выберите сотрудника"
+                        fullWidth
+                        size="small"
+                        error={touched && employeeId == null}
+                        helperText={
+                          touched && employeeId == null
+                            ? "Выберите сотрудника"
+                            : ""
+                        }
+                      />
+                    )}
+                  />
+                )}
+              </Stack>
+            </MotionBox>
 
             {(isEdit || employeeId != null) && (
               <>
-                {/* Дата + режим смены */}
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={1.5}
-                  alignItems={{ sm: "flex-end" }}
-                >
-                  <Stack spacing={0.5} sx={{ flex: "1 1 60%" }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Дата *
+                {/* ── Дата смены ── */}
+                <MotionBox variants={cascadeItem}>
+                  <Stack spacing={1.5}>
+                    <Divider />
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                      Дата смены
                     </Typography>
-                    <DatePicker
-                      value={startDate ? dayjs(startDate) : null}
-                      format="DD.MM.YYYY"
-                      onChange={(val) => {
-                        const newDate = val ? val.format("YYYY-MM-DD") : "";
-                        setStartDate(newDate);
-                        if (selectedWeekdays.length === 0) {
-                          setEndDate(
-                            endDateOvernight
-                              ? dayjs(newDate)
-                                  .add(1, "day")
-                                  .format("YYYY-MM-DD")
-                              : newDate,
-                          );
-                        } else if (!endDate || endDate < newDate) {
-                          setEndDate(newDate);
-                        }
-                      }}
-                      slotProps={{ textField: { fullWidth: true, size: "small" } }}
-                    />
-                  </Stack>
-                  <Box sx={{ flex: "1 1 40%" }}>
-                    <ToggleButtonGroup
-                      exclusive
-                      value={workMode}
-                      onChange={(_, v) => {
-                        if (v) {
-                          setIsNightShift(v === "night");
-                          setManuallySetNight(true);
-                        }
-                      }}
-                      size="small"
-                      sx={{
-                        width: 1,
-                        bgcolor: (t) => subtleBg(t),
-                        borderRadius: "10px",
-                        p: "3px",
-                        border: "none",
-                        "& .MuiToggleButton-root": {
-                          flex: 1,
-                          border: "none",
-                          borderRadius: "7px",
-                          py: 0.75,
-                          transition: "background-color .15s ease, color .15s ease",
-                          bgcolor: "transparent",
-                          color: "text.disabled",
-                          boxShadow: "none",
-                          "&:hover": { bgcolor: (t) => subtleBg(t, true) },
-                          "&.Mui-selected": {
-                            bgcolor: "primary.main",
-                            color: "primary.contrastText",
-                            fontWeight: 600,
-                            "&:hover": { bgcolor: "primary.dark" },
-                          },
-                        },
-                      }}
+
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                      alignItems={{ sm: "flex-end" }}
                     >
-                      <ToggleButton value="day" aria-label="Дневной">
-                        <WbSunnyOutlined sx={{ fontSize: 20 }} />
-                      </ToggleButton>
-                      <ToggleButton value="night" aria-label="Ночной">
-                        <NightlightOutlined sx={{ fontSize: 20 }} />
-                      </ToggleButton>
-                    </ToggleButtonGroup>
-                  </Box>
-                </Stack>
-
-                {/* Дата окончания диапазона (только для массового создания) */}
-                {!isEdit && selectedWeekdays.length > 0 && (
-                  <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary">
-                      Дата окончания диапазона
-                    </Typography>
-                    <DatePicker
-                      value={endDate ? dayjs(endDate) : null}
-                      format="DD.MM.YYYY"
-                      onChange={(val) =>
-                        setEndDate(val ? val.format("YYYY-MM-DD") : "")
-                      }
-                      slotProps={{ textField: { fullWidth: true, size: "small" } }}
-                    />
-                  </Stack>
-                )}
-
-                {/* Рабочее время */}
-                <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
-                  <CardContent sx={{ p: 2 }}>
-                    <Stack spacing={2}>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ fontWeight: 600 }}
-                      >
-                        Рабочее время
-                      </Typography>
-
-                      <Stack direction="row" spacing={2}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography
-                            variant="caption"
-                            sx={{ mb: 0.5, display: "block", color: "text.secondary" }}
-                          >
-                            Начало
-                          </Typography>
-                          <TimePicker
-                            value={dayjs(`2000-01-01T${startTime}`)}
-                            onChange={(val) =>
-                              setStartTime(val ? val.format("HH:mm") : "")
+                      <Stack spacing={0.5} sx={{ flex: "1 1 60%" }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Дата *
+                        </Typography>
+                        <DatePicker
+                          value={startDate ? dayjs(startDate) : null}
+                          format="DD.MM.YYYY"
+                          onChange={(val) => {
+                            const newDate = val ? val.format("YYYY-MM-DD") : "";
+                            setStartDate(newDate);
+                            if (selectedWeekdays.length === 0) {
+                              setEndDate(
+                                endDateOvernight
+                                  ? dayjs(newDate)
+                                      .add(1, "day")
+                                      .format("YYYY-MM-DD")
+                                  : newDate,
+                              );
+                            } else if (!endDate || endDate < newDate) {
+                              setEndDate(newDate);
                             }
-                            ampm={false}
-                            minutesStep={15}
-                            slotProps={{ textField: { size: "small", fullWidth: true } }}
-                          />
-                        </Box>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography
-                            variant="caption"
-                            sx={{ mb: 0.5, display: "block", color: "text.secondary" }}
-                          >
-                            Конец
-                          </Typography>
-                          <TimePicker
-                            value={dayjs(`2000-01-01T${endTime}`)}
-                            onChange={(val) =>
-                              setEndTime(val ? val.format("HH:mm") : "")
-                            }
-                            ampm={false}
-                            minutesStep={15}
-                            slotProps={{ textField: { size: "small", fullWidth: true } }}
-                          />
-                        </Box>
-                      </Stack>
-
-                      {/* Смена заканчивается на следующий день */}
-                      <Box>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              size="small"
-                              checked={endDateOvernight}
-                              onChange={(e) => setEndDateOvernight(e.target.checked)}
-                            />
-                          }
-                          label={
-                            <Typography variant="body2">
-                              Смена заканчивается на следующий день
-                            </Typography>
-                          }
+                          }}
+                          slotProps={{ textField: { fullWidth: true, size: "small" } }}
                         />
-                        {endDateOvernight && (
-                          <Stack spacing={0.5} sx={{ mt: 1 }}>
-                            <Typography variant="caption" color="text.secondary">
-                              Дата окончания смены
-                            </Typography>
-                            <DatePicker
-                              value={endDate ? dayjs(endDate) : null}
-                              format="DD.MM.YYYY"
-                              onChange={(val) =>
-                                setEndDate(val ? val.format("YYYY-MM-DD") : "")
-                              }
-                              slotProps={{
-                                textField: { size: "small", fullWidth: true },
-                              }}
-                            />
-                          </Stack>
-                        )}
-                      </Box>
-
-                      {/* Обеденный перерыв */}
-                      {!hasLunch ? (
-                        <Button
-                          variant="outlined"
-                          startIcon={<RestaurantMenu />}
-                          onClick={() => setHasLunch(true)}
+                      </Stack>
+                      <Box sx={{ flex: "1 1 40%" }}>
+                        <ToggleButtonGroup
+                          exclusive
+                          value={workMode}
+                          onChange={(_, v) => {
+                            if (v) {
+                              setIsNightShift(v === "night");
+                              setManuallySetNight(true);
+                            }
+                          }}
                           size="small"
-                          sx={{ alignSelf: "flex-start" }}
+                          sx={{
+                            width: 1,
+                            bgcolor: (t) => subtleBg(t),
+                            borderRadius: "10px",
+                            p: "3px",
+                            border: "none",
+                            "& .MuiToggleButton-root": {
+                              flex: 1,
+                              border: "none",
+                              borderRadius: "7px",
+                              py: 0.75,
+                              transition: "background-color .15s ease, color .15s ease",
+                              bgcolor: "transparent",
+                              color: "text.disabled",
+                              boxShadow: "none",
+                              "&:hover": { bgcolor: (t) => subtleBg(t, true) },
+                              "&.Mui-selected": {
+                                bgcolor: "primary.main",
+                                color: "primary.contrastText",
+                                fontWeight: 600,
+                                "&:hover": { bgcolor: "primary.dark" },
+                              },
+                            },
+                          }}
                         >
-                          Добавить обед
-                        </Button>
-                      ) : (
-                        <Box>
-                          <Stack
-                            direction="row"
-                            alignItems="center"
-                            justifyContent="space-between"
-                            sx={{ mb: 1 }}
-                          >
-                            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                              Обеденный перерыв (ровно 1 час)
-                            </Typography>
-                            <Button
-                              size="small"
-                              startIcon={<Close />}
-                              onClick={() => setHasLunch(false)}
-                              color="error"
-                              sx={{ minWidth: "auto", px: 1 }}
-                            >
-                              Убрать
-                            </Button>
-                          </Stack>
-                          <Stack direction="row" spacing={2} alignItems="flex-end">
+                          <ToggleButton value="day" aria-label="Дневной">
+                            <WbSunnyOutlined sx={{ fontSize: 20 }} />
+                          </ToggleButton>
+                          <ToggleButton value="night" aria-label="Ночной">
+                            <NightlightOutlined sx={{ fontSize: 20 }} />
+                          </ToggleButton>
+                        </ToggleButtonGroup>
+                      </Box>
+                    </Stack>
+
+                    {/* Дата окончания диапазона (только для массового создания) */}
+                    {!isEdit && selectedWeekdays.length > 0 && (
+                      <Stack spacing={0.5}>
+                        <Typography variant="body2" color="text.secondary">
+                          Дата окончания диапазона
+                        </Typography>
+                        <DatePicker
+                          value={endDate ? dayjs(endDate) : null}
+                          format="DD.MM.YYYY"
+                          onChange={(val) =>
+                            setEndDate(val ? val.format("YYYY-MM-DD") : "")
+                          }
+                          slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                        />
+                      </Stack>
+                    )}
+                  </Stack>
+                </MotionBox>
+
+                {/* ── Рабочее время ── */}
+                <MotionBox variants={cascadeItem}>
+                  <Stack spacing={1.5}>
+                    <Divider />
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                      Рабочее время
+                    </Typography>
+
+                    <Card variant="outlined" sx={{ bgcolor: "background.paper" }}>
+                      <CardContent sx={{ p: 2 }}>
+                        <Stack spacing={2}>
+                          <Stack direction="row" spacing={2}>
                             <Box sx={{ flex: 1 }}>
                               <Typography
                                 variant="caption"
                                 sx={{ mb: 0.5, display: "block", color: "text.secondary" }}
                               >
-                                Начало обеда
+                                Начало
                               </Typography>
                               <TimePicker
-                                value={dayjs(`2000-01-01T${lunchStart}`)}
+                                value={dayjs(`2000-01-01T${startTime}`)}
                                 onChange={(val) =>
-                                  setLunchStart(val ? val.format("HH:mm") : "")
+                                  setStartTime(val ? val.format("HH:mm") : "")
                                 }
                                 ampm={false}
                                 minutesStep={15}
@@ -519,64 +656,188 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                                 variant="caption"
                                 sx={{ mb: 0.5, display: "block", color: "text.secondary" }}
                               >
-                                Конец обеда
+                                Конец
                               </Typography>
-                              <TextField value={lunchEnd} size="small" fullWidth disabled />
+                              <TimePicker
+                                value={dayjs(`2000-01-01T${endTime}`)}
+                                onChange={(val) =>
+                                  setEndTime(val ? val.format("HH:mm") : "")
+                                }
+                                ampm={false}
+                                minutesStep={15}
+                                slotProps={{ textField: { size: "small", fullWidth: true } }}
+                              />
                             </Box>
                           </Stack>
-                          <Alert severity="info" sx={{ mt: 1 }}>
-                            Обеденный перерыв: {lunchStart} - {lunchEnd}
-                          </Alert>
-                        </Box>
+
+                          {/* Смена заканчивается на следующий день */}
+                          <Box>
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  size="small"
+                                  checked={endDateOvernight}
+                                  onChange={(e) => setEndDateOvernight(e.target.checked)}
+                                />
+                              }
+                              label={
+                                <Typography variant="body2">
+                                  Смена заканчивается на следующий день
+                                </Typography>
+                              }
+                            />
+                            {endDateOvernight && (
+                              <Stack spacing={0.5} sx={{ mt: 1 }}>
+                                <Typography variant="caption" color="text.secondary">
+                                  Дата окончания смены
+                                </Typography>
+                                <DatePicker
+                                  value={endDate ? dayjs(endDate) : null}
+                                  format="DD.MM.YYYY"
+                                  onChange={(val) =>
+                                    setEndDate(val ? val.format("YYYY-MM-DD") : "")
+                                  }
+                                  slotProps={{
+                                    textField: { size: "small", fullWidth: true },
+                                  }}
+                                />
+                              </Stack>
+                            )}
+                          </Box>
+
+                          {/* Обеденный перерыв */}
+                          {!hasLunch ? (
+                            <Button
+                              variant="outlined"
+                              startIcon={<RestaurantMenu />}
+                              onClick={() => setHasLunch(true)}
+                              size="small"
+                              sx={{ alignSelf: "flex-start" }}
+                            >
+                              Добавить обед
+                            </Button>
+                          ) : (
+                            <Box>
+                              <Stack
+                                direction="row"
+                                alignItems="center"
+                                justifyContent="space-between"
+                                sx={{ mb: 1 }}
+                              >
+                                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                  Обеденный перерыв (ровно 1 час)
+                                </Typography>
+                                <Button
+                                  size="small"
+                                  startIcon={<Close />}
+                                  onClick={() => setHasLunch(false)}
+                                  color="error"
+                                  sx={{ minWidth: "auto", px: 1 }}
+                                >
+                                  Убрать
+                                </Button>
+                              </Stack>
+                              <Stack direction="row" spacing={2} alignItems="flex-end">
+                                <Box sx={{ flex: 1 }}>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ mb: 0.5, display: "block", color: "text.secondary" }}
+                                  >
+                                    Начало обеда
+                                  </Typography>
+                                  <TimePicker
+                                    value={dayjs(`2000-01-01T${lunchStart}`)}
+                                    onChange={(val) =>
+                                      setLunchStart(val ? val.format("HH:mm") : "")
+                                    }
+                                    ampm={false}
+                                    minutesStep={15}
+                                    slotProps={{ textField: { size: "small", fullWidth: true } }}
+                                  />
+                                </Box>
+                                <Box sx={{ flex: 1 }}>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ mb: 0.5, display: "block", color: "text.secondary" }}
+                                  >
+                                    Конец обеда
+                                  </Typography>
+                                  <TextField
+                                    value={lunchEnd}
+                                    size="small"
+                                    fullWidth
+                                    disabled
+                                    InputProps={{
+                                      startAdornment: (
+                                        <InputAdornment position="start">
+                                          <AccessTimeOutlined fontSize="small" color="disabled" />
+                                        </InputAdornment>
+                                      ),
+                                    }}
+                                  />
+                                </Box>
+                              </Stack>
+                              <Alert severity="info" sx={{ mt: 1 }}>
+                                Обеденный перерыв: {lunchStart} - {lunchEnd}
+                              </Alert>
+                            </Box>
+                          )}
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  </Stack>
+                </MotionBox>
+
+                {/* ── Повторение (только при создании) ── */}
+                {!isEdit && (
+                  <MotionBox variants={cascadeItem}>
+                    <Stack spacing={1.5}>
+                      <Divider />
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                        Повторение
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Рабочие дни недели (не обязательно)
+                      </Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {WEEKDAYS.map((day) => (
+                          <Chip
+                            key={day.value}
+                            label={day.label}
+                            onClick={() => handleWeekdayToggle(day.value)}
+                            color={
+                              selectedWeekdays.includes(day.value) ? "primary" : "default"
+                            }
+                            variant={
+                              selectedWeekdays.includes(day.value) ? "filled" : "outlined"
+                            }
+                            sx={{
+                              fontWeight: selectedWeekdays.includes(day.value) ? 600 : 400,
+                              cursor: "pointer",
+                            }}
+                          />
+                        ))}
+                      </Stack>
+                      {selectedWeekdays.length > 0 && (
+                        <Alert severity="warning">
+                          Будут созданы смены на все{" "}
+                          {selectedWeekdays
+                            .map((d) => WEEKDAYS.find((w) => w.value === d)?.label)
+                            .join(", ")}{" "}
+                          с {dayjs(startDate).format("DD.MM.YYYY")} по{" "}
+                          {dayjs(endDate).format("DD.MM.YYYY")}
+                        </Alert>
                       )}
                     </Stack>
-                  </CardContent>
-                </Card>
-
-                {/* Дни недели — массовое создание (только при создании) */}
-                {!isEdit && (
-                  <Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Рабочие дни недели (не обязательно)
-                    </Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      {WEEKDAYS.map((day) => (
-                        <Chip
-                          key={day.value}
-                          label={day.label}
-                          onClick={() => handleWeekdayToggle(day.value)}
-                          color={
-                            selectedWeekdays.includes(day.value) ? "primary" : "default"
-                          }
-                          variant={
-                            selectedWeekdays.includes(day.value) ? "filled" : "outlined"
-                          }
-                          sx={{
-                            fontWeight: selectedWeekdays.includes(day.value) ? 600 : 400,
-                            cursor: "pointer",
-                          }}
-                        />
-                      ))}
-                    </Stack>
-                    {selectedWeekdays.length > 0 && (
-                      <Alert severity="warning" sx={{ mt: 1.5 }}>
-                        Будут созданы смены на все{" "}
-                        {selectedWeekdays
-                          .map((d) => WEEKDAYS.find((w) => w.value === d)?.label)
-                          .join(", ")}{" "}
-                        с {dayjs(startDate).format("DD.MM.YYYY")} по{" "}
-                        {dayjs(endDate).format("DD.MM.YYYY")}
-                      </Alert>
-                    )}
-                  </Box>
+                  </MotionBox>
                 )}
               </>
             )}
-          </Stack>
+          </MotionStack>
 
           {/* Кнопки */}
           <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 3 }}>
-            <Button onClick={onClose} color="inherit" disabled={saving}>
+            <Button onClick={handleClose} color="inherit" disabled={saving}>
               Отмена
             </Button>
             <Button
