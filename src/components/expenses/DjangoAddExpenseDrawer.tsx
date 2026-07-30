@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   CircularProgress,
+  Collapse,
   Divider,
   Drawer,
   IconButton,
@@ -164,8 +165,17 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   // ── Черновик формы ────────────────────────────────────────────────────────────
   const [draftRestored, setDraftRestored] = React.useState(false);
 
+  // ── Поэтапное раскрытие ───────────────────────────────────────────────────────
+  // Сначала форма короткая: дата (уже сегодняшняя), название и категория. Суммы,
+  // комментарий и фото появляются, только когда эта «шапка» заполнена — иначе
+  // дровер открывается простынёй полей.
+  const basicsFilled = Boolean(expenseDate?.isValid() && name.trim() && categoryId);
+
   // ── Reset / восстановление черновика на открытии ─────────────────────────────
   const prefillCategoryAppliedRef = React.useRef(false);
+  // Последнее название, подставленное категорией: своё, набранное руками, не
+  // перетираем при смене категории.
+  const autoNameRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (open) {
       const draft = readFormDraft<ExpenseDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
@@ -207,6 +217,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       setPhotoPreview(null);
       setError(null);
       setBusy(false);
+      autoNameRef.current = null;
     }
     // Read `prefill` from closure at open time — don't reset the form mid-edit
     // if the parent re-creates the prefill object on every render.
@@ -261,6 +272,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     setEmployeeValue(emp);
     setEmployeeOptions(emp ? [emp] : []);
     setDraftRestored(false);
+    autoNameRef.current = null;
   };
 
   // Prefill the category once the categories list has loaded (async).
@@ -300,6 +312,24 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       controller.abort();
     };
   }, [employeeInput, needsEmployee, organizationId]);
+
+  // ── Смена категории ───────────────────────────────────────────────────────────
+  // Название расхода почти всегда повторяет категорию («Аренда», «Коммунальные»),
+  // поэтому пустое поле заполняем за пользователя. Своё название не трогаем —
+  // только то, что подставили сами (чтобы смена категории его освежала).
+  const handleCategoryChange = (raw: string) => {
+    const nextId = raw === "" ? "" : Number(raw);
+    setCategoryId(nextId);
+    setEmployeeValue(null);
+    setEmployeeInput("");
+
+    const category = nextId === "" ? null : activeCategories.find((c) => c.id === nextId);
+    if (category && (!name.trim() || name === autoNameRef.current)) {
+      setName(category.name);
+      autoNameRef.current = category.name;
+      setError(null);
+    }
+  };
 
   // ── Photo pick ────────────────────────────────────────────────────────────────
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -420,49 +450,8 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
           "&::-webkit-scrollbar": { display: "none" },
         }}
       >
+        {/* ── Шаг 1: дата → название → категория ── */}
         <Stack spacing={2.5}>
-          {/* Фото */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Фото
-            </Typography>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              style={{ display: "none" }}
-              onChange={handlePhotoChange}
-            />
-            {photoPreview ? (
-              <Box sx={{ position: "relative", width: "100%", height: 160, borderRadius: "10px", overflow: "hidden", border: "1px solid", borderColor: "divider" }}>
-                <Box
-                  component="img"
-                  src={photoPreview}
-                  alt="preview"
-                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-                <IconButton
-                  size="small"
-                  onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
-                  sx={{ position: "absolute", top: 6, right: 6, bgcolor: "background.paper", "&:hover": { bgcolor: "action.hover" } }}
-                >
-                  <CloseOutlined fontSize="small" />
-                </IconButton>
-              </Box>
-            ) : (
-              <Button
-                variant="outlined"
-                startIcon={<ImageOutlined />}
-                onClick={() => photoInputRef.current?.click()}
-                disabled={busy}
-                fullWidth
-                sx={{ height: 64, borderStyle: "dashed" }}
-              >
-                Прикрепить фото
-              </Button>
-            )}
-          </Stack>
-
           {/* Дата */}
           <Stack spacing={0.5}>
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
@@ -511,11 +500,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               size="small"
               fullWidth
               value={categoryId}
-              onChange={(e) => {
-                setCategoryId(e.target.value === "" ? "" : Number(e.target.value));
-                setEmployeeValue(null);
-                setEmployeeInput("");
-              }}
+              onChange={(e) => handleCategoryChange(e.target.value)}
               SelectProps={{ displayEmpty: true }}
               disabled={busy || categoriesQuery.isLoading}
               {...form.field("categoryId")}
@@ -562,134 +547,191 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               </Alert>
             )}
 
-          {/* Сотрудник — только для advance/salary */}
-          {needsEmployee && (
+          {!basicsFilled && (
+            <Typography variant="caption" color="text.secondary">
+              Заполните название и категорию — ниже появятся суммы, комментарий и фото.
+            </Typography>
+          )}
+        </Stack>
+
+        {/* ── Шаг 2: появляется, когда шапка заполнена ── */}
+        <Collapse in={basicsFilled} timeout="auto">
+          <Stack spacing={2.5} sx={{ pt: 2.5 }}>
+            {/* Сотрудник — только для advance/salary */}
+            {needsEmployee && (
+              <Stack spacing={0.5}>
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  Сотрудник *
+                </Typography>
+                <Autocomplete
+                  options={
+                    employeeValue && !employeeOptions.some((o) => o.id === employeeValue.id)
+                      ? [employeeValue, ...employeeOptions]
+                      : employeeOptions
+                  }
+                  loading={empLoading}
+                  value={employeeValue}
+                  inputValue={employeeInput}
+                  getOptionLabel={(o) => o.fullName}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  onChange={(_, v) => setEmployeeValue(v)}
+                  onInputChange={(_, v) => setEmployeeInput(v)}
+                  disabled={busy}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      size="small"
+                      placeholder="Введите имя сотрудника..."
+                      {...form.field("employee")}
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            {empLoading && <CircularProgress size={14} />}
+                            {params.InputProps.endAdornment}
+                          </>
+                        ),
+                      }}
+                    />
+                  )}
+                  noOptionsText="Сотрудники не найдены"
+                  loadingText="Поиск..."
+                />
+              </Stack>
+            )}
+
+            {/* Суммы наличные + карта */}
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2.5,
+                bgcolor: alpha(theme.palette.primary.main, 0.04),
+                borderColor: "divider",
+                borderRadius: "14px",
+              }}
+            >
+              <Stack spacing={2}>
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    <AccountBalanceWalletOutlined sx={{ fontSize: 16, verticalAlign: "middle", mr: 0.5 }} />
+                    Наличные
+                  </Typography>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    value={cashAmount}
+                    onChange={(e) => { setError(null); setCashAmount(e.target.value); }}
+                    inputProps={{ min: 0, step: "any" }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+                    }}
+                    disabled={busy}
+                    placeholder="0.00"
+                    {...form.field("cashAmount")}
+                  />
+                </Stack>
+
+                <Stack spacing={0.5}>
+                  <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                    <CreditCardOutlined sx={{ fontSize: 16, verticalAlign: "middle", mr: 0.5 }} />
+                    Карта
+                  </Typography>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    value={cardAmount}
+                    onChange={(e) => { setError(null); setCardAmount(e.target.value); }}
+                    inputProps={{ min: 0, step: "any" }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+                    }}
+                    disabled={busy}
+                    placeholder="0.00"
+                  />
+                </Stack>
+
+                {total > 0 && (
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" color="text.secondary">
+                      ИТОГО
+                    </Typography>
+                    <Typography variant="subtitle1" fontWeight={700} color="primary.onSurface">
+                      {formatKGS(total)}
+                    </Typography>
+                  </Stack>
+                )}
+              </Stack>
+            </Paper>
+
+            {/* Комментарий */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Сотрудник *
+                Комментарий
               </Typography>
-              <Autocomplete
-                options={
-                  employeeValue && !employeeOptions.some((o) => o.id === employeeValue.id)
-                    ? [employeeValue, ...employeeOptions]
-                    : employeeOptions
-                }
-                loading={empLoading}
-                value={employeeValue}
-                inputValue={employeeInput}
-                getOptionLabel={(o) => o.fullName}
-                isOptionEqualToValue={(a, b) => a.id === b.id}
-                onChange={(_, v) => setEmployeeValue(v)}
-                onInputChange={(_, v) => setEmployeeInput(v)}
+              <TextField
+                size="small"
+                fullWidth
+                multiline
+                minRows={3}
+                placeholder="Необязательный комментарий"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
                 disabled={busy}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    size="small"
-                    placeholder="Введите имя сотрудника..."
-                    {...form.field("employee")}
-                    InputProps={{
-                      ...params.InputProps,
-                      endAdornment: (
-                        <>
-                          {empLoading && <CircularProgress size={14} />}
-                          {params.InputProps.endAdornment}
-                        </>
-                      ),
-                    }}
-                  />
-                )}
-                noOptionsText="Сотрудники не найдены"
-                loadingText="Поиск..."
+                inputProps={{ maxLength: 1000 }}
               />
             </Stack>
-          )}
 
-          {/* Суммы наличные + карта */}
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2.5,
-              bgcolor: alpha(theme.palette.primary.main, 0.04),
-              borderColor: "divider",
-              borderRadius: "14px",
-            }}
-          >
-            <Stack spacing={2}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  <AccountBalanceWalletOutlined sx={{ fontSize: 16, verticalAlign: "middle", mr: 0.5 }} />
-                  Наличные
-                </Typography>
-                <TextField
-                  size="small"
-                  fullWidth
-                  type="number"
-                  value={cashAmount}
-                  onChange={(e) => { setError(null); setCashAmount(e.target.value); }}
-                  inputProps={{ min: 0, step: "any" }}
-                  InputProps={{
-                    endAdornment: <InputAdornment position="end">сом</InputAdornment>,
-                  }}
+            {/* Фото — последним: чек прикладывают в конце */}
+            <Stack spacing={0.5}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                Фото
+              </Typography>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                style={{ display: "none" }}
+                onChange={handlePhotoChange}
+              />
+              {photoPreview ? (
+                <Box sx={{ position: "relative", width: "100%", height: 160, borderRadius: "10px", overflow: "hidden", border: "1px solid", borderColor: "divider" }}>
+                  <Box
+                    component="img"
+                    src={photoPreview}
+                    alt="preview"
+                    sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                  <IconButton
+                    size="small"
+                    onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                    sx={{ position: "absolute", top: 6, right: 6, bgcolor: "background.paper", "&:hover": { bgcolor: "action.hover" } }}
+                  >
+                    <CloseOutlined fontSize="small" />
+                  </IconButton>
+                </Box>
+              ) : (
+                <Button
+                  variant="outlined"
+                  startIcon={<ImageOutlined />}
+                  onClick={() => photoInputRef.current?.click()}
                   disabled={busy}
-                  placeholder="0.00"
-                  {...form.field("cashAmount")}
-                />
-              </Stack>
-
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  <CreditCardOutlined sx={{ fontSize: 16, verticalAlign: "middle", mr: 0.5 }} />
-                  Карта
-                </Typography>
-                <TextField
-                  size="small"
                   fullWidth
-                  type="number"
-                  value={cardAmount}
-                  onChange={(e) => { setError(null); setCardAmount(e.target.value); }}
-                  inputProps={{ min: 0, step: "any" }}
-                  InputProps={{
-                    endAdornment: <InputAdornment position="end">сом</InputAdornment>,
-                  }}
-                  disabled={busy}
-                  placeholder="0.00"
-                />
-              </Stack>
-
-              {total > 0 && (
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2" color="text.secondary">
-                    ИТОГО
-                  </Typography>
-                  <Typography variant="subtitle1" fontWeight={700} color="primary.onSurface">
-                    {formatKGS(total)}
-                  </Typography>
-                </Stack>
+                  sx={{ height: 64, borderStyle: "dashed" }}
+                >
+                  Прикрепить фото
+                </Button>
               )}
             </Stack>
-          </Paper>
-
-          {/* Комментарий */}
-          <Stack spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" fontWeight={600}>
-              Комментарий
-            </Typography>
-            <TextField
-              size="small"
-              fullWidth
-              multiline
-              minRows={3}
-              placeholder="Необязательный комментарий"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={busy}
-              inputProps={{ maxLength: 1000 }}
-            />
           </Stack>
+        </Collapse>
 
-          {error && <Alert severity="error">{error}</Alert>}
-        </Stack>
+        {error && (
+          <Alert severity="error" sx={{ mt: 2.5 }}>
+            {error}
+          </Alert>
+        )}
       </Box>
 
       {/* Фиксированный футер */}
