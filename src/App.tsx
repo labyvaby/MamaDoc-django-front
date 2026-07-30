@@ -45,6 +45,10 @@ import { RequireAuth } from "./components/auth/RequireAuth";
 import { ProtectedRoute } from "./components/rbac/ProtectedRoute";
 import { RequirePermission } from "./components/rbac/RequirePermission";
 import { RequireModule } from "./components/rbac/RequireModule";
+import {
+  PAGE_PERMISSIONS,
+  SETTINGS_TAB_PERMISSIONS,
+} from "./config/accessPermissions";
 import { CallNotification } from "./components/CallNotification";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
@@ -581,18 +585,26 @@ function App() {
                         <Route
                           path="patients"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <PatientsPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission={PAGE_PERMISSIONS.patients}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <PatientsPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <PatientsPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            )
                           }
                         />
                         <Route
                           path="expenses"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={["finance.view", "finance.expense.view"]}>
+                              <RequirePermission permission={PAGE_PERMISSIONS.expenses}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoExpensesPage />
                                 </Suspense>
@@ -609,28 +621,44 @@ function App() {
                         <Route
                           path="employees"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <EmployeesPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission={PAGE_PERMISSIONS.employees}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <EmployeesPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <EmployeesPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            )
                           }
                         />
                         <Route
                           path="services"
                           element={
-                            <ProtectedRoute deniedRoles={[]}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <ServicesPage />
-                              </Suspense>
-                            </ProtectedRoute>
+                            IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission={PAGE_PERMISSIONS.services}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <ServicesPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <ProtectedRoute deniedRoles={[]}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <ServicesPage />
+                                </Suspense>
+                              </ProtectedRoute>
+                            )
                           }
                         />
                         <Route
                           path="products"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={["warehouse.view", "warehouse.sales.view"]}>
+                              <RequirePermission permission={PAGE_PERMISSIONS.products}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoProductsPage />
                                 </Suspense>
@@ -665,7 +693,7 @@ function App() {
                           path="warehouses"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="warehouse.view">
+                              <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoWarehousesPage />
                                 </Suspense>
@@ -683,7 +711,7 @@ function App() {
                           path="schedule"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="schedule.view">
+                              <RequirePermission permission={PAGE_PERMISSIONS.schedule}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoSchedulePage />
                                 </Suspense>
@@ -701,7 +729,7 @@ function App() {
                           path="doctor"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="appointments.view">
+                              <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <AppointmentsPage scope="me" />
                                 </Suspense>
@@ -720,7 +748,7 @@ function App() {
                         <Route
                           path="nurse"
                           element={
-                            <RequirePermission permission="appointments.view">
+                            <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="nurse" />
                               </Suspense>
@@ -731,7 +759,7 @@ function App() {
                           path="work-shifts"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="attendance.view">
+                              <RequirePermission permission={PAGE_PERMISSIONS.attendance}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoWorkShiftsPage />
                                 </Suspense>
@@ -759,7 +787,7 @@ function App() {
                           path="sales"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={["warehouse.sales.view", "warehouse.view"]}>
+                              <RequirePermission permission={PAGE_PERMISSIONS.sales}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoSalesPage />
                                 </Suspense>
@@ -777,7 +805,7 @@ function App() {
                           path="cashbox"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="finance.view">
+                              <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoCashboxPage />
                                 </Suspense>
@@ -795,7 +823,7 @@ function App() {
                           path="reports"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="reports.view">
+                              <RequirePermission permission={PAGE_PERMISSIONS.reports}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoReportsPage />
                                 </Suspense>
@@ -815,9 +843,11 @@ function App() {
                           path="salary-reports"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <Suspense fallback={<LinearProgress />}>
-                                <DjangoSalaryReportsPage />
-                              </Suspense>
+                              <RequirePermission permission={PAGE_PERMISSIONS.payroll}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <DjangoSalaryReportsPage />
+                                </Suspense>
+                              </RequirePermission>
                             ) : (
                               <LegacyRouteGuard title="Отчет по ЗП в разработке">
                                 <ProtectedRoute deniedRoles={[]}>
@@ -832,7 +862,7 @@ function App() {
                         <Route
                           path="all-appointments"
                           element={
-                            <RequirePermission permission="appointments.view">
+                            <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllAppointmentsPage />
                               </Suspense>
@@ -842,7 +872,7 @@ function App() {
                         <Route
                           path="all-procedures"
                           element={
-                            <RequirePermission permission="appointments.view">
+                            <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllProceduresPage />
                               </Suspense>
@@ -854,7 +884,7 @@ function App() {
                           path="settings/skud"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="attendance.manage">
+                              <RequirePermission permission={PAGE_PERMISSIONS.attendanceSettings}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoSkudSettingsPage />
                                 </Suspense>
@@ -888,7 +918,7 @@ function App() {
                           path="settings/notifications"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission="notifications.manage">
+                              <RequirePermission permission={PAGE_PERMISSIONS.notifications}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <DjangoNotificationSettingsPage />
                                 </Suspense>
@@ -907,7 +937,7 @@ function App() {
                         <Route
                           path="admin/load"
                           element={
-                            <RequirePermission permission="reports.view">
+                            <RequirePermission permission={PAGE_PERMISSIONS.reports}>
                               <Suspense fallback={<LinearProgress />}>
                                 <LoadAnalyticsPage />
                               </Suspense>
@@ -919,7 +949,7 @@ function App() {
                             <Route
                               path="appointments"
                               element={
-                                <RequirePermission permission="appointments.view">
+                                <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <AppointmentsPage />
                                   </Suspense>
@@ -937,7 +967,7 @@ function App() {
                             <Route
                               path="settings/organization"
                               element={
-                                <RequirePermission permission="organization.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.organization}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <OrganizationSettingsPage />
                                   </Suspense>
@@ -947,7 +977,7 @@ function App() {
                             <Route
                               path="settings/branches"
                               element={
-                                <RequirePermission permission="branches.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.branches}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BranchesSettingsPage />
                                   </Suspense>
@@ -957,7 +987,7 @@ function App() {
                             <Route
                               path="settings/roles"
                               element={
-                                <RequirePermission permission="rbac.roles.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.roles}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <RolesSettingsPage />
                                   </Suspense>
@@ -967,7 +997,7 @@ function App() {
                             <Route
                               path="settings/memberships"
                               element={
-                                <RequirePermission permission="rbac.memberships.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.memberships}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <MembershipsSettingsPage />
                                   </Suspense>
@@ -977,7 +1007,7 @@ function App() {
                             <Route
                               path="settings/specializations"
                               element={
-                                <RequirePermission permission="staff.specializations.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.specializations}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <SpecializationsSettingsPage />
                                   </Suspense>
@@ -987,7 +1017,7 @@ function App() {
                             <Route
                               path="settings/banks"
                               element={
-                                <RequirePermission permission="staff.private.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.banks}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BanksSettingsPage />
                                   </Suspense>
@@ -997,7 +1027,7 @@ function App() {
                             <Route
                               path="settings/insurers"
                               element={
-                                <RequirePermission permission="finance.view">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.insurers}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <InsurersSettingsPage />
                                   </Suspense>
@@ -1007,7 +1037,7 @@ function App() {
                             <Route
                               path="settings/expense-categories"
                               element={
-                                <RequirePermission permission="finance.expense.manage">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.expenseCategories}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ExpenseCategoriesSettingsPage />
                                   </Suspense>
@@ -1017,7 +1047,7 @@ function App() {
                             <Route
                               path="settings/tasks"
                               element={
-                                <RequirePermission permission="tasks.manage">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.tasks}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <TasksSettingsPage />
                                   </Suspense>
@@ -1027,7 +1057,7 @@ function App() {
                             <Route
                               path="reviews"
                               element={
-                                <RequirePermission permission={["reviews.view", "reviews.manage"]}>
+                                <RequirePermission permission={PAGE_PERMISSIONS.reviews}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <ReviewsPage />
                                   </Suspense>
@@ -1037,7 +1067,7 @@ function App() {
                             <Route
                               path="bookings"
                               element={
-                                <RequirePermission permission={["bookings.view", "bookings.manage"]}>
+                                <RequirePermission permission={PAGE_PERMISSIONS.bookings}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BookingsPage />
                                   </Suspense>
@@ -1047,7 +1077,7 @@ function App() {
                             <Route
                               path="tasks"
                               element={
-                                <RequirePermission permission="tasks.list">
+                                <RequirePermission permission={PAGE_PERMISSIONS.tasks}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <TasksPage />
                                   </Suspense>
@@ -1057,7 +1087,7 @@ function App() {
                             <Route
                               path="vaccinations"
                               element={
-                                <RequirePermission permission="vaccinations.view">
+                                <RequirePermission permission={PAGE_PERMISSIONS.vaccinations}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <VaccinationsPage />
                                   </Suspense>
@@ -1067,7 +1097,7 @@ function App() {
                             <Route
                               path="achievements"
                               element={
-                                <RequirePermission permission="achievements.view">
+                                <RequirePermission permission={PAGE_PERMISSIONS.achievements}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <AchievementsPage />
                                   </Suspense>
@@ -1111,7 +1141,7 @@ function App() {
                             <Route
                               path="settings/announcements"
                               element={
-                                <RequirePermission permission={["announcements.view", "announcements.manage"]}>
+                                <RequirePermission permission={PAGE_PERMISSIONS.announcements}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <AnnouncementsSettingsPage />
                                   </Suspense>
@@ -1151,7 +1181,7 @@ function App() {
                             <Route
                               path="settings/diagnoses"
                               element={
-                                <RequirePermission permission="medical.diagnoses.manage">
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.diagnoses}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <DiagnosesSettingsPage />
                                   </Suspense>
@@ -1182,9 +1212,17 @@ function App() {
                         path="print/conclusion/:id"
                         element={
                           <RequireAuth>
-                            <Suspense fallback={<LinearProgress />}>
-                              <ConclusionPrintPage />
-                            </Suspense>
+                            {IS_DJANGO_BACKEND ? (
+                              <RequirePermission permission={PAGE_PERMISSIONS.conclusionPrint}>
+                                <Suspense fallback={<LinearProgress />}>
+                                  <ConclusionPrintPage />
+                                </Suspense>
+                              </RequirePermission>
+                            ) : (
+                              <Suspense fallback={<LinearProgress />}>
+                                <ConclusionPrintPage />
+                              </Suspense>
+                            )}
                           </RequireAuth>
                         }
                       />

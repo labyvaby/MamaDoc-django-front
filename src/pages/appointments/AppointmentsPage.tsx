@@ -262,27 +262,23 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     activeOrganization,
     activeEmployee,
     isSuperAdmin,
-    isAdmin,
-    isRegistrator,
-    hasRole,
   } = usePermissions();
 
-  // Привилегированная роль — те, кто работает с созданием приёмов напрямую
-  // (админ / регистратура / управляющий). Они видят приёмы ВСЕХ клиницистов
-  // нужного типа: в кабинете врача — всех врачей, в процедурном — всех медсестёр.
-  // Непривилегированный сотрудник (рабочая роль) видит только СВОИ приёмы,
-  // независимо от его клинической роли (clinical_role ≠ RBAC-роль).
-  const isPrivileged = isAdmin() || isRegistrator() || hasRole("manager");
+  // Доступ к общему рабочему списку определяется правом управления приёмами,
+  // а не названием роли. Поэтому пользовательская роль с appointments.update
+  // работает так же, как стандартные управляющий/регистратор.
+  const canManageAppointments =
+    can("appointments.update") || can("appointments.manage");
 
   // Кабинет врача: непривилегированный сотрудник видит только свои приёмы ("me");
   // привилегированная роль — приёмы всех врачей (фильтр clinicalRole=doctor на бэке).
-  const doctorSeesOwnOnly = isDoctorCabinet && !isPrivileged;
-  const doctorSeesAll = isDoctorCabinet && isPrivileged;
+  const doctorSeesOwnOnly = isDoctorCabinet && !canManageAppointments;
+  const doctorSeesAll = isDoctorCabinet && canManageAppointments;
 
   // Процедурный кабинет: непривилегированный сотрудник видит только свои процедуры;
   // привилегированная роль — приёмы всех медсестёр (фильтр clinicalRole=nurse).
-  const nurseSeesOwnOnly = isNurseCabinet && !isPrivileged;
-  const nurseSeesAll = isNurseCabinet && isPrivileged;
+  const nurseSeesOwnOnly = isNurseCabinet && !canManageAppointments;
+  const nurseSeesAll = isNurseCabinet && canManageAppointments;
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));

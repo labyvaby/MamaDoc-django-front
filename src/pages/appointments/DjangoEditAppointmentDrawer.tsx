@@ -304,14 +304,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     activeMembership,
     activeEmployee,
     isNurse,
-    isAdmin,
   } = usePermissions();
   const orgId = useApiOrgId();
 
-  // Процедурный кабинет: настоящая медсестра (не админ) не может переназначить
-  // исполнителя — поле фиксируется её employee id (как в форме создания).
+  // Процедурный кабинет: медсестра без права управления приёмами не может
+  // переназначить исполнителя — поле фиксируется её employee id.
   const nurseEmployeeId =
-    isNurse() && !isAdmin() ? activeEmployee?.id ?? null : null;
+    isNurse() && !canUpdate ? activeEmployee?.id ?? null : null;
   const isWorkplaceNurse = nurseEmployeeId !== null;
 
   const data = useDjangoAppointmentData(

@@ -242,7 +242,6 @@ const DjangoSalaryReportsPage: React.FC = () => {
     activeBranch,
     memberships,
     activeEmployee,
-    isRegistrator: isRegistratorRole,
     loading: permLoading,
   } = usePermissions();
   
@@ -498,7 +497,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
           }}
         >
           {/* Summary Cards Row */}
-          {!isRegistratorRole() && (
+          {(canView || canOwnView) && (
             <Box sx={{ my: 2 }}>
               <AppointmentsSummaryCards
                 dateFrom={selectedMonth}

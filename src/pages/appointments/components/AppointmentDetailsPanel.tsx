@@ -164,7 +164,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // живут отмена/удаление, паттерн знакомый).
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const orgId = useApiOrgId();
-  const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
+  const { isDoctor, isNurse, activeEmployee } = usePermissions();
   // Клик по товару открывает карточку из справочника — только при праве на него.
   const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
 
@@ -273,8 +273,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // Врач — исполнитель? Есть невыполненные услуги для него?
   const isDoctorRole = isDoctor();
   const isNurseRole = isNurse();
-  const isAdminRole = isAdmin();
-  const isRegistratorRole = isRegistrator();
   const isNonDoctor = !isDoctorRole && !isNurseRole;
 
   // Ниже покажется PaymentInfoBlock со своим статусом крупно (см. paymentBlock) —
@@ -517,7 +515,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  if (canUpdate && (isAdminRole || isRegistratorRole)) {
+  if (canUpdate) {
     actions.push({
       key: "edit",
       label: t("details.edit"),
@@ -574,7 +572,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
    * в удаление записи.
    */
   const dangerActions: HeaderAction[] = [];
-  if (canUpdate && onCancelAppt && !isCancelled && (isAdminRole || isRegistratorRole)) {
+  if (canUpdate && onCancelAppt && !isCancelled) {
     dangerActions.push({
       key: "cancel",
       label: t("details.cancelRecord"),
@@ -585,7 +583,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       },
     });
   }
-  if (canDelete && onDelete && (isAdminRole || isRegistratorRole)) {
+  if (canDelete && onDelete) {
     dangerActions.push({
       key: "delete",
       label: t("details.delete"),

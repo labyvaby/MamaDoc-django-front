@@ -194,23 +194,23 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const theme = useTheme();
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
+  const canManageAppointments = useCan("appointments.update");
   const {
     activeBranch,
     activeOrganization,
     activeMembership,
     activeEmployee,
     isNurse,
-    isAdmin,
   } = usePermissions();
   // Орг-скоуп для запросов: суперпользователю/мультиорг-аккаунту передаём явно,
   // иначе пикеры и проверка дублей смотрят не в ту организацию.
   const orgId = useApiOrgId();
 
-  // Процедурный кабинет: настоящая медсестра (не админ) создаёт процедуры
-  // только на себя — поле исполнителя фиксируется её employee id. Без
+  // Процедурный кабинет: медсестра без права управления приёмами создаёт
+  // процедуры только на себя — поле исполнителя фиксируется её employee id. Без
   // известного employee id поле не блокируем, иначе форма станет незаполнимой.
   const nurseEmployeeId =
-    isNurse() && !isAdmin() ? activeEmployee?.id ?? null : null;
+    isNurse() && !canManageAppointments ? activeEmployee?.id ?? null : null;
   const isWorkplaceNurse = nurseEmployeeId !== null;
 
   const data = useDjangoAppointmentData(

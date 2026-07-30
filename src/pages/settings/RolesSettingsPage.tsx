@@ -473,6 +473,9 @@ function RoleFormDrawer({
         };
         saved = await updateRole(initial!.id, payload);
       }
+      // The current user may belong to the edited role. Refresh the shared
+      // /auth/me/ cache immediately so revoked menu items/buttons disappear.
+      window.dispatchEvent(new Event("mamadoc:rbac-changed"));
       onSaved(saved);
       onClose();
     } catch (err) {

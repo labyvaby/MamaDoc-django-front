@@ -262,6 +262,11 @@ export async function apiRequest<T>(
   if (response.status === 401) {
     window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
   }
+  // A role may have been changed while this tab was open. Refresh the cached
+  // access matrix after the first rejected action so stale buttons disappear.
+  if (response.status === 403) {
+    window.dispatchEvent(new Event("mamadoc:api-forbidden"));
+  }
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -311,6 +316,9 @@ export async function apiRequestWithHeaders<T>(
 
   if (response.status === 401) {
     window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
+  }
+  if (response.status === 403) {
+    window.dispatchEvent(new Event("mamadoc:api-forbidden"));
   }
 
   const payload = await response.json().catch(() => null);

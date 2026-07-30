@@ -20,6 +20,7 @@ import { ColorModeContext } from "../../contexts/color-mode";
 import { CanAccess } from "../rbac/CanAccess";
 import { Link as RouterLink } from "react-router";
 import { useCan } from "../../hooks/useCan";
+import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 
 type SettingsModalProps = {
   open: boolean;
@@ -32,7 +33,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const { mode, setScheme } = React.useContext(ColorModeContext);
   const appVersion = useAppVersion();
-  const canManageSkud = useCan("attendance.manage");
+  const canManageSkud = useCan(PAGE_PERMISSIONS.attendanceSettings);
+  const canManageNotifications = useCan(PAGE_PERMISSIONS.notifications);
 
   const handleLogout = async () => {
     try {
@@ -78,18 +80,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </CanAccess>
           )}
 
-          <CanAccess roles={['superadmin']}>
-            <Button
-              variant="outlined"
-              fullWidth
-              component={RouterLink}
-              to="/settings/notifications"
-              onClick={onClose}
-              startIcon={<NotificationsOutlined />}
-            >
-              Настройка уведомлений
-            </Button>
-          </CanAccess>
+          {IS_DJANGO_BACKEND ? (
+            canManageNotifications ? (
+              <Button
+                variant="outlined"
+                fullWidth
+                component={RouterLink}
+                to="/settings/notifications"
+                onClick={onClose}
+                startIcon={<NotificationsOutlined />}
+              >
+                Настройка уведомлений
+              </Button>
+            ) : null
+          ) : (
+            <CanAccess roles={['superadmin']}>
+              <Button
+                variant="outlined"
+                fullWidth
+                component={RouterLink}
+                to="/settings/notifications"
+                onClick={onClose}
+                startIcon={<NotificationsOutlined />}
+              >
+                Настройка уведомлений
+              </Button>
+            </CanAccess>
+          )}
 
           <Button
             variant="outlined"

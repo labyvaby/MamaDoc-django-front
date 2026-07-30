@@ -30,6 +30,7 @@ import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
+import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { useModuleGate } from "../../hooks/useModuleGate";
@@ -147,6 +148,12 @@ const TAB_DEFS: TabDef[] = [
     key: "announcements",
     to: "/settings/announcements",
     icon: <CampaignOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "notifications",
+    to: "/settings/notifications",
+    icon: <NotificationsOutlined fontSize="small" />,
     group: "operations",
   },
 ];
