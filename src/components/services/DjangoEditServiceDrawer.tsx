@@ -41,6 +41,7 @@ import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
+import { useT } from "../../i18n/VerticalProvider";
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -64,6 +65,7 @@ type Props = {
 };
 
 const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpdated }) => {
+  const { t } = useT("services");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const { activeMembership } = usePermissions();
@@ -193,11 +195,11 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     const priceNum = Number(price);
     const durNum = Number(durationMinutes);
     if (!name.trim() || !price || !Number.isFinite(priceNum) || priceNum <= 0) {
-      notify?.({ type: "error", message: "Заполните название и положительную стоимость услуги" });
+      notify?.({ type: "error", message: t("edit.validationRequired") });
       return;
     }
     if (selectedBranches.length === 0) {
-      notify?.({ type: "error", message: "Выберите хотя бы один филиал" });
+      notify?.({ type: "error", message: t("edit.branchRequired") });
       return;
     }
     // Количество расходника валидируем до запроса: бэк на ≤ 0 отвечает 400 и
@@ -205,7 +207,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     if (hasInvalidQuantity(relatedProducts)) {
       notify?.({
         type: "error",
-        message: "Количество расходника должно быть больше 0 (до 3 знаков)",
+        message: t("edit.quantityError"),
       });
       return;
     }
@@ -234,7 +236,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       } else if (removePhoto && record.imageUrl) {
         await deleteServiceImage(record.id);
       }
-      notify?.({ type: "success", message: "Услуга обновлена" });
+      notify?.({ type: "success", message: t("edit.updated") });
       // Список услуг формы приёма кэшируется на 10 минут — обновляем,
       // чтобы правки (название, цена, филиалы, активность) сразу попали в форму.
       void queryClient.invalidateQueries({
@@ -243,7 +245,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       onUpdated?.();
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Не удалось обновить услугу";
+      const msg = e instanceof Error ? e.message : t("edit.updateError");
       setSubmitError(msg);
     } finally {
       setBusy(false);
@@ -273,8 +275,8 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       <Box sx={{ width: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
         {/* Header */}
         <Stack direction="row" alignItems="center" justifyContent="space-between" px={2} py={1.5}>
-          <Typography variant="h6">Редактирование услуги</Typography>
-          <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+          <Typography variant="h6">{t("edit.title")}</Typography>
+          <IconButton onClick={busy ? undefined : onClose} aria-label={t("common.close")}>
             <CloseOutlined />
           </IconButton>
         </Stack>
@@ -301,7 +303,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
 
             {record.hasHiddenBranches && (
               <Alert severity="info">
-                Услуга связана с филиалами вне вашего доступа. Некоторые настройки могут быть ограничены.
+                {t("edit.hiddenBranchesWarning")}
               </Alert>
             )}
 
@@ -315,15 +317,15 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
             {/* Название */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Название услуги *
+                {t("form.nameLabel")}
               </Typography>
               <TextField
-                placeholder="Например: УЗИ брюшной полости"
+                placeholder={t("form.namePlaceholder")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 fullWidth
                 error={nameError}
-                helperText={nameError ? "Обязательное поле" : ""}
+                helperText={nameError ? t("form.nameRequired") : ""}
                 disabled={busy}
               />
             </Stack>
@@ -331,10 +333,10 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
             {/* Филиалы */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Филиалы *
+                {t("form.branchesLabelRequired")}
               </Typography>
               {noBranches ? (
-                <Alert severity="warning">Сначала создайте филиал</Alert>
+                <Alert severity="warning">{t("form.noBranches")}</Alert>
               ) : (
                 <Autocomplete
                   multiple
@@ -356,9 +358,9 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      placeholder={selectedBranches.length === 0 ? "Выберите филиалы" : ""}
+                      placeholder={selectedBranches.length === 0 ? t("form.branchesPlaceholderSelect") : ""}
                       error={branchError}
-                      helperText={branchError ? "Выберите хотя бы один филиал" : ""}
+                      helperText={branchError ? t("form.branchesErrorRequired") : ""}
                     />
                   )}
                 />
@@ -369,33 +371,33 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
             <Stack direction="row" spacing={1.5}>
               <Stack spacing={0.5} sx={{ flex: 1 }}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Стоимость *
+                  {t("form.priceLabel")}
                 </Typography>
                 <TextField
                   type="text"
                   inputMode="numeric"
                   value={price}
                   onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                  InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
+                  InputProps={{ endAdornment: <InputAdornment position="end">{t("form.priceCurrency")}</InputAdornment> }}
                   fullWidth
-                  placeholder="0"
+                  placeholder={t("form.pricePlaceholder")}
                   error={priceError}
-                  helperText={priceError ? "Введите положительную стоимость" : ""}
+                  helperText={priceError ? t("form.priceError") : ""}
                   disabled={busy}
                 />
               </Stack>
               <Stack spacing={0.5} sx={{ flex: 1 }}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Длительность
+                  {t("form.durationLabel")}
                 </Typography>
                 <TextField
                   type="text"
                   inputMode="numeric"
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(e.target.value.replace(/[^\d]/g, ""))}
-                  InputProps={{ endAdornment: <InputAdornment position="end">мин</InputAdornment> }}
+                  InputProps={{ endAdornment: <InputAdornment position="end">{t("form.durationUnit")}</InputAdornment> }}
                   fullWidth
-                  placeholder="30"
+                  placeholder={t("form.durationPlaceholder")}
                   disabled={busy}
                 />
               </Stack>
@@ -405,7 +407,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
             {SERVICE_CATEGORIES_ENABLED && (
               <Stack spacing={0.5}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Категория
+                  {t("form.categoryLabel")}
                 </Typography>
                 <TextField
                   select
@@ -414,7 +416,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                   fullWidth
                   disabled={busy}
                 >
-                  <MenuItem value="">Без категории</MenuItem>
+                  <MenuItem value="">{t("form.categoryNone")}</MenuItem>
                   {SERVICE_CATEGORY_OPTIONS.map((c) => (
                     <MenuItem key={c} value={c}>
                       {SERVICE_CATEGORY_LABELS[c]}
@@ -439,10 +441,10 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
             {/* Описание */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Описание
+                {t("form.descriptionLabel")}
               </Typography>
               <TextField
-                placeholder="Добавьте описание услуги (необязательно)"
+                placeholder={t("form.descriptionPlaceholder")}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 fullWidth
@@ -454,15 +456,15 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
 
             {/* Статус */}
             <Paper elevation={0} variant="outlined" sx={{ p: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <Typography variant="body2">Статус услуги</Typography>
+              <Typography variant="body2">{t("form.statusLabel")}</Typography>
               <Tabs
                 value={isActive ? 0 : 1}
                 onChange={(_, v) => setIsActive(v === 0)}
                 sx={{ minHeight: 32 }}
                 TabIndicatorProps={{ style: { display: "none" } }}
               >
-                <Tab label="Активна" sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })} />
-                <Tab label="Неактивна" sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
+                <Tab label={t("common.active")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })} />
+                <Tab label={t("common.inactive")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
               </Tabs>
             </Paper>
           </Stack>
@@ -472,16 +474,16 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         <Divider />
         <Box px={2} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
           <Button onClick={onClose} disabled={busy}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button variant="contained" onClick={handleSubmit} disabled={busy || submitDisabled}>
             {busy ? (
               <Stack direction="row" alignItems="center" spacing={1}>
                 <CircularProgress size={18} />
-                <span>Сохранение…</span>
+                <span>{t("common.saving")}</span>
               </Stack>
             ) : (
-              "Сохранить"
+              t("common.save")
             )}
           </Button>
         </Box>

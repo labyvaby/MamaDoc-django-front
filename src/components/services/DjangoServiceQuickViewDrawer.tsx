@@ -18,6 +18,7 @@ import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import { getService } from "../../api/catalog";
 import type { Service } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
+import { useT } from "../../i18n/VerticalProvider";
 
 type Props = {
   open: boolean;
@@ -26,6 +27,7 @@ type Props = {
 };
 
 const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceId }) => {
+  const { t } = useT("services");
   const [loading, setLoading] = React.useState(false);
   const [service, setService] = React.useState<Service | null>(null);
 
@@ -76,7 +78,7 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
         }}
       >
         <Typography variant="h6" fontWeight={600}>
-          Информация об услуге
+          {t("quickView.title")}
         </Typography>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
@@ -117,9 +119,9 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                     {service.name}
                   </Typography>
                   <Stack direction="row" spacing={1} flexWrap="wrap">
-                    <Chip label="Услуга" size="small" color="primary" variant="outlined" />
+                    <Chip label={t("common.chip")} size="small" color="primary" variant="outlined" />
                     <Chip
-                      label={service.isActive ? "Активна" : "Неактивна"}
+                      label={service.isActive ? t("common.active") : t("common.inactive")}
                       size="small"
                       color={service.isActive ? "success" : "default"}
                       variant="filled"
@@ -134,20 +136,20 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                 <Stack direction="row" spacing={1.5} alignItems="center">
                   <AttachMoneyIcon fontSize="small" color="action" />
                   <Typography variant="body2" color="text.secondary">
-                    Стоимость:
+                    {t("quickView.price")}
                   </Typography>
                   <Typography variant="body2" fontWeight={500}>
-                    {service.basePrice ? formatKGS(Number(service.basePrice)) : "Не указано"}
+                    {service.basePrice ? formatKGS(Number(service.basePrice)) : t("quickView.priceUnknown")}
                   </Typography>
                 </Stack>
                 {service.durationMinutes > 0 && (
                   <Stack direction="row" spacing={1.5} alignItems="center">
                     <AccessTimeIcon fontSize="small" color="action" />
                     <Typography variant="body2" color="text.secondary">
-                      Длительность:
+                      {t("quickView.duration")}
                     </Typography>
                     <Typography variant="body2" fontWeight={500}>
-                      {service.durationMinutes} мин
+                      {t("quickView.durationValue", { minutes: service.durationMinutes })}
                     </Typography>
                   </Stack>
                 )}
@@ -156,7 +158,7 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                     <LocationOnOutlinedIcon fontSize="small" color="action" sx={{ mt: 0.25 }} />
                     <Box>
                       <Typography variant="body2" color="text.secondary" gutterBottom>
-                        Филиалы:
+                        {t("quickView.branches")}
                       </Typography>
                       <Stack direction="row" flexWrap="wrap" gap={0.5}>
                         {service.branches.map((b) => (
@@ -176,7 +178,7 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                   <Divider sx={{ my: 2 }} />
                   <Box>
                     <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                      Описание
+                      {t("quickView.description")}
                     </Typography>
                     <Typography
                       variant="body2"
@@ -192,7 +194,7 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
-            Услуга не найдена
+            {t("common.notFound")}
           </Typography>
         )}
       </Box>

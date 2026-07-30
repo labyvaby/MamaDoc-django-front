@@ -39,6 +39,7 @@ import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
+import { useT } from "../../i18n/VerticalProvider";
 
 const toggleTabStyles = (theme: any, color: string) => ({
   minHeight: 32,
@@ -61,6 +62,7 @@ type Props = {
 };
 
 const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
+  const { t } = useT("services");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const { activeMembership, activeBranch } = usePermissions();
@@ -155,7 +157,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     const priceNum = Number(price);
     const durNum = Number(durationMinutes);
     if (!name.trim() || !price || !Number.isFinite(priceNum) || priceNum <= 0) {
-      notify?.({ type: "error", message: "Заполните название и положительную стоимость услуги" });
+      notify?.({ type: "error", message: t("add.validationRequired") });
       return;
     }
     // Количество расходника валидируем до запроса: бэк на ≤ 0 отвечает 400 и
@@ -163,7 +165,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     if (hasInvalidQuantity(relatedProducts)) {
       notify?.({
         type: "error",
-        message: "Количество расходника должно быть больше 0 (до 3 знаков)",
+        message: t("add.quantityError"),
       });
       return;
     }
@@ -174,7 +176,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     } else if (activeBranch && availableBranches.some((b) => b.id === activeBranch.id)) {
       effectiveBranchIds = [activeBranch.id];
     } else {
-      notify?.({ type: "error", message: "Выберите филиал в сайдбаре или укажите филиалы вручную" });
+      notify?.({ type: "error", message: t("add.branchRequired") });
       return;
     }
 
@@ -205,7 +207,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
           // image upload failure is non-fatal
         }
       }
-      notify?.({ type: "success", message: "Услуга создана" });
+      notify?.({ type: "success", message: t("add.created") });
       // Список услуг формы приёма кэшируется на 10 минут — обновляем,
       // чтобы новая услуга сразу была доступна при создании приёма.
       void queryClient.invalidateQueries({
@@ -214,7 +216,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       onCreated?.();
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Не удалось создать услугу";
+      const msg = e instanceof Error ? e.message : t("add.createError");
       setSubmitError(msg);
     } finally {
       setBusy(false);
@@ -245,8 +247,8 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       <Box sx={{ width: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
         {/* Header */}
         <Stack direction="row" alignItems="center" justifyContent="space-between" px={2} py={1.5}>
-          <Typography variant="h6">Добавление услуги</Typography>
-          <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть">
+          <Typography variant="h6">{t("add.title")}</Typography>
+          <IconButton onClick={busy ? undefined : onClose} aria-label={t("common.close")}>
             <CloseOutlined />
           </IconButton>
         </Stack>
@@ -281,15 +283,15 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             {/* Название */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Название услуги *
+                {t("form.nameLabel")}
               </Typography>
               <TextField
-                placeholder="Например: УЗИ брюшной полости"
+                placeholder={t("form.namePlaceholder")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 fullWidth
                 error={nameError}
-                helperText={nameError ? "Обязательное поле" : ""}
+                helperText={nameError ? t("form.nameRequired") : ""}
                 disabled={busy}
               />
             </Stack>
@@ -297,10 +299,10 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             {/* Филиалы */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Филиалы
+                {t("form.branchesLabel")}
               </Typography>
               {noBranches ? (
-                <Alert severity="warning">Сначала создайте филиал</Alert>
+                <Alert severity="warning">{t("form.noBranches")}</Alert>
               ) : (
                 <Autocomplete
                   multiple
@@ -325,12 +327,12 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                       placeholder={
                         selectedBranches.length === 0
                           ? activeBranch
-                            ? `По умолчанию: ${activeBranch.name}. Можно выбрать несколько филиалов.`
-                            : "Выберите один или несколько филиалов"
+                            ? t("form.branchesPlaceholderDefault", { branch: activeBranch.name })
+                            : t("form.branchesPlaceholderEmpty")
                           : ""
                       }
                       error={branchError}
-                      helperText={branchError ? "Выберите филиал в сайдбаре или укажите филиалы вручную" : ""}
+                      helperText={branchError ? t("form.branchesError") : ""}
                     />
                   )}
                 />
@@ -341,33 +343,33 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             <Stack direction="row" spacing={1.5}>
               <Stack spacing={0.5} sx={{ flex: 1 }}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Стоимость *
+                  {t("form.priceLabel")}
                 </Typography>
                 <TextField
                   type="text"
                   inputMode="numeric"
                   value={price}
                   onChange={(e) => setPrice(e.target.value.replace(/[^\d]/g, ""))}
-                  InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
+                  InputProps={{ endAdornment: <InputAdornment position="end">{t("form.priceCurrency")}</InputAdornment> }}
                   fullWidth
-                  placeholder="0"
+                  placeholder={t("form.pricePlaceholder")}
                   error={priceError}
-                  helperText={priceError ? "Введите положительную стоимость" : ""}
+                  helperText={priceError ? t("form.priceError") : ""}
                   disabled={busy}
                 />
               </Stack>
               <Stack spacing={0.5} sx={{ flex: 1 }}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Длительность
+                  {t("form.durationLabel")}
                 </Typography>
                 <TextField
                   type="text"
                   inputMode="numeric"
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(e.target.value.replace(/[^\d]/g, ""))}
-                  InputProps={{ endAdornment: <InputAdornment position="end">мин</InputAdornment> }}
+                  InputProps={{ endAdornment: <InputAdornment position="end">{t("form.durationUnit")}</InputAdornment> }}
                   fullWidth
-                  placeholder="30"
+                  placeholder={t("form.durationPlaceholder")}
                   disabled={busy}
                 />
               </Stack>
@@ -377,7 +379,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             {SERVICE_CATEGORIES_ENABLED && (
               <Stack spacing={0.5}>
                 <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                  Категория
+                  {t("form.categoryLabel")}
                 </Typography>
                 <TextField
                   select
@@ -386,7 +388,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                   fullWidth
                   disabled={busy}
                 >
-                  <MenuItem value="">Без категории</MenuItem>
+                  <MenuItem value="">{t("form.categoryNone")}</MenuItem>
                   {SERVICE_CATEGORY_OPTIONS.map((c) => (
                     <MenuItem key={c} value={c}>
                       {SERVICE_CATEGORY_LABELS[c]}
@@ -411,10 +413,10 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
             {/* Описание */}
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                Описание
+                {t("form.descriptionLabel")}
               </Typography>
               <TextField
-                placeholder="Добавьте описание услуги (необязательно)"
+                placeholder={t("form.descriptionPlaceholder")}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 fullWidth
@@ -426,15 +428,15 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
 
             {/* Статус */}
             <Paper elevation={0} variant="outlined" sx={{ p: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <Typography variant="body2">Статус услуги</Typography>
+              <Typography variant="body2">{t("form.statusLabel")}</Typography>
               <Tabs
                 value={isActive ? 0 : 1}
                 onChange={(_, v) => setIsActive(v === 0)}
                 sx={{ minHeight: 32 }}
                 TabIndicatorProps={{ style: { display: "none" } }}
               >
-                <Tab label="Активна" sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })} />
-                <Tab label="Неактивна" sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
+                <Tab label={t("common.active")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.success.main), minHeight: 32, py: 0, px: 2 })} />
+                <Tab label={t("common.inactive")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
               </Tabs>
             </Paper>
           </Stack>
@@ -444,16 +446,16 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         <Divider />
         <Box px={2} py={1.5} display="flex" justifyContent="flex-end" gap={1.5}>
           <Button onClick={onClose} disabled={busy}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button variant="contained" onClick={handleSubmit} disabled={busy || submitDisabled}>
             {busy ? (
               <Stack direction="row" alignItems="center" spacing={1}>
                 <CircularProgress size={18} />
-                <span>Сохранение…</span>
+                <span>{t("common.saving")}</span>
               </Stack>
             ) : (
-              "Сохранить"
+              t("common.save")
             )}
           </Button>
         </Box>

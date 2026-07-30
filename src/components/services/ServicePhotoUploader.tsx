@@ -14,6 +14,7 @@ import {
   Box,
 } from "@mui/material";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
+import { useT } from "../../i18n/VerticalProvider";
 
 export type ServicePhotoUploaderProps = {
   photoFile: File | null;
@@ -27,10 +28,11 @@ const ServicePhotoUploader: React.FC<ServicePhotoUploaderProps> = ({
   inputId = "add-service-file-input",
   onPickPhoto,
 }) => {
+  const { t } = useT("services");
   return (
     <Stack spacing={0.5}>
       <Typography variant="body2" color="text.secondary">
-        Картинка
+        {t("photo.label")}
       </Typography>
       <Card variant="outlined" sx={{ borderStyle: "dashed" }}>
         <CardContent
@@ -55,10 +57,10 @@ const ServicePhotoUploader: React.FC<ServicePhotoUploaderProps> = ({
           </Avatar>
           <Box sx={{ flex: 1 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-              {photoPreview ? "Сменить фото" : "Добавить фото"}
+              {photoPreview ? t("photo.change") : t("photo.add")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Необязательно
+              {t("photo.optional")}
             </Typography>
           </Box>
           <input
