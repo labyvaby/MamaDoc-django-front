@@ -37,6 +37,7 @@ import {
 } from "../../api/payments";
 import { getInsurers } from "../../api/insurers";
 import type { DjangoAppointment } from "../../api/appointments";
+import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
 import { DiscountInput } from "../../components/ui";
 import {
   djangoQueryKeys,
@@ -397,6 +398,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.transactions(patientId) });
       }
       notify?.({ type: "success", message: t("payment.saved") });
+      // Оплата, закрывающая чек (paid/discounted), сама списывает расходники
+      // услуг со склада. Нехватка остатка оплату не блокирует — бэк уводит
+      // остаток в минус и присылает предупреждение, наше дело показать его.
+      const warning = formatConsumptionWarnings(result.consumptionWarnings);
+      if (warning) notify?.({ type: "error", message: warning });
       onClose();
       onSaved?.(result);
     },

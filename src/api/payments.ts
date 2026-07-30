@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { AppointmentConsumptionWarning } from "./appointments";
 export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -59,6 +60,17 @@ export interface PaymentSummary {
   appointmentStatus?: string;
   payments: AppointmentPayment[];
   refunds?: AppointmentRefund[];
+  /**
+   * Что натворило автосписание расходников в **этом** запросе. Оплата,
+   * переводящая приём в `paid`/`discounted`, сама списывает расходники со
+   * склада, а возврат, уводящий приём из оплаченных, возвращает их назад
+   * (`front_consumables_integration.md`, ответы 1–3) — поэтому предупреждения
+   * приходят именно сюда, а не только в ответе приёма.
+   *
+   * На GET `/payments/` — всегда пустой массив (проверено на живом API
+   * 30.07.2026: поле присутствует).
+   */
+  consumptionWarnings?: AppointmentConsumptionWarning[];
 }
 
 export interface PaymentLineInput {
@@ -94,6 +106,22 @@ export interface RefundPayload {
 export interface CreateRefundResponse {
   refund: AppointmentRefund;
   paymentSummary: PaymentSummary;
+  /**
+   * Гайд (§1.3) обещает предупреждения в корне ответа возврата, а живой
+   * `PaymentSummary` держит их внутри — читаем оба места (см.
+   * `refundConsumptionWarnings`).
+   */
+  consumptionWarnings?: AppointmentConsumptionWarning[];
+}
+
+/** Предупреждения возврата — из корня ответа или из вложенной сводки. */
+export function refundConsumptionWarnings(
+  res: CreateRefundResponse,
+): AppointmentConsumptionWarning[] {
+  const root = res.consumptionWarnings;
+  if (Array.isArray(root) && root.length > 0) return root;
+  const nested = res.paymentSummary?.consumptionWarnings;
+  return Array.isArray(nested) ? nested : [];
 }
 
 // ── API functions ──────────────────────────────────────────────────────────────

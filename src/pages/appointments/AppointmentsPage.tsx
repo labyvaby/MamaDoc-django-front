@@ -533,6 +533,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                 ...appt,
                 paymentStatus: summary.paymentStatus,
                 paidTotal: summary.paidTotal,
+                // Сумму чека тоже забираем из сводки: с платными расходниками
+                // услуг totalAmount перестал быть неизменяемым, а строка списка
+                // считает от него скидку — иначе до рефетча покажет своё.
+                totalAmount: summary.totalAmount,
                 discountAmount: summary.discountAmount,
                 payableAmount: summary.payableAmount,
                 debt: summary.debt,
