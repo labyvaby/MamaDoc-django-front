@@ -912,6 +912,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                     key={slot.start}
                                     direction="row"
                                     alignItems="center"
+                                    justifyContent="space-between"
                                     spacing={0.75}
                                     onClick={
                                       slot.free
@@ -1114,21 +1115,35 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                                 <Stack
                                   direction="row"
                                   alignItems="center"
-                                  spacing={0.5}
+                                  justifyContent="center"
+                                  spacing={0.4}
                                   sx={(t) => ({
-                                    px: 1,
-                                    height: 24,
-                                    borderRadius: "6px",
+                                    ml: "auto",
+                                    px: 0.85,
+                                    height: 22,
+                                    borderRadius: "5px",
                                     border: "1px solid",
                                     borderColor: alpha(t.palette.success.main, 0.32),
                                     color: "success.dark",
                                     fontWeight: 600,
-                                    fontSize: "0.7rem",
+                                    fontSize: "0.6875rem",
+                                    lineHeight: 1,
+                                    flexShrink: 0,
                                     ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
                                   })}
                                 >
-                                  <AddOutlined sx={{ fontSize: 13 }} />
-                                  {t("slots.book")}
+                                  <AddOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
+                                  <Typography
+                                    component="span"
+                                    sx={{
+                                      fontSize: "0.6875rem",
+                                      fontWeight: 600,
+                                      lineHeight: 1,
+                                      display: "inline-block",
+                                    }}
+                                  >
+                                    {t("slots.book")}
+                                  </Typography>
                                 </Stack>
                               ) : busy ? (
                                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
