@@ -209,6 +209,7 @@
     "title": "Добавить {{visit.acc}}",
     "noBranchTitle": "Не выбран {{branch.nom}}",
     "noBranchText": "{{visit.nom, capitalize}} всегда создаётся в конкретном {{branch.pre}}, а сейчас включён режим «Все {{branch.nomPl}}» — поэтому кнопка «Сохранить» недоступна.",
+    "chooseBranch": "Выберите филиал для этого приёма:",
     "noBranchHowTo": "Как выбрать {{branch.acc}}: нажмите на",
     "noBranchHowToLink": "название {{org.gen}} вверху бокового меню",
     "noBranchHowToTail": "(на телефоне сначала откройте меню кнопкой ☰) и в списке выберите нужный {{branch.acc}}. После этого вернитесь сюда и создайте {{visit.acc}}.",

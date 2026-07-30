@@ -566,14 +566,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  /**
-   * Отмена и удаление — только в меню и отделены разделителем. Раньше это были
-   * две одинаковые красные иконки рядом: промах на шаг превращал отмену визита
-   * в удаление записи.
-   */
-  const dangerActions: HeaderAction[] = [];
+  // Отмена — заметная отдельная кнопка: это частое действие регистратуры.
+  // Удаление остаётся в меню, чтобы их нельзя было перепутать.
+  let cancelAction: HeaderAction | null = null;
   if (canUpdate && onCancelAppt && !isCancelled) {
-    dangerActions.push({
+    cancelAction = {
       key: "cancel",
       label: t("details.cancelRecord"),
       icon: <PersonOffOutlined fontSize="small" />,
@@ -581,8 +578,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         setConfirmAction("cancel");
         setConfirmOpen(true);
       },
-    });
+    };
   }
+
+  const dangerActions: HeaderAction[] = [];
   if (canDelete && onDelete) {
     dangerActions.push({
       key: "delete",
@@ -684,6 +683,19 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </Button>
                 ))}
               </Stack>
+
+              {cancelAction && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  startIcon={cancelAction.icon}
+                  onClick={cancelAction.onClick}
+                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                >
+                  {cancelAction.label}
+                </Button>
+              )}
 
               {hasMenu && (
                 <Tooltip title={t("details.moreActions")}>
