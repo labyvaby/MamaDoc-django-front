@@ -34,6 +34,8 @@ export interface OfficeIp {
   /** Общий IP организации (дефолт, если у филиала нет своего). */
   officeIp: string;
   updatedAt: string | null;
+  /** Публичный IP текущего пользователя, определённый нашим сервером. */
+  currentIp: string;
   /** Wi-Fi IP по каждому активному филиалу. */
   branches: BranchOfficeIp[];
 }
