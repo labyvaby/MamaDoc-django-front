@@ -26,6 +26,10 @@ export const djangoQueryKeys = {
     all: ["django", "appointments"] as const,
     list: (params: Record<string, unknown>) =>
       ["django", "appointments", "list", params] as const,
+    // Один приём по id — карточка, открытая вне списка дня (клик по занятому
+    // окну в виде «Окна»: приём может быть на другой дате).
+    detail: (appointmentId: number) =>
+      ["django", "appointments", appointmentId, "detail"] as const,
     dayCounts: (params: Record<string, unknown>) =>
       ["django", "appointments", "day-counts", params] as const,
     home: (params: Record<string, unknown>) =>

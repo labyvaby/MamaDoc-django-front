@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, CircularProgress, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -15,9 +15,14 @@ import {
   getAvailabilitySummary,
   type EmployeeAvailability,
   type AvailabilityDay,
-  type AvailabilitySlot,
 } from "../../api/scheduling";
-import { parseBackendError } from "../../api/appointments";
+import { buildTimeline } from "./freeSlotsTimeline";
+import {
+  getStatusAccent,
+  getStatusChipSx,
+  getStatusConfig,
+  getStatusLabel,
+} from "../../config/appointmentStatuses";
 import {
   djangoQueryKeys,
   DJANGO_REFERENCE_STALE_TIME_MS,
@@ -126,15 +131,249 @@ const STATUS_DOT: Record<DocStatus, "success.main" | "warning.main" | "text.disa
   none: "text.disabled",
 };
 
+// ── Таймлайн дня ──────────────────────────────────────────────────────────────
+
+interface DayTimelineProps {
+  day: AvailabilityDay;
+  employeeId: number;
+  /** Компактный режим — колонка в сетке врачей (уже и мельче). */
+  dense?: boolean;
+  onBook: (employeeId: number, isoDateTime: string) => void;
+  /** Клик по занятому времени — открыть карточку приёма поверх окон. */
+  onOpenAppointment?: (appointmentId: number) => void;
+  /** Клик не считается, если это было перетаскивание сетки (drag-to-scroll). */
+  dragMovedRef?: { current: boolean };
+}
+
+/** Окна и приёмы одного дня одного врача — общий рендер сетки и панели врача. */
+const DayTimeline: React.FC<DayTimelineProps> = ({
+  day,
+  employeeId,
+  dense = false,
+  onBook,
+  onOpenAppointment,
+  dragMovedRef,
+}) => {
+  const { t } = useT("appointments");
+  const theme = useTheme();
+  const rows = React.useMemo(() => buildTimeline(day), [day]);
+
+  if (day.dayOff) {
+    return <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>;
+  }
+  if (!day.scheduled) {
+    return <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>;
+  }
+  if (rows.length === 0) {
+    return (
+      <Alert severity="info" icon={false}>
+        {dense ? t("slots.noSlotsShort") : t("slots.noFreeSlots")}
+      </Alert>
+    );
+  }
+
+  const timeFontSize = dense ? "0.775rem" : "0.8rem";
+
+  return (
+    <Stack spacing={0.5}>
+      {rows.map((row) => {
+        if (row.kind === "appt") {
+          const { appt } = row;
+          const accent = getStatusAccent(appt.status, theme);
+          const statusLabel = getStatusLabel(appt.status);
+          const patient = appt.patientName || t("slots.busy");
+          return (
+            <Tooltip
+              key={row.key}
+              title={`${appt.start}–${appt.end} · ${patient} · ${statusLabel}`}
+              placement="top"
+              disableInteractive
+            >
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={dense ? 0.75 : 1}
+                onClick={
+                  onOpenAppointment
+                    ? () => {
+                        if (dragMovedRef?.current) return;
+                        onOpenAppointment(appt.id);
+                      }
+                    : undefined
+                }
+                sx={{
+                  px: dense ? 1 : 1.25,
+                  py: dense ? 0.5 : 0.75,
+                  borderRadius: "8px",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderLeft: `3px solid ${accent.main}`,
+                  bgcolor: subtleBg(theme),
+                  cursor: onOpenAppointment ? "pointer" : "default",
+                  transition: "background-color .13s ease",
+                  "&:hover": onOpenAppointment
+                    ? { bgcolor: alpha(accent.main, theme.palette.mode === "dark" ? 0.16 : 0.09) }
+                    : undefined,
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontFamily: "monospace",
+                    fontWeight: 600,
+                    fontSize: timeFontSize,
+                    flexShrink: 0,
+                    color: "text.primary",
+                  }}
+                >
+                  {dense ? appt.start : `${appt.start}–${appt.end}`}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  noWrap
+                  sx={{ flex: 1, minWidth: 0, fontSize: dense ? "0.7rem" : "0.75rem" }}
+                >
+                  {patient}
+                </Typography>
+                {dense ? (
+                  <Box
+                    sx={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      bgcolor: accent.main,
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : (
+                  <Chip
+                    size="small"
+                    icon={getStatusConfig(appt.status).icon}
+                    label={statusLabel}
+                    sx={getStatusChipSx(appt.status)}
+                  />
+                )}
+              </Stack>
+            </Tooltip>
+          );
+        }
+
+        const { slot } = row;
+        // Не свободен и не занят приёмом — окно, которое уже прошло.
+        const past = !slot.free && slot.appointmentId == null;
+        const busy = !slot.free && slot.appointmentId != null;
+        return (
+          <Stack
+            key={row.key}
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={dense ? 0.75 : 1}
+            onClick={
+              slot.free
+                ? () => {
+                    if (dragMovedRef?.current) return;
+                    onBook(employeeId, `${day.date}T${slot.start}`);
+                  }
+                : busy && onOpenAppointment
+                  ? () => {
+                      if (dragMovedRef?.current) return;
+                      onOpenAppointment(slot.appointmentId!);
+                    }
+                  : undefined
+            }
+            sx={{
+              width: "100%",
+              px: dense ? 1 : 1.25,
+              py: dense ? 0.5 : 0.75,
+              borderRadius: dense ? "7px" : "8px",
+              border: "1px solid",
+              borderStyle: past ? "dashed" : "solid",
+              borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
+              bgcolor: slot.free
+                ? alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.14 : 0.08)
+                : busy
+                  ? subtleBg(theme)
+                  : "transparent",
+              cursor: slot.free || busy ? "pointer" : "default",
+              transition: "filter .13s ease",
+              "&:hover": slot.free ? { filter: "brightness(1.04)" } : undefined,
+            }}
+          >
+            <Typography
+              sx={{
+                fontFamily: "monospace",
+                fontWeight: 600,
+                fontSize: timeFontSize,
+                ...(dense ? {} : { width: 44 }),
+                flexShrink: 0,
+                color: slot.free ? "success.main" : "text.disabled",
+              }}
+            >
+              {slot.start}
+            </Typography>
+            {slot.free ? (
+              <Stack
+                direction="row"
+                alignItems="center"
+                justifyContent="center"
+                spacing={0.4}
+                sx={(tokens) => ({
+                  ml: "auto",
+                  px: 0.85,
+                  height: 22,
+                  borderRadius: "5px",
+                  border: "1px solid",
+                  borderColor: alpha(tokens.palette.success.main, 0.32),
+                  color: "success.dark",
+                  fontWeight: 600,
+                  fontSize: "0.6875rem",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  ...(tokens.palette.mode === "dark" ? { color: tokens.palette.success.light } : {}),
+                })}
+              >
+                <AddOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
+                <Typography
+                  component="span"
+                  sx={{
+                    fontSize: "0.6875rem",
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    display: "inline-block",
+                  }}
+                >
+                  {t("slots.book")}
+                </Typography>
+              </Stack>
+            ) : busy ? (
+              <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
+                {slot.patientName ?? ""}
+              </Typography>
+            ) : null}
+          </Stack>
+        );
+      })}
+    </Stack>
+  );
+};
+
 export interface FreeSlotsViewProps {
   branchId?: number;
   organizationId?: number;
   headerActions?: React.ReactNode;
   /** Открыть создание приёма с предзаполнением врача и времени (услуга — в форме). */
   onBook: (employeeId: number, isoDateTime: string) => void;
+  /** Клик по занятому времени — открыть карточку этого приёма поверх окон. */
+  onOpenAppointment?: (appointmentId: number) => void;
 }
 
-const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId, headerActions, onBook }) => {
+const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
+  branchId,
+  organizationId,
+  headerActions,
+  onBook,
+  onOpenAppointment,
+}) => {
   const { t } = useT("appointments");
   const theme = useTheme();
 
@@ -894,106 +1133,19 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                           </Stack>
                         </Stack>
 
-                        {/* Таймлайн окон за день */}
+                        {/* Таймлайн окон и приёмов за день */}
                         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}>
-                          {!docDay || !docDay.scheduled ? (
+                          {!docDay ? (
                             <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
-                          ) : docDay.dayOff ? (
-                            <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>
-                          ) : docDay.slots.length === 0 ? (
-                            <Alert severity="info" icon={false}>{t("slots.noFreeSlots")}</Alert>
                           ) : (
-                            <Stack spacing={0.5}>
-                              {docDay.slots.map((slot: AvailabilitySlot) => {
-                                const busy = !slot.free && slot.appointmentId != null;
-                                const past = !slot.free && slot.appointmentId == null;
-                                return (
-                                  <Stack
-                                    key={slot.start}
-                                    direction="row"
-                                    alignItems="center"
-                                    justifyContent="space-between"
-                                    spacing={0.75}
-                                    onClick={
-                                      slot.free
-                                        ? () => {
-                                            if (isDragMovedRef.current) return;
-                                            onBook(emp.employeeId, `${docDay.date}T${slot.start}`);
-                                          }
-                                        : undefined
-                                    }
-                                    sx={{
-                                      width: "100%",
-                                      px: 1,
-                                      py: 0.5,
-                                      borderRadius: "7px",
-                                      border: "1px solid",
-                                      borderStyle: past ? "dashed" : "solid",
-                                      borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
-                                      bgcolor: slot.free
-                                        ? alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.14 : 0.08)
-                                        : busy
-                                          ? subtleBg(theme)
-                                          : "transparent",
-                                      cursor: slot.free ? "pointer" : "default",
-                                      transition: "filter .13s ease",
-                                      "&:hover": slot.free ? { filter: "brightness(1.04)" } : undefined,
-                                    }}
-                                  >
-                                    <Typography
-                                      sx={{
-                                        fontFamily: "monospace",
-                                        fontWeight: 600,
-                                        fontSize: "0.775rem",
-                                        flexShrink: 0,
-                                        color: slot.free ? "success.main" : "text.disabled",
-                                      }}
-                                    >
-                                      {slot.start}
-                                    </Typography>
-                                    {slot.free ? (
-                                      <Stack
-                                        direction="row"
-                                        alignItems="center"
-                                        justifyContent="center"
-                                        spacing={0.4}
-                                        sx={(t) => ({
-                                          ml: "auto",
-                                          px: 0.85,
-                                          height: 22,
-                                          borderRadius: "5px",
-                                          border: "1px solid",
-                                          borderColor: alpha(t.palette.success.main, 0.32),
-                                          color: "success.dark",
-                                          fontWeight: 600,
-                                          fontSize: "0.6875rem",
-                                          lineHeight: 1,
-                                          flexShrink: 0,
-                                          ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
-                                        })}
-                                      >
-                                        <AddOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
-                                        <Typography
-                                          component="span"
-                                          sx={{
-                                            fontSize: "0.6875rem",
-                                            fontWeight: 600,
-                                            lineHeight: 1,
-                                            display: "inline-block",
-                                          }}
-                                        >
-                                          {t("slots.book")}
-                                        </Typography>
-                                      </Stack>
-                                    ) : busy ? (
-                                      <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
-                                        {slot.patientName ?? ""}
-                                      </Typography>
-                                    ) : null}
-                                  </Stack>
-                                );
-                              })}
-                            </Stack>
+                            <DayTimeline
+                              day={docDay}
+                              employeeId={emp.employeeId}
+                              dense
+                              onBook={onBook}
+                              onOpenAppointment={onOpenAppointment}
+                              dragMovedRef={isDragMovedRef}
+                            />
                           )}
                         </Box>
                       </Box>
@@ -1053,109 +1205,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({ branchId, organizationId,
                 </Button>
               </Stack>
 
-              {/* Таймлайн окон выбранного дня */}
+              {/* Таймлайн окон и приёмов выбранного дня */}
               <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.5 }}>
                 {!selectedDay ? (
                   <Alert severity="info" icon={false}>{t("slots.noShiftsForSpecialist")}</Alert>
                 ) : (
-                  <>
-                    {selectedDay.dayOff ? (
-                      <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>
-                    ) : !selectedDay.scheduled ? (
-                      <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
-                    ) : selectedDay.slots.length === 0 ? (
-                      <Alert severity="info" icon={false}>{t("slots.noSlotsShort")}</Alert>
-                    ) : (
-                      <Stack spacing={0.5}>
-                        {selectedDay.slots.map((slot) => {
-                          const busy = !slot.free && slot.appointmentId != null;
-                          const past = !slot.free && slot.appointmentId == null;
-                          return (
-                            <Stack
-                              key={slot.start}
-                              direction="row"
-                              alignItems="center"
-                              justifyContent="space-between"
-                              spacing={1}
-                              onClick={
-                                slot.free
-                                  ? () => onBook(selectedDoc.emp.employeeId, `${selectedDay.date}T${slot.start}`)
-                                  : undefined
-                              }
-                              sx={{
-                                px: 1.25,
-                                py: 0.75,
-                                borderRadius: "8px",
-                                border: "1px solid",
-                                borderStyle: past ? "dashed" : "solid",
-                                borderColor: slot.free ? alpha(theme.palette.success.main, 0.32) : "divider",
-                                bgcolor: slot.free
-                                  ? alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.14 : 0.08)
-                                  : busy
-                                    ? subtleBg(theme)
-                                    : "transparent",
-                                cursor: slot.free ? "pointer" : "default",
-                                transition: "filter .13s ease",
-                                "&:hover": slot.free ? { filter: "brightness(1.04)" } : undefined,
-                              }}
-                            >
-                              <Typography
-                                sx={{
-                                  fontFamily: "monospace",
-                                  fontWeight: 600,
-                                  fontSize: "0.8rem",
-                                  width: 44,
-                                  flexShrink: 0,
-                                  color: slot.free ? "success.main" : "text.disabled",
-                                }}
-                              >
-                                {slot.start}
-                              </Typography>
-                              {slot.free ? (
-                                <Stack
-                                  direction="row"
-                                  alignItems="center"
-                                  justifyContent="center"
-                                  spacing={0.4}
-                                  sx={(t) => ({
-                                    ml: "auto",
-                                    px: 0.85,
-                                    height: 22,
-                                    borderRadius: "5px",
-                                    border: "1px solid",
-                                    borderColor: alpha(t.palette.success.main, 0.32),
-                                    color: "success.dark",
-                                    fontWeight: 600,
-                                    fontSize: "0.6875rem",
-                                    lineHeight: 1,
-                                    flexShrink: 0,
-                                    ...(t.palette.mode === "dark" ? { color: t.palette.success.light } : {}),
-                                  })}
-                                >
-                                  <AddOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
-                                  <Typography
-                                    component="span"
-                                    sx={{
-                                      fontSize: "0.6875rem",
-                                      fontWeight: 600,
-                                      lineHeight: 1,
-                                      display: "inline-block",
-                                    }}
-                                  >
-                                    {t("slots.book")}
-                                  </Typography>
-                                </Stack>
-                              ) : busy ? (
-                                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
-                                  {slot.patientName ?? ""}
-                                </Typography>
-                              ) : null}
-                            </Stack>
-                          );
-                        })}
-                      </Stack>
-                    )}
-                  </>
+                  <DayTimeline
+                    day={selectedDay}
+                    employeeId={selectedDoc.emp.employeeId}
+                    onBook={onBook}
+                    onOpenAppointment={onOpenAppointment}
+                  />
                 )}
               </Box>
             </>
