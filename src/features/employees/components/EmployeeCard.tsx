@@ -285,6 +285,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const relatedBase = IS_DJANGO_BACKEND && empIdNum > 0;
   const shiftsQ = useEmployeeShiftsMonth(
     empIdNum,
+    apiOrgId,
     relatedBase && (canViewAttendance || isOwnCard),
     relatedMonth,
   );

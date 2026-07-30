@@ -116,10 +116,12 @@ export const djangoQueryKeys = {
 
   attendance: {
     all: ["django", "attendance"] as const,
-    active: ["django", "attendance", "active"] as const,
-    list: (filters: Record<string, unknown>) =>
-      ["django", "attendance", "list", filters] as const,
-    officeIp: ["django", "attendance", "office-ip"] as const,
+    active: (organizationId?: number) =>
+      ["django", "attendance", "active", organizationId ?? null] as const,
+    list: (filters: Record<string, unknown>, organizationId?: number) =>
+      ["django", "attendance", "list", filters, organizationId ?? null] as const,
+    officeIp: (organizationId?: number) =>
+      ["django", "attendance", "office-ip", organizationId ?? null] as const,
   },
 
   organization: {

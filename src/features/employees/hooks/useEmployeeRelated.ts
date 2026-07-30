@@ -25,14 +25,23 @@ const monthKey = (anchor: string) => dayjs(anchor).format("YYYY-MM");
 /** Смены сотрудника за выбранный месяц (СКУД). */
 export function useEmployeeShiftsMonth(
   employeeId: number,
+  organizationId: number | undefined,
   enabled: boolean,
   monthAnchor: string = currentMonthAnchor(),
 ) {
   return useQuery({
-    queryKey: ["django", "attendance", "shifts", employeeId, monthKey(monthAnchor)],
+    queryKey: [
+      "django",
+      "attendance",
+      "shifts",
+      employeeId,
+      monthKey(monthAnchor),
+      organizationId ?? null,
+    ],
     queryFn: ({ signal }) =>
       getShifts(
         { employeeId, dateFrom: monthStart(monthAnchor), dateTo: monthEnd(monthAnchor) },
+        organizationId,
         signal,
       ),
     enabled,

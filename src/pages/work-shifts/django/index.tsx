@@ -157,12 +157,12 @@ const DjangoWorkShiftsPage: React.FC = () => {
   }) => {
     try {
       if (editId != null) {
-        await updateShift(editId, rows[0]);
+        await updateShift(editId, rows[0], orgId);
         notify?.({ type: "success", message: "Смена обновлена" });
       } else {
         // Weekday bulk-create persists each generated shift (one POST per day).
         for (const row of rows) {
-          await createShift(row);
+          await createShift(row, orgId);
         }
         notify?.({
           type: "success",
@@ -181,7 +181,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteShift(deleteTarget.id);
+      await deleteShift(deleteTarget.id, orgId);
       notify?.({ type: "success", message: "Смена удалена" });
       void invalidate();
       setDeleteTarget(null);

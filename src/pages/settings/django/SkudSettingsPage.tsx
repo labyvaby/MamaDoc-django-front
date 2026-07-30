@@ -18,6 +18,7 @@ import { useNotification } from "@refinedev/core";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { getOfficeIp, setOfficeIp } from "../../../api/attendance";
 import { djangoQueryKeys } from "../../../api/queryKeys";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { parseIpList } from "../../../utility/network";
 import { PageHeader, AppCard } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
@@ -112,10 +113,11 @@ const DjangoSkudSettingsPage: React.FC = () => {
   usePageTitle(t("skud.pageTitle"));
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
+  const orgId = useApiOrgId();
 
   const query = useQuery({
-    queryKey: djangoQueryKeys.attendance.officeIp,
-    queryFn: ({ signal }) => getOfficeIp(signal),
+    queryKey: djangoQueryKeys.attendance.officeIp(orgId),
+    queryFn: ({ signal }) => getOfficeIp(orgId, signal),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -149,16 +151,16 @@ const DjangoSkudSettingsPage: React.FC = () => {
       // Сохраняем только изменённые значения (общий IP + IP филиалов).
       const nextOrgIp = ips.join(", ");
       if (nextOrgIp !== (query.data.officeIp ?? "")) {
-        await setOfficeIp(nextOrgIp);
+        await setOfficeIp(nextOrgIp, undefined, orgId);
       }
       for (const b of query.data.branches ?? []) {
         const next = (branchIps[b.branchId] ?? []).join(", ");
         if (next !== (b.officeIp ?? "")) {
-          await setOfficeIp(next, b.branchId);
+          await setOfficeIp(next, b.branchId, orgId);
         }
       }
       await queryClient.invalidateQueries({
-        queryKey: djangoQueryKeys.attendance.officeIp,
+        queryKey: djangoQueryKeys.attendance.officeIp(orgId),
       });
       notify?.({ type: "success", message: t("skud.saveSuccess") });
     } catch (e) {

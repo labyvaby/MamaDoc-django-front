@@ -16,6 +16,7 @@ import {
 } from "../api/attendance";
 import { djangoQueryKeys } from "../api/queryKeys";
 import { useCan } from "./useCan";
+import { useApiOrgId } from "./useApiOrgId";
 import { isIpInCidr, parseIpList } from "../utility/network";
 
 
@@ -35,6 +36,7 @@ export function useDjangoSkudActions(
 ) {
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
+  const orgId = useApiOrgId();
   const canView = useCan("attendance.view");
   const canClock = useCan("attendance.clock");
   const canManage = useCan("attendance.manage");
@@ -57,8 +59,8 @@ export function useDjangoSkudActions(
 
   // 2. Allowed office IP from the backend (cached 5 min).
   const { data: officeIpData, isLoading: officeIpLoading } = useQuery({
-    queryKey: djangoQueryKeys.attendance.officeIp,
-    queryFn: ({ signal }) => getOfficeIp(signal),
+    queryKey: djangoQueryKeys.attendance.officeIp(orgId),
+    queryFn: ({ signal }) => getOfficeIp(orgId, signal),
     staleTime: 5 * 60 * 1000,
     enabled: enabled && canView,
   });
@@ -84,8 +86,8 @@ export function useDjangoSkudActions(
 
   // 3. Current active shift.
   const activeQuery = useQuery({
-    queryKey: djangoQueryKeys.attendance.active,
-    queryFn: ({ signal }) => getActiveShift(signal),
+    queryKey: djangoQueryKeys.attendance.active(orgId),
+    queryFn: ({ signal }) => getActiveShift(orgId, signal),
     staleTime: 60 * 1000,
     enabled: enabled && canView,
   });
@@ -93,11 +95,14 @@ export function useDjangoSkudActions(
 
   // 4. History (only when requested).
   const historyQuery = useQuery({
-    queryKey: djangoQueryKeys.attendance.list({
-      employeeId: canManage ? filterEmployeeId ?? null : "self",
-      from: filterStartDate ?? null,
-      to: filterEndDate ?? null,
-    }),
+    queryKey: djangoQueryKeys.attendance.list(
+      {
+        employeeId: canManage ? filterEmployeeId ?? null : "self",
+        from: filterStartDate ?? null,
+        to: filterEndDate ?? null,
+      },
+      orgId,
+    ),
     queryFn: ({ signal }) =>
       getShifts(
         {
@@ -108,6 +113,7 @@ export function useDjangoSkudActions(
           dateFrom: filterStartDate ?? undefined,
           dateTo: filterEndDate ?? undefined,
         },
+        orgId,
         signal,
       ),
     enabled: enabled && enableHistory && canView,
@@ -131,7 +137,7 @@ export function useDjangoSkudActions(
     }
     setActionLoading(true);
     try {
-      await apiClockIn();
+      await apiClockIn(orgId);
       notify?.({ type: "success", message: "Смена началась" });
       invalidate();
     } catch (e) {
@@ -147,7 +153,7 @@ export function useDjangoSkudActions(
   const handleEndShift = async () => {
     setActionLoading(true);
     try {
-      await apiClockOut();
+      await apiClockOut(orgId);
       notify?.({ type: "success", message: "Смена завершена" });
       invalidate();
     } catch (e) {

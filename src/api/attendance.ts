@@ -1,5 +1,16 @@
 import { apiRequest } from "./client";
 
+/**
+ * Суперпользователю/мультиорг-аккаунту бэк требует явный query-параметр
+ * organizationId на всех эндпоинтах attendance (иначе 400 "Суперпользователю
+ * необходимо указать organizationId") — тот же контракт, что и у tasks/warehouse.
+ */
+function withOrg(path: string, organizationId?: number): string {
+  if (organizationId == null) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}organizationId=${organizationId}`;
+}
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface WorkShiftRow {
@@ -58,6 +69,7 @@ export interface ShiftListParams {
 /** GET /api/attendance/shifts/ — history (own, or all when caller can manage). */
 export function getShifts(
   params: ShiftListParams = {},
+  organizationId?: number,
   signal?: AbortSignal,
 ): Promise<WorkShiftRow[]> {
   const q = new URLSearchParams();
@@ -66,35 +78,44 @@ export function getShifts(
   if (params.dateTo) q.set("dateTo", params.dateTo);
   const qs = q.toString();
   return apiRequest<WorkShiftRow[]>(
-    `/attendance/shifts/${qs ? `?${qs}` : ""}`,
+    withOrg(`/attendance/shifts/${qs ? `?${qs}` : ""}`, organizationId),
     { signal },
   ).then((rows) => (Array.isArray(rows) ? rows : []));
 }
 
 /** GET /api/attendance/shifts/active/ — the caller's open shift (or null). */
-export function getActiveShift(signal?: AbortSignal): Promise<ActiveShiftResponse> {
-  return apiRequest<ActiveShiftResponse>("/attendance/shifts/active/", { signal });
+export function getActiveShift(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<ActiveShiftResponse> {
+  return apiRequest<ActiveShiftResponse>(
+    withOrg("/attendance/shifts/active/", organizationId),
+    { signal },
+  );
 }
 
 /** POST /api/attendance/shifts/clock-in/ — open the caller's shift. */
-export function clockIn(): Promise<WorkShiftRow> {
-  return apiRequest<WorkShiftRow>("/attendance/shifts/clock-in/", {
+export function clockIn(organizationId?: number): Promise<WorkShiftRow> {
+  return apiRequest<WorkShiftRow>(withOrg("/attendance/shifts/clock-in/", organizationId), {
     method: "POST",
     body: {},
   });
 }
 
 /** POST /api/attendance/shifts/clock-out/ — close the caller's shift. */
-export function clockOut(): Promise<WorkShiftRow> {
-  return apiRequest<WorkShiftRow>("/attendance/shifts/clock-out/", {
+export function clockOut(organizationId?: number): Promise<WorkShiftRow> {
+  return apiRequest<WorkShiftRow>(withOrg("/attendance/shifts/clock-out/", organizationId), {
     method: "POST",
     body: {},
   });
 }
 
 /** POST /api/attendance/shifts/ — manual shift creation (admin). */
-export function createShift(data: ShiftWriteData): Promise<WorkShiftRow> {
-  return apiRequest<WorkShiftRow>("/attendance/shifts/", {
+export function createShift(
+  data: ShiftWriteData,
+  organizationId?: number,
+): Promise<WorkShiftRow> {
+  return apiRequest<WorkShiftRow>(withOrg("/attendance/shifts/", organizationId), {
     method: "POST",
     body: data,
   });
@@ -104,23 +125,29 @@ export function createShift(data: ShiftWriteData): Promise<WorkShiftRow> {
 export function updateShift(
   id: number,
   data: ShiftWriteData,
+  organizationId?: number,
 ): Promise<WorkShiftRow> {
-  return apiRequest<WorkShiftRow>(`/attendance/shifts/${id}/`, {
+  return apiRequest<WorkShiftRow>(withOrg(`/attendance/shifts/${id}/`, organizationId), {
     method: "PATCH",
     body: data,
   });
 }
 
 /** DELETE /api/attendance/shifts/<id>/ — delete a shift (admin). */
-export function deleteShift(id: number): Promise<void> {
-  return apiRequest<void>(`/attendance/shifts/${id}/`, { method: "DELETE" });
+export function deleteShift(id: number, organizationId?: number): Promise<void> {
+  return apiRequest<void>(withOrg(`/attendance/shifts/${id}/`, organizationId), {
+    method: "DELETE",
+  });
 }
 
 // ── API functions — office IP ──────────────────────────────────────────────────
 
 /** GET /api/attendance/office-ip/ — the org's configured office IP. */
-export function getOfficeIp(signal?: AbortSignal): Promise<OfficeIp> {
-  return apiRequest<OfficeIp>("/attendance/office-ip/", { signal });
+export function getOfficeIp(
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<OfficeIp> {
+  return apiRequest<OfficeIp>(withOrg("/attendance/office-ip/", organizationId), { signal });
 }
 
 /**
@@ -130,8 +157,9 @@ export function getOfficeIp(signal?: AbortSignal): Promise<OfficeIp> {
 export function setOfficeIp(
   officeIp: string,
   branchId?: number | null,
+  organizationId?: number,
 ): Promise<OfficeIp> {
-  return apiRequest<OfficeIp>("/attendance/office-ip/", {
+  return apiRequest<OfficeIp>(withOrg("/attendance/office-ip/", organizationId), {
     method: "PATCH",
     body: branchId != null ? { officeIp, branchId } : { officeIp },
   });
