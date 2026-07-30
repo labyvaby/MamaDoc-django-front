@@ -135,36 +135,19 @@ export const AttendanceReminder: React.FC = () => {
     </Tooltip>
   );
 
+  if (!show) return null;
+
   return (
-    <Portal>
-      <Box
-        sx={(t) => ({
-          position: "fixed",
-          zIndex: t.zIndex.snackbar,
-          top: {
-            xs: `${t.appLayout.header.height.mobile + 12}px`,
-            md: `${t.appLayout.header.height.desktop + 12}px`,
-          },
-          left: 0,
-          right: 0,
-          display: "flex",
-          justifyContent: "center",
-          px: 1.5,
-          pointerEvents: "none",
-        })}
-      >
-        <AnimatePresence>
-          {show && (
-            <MotionBox
-              key="attendance-reminder"
-              role="status"
-              aria-live="polite"
-              initial={{ opacity: 0, y: -12, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              sx={{ width: "100%", maxWidth: 720, pointerEvents: "auto" }}
-            >
+    <MotionBox
+      key="attendance-reminder"
+      role="status"
+      aria-live="polite"
+      initial={{ opacity: 0, y: -12, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      sx={{ width: "100%", maxWidth: 720, pointerEvents: "auto" }}
+    >
               <AppCard
                 variant="outlined"
                 elevation={0}
@@ -282,12 +265,8 @@ export const AttendanceReminder: React.FC = () => {
                     <CloseOutlined />
                   </IconButton>
                 </Tooltip>
-              </AppCard>
-            </MotionBox>
-          )}
-        </AnimatePresence>
-      </Box>
-    </Portal>
+      </AppCard>
+    </MotionBox>
   );
 };
 
