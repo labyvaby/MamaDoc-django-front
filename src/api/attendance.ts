@@ -6,6 +6,9 @@ export interface WorkShiftRow {
   id: number;
   employeeId: number;
   employeeName: string;
+  /** Филиал, в котором отработана смена; null для старых общеклинических записей. */
+  branchId: number | null;
+  branchName: string | null;
   clockIn: string;
   clockOut: string | null;
   isNightShift: boolean;
@@ -42,6 +45,8 @@ export interface OfficeIp {
 
 export interface ShiftWriteData {
   employeeId?: number;
+  /** Явный филиал нужен, чтобы смена вошла в филиальный расчёт зарплаты. */
+  branchId?: number | null;
   clockIn: string;
   clockOut?: string | null;
   isNightShift?: boolean | null;
