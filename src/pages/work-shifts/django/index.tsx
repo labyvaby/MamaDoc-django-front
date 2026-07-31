@@ -45,6 +45,7 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../../hooks/useDjangoSkud";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { getDjangoEmployees } from "../../../api/staff";
+import { getBranches } from "../../../api/organization";
 import {
   createShift,
   deleteShift,
@@ -54,7 +55,7 @@ import {
 } from "../../../api/attendance";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
 import { PageHeader, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
-import ShiftFormDrawer, { type EmployeeOption } from "./ShiftFormDrawer";
+import ShiftFormDrawer, { type BranchOption, type EmployeeOption } from "./ShiftFormDrawer";
 
 dayjs.extend(duration);
 
@@ -77,7 +78,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const queryClient = useQueryClient();
   // Как в оригинале: без карточки сотрудника отметка невозможна — показываем
   // предупреждение вместо кнопок, а не ошибку 400 после клика.
-  const { activeEmployee } = usePermissions();
+  const { activeEmployee, activeOrganization, activeBranch } = usePermissions();
   const orgId = useApiOrgId();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = React.useState<number | null>(null);
@@ -105,6 +106,31 @@ const DjangoWorkShiftsPage: React.FC = () => {
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
+
+  // Филиалы нужны форме ручной смены: без филиала часы смены не попадают в
+  // филиальный срез отчёта ЗП (см. WorkShift.branch в payroll-расчёте).
+  const branchesQuery = useQuery({
+    queryKey: djangoQueryKeys.organization.branches,
+    queryFn: () => getBranches(),
+    enabled: canManage,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+
+  // Суперюзеру/мультиорг-пользователю бэкенд отдаёт филиалы всех организаций —
+  // оставляем только активную, иначе в списке чужие филиалы.
+  const branches: BranchOption[] = React.useMemo(
+    () =>
+      (branchesQuery.data ?? [])
+        .filter(
+          (b) =>
+            activeOrganization?.id == null ||
+            b.organizationId === activeOrganization.id,
+        )
+        .map((b) => ({ id: b.id, name: b.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [branchesQuery.data, activeOrganization?.id],
+  );
 
   const employees: EmployeeOption[] = React.useMemo(
     () =>
@@ -135,8 +161,13 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = React.useState<WorkShiftRow | null>(null);
   const [deleting, setDeleting] = React.useState(false);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: djangoQueryKeys.attendance.all });
+  // Смена — источник часов для расчёта ЗП, поэтому вместе со списком СКУД
+  // сбрасываем и кэш отчёта ЗП: иначе правка часов «не видна» в зарплате, пока
+  // не истечёт staleTime отчёта или страницу не перезагрузят.
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.attendance.all });
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.payroll.all });
+  };
 
   const openCreate = () => {
     setEditTarget(null);
@@ -426,6 +457,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                       <TableCell>Дата</TableCell>
                       <TableCell>Режим</TableCell>
                       {canManage && <TableCell>Сотрудник</TableCell>}
+                      <TableCell>Филиал</TableCell>
                       <TableCell>Начало</TableCell>
                       <TableCell>Конец</TableCell>
                       <TableCell>Длительность</TableCell>
@@ -444,7 +476,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                             {isNewDay && (
                               <TableRow sx={{ position: "sticky", top: 56, zIndex: 2 }}>
                                 <TableCell
-                                  colSpan={canManage ? 8 : 6}
+                                  colSpan={canManage ? 9 : 7}
                                   sx={{
                                     py: 1,
                                     fontWeight: 700,
@@ -479,6 +511,21 @@ const DjangoWorkShiftsPage: React.FC = () => {
                                 )}
                               </TableCell>
                               {canManage && <TableCell>{shift.employeeName}</TableCell>}
+                              <TableCell>
+                                {shift.branchName ? (
+                                  shift.branchName
+                                ) : (
+                                  <Tooltip title="Филиал не указан — часы не попадут в отчёт ЗП по филиалу, только в режим «Все филиалы»">
+                                    <Typography
+                                      variant="body2"
+                                      component="span"
+                                      sx={{ color: "warning.main" }}
+                                    >
+                                      Не указан
+                                    </Typography>
+                                  </Tooltip>
+                                )}
+                              </TableCell>
                               <TableCell>{shift.timeStart}</TableCell>
                               <TableCell>{shift.timeEnd}</TableCell>
                               <TableCell>{shift.durationStr}</TableCell>
@@ -562,6 +609,13 @@ const DjangoWorkShiftsPage: React.FC = () => {
                                     {shift.employeeName}
                                   </Typography>
                                 )}
+                                <Typography
+                                  variant="caption"
+                                  noWrap
+                                  sx={{ color: shift.branchName ? "text.secondary" : "warning.main" }}
+                                >
+                                  {shift.branchName ?? "Филиал не указан"}
+                                </Typography>
                               </Stack>
                             </Box>
                             <Stack direction="row" alignItems="center" spacing={0.5} ml={1} sx={{ flexShrink: 0 }}>
@@ -593,6 +647,8 @@ const DjangoWorkShiftsPage: React.FC = () => {
         open={formOpen}
         shiftToEdit={editTarget}
         employees={employees}
+        branches={branches}
+        defaultBranchId={activeBranch?.id ?? null}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
         onDelete={

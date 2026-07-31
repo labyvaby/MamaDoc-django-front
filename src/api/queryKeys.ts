@@ -108,6 +108,7 @@ export const djangoQueryKeys = {
   },
 
   payroll: {
+    all: ["django", "payroll"] as const,
     report: (params: Record<string, unknown>) =>
       ["django", "payroll", "report", params] as const,
     activeMonths: (params: Record<string, unknown>) =>

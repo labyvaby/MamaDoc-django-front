@@ -6,6 +6,9 @@ export interface WorkShiftRow {
   id: number;
   employeeId: number;
   employeeName: string;
+  /** Филиал смены; null — смена без филиала (в филиальный срез ЗП не попадёт). */
+  branchId: number | null;
+  branchName: string | null;
   clockIn: string;
   clockOut: string | null;
   isNightShift: boolean;
@@ -47,6 +50,13 @@ export interface ShiftWriteData {
   isNightShift?: boolean | null;
   hasLunch?: boolean;
   lunchStart?: string | null;
+  /**
+   * Филиал, где отработана смена. Часы попадают в филиальный срез отчёта ЗП
+   * только по этому полю, поэтому форма всегда присылает его явно: число —
+   * филиал, null — смена без филиала (видна лишь в режиме «Все филиалы»).
+   * При PATCH пропуск поля означает «не менять филиал».
+   */
+  branchId?: number | null;
 }
 
 export interface ShiftListParams {
