@@ -19,6 +19,7 @@ import {
   Autocomplete,
   Tooltip,
   InputAdornment,
+  MenuItem,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { SaveOutlined as Save, RestaurantMenuOutlined as RestaurantMenu, CloseOutlined as Close, DeleteOutline as Delete } from "@mui/icons-material";
@@ -46,11 +47,19 @@ export interface EmployeeOption {
   fullName: string;
 }
 
+export interface BranchOption {
+  id: number;
+  name: string;
+}
+
 interface ShiftFormDrawerProps {
   open: boolean;
   /** The shift being edited, or null when creating a new one. */
   shiftToEdit: WorkShiftRow | null;
   employees: EmployeeOption[];
+  branches: BranchOption[];
+  /** Филиал по умолчанию для новой смены — активный филиал сессии. */
+  defaultBranchId?: number | null;
   onClose: () => void;
   /** Persist the form: one row (create/edit) or many (weekday bulk-create). */
   onSubmit: (params: {
@@ -95,6 +104,7 @@ const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — счи�
 
 type ShiftDraftFields = {
   employeeId: number | null;
+  branchId: number | null;
   startDate: string;
   endDate: string;
   startTime: string;
@@ -113,9 +123,23 @@ function editDraftKeyFor(shiftId: number): string {
   return `mamadoc:work-shifts:edit-draft:${shiftId}`;
 }
 
-function isDraftEmpty(d: ShiftDraftFields, today: string): boolean {
+/** Черновики, записанные до появления поля филиала, приходят без branchId. */
+function draftBranchId(
+  d: ShiftDraftFields | null,
+  fallback: number | null,
+): number | null {
+  if (d == null || d.branchId === undefined) return fallback;
+  return d.branchId;
+}
+
+function isDraftEmpty(
+  d: ShiftDraftFields,
+  today: string,
+  defaultBranchId: number | null,
+): boolean {
   return (
     d.employeeId == null &&
+    d.branchId === defaultBranchId &&
     d.startDate === today &&
     d.endDate === today &&
     d.startTime === "09:00" &&
@@ -132,6 +156,7 @@ function isDraftEmpty(d: ShiftDraftFields, today: string): boolean {
 function sameAsBaseline(a: ShiftDraftFields, b: ShiftDraftFields): boolean {
   return (
     a.employeeId === b.employeeId &&
+    a.branchId === b.branchId &&
     a.startDate === b.startDate &&
     a.endDate === b.endDate &&
     a.startTime === b.startTime &&
@@ -149,6 +174,8 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   open,
   shiftToEdit,
   employees,
+  branches,
+  defaultBranchId = null,
   onClose,
   onSubmit,
   onDelete,
@@ -157,6 +184,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   const isEdit = shiftToEdit != null;
 
   const [employeeId, setEmployeeId] = React.useState<number | null>(null);
+  const [branchId, setBranchId] = React.useState<number | null>(null);
   const [startDate, setStartDate] = React.useState("");
   const [endDate, setEndDate] = React.useState("");
   const [startTime, setStartTime] = React.useState("09:00");
@@ -172,6 +200,10 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   const [draftRestored, setDraftRestored] = React.useState(false);
 
   const baselineRef = React.useRef<ShiftDraftFields | null>(null);
+  // Через ref, чтобы переключение филиала в сайдбаре при открытом дровере не
+  // сбрасывало уже заполненную форму (эффект сброса зависит только от open).
+  const defaultBranchIdRef = React.useRef(defaultBranchId);
+  defaultBranchIdRef.current = defaultBranchId;
 
   // Lunch always ends exactly one hour after it starts.
   const lunchEnd = React.useMemo(() => {
@@ -190,6 +222,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       const end = shiftToEdit.clockOut ? dayjs(shiftToEdit.clockOut) : start;
       const baseline: ShiftDraftFields = {
         employeeId: shiftToEdit.employeeId,
+        branchId: shiftToEdit.branchId ?? null,
         startDate: start.format("YYYY-MM-DD"),
         endDate: end.format("YYYY-MM-DD"),
         startTime: start.format("HH:mm"),
@@ -205,6 +238,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       const draft = readFormDraft<ShiftDraft>(editDraftKeyFor(shiftToEdit.id), DRAFT_TTL_MS);
       const next = draft ?? baseline;
       setEmployeeId(next.employeeId);
+      setBranchId(draftBranchId(draft, baseline.branchId));
       setStartDate(next.startDate);
       setEndDate(next.endDate);
       setEndDateOvernight(next.endDateOvernight);
@@ -221,6 +255,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       const today = dayjs().format("YYYY-MM-DD");
       const defaults: ShiftDraftFields = {
         employeeId: null,
+        branchId: defaultBranchIdRef.current,
         startDate: today,
         endDate: today,
         startTime: "09:00",
@@ -235,6 +270,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       const draft = readFormDraft<ShiftDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
       const next = draft ?? defaults;
       setEmployeeId(next.employeeId);
+      setBranchId(draftBranchId(draft, defaults.branchId));
       setStartDate(next.startDate);
       setEndDate(next.endDate);
       setEndDateOvernight(next.endDateOvernight);
@@ -275,6 +311,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
   flushDraftRef.current = () => {
     const current: ShiftDraftFields = {
       employeeId,
+      branchId,
       startDate,
       endDate,
       startTime,
@@ -295,7 +332,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       }
     } else {
       const today = dayjs().format("YYYY-MM-DD");
-      if (isDraftEmpty(current, today)) {
+      if (isDraftEmpty(current, today, defaultBranchId)) {
         clearFormDraft(ADD_DRAFT_KEY);
       } else {
         writeFormDraft(ADD_DRAFT_KEY, current);
@@ -312,6 +349,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
     isEdit,
     shiftToEdit,
     employeeId,
+    branchId,
     startDate,
     endDate,
     startTime,
@@ -335,6 +373,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       const b = baselineRef.current;
       if (b) {
         setEmployeeId(b.employeeId);
+        setBranchId(b.branchId);
         setStartDate(b.startDate);
         setEndDate(b.endDate);
         setEndDateOvernight(b.endDateOvernight);
@@ -350,6 +389,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
       clearFormDraft(ADD_DRAFT_KEY);
       const today = dayjs().format("YYYY-MM-DD");
       setEmployeeId(null);
+      setBranchId(defaultBranchId);
       setStartDate(today);
       setEndDate(today);
       setEndDateOvernight(false);
@@ -366,12 +406,29 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
 
   const workMode = isNightShift ? "night" : "day";
 
+  // Филиал смены может отсутствовать в списке (неактивный или недоступный
+  // текущему пользователю) — тогда показываем его отдельной опцией, чтобы
+  // редактирование смены не обнуляло филиал молча.
+  const branchOptions = React.useMemo(() => {
+    const list = [...branches];
+    if (branchId != null && !list.some((b) => b.id === branchId)) {
+      list.push({
+        id: branchId,
+        name: shiftToEdit?.branchName ?? `Филиал #${branchId}`,
+      });
+    }
+    return list;
+  }, [branches, branchId, shiftToEdit?.branchName]);
+
   const buildRow = (dateStr: string): ShiftWriteData => {
     const endBase = endDateOvernight
       ? dayjs(dateStr).add(1, "day").format("YYYY-MM-DD")
       : dateStr;
     return {
       employeeId: employeeId ?? undefined,
+      // Филиал присылаем всегда: часы смены попадают в филиальный срез отчёта
+      // ЗП только по этому полю, а null — осознанное «без филиала».
+      branchId,
       clockIn: dayjs(`${dateStr}T${startTime}`).toISOString(),
       clockOut: dayjs(`${endBase}T${endTime}`).toISOString(),
       isNightShift,
@@ -519,6 +576,33 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
 
             {(isEdit || employeeId != null) && (
               <>
+                {/* ── Филиал ── */}
+                <MotionBox variants={cascadeItem}>
+                  <Stack spacing={1}>
+                    <Divider />
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                      Филиал
+                    </Typography>
+                    <TextField
+                      select
+                      size="small"
+                      fullWidth
+                      value={branchId ?? ""}
+                      onChange={(e) =>
+                        setBranchId(e.target.value === "" ? null : Number(e.target.value))
+                      }
+                      helperText="Часы смены учитываются в ЗП этого филиала. Без филиала они видны только в режиме «Все филиалы»."
+                    >
+                      <MenuItem value="">Не указан</MenuItem>
+                      {branchOptions.map((b) => (
+                        <MenuItem key={b.id} value={b.id}>
+                          {b.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+                </MotionBox>
+
                 {/* ── Дата смены ── */}
                 <MotionBox variants={cascadeItem}>
                   <Stack spacing={1.5}>
