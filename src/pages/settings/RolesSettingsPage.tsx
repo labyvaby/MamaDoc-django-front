@@ -364,6 +364,7 @@ interface RoleFormDrawerProps {
   mode: "create" | "edit";
   initial?: RbacRole | null;
   permissions: RbacPermission[];
+  organizationId?: number;
   onClose: () => void;
   onSaved: (role: RbacRole) => void;
 }
@@ -373,6 +374,7 @@ function RoleFormDrawer({
   mode,
   initial,
   permissions,
+  organizationId,
   onClose,
   onSaved,
 }: RoleFormDrawerProps) {
@@ -458,9 +460,14 @@ function RoleFormDrawer({
     try {
       let saved: RbacRole;
       if (mode === "create") {
+        if (organizationId == null) {
+          setError("Сначала выберите организацию.");
+          return;
+        }
         const payload: RoleCreatePayload = {
           name: name.trim(),
           code: code.trim(),
+          organizationId,
           description: description.trim(),
           permissionCodes: selectedCodes,
         };
@@ -1204,6 +1211,7 @@ const RolesSettingsPage: React.FC = () => {
         mode={drawerMode}
         initial={editingRole}
         permissions={permissions}
+        organizationId={activeOrganization?.id}
         onClose={() => setDrawerOpen(false)}
         onSaved={handleSaved}
       />

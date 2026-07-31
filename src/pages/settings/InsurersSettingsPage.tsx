@@ -198,7 +198,11 @@ const InsurersSettingsPage: React.FC = () => {
 
   const insurersQuery = useQuery({
     queryKey: djangoQueryKeys.insurers.list(orgId ?? null),
-    queryFn: ({ signal }) => getInsurers(signal, { includeInactive: true }),
+    queryFn: ({ signal }) =>
+      getInsurers(signal, {
+        includeInactive: true,
+        organizationId: orgId,
+      }),
     enabled: !permLoading && !needsOrg,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     retry: (count, err) => {
