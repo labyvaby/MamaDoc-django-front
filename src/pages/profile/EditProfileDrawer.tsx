@@ -43,13 +43,15 @@ export type ProfileFormValues = {
   birthDate: string; // YYYY-MM-DD or ""
   bankAccountNumber: string;
   inn: string;
+  instagram: string;
+  address: string;
+  bank: string;
+  bik: string;
 };
 
 type Props = {
   open: boolean;
   initial: ProfileFormValues;
-  /** Whether private fields (bank account, INN) may be edited. */
-  canEditPrivate: boolean;
   onClose: () => void;
   onSaved: (values: ProfileFormValues) => void;
 };
@@ -57,7 +59,6 @@ type Props = {
 const EditProfileDrawer: React.FC<Props> = ({
   open,
   initial,
-  canEditPrivate,
   onClose,
   onSaved,
 }) => {
@@ -93,12 +94,12 @@ const EditProfileDrawer: React.FC<Props> = ({
       telegramId: toNullable(values.telegramId),
       nickname: toNullable(values.nickname),
       birthDate: toNullable(values.birthDate),
-      ...(canEditPrivate
-        ? {
-            bankAccountNumber: toNullable(values.bankAccountNumber),
-            inn: toNullable(values.inn),
-          }
-        : {}),
+      bankAccountNumber: toNullable(values.bankAccountNumber),
+      inn: toNullable(values.inn),
+      instagram: toNullable(values.instagram),
+      address: toNullable(values.address),
+      bank: toNullable(values.bank),
+      bik: toNullable(values.bik),
     };
 
     try {
@@ -200,6 +201,15 @@ const EditProfileDrawer: React.FC<Props> = ({
               disabled={busy}
             />
             <TextField
+              label="Instagram"
+              value={values.instagram}
+              onChange={set("instagram")}
+              fullWidth
+              size="small"
+              disabled={busy}
+              placeholder="username"
+            />
+            <TextField
               label="Дата рождения"
               type="date"
               value={values.birthDate}
@@ -210,26 +220,46 @@ const EditProfileDrawer: React.FC<Props> = ({
               InputLabelProps={{ shrink: true }}
             />
 
-            {canEditPrivate && (
-              <>
-                <TextField
-                  label="Банковский счёт"
-                  value={values.bankAccountNumber}
-                  onChange={set("bankAccountNumber")}
-                  fullWidth
-                  size="small"
-                  disabled={busy}
-                />
-                <TextField
-                  label="ИНН"
-                  value={values.inn}
-                  onChange={set("inn")}
-                  fullWidth
-                  size="small"
-                  disabled={busy}
-                />
-              </>
-            )}
+            <TextField
+              label="Адрес"
+              value={values.address}
+              onChange={set("address")}
+              fullWidth
+              size="small"
+              disabled={busy}
+            />
+            <TextField
+              label="Банк"
+              value={values.bank}
+              onChange={set("bank")}
+              fullWidth
+              size="small"
+              disabled={busy}
+            />
+            <TextField
+              label="БИК"
+              value={values.bik}
+              onChange={set("bik")}
+              fullWidth
+              size="small"
+              disabled={busy}
+            />
+            <TextField
+              label="Банковский счёт"
+              value={values.bankAccountNumber}
+              onChange={set("bankAccountNumber")}
+              fullWidth
+              size="small"
+              disabled={busy}
+            />
+            <TextField
+              label="ИНН"
+              value={values.inn}
+              onChange={set("inn")}
+              fullWidth
+              size="small"
+              disabled={busy}
+            />
           </Stack>
         </Box>
 
