@@ -44,18 +44,24 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
+  APPOINTMENT_CONSUMPTIONS_ENABLED,
   createAppointment,
   getAppointments,
   parseBackendError,
   parseOverlapConflict,
   type AppointmentOverlapConflict,
 } from "../../api/appointments";
+import { parseRelatedQuantity } from "../../api/catalog";
+import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import {
+  billableRowsTotal,
+  hasInvalidConsumptionQuantity,
+  serviceTemplateRows,
+  type ConsumptionRow,
+} from "../../components/appointments/consumptionRows";
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
-import ServiceConsumptionsPreview, {
-  previewBillableTotal,
-} from "./components/ServiceConsumptionsPreview";
 import { getPatientBalance } from "../../api/patientBalance";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
 import {
@@ -110,6 +116,12 @@ type ServiceRow = {
   serviceId: number | null;
   employeeId: number | null;
   quantity: number;
+  /**
+   * Расходники строки, когда их правили руками. Пока `null` — состав берётся из
+   * справочника услуги (и следует количеству услуги), а `consumptions` в запрос
+   * не уходит вовсе: бэк развернёт состав сам.
+   */
+  consumptions: ConsumptionRow[] | null;
 };
 
 let serviceRowSeq = 0;
@@ -123,6 +135,7 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     serviceId: null,
     employeeId: null,
     quantity: 1,
+    consumptions: null,
     ...patch,
   };
 }
@@ -229,6 +242,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([newServiceRow()]);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+  /** Каталог для расходников — без фильтров продажи и остатка. */
+  const [consumableProducts, setConsumableProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
   const [complaints, setComplaints] = React.useState("");
   const [adminComment, setAdminComment] = React.useState("");
@@ -319,6 +334,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         if (ctrl.signal.aborted) return;
         // Only goods that can be sold and are currently in stock.
         setProducts(list.filter((p) => p.isActive && p.isForSale && p.stock > 0));
+        // Расходники — не продажа: ни «на продажу», ни «остаток > 0» к ним не
+        // применимы (гель не продаётся, а минусовой остаток бэк разрешает).
+        setConsumableProducts(list.filter((p) => p.isActive));
       })
       .catch(() => {
         /* products are optional; ignore load errors silently */
@@ -424,6 +442,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     [serviceRows],
   );
 
+  // Расходники строки: пока их не правили — состав справочника, умноженный на
+  // количество услуги (ровно то, что развернёт бэк); после правки — то, что
+  // осталось в форме.
+  const effectiveConsumptions = React.useCallback(
+    (row: ServiceRow): ConsumptionRow[] => {
+      if (row.consumptions !== null) return row.consumptions;
+      const svc = data.services.find((s) => s.id === row.serviceId);
+      return svc ? serviceTemplateRows(svc.relatedProducts, row.quantity) : [];
+    },
+    [data.services],
+  );
+
   // ── validation ────────────────────────────────────────────────────────────
   const validRows = serviceRows.filter((r) => r.serviceId !== null && r.employeeId !== null);
   const incompatibleRows = validRows.filter(
@@ -446,7 +476,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         ? t("addDrawer.errors.serviceRequired")
         : incompatibleRows.length > 0
           ? t("addDrawer.errors.performerMismatch")
-          : null,
+          : serviceRows.some(
+                (r) => r.consumptions !== null && hasInvalidConsumptionQuantity(r.consumptions),
+              )
+            ? t("consumptions.quantityError")
+            : null,
     products:
       overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
     adminComment:
@@ -476,12 +510,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   // сумму меньше той, что попадёт в чек.
   const consumptionsTotal = React.useMemo(
     () =>
-      validRows.reduce((sum, r) => {
-        const svc = data.services.find((s) => s.id === r.serviceId);
-        if (!svc) return sum;
-        return sum + previewBillableTotal(svc.relatedProducts, r.quantity);
-      }, 0),
-    [validRows, data.services],
+      validRows.reduce((sum, r) => sum + billableRowsTotal(effectiveConsumptions(r)), 0),
+    [validRows, effectiveConsumptions],
   );
   const totalCost = servicesTotal + productsTotal + consumptionsTotal;
 
@@ -533,6 +563,19 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           serviceId: r.serviceId!,
           employeeId: r.employeeId,
           quantity: r.quantity > 0 ? r.quantity : 1,
+          // Ключ уходит только когда расходники правили: его отсутствие значит
+          // «развернуть состав услуги как есть», а `[]` — «без расходников»
+          // (именно так убирается лишний товар из состава при записи).
+          ...(APPOINTMENT_CONSUMPTIONS_ENABLED && r.consumptions !== null
+            ? {
+                consumptions: r.consumptions.map((c) => ({
+                  productId: c.productId,
+                  quantity: String(parseRelatedQuantity(c.quantity) ?? 1),
+                  autoWriteOff: c.autoWriteOff,
+                  billable: c.billable,
+                })),
+              }
+            : {}),
         })),
         products: validProductRows.map((r) => ({
           productId: r.productId!,
@@ -1179,6 +1222,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                                 ? row.employeeId
                                                 : null
                                               : row.employeeId,
+                                          // Другая услуга — другой состав: правки
+                                          // относились к прежним расходникам.
+                                          ...((v?.id ?? null) !== row.serviceId
+                                            ? { consumptions: null }
+                                            : {}),
                                         });
                                       }}
                                       getOptionLabel={(s) =>
@@ -1231,15 +1279,26 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                     </Typography>
                                   )}
 
-                                  {/* Состав расходников из справочника: снапшот
-                                      строк расхода соберёт бэк после сохранения,
-                                      до этого показать нечего кроме справочника. */}
-                                  {selectedService && (
-                                    <ServiceConsumptionsPreview
-                                      products={selectedService.relatedProducts}
-                                      serviceQuantity={row.quantity}
-                                    />
-                                  )}
+                                  {/* Расходники: до сохранения строк расхода нет,
+                                      поэтому основа — состав справочника услуги.
+                                      Правится здесь же: лишний товар из состава
+                                      (например второй флакон) убирается до записи,
+                                      а не после сохранения приёма. Пока не правили —
+                                      количество следует количеству услуги. */}
+                                  {APPOINTMENT_CONSUMPTIONS_ENABLED &&
+                                    selectedService &&
+                                    (row.consumptions !== null ||
+                                      selectedService.relatedProducts.length > 0) && (
+                                      <ConsumptionRowsEditor
+                                        rows={effectiveConsumptions(row)}
+                                        options={consumableProducts}
+                                        disabled={saving}
+                                        showErrors={touched}
+                                        onChange={(next) =>
+                                          updateRow(index, { consumptions: next })
+                                        }
+                                      />
+                                    )}
 
                                   {duplicate && (
                                     <Typography variant="caption" color="warning.main">

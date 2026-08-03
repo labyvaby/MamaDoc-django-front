@@ -74,7 +74,10 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
           .map(
             (r) =>
               `${r.name} ${t("consumptions.quantity", {
-                quantity: formatQuantity(r.quantity),
+                // Через парсер, а не напрямую: в поле ввода количество лежит как
+                // его набрали («2,5»), а formatQuantity ждёт точку — иначе в
+                // сводке вместо числа появлялся прочерк.
+                quantity: formatQuantity(parseRelatedQuantity(r.quantity)),
                 unit: r.unit ? ` ${r.unit}` : "",
               })}`,
           )
@@ -143,13 +146,18 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                   <Typography variant="caption" display="block" noWrap>
                     {row.name}
                   </Typography>
-                  <Typography variant="caption" color="text.disabled">
-                    {row.stockOnHand === null
-                      ? t("consumptions.stockUnknown")
-                      : t("consumptions.stock", {
-                          stock: formatQuantity(row.stockOnHand),
-                        })}
-                  </Typography>
+                  {/* Остаток есть только у сохранённой строки: у новой (и во
+                      всей форме создания приёма) бэк его ещё не считал, а
+                      «склада нет» там неправда — подпись просто скрываем. */}
+                  {!(row.lineId === null && row.stockOnHand === null) && (
+                    <Typography variant="caption" color="text.disabled">
+                      {row.stockOnHand === null
+                        ? t("consumptions.stockUnknown")
+                        : t("consumptions.stock", {
+                            stock: formatQuantity(row.stockOnHand),
+                          })}
+                    </Typography>
+                  )}
                   {lineTotal > 0 && (
                     <Typography
                       variant="caption"
