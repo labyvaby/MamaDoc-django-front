@@ -326,16 +326,20 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     // не разрешает выбрать. nowRounded() уже округлён.
     // Исключение — предзаполнение из свободного окна: время слота (например
     // 09:20 при 20-минутной услуге) должно сохраниться точно, иначе приём
-    // съедет на соседний слот.
-    const isSlotPrefill = Boolean(initialEmployeeId || initialServiceId);
+    // съедет на соседний слот; вызывающая сторона помечает такое время
+    // initialDateExact. Само наличие initialEmployeeId к округлению отношения
+    // не имеет: врач может прийти из фильтра-ленты регистратуры, а время там —
+    // «сырое» текущее (19:58), которое пикер выбрать не даёт.
     const base = initialDate
-      ? isSlotPrefill || initialDateExact
+      ? initialDateExact
         ? initialDate
         : roundDateTimeLocalToStep(initialDate, 15)
       : nowRounded();
     setScheduledAt(base);
     setWorkMode(inferWorkMode(base));
-    // Предзаполнение из клика по свободному окну (врач + услуга в первой строке).
+    // Предзаполнение исполнителя/услуги: клик по свободному окну (врач +
+    // услуга) либо выбранный в ленте регистратуры специалист (только врач).
+    const isSlotPrefill = Boolean(initialEmployeeId || initialServiceId);
     if (isSlotPrefill) {
       // Бронь — только по явному запросу вызывающей стороны: она раскрывает
       // секцию услуг сразу и снимает обязательность пациента.
