@@ -78,6 +78,11 @@ import {
   type ConsumptionRow,
 } from "../../components/appointments/consumptionRows";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
+import { useBranchStock } from "../../hooks/useBranchStock";
+import {
+  branchStockCaption,
+  branchStockWarning,
+} from "../../components/appointments/branchStockHint";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -576,6 +581,15 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       });
     return () => ctrl.abort();
   }, [open, orgId]);
+
+  // Остаток на складах филиала приёма: `product.stock` считается по всей
+  // организации, а сохранение бэк проверяет по складу филиала — предупреждаем
+  // до «Сохранить» (см. useBranchStock).
+  const branchStock = useBranchStock(
+    open && EDIT_APPOINTMENT_PRODUCTS_ENABLED,
+    appointment?.branchId ?? null,
+    orgId,
+  );
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   const [patientOptions, setPatientOptions] = React.useState<DjangoPatient[]>([]);
@@ -1562,6 +1576,16 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                 row.lineId === null &&
                                 selectedProduct !== null &&
                                 parseQty(row.quantity) > selectedProduct.stock;
+                              // Товар существующей строки уже списан со склада —
+                              // предупреждать про остаток филиала незачем.
+                              const branchWarning =
+                                row.lineId === null && selectedProduct !== null && !overstocked
+                                  ? branchStockWarning(
+                                      branchStock,
+                                      selectedProduct,
+                                      parseQty(row.quantity),
+                                    )
+                                  : null;
                               return (
                                 <Stack key={index} spacing={1}>
                                   <Stack direction="row" spacing={1} alignItems="flex-start">
@@ -1598,16 +1622,31 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       getOptionLabel={(p) => `${p.name} — ${formatKGS(p.price)}`}
                                       isOptionEqualToValue={(a, b) => a.id === b.id}
                                       noOptionsText={t("addDrawer.noProductsInStock")}
-                                      renderOption={(props, p) => (
-                                        <li {...props} key={p.id}>
-                                          <Stack>
-                                            <Typography variant="body2">{p.name}</Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                              {t("addDrawer.productStock", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
-                                            </Typography>
-                                          </Stack>
-                                        </li>
-                                      )}
+                                      renderOption={(props, p) => {
+                                        const branchCaption = branchStockCaption(branchStock, p);
+                                        return (
+                                          <li {...props} key={p.id}>
+                                            <Stack>
+                                              <Typography variant="body2">{p.name}</Typography>
+                                              <Typography variant="caption" color="text.secondary">
+                                                {t("addDrawer.productStock", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
+                                              </Typography>
+                                              {branchCaption && (
+                                                <Typography
+                                                  variant="caption"
+                                                  color={
+                                                    branchStock.quantityOf(p.id) > 0
+                                                      ? "text.secondary"
+                                                      : "warning.main"
+                                                  }
+                                                >
+                                                  {branchCaption}
+                                                </Typography>
+                                              )}
+                                            </Stack>
+                                          </li>
+                                        );
+                                      }}
                                       renderInput={(params) => (
                                         <TextField
                                           {...params}
@@ -1678,6 +1717,11 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   {overstocked && (
                                     <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
                                       {t("addDrawer.productOverStock")}
+                                    </Alert>
+                                  )}
+                                  {branchWarning && (
+                                    <Alert severity="warning" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                      {branchWarning}
                                     </Alert>
                                   )}
                                 </Stack>

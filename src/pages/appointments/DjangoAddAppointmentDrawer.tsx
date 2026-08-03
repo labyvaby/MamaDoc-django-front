@@ -83,6 +83,11 @@ import { groupServiceRowsByEmployee } from "../../components/appointments/servic
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 import { attentionFieldSx } from "../../theme/uiHelpers";
 import type { RbacBranch } from "../../api/auth";
+import { useBranchStock } from "../../hooks/useBranchStock";
+import {
+  branchStockCaption,
+  branchStockWarning,
+} from "../../components/appointments/branchStockHint";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -358,6 +363,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       });
     return () => ctrl.abort();
   }, [open, effectiveBranch?.id, orgId]);
+
+  // Остаток на складах филиала приёма: `product.stock` бэк считает по всей
+  // организации, а при сохранении проверяет склад филиала — предупреждаем до
+  // «Сохранить» (см. useBranchStock). Филиал здесь меняется в самой форме.
+  const branchStock = useBranchStock(open, effectiveBranch?.id ?? null, orgId);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   // The clinic can have tens of thousands of patients, so the autocomplete
@@ -1415,6 +1425,14 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                           products.find((p) => p.id === row.productId) ?? null;
                         const overstocked =
                           selectedProduct !== null && parseQty(row.quantity) > selectedProduct.stock;
+                        const branchWarning =
+                          selectedProduct !== null && !overstocked
+                            ? branchStockWarning(
+                                branchStock,
+                                selectedProduct,
+                                parseQty(row.quantity),
+                              )
+                            : null;
                         return (
                           <Stack key={index} spacing={1}>
                             <Stack direction="row" spacing={1} alignItems="flex-start">
@@ -1436,16 +1454,31 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 }
                                 isOptionEqualToValue={(a, b) => a.id === b.id}
                                 noOptionsText={t("addDrawer.noProductsInStock")}
-                                renderOption={(props, p) => (
-                                  <li {...props} key={p.id}>
-                                    <Stack>
-                                      <Typography variant="body2">{p.name}</Typography>
-                                      <Typography variant="caption" color="text.secondary">
-                                        {t("addDrawer.productStock", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
-                                      </Typography>
-                                    </Stack>
-                                  </li>
-                                )}
+                                renderOption={(props, p) => {
+                                  const branchCaption = branchStockCaption(branchStock, p);
+                                  return (
+                                    <li {...props} key={p.id}>
+                                      <Stack>
+                                        <Typography variant="body2">{p.name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                          {t("addDrawer.productStock", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
+                                        </Typography>
+                                        {branchCaption && (
+                                          <Typography
+                                            variant="caption"
+                                            color={
+                                              branchStock.quantityOf(p.id) > 0
+                                                ? "text.secondary"
+                                                : "warning.main"
+                                            }
+                                          >
+                                            {branchCaption}
+                                          </Typography>
+                                        )}
+                                      </Stack>
+                                    </li>
+                                  );
+                                }}
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
@@ -1516,6 +1549,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                             {overstocked && (
                               <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
                                 {t("addDrawer.productOverStock")}
+                              </Alert>
+                            )}
+                            {branchWarning && (
+                              <Alert severity="warning" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                {branchWarning}
                               </Alert>
                             )}
                           </Stack>
