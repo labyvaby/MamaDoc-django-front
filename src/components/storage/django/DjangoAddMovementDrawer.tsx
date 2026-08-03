@@ -297,7 +297,9 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
 
     const getTitle = () => {
         if (editingMovement) return "Редактировать приход";
-        if (!product && mode === "in") return "Приход нового товара";
+        // Товар выбирается в дровере — это может быть и существующий товар,
+        // и созданный на лету, поэтому не обещаем «нового».
+        if (!product && mode === "in") return "Приход товара";
         if (mode === "in") return "Приход товара";
         return "Списание товара";
     };

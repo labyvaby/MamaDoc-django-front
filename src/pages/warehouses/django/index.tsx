@@ -127,7 +127,16 @@ const DjangoWarehousesPage: React.FC = () => {
             setProductPrices(new Map(prods.map((p) => [p.id, p.price || 0])));
             setSelectedWarehouseId((prev) => {
                 if (prev !== null && ws.some((w) => w.id === prev)) return prev;
-                const primary = ws.find((w) => w.isPrimary && !w.isLinked) || ws[0];
+                // Дефолт — склад активного филиала: суперпользователю/владельцу
+                // бэк отдаёт склады всех филиалов организации, и «первый primary»
+                // легко оказывается складом чужого филиала — тогда остатки
+                // выглядят пустыми, хотя товары лежат на своём складе.
+                const primary =
+                    ws.find((w) => w.branchId === activeBranchId && w.isPrimary && !w.isLinked)
+                    || ws.find((w) => w.branchId === activeBranchId && !w.isLinked)
+                    || ws.find((w) => w.branchId === activeBranchId)
+                    || ws.find((w) => w.isPrimary && !w.isLinked)
+                    || ws[0];
                 return primary ? primary.id : null;
             });
         } catch (e) {
@@ -136,7 +145,7 @@ const DjangoWarehousesPage: React.FC = () => {
         } finally {
             setLoadingWarehouses(false);
         }
-    }, [notify, canView, orgId]);
+    }, [notify, canView, orgId, activeBranchId]);
 
     React.useEffect(() => {
         if (!permLoading && orgReady && canView) loadInitialData();
@@ -204,10 +213,16 @@ const DjangoWarehousesPage: React.FC = () => {
         return undefined;
     }, [selectedItem, isDetailsOpen, isMobile, orgId, orgReady]);
 
-    // Auto-select first item on desktop
+    // Auto-select first item on desktop.
+    // Пока открыт дровер — не автовыбираем: приход «с нуля» (кнопка в шапке)
+    // намеренно сбрасывает позицию, чтобы в дровере появился выбор товара;
+    // автовыбор первой позиции тут же его перебивал, и приход всегда уходил
+    // на первый товар списка — выбрать другой или создать новый было нельзя.
     React.useEffect(() => {
-        if (!isMobile && stock.length > 0 && !selectedItem) setSelectedItem(stock[0]);
-    }, [isMobile, stock, selectedItem]);
+        if (!isMobile && stock.length > 0 && !selectedItem && !movementDrawerOpen) {
+            setSelectedItem(stock[0]);
+        }
+    }, [isMobile, stock, selectedItem, movementDrawerOpen]);
 
     // Handlers
     const handleAddWarehouse = () => {
@@ -266,10 +281,19 @@ const DjangoWarehousesPage: React.FC = () => {
         selectedProd?: MovementProductOption | null,
         amount?: number,
         paymentMethod?: "cash" | "cashless",
+        warehouseIdFromDrawer?: number,
     ) => {
-        const wId = editingMovement?.warehouseId || selectedItem?.warehouseId || selectedWarehouseId;
+        const wId = editingMovement?.warehouseId
+            || selectedItem?.warehouseId
+            || warehouseIdFromDrawer
+            || selectedWarehouseId;
         if (!wId) {
-            notify?.({ type: "error", message: "Склад не выбран" });
+            notify?.({
+                type: "error",
+                message: warehouses.length === 0
+                    ? "Сначала создайте склад — кнопка «Склады»"
+                    : "Выберите склад",
+            });
             return;
         }
         const targetProductId = editingMovement?.productId ?? selectedItem?.productId ?? selectedProd?.id ?? undefined;
@@ -298,6 +322,25 @@ const DjangoWarehousesPage: React.FC = () => {
             }
             notify?.({ type: "success", message: editingMovement ? "Приход обновлен" : "Успешно" });
 
+            // Новый товар создан на лету — обновляем справочник для пикера.
+            if (newProductName) {
+                getProducts(undefined, { organizationId: orgId })
+                    .then((prods) => {
+                        setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
+                        setProductPrices(new Map(prods.map((p) => [p.id, p.price || 0])));
+                    })
+                    .catch(() => undefined);
+            }
+
+            // Приход мог уйти на другой склад (выбор в дровере) — переключаемся
+            // на него, иначе результат операции просто не виден в списке.
+            if (wId !== selectedWarehouseId) {
+                setSelectedItem(null);
+                setSelectedWarehouseId(wId);
+                setEditingMovement(null);
+                return;
+            }
+
             const data = await fetchStock();
             const updated = data?.find((i) =>
                 targetProductId
@@ -310,11 +353,6 @@ const DjangoWarehousesPage: React.FC = () => {
             if (refreshProductId) {
                 const moves = await getStockMovements({ productId: refreshProductId, warehouseId: wId, organizationId: orgId });
                 setMovements(moves);
-            }
-            if (newProductName) {
-                getProducts(undefined, { organizationId: orgId })
-                    .then((prods) => setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name }))))
-                    .catch(() => undefined);
             }
             setEditingMovement(null);
         } catch (e) {
@@ -673,6 +711,8 @@ const DjangoWarehousesPage: React.FC = () => {
                 onConfirm={handleConfirmMovement}
                 availableProducts={availableProducts}
                 editingMovement={editingMovement}
+                warehouses={warehouseOptions}
+                defaultWarehouseId={selectedWarehouseId}
             />
 
             {/* Перемещение между складами */}
