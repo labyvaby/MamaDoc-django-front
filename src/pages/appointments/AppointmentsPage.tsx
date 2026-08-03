@@ -313,7 +313,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       employeeId: number | null;
       dateTime: string;
       serviceId: number | null;
-      /** Открыть форму в режиме брони (без пациента) — так работает вид «Окна». */
+      /** Явно включить режим брони без пациента. */
       booking: boolean;
     } | null
   >(null);
@@ -866,8 +866,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                 )
               }
               onBook={(employeeId, dateTime) => {
-                // Услугу регистратор выбирает уже в форме записи.
-                setSlotPrefill({ employeeId, dateTime, serviceId: null, booking: true });
+                // Услугу регистратор выбирает уже в форме записи. Из режима
+                // «Окна» открывается обычный приём, а не бронь без пациента.
+                setSlotPrefill({ employeeId, dateTime, serviceId: null, booking: false });
                 setCreateOpen(true);
               }}
               onOpenAppointment={(appointmentId) => {
@@ -1139,6 +1140,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         initialEmployeeId={slotPrefill ? slotPrefill.employeeId : filterEmployeeId}
         initialServiceId={slotPrefill?.serviceId ?? null}
         initialBooking={slotPrefill?.booking ?? false}
+        showAllFieldsInitially={slotPrefill?.employeeId != null}
       />
 
       <DjangoEditAppointmentDrawer

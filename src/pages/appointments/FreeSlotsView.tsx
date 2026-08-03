@@ -51,7 +51,7 @@ const MONTHS_SHORT = [
 ];
 
 /** На сколько дней вперёд регистратор ищет окна (влезает в лимит бэка 62). */
-const HORIZON_DAYS = 14;
+const HORIZON_DAYS = 62;
 
 /** Индекс дня недели с понедельника (Пн=0 … Вс=6), без плагина isoWeek. */
 function mondayIndex(d: Dayjs): number {
@@ -470,9 +470,13 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
   // Позволяет свернуть раскрытый список врачей под активной специальностью.
-  // Список открыт по умолчанию; повторный клик по активной группе его сворачивает.
-  const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>(null);
+  // При первом открытии остаёмся на «Все специалисты», но список врачей свёрнут.
+  const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>("all");
   const stripRef = React.useRef<HTMLDivElement>(null);
+  const [isStripDragging, setIsStripDragging] = React.useState(false);
+  const stripDragStartXRef = React.useRef(0);
+  const stripScrollStartRef = React.useRef(0);
+  const stripDragMovedRef = React.useRef(false);
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
   const matrixScrollRef = React.useRef<HTMLDivElement>(null);
@@ -505,6 +509,25 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
   const handleMouseUpOrLeave = () => {
     setIsDragging(false);
+  };
+
+  const handleStripMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !stripRef.current) return;
+    setIsStripDragging(true);
+    stripDragMovedRef.current = false;
+    stripDragStartXRef.current = e.pageX;
+    stripScrollStartRef.current = stripRef.current.scrollLeft;
+  };
+
+  const handleStripMouseMove = (e: React.MouseEvent) => {
+    if (!isStripDragging || !stripRef.current) return;
+    const delta = e.pageX - stripDragStartXRef.current;
+    if (Math.abs(delta) > 4) stripDragMovedRef.current = true;
+    stripRef.current.scrollLeft = stripScrollStartRef.current - delta;
+  };
+
+  const handleStripMouseUpOrLeave = () => {
+    setIsStripDragging(false);
   };
 
   // Справочник специализаций — левый рельс.
@@ -629,6 +652,17 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     stripRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
   };
 
+  // Если ближайшая смена находится далеко от сегодняшней даты, выбранный день
+  // должен сразу оказаться в видимой части горизонтальной ленты.
+  React.useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || !selDay) return;
+    const dayButton = strip.querySelector<HTMLElement>(`[data-slot-date="${selDay}"]`);
+    if (!dayButton) return;
+    const left = dayButton.offsetLeft - (strip.clientWidth - dayButton.clientWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [selDay, selectableDays]);
+
   return (
     <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
       {/* ── Верхний навбар дат и кнопка переключения режимов ── */}
@@ -670,7 +704,19 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 ref={stripRef}
                 direction="row"
                 spacing={0.75}
-                sx={{ overflowX: "auto", py: 0.25, px: 0.5, flex: 1, "&::-webkit-scrollbar": { height: 4 } }}
+                onMouseDown={handleStripMouseDown}
+                onMouseMove={handleStripMouseMove}
+                onMouseUp={handleStripMouseUpOrLeave}
+                onMouseLeave={handleStripMouseUpOrLeave}
+                sx={{
+                  overflowX: "auto",
+                  py: 0.25,
+                  px: 0.5,
+                  flex: 1,
+                  cursor: isStripDragging ? "grabbing" : "grab",
+                  userSelect: isStripDragging ? "none" : "auto",
+                  "&::-webkit-scrollbar": { height: 4 },
+                }}
               >
                 {selectableDays.map((d) => {
                   const dj = dayjs(d.date);
@@ -679,7 +725,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   return (
                     <Box
                       key={d.date}
-                      onClick={() => setSelDay(d.date)}
+                      data-slot-date={d.date}
+                      onClick={() => {
+                        if (stripDragMovedRef.current) return;
+                        setSelDay(d.date);
+                      }}
                       sx={{
                         flex: "0 0 auto",
                         minWidth: 60,
@@ -794,7 +844,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           setSpecId(null);
                           setSelDocId(null);
                           setSelDay(null);
-                          setCollapsedGroup(null);
+                          setCollapsedGroup("all");
                         } else if (collapsedGroup === "all") {
                           setCollapsedGroup(null);
                         } else {
@@ -824,6 +874,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       >
                         {t("slots.allSpecialists")}
                       </Typography>
+                      <KeyboardArrowRightOutlined
+                        sx={{
+                          fontSize: 17,
+                          flexShrink: 0,
+                          transform: collapsedGroup === "all" ? "none" : "rotate(90deg)",
+                          transition: "transform .13s ease",
+                        }}
+                      />
                       {overall && (
                         <Box
                           sx={(t) => ({
@@ -912,6 +970,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         >
                           {s.name}
                         </Typography>
+                        <KeyboardArrowRightOutlined
+                          sx={{
+                            fontSize: 17,
+                            flexShrink: 0,
+                            transform: collapsedGroup === s.id ? "none" : "rotate(90deg)",
+                            transition: "transform .13s ease",
+                          }}
+                        />
                         {badge && (
                           <Box
                             sx={(t) => ({
