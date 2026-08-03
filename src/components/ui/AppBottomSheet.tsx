@@ -23,6 +23,14 @@ export type AppBottomSheetProps = Omit<DrawerProps, "anchor" | "open" | "onClose
   header?: React.ReactNode;
 
   /**
+   * Лист всегда во всю штатную высоту (токен), а не по содержимому.
+   * Нужен, когда внутри живёт панель со своим скроллом и шапкой: иначе каждое
+   * место подбирало высоту само («80vh» здесь, «90vh» там) и одинаковые
+   * карточки открывались на разную высоту.
+   */
+  fullHeight?: boolean;
+
+  /**
    * Основной скроллируемый контент.
    */
   children: React.ReactNode;
@@ -32,6 +40,7 @@ export const AppBottomSheet: React.FC<AppBottomSheetProps> = ({
   open,
   onClose,
   header,
+  fullHeight = false,
   children,
   PaperProps,
   ModalProps,
@@ -102,6 +111,7 @@ export const AppBottomSheet: React.FC<AppBottomSheetProps> = ({
         ...(PaperProps ?? {}),
         sx: (theme) => ({
           maxHeight: theme.appLayout.drawer.bottomSheet.height,
+          ...(fullHeight ? { height: theme.appLayout.drawer.bottomSheet.height } : null),
           borderTopLeftRadius: 16,
           borderTopRightRadius: 16,
           overflow: "hidden",
