@@ -54,6 +54,7 @@
       "accountNumber": "Номер счёта",
       "inn": "ИНН"
     },
+    "accessRoleTooltip": "Роль доступа в системе: {{role}}",
     "requisitesPrivate": "приватно",
     "elqrLabel": "elQR (реквизиты)",
     "openAction": "Открыть",

@@ -46,6 +46,7 @@ import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import type { EmployesRow } from "../types";
+import { getEmployeePosition } from "../position";
 import type { ServiceRow as ServiceDto } from "../../../services/services";
 
 import { formatDateRu } from "../../../utility/format";
@@ -435,12 +436,17 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   // ── Вычисляем отображаемую роль ───────────────────────────────────────────
   let roleDisplayName = "";
   let isDoctor = false;
+  // Роль доступа, противоречащая клинической (медсестра с доступом врача) —
+  // показываем отдельным чипом, чтобы не терять информацию о правах.
+  let conflictingAccessRole: string | null = null;
 
   if (IS_DJANGO_BACKEND) {
     const dr = emp?._djangoRole;
     if (dr) {
-      // Используем name как display — бэкенд возвращает display_name в поле name (или code для внутреннего кода)
-      roleDisplayName = dr.name;
+      // Подпись — должность (см. position.ts), а не название роли доступа
+      const position = getEmployeePosition(emp, t);
+      roleDisplayName = position.label;
+      conflictingAccessRole = position.conflictingAccessRole;
       isDoctor = dr.code === "doctor";
     }
   } else {
@@ -605,6 +611,23 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                       bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
                     })}
                   />
+                  {conflictingAccessRole && (
+                    <Tooltip title={t("card.accessRoleTooltip", { role: conflictingAccessRole })}>
+                      <Chip
+                        size="small"
+                        icon={<LockOutlined sx={{ fontSize: 13 }} />}
+                        label={conflictingAccessRole}
+                        sx={(t) => ({
+                          fontWeight: 500,
+                          height: 24,
+                          borderRadius: "7px",
+                          color: "text.secondary",
+                          bgcolor: subtleBg(t, true),
+                          "& .MuiChip-icon": { ml: 0.75, mr: -0.25, color: "text.disabled" },
+                        })}
+                      />
+                    </Tooltip>
+                  )}
                   {status && (
                     <Chip
                       size="small"

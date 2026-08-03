@@ -9,6 +9,7 @@ import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { useT } from "../../../i18n/VerticalProvider";
+import { getEmployeePosition, getPositionGroupWeight } from "../position";
 
 export type EmployeeListProps = {
   items: EmployesRow[];
@@ -115,7 +116,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
     let roleText: string;
     if (IS_DJANGO_BACKEND) {
-      roleText = e._djangoRole?.name || statusText || t("list.fallbackEmployee");
+      roleText =
+        getEmployeePosition(e, t).label || statusText || t("list.fallbackEmployee");
     } else {
       const roleObj = roles.find((r) => r.id === e.role_id);
       roleText =
@@ -256,17 +258,31 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     if (!isGrouped) return items.map(renderItem);
 
     if (IS_DJANGO_BACKEND) {
-      const grouped: Record<string, { name: string; items: EmployesRow[] }> = {};
+      // Группируем по должности (см. position.ts), а не по роли доступа: иначе
+      // медсестра с доступом врача попадала в группу «Врач» с подписью
+      // «Медсестра» в строке.
+      const grouped: Record<
+        string,
+        { name: string; weight: number; items: EmployesRow[] }
+      > = {};
       items.forEach((item) => {
-        const role = item._djangoRole;
-        const gId = role ? String(role.id) : "other";
-        const gName = role ? role.name : t("list.noSystemAccessGroup");
-        if (!grouped[gId]) grouped[gId] = { name: gName, items: [] };
+        const label = getEmployeePosition(item, t).label;
+        const gId = label || "__no_access__";
+        const gName = label || t("list.noSystemAccessGroup");
+        if (!grouped[gId]) {
+          grouped[gId] = { name: gName, weight: getPositionGroupWeight(item), items: [] };
+        }
         grouped[gId].items.push(item);
       });
 
+      // Порядок групп фиксирован (лечебный персонал → остальные → без
+      // доступа), иначе он зависел от того, кто раньше встретился в выдаче.
+      const ordered = Object.entries(grouped).sort(
+        ([, a], [, b]) => a.weight - b.weight || a.name.localeCompare(b.name, "ru"),
+      );
+
       const elements: React.ReactNode[] = [];
-      Object.entries(grouped).forEach(([gId, group], idx) => {
+      ordered.forEach(([gId, group], idx) => {
         elements.push(
           <GroupHeader key={`header-django-${gId}`} title={group.name} count={group.items.length} first={idx === 0} />,
         );
