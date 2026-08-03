@@ -208,6 +208,12 @@ export type DjangoAddAppointmentDrawerProps = {
   initialDateExact?: boolean;
   initialEmployeeId?: number | null;
   initialServiceId?: number | null;
+  /**
+   * Включать режим «Бронирование (без пациента)» при предзаполнении из окна.
+   * Вид «Окна» бронирует время без пациента; клик по «Есть окно на HH:mm» в
+   * списке — обычная запись, там пациент по-прежнему обязателен.
+   */
+  initialBooking?: boolean;
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -220,6 +226,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   initialDateExact = false,
   initialEmployeeId,
   initialServiceId,
+  initialBooking = false,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -330,7 +337,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     setWorkMode(inferWorkMode(base));
     // Предзаполнение из клика по свободному окну (врач + услуга в первой строке).
     if (isSlotPrefill) {
-      setIsBooking(true); // раскрыть секцию услуг сразу (без обязательного пациента)
+      // Бронь — только по явному запросу вызывающей стороны: она раскрывает
+      // секцию услуг сразу и снимает обязательность пациента.
+      if (initialBooking) setIsBooking(true);
       setServiceRows([
         newServiceRow({
           serviceId: initialServiceId ?? null,
