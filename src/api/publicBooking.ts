@@ -554,7 +554,7 @@ export interface CreateGuestBookingRequest {
   comment?: string;
 }
 
-/** Ответ на создание брони — предложение фронта (не факт из контракта). */
+/** Ответ на создание брони. Сабмит проверен вживую 03.08.2026 — форма подходит. */
 export interface GuestBookingResult {
   id: number;
   confirmationCode: string;
