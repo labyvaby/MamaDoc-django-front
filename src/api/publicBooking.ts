@@ -169,6 +169,12 @@ export interface OrganizationPreview {
   branchesCount: number;
   specialistsCount: number;
   professionalsCount: number;
+  /**
+   * Логотип клиники. В контракте §2 поля нет и на 03.08.2026 бэк его не отдаёт
+   * (тикет `docs/backend-ticket-public-booking-logo.md`); витрина рисует
+   * монограмму, пока значение не появится.
+   */
+  logoUrl?: string | null;
 }
 
 /** Организация — детали (§2). Адрес/телефоны всегда пустые (они на филиалах). */
