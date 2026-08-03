@@ -19,7 +19,6 @@ import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeIte
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
-import { useCan } from "../../hooks/useCan";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
 import {
@@ -111,15 +110,6 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
-  // Заключения приёма — тот же набор кодов, что на странице «Записи»
-  // (просмотр открывает любой из create/update/manage).
-  const canViewConclusions = useCan([
-    "medical.conclusions.view",
-    "medical.conclusions.create",
-    "medical.conclusions.update",
-    "medical.conclusions.manage",
-  ]);
-
   const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
 
@@ -571,7 +561,6 @@ const DjangoPatientsPage: React.FC = () => {
                 canUpdate={false}
                 canManageFinance={false}
                 canViewFinance={canViewFinance}
-                canViewConclusions={canViewConclusions}
                 isConclusionVisible={conclusionOpen}
                 onToggleConclusion={() => setConclusionOpen((v) => !v)}
                 onEdit={() => {}}

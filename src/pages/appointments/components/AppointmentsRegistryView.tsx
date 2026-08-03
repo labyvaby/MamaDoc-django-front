@@ -129,7 +129,6 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   const canUpdate = can("appointments.update");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
-  const canViewConclusions = can("medical.conclusions.view");
 
   // ── Filters ────────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -317,7 +316,6 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
       canUpdate={canUpdate}
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
-      canViewConclusions={canViewConclusions}
       onEdit={setEditTarget}
       onPay={setPaymentTarget}
       onConfirmVisit={handleConfirmVisit}
@@ -546,7 +544,6 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                 canUpdate={canUpdate}
                 canManageFinance={canManageFinance}
                 canViewFinance={canViewFinance}
-                canViewConclusions={canViewConclusions}
                 onEdit={setEditTarget}
                 onPay={setPaymentTarget}
                 onArrived={handleArrived}

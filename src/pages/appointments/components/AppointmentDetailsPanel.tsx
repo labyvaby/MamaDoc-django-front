@@ -21,7 +21,6 @@ import {
   Stack,
   Tooltip,
   Typography,
-  useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -75,9 +74,6 @@ import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
-/** Сколько действий шапки показывать кнопками; остальные уходят в меню «⋯». */
-const INLINE_ACTIONS_LIMIT = 3;
-
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
 interface HeaderAction {
   key: string;
@@ -96,7 +92,6 @@ interface AppointmentDetailsPanelProps {
   canUpdate: boolean;
   canManageFinance: boolean;
   canViewFinance: boolean;
-  canViewConclusions: boolean;
   canDelete?: boolean;
   /** vaccinations.record — показывать «Ввести прививку» в карточке приёма. */
   canRecordVaccination?: boolean;
@@ -141,7 +136,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   canUpdate,
   canManageFinance,
   canViewFinance,
-  canViewConclusions,
   canDelete,
   canRecordVaccination,
   isConclusionVisible = false,
@@ -159,12 +153,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
-  // На узком экране кнопкам шапки не хватает места даже вдвоём — держим
-  // инлайн только самые частые действия, остальное уходит в «⋯» (там уже
-  // живут отмена/удаление, паттерн знакомый).
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, activeEmployee } = usePermissions();
+  // Каждое действие заключения проверяет ровно то право, которое требует API.
+  // Объединять view/create/update нельзя: иначе фронт показывает действие,
+  // которое сервер затем корректно отклоняет с 403.
+  const canViewConclusions = useCan("medical.conclusions.view");
+  const canCreateConclusions = useCan("medical.conclusions.create");
+  const canUpdateConclusions = useCan("medical.conclusions.update");
   // Клик по товару открывает карточку из справочника — только при праве на него.
   const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
 
@@ -457,12 +453,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     );
   };
 
-  /**
-   * Действия шапки одним списком в порядке важности. Раньше они рисовались
-   * подряд шестью кнопками: у админа на активном приёме шапка переносилась на
-   * вторую строку и толкала содержимое вниз. Теперь первые INLINE_ACTIONS_LIMIT
-   * видны кнопками, остальное — в меню «⋯».
-   */
+  /** Действия шапки одним списком в порядке важности. */
   const actions: HeaderAction[] = [];
 
   // Подтвердить — пациент подтвердил визит по телефону, но ещё не пришёл.
@@ -490,7 +481,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // Начать приём — врач-исполнитель с незавершёнными услугами, при любом
   // активном статусе: регистратор мог не отметить «Пациент здесь», а врач всё
   // равно должен мочь начать приём.
-  if (isDoctorRole && hasIncompleteServices && isAppointmentActive && canViewConclusions) {
+  if (isDoctorRole && hasIncompleteServices && isAppointmentActive && canCreateConclusions) {
     actions.push({
       key: "start",
       label: t("details.startVisit"),
@@ -506,7 +497,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   }
 
   // Изменить заключение — врач-исполнитель, у которого заключение уже есть.
-  if (isDoctorRole && !hasIncompleteServices && isPerformer && canViewConclusions) {
+  if (isDoctorRole && !hasIncompleteServices && isPerformer && canUpdateConclusions) {
     actions.push({
       key: "edit-conclusion",
       label: t("details.editConclusion"),
@@ -574,6 +565,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       key: "cancel",
       label: t("details.cancelRecord"),
       icon: <PersonOffOutlined fontSize="small" />,
+      color: "error",
       onClick: () => {
         setConfirmAction("cancel");
         setConfirmOpen(true);
@@ -594,9 +586,69 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  const inlineLimit = isMobile ? 2 : INLINE_ACTIONS_LIMIT;
-  const inlineActions = actions.slice(0, inlineLimit);
-  const overflowActions = actions.slice(inlineLimit);
+  // Все обычные действия, включая отмену, участвуют в расчёте доступной ширины.
+  // Не поместившийся хвост списка автоматически переезжает в меню «⋯».
+  const headerActions = cancelAction ? [...actions, cancelAction] : actions;
+  const headerActionsRowRef = React.useRef<HTMLDivElement>(null);
+  const headerActionsMeasureRef = React.useRef<HTMLDivElement>(null);
+  const [inlineActionCount, setInlineActionCount] = React.useState(0);
+  const headerActionsSignature = headerActions
+    .map((action) => `${action.key}:${action.label}`)
+    .join("|");
+
+  React.useLayoutEffect(() => {
+    const row = headerActionsRowRef.current;
+    const measure = headerActionsMeasureRef.current;
+    if (!row || !measure) return;
+
+    const recalculate = () => {
+      const actionNodes = Array.from(
+        measure.querySelectorAll<HTMLElement>("[data-header-action-measure]"),
+      );
+      const moreNode = measure.querySelector<HTMLElement>("[data-header-more-measure]");
+      if (actionNodes.length !== headerActions.length || !moreNode) return;
+
+      const rowWidth = row.clientWidth;
+      const measureStyle = window.getComputedStyle(measure);
+      const parsedGap = Number.parseFloat(measureStyle.columnGap || measureStyle.gap);
+      const gap = Number.isFinite(parsedGap) ? parsedGap : 0;
+      const actionWidths = actionNodes.map((node) => node.getBoundingClientRect().width);
+      const moreWidth = moreNode.getBoundingClientRect().width;
+
+      let nextCount = 0;
+      for (let count = actionWidths.length; count >= 0; count -= 1) {
+        const menuRequired = count < actionWidths.length || dangerActions.length > 0;
+        const buttonsWidth = actionWidths
+          .slice(0, count)
+          .reduce((sum, width) => sum + width, 0);
+        const buttonsGaps = Math.max(0, count - 1) * gap;
+        const menuWidth = menuRequired ? moreWidth + (count > 0 ? gap : 0) : 0;
+
+        // Один пиксель запаса защищает от дробного округления ширины браузером.
+        if (buttonsWidth + buttonsGaps + menuWidth <= rowWidth - 1) {
+          nextCount = count;
+          break;
+        }
+      }
+
+      setInlineActionCount((current) => (current === nextCount ? current : nextCount));
+    };
+
+    recalculate();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(recalculate);
+      observer.observe(row);
+      observer.observe(measure);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", recalculate);
+    return () => window.removeEventListener("resize", recalculate);
+  }, [headerActionsSignature, headerActions.length, dangerActions.length]);
+
+  const inlineActions = headerActions.slice(0, inlineActionCount);
+  const overflowActions = headerActions.slice(inlineActionCount);
   const hasMenu = overflowActions.length > 0 || dangerActions.length > 0;
 
   const runFromMenu = (action: HeaderAction) => {
@@ -635,35 +687,25 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             "& .MuiCardHeader-action": { mt: 0, alignSelf: "center", ml: 1 },
           }}
           title={
-            /* Основные действия — кнопками, остальное в меню «⋯».
-               Кнопки переносятся на следующую строку: строка, которая
-               скроллилась вбок, обрезала «Изменить» на полуслове, и было не
-               видно, что кнопка вообще есть. Сознательный обмен: лишний ряд в
-               шапке лучше спрятанного действия.
-               «⋯» при этом вынесено из переносимого потока и прибито справа —
-               иначе оно уезжало на второй ряд и висело там одно. */
             <Box
               sx={{
-                display: "flex",
-                flexDirection: "row",
-                flexWrap: "nowrap",
-                alignItems: "center",
-                gap: { xs: 0.5, sm: 1 },
+                position: "relative",
                 minWidth: 0,
-                // Место под крестик закрытия — он висит абсолютом в правом
-                // верхнем углу шапки, «⋯» не должно под него заезжать.
-                pr: onClose ? 4 : 0,
+                // Крестик закрытия висит абсолютом в правом верхнем углу.
+                pr: 4,
               }}
             >
               <Stack
+                ref={headerActionsRowRef}
                 direction="row"
                 alignItems="center"
                 useFlexGap
                 sx={{
-                  gap: { xs: 0.5, sm: 1 },
-                  flexWrap: "wrap",
-                  flex: "1 1 auto",
+                  width: "100%",
                   minWidth: 0,
+                  gap: { xs: 0.5, sm: 1 },
+                  flexWrap: "nowrap",
+                  overflow: "hidden",
                 }}
               >
                 {inlineActions.map((action) => (
@@ -681,32 +723,76 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </Button>
                 ))}
 
-                {cancelAction && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="error"
-                    startIcon={cancelAction.icon}
-                    onClick={cancelAction.onClick}
-                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                  >
-                    {cancelAction.label}
-                  </Button>
+                {hasMenu && (
+                  <Tooltip title={t("details.moreActions")}>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => setMenuAnchor(e.currentTarget)}
+                      sx={{ flexShrink: 0, ml: "auto" }}
+                    >
+                      <MoreVertOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 )}
               </Stack>
 
-              {hasMenu && (
-                <Tooltip title={t("details.moreActions")}>
-                  <IconButton
+              {/* Невидимая копия нужна только для точного измерения кнопок.
+                  Она не участвует в раскладке и недоступна для взаимодействия. */}
+              <Stack
+                ref={headerActionsMeasureRef}
+                direction="row"
+                alignItems="center"
+                useFlexGap
+                aria-hidden
+                sx={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: "max-content",
+                  gap: { xs: 0.5, sm: 1 },
+                  visibility: "hidden",
+                  pointerEvents: "none",
+                }}
+              >
+                {headerActions.map((action) => (
+                  <Button
+                    key={action.key}
+                    data-header-action-measure
+                    tabIndex={-1}
                     size="small"
-                    onClick={(e) => setMenuAnchor(e.currentTarget)}
-                    sx={{ flexShrink: 0, alignSelf: "center" }}
+                    variant={action.active ? "contained" : "outlined"}
+                    color={action.color ?? "primary"}
+                    startIcon={action.icon}
+                    disabled={action.disabled}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                   >
-                    <MoreVertOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              )}
+                    {action.label}
+                  </Button>
+                ))}
+                <IconButton data-header-more-measure tabIndex={-1} size="small">
+                  <MoreVertOutlined fontSize="small" />
+                </IconButton>
+              </Stack>
             </Box>
+                  width: "max-content",
+                  gap: { xs: 0.5, sm: 1 },
+                  visibility: "hidden",
+                  pointerEvents: "none",
+                }}
+              >
+                {headerActions.map((action) => (
+                  <Button
+                    key={action.key}
+                    data-header-action-measure
+                    tabIndex={-1}
+                    size="small"
+                    variant={action.active ? "contained" : "outlined"}
+                    color={action.color ?? "primary"}
+                    startIcon={action.icon}
+                    disabled={action.disabled}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                  >
+                    {action.label}
           }
           action={
             onClose ? (
@@ -953,6 +1039,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             onClick={() => runFromMenu(action)}
             disabled={action.disabled}
             selected={action.active}
+            sx={{ color: action.color === "error" ? "error.main" : undefined }}
           >
             <ListItemIcon sx={{ color: action.color ? `${action.color}.main` : undefined }}>
               {action.icon}
