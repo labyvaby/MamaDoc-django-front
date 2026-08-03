@@ -79,7 +79,13 @@ interface AppointmentListPanelProps {
   onSelect: (a: DjangoAppointment) => void;
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
-  onAddSlot?: (dateIso: string) => void;
+  /**
+   * Клик по «Есть окно на HH:mm». Второй аргумент — исполнитель группы, в
+   * которой показано окно: форма записи открывается сразу с ним, иначе
+   * регистратор выбирал бы врача заново и мог промахнуться мимо свободного.
+   * null — окно в группе «без специалиста».
+   */
+  onAddSlot?: (dateIso: string, employeeId: number | null) => void;
   /** Скрыть ленту аватарок-исполнителей (процедурный кабинет её не показывает). */
   hideDoctorStrip?: boolean;
   /**
@@ -114,6 +120,8 @@ type GapSlot = {
   id: string;
   timeStr: string;
   dateIso: string;
+  /** Исполнитель группы, в которой стоит окно (null — группа «без специалиста»). */
+  employeeId: number | null;
 };
 
 type RenderItem = DjangoAppointment | GapSlot;
@@ -403,23 +411,25 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const activeIntervals = busyIntervals(sorted);
       const isCoveredByActive = (t: number) => isSlotCovered(activeIntervals, t);
 
+      // Исполнитель группы: нужен и для рабочих часов, и для предзаполнения
+      // формы при клике по окну. Группы строятся по имени, id берём из первой
+      // строки услуги с этим именем.
+      let groupEmployeeId: number | null = null;
+      outer: for (const a of sorted) {
+        for (const sl of a.services) {
+          if (sl.employee && sl.employee.fullName === docName) {
+            groupEmployeeId = sl.employee.id;
+            break outer;
+          }
+        }
+      }
+
       // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
       // (например, «Есть окно на 16:00» при графике до 16:00). Если расписание
       // на сотрудника не ведётся (нет активного правила на дату) — не ограничиваем.
       let shiftSegments: { start: string; end: string }[] | null = null;
-      if (dayShifts) {
-        let empId: number | null = null;
-        outer: for (const a of sorted) {
-          for (const sl of a.services) {
-            if (sl.employee && sl.employee.fullName === docName) {
-              empId = sl.employee.id;
-              break outer;
-            }
-          }
-        }
-        if (empId != null && dayShifts.scheduledIds.has(empId)) {
-          shiftSegments = dayShifts.segments.get(empId) ?? [];
-        }
+      if (dayShifts && groupEmployeeId != null && dayShifts.scheduledIds.has(groupEmployeeId)) {
+        shiftSegments = dayShifts.segments.get(groupEmployeeId) ?? [];
       }
       const slotInShift = (d: dayjs.Dayjs) => {
         if (!shiftSegments) return true;
@@ -445,6 +455,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               id: key,
               timeStr: start.format("HH:mm"),
               dateIso: start.format("YYYY-MM-DDTHH:mm"),
+              employeeId: groupEmployeeId,
             });
           }
         }
@@ -464,6 +475,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                 id: key,
                 timeStr: currentEnd.format("HH:mm"),
                 dateIso: currentEnd.format("YYYY-MM-DDTHH:mm"),
+                employeeId: groupEmployeeId,
               });
             }
           }
@@ -476,6 +488,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               id: `gap-after-${current.id}`,
               timeStr: currentEnd.format("HH:mm"),
               dateIso: currentEnd.format("YYYY-MM-DDTHH:mm"),
+              employeeId: groupEmployeeId,
             });
           }
         }
@@ -712,7 +725,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           <AddSlotButton
                             key={item.id}
                             timeStr={item.timeStr}
-                            onClick={() => onAddSlot?.(item.dateIso)}
+                            onClick={() => onAddSlot?.(item.dateIso, item.employeeId)}
                           />
                         );
                       }

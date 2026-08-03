@@ -20,7 +20,7 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 // parseRelatedQuantity — общий парсер decimal-количества (> 0, до 3 знаков):
 // у расходника приёма та же семантика, что у состава услуги в справочнике.
 import { parseRelatedQuantity } from "../../api/catalog";
-import type { DjangoProduct } from "../../api/warehouse";
+import { productAvailableStock, type DjangoProduct } from "../../api/warehouse";
 import { formatKGS, formatQuantity } from "../../utility/format";
 import { useT } from "../../i18n/VerticalProvider";
 import { billableRowsTotal, type ConsumptionRow } from "./consumptionRows";
@@ -74,7 +74,10 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
           .map(
             (r) =>
               `${r.name} ${t("consumptions.quantity", {
-                quantity: formatQuantity(r.quantity),
+                // Через парсер, а не напрямую: в поле ввода количество лежит как
+                // его набрали («2,5»), а formatQuantity ждёт точку — иначе в
+                // сводке вместо числа появлялся прочерк.
+                quantity: formatQuantity(parseRelatedQuantity(r.quantity)),
                 unit: r.unit ? ` ${r.unit}` : "",
               })}`,
           )
@@ -143,13 +146,18 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                   <Typography variant="caption" display="block" noWrap>
                     {row.name}
                   </Typography>
-                  <Typography variant="caption" color="text.disabled">
-                    {row.stockOnHand === null
-                      ? t("consumptions.stockUnknown")
-                      : t("consumptions.stock", {
-                          stock: formatQuantity(row.stockOnHand),
-                        })}
-                  </Typography>
+                  {/* Остаток есть только у сохранённой строки: у новой (и во
+                      всей форме создания приёма) бэк его ещё не считал, а
+                      «склада нет» там неправда — подпись просто скрываем. */}
+                  {!(row.lineId === null && row.stockOnHand === null) && (
+                    <Typography variant="caption" color="text.disabled">
+                      {row.stockOnHand === null
+                        ? t("consumptions.stockUnknown")
+                        : t("consumptions.stock", {
+                            stock: formatQuantity(row.stockOnHand),
+                          })}
+                    </Typography>
+                  )}
                   {lineTotal > 0 && (
                     <Typography
                       variant="caption"
@@ -246,9 +254,11 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                   // руками, по умолчанию идёт в цену услуги, как из справочника.
                   billable: false,
                   unitPrice: p.price,
-                  // Остаток филиала знает только бэк — до перезагрузки приёма
-                  // не выдумываем число (ноль читался бы как нехватка).
-                  stockOnHand: null,
+                  // Остаток склада филиала — из `branchStock` каталога (есть,
+                  // когда товары загружены с branchId); null оставляем как
+                  // «неизвестен», чтобы ноль не читался как нехватка. Строка
+                  // хранит его строкой-decimal, как отдаёт API приёма.
+                  stockOnHand: p.branchStock === null ? null : String(p.branchStock),
                   source: "manual",
                 },
               ]);
@@ -258,7 +268,10 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                 <Stack>
                   <Typography variant="body2">{p.name}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {t("consumptions.stock", { stock: formatQuantity(p.stock) })} {p.unit}
+                    {t("consumptions.stock", {
+                      stock: formatQuantity(productAvailableStock(p)),
+                    })}{" "}
+                    {p.unit}
                   </Typography>
                 </Stack>
               </li>

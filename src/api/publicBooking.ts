@@ -169,6 +169,12 @@ export interface OrganizationPreview {
   branchesCount: number;
   specialistsCount: number;
   professionalsCount: number;
+  /**
+   * Логотип клиники. В контракте §2 поля нет и на 03.08.2026 бэк его не отдаёт
+   * (тикет `docs/backend-ticket-public-booking-logo.md`); витрина рисует
+   * монограмму, пока значение не появится.
+   */
+  logoUrl?: string | null;
 }
 
 /** Организация — детали (§2). Адрес/телефоны всегда пустые (они на филиалах). */
@@ -526,16 +532,29 @@ export function getPhoneCountries(signal?: AbortSignal): Promise<PhoneCountry[]>
   );
 }
 
-// ── Гостевая бронь (§7 — НЕ РЕАЛИЗОВАНО на бэке) ──────────────────────────────
+// ── Гостевая бронь ────────────────────────────────────────────────────────────
 //
-// ⚠ ПРЕДЛОЖЕННЫЙ фронтом контракт, НЕ подтверждён бэком. POST /api/v1/bookings/
-// в §7 помечен как «не готово». До реализации вызов вернёт 404 —
-// UI показывает заглушку. Тикет с этим контрактом уходит Рику (см. задачу #4).
-// Продуктовое решение: гостевая запись без регистрации пациента (без OTP/JWT).
+// POST /api/v1/bookings/ бэк реализовал (проверено 03.08.2026). Обязательные
+// поля подтверждены самим бэком — ответ на пустое тело перечисляет их в
+// `details.missing`: professional_id, branch_id, date, time, patient_name,
+// patient_phone, service_ids. Продуктовое решение: гостевая запись без
+// регистрации пациента (без OTP/JWT); заявка ложится в очередь «Брони»
+// (status=pending), приём создаётся только при подтверждении персоналом.
 
-/** Тело гостевой брони — предложение фронта (не факт из контракта). */
+/** Тело гостевой брони. Все поля ниже — обязательные (см. `details.missing`). */
 export interface CreateGuestBookingRequest {
   professionalId: number;
+  /**
+   * Филиал приёма — обязателен (`400 validation_error` без него). Берём из
+   * `ProfessionalDetail.branch` (основной филиал врача) — единственный
+   * источник в публичном каталоге; см. открытый вопрос §7.4 тикета.
+   */
+  branchId: number;
+  /**
+   * Минимум одна услуга — обязательна. Бэк отклоняет пустой список
+   * (`400 validation_error`), запись «просто к врачу» не поддерживается
+   * (подтверждено бэком 03.08.2026, тикет §8.1).
+   */
   serviceIds: number[];
   /** YYYY-MM-DD */
   date: string;
@@ -548,7 +567,7 @@ export interface CreateGuestBookingRequest {
   comment?: string;
 }
 
-/** Ответ на создание брони — предложение фронта (не факт из контракта). */
+/** Ответ на создание брони. Сабмит проверен вживую 03.08.2026 — форма подходит. */
 export interface GuestBookingResult {
   id: number;
   confirmationCode: string;
@@ -558,8 +577,9 @@ export interface GuestBookingResult {
 }
 
 /**
- * Создание гостевой брони. ⚠ Эндпоинт на бэке пока отсутствует (§7) —
- * ожидаемо вернёт 404, пока Рик не реализует контракт (задача #4).
+ * Создание гостевой брони — заявка в очередь «Брони» (status=pending), приём
+ * создаётся персоналом при подтверждении. Известные ошибки бэка: `400
+ * validation_error` (+`details.missing`), `409` на занятый слот.
  */
 export async function createGuestBooking(
   req: CreateGuestBookingRequest,
@@ -570,6 +590,7 @@ export async function createGuestBooking(
     signal,
     body: {
       professional_id: req.professionalId,
+      branch_id: req.branchId,
       service_ids: req.serviceIds,
       date: req.date,
       time: req.time,

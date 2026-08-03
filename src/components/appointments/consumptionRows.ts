@@ -1,5 +1,6 @@
-import { parseRelatedQuantity } from "../../api/catalog";
+import { parseRelatedQuantity, type ServiceRelatedProduct } from "../../api/catalog";
 import { consumptionLineTotal, type AppointmentConsumption } from "../../api/appointments";
+import { formatQuantity } from "../../utility/format";
 
 /** Расходник строки услуги в форме приёма. */
 export interface ConsumptionRow {
@@ -43,6 +44,34 @@ export function toConsumptionRow(c: AppointmentConsumption): ConsumptionRow {
     stockOnHand: c.stockOnHand,
     source: c.source,
   };
+}
+
+/**
+ * Состав услуги из справочника → строки формы приёма, который ещё не сохранён.
+ *
+ * Количество умножается на количество услуги в строке — так же, как это сделает
+ * бэк, разворачивая состав в строки расхода. `lineId` нет: строк расхода в базе
+ * ещё не существует. Остаток склада филиала знает только API приёма, в
+ * справочнике он по всей организации — поэтому `stockOnHand: null` («неизвестен»)
+ * вместо числа, которое после сохранения окажется другим.
+ */
+export function serviceTemplateRows(
+  products: ServiceRelatedProduct[],
+  serviceQuantity = 1,
+): ConsumptionRow[] {
+  const multiplier = serviceQuantity > 0 ? serviceQuantity : 1;
+  return products.map((p) => ({
+    lineId: null,
+    productId: p.id,
+    name: p.name,
+    unit: p.unit,
+    quantity: formatQuantity(p.quantity * multiplier),
+    autoWriteOff: p.autoWriteOff,
+    billable: p.billable,
+    unitPrice: p.price,
+    stockOnHand: null,
+    source: "service_template",
+  }));
 }
 
 /** Сколько платные расходники строки услуги добавляют к сумме приёма. */

@@ -306,9 +306,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   }, []);
   // Предзаполнение создания приёма из клика по свободному окну.
   // employeeId/serviceId заполнены из вида «Окна» (врач+услуга известны);
-  // клик по «Есть окно на HH:mm» в списке передаёт только время.
+  // клик по «Есть окно на HH:mm» в списке передаёт время и врача группы
+  // (услугу регистратор выбирает в форме).
   const [slotPrefill, setSlotPrefill] = React.useState<
-    { employeeId: number | null; dateTime: string; serviceId: number | null } | null
+    {
+      employeeId: number | null;
+      dateTime: string;
+      serviceId: number | null;
+      /** Открыть форму в режиме брони (без пациента) — так работает вид «Окна». */
+      booking: boolean;
+    } | null
   >(null);
   // Клик по занятому времени в виде «Окна»: карточка приёма открывается дровером
   // поверх сетки. Сетка знает только id приёма (и он может быть на другой дате,
@@ -845,7 +852,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               }
               onBook={(employeeId, dateTime) => {
                 // Услугу регистратор выбирает уже в форме записи.
-                setSlotPrefill({ employeeId, dateTime, serviceId: null });
+                setSlotPrefill({ employeeId, dateTime, serviceId: null, booking: true });
                 setCreateOpen(true);
               }}
               onOpenAppointment={(appointmentId) => {
@@ -894,9 +901,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               onSelect={handleSelect}
               onEdit={handleEdit}
               onPay={handlePay}
-              onAddSlot={canCreate ? (dateIso) => {
-                // Клик по «Есть окно на HH:mm» — время окна попадает в форму.
-                setSlotPrefill({ employeeId: null, dateTime: dateIso, serviceId: null });
+              onAddSlot={canCreate ? (dateIso, employeeId) => {
+                // Клик по «Есть окно на HH:mm» — в форму попадают время окна и
+                // исполнитель группы, в которой это окно показано.
+                setSlotPrefill({ employeeId, dateTime: dateIso, serviceId: null, booking: false });
                 setCreateOpen(true);
               } : undefined}
               hideDoctorStrip={hideEmployeeStrip}
@@ -1112,6 +1120,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         initialDateExact={!!slotPrefill}
         initialEmployeeId={slotPrefill?.employeeId ?? null}
         initialServiceId={slotPrefill?.serviceId ?? null}
+        initialBooking={slotPrefill?.booking ?? false}
       />
 
       <DjangoEditAppointmentDrawer

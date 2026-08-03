@@ -125,6 +125,65 @@ export function parseOverlapConflict(
   return null;
 }
 
+// ── Нехватка товара при сохранении (HTTP 400, машиночитаемая) ────────────────
+
+/**
+ * Блокирующая нехватка остатка: товар не списать со склада филиала приёма.
+ * Бэк с 03.08.2026 присылает её структурой, а не только русским текстом
+ * (`detail[0]`: `code`/`type` = `insufficient_stock`, `productId`,
+ * `warehouseId`, `warehouseName`, `required`, `available`) — тикет
+ * `backend_ticket_product_stock_branch_scoping.md`, п. 3.
+ *
+ * Не путать с `AppointmentConsumptionWarning`: то — неблокирующее предупреждение
+ * автосписания расходников (остаток уходит в минус, приём сохраняется).
+ */
+export interface AppointmentStockShortage {
+  productId: number | null;
+  warehouseId: number | null;
+  warehouseName: string | null;
+  /** decimal-строки/числа как пришли от бэка — только для показа. */
+  required: string | null;
+  available: string | null;
+  /** Русский текст бэка — фолбэк, если названия склада в ответе нет. */
+  msg: string | null;
+}
+
+const asStringOrNull = (v: unknown): string | null =>
+  typeof v === "string" ? v : typeof v === "number" ? String(v) : null;
+
+const asNumberOrNull = (v: unknown): number | null =>
+  typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : null;
+
+/**
+ * Распознать нехватку остатка в ошибке сохранения приёма. Матчим по `code`/`type`
+ * (регистр не важен), а не по тексту — текст терминологичен и меняется.
+ * Возвращает null для любой другой ошибки: вызывающий покажет обычный saveError.
+ */
+export function parseInsufficientStock(
+  err: unknown,
+): AppointmentStockShortage | null {
+  if (!(err instanceof ApiError) || err.status !== 400) return null;
+  const p = err.payload as Record<string, unknown> | null | undefined;
+  if (!p || typeof p !== "object" || !Array.isArray(p.detail)) return null;
+  for (const raw of p.detail as unknown[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    const code = String(item.code ?? item.type ?? "").toLowerCase();
+    if (code !== "insufficient_stock") continue;
+    return {
+      productId: asNumberOrNull(item.productId),
+      warehouseId: asNumberOrNull(item.warehouseId),
+      warehouseName: asStringOrNull(item.warehouseName),
+      required: asStringOrNull(item.required),
+      available: asStringOrNull(item.available),
+      // Живьём msg приходит с префиксом поля («products: Недостаточно…»,
+      // проверено на проде 03.08.2026) — пользователю он ни о чём не говорит.
+      msg: asStringOrNull(item.msg)?.replace(/^\s*products?\s*:\s*/i, "") ?? null,
+    };
+  }
+  return null;
+}
+
 // ── Nested shapes ─────────────────────────────────────────────────────────────
 
 export interface AppointmentPatientShort {

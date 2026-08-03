@@ -45,20 +45,32 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
+  APPOINTMENT_CONSUMPTIONS_ENABLED,
   createAppointment,
   getAppointments,
   parseBackendError,
+  parseInsufficientStock,
   parseOverlapConflict,
   type AppointmentOverlapConflict,
+  type AppointmentStockShortage,
 } from "../../api/appointments";
+import { parseRelatedQuantity } from "../../api/catalog";
+import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
+import {
+  billableRowsTotal,
+  hasInvalidConsumptionQuantity,
+  serviceTemplateRows,
+  type ConsumptionRow,
+} from "../../components/appointments/consumptionRows";
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
-import ServiceConsumptionsPreview, {
-  previewBillableTotal,
-} from "./components/ServiceConsumptionsPreview";
 import { getPatientBalance } from "../../api/patientBalance";
-import { getProducts, type DjangoProduct } from "../../api/warehouse";
+import {
+  getProducts,
+  productAvailableStock,
+  type DjangoProduct,
+} from "../../api/warehouse";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -77,6 +89,15 @@ import { groupServiceRowsByEmployee } from "../../components/appointments/servic
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
 import { attentionFieldSx } from "../../theme/uiHelpers";
 import type { RbacBranch } from "../../api/auth";
+import { useStockElsewhere } from "../../hooks/useStockElsewhere";
+import {
+  branchStockCaption,
+  branchStockWarning,
+} from "../../components/appointments/branchStockHint";
+import {
+  stockShortageMessage,
+  stockShortageRowText,
+} from "../../components/appointments/stockShortage";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -113,6 +134,12 @@ type ServiceRow = {
   serviceId: number | null;
   employeeId: number | null;
   quantity: number;
+  /**
+   * Расходники строки, когда их правили руками. Пока `null` — состав берётся из
+   * справочника услуги (и следует количеству услуги), а `consumptions` в запрос
+   * не уходит вовсе: бэк развернёт состав сам.
+   */
+  consumptions: ConsumptionRow[] | null;
 };
 
 let serviceRowSeq = 0;
@@ -126,6 +153,7 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     serviceId: null,
     employeeId: null,
     quantity: 1,
+    consumptions: null,
     ...patch,
   };
 }
@@ -180,6 +208,12 @@ export type DjangoAddAppointmentDrawerProps = {
   initialDateExact?: boolean;
   initialEmployeeId?: number | null;
   initialServiceId?: number | null;
+  /**
+   * Включать режим «Бронирование (без пациента)» при предзаполнении из окна.
+   * Вид «Окна» бронирует время без пациента; клик по «Есть окно на HH:mm» в
+   * списке — обычная запись, там пациент по-прежнему обязателен.
+   */
+  initialBooking?: boolean;
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -192,6 +226,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   initialDateExact = false,
   initialEmployeeId,
   initialServiceId,
+  initialBooking = false,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -225,6 +260,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([newServiceRow()]);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+  /** Каталог для расходников — без фильтров продажи и остатка. */
+  const [consumableProducts, setConsumableProducts] = React.useState<DjangoProduct[]>([]);
   const [productsLoading, setProductsLoading] = React.useState(false);
   const [complaints, setComplaints] = React.useState("");
   const [adminComment, setAdminComment] = React.useState("");
@@ -239,6 +276,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [confirmDuplicateOpen, setConfirmDuplicateOpen] = React.useState(false);
   const [overlapConflict, setOverlapConflict] =
     React.useState<AppointmentOverlapConflict | null>(null);
+  /** Какому товару не хватило остатка на складе филиала (машинный код бэка). */
+  const [shortage, setShortage] = React.useState<AppointmentStockShortage | null>(null);
+  // Любая правка состава снимает пометку: она относилась к отправленным строкам.
+  React.useEffect(() => {
+    setShortage(null);
+  }, [productRows, serviceRows]);
   const availableBranches = React.useMemo(
     () => (activeMembership?.branches ?? []).filter((branch) => branch.isActive),
     [activeMembership],
@@ -294,7 +337,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     setWorkMode(inferWorkMode(base));
     // Предзаполнение из клика по свободному окну (врач + услуга в первой строке).
     if (isSlotPrefill) {
-      setIsBooking(true); // раскрыть секцию услуг сразу (без обязательного пациента)
+      // Бронь — только по явному запросу вызывающей стороны: она раскрывает
+      // секцию услуг сразу и снимает обязательность пациента.
+      if (initialBooking) setIsBooking(true);
       setServiceRows([
         newServiceRow({
           serviceId: initialServiceId ?? null,
@@ -321,16 +366,27 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     );
   }, [open, nurseEmployeeId]);
 
-  // ── load sellable products (with context stock) ────────────────────────────
+  // ── load sellable products (with branch stock) ─────────────────────────────
+  // branchId обязателен: без него бэк отдаёт только агрегат `stock` по всей
+  // организации, а списывает со склада филиала — пикер обещал бы остаток,
+  // которого на месте нет (тикет product_stock_branch_scoping, закрыт 03.08.2026).
   React.useEffect(() => {
     if (!open) return;
     const ctrl = new AbortController();
     setProductsLoading(true);
-    getProducts(ctrl.signal, { organizationId: orgId })
+    getProducts(ctrl.signal, { organizationId: orgId, branchId: effectiveBranch?.id })
       .then((list) => {
         if (ctrl.signal.aborted) return;
-        // Only goods that can be sold and are currently in stock.
-        setProducts(list.filter((p) => p.isActive && p.isForSale && p.stock > 0));
+        // Only goods that can be sold and are currently in stock — остаток берём
+        // филиальный (productAvailableStock), именно его проверит сохранение.
+        setProducts(
+          list.filter(
+            (p) => p.isActive && p.isForSale && productAvailableStock(p) > 0,
+          ),
+        );
+        // Расходники — не продажа: ни «на продажу», ни «остаток > 0» к ним не
+        // применимы (гель не продаётся, а минусовой остаток бэк разрешает).
+        setConsumableProducts(list.filter((p) => p.isActive));
       })
       .catch(() => {
         /* products are optional; ignore load errors silently */
@@ -340,6 +396,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       });
     return () => ctrl.abort();
   }, [open, effectiveBranch?.id, orgId]);
+
+  // «Есть на складе X» для товара, которого нет на складе филиала: сам остаток
+  // филиала приходит в product.branchStock, здесь — только откуда его передать.
+  const stockElsewhere = useStockElsewhere(open, orgId);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   // The clinic can have tens of thousands of patients, so the autocomplete
@@ -436,6 +496,18 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     [serviceRows],
   );
 
+  // Расходники строки: пока их не правили — состав справочника, умноженный на
+  // количество услуги (ровно то, что развернёт бэк); после правки — то, что
+  // осталось в форме.
+  const effectiveConsumptions = React.useCallback(
+    (row: ServiceRow): ConsumptionRow[] => {
+      if (row.consumptions !== null) return row.consumptions;
+      const svc = data.services.find((s) => s.id === row.serviceId);
+      return svc ? serviceTemplateRows(svc.relatedProducts, row.quantity) : [];
+    },
+    [data.services],
+  );
+
   // ── validation ────────────────────────────────────────────────────────────
   const validRows = serviceRows.filter((r) => r.serviceId !== null && r.employeeId !== null);
   const incompatibleRows = validRows.filter(
@@ -444,10 +516,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const validProductRows = productRows.filter(
     (r) => r.productId !== null && parseQty(r.quantity) > 0,
   );
-  // A selected quantity exceeding context stock — block submit with a hint.
+  // A selected quantity exceeding branch stock — block submit with a hint.
   const overstockedRows = validProductRows.filter((r) => {
     const p = products.find((x) => x.id === r.productId);
-    return p ? parseQty(r.quantity) > p.stock : false;
+    return p ? parseQty(r.quantity) > productAvailableStock(p) : false;
   });
   // Порядок ключей = порядок полей в форме: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
@@ -458,7 +530,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         ? t("addDrawer.errors.serviceRequired")
         : incompatibleRows.length > 0
           ? t("addDrawer.errors.performerMismatch")
-          : null,
+          : serviceRows.some(
+                (r) => r.consumptions !== null && hasInvalidConsumptionQuantity(r.consumptions),
+              )
+            ? t("consumptions.quantityError")
+            : null,
     products:
       overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
     // Комментарий к брони необязателен: часто бронируют по звонку, когда
@@ -488,12 +564,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   // сумму меньше той, что попадёт в чек.
   const consumptionsTotal = React.useMemo(
     () =>
-      validRows.reduce((sum, r) => {
-        const svc = data.services.find((s) => s.id === r.serviceId);
-        if (!svc) return sum;
-        return sum + previewBillableTotal(svc.relatedProducts, r.quantity);
-      }, 0),
-    [validRows, data.services],
+      validRows.reduce((sum, r) => sum + billableRowsTotal(effectiveConsumptions(r)), 0),
+    [validRows, effectiveConsumptions],
   );
   const totalCost = servicesTotal + productsTotal + consumptionsTotal;
 
@@ -545,6 +617,19 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           serviceId: r.serviceId!,
           employeeId: r.employeeId,
           quantity: r.quantity > 0 ? r.quantity : 1,
+          // Ключ уходит только когда расходники правили: его отсутствие значит
+          // «развернуть состав услуги как есть», а `[]` — «без расходников»
+          // (именно так убирается лишний товар из состава при записи).
+          ...(APPOINTMENT_CONSUMPTIONS_ENABLED && r.consumptions !== null
+            ? {
+                consumptions: r.consumptions.map((c) => ({
+                  productId: c.productId,
+                  quantity: String(parseRelatedQuantity(c.quantity) ?? 1),
+                  autoWriteOff: c.autoWriteOff,
+                  billable: c.billable,
+                })),
+              }
+            : {}),
         })),
         products: validProductRows.map((r) => ({
           productId: r.productId!,
@@ -563,9 +648,24 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       const conflict = parseOverlapConflict(err);
       if (conflict && !allowOverlap) {
         setOverlapConflict(conflict);
-      } else {
-        setSaveError(parseBackendError(err));
+        return;
       }
+      // Нехватка остатка приходит машинным кодом — показываем склад и цифры,
+      // а строку товара помечаем (см. parseInsufficientStock).
+      const stockShortage = parseInsufficientStock(err);
+      if (stockShortage) {
+        setShortage(stockShortage);
+        setSaveError(
+          stockShortageMessage(
+            stockShortage,
+            [...products, ...consumableProducts].find(
+              (p) => p.id === stockShortage.productId,
+            )?.name ?? null,
+          ),
+        );
+        return;
+      }
+      setSaveError(parseBackendError(err));
     } finally {
       setSaving(false);
     }
@@ -1218,6 +1318,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                                 ? row.employeeId
                                                 : null
                                               : row.employeeId,
+                                          // Другая услуга — другой состав: правки
+                                          // относились к прежним расходникам.
+                                          ...((v?.id ?? null) !== row.serviceId
+                                            ? { consumptions: null }
+                                            : {}),
                                         });
                                       }}
                                       getOptionLabel={(s) =>
@@ -1270,15 +1375,26 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                     </Typography>
                                   )}
 
-                                  {/* Состав расходников из справочника: снапшот
-                                      строк расхода соберёт бэк после сохранения,
-                                      до этого показать нечего кроме справочника. */}
-                                  {selectedService && (
-                                    <ServiceConsumptionsPreview
-                                      products={selectedService.relatedProducts}
-                                      serviceQuantity={row.quantity}
-                                    />
-                                  )}
+                                  {/* Расходники: до сохранения строк расхода нет,
+                                      поэтому основа — состав справочника услуги.
+                                      Правится здесь же: лишний товар из состава
+                                      (например второй флакон) убирается до записи,
+                                      а не после сохранения приёма. Пока не правили —
+                                      количество следует количеству услуги. */}
+                                  {APPOINTMENT_CONSUMPTIONS_ENABLED &&
+                                    selectedService &&
+                                    (row.consumptions !== null ||
+                                      selectedService.relatedProducts.length > 0) && (
+                                      <ConsumptionRowsEditor
+                                        rows={effectiveConsumptions(row)}
+                                        options={consumableProducts}
+                                        disabled={saving}
+                                        showErrors={touched}
+                                        onChange={(next) =>
+                                          updateRow(index, { consumptions: next })
+                                        }
+                                      />
+                                    )}
 
                                   {duplicate && (
                                     <Typography variant="caption" color="warning.main">
@@ -1355,7 +1471,21 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                         const selectedProduct =
                           products.find((p) => p.id === row.productId) ?? null;
                         const overstocked =
-                          selectedProduct !== null && parseQty(row.quantity) > selectedProduct.stock;
+                          selectedProduct !== null &&
+                          parseQty(row.quantity) > productAvailableStock(selectedProduct);
+                        const branchWarning =
+                          selectedProduct !== null && !overstocked
+                            ? branchStockWarning(
+                                stockElsewhere,
+                                selectedProduct,
+                                parseQty(row.quantity),
+                              )
+                            : null;
+                        // Бэк отклонил сохранение именно из-за этого товара.
+                        const rowShortage =
+                          shortage && shortage.productId === row.productId
+                            ? stockShortageRowText(shortage)
+                            : null;
                         return (
                           <Stack key={index} spacing={1}>
                             <Stack direction="row" spacing={1} alignItems="flex-start">
@@ -1377,16 +1507,24 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                 }
                                 isOptionEqualToValue={(a, b) => a.id === b.id}
                                 noOptionsText={t("addDrawer.noProductsInStock")}
-                                renderOption={(props, p) => (
-                                  <li {...props} key={p.id}>
-                                    <Stack>
-                                      <Typography variant="body2">{p.name}</Typography>
-                                      <Typography variant="caption" color="text.secondary">
-                                        {t("addDrawer.productStock", { price: formatKGS(p.price), stock: p.stock, unit: p.unit })}
-                                      </Typography>
-                                    </Stack>
-                                  </li>
-                                )}
+                                renderOption={(props, p) => {
+                                  const branchCaption = branchStockCaption(stockElsewhere, p);
+                                  return (
+                                    <li {...props} key={p.id}>
+                                      <Stack>
+                                        <Typography variant="body2">{p.name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                          {t("addDrawer.productStock", { price: formatKGS(p.price), stock: productAvailableStock(p), unit: p.unit })}
+                                        </Typography>
+                                        {branchCaption && (
+                                          <Typography variant="caption" color="warning.main">
+                                            {branchCaption}
+                                          </Typography>
+                                        )}
+                                      </Stack>
+                                    </li>
+                                  );
+                                }}
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
@@ -1450,13 +1588,25 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                   {formatKGS(selectedProduct.price * parseQty(row.quantity))}
                                 </strong>
                                 {overstocked
-                                  ? t("addDrawer.insufficientStock", { stock: selectedProduct.stock })
+                                  ? t("addDrawer.insufficientStock", {
+                                      stock: productAvailableStock(selectedProduct),
+                                    })
                                   : ""}
                               </Typography>
                             )}
                             {overstocked && (
                               <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
                                 {t("addDrawer.productOverStock")}
+                              </Alert>
+                            )}
+                            {branchWarning && (
+                              <Alert severity="warning" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                {branchWarning}
+                              </Alert>
+                            )}
+                            {rowShortage && (
+                              <Alert severity="error" sx={{ py: 0, fontSize: "0.75rem" }}>
+                                {rowShortage}
                               </Alert>
                             )}
                           </Stack>

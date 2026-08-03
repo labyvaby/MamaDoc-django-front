@@ -36,6 +36,7 @@ import {
   type DjangoBank,
 } from "../../../api/staff";
 import { getRoles, type RbacRole } from "../../../api/rbac";
+import { ApiError } from "../../../api/client";
 import { usePermissions } from "../../../hooks/usePermissions";
 import type { RbacBranch } from "../../../api/auth";
 import { mapDjangoFullToRow } from "../viewModel";
@@ -609,8 +610,17 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
       onCreated(employeeRow);
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Не удалось создать сотрудника";
-      setSubmitError(msg);
+      // 5xx — сбой бэкенда, а не данные формы: не заставляем искать «неправильное» поле.
+      if (err instanceof ApiError && err.status >= 500) {
+        setSubmitError(
+          `Сервер не смог создать сотрудника (ошибка ${err.status}). ` +
+            "Данные формы сохранены в черновике — повторите позже и сообщите разработчикам.",
+        );
+      } else {
+        setSubmitError(
+          err instanceof Error ? err.message : "Не удалось создать сотрудника",
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -634,14 +644,15 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
           </Tooltip>
         ) : undefined
       }
-    >
-      <MotionStack spacing={2.5} variants={cascadeContainer} initial="hidden" animate="show">
-        {submitError && (
+      footerAlert={
+        submitError ? (
           <Alert severity="error" onClose={() => setSubmitError(null)}>
             {submitError}
           </Alert>
-        )}
-
+        ) : undefined
+      }
+    >
+      <MotionStack spacing={2.5} variants={cascadeContainer} initial="hidden" animate="show">
         {/* ── Личная информация: фото + ФИО/Псевдоним + Дата рождения/ИНН ── */}
         <MotionBox variants={cascadeItem}>
           <Stack spacing={2.5}>

@@ -200,10 +200,12 @@ const DirTabs: React.FC<{ value: Direction; onChange: (v: Direction) => void }> 
 
 const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
   const inflow = isInflow(entry);
-  // Цвет кодирует способ оплаты на всей странице: наличные — зелёный,
-  // безнал — синий. Направление по-прежнему видно по стрелке и знаку.
+  // Чип метода кодирует способ оплаты: наличные — зелёный, безнал — синий.
   const methodPaletteKey =
     entry.method === "cash" ? "success" : entry.method === "card" ? "primary" : "info";
+  // Сумма и стрелка кодируют направление: расход всегда красный,
+  // приход — в цвете способа оплаты.
+  const amountPaletteKey = inflow ? methodPaletteKey : "error";
 
   return (
     <Stack
@@ -242,9 +244,9 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: `${methodPaletteKey}.main`,
+          color: `${amountPaletteKey}.main`,
           bgcolor: alpha(
-            t.palette[methodPaletteKey].main,
+            t.palette[amountPaletteKey].main,
             t.palette.mode === "dark" ? 0.16 : 0.1,
           ),
           "& .MuiSvgIcon-root": { fontSize: 16 },
@@ -298,7 +300,7 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
           minWidth: 96,
           textAlign: "right",
           fontVariantNumeric: "tabular-nums",
-          color: `${methodPaletteKey}.main`,
+          color: `${amountPaletteKey}.main`,
         }}
       >
         {(inflow ? "+ " : "− ") + formatSom(parseFloat(entry.amount))}
