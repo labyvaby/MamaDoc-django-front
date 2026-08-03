@@ -260,22 +260,23 @@ const DoctorBookingPage: React.FC = () => {
   // показываем понятное сообщение.
   const hasAvailableDay = calendar.some((d) => d.isAvailable);
 
+  // Услуга обязательна: бэк отклоняет пустой service_ids (400, тикет §8.1) —
+  // значит к врачу без услуг в публичном каталоге записаться нельзя вообще.
+  const canBook = !doctor || doctor.services.length > 0;
+
   // Выбор врача/времени — часть той же формы: без него запись не отправить.
   const selection = useFormValidation({
-    service:
-      !doctor || doctor.services.length === 0 || serviceId !== null
-        ? null
-        : t("selectServiceRequired"),
+    service: serviceId !== null ? null : t("selectServiceRequired"),
     slot: selectedDate && selectedTime ? null : t("selectSlotRequired"),
   });
 
   const handleSubmit = (name: string, phone: string, comment: string) => {
-    if (!doctor || !selectedDate || !selectedTime) return;
+    if (!doctor || !serviceId || !selectedDate || !selectedTime) return;
     setSubmitting(true);
     setSubmitError(null);
     createGuestBooking({
       professionalId: doctor.id,
-      serviceIds: serviceId ? [serviceId] : [],
+      serviceIds: [serviceId],
       date: selectedDate,
       time: selectedTime,
       patientName: name,
@@ -374,8 +375,14 @@ const DoctorBookingPage: React.FC = () => {
         )}
       </Paper>
 
+      {!canBook && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {t("noServicesAvailable")}
+        </Alert>
+      )}
+
       {/* Выбор услуги */}
-      {doctor.services.length > 0 && (
+      {canBook && (
         <Paper
           ref={selection.anchor("service")}
           variant="outlined"
@@ -422,96 +429,102 @@ const DoctorBookingPage: React.FC = () => {
         </Paper>
       )}
 
-      {/* Календарь */}
-      <Paper
-        ref={selection.anchor("slot")}
-        variant="outlined"
-        sx={{
-          p: 2,
-          borderRadius: "14px",
-          mb: 2,
-          ...(selection.errorOf("slot") && { borderColor: "error.main" }),
-        }}
-      >
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
-          <EventAvailableOutlined fontSize="small" color="primary" />
-          <Typography variant="subtitle1" fontWeight={600}>
-            Выберите время
-          </Typography>
-        </Stack>
-        {selection.errorOf("slot") && (
-          <Typography variant="body2" color="error" sx={{ mb: 1 }}>
-            {selection.errorOf("slot")}
-          </Typography>
-        )}
+      {/* Календарь и форма гостя — только если запись вообще возможна (§8.1:
+          услуга обязательна, значит без услуг записаться нельзя) */}
+      {canBook && (
+        <>
+        {/* Календарь */}
+        <Paper
+          ref={selection.anchor("slot")}
+          variant="outlined"
+          sx={{
+            p: 2,
+            borderRadius: "14px",
+            mb: 2,
+            ...(selection.errorOf("slot") && { borderColor: "error.main" }),
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+            <EventAvailableOutlined fontSize="small" color="primary" />
+            <Typography variant="subtitle1" fontWeight={600}>
+              Выберите время
+            </Typography>
+          </Stack>
+          {selection.errorOf("slot") && (
+            <Typography variant="body2" color="error" sx={{ mb: 1 }}>
+              {selection.errorOf("slot")}
+            </Typography>
+          )}
 
-        {calendarLoading ? (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
-            <CircularProgress size={24} />
-          </Box>
-        ) : !hasAvailableDay ? (
-          <Typography variant="body2" color="text.secondary">
-            {t("noSlotsAvailable")}
-          </Typography>
-        ) : (
-          <>
-            <Box sx={{ display: "flex", gap: 1, overflowX: "auto", pb: 1 }}>
-              {calendar.map((day) => (
-                <Chip
-                  key={day.date}
-                  label={day.label}
-                  disabled={!day.isAvailable}
-                  color={selectedDate === day.date ? "primary" : "default"}
-                  variant={selectedDate === day.date ? "filled" : "outlined"}
-                  onClick={() => {
-                    setSelectedDate(day.date);
-                    setSelectedTime(null);
-                  }}
-                  sx={{ flexShrink: 0 }}
-                />
-              ))}
+          {calendarLoading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+              <CircularProgress size={24} />
             </Box>
-
-            {selectedDay && (
-              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 2 }}>
-                {selectedDay.times.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    На этот день нет свободного времени.
-                  </Typography>
-                ) : (
-                  selectedDay.times.map((t) => (
-                    <Chip
-                      key={t}
-                      label={t}
-                      color={selectedTime === t ? "primary" : "default"}
-                      variant={selectedTime === t ? "filled" : "outlined"}
-                      onClick={() => setSelectedTime(t)}
-                    />
-                  ))
-                )}
+          ) : !hasAvailableDay ? (
+            <Typography variant="body2" color="text.secondary">
+              {t("noSlotsAvailable")}
+            </Typography>
+          ) : (
+            <>
+              <Box sx={{ display: "flex", gap: 1, overflowX: "auto", pb: 1 }}>
+                {calendar.map((day) => (
+                  <Chip
+                    key={day.date}
+                    label={day.label}
+                    disabled={!day.isAvailable}
+                    color={selectedDate === day.date ? "primary" : "default"}
+                    variant={selectedDate === day.date ? "filled" : "outlined"}
+                    onClick={() => {
+                      setSelectedDate(day.date);
+                      setSelectedTime(null);
+                    }}
+                    sx={{ flexShrink: 0 }}
+                  />
+                ))}
               </Box>
-            )}
-          </>
-        )}
-      </Paper>
 
-      {/* Форма гостя — видна сразу: незаполненное подсветится по клику «Записаться» */}
-      <Paper variant="outlined" sx={{ p: 2, borderRadius: "14px", mb: 2 }}>
-        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-          Ваши данные
-        </Typography>
-        {submitError && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            {submitError}
-          </Alert>
-        )}
-        <GuestForm
-          countries={countries}
-          submitting={submitting}
-          validateSelection={selection.validate}
-          onSubmit={handleSubmit}
-        />
-      </Paper>
+              {selectedDay && (
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 2 }}>
+                  {selectedDay.times.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      На этот день нет свободного времени.
+                    </Typography>
+                  ) : (
+                    selectedDay.times.map((t) => (
+                      <Chip
+                        key={t}
+                        label={t}
+                        color={selectedTime === t ? "primary" : "default"}
+                        variant={selectedTime === t ? "filled" : "outlined"}
+                        onClick={() => setSelectedTime(t)}
+                      />
+                    ))
+                  )}
+                </Box>
+              )}
+            </>
+          )}
+        </Paper>
+
+        {/* Форма гостя — видна сразу: незаполненное подсветится по клику «Записаться» */}
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: "14px", mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+            Ваши данные
+          </Typography>
+          {submitError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {submitError}
+            </Alert>
+          )}
+          <GuestForm
+            countries={countries}
+            submitting={submitting}
+            validateSelection={selection.validate}
+            onSubmit={handleSubmit}
+          />
+        </Paper>
+        </>
+      )}
 
       <Reviews reviews={reviews} />
     </PublicBookingShell>

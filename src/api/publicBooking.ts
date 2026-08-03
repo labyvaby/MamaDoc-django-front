@@ -529,6 +529,11 @@ export function getPhoneCountries(signal?: AbortSignal): Promise<PhoneCountry[]>
 /** Тело гостевой брони — предложение фронта (не факт из контракта). */
 export interface CreateGuestBookingRequest {
   professionalId: number;
+  /**
+   * Минимум одна услуга — обязательна. Бэк отклоняет пустой список
+   * (`400 validation_error`), запись «просто к врачу» не поддерживается
+   * (подтверждено бэком 03.08.2026, тикет §8.1).
+   */
   serviceIds: number[];
   /** YYYY-MM-DD */
   date: string;

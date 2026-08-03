@@ -6,6 +6,7 @@
   "searchPlaceholder": "Поиск по имени {{specialist.gen}}",
   "noSpecialistsFound": "По вашему запросу {{specialist.nomPl}} не найдены.",
   "selectServiceRequired": "Выберите услугу",
+  "noServicesAvailable": "У {{specialist.gen}} пока нет услуг, доступных для онлайн-записи. Выберите другого {{specialist.acc}} или свяжитесь с {{org.ins}}.",
   "selectSlotRequired": "Выберите дату и время приёма",
   "noSlotsAvailable": "У {{specialist.gen}} сейчас нет свободного времени для онлайн-записи на ближайшие две недели. Выберите другого {{specialist.acc}} или свяжитесь с {{org.ins}}.",
   "onlineBookingSoon": "Онлайн-запись скоро заработает. Пока, пожалуйста, позвоните в {{org.acc}}, чтобы записаться на выбранное время."
