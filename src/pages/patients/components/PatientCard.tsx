@@ -15,6 +15,7 @@ import {
   Menu,
   MenuItem,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -33,7 +34,7 @@ import CameraAltOutlined from "@mui/icons-material/CameraAltOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 
-import { AppCard, AppButton, InfoTile, UserAvatar, ListEmptyState } from "../../../components/ui";
+import { AppCard, InfoTile, UserAvatar, ListEmptyState } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
 import type { DjangoPatient } from "../../../api/patients";
 import type { PatientBalance } from "../../../api/patientBalance";
@@ -188,37 +189,47 @@ const PatientCard: React.FC<Props> = ({
             </Stack>
             {patient && (onTopUp || onEdit || onMerge || onFace) && (
               <>
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    useFlexGap
-                    flexWrap="wrap"
-                    sx={{
-                      display: { xs: "none", md: "flex" },
-                      width: { md: "100%" },
-                      justifyContent: "flex-end",
-                      minWidth: 0,
-                    }}
-                  >
+                {/* Колонка карточки узкая (≈260–460px) — текстовые кнопки в неё не влезали
+                    и рвали шапку на две строки. Действия — компактными иконками с подсказками. */}
+                <Stack
+                  direction="row"
+                  spacing={0.25}
+                  sx={{ display: { xs: "none", md: "flex" }, flexShrink: 0 }}
+                >
                   {onTopUp && (
-                    <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="success" onClick={onTopUp} startIcon={<AccountBalanceWalletOutlined />}>
-                      {t("card.actions.topUp")}
-                    </AppButton>
+                    <Tooltip title={t("card.actions.topUpAccount")}>
+                      <IconButton size="small" color="success" onClick={onTopUp}>
+                        <AccountBalanceWalletOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   )}
                   {onMerge && (
-                    <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="warning" onClick={onMerge} startIcon={<MergeTypeIcon />}>
-                      {t("card.actions.merge")}
-                    </AppButton>
+                    <Tooltip title={t("card.actions.mergeWithDuplicate")}>
+                      <IconButton size="small" color="warning" onClick={onMerge}>
+                        <MergeTypeIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   )}
                   {onFace && (
-                    <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="outlined" color="info" onClick={onFace} startIcon={<CameraAltOutlined />}>
-                      {t("card.actions.camera")}
-                    </AppButton>
+                    <Tooltip title={t("card.actions.camera")}>
+                      <IconButton size="small" color="info" onClick={onFace}>
+                        <CameraAltOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   )}
                   {onEdit && (
-                    <AppButton sx={{ flex: "0 1 auto" }} size="small" variant="contained" onClick={onEdit} startIcon={<EditOutlined />}>
-                      {t("card.actions.edit")}
-                    </AppButton>
+                    <Tooltip title={t("card.actions.edit")}>
+                      {/* Основное действие карточки — приглушённая подложка вместо
+                          contained-кнопки, чтобы не выбиваться из плоского стиля. */}
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={onEdit}
+                        sx={(th) => ({ bgcolor: alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.2 : 0.12) })}
+                      >
+                        <EditOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   )}
                 </Stack>
 
