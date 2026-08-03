@@ -636,64 +636,77 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           }}
           title={
             /* Основные действия — кнопками, остальное в меню «⋯».
-               Кнопки переносятся на следующую строку. Раньше строка не
-               переносилась, а скроллилась вбок — и в узкой карточке
-               «Изменить» обрезалось на полуслове, из-за чего было не видно,
-               что кнопка вообще есть. Сознательный обмен: лишний ряд в шапке
-               лучше спрятанного действия. */
-            <Stack
-              direction="row"
-              alignItems="center"
-              useFlexGap
+               Кнопки переносятся на следующую строку: строка, которая
+               скроллилась вбок, обрезала «Изменить» на полуслове, и было не
+               видно, что кнопка вообще есть. Сознательный обмен: лишний ряд в
+               шапке лучше спрятанного действия.
+               «⋯» при этом вынесено из переносимого потока и прибито справа —
+               иначе оно уезжало на второй ряд и висело там одно. */
+            <Box
               sx={{
+                display: "flex",
+                flexDirection: "row",
+                flexWrap: "nowrap",
+                alignItems: "center",
                 gap: { xs: 0.5, sm: 1 },
-                flexWrap: "wrap",
                 minWidth: 0,
                 // Место под крестик закрытия — он висит абсолютом в правом
-                // верхнем углу шапки, первый ряд не должен под него заезжать.
-                pr: 4,
+                // верхнем углу шапки, «⋯» не должно под него заезжать.
+                pr: onClose ? 4 : 0,
               }}
             >
-              {inlineActions.map((action) => (
-                <Button
-                  key={action.key}
-                  size="small"
-                  variant={action.active ? "contained" : "outlined"}
-                  color={action.color ?? "primary"}
-                  startIcon={action.icon}
-                  onClick={action.onClick}
-                  disabled={action.disabled}
-                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                >
-                  {action.label}
-                </Button>
-              ))}
+              <Stack
+                direction="row"
+                alignItems="center"
+                useFlexGap
+                sx={{
+                  gap: { xs: 0.5, sm: 1 },
+                  flexWrap: "wrap",
+                  flex: "1 1 auto",
+                  minWidth: 0,
+                }}
+              >
+                {inlineActions.map((action) => (
+                  <Button
+                    key={action.key}
+                    size="small"
+                    variant={action.active ? "contained" : "outlined"}
+                    color={action.color ?? "primary"}
+                    startIcon={action.icon}
+                    onClick={action.onClick}
+                    disabled={action.disabled}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
 
-              {cancelAction && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="error"
-                  startIcon={cancelAction.icon}
-                  onClick={cancelAction.onClick}
-                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                >
-                  {cancelAction.label}
-                </Button>
-              )}
+                {cancelAction && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    startIcon={cancelAction.icon}
+                    onClick={cancelAction.onClick}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                  >
+                    {cancelAction.label}
+                  </Button>
+                )}
+              </Stack>
 
               {hasMenu && (
                 <Tooltip title={t("details.moreActions")}>
                   <IconButton
                     size="small"
                     onClick={(e) => setMenuAnchor(e.currentTarget)}
-                    sx={{ flexShrink: 0 }}
+                    sx={{ flexShrink: 0, alignSelf: "center" }}
                   >
                     <MoreVertOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
               )}
-            </Stack>
+            </Box>
           }
           action={
             onClose ? (
