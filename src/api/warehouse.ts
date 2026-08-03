@@ -79,8 +79,17 @@ export type DjangoProduct = {
     isForSale: boolean;
     isActive: boolean;
     imageUrl: string | null;
-    /** Остаток по видимым складам контекста. */
+    /** Остаток по видимым складам контекста (агрегат — может включать чужие). */
     stock: number;
+    /**
+     * Остаток на складе, с которого спишется товар в приёме филиала (правило
+     * бэка: склад продаж `isSales` → основной `isPrimary` → минимальный id
+     * филиала). Заполняется только при явном `branchId` в запросе, иначе `null`
+     * — контракт от 03.08.2026, закрыл тикет `backend_ticket_product_stock_
+     * branch_scoping.md`. Именно по этой цифре бэк валидирует сохранение приёма,
+     * поэтому в пикерах товара показываем и фильтруем по ней, а не по `stock`.
+     */
+    branchStock: number | null;
     createdAt: string;
     updatedAt: string;
 };
@@ -206,15 +215,20 @@ export function unlinkWarehouse(id: number, branchId?: number): Promise<void> {
 
 // ── Products ────────────────────────────────────────────────────────────────
 
-type RawProduct = Omit<DjangoProduct, "price" | "stock"> & {
+type RawProduct = Omit<DjangoProduct, "price" | "stock" | "branchStock"> & {
     price: string;
     stock: string;
+    /** null без branchId в запросе; на эндпоинтах записи товара поля нет вовсе. */
+    branchStock?: string | null;
 };
 
 const mapProduct = (raw: RawProduct): DjangoProduct => ({
     ...raw,
     price: parseFloat(raw.price) || 0,
     stock: parseFloat(raw.stock) || 0,
+    // Отсутствие поля и null — одно и то же: остаток филиала неизвестен. «0»
+    // отличаем от «неизвестно», иначе пикер скроет товар, который есть.
+    branchStock: raw.branchStock == null ? null : parseFloat(raw.branchStock) || 0,
 });
 
 export async function getProducts(
@@ -225,6 +239,13 @@ export async function getProducts(
         /** Только товары-вакцины (?isVaccine=true) — для пикеров раздела «Прививки». */
         isVaccine?: boolean;
         organizationId?: number;
+        /**
+         * Филиал контекста: включает в ответе `branchStock` — остаток склада, с
+         * которого товар спишется в приёме этого филиала (реальный фильтр с
+         * 03.08.2026; раньше параметр молча игнорировался). Суперпользователю
+         * нужен явно — сессионного филиала у него нет.
+         */
+        branchId?: number;
     } = {},
 ): Promise<DjangoProduct[]> {
     const q = new URLSearchParams();
@@ -232,6 +253,7 @@ export async function getProducts(
     if (opts.category) q.set("category", opts.category);
     if (opts.isVaccine != null) q.set("isVaccine", String(opts.isVaccine));
     if (opts.organizationId != null) q.set("organizationId", String(opts.organizationId));
+    if (opts.branchId != null) q.set("branchId", String(opts.branchId));
     const qs = q.toString();
     const rows = await apiRequest<RawProduct[]>(
         `/warehouse/products/${qs ? `?${qs}` : ""}`,
@@ -239,6 +261,15 @@ export async function getProducts(
     );
     return rows.map(mapProduct);
 }
+
+/**
+ * Остаток, по которому фронт судит о доступности товара: остаток склада филиала,
+ * если он известен (запрос с `branchId`), иначе агрегат `stock`. Именно
+ * `branchStock` бэк проверяет при списании в приёме — см. поле в `DjangoProduct`.
+ */
+export const productAvailableStock = (
+    p: Pick<DjangoProduct, "stock" | "branchStock">,
+): number => p.branchStock ?? p.stock;
 
 /**
  * Уникальные непустые категории товаров, отсортированные по алфавиту.

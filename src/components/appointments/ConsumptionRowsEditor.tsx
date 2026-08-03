@@ -20,7 +20,7 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 // parseRelatedQuantity — общий парсер decimal-количества (> 0, до 3 знаков):
 // у расходника приёма та же семантика, что у состава услуги в справочнике.
 import { parseRelatedQuantity } from "../../api/catalog";
-import type { DjangoProduct } from "../../api/warehouse";
+import { productAvailableStock, type DjangoProduct } from "../../api/warehouse";
 import { formatKGS, formatQuantity } from "../../utility/format";
 import { useT } from "../../i18n/VerticalProvider";
 import { billableRowsTotal, type ConsumptionRow } from "./consumptionRows";
@@ -254,9 +254,11 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                   // руками, по умолчанию идёт в цену услуги, как из справочника.
                   billable: false,
                   unitPrice: p.price,
-                  // Остаток филиала знает только бэк — до перезагрузки приёма
-                  // не выдумываем число (ноль читался бы как нехватка).
-                  stockOnHand: null,
+                  // Остаток склада филиала — из `branchStock` каталога (есть,
+                  // когда товары загружены с branchId); null оставляем как
+                  // «неизвестен», чтобы ноль не читался как нехватка. Строка
+                  // хранит его строкой-decimal, как отдаёт API приёма.
+                  stockOnHand: p.branchStock === null ? null : String(p.branchStock),
                   source: "manual",
                 },
               ]);
@@ -266,7 +268,10 @@ const ConsumptionRowsEditor: React.FC<Props> = ({
                 <Stack>
                   <Typography variant="body2">{p.name}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {t("consumptions.stock", { stock: formatQuantity(p.stock) })} {p.unit}
+                    {t("consumptions.stock", {
+                      stock: formatQuantity(productAvailableStock(p)),
+                    })}{" "}
+                    {p.unit}
                   </Typography>
                 </Stack>
               </li>
