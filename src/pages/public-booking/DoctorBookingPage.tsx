@@ -260,9 +260,12 @@ const DoctorBookingPage: React.FC = () => {
   // показываем понятное сообщение.
   const hasAvailableDay = calendar.some((d) => d.isAvailable);
 
-  // Услуга обязательна: бэк отклоняет пустой service_ids (400, тикет §8.1) —
-  // значит к врачу без услуг в публичном каталоге записаться нельзя вообще.
-  const canBook = !doctor || doctor.services.length > 0;
+  // Бэк требует обязательными и услугу (пустой service_ids → 400, тикет §8.1),
+  // и филиал (branch_id → 400). Филиал берём из основного филиала врача — это
+  // единственный источник в публичном каталоге. Если чего-то из этого нет,
+  // записаться к врачу онлайн нельзя вообще: сабмит гарантированно упрётся в 400.
+  const branchId = doctor?.branch?.id ?? null;
+  const canBook = !doctor || (doctor.services.length > 0 && branchId !== null);
 
   // Выбор врача/времени — часть той же формы: без него запись не отправить.
   const selection = useFormValidation({
@@ -271,11 +274,12 @@ const DoctorBookingPage: React.FC = () => {
   });
 
   const handleSubmit = (name: string, phone: string, comment: string) => {
-    if (!doctor || !serviceId || !selectedDate || !selectedTime) return;
+    if (!doctor || !serviceId || !branchId || !selectedDate || !selectedTime) return;
     setSubmitting(true);
     setSubmitError(null);
     createGuestBooking({
       professionalId: doctor.id,
+      branchId,
       serviceIds: [serviceId],
       date: selectedDate,
       time: selectedTime,
@@ -285,11 +289,20 @@ const DoctorBookingPage: React.FC = () => {
     })
       .then(setResult)
       .catch((e) => {
-        // Бэк ещё не реализовал POST /bookings/ (§7) — 404/405 объясняем человечно.
-        if (e instanceof ApiError && (e.status === 404 || e.status === 405)) {
+        // Тексты ошибок бэка адресованы разработчику («Не заполнены обязательные
+        // поля») — гостю показываем понятное объяснение по коду ответа.
+        if (!(e instanceof ApiError)) {
+          setSubmitError(t("bookingFailed"));
+        } else if (e.status === 404 || e.status === 405) {
           setSubmitError(t("onlineBookingSoon"));
+        } else if (e.status === 409) {
+          setSubmitError(t("slotTaken"));
+        } else if (e.status === 429) {
+          setSubmitError(t("tooManyAttempts"));
+        } else if (e.status === 400) {
+          setSubmitError(t("bookingFailed"));
         } else {
-          setSubmitError(e instanceof Error ? e.message : "Не удалось записаться");
+          setSubmitError(e.message || t("bookingFailed"));
         }
       })
       .finally(() => setSubmitting(false));
@@ -377,7 +390,7 @@ const DoctorBookingPage: React.FC = () => {
 
       {!canBook && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          {t("noServicesAvailable")}
+          {t("bookingUnavailable")}
         </Alert>
       )}
 
