@@ -14,6 +14,11 @@ type DrawerBaseProps = {
   submitDisabled?: boolean;
   /** Доп. контрол в шапке слева от крестика закрытия (например, кнопка «Очистить черновик»). */
   headerExtra?: React.ReactNode;
+  /**
+   * Сообщение над кнопками (обычно Alert с ошибкой сохранения). Футер закреплён,
+   * поэтому ошибка видна независимо от того, куда проскроллена длинная форма.
+   */
+  footerAlert?: React.ReactNode;
 };
 
 const DrawerBase: React.FC<DrawerBaseProps> = ({
@@ -26,6 +31,7 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
   submitLabel = "Сохранить",
   submitDisabled,
   headerExtra,
+  footerAlert,
 }) => {
   return (
     <Drawer
@@ -69,22 +75,25 @@ const DrawerBase: React.FC<DrawerBaseProps> = ({
         >
           {children}
         </Box>
-        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', mt: 'auto', bgcolor: 'background.paper', display: 'flex', justifyContent: 'flex-end', gap: 1.5, flexShrink: 0 }}>
-          <AppButton onClick={onClose} disabled={busy}>
-            Отмена
-          </AppButton>
-          {onSubmit && (
-            <AppButton onClick={onSubmit} variant="contained" disabled={busy || submitDisabled}>
-              {busy ? (
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <CircularProgress size={18} />
-                  <span>Сохранение…</span>
-                </Stack>
-              ) : (
-                submitLabel
-              )}
+        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', mt: 'auto', bgcolor: 'background.paper', flexShrink: 0 }}>
+          {footerAlert && <Box sx={{ mb: 1.5 }}>{footerAlert}</Box>}
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5 }}>
+            <AppButton onClick={onClose} disabled={busy}>
+              Отмена
             </AppButton>
-          )}
+            {onSubmit && (
+              <AppButton onClick={onSubmit} variant="contained" disabled={busy || submitDisabled}>
+                {busy ? (
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <CircularProgress size={18} />
+                    <span>Сохранение…</span>
+                  </Stack>
+                ) : (
+                  submitLabel
+                )}
+              </AppButton>
+            )}
+          </Box>
         </Box>
       </Box>
     </Drawer>
