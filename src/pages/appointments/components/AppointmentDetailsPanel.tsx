@@ -262,6 +262,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const hasPaid = !!(paidTotal && paidTotal !== "0.00" && paidTotal !== "0");
   const hasRefund = !!(refundedTotal && refundedTotal !== "0.00" && refundedTotal !== "0");
 
+  // Оплату приняли — визит де-факто состоялся, поэтому «Подтвердить»,
+  // «Пациент здесь» и запрос отзыва в шапке уже не нужны. Смотрим на деньги,
+  // а не на статус приёма: бэк оставляет его scheduled/confirmed и после оплаты.
+  // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
+  const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
+
   const cashPaid = pay?.payments?.reduce((s, p) => p.method === "cash" ? s + Number(p.amount) : s, 0) ?? 0;
   const cardPaid = pay?.payments?.reduce((s, p) => p.method === "card" ? s + Number(p.amount) : s, 0) ?? 0;
   const balancePaid = pay?.payments?.reduce((s, p) => p.method === "balance" ? s + Number(p.amount) : s, 0) ?? 0;
@@ -466,7 +472,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const actions: HeaderAction[] = [];
 
   // Подтвердить — пациент подтвердил визит по телефону, но ещё не пришёл.
-  if (canUpdate && onConfirmVisit && appt.status === "scheduled") {
+  if (canUpdate && onConfirmVisit && appt.status === "scheduled" && !isPaymentAccepted) {
     actions.push({
       key: "confirm",
       label: t("details.confirm"),
@@ -477,7 +483,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   }
 
   // Пациент здесь — пока пациента не отметили пришедшим.
-  if (canUpdate && onArrived && (appt.status === "scheduled" || appt.status === "confirmed")) {
+  if (
+    canUpdate &&
+    onArrived &&
+    (appt.status === "scheduled" || appt.status === "confirmed") &&
+    !isPaymentAccepted
+  ) {
     actions.push({
       key: "arrived",
       label: t("details.patientArrived"),
@@ -526,7 +537,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   // Запросить отзыв — низкоприоритетное действие, обычно уходит в меню «⋯»;
   // если запрос уже был, кнопка предлагает переотправить.
-  if (review.showButton) {
+  if (review.showButton && !isPaymentAccepted) {
     actions.push({
       key: "review",
       label: review.latest ? "Переотправить отзыв" : "Запросить отзыв",
