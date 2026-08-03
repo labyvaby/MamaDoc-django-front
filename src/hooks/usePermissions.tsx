@@ -107,6 +107,11 @@ if (IS_DJANGO_BACKEND && typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refetchOnReturn();
   });
+  window.addEventListener('mamadoc:api-forbidden', refetchOnReturn);
+  window.addEventListener('mamadoc:rbac-changed', () => {
+    if (globalState.authStatus !== 'authenticated') return;
+    void fetchPermissions({ force: true });
+  });
 }
 
 type RolePermissionsRow = { permissions?: Permission | Permission[] | null };
@@ -545,12 +550,12 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
   );
 
   const isSuperAdmin = useCallback(() => state.role?.name === 'superadmin', [state.role]);
-  const isAdmin = useCallback(() => hasRole(['superadmin', 'admin']), [hasRole]);
+  const isAdmin = useCallback(
+    () => hasRole(['superadmin', 'admin', 'administrator']),
+    [hasRole],
+  );
   const isRegistrator = useCallback(() => hasRole(['receptionist', 'registrator']), [hasRole]);
   const isDoctor = useCallback(() => hasRole('doctor'), [hasRole]);
-
-  const canManageEmployees = useCallback(() => hasRole(['superadmin', 'admin', 'receptionist', 'registrator']), [hasRole]);
-  const canManageExpenses = useCallback(() => hasRole(['superadmin', 'admin', 'registrator', 'receptionist', 'manager']), [hasRole]);
 
   const hasModule = useCallback(
     (moduleCode: string): boolean => {
@@ -571,6 +576,23 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
       return state.enabledModules.includes(moduleCode);
     },
     [hasPermission, state.enabledModules, state.role]
+  );
+
+  const canManageEmployees = useCallback(
+    () => (
+      IS_DJANGO_BACKEND
+        ? canAccess('staff.update')
+        : hasRole(['superadmin', 'admin', 'receptionist', 'registrator'])
+    ),
+    [canAccess, hasRole],
+  );
+  const canManageExpenses = useCallback(
+    () => (
+      IS_DJANGO_BACKEND
+        ? canAccess('finance.expense.manage')
+        : hasRole(['superadmin', 'admin', 'registrator', 'receptionist', 'manager'])
+    ),
+    [canAccess, hasRole],
   );
 
   return {

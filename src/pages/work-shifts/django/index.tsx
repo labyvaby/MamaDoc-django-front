@@ -77,7 +77,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const queryClient = useQueryClient();
   // Как в оригинале: без карточки сотрудника отметка невозможна — показываем
   // предупреждение вместо кнопок, а не ошибку 400 после клика.
-  const { activeEmployee } = usePermissions();
+  const { activeEmployee, activeBranch } = usePermissions();
   const orgId = useApiOrgId();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = React.useState<number | null>(null);
@@ -157,12 +157,22 @@ const DjangoWorkShiftsPage: React.FC = () => {
   }) => {
     try {
       if (editId != null) {
-        await updateShift(editId, rows[0], { organizationId: orgId });
+        // Ручная смена должна быть привязана к текущему филиалу: payroll в
+        // филиальном срезе намеренно не включает общеклинические (branch=null)
+        // записи. При «Все филиалы» не передаём поле, чтобы не менять старую
+        // привязку неожиданно.
+        const row = activeBranch
+          ? { ...rows[0], branchId: activeBranch.id }
+          : rows[0];
+        await updateShift(editId, row, { organizationId: orgId });
         notify?.({ type: "success", message: "Смена обновлена" });
       } else {
         // Weekday bulk-create persists each generated shift (one POST per day).
         for (const row of rows) {
-          await createShift(row, { organizationId: orgId });
+          await createShift(
+            activeBranch ? { ...row, branchId: activeBranch.id } : row,
+            { organizationId: orgId },
+          );
         }
         notify?.({
           type: "success",

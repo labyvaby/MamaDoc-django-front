@@ -209,6 +209,7 @@
     "title": "Добавить {{visit.acc}}",
     "noBranchTitle": "Не выбран {{branch.nom}}",
     "noBranchText": "{{visit.nom, capitalize}} всегда создаётся в конкретном {{branch.pre}}, а сейчас включён режим «Все {{branch.nomPl}}» — поэтому кнопка «Сохранить» недоступна.",
+    "chooseBranch": "Выберите филиал для этого приёма:",
     "noBranchHowTo": "Как выбрать {{branch.acc}}: нажмите на",
     "noBranchHowToLink": "название {{org.gen}} вверху бокового меню",
     "noBranchHowToTail": "(на телефоне сначала откройте меню кнопкой ☰) и в списке выберите нужный {{branch.acc}}. После этого вернитесь сюда и создайте {{visit.acc}}.",
@@ -258,7 +259,8 @@
     "quantity": "Кол-во",
     "insufficientStock": " · недостаточно на складе (в наличии {{stock}})",
     "optional": "Необязательно",
-    "bookingReason": "Причина бронирования (обязательно)",
+    "bookingReason": "Причина бронирования",
+    "bookingReasonHint": "Необязательно, но по комментарию коллеги поймут, для кого забронировано время",
     "saving": "Сохранение…",
     "save": "Сохранить",
     "thisTime": "это время",
@@ -270,7 +272,7 @@
     "minutesValue": "{{minutes}} мин",
     "sumLabel": "Сумма:",
     "productStock": "{{price}} · в наличии: {{stock}} {{unit}}",
-    "adminCommentLabel": "Комментарий администратора{{required}}",
+    "adminCommentLabel": "Комментарий администратора",
     "blacklistReason": "Причина: {{reason}}",
     "duplicateDialogText": "{{name}} уже записан на {{when}}{{performer}}. Создать ещё одну {{record.acc}} на то же время?",
     "errors": {
@@ -278,8 +280,7 @@
       "patientRequired": "Выберите {{patient.acc}}",
       "serviceRequired": "Добавьте хотя бы одну {{service.acc}} с исполнителем",
       "performerMismatch": "Исполнитель не оказывает выбранную {{service.acc}}",
-      "overStock": "Количество товара больше остатка на складе",
-      "bookingReasonRequired": "Опишите бронь в комментарии"
+      "overStock": "Количество товара больше остатка на складе"
     },
     "created": "{{visit.nom, capitalize}} успешно создан!"
   },
@@ -295,7 +296,6 @@
     "productsLocked": "Изменить товары созданного {{visit.gen}} пока нельзя. Дополнительные расходники оформляются отдельной продажей в разделе «Продажи».",
     "productsHint": "Товары добавляются при создании {{visit.gen}}. К созданному {{visit.dat}} расходники (шприц, зонд и т.п.) оформляются отдельной продажей в разделе «Продажи».",
     "doctorComplaints": "{{complaint.nomPl, capitalize}} ({{specialist.nom}})",
-    "adminCommentRequired": "Комментарий администратора (обязательно)",
     "adminComment": "Комментарий администратора",
     "updated": "{{visit.nom, capitalize}} обновлён",
     "draftRestored": "Восстановлены несохранённые данные",

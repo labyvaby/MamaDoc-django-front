@@ -243,8 +243,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // Справочник страховых (для строки «Страховка»); только активные.
   const insurersQuery = useQuery({
     queryKey: djangoQueryKeys.insurers.list(appointment?.organizationId ?? null),
-    queryFn: ({ signal }) => getInsurers(signal),
-    enabled: open,
+    queryFn: ({ signal }) =>
+      getInsurers(signal, {
+        organizationId: appointment?.organizationId,
+      }),
+    enabled: open && appointment?.organizationId != null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
   const insurers = insurersQuery.data ?? [];

@@ -131,9 +131,9 @@ export interface RuleWriteData {
 
 /** GET /api/payroll/report/ — monthly per-employee salary report.
 
- * branchId — аналитический срез по филиалу (приёмы и авансы филиала;
- * часы СКУД в срез не входят — у смен нет филиала). Без branchId —
- * полный org-wide расчёт, участвующий в заморозке.
+ * branchId — аналитический срез по филиалу, включая смены, привязанные к
+ * этому филиалу. Без branchId — полный org-wide расчёт, участвующий в
+ * заморозке.
  */
 export function getPayrollReport(
   params: {

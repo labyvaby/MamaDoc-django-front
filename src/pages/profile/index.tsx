@@ -30,7 +30,7 @@ import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useProfileCompleteness } from "../../hooks/useProfileCompleteness";
-import { useCan, useCanChecker } from "../../hooks/useCan";
+import { useCanChecker } from "../../hooks/useCan";
 import { PageHeader, AppCard, UserAvatar, InfoTile } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { getCurrentUser } from "../../api/auth";
@@ -71,6 +71,10 @@ type ProfileView = {
   telegramId: string;
   bank: string;
   inn: string;
+  instagram: string;
+  address: string;
+  bankName: string;
+  bik: string;
   birthDate: string | null;
   nickname: string;
   status?: string;
@@ -85,6 +89,10 @@ type RawEmployeeSource = {
   telegramId?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  instagram?: string | null;
+  address?: string | null;
+  bank?: string | null;
+  bik?: string | null;
   birthDate?: string | null;
   nickname?: string | null;
   status?: string | null;
@@ -109,6 +117,10 @@ const deriveView = (src: RawEmployeeSource, user?: RawUserSource): ProfileView =
   telegramId: src?.telegramId || "",
   bank: src?.bankAccountNumber || "",
   inn: src?.inn || "",
+  instagram: src?.instagram || "",
+  address: src?.address || "",
+  bankName: src?.bank || "",
+  bik: src?.bik || "",
   birthDate: src?.birthDate || null,
   nickname: src?.nickname || "",
   status: src?.status || undefined,
@@ -160,9 +172,6 @@ const ProfilePage: React.FC = () => {
   usePageTitle("Профиль");
   const { employee: empFromPerms, role } = usePermissions();
 
-  const canViewPrivate = useCan("staff.private.view");
-  const canViewDocs = useCan("staff.documents.view");
-  const canManagePrivate = useCan("staff.private.manage");
   const { can } = useCanChecker();
 
   const [editOpen, setEditOpen] = React.useState(false);
@@ -232,12 +241,8 @@ const ProfilePage: React.FC = () => {
             {view.birthDate && (
               <InfoTile icon={<CakeOutlined />} label="Дата рождения" value={dayjs(view.birthDate).format("DD.MM.YYYY")} />
             )}
-            {canViewPrivate && (
-              <>
-                <InfoTile icon={<CreditCardOutlined />} label="Банковский счёт" value={formatBank(view.bank)} active={Boolean(view.bank)} monospace />
-                <InfoTile icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
-              </>
-            )}
+            <InfoTile icon={<CreditCardOutlined />} label="Банковский счёт" value={formatBank(view.bank)} active={Boolean(view.bank)} monospace />
+            <InfoTile icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
           </Box>
         </AppCard>
       ),
@@ -257,7 +262,7 @@ const ProfilePage: React.FC = () => {
     });
   }
 
-  if (hasDjangoEmp && canViewDocs) {
+  if (hasDjangoEmp) {
     tabs.push({
       key: "documents",
       label: "Документы",
@@ -352,7 +357,6 @@ const ProfilePage: React.FC = () => {
       {hasDjangoEmp && (
         <EditProfileDrawer
           open={editOpen}
-          canEditPrivate={canManagePrivate}
           initial={{
             fullName: view.fullName,
             phone: view.phone,
@@ -362,6 +366,10 @@ const ProfilePage: React.FC = () => {
             birthDate: view.birthDate ?? "",
             bankAccountNumber: view.bank,
             inn: view.inn,
+            instagram: view.instagram,
+            address: view.address,
+            bank: view.bankName,
+            bik: view.bik,
           }}
           onClose={() => setEditOpen(false)}
           onSaved={(values: ProfileFormValues) => {
@@ -375,6 +383,10 @@ const ProfilePage: React.FC = () => {
               birthDate: values.birthDate || null,
               bank: values.bankAccountNumber,
               inn: values.inn,
+              instagram: values.instagram,
+              address: values.address,
+              bankName: values.bank,
+              bik: values.bik,
             }));
           }}
         />

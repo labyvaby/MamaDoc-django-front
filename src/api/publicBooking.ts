@@ -1,4 +1,10 @@
-import { API_BASE, ApiError, extractErrorMessage, NETWORK_ERROR_MESSAGE } from "./client";
+import {
+  API_BASE,
+  ApiError,
+  extractErrorMessage,
+  NETWORK_ERROR_MESSAGE,
+  notifyRateLimited,
+} from "./client";
 
 // ── Публичный booking-API (`/api/v1`) ────────────────────────────────────────
 // Контракт: docs `public-booking-api-contract.md` (2026-07-24).
@@ -101,6 +107,7 @@ async function publicRawRequest<T>(
   }
 
   if (response.status === 204) return undefined as T;
+  if (response.status === 429) notifyRateLimited();
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

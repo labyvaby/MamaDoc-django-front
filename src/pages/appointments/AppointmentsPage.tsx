@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -41,6 +42,7 @@ import DjangoPaymentDrawer from "./DjangoPaymentDrawer";
 import type { PaymentSummary } from "../../api/payments";
 import {
   getHomeDashboard,
+  getAppointment,
   getAppointmentNotifications,
   updateAppointment,
   startAppointment,
@@ -56,6 +58,7 @@ import { computeDayOccurrences } from "../schedule/django/occurrences";
 import { useNotification } from "@refinedev/core";
 import {
   djangoQueryKeys,
+  DJANGO_DETAIL_STALE_TIME_MS,
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../api/queryKeys";
 
@@ -262,27 +265,23 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     activeOrganization,
     activeEmployee,
     isSuperAdmin,
-    isAdmin,
-    isRegistrator,
-    hasRole,
   } = usePermissions();
 
-  // Привилегированная роль — те, кто работает с созданием приёмов напрямую
-  // (админ / регистратура / управляющий). Они видят приёмы ВСЕХ клиницистов
-  // нужного типа: в кабинете врача — всех врачей, в процедурном — всех медсестёр.
-  // Непривилегированный сотрудник (рабочая роль) видит только СВОИ приёмы,
-  // независимо от его клинической роли (clinical_role ≠ RBAC-роль).
-  const isPrivileged = isAdmin() || isRegistrator() || hasRole("manager");
+  // Доступ к общему рабочему списку определяется правом управления приёмами,
+  // а не названием роли. Поэтому пользовательская роль с appointments.update
+  // работает так же, как стандартные управляющий/регистратор.
+  const canManageAppointments =
+    can("appointments.update") || can("appointments.manage");
 
   // Кабинет врача: непривилегированный сотрудник видит только свои приёмы ("me");
   // привилегированная роль — приёмы всех врачей (фильтр clinicalRole=doctor на бэке).
-  const doctorSeesOwnOnly = isDoctorCabinet && !isPrivileged;
-  const doctorSeesAll = isDoctorCabinet && isPrivileged;
+  const doctorSeesOwnOnly = isDoctorCabinet && !canManageAppointments;
+  const doctorSeesAll = isDoctorCabinet && canManageAppointments;
 
   // Процедурный кабинет: непривилегированный сотрудник видит только свои процедуры;
   // привилегированная роль — приёмы всех медсестёр (фильтр clinicalRole=nurse).
-  const nurseSeesOwnOnly = isNurseCabinet && !isPrivileged;
-  const nurseSeesAll = isNurseCabinet && isPrivileged;
+  const nurseSeesOwnOnly = isNurseCabinet && !canManageAppointments;
+  const nurseSeesAll = isNurseCabinet && canManageAppointments;
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -296,14 +295,25 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const handleSetDate = React.useCallback((s: string) => setDate(dayjs(s)), []);
 
   const [createOpen, setCreateOpen] = React.useState(false);
-  // Вид регистратуры: список приёмов или свободные окна врачей.
-  const [viewMode, setViewMode] = React.useState<"list" | "slots">("list");
+  // Вид регистратуры: список приёмов или свободные окна врачей (сохраняется в localStorage).
+  const [viewMode, setViewModeState] = React.useState<"list" | "slots">(() => {
+    const saved = localStorage.getItem("mamadoc_appointments_view_mode");
+    return saved === "slots" || saved === "list" ? saved : "list";
+  });
+  const handleViewModeChange = React.useCallback((mode: "list" | "slots") => {
+    setViewModeState(mode);
+    localStorage.setItem("mamadoc_appointments_view_mode", mode);
+  }, []);
   // Предзаполнение создания приёма из клика по свободному окну.
   // employeeId/serviceId заполнены из вида «Окна» (врач+услуга известны);
   // клик по «Есть окно на HH:mm» в списке передаёт только время.
   const [slotPrefill, setSlotPrefill] = React.useState<
     { employeeId: number | null; dateTime: string; serviceId: number | null } | null
   >(null);
+  // Клик по занятому времени в виде «Окна»: карточка приёма открывается дровером
+  // поверх сетки. Сетка знает только id приёма (и он может быть на другой дате,
+  // чем список дня), поэтому карточка грузится отдельным запросом по id.
+  const [slotApptId, setSlotApptId] = React.useState<number | null>(null);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
@@ -394,6 +404,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     clinicalRole: clinicalRoleScope,
     nightOnly,
   });
+
+  // Приём, открытый из вида «Окна» (клик по занятому времени).
+  const slotApptQuery = useQuery({
+    queryKey: djangoQueryKeys.appointments.detail(slotApptId ?? 0),
+    queryFn: () => getAppointment(slotApptId as number),
+    enabled: slotApptId != null,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const slotAppt = slotApptId != null ? slotApptQuery.data ?? null : null;
+  const closeSlotAppt = React.useCallback(() => {
+    setSlotApptId(null);
+    setConclusionOpen(false);
+  }, []);
 
   // Синхронизация с изменениями коллег: WebSocket /ws/changes/ как мгновенный
   // триггер + лёгкий timestamp-polling как страховка (частый, когда сокет
@@ -544,9 +567,35 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             : appt,
         ),
       );
+      // Карточка над «Окнами» живёт вне списка дня — её обновляем запросом.
+      if (slotApptId === summary.appointmentId) {
+        queryClient.invalidateQueries({
+          queryKey: djangoQueryKeys.appointments.detail(slotApptId),
+        });
+      }
     },
-    [setItems],
+    [setItems, slotApptId, queryClient],
   );
+
+  /**
+   * Обновление после любой мутации приёма.
+   *
+   * Кроме списка дня перезапрашиваем сетку окон (приём мог занять/освободить
+   * время) и карточку, открытую поверх окон — она живёт вне списка дня и сама
+   * бы не обновилась. Инвалидация неактивных запросов холостая, поэтому в виде
+   * «Список» это ничего не стоит.
+   */
+  const refreshAfterMutation = React.useCallback(() => {
+    void refresh();
+    queryClient.invalidateQueries({
+      queryKey: djangoQueryKeys.scheduling.availabilityAll,
+    });
+    if (slotApptId != null) {
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.appointments.detail(slotApptId),
+      });
+    }
+  }, [refresh, queryClient, slotApptId]);
 
   const handleSelect = React.useCallback((appt: DjangoAppointment) => {
     setConclusionOpen(false); // при смене приёма закрываем колонку заключения
@@ -580,12 +629,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "confirmed" });
         notifyConsumptionWarnings(updated);
-        void refresh();
+        refreshAfterMutation();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [refresh, notify, notifyConsumptionWarnings],
+    [refreshAfterMutation, notify, notifyConsumptionWarnings],
   );
 
   // "Пациент здесь": scheduled → arrived (status-only, overlap не проверяется).
@@ -594,12 +643,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "arrived" });
         notifyConsumptionWarnings(updated);
-        void refresh();
+        refreshAfterMutation();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [refresh, notify, notifyConsumptionWarnings],
+    [refreshAfterMutation, notify, notifyConsumptionWarnings],
   );
 
   // Врач начинает приём → статус in_progress («На приёме»). Используем
@@ -610,12 +659,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     async (appt: DjangoAppointment) => {
       try {
         await startAppointment(appt.id);
-        void refresh();
+        refreshAfterMutation();
       } catch (e) {
         notify?.({ type: "error", message: parseBackendError(e) });
       }
     },
-    [refresh, notify],
+    [refreshAfterMutation, notify],
   );
 
   const handleConfirm = React.useCallback(async () => {
@@ -632,32 +681,45 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
+        // Удалённый приём нельзя оставлять открытым поверх окон.
+        if (slotApptId === confirm.appt.id) closeSlotAppt();
       }
       setConfirm(null);
-      void refresh();
+      refreshAfterMutation();
     } catch (e) {
       notify?.({ type: "error", message: parseBackendError(e) });
     } finally {
       setConfirmBusy(false);
     }
-  }, [confirm, refresh, notify, notifyConsumptionWarnings]);
+  }, [
+    confirm,
+    refreshAfterMutation,
+    notify,
+    notifyConsumptionWarnings,
+    slotApptId,
+    closeSlotAppt,
+  ]);
 
   const handleCreated = React.useCallback(() => {
     setCreateOpen(false);
-    void refresh();
-  }, [refresh]);
+    refreshAfterMutation();
+  }, [refreshAfterMutation]);
 
   const handleSaved = React.useCallback(() => {
     setEditTarget(null);
-    void refresh();
-  }, [refresh]);
+    refreshAfterMutation();
+  }, [refreshAfterMutation]);
 
   const showDetails = selectedAppt !== null;
 
-  // Details panel: drawer on mobile, inline panel on desktop
-  const detailsPanel = showDetails ? (
+  /**
+   * Карточка приёма: в виде «Список» — колонка/дровер выбранного приёма,
+   * в виде «Окна» — дровер поверх сетки. Действия одни и те же, поэтому
+   * рендер общий, отличается только приём и способ закрытия.
+   */
+  const renderDetailsPanel = (appt: DjangoAppointment, onClose: () => void) => (
     <AppointmentDetailsPanel
-      appointment={selectedAppt}
+      appointment={appt}
       canUpdate={canUpdate}
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
@@ -681,9 +743,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       }}
       onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}
       onDelete={(a) => setConfirm({ mode: "delete", appt: a })}
-      onClose={() => setSelectedAppt(null)}
+      onClose={onClose}
     />
-  ) : null;
+  );
+
+  // Details panel: drawer on mobile, inline panel on desktop
+  const detailsPanel = selectedAppt
+    ? renderDetailsPanel(selectedAppt, () => setSelectedAppt(null))
+    : null;
 
   return (
     <>
@@ -715,7 +782,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                     size="small"
                     exclusive
                     value={viewMode}
-                    onChange={(_, v) => v && setViewMode(v)}
+                    onChange={(_, v) => v && handleViewModeChange(v)}
                   >
                     <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
                       <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
@@ -763,7 +830,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                     size="small"
                     exclusive
                     value={viewMode}
-                    onChange={(_, v) => v && setViewMode(v)}
+                    onChange={(_, v) => v && handleViewModeChange(v)}
                   >
                     <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
                       <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
@@ -780,6 +847,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                 // Услугу регистратор выбирает уже в форме записи.
                 setSlotPrefill({ employeeId, dateTime, serviceId: null });
                 setCreateOpen(true);
+              }}
+              onOpenAppointment={(appointmentId) => {
+                setConclusionOpen(false);
+                setSlotApptId(appointmentId);
               }}
             />
           </Box>
@@ -934,6 +1005,91 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           )}
         </Drawer>
       )}
+
+      {/* Карточка приёма поверх вида «Окна»: клик по занятому времени открывает
+          ту же полную карточку, что и в списке — с оплатой, правкой, отменой и
+          заключением. Регистратор не теряет из вида поиск окон. */}
+      <Drawer
+        anchor={isMobile ? "bottom" : "right"}
+        open={slotApptId != null}
+        onClose={closeSlotAppt}
+        PaperProps={{
+          sx: {
+            ...(isMobile
+              ? {
+                  height: "90vh",
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                }
+              : {
+                  // 760px — чтобы весь ряд действий шапки («Подтвердить»,
+                  // «Пациент здесь», «Изменить», «Отменить запись», «⋯»)
+                  // помещался в одну строку; на 620px он не влезал.
+                  // Заключение открывается второй колонкой — дровер расширяется.
+                  width: conclusionOpen ? { xs: "100%", md: 1240 } : { xs: "100%", sm: 760 },
+                  maxWidth: "100vw",
+                }),
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+          },
+        }}
+      >
+        {slotAppt ? (
+          <>
+            <Box
+              sx={{
+                flex: conclusionOpen && isMobile ? "0 0 50%" : 1,
+                minWidth: 0,
+                minHeight: 0,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {renderDetailsPanel(slotAppt, closeSlotAppt)}
+            </Box>
+            {conclusionOpen && (
+              <>
+                <Divider orientation={isMobile ? "horizontal" : "vertical"} flexItem />
+                <Box
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 0,
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <DjangoConclusionSlotsPanel
+                    appointmentId={slotAppt.id}
+                    onClose={() => setConclusionOpen(false)}
+                  />
+                </Box>
+              </>
+            )}
+          </>
+        ) : (
+          <Stack
+            alignItems="center"
+            justifyContent="center"
+            spacing={2}
+            sx={{ flex: 1, p: 3 }}
+          >
+            {slotApptQuery.isError ? (
+              <>
+                <Alert severity="error">{parseBackendError(slotApptQuery.error)}</Alert>
+                <Button onClick={closeSlotAppt} color="inherit">
+                  {t("confirm.dismiss")}
+                </Button>
+              </>
+            ) : (
+              <CircularProgress size={32} />
+            )}
+          </Stack>
+        )}
+      </Drawer>
 
       {/* ── Drawers ── */}
       <DjangoAddAppointmentDrawer

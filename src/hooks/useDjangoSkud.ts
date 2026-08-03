@@ -20,8 +20,6 @@ import { useActiveScope } from "./useActiveScope";
 import { isIpInCidr, parseIpList } from "../utility/network";
 
 
-const IP_QUERY_KEY = ["common", "userIp"] as const;
-
 /**
  * Django-backed СКУД hook — mirrors the surface of useSkudActions so the
  * shifts page and sidebar can drive clock-in/out, history and the office-IP
@@ -43,21 +41,8 @@ export function useDjangoSkudActions(
 
   const [actionLoading, setActionLoading] = React.useState(false);
 
-  // 1. User's public IP (cached forever).
-  const { data: userIp, isLoading: userIpLoading } = useQuery({
-    queryKey: IP_QUERY_KEY,
-    queryFn: async () => {
-      const response = await fetch("https://api.ipify.org?format=json");
-      const data = await response.json();
-      return data.ip as string;
-    },
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: false,
-    enabled: enabled && canClock,
-  });
-
-  // 2. Allowed office IP from the backend (cached 5 min).
+  // 1. Allowed office IP and the user's public IP from our own backend.
+  // No external IP service: it could independently rate-limit clinic users.
   const { data: officeIpData, isLoading: officeIpLoading } = useQuery({
     queryKey: [
       ...djangoQueryKeys.attendance.officeIp,
@@ -68,6 +53,7 @@ export function useDjangoSkudActions(
     staleTime: 5 * 60 * 1000,
     enabled: enabled && canView && scope.orgReady,
   });
+  const userIp = officeIpData?.currentIp || undefined;
 
   const envIp = import.meta.env.VITE_OFFICE_IP as string | undefined;
   // Разрешённые IP: Wi-Fi каждого филиала + общий IP организации (или env).
@@ -88,7 +74,7 @@ export function useDjangoSkudActions(
     (!!userIp && allowedIps.some((allowed) => isIpInCidr(userIp, allowed)));
 
 
-  // 3. Current active shift.
+  // 2. Current active shift.
   const activeQuery = useQuery({
     queryKey: [
       ...djangoQueryKeys.attendance.active,
@@ -101,7 +87,7 @@ export function useDjangoSkudActions(
   });
   const currentShift = activeQuery.data?.shift ?? null;
 
-  // 4. History (only when requested).
+  // 3. History (only when requested).
   const historyQuery = useQuery({
     queryKey: djangoQueryKeys.attendance.list({
       employeeId: canManage ? filterEmployeeId ?? null : "self",
@@ -186,7 +172,7 @@ export function useDjangoSkudActions(
       activeQuery.isLoading || (enableHistory && historyQuery.isLoading),
     statusError:
       activeQuery.isError || (enableHistory && historyQuery.isError),
-    locationLoading: userIpLoading || officeIpLoading,
+    locationLoading: officeIpLoading,
     effectiveAllowedIp,
     userIp,
     isIpCorrect,

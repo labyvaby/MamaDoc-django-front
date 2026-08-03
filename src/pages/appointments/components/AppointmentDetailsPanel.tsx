@@ -164,7 +164,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // живут отмена/удаление, паттерн знакомый).
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const orgId = useApiOrgId();
-  const { isDoctor, isNurse, isAdmin, isRegistrator, activeEmployee } = usePermissions();
+  const { isDoctor, isNurse, activeEmployee } = usePermissions();
   // Клик по товару открывает карточку из справочника — только при праве на него.
   const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
 
@@ -273,8 +273,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // Врач — исполнитель? Есть невыполненные услуги для него?
   const isDoctorRole = isDoctor();
   const isNurseRole = isNurse();
-  const isAdminRole = isAdmin();
-  const isRegistratorRole = isRegistrator();
   const isNonDoctor = !isDoctorRole && !isNurseRole;
 
   // Ниже покажется PaymentInfoBlock со своим статусом крупно (см. paymentBlock) —
@@ -517,7 +515,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  if (canUpdate && (isAdminRole || isRegistratorRole)) {
+  if (canUpdate) {
     actions.push({
       key: "edit",
       label: t("details.edit"),
@@ -568,14 +566,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  /**
-   * Отмена и удаление — только в меню и отделены разделителем. Раньше это были
-   * две одинаковые красные иконки рядом: промах на шаг превращал отмену визита
-   * в удаление записи.
-   */
-  const dangerActions: HeaderAction[] = [];
-  if (canUpdate && onCancelAppt && !isCancelled && (isAdminRole || isRegistratorRole)) {
-    dangerActions.push({
+  // Отмена — заметная отдельная кнопка: это частое действие регистратуры.
+  // Удаление остаётся в меню, чтобы их нельзя было перепутать.
+  let cancelAction: HeaderAction | null = null;
+  if (canUpdate && onCancelAppt && !isCancelled) {
+    cancelAction = {
       key: "cancel",
       label: t("details.cancelRecord"),
       icon: <PersonOffOutlined fontSize="small" />,
@@ -583,9 +578,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         setConfirmAction("cancel");
         setConfirmOpen(true);
       },
-    });
+    };
   }
-  if (canDelete && onDelete && (isAdminRole || isRegistratorRole)) {
+
+  const dangerActions: HeaderAction[] = [];
+  if (canDelete && onDelete) {
     dangerActions.push({
       key: "delete",
       label: t("details.delete"),
@@ -638,54 +635,52 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             "& .MuiCardHeader-action": { mt: 0, alignSelf: "center", ml: 1 },
           }}
           title={
-            <Box
+            /* Основные действия — кнопками, остальное в меню «⋯».
+               Кнопки переносятся на следующую строку. Раньше строка не
+               переносилась, а скроллилась вбок — и в узкой карточке
+               «Изменить» обрезалось на полуслове, из-за чего было не видно,
+               что кнопка вообще есть. Сознательный обмен: лишний ряд в шапке
+               лучше спрятанного действия. */
+            <Stack
+              direction="row"
+              alignItems="center"
+              useFlexGap
               sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: { xs: 0.5, sm: 2 },
-                flexWrap: "nowrap",
+                gap: { xs: 0.5, sm: 1 },
+                flexWrap: "wrap",
+                minWidth: 0,
+                // Место под крестик закрытия — он висит абсолютом в правом
+                // верхнем углу шапки, первый ряд не должен под него заезжать.
+                pr: 4,
               }}
             >
-              {/* Основные действия — кнопками, остальное в меню «⋯». На узких
-                  экранах кнопок иногда больше, чем помещается в строку
-                  («Подтвердить» + «Пациент здесь» + «Изменить» и т.п.) — раньше
-                  они переносились по одной и шапка растягивалась на три ряда.
-                  Теперь строка не переносится, а скроллится вбок: высота шапки
-                  постоянна, лишние кнопки просто уезжают за край. */}
-              <Stack
-                direction="row"
-                spacing={{ xs: 0.5, sm: 1 }}
-                alignItems="center"
-                flexWrap="nowrap"
-                useFlexGap
-                sx={{
-                  gap: { xs: 0.5, sm: 1 },
-                  flex: "1 1 auto",
-                  minWidth: 0,
-                  overflowX: "auto",
-                  scrollbarWidth: "none",
-                  msOverflowStyle: "none",
-                  "&::-webkit-scrollbar": { display: "none" },
-                  // Чуть воздуха в конце — последняя кнопка не липнет к «⋯».
-                  pr: 0.5,
-                }}
-              >
-                {inlineActions.map((action) => (
-                  <Button
-                    key={action.key}
-                    size="small"
-                    variant={action.active ? "contained" : "outlined"}
-                    color={action.color ?? "primary"}
-                    startIcon={action.icon}
-                    onClick={action.onClick}
-                    disabled={action.disabled}
-                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                  >
-                    {action.label}
-                  </Button>
-                ))}
-              </Stack>
+              {inlineActions.map((action) => (
+                <Button
+                  key={action.key}
+                  size="small"
+                  variant={action.active ? "contained" : "outlined"}
+                  color={action.color ?? "primary"}
+                  startIcon={action.icon}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                >
+                  {action.label}
+                </Button>
+              ))}
+
+              {cancelAction && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  startIcon={cancelAction.icon}
+                  onClick={cancelAction.onClick}
+                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                >
+                  {cancelAction.label}
+                </Button>
+              )}
 
               {hasMenu && (
                 <Tooltip title={t("details.moreActions")}>
@@ -698,7 +693,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   </IconButton>
                 </Tooltip>
               )}
-            </Box>
+            </Stack>
           }
           action={
             onClose ? (

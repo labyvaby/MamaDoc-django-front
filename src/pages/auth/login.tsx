@@ -187,7 +187,9 @@ const LoginPage: React.FC = () => {
     // Django ApiError — разбираем по статусу, не показываем технический текст
     if (error instanceof ApiError) {
       if (error.status === 401) return "Неверный логин или пароль";
-      if (error.status === 429) return "Слишком много попыток. Пожалуйста, подождите немного";
+      if (error.status === 429) {
+        return "Приносим извинения: запрос временно не выполнился. Обновите страницу и попробуйте снова";
+      }
       if (error.status === 0 || error.status >= 500) {
         return "Сервер временно недоступен. Проверьте подключение и попробуйте снова.";
       }
@@ -213,7 +215,9 @@ const LoginPage: React.FC = () => {
     if (message.includes("Invalid login credentials")) return "Неверный email или пароль";
     if (message.includes("User not found")) return "Пользователь с таким Email не найден";
     if (message.includes("Email not confirmed")) return "Email не подтверждён. Пожалуйста, проверьте почту";
-    if (message.includes("Rate limit exceeded")) return "Слишком много попыток. Пожалуйста, подождите немного";
+    if (message.includes("Rate limit exceeded")) {
+      return "Приносим извинения: запрос временно не выполнился. Обновите страницу и попробуйте снова";
+    }
     if (message.includes("Auth session missing")) return "Сессия авторизации отсутствует или истекла. Пожалуйста, перейдите по ссылке из письма снова";
 
     return message;

@@ -1,4 +1,4 @@
-import { apiRequest, API_BASE } from "./client";
+import { apiRequest } from "./client";
 import { tt } from "../i18n/t";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -366,21 +366,15 @@ export function deleteService(id: number): Promise<void> {
 
 /**
  * Upload or replace the service image.
- * Uses native fetch with multipart/form-data (not JSON).
+ * Uses the shared API client with multipart/form-data.
  */
 export async function uploadServiceImage(id: number, file: File): Promise<Service> {
   const form = new FormData();
   form.append("image", file);
-  const resp = await fetch(`${API_BASE}/catalog/services/${id}/image/`, {
+  const service = await apiRequest<Service>(`/catalog/services/${id}/image/`, {
     method: "PUT",
-    credentials: "include",
-    body: form,
+    formData: form,
   });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => resp.statusText);
-    throw new Error(text || `HTTP ${resp.status}`);
-  }
-  const service = (await resp.json()) as Service;
   return normalizeService(service);
 }
 
@@ -388,12 +382,7 @@ export async function uploadServiceImage(id: number, file: File): Promise<Servic
  * Remove the service image.
  */
 export async function deleteServiceImage(id: number): Promise<void> {
-  const resp = await fetch(`${API_BASE}/catalog/services/${id}/image/`, {
+  await apiRequest<void>(`/catalog/services/${id}/image/`, {
     method: "DELETE",
-    credentials: "include",
   });
-  if (!resp.ok && resp.status !== 204) {
-    const text = await resp.text().catch(() => resp.statusText);
-    throw new Error(text || `HTTP ${resp.status}`);
-  }
 }

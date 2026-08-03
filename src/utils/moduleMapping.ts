@@ -26,6 +26,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   knowledge: 'knowledge',
   vaccinations: 'vaccinations',
   announcements: 'announcements',
+  profigram: 'profigram',
 };
 
 /**

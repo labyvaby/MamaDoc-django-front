@@ -31,10 +31,18 @@ export interface InsurerUpdatePayload {
 
 export function getInsurers(
   signal?: AbortSignal,
-  options?: { includeInactive?: boolean },
+  options?: { includeInactive?: boolean; organizationId?: number | null },
 ): Promise<DjangoInsurer[]> {
-  const qs = options?.includeInactive ? "?includeInactive=1" : "";
-  return apiRequest<DjangoInsurer[]>(`/finance/insurers/${qs}`, { signal });
+  const query = new URLSearchParams();
+  if (options?.includeInactive) query.set("includeInactive", "1");
+  if (options?.organizationId != null) {
+    query.set("organizationId", String(options.organizationId));
+  }
+  const qs = query.toString();
+  return apiRequest<DjangoInsurer[]>(
+    `/finance/insurers/${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
 }
 
 export function createInsurer(

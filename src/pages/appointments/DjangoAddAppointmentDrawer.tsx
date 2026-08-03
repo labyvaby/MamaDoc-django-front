@@ -30,6 +30,7 @@ import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import { useNotification } from "@refinedev/core";
@@ -80,6 +81,8 @@ import ServiceGroupShell, {
 } from "../../components/appointments/ServiceGroupShell";
 import { groupServiceRowsByEmployee } from "../../components/appointments/serviceRowGroups";
 import { buildEmployeeAccentMap } from "../../components/appointments/employeeAccent";
+import { attentionFieldSx } from "../../theme/uiHelpers";
+import type { RbacBranch } from "../../api/auth";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -207,31 +210,24 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const theme = useTheme();
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
+  const canManageAppointments = useCan("appointments.update");
   const {
     activeBranch,
     activeOrganization,
     activeMembership,
     activeEmployee,
     isNurse,
-    isAdmin,
   } = usePermissions();
   // Орг-скоуп для запросов: суперпользователю/мультиорг-аккаунту передаём явно,
   // иначе пикеры и проверка дублей смотрят не в ту организацию.
   const orgId = useApiOrgId();
 
-  // Процедурный кабинет: настоящая медсестра (не админ) создаёт процедуры
-  // только на себя — поле исполнителя фиксируется её employee id. Без
+  // Процедурный кабинет: медсестра без права управления приёмами создаёт
+  // процедуры только на себя — поле исполнителя фиксируется её employee id. Без
   // известного employee id поле не блокируем, иначе форма станет незаполнимой.
   const nurseEmployeeId =
-    isNurse() && !isAdmin() ? activeEmployee?.id ?? null : null;
+    isNurse() && !canManageAppointments ? activeEmployee?.id ?? null : null;
   const isWorkplaceNurse = nurseEmployeeId !== null;
-
-  const data = useDjangoAppointmentData(
-    open,
-    activeBranch?.id ?? null,
-    activeOrganization?.id ?? null,
-    activeMembership?.id ?? null,
-  );
 
   // ── form state ───────────────────────────────────────────────────────────
   const [scheduledAt, setScheduledAt] = React.useState<string>("");
@@ -249,11 +245,26 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [adminComment, setAdminComment] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Выбор здесь относится только к создаваемому приёму. Не переключаем
+  // глобальный контекст: switchContext() размонтирует страницы приложения и
+  // закроет этот дровер вместе с уже заполненной формой.
+  const [appointmentBranch, setAppointmentBranch] = React.useState<RbacBranch | null>(null);
   const [addPatientOpen, setAddPatientOpen] = React.useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = React.useState(false);
   const [confirmDuplicateOpen, setConfirmDuplicateOpen] = React.useState(false);
   const [overlapConflict, setOverlapConflict] =
     React.useState<AppointmentOverlapConflict | null>(null);
+  const availableBranches = React.useMemo(
+    () => (activeMembership?.branches ?? []).filter((branch) => branch.isActive),
+    [activeMembership],
+  );
+  const effectiveBranch = appointmentBranch ?? activeBranch;
+  const data = useDjangoAppointmentData(
+    open,
+    effectiveBranch?.id ?? null,
+    activeOrganization?.id ?? null,
+    activeMembership?.id ?? null,
+  );
   // Чтобы ошибка была видна, даже если пользователь прокрутил вниз к «Сохранить».
   const errorRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -277,6 +288,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       form.reset();
       setSaving(false);
       setSaveError(null);
+      setAppointmentBranch(null);
       setConfirmCloseOpen(false);
       setConfirmDuplicateOpen(false);
       return;
@@ -345,7 +357,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         if (!ctrl.signal.aborted) setProductsLoading(false);
       });
     return () => ctrl.abort();
-  }, [open, activeBranch?.id, orgId]);
+  }, [open, effectiveBranch?.id, orgId]);
 
   // ── patient search (server-side; never loads the whole patient table) ───────
   // The clinic can have tens of thousands of patients, so the autocomplete
@@ -483,8 +495,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             : null,
     products:
       overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
-    adminComment:
-      isBooking && !adminComment.trim() ? t("addDrawer.errors.bookingReasonRequired") : null,
+    // Комментарий к брони необязателен: часто бронируют по звонку, когда
+    // сказать про неё пока нечего, а пустое поле блокировало сохранение.
   });
   const touched = form.attempted;
 
@@ -532,7 +544,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     if (saving) return;
     // Без активного филиала бэкенд отклонит запрос (branchId обязателен) —
     // не даём отправить форму, предупреждение уже показано сверху.
-    if (!activeBranch) return;
+    if (!effectiveBranch) return;
     // Показывает ошибки и уводит фокус в первое незаполненное поле.
     if (!form.validate()) return;
     // У пациента уже есть активная запись на это время — создание только
@@ -551,7 +563,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     try {
       await createAppointment({
         patientId: selectedPatient?.id ?? null,
-        branchId: activeBranch?.id ?? null,
+        branchId: effectiveBranch?.id ?? null,
         // Scope to the active org so branch/org never mismatch (multi-org users).
         organizationId: activeOrganization?.id ?? null,
         scheduledAt: dayjs(scheduledAt).toISOString(),
@@ -723,13 +735,40 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           }}
         >
           <Stack spacing={2.5}>
-            {!activeBranch && (
+            {!effectiveBranch && (
               <Alert severity="warning">
                 <AlertTitle>{t("addDrawer.noBranchTitle")}</AlertTitle>
                 {t("addDrawer.noBranchText")}
-                <br />
-                {t("addDrawer.noBranchHowTo")} <b>{t("addDrawer.noBranchHowToLink")}</b>{" "}
-                {t("addDrawer.noBranchHowToTail")}
+                {availableBranches.length > 0 ? (
+                  <Box sx={{ mt: 1.5 }}>
+                    <Typography variant="body2" sx={{ mb: 0.75, fontWeight: 600 }}>
+                      {t("addDrawer.chooseBranch")}
+                    </Typography>
+                    <Stack spacing={0.75}>
+                      {availableBranches.map((branch) => {
+                        return (
+                          <Button
+                            key={branch.id}
+                            variant="outlined"
+                            color="warning"
+                            fullWidth
+                            onClick={() => setAppointmentBranch(branch)}
+                            startIcon={<StoreOutlined />}
+                            sx={{ justifyContent: "flex-start" }}
+                          >
+                            {branch.name}
+                          </Button>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                ) : (
+                  <>
+                    <br />
+                    {t("addDrawer.noBranchHowTo")} <b>{t("addDrawer.noBranchHowToLink")}</b>{" "}
+                    {t("addDrawer.noBranchHowToTail")}
+                  </>
+                )}
               </Alert>
             )}
             {saveError && (
@@ -1585,7 +1624,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
 
                 <Stack spacing={0.5}>
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                    {t("addDrawer.adminCommentLabel", { required: isBooking ? " *" : "" })}
+                    {t("addDrawer.adminCommentLabel")}
                   </Typography>
                   <TextField
                     value={adminComment}
@@ -1597,7 +1636,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                     placeholder={
                       isBooking ? t("addDrawer.bookingReason") : t("addDrawer.optional")
                     }
-                    {...form.field("adminComment")}
+                    // У брони поле подсвечено янтарным (как тумблер брони):
+                    // без пациента только комментарий и объясняет, чьё время
+                    // занято. Подсказка, а не обязательное поле.
+                    helperText={isBooking ? t("addDrawer.bookingReasonHint") : undefined}
+                    sx={isBooking ? attentionFieldSx : undefined}
                   />
                 </Stack>
               </>
@@ -1622,7 +1665,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
             </Button>
             <Button
               variant="contained"
-              disabled={saving || data.loading || !activeBranch}
+              disabled={saving || data.loading || !effectiveBranch}
               onClick={handleSave}
               startIcon={
                 saving ? <CircularProgress size={16} color="inherit" /> : undefined

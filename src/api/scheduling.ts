@@ -82,12 +82,29 @@ export interface AvailabilitySlot {
   patientName: string | null;
 }
 
+/**
+ * Занятое время дня — ФАКТИЧЕСКИЙ приём, а не слот сетки.
+ *
+ * Сетка режется шагом от начала смены, поэтому приём 11:45–12:15 попадает
+ * сразу в два слота (11:30 и 12:00) и ни один из них не показывает его
+ * настоящее время. Время занятой строки берём отсюда.
+ */
+export interface AvailabilityAppointment {
+  id: number;
+  start: string; // HH:MM
+  end: string;
+  patientName: string;
+  status: string;
+}
+
 export interface AvailabilityDay {
   date: string;
   scheduled: boolean;
   dayOff: boolean;
   freeCount: number;
   slots: AvailabilitySlot[];
+  /** undefined — бэкенд ещё без этого поля (фронт деплоится раньше). */
+  appointments?: AvailabilityAppointment[];
 }
 
 export interface EmployeeAvailability {

@@ -30,7 +30,6 @@ import { useT } from "../../i18n/VerticalProvider";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
-import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
@@ -70,7 +69,6 @@ import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
 import { useMobileSidebar } from "./mobile-context";
-import { SettingsModal } from "./SettingsModal";
 import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -79,7 +77,10 @@ import { useSkudActions } from "../../hooks/useSkudActions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
-import { SETTINGS_TAB_PERMISSIONS } from "../../config/settingsPermissions";
+import {
+  PAGE_PERMISSIONS,
+  SETTINGS_TAB_PERMISSIONS,
+} from "../../config/accessPermissions";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import { AccountBalanceWalletOutlined } from "@mui/icons-material";
@@ -353,7 +354,7 @@ const SidebarSecondary: React.FC = () => {
     SETTINGS_TAB_PERMISSIONS,
   ).some(([key, permission]) =>
     key === "cleaning"
-      ? moduleGate("cleaning", [permission])
+      ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
       : can(permission),
   );
   const orgId = useApiOrgId();
@@ -381,34 +382,36 @@ const SidebarSecondary: React.FC = () => {
   // «Организация» — справочное (пациенты, приёмы, услуги, документы).
   const can_ = {
     // МОЯ РАБОТА
-    registratura: isSuper || (!isNurse && !isDoctor()),
-    bookings: IS_DJANGO_BACKEND && (isSuper || can(["bookings.view", "bookings.manage"])),
+    registratura: IS_DJANGO_BACKEND
+      ? (isSuper || can(PAGE_PERMISSIONS.appointments))
+      : (isSuper || (!isNurse && !isDoctor())),
+    bookings: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.bookings)),
     doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
     // Список привилегированных повторяет isPrivileged из AppointmentsPage:
     // роут /nurse пускает по appointments.view, и сама страница показывает
     // им приёмы всех медсестёр — скрывать пункт меню было нечем оправдать
     // (управляющий и регистратор его не видели, хотя страница им открыта).
     nurseRoom: isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse,
-    schedule: IS_DJANGO_BACKEND ? (isSuper || can("schedule.view")) : true,
-    skud: !IS_DJANGO_BACKEND || isSuper || can("attendance.view"),
+    schedule: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.schedule)) : true,
+    skud: !IS_DJANGO_BACKEND || isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
-    tasks: IS_DJANGO_BACKEND && (isSuper || can("tasks.list")),
-    expenses: true,
+    tasks: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.tasks)),
+    expenses: !IS_DJANGO_BACKEND || isSuper || can(PAGE_PERMISSIONS.expenses),
     knowledge: IS_DJANGO_BACKEND && moduleGate("knowledge"),
-    achievements: IS_DJANGO_BACKEND && (isSuper || can("achievements.view")),
+    achievements: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.achievements)),
     // ОРГАНИЗАЦИЯ
-    employees: isSuper || (IS_DJANGO_BACKEND ? can("staff.view") : !isNurse),
-    patients: isSuper || (IS_DJANGO_BACKEND ? can("patients.view") : !isNurse),
-    vaccinations: IS_DJANGO_BACKEND && (isSuper || can("vaccinations.view")),
-    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
-    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can("appointments.view") : true),
-    services: isSuper || (IS_DJANGO_BACKEND ? can("catalog.view") : true),
+    employees: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.employees) : !isNurse),
+    patients: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.patients) : !isNurse),
+    vaccinations: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.vaccinations)),
+    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.appointments) : true),
+    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.appointments) : true),
+    services: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.services) : true),
     documents: IS_DJANGO_BACKEND && moduleGate("documents"),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
     // СКЛАДЫ
-    products: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.view", "warehouse.sales.view"]) : true),
-    sales: isSuper || (IS_DJANGO_BACKEND ? can(["warehouse.sales.view", "warehouse.view"]) : (isAdmin() || isRegistrator())),
-    storage: isSuper || (IS_DJANGO_BACKEND ? can("warehouse.view") : isAdmin()),
+    products: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.products) : true),
+    sales: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.sales) : (isAdmin() || isRegistrator())),
+    storage: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.warehouses) : isAdmin()),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
@@ -419,11 +422,13 @@ const SidebarSecondary: React.FC = () => {
     // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
     reports: IS_DJANGO_BACKEND
-      ? (isSuper || can("reports.view"))
+      ? (isSuper || can(PAGE_PERMISSIONS.reports))
       : (isSuper || isAdmin() || hasRole(["accountant"])),
-    cashbox: IS_DJANGO_BACKEND ? (isSuper || can("finance.view")) : hasAccessToCashbox,
-    load: IS_DJANGO_BACKEND ? (isSuper || can("reports.view")) : isSuper,
-    notifications: isSuper,
+    cashbox: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.cashbox)) : hasAccessToCashbox,
+    load: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.reports)) : isSuper,
+    notifications: IS_DJANGO_BACKEND
+      ? (isSuper || can(PAGE_PERMISSIONS.notifications))
+      : isSuper,
     settings: IS_DJANGO_BACKEND && hasVisibleSettingsTab,
   };
 
@@ -714,7 +719,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Отзывы (Django-mode only) */}
-        {show("management") && IS_DJANGO_BACKEND && (isSuper || can(['reviews.view', 'reviews.manage'])) && (
+        {show("management") && IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 
@@ -1013,12 +1018,10 @@ const SidebarFooter: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isCollapsed = siderCollapsed && !isMobile; // Always expanded on mobile
 
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
   const appVersion = useAppVersion();
 
   const handleLogoutClick = () => {
-    setSettingsOpen(false); // Close settings if open (though they are different modals)
     setLogoutOpen(true);
   };
 
@@ -1047,11 +1050,6 @@ const SidebarFooter: React.FC = () => {
         {isCollapsed ? (
           <Stack spacing={1} alignItems="center">
             <ThemeCustomizerButton tooltipPlacement="right" />
-            <Tooltip title="Настройки" placement="right">
-              <IconButton onClick={() => setSettingsOpen(true)} size="small">
-                <SettingsOutlined fontSize="small" />
-              </IconButton>
-            </Tooltip>
             <Tooltip title="Выйти" placement="right">
               <IconButton onClick={handleLogoutClick} size="small" color="error">
                 <LogoutOutlined fontSize="small" />
@@ -1080,11 +1078,6 @@ const SidebarFooter: React.FC = () => {
 
             <Stack direction="row" spacing={0.5}>
               <ThemeCustomizerButton tooltipPlacement="top" />
-              <Tooltip title="Настройки" placement="top">
-                <IconButton onClick={() => setSettingsOpen(true)} size="small">
-                  <SettingsOutlined fontSize="small" />
-                </IconButton>
-              </Tooltip>
               <Tooltip title="Выйти" placement="top">
                 <IconButton onClick={handleLogoutClick} size="small" color="error">
                   <LogoutOutlined fontSize="small" />
@@ -1094,8 +1087,6 @@ const SidebarFooter: React.FC = () => {
           </>
         )}
       </Stack>
-
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* Confirmation Dialog */}
       <Dialog

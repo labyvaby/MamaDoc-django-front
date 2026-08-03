@@ -364,6 +364,7 @@ interface RoleFormDrawerProps {
   mode: "create" | "edit";
   initial?: RbacRole | null;
   permissions: RbacPermission[];
+  organizationId?: number;
   onClose: () => void;
   onSaved: (role: RbacRole) => void;
 }
@@ -373,6 +374,7 @@ function RoleFormDrawer({
   mode,
   initial,
   permissions,
+  organizationId,
   onClose,
   onSaved,
 }: RoleFormDrawerProps) {
@@ -458,9 +460,14 @@ function RoleFormDrawer({
     try {
       let saved: RbacRole;
       if (mode === "create") {
+        if (organizationId == null) {
+          setError("Сначала выберите организацию.");
+          return;
+        }
         const payload: RoleCreatePayload = {
           name: name.trim(),
           code: code.trim(),
+          organizationId,
           description: description.trim(),
           permissionCodes: selectedCodes,
         };
@@ -473,6 +480,9 @@ function RoleFormDrawer({
         };
         saved = await updateRole(initial!.id, payload);
       }
+      // The current user may belong to the edited role. Refresh the shared
+      // /auth/me/ cache immediately so revoked menu items/buttons disappear.
+      window.dispatchEvent(new Event("mamadoc:rbac-changed"));
       onSaved(saved);
       onClose();
     } catch (err) {
@@ -900,7 +910,7 @@ const RolesSettingsPage: React.FC = () => {
     return t("roles.unknownError");
   }
 
-  const { activeOrganization, isSuperAdmin } = usePermissions();
+  const { activeOrganization } = usePermissions();
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
   const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -1169,16 +1179,26 @@ const RolesSettingsPage: React.FC = () => {
               {t("roles.systemRolesSection")}
             </Typography>
             <Stack spacing={1}>
-              {/* Бэкенд разрешает менять системные роли только Django-суперпользователю
-                  (rbac/api/views.py: System roles can only be edited by a superuser). */}
               {systemRoles.map((role) => (
-                <RoleRow
+                <CanAccess
                   key={role.id}
-                  role={role}
-                  allPermissions={permissions}
-                  onEdit={() => handleOpenEdit(role)}
-                  canEdit={isSuperAdmin()}
-                />
+                  permissions="rbac.roles.update"
+                  fallback={
+                    <RoleRow
+                      role={role}
+                      allPermissions={permissions}
+                      onEdit={() => handleOpenEdit(role)}
+                      canEdit={false}
+                    />
+                  }
+                >
+                  <RoleRow
+                    role={role}
+                    allPermissions={permissions}
+                    onEdit={() => handleOpenEdit(role)}
+                    canEdit
+                  />
+                </CanAccess>
               ))}
             </Stack>
           </Box>
@@ -1191,6 +1211,7 @@ const RolesSettingsPage: React.FC = () => {
         mode={drawerMode}
         initial={editingRole}
         permissions={permissions}
+        organizationId={activeOrganization?.id}
         onClose={() => setDrawerOpen(false)}
         onSaved={handleSaved}
       />

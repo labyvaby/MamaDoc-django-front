@@ -78,6 +78,10 @@ export type ActiveEmployee = {
   telegramId: string;
   bankAccountNumber: string;
   inn: string;
+  instagram?: string;
+  address?: string;
+  bank?: string;
+  bik?: string;
   status: string;
   branch: { id: number; name: string } | null;
 } | null;
@@ -147,6 +151,10 @@ export type ProfileUpdatePayload = {
   telegramId?: string | null;
   bankAccountNumber?: string | null;
   inn?: string | null;
+  instagram?: string | null;
+  address?: string | null;
+  bank?: string | null;
+  bik?: string | null;
 };
 
 /** Returns the current user's own Employee profile (active organization). */
