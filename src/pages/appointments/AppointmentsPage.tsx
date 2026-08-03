@@ -317,6 +317,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       booking: boolean;
     } | null
   >(null);
+  // Выбранный в ленте аватарок исполнитель. Держим на странице (а не внутри
+  // AppointmentListPanel), потому что «Добавить приём» подставляет его в
+  // исполнителя первой строки услуг: регистратор, отобравший день по врачу,
+  // почти всегда записывает именно к нему. Контракт ленты — ФИО.
+  const [doctorFilter, setDoctorFilter] = React.useState<string | null>(null);
+  // Лента сбрасывалась при смене даты своим внутренним состоянием; в
+  // управляемом режиме сброс делаем сами, поведение то же.
+  React.useEffect(() => {
+    setDoctorFilter(null);
+  }, [dateStr]);
   // Клик по занятому времени в виде «Окна»: карточка приёма открывается дровером
   // поверх сетки. Сетка знает только id приёма (и он может быть на другой дате,
   // чем список дня), поэтому карточка грузится отдельным запросом по id.
@@ -520,6 +530,19 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       a.services.some((s) => s.employee != null && clinicianIds.has(s.employee.id)),
     );
   }, [items, clinicalRoleScope, clinicianIds]);
+
+  // Исполнитель, выбранный в ленте, в виде employee id — для предзаполнения
+  // формы записи. Лента фильтрует по ФИО, поэтому id ищем в тех же приёмах,
+  // из которых она построена. Полных однофамильцев лента и так не различает.
+  const filterEmployeeId = React.useMemo<number | null>(() => {
+    if (!doctorFilter) return null;
+    for (const appt of visibleItems) {
+      for (const sl of appt.services) {
+        if (sl.employee?.fullName === doctorFilter) return sl.employee.id;
+      }
+    }
+    return null;
+  }, [doctorFilter, visibleItems]);
 
   // Группировка: привилегированный кабинет — строго по клиницистам своего типа;
   // клиницист в своём кабинете — по себе. Иначе (Регистратура) — по всем участникам.
@@ -908,6 +931,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                 setCreateOpen(true);
               } : undefined}
               hideDoctorStrip={hideEmployeeStrip}
+              doctorFilter={doctorFilter}
+              onDoctorFilterChange={setDoctorFilter}
               groupEmployeeIds={groupEmployeeIds}
               dayShifts={dayShifts}
             />
@@ -1118,7 +1143,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               : undefined
         }
         initialDateExact={!!slotPrefill}
-        initialEmployeeId={slotPrefill?.employeeId ?? null}
+        // Без предзаполнения из окна — исполнитель, отобранный в ленте аватарок.
+        initialEmployeeId={slotPrefill ? slotPrefill.employeeId : filterEmployeeId}
         initialServiceId={slotPrefill?.serviceId ?? null}
         initialBooking={slotPrefill?.booking ?? false}
       />
