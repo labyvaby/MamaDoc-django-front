@@ -774,25 +774,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 </IconButton>
               </Stack>
             </Box>
-                  width: "max-content",
-                  gap: { xs: 0.5, sm: 1 },
-                  visibility: "hidden",
-                  pointerEvents: "none",
-                }}
-              >
-                {headerActions.map((action) => (
-                  <Button
-                    key={action.key}
-                    data-header-action-measure
-                    tabIndex={-1}
-                    size="small"
-                    variant={action.active ? "contained" : "outlined"}
-                    color={action.color ?? "primary"}
-                    startIcon={action.icon}
-                    disabled={action.disabled}
-                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                  >
-                    {action.label}
           }
           action={
             onClose ? (
