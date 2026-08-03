@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, Chip, CircularProgress, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Chip, CircularProgress, Collapse, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -129,6 +129,87 @@ const STATUS_DOT: Record<DocStatus, "success.main" | "warning.main" | "text.disa
   free: "success.main",
   later: "warning.main",
   none: "text.disabled",
+};
+
+// ── Список врачей под группой специальностей ─────────────────────────────────
+
+interface DocRailListProps {
+  docs: { emp: EmployeeAvailability; sum: DocSummary }[];
+  selectedId: number | null;
+  /** Окна специальности ещё грузятся — показываем спиннер, а не пустоту. */
+  loading: boolean;
+  onSelect: (employeeId: number | null) => void;
+}
+
+/**
+ * Раскрывающийся список врачей группы в левом рельсе. Выбор врача — это фильтр
+ * сетки, а не отдельный экран: клик по активному врачу снимает фильтр.
+ */
+const DocRailList: React.FC<DocRailListProps> = ({ docs, selectedId, loading, onSelect }) => {
+  const { t } = useT("appointments");
+
+  return (
+    <Stack
+      spacing={0.25}
+      sx={(tokens) => ({ py: 0.5, px: 1, bgcolor: alpha(tokens.palette.primary.main, 0.03) })}
+    >
+      {loading && docs.length === 0 ? (
+        <Stack alignItems="center" sx={{ py: 1 }}>
+          <CircularProgress size={16} />
+        </Stack>
+      ) : docs.length === 0 ? (
+        <Typography variant="caption" color="text.disabled" sx={{ px: 1.25, py: 0.5 }}>
+          {t("slots.specialistsNotFound")}
+        </Typography>
+      ) : (
+        docs.map(({ emp, sum }) => {
+          const isDocActive = selectedId === emp.employeeId;
+          return (
+            <Stack
+              key={emp.employeeId}
+              direction="row"
+              alignItems="center"
+              spacing={1}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(isDocActive ? null : emp.employeeId);
+              }}
+              sx={(tokens) => ({
+                py: 0.75,
+                px: 1.25,
+                borderRadius: "8px",
+                cursor: "pointer",
+                bgcolor: isDocActive ? "primary.main" : "transparent",
+                color: isDocActive ? "primary.contrastText" : "text.primary",
+                transition: "all .13s ease",
+                "&:hover": {
+                  bgcolor: isDocActive ? "primary.main" : alpha(tokens.palette.primary.main, 0.08),
+                },
+              })}
+            >
+              <Box
+                sx={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  bgcolor: isDocActive ? "primary.contrastText" : STATUS_DOT[sum.status],
+                  flexShrink: 0,
+                }}
+              />
+              <Typography
+                variant="caption"
+                fontWeight={isDocActive ? 700 : 500}
+                noWrap
+                sx={{ flex: 1, minWidth: 0, fontSize: "0.775rem" }}
+              >
+                {emp.fullName}
+              </Typography>
+            </Stack>
+          );
+        })
+      )}
+    </Stack>
+  );
 };
 
 // ── Таймлайн дня ──────────────────────────────────────────────────────────────
@@ -388,6 +469,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const [search, setSearch] = React.useState("");
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
+  // Позволяет свернуть раскрытый список врачей под активной специальностью.
+  // Список открыт по умолчанию; повторный клик по активной группе его сворачивает.
+  const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>(null);
   const stripRef = React.useRef<HTMLDivElement>(null);
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
@@ -480,7 +564,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Врачи специальности + сводка, отсортированные «лучшие сверху».
   const docs = React.useMemo(() => {
     const list = (availQuery.data?.employees ?? [])
-      .filter((emp) => emp.days.some((d) => d.scheduled))
       .map((emp) => ({
         emp,
         sum: summarize(emp, todayIso),
@@ -505,6 +588,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   }, [docs, selDocId]);
 
   const selectedDoc = docs.find((x) => x.emp.employeeId === selDocId) ?? null;
+  // Выбор врача в рельсе — это фильтр сетки (отдельного экрана врача нет):
+  // остаётся одна колонка, вид и поведение окон те же.
+  const gridDocs = selectedDoc ? [selectedDoc] : docs;
   // В навбаре оставляем только реальные смены. Выходные, отпуск и дни без
   // расписания не должны выглядеть как даты, на которые можно записать пациента.
   const selectableDays = React.useMemo(() => {
@@ -708,7 +794,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           setSpecId(null);
                           setSelDocId(null);
                           setSelDay(null);
-                        } else if (selDocId !== null) {
+                          setCollapsedGroup(null);
+                        } else if (collapsedGroup === "all") {
+                          setCollapsedGroup(null);
+                        } else {
+                          setCollapsedGroup("all");
                           setSelDocId(null);
                         }
                       }}
@@ -756,55 +846,23 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       )}
                     </Box>
 
-                    {active && docs.length > 0 && (
-                      <Stack spacing={0.25} sx={{ py: 0.5, px: 1, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
-                        {docs.map(({ emp, sum }) => {
-                          const isDocActive = selDocId === emp.employeeId;
-                          return (
-                            <Stack
-                              key={emp.employeeId}
-                              direction="row"
-                              alignItems="center"
-                              spacing={1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelDocId(isDocActive ? null : emp.employeeId);
-                              }}
-                              sx={(t) => ({
-                                py: 0.75,
-                                px: 1.25,
-                                borderRadius: "8px",
-                                cursor: "pointer",
-                                bgcolor: isDocActive ? "primary.main" : "transparent",
-                                color: isDocActive ? "primary.contrastText" : "text.primary",
-                                transition: "all .13s ease",
-                                "&:hover": {
-                                  bgcolor: isDocActive ? "primary.main" : alpha(t.palette.primary.main, 0.08),
-                                },
-                              })}
-                            >
-                              <Box
-                                sx={{
-                                  width: 7,
-                                  height: 7,
-                                  borderRadius: "50%",
-                                  bgcolor: isDocActive ? "primary.contrastText" : STATUS_DOT[sum.status],
-                                  flexShrink: 0,
-                                }}
-                              />
-                              <Typography
-                                variant="caption"
-                                fontWeight={isDocActive ? 700 : 500}
-                                noWrap
-                                sx={{ flex: 1, minWidth: 0, fontSize: "0.775rem" }}
-                              >
-                                {emp.fullName}
-                              </Typography>
-                            </Stack>
-                          );
-                        })}
-                      </Stack>
-                    )}
+                    <Collapse
+                      in={active && collapsedGroup !== "all"}
+                      timeout={{ enter: 240, exit: 180 }}
+                      easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
+                      unmountOnExit
+                      // flexShrink: 0 обязателен: рельс — это flex-колонка со скроллом,
+                      // а у Collapse overflow: hidden (min-height: auto → 0), поэтому
+                      // иначе флексбокс ужимает раскрытый список до нулевой высоты.
+                      sx={{ flexShrink: 0, overflow: "hidden" }}
+                    >
+                      <DocRailList
+                        docs={docs}
+                        selectedId={selDocId}
+                        loading={availQuery.isLoading}
+                        onSelect={setSelDocId}
+                      />
+                    </Collapse>
                   </React.Fragment>
                 );
               })()}
@@ -824,7 +882,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             setSpecId(s.id);
                             setSelDocId(null);
                             setSelDay(null);
-                          } else if (selDocId !== null) {
+                            setCollapsedGroup(null);
+                          } else if (collapsedGroup === s.id) {
+                            setCollapsedGroup(null);
+                          } else {
+                            setCollapsedGroup(s.id);
                             setSelDocId(null);
                           }
                         }}
@@ -873,55 +935,20 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       </Box>
 
                       {/* Список сотрудников выбранной специальности */}
-                      {active && docs.length > 0 && (
-                        <Stack spacing={0.25} sx={{ py: 0.5, px: 1, bgcolor: alpha(theme.palette.primary.main, 0.03) }}>
-                          {docs.map(({ emp, sum }) => {
-                            const isDocActive = selDocId === emp.employeeId;
-                            return (
-                              <Stack
-                                key={emp.employeeId}
-                                direction="row"
-                                alignItems="center"
-                                spacing={1}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelDocId(isDocActive ? null : emp.employeeId);
-                                }}
-                                sx={(t) => ({
-                                  py: 0.75,
-                                  px: 1.25,
-                                  borderRadius: "8px",
-                                  cursor: "pointer",
-                                  bgcolor: isDocActive ? "primary.main" : "transparent",
-                                  color: isDocActive ? "primary.contrastText" : "text.primary",
-                                  transition: "all .13s ease",
-                                  "&:hover": {
-                                    bgcolor: isDocActive ? "primary.main" : alpha(t.palette.primary.main, 0.08),
-                                  },
-                                })}
-                              >
-                                <Box
-                                  sx={{
-                                    width: 7,
-                                    height: 7,
-                                    borderRadius: "50%",
-                                    bgcolor: isDocActive ? "primary.contrastText" : STATUS_DOT[sum.status],
-                                    flexShrink: 0,
-                                  }}
-                                />
-                                <Typography
-                                  variant="caption"
-                                  fontWeight={isDocActive ? 700 : 500}
-                                  noWrap
-                                  sx={{ flex: 1, minWidth: 0, fontSize: "0.775rem" }}
-                                >
-                                  {emp.fullName}
-                                </Typography>
-                              </Stack>
-                            );
-                          })}
-                        </Stack>
-                      )}
+                      <Collapse
+                        in={active && collapsedGroup !== s.id}
+                        timeout={{ enter: 240, exit: 180 }}
+                        easing={{ enter: "cubic-bezier(0.22, 1, 0.36, 1)", exit: "cubic-bezier(0.4, 0, 1, 1)" }}
+                        unmountOnExit
+                        sx={{ flexShrink: 0, overflow: "hidden" }}
+                      >
+                        <DocRailList
+                          docs={docs}
+                          selectedId={selDocId}
+                          loading={availQuery.isLoading}
+                          onSelect={setSelDocId}
+                        />
+                      </Collapse>
                     </React.Fragment>
                   );
                 })
@@ -930,7 +957,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
           )}
         </Box>
 
-        {/* ── Правая колонка: сетка врачей / окна выбранного врача ── */}
+        {/* ── Правая колонка: сетка врачей ── */}
         <Box
           sx={{
             minWidth: 0,
@@ -945,281 +972,207 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             p: 0,
           }}
         >
-          {!selectedDoc ? (
-            <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <Stack
-                direction="row"
-                alignItems="center"
-                spacing={2}
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={2}
+            sx={{
+              px: 2,
+              py: 1.25,
+              borderBottom: "1px solid",
+              borderColor: "divider",
+              flexShrink: 0,
+              bgcolor: "background.paper",
+            }}
+          >
+            <TextField
+              size="small"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("slots.searchSpecialist")}
+              sx={{ width: { xs: 200, sm: 260 } }}
+              InputProps={{
+                startAdornment: (
+                  <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
+                ),
+              }}
+            />
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600}>
+                {t("slots.grid")}{" "}
+                {specId
+                  ? `(${specs.find((s) => s.id === specId)?.name})`
+                  : t("slots.allSpecialistsOption")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t("slots.foundSpecialists", { count: gridDocs.length })}
+              </Typography>
+            </Box>
+          </Stack>
+
+          {(() => {
+            const isMatrixLoading = (availQuery.isLoading || summaryQuery.isLoading) && !availQuery.data;
+
+            if (isMatrixLoading) {
+              return (
+                <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ py: 12, flex: 1 }}>
+                  <CircularProgress size={36} />
+                  <Typography variant="body2" color="text.secondary">
+                    Загрузка расписания врачей…
+                  </Typography>
+                </Stack>
+              );
+            }
+
+            const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
+            const activeDocsOnDay = gridDocs.filter(({ emp }) => {
+              const d = emp.days.find((x) => x.date === activeDayDate);
+              return d && d.scheduled && !d.dayOff;
+            });
+
+            if (docs.length === 0) {
+              return (
+                <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
+                  <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
+                  <Typography variant="body2" color="text.disabled">
+                    {search
+                      ? t("slots.specialistsNotFoundByQuery")
+                      : t("slots.specialistsNotFound")}
+                  </Typography>
+                </Stack>
+              );
+            }
+
+            if (activeDocsOnDay.length === 0) {
+              return (
+                <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
+                  <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
+                  <Typography variant="body2" color="text.disabled">
+                    {t("slots.noShiftsOnDate")}
+                  </Typography>
+                </Stack>
+              );
+            }
+
+            return (
+              <Box
+                ref={matrixScrollRef}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUpOrLeave}
+                onMouseLeave={handleMouseUpOrLeave}
                 sx={{
-                  px: 2,
-                  py: 1.25,
-                  borderBottom: "1px solid",
-                  borderColor: "divider",
-                  flexShrink: 0,
-                  bgcolor: "background.paper",
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "row",
+                  overflowX: "auto",
+                  cursor: isDragging ? "grabbing" : "grab",
+                  userSelect: isDragging ? "none" : "auto",
+                  "&::-webkit-scrollbar": { height: 6 },
                 }}
               >
-                <TextField
-                  size="small"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t("slots.searchSpecialist")}
-                  sx={{ width: { xs: 200, sm: 260 } }}
-                  InputProps={{
-                    startAdornment: (
-                      <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
-                    ),
-                  }}
-                />
-                <Box>
-                  <Typography variant="subtitle1" fontWeight={600}>
-                    {t("slots.grid")}{" "}
-                    {specId
-                      ? `(${specs.find((s) => s.id === specId)?.name})`
-                      : t("slots.allSpecialistsOption")}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {t("slots.foundSpecialists", { count: docs.length })}
-                  </Typography>
-                </Box>
-              </Stack>
+                {activeDocsOnDay.map(({ emp, sum }) => {
+                  const docDay = emp.days.find((d) => d.date === activeDayDate)!;
+                  const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
 
-              {(() => {
-                const isMatrixLoading = (availQuery.isLoading || summaryQuery.isLoading) && !availQuery.data;
-
-                if (isMatrixLoading) {
                   return (
-                    <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ py: 12, flex: 1 }}>
-                      <CircularProgress size={36} />
-                      <Typography variant="body2" color="text.secondary">
-                        Загрузка расписания врачей…
-                      </Typography>
-                    </Stack>
-                  );
-                }
-
-                const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
-                const activeDocsOnDay = docs.filter(({ emp }) => {
-                  const d = emp.days.find((x) => x.date === activeDayDate);
-                  return d && d.scheduled && !d.dayOff;
-                });
-
-                if (docs.length === 0) {
-                  return (
-                    <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
-                      <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
-                      <Typography variant="body2" color="text.disabled">
-                        {search
-                          ? t("slots.specialistsNotFoundByQuery")
-                          : t("slots.specialistsNotFound")}
-                      </Typography>
-                    </Stack>
-                  );
-                }
-
-                if (activeDocsOnDay.length === 0) {
-                  return (
-                    <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8, flex: 1 }}>
-                      <PersonSearchOutlined sx={{ fontSize: 36, color: "text.disabled" }} />
-                      <Typography variant="body2" color="text.disabled">
-                        {t("slots.noShiftsOnDate")}
-                      </Typography>
-                    </Stack>
-                  );
-                }
-
-                const isFewDocs = activeDocsOnDay.length <= 4;
-
-                return (
-                  <Box
-                    ref={matrixScrollRef}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUpOrLeave}
-                    onMouseLeave={handleMouseUpOrLeave}
-                    sx={{
-                      flex: 1,
-                      minHeight: 0,
-                      display: "flex",
-                      flexDirection: "row",
-                      overflowX: "auto",
-                      cursor: isDragging ? "grabbing" : "grab",
-                      userSelect: isDragging ? "none" : "auto",
-                      "&::-webkit-scrollbar": { height: 6 },
-                    }}
-                  >
-                    {activeDocsOnDay.map(({ emp, sum }) => {
-                      const docDay = emp.days.find((d) => d.date === activeDayDate)!;
-                      const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
-
-                    return (
-                      <Box
-                        key={emp.employeeId}
-                        sx={{
-                          flex: isFewDocs ? "1 1 0px" : "0 0 210px",
-                          minWidth: 175,
-                          height: "100%",
-                          display: "flex",
-                          flexDirection: "column",
-                          borderRight: "1px solid",
+                    <Box
+                      key={emp.employeeId}
+                      sx={{
+                        // Сетка не растягивает карточки по числу врачей:
+                        // одна, две или три карточки занимают по трети панели.
+                        flex: "0 0 33.3333%",
+                        minWidth: 175,
+                        height: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                        borderRight: "1px solid",
+                        borderColor: "divider",
+                        "&:last-of-type": {
+                          borderRight: "none",
+                        },
+                      }}
+                    >
+                      {/* Шапка врача в колонке — подпись, а не кнопка:
+                          отдельного экрана врача в режиме окон нет. */}
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        spacing={1}
+                        sx={(tokens) => ({
+                          px: 1.25,
+                          py: 1,
+                          borderBottom: "1px solid",
                           borderColor: "divider",
-                          "&:last-of-type": {
-                            borderRight: "none",
-                          },
-                        }}
+                          bgcolor: subtleBg(tokens),
+                        })}
                       >
-                        {/* Шапка врача в колонке */}
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          justifyContent="space-between"
-                          spacing={1}
-                          onClick={() => {
-                            if (isDragMovedRef.current) return;
-                            setSelDocId(emp.employeeId);
-                          }}
-                          sx={(t) => ({
-                            px: 1.25,
-                            py: 1,
-                            borderBottom: "1px solid",
-                            borderColor: "divider",
-                            bgcolor: subtleBg(t),
-                            cursor: "pointer",
-                            transition: "background-color .13s ease",
-                            "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.06) },
-                          })}
-                        >
-                          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
-                            <Box sx={{ position: "relative", flexShrink: 0 }}>
-                              <Box
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: "9px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  color: "#fff",
-                                  fontSize: "0.75rem",
-                                  fontWeight: 600,
-                                  bgcolor: avatarColor(emp.fullName),
-                                }}
-                              >
-                                {initials(emp.fullName)}
-                              </Box>
-                              <Box
-                                sx={{
-                                  position: "absolute",
-                                  right: -2,
-                                  bottom: -2,
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: "50%",
-                                  border: "2px solid",
-                                  borderColor: "background.paper",
-                                  bgcolor: STATUS_DOT[sum.status],
-                                }}
-                              />
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                          <Box sx={{ position: "relative", flexShrink: 0 }}>
+                            <Box
+                              sx={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: "9px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#fff",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                bgcolor: avatarColor(emp.fullName),
+                              }}
+                            >
+                              {initials(emp.fullName)}
                             </Box>
-                            <Box sx={{ minWidth: 0, flex: 1 }}>
-                              <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}>
-                                {emp.fullName}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: "0.6875rem" }}>
-                                {specName ?? t("slots.specialist")}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        </Stack>
-
-                        {/* Таймлайн окон и приёмов за день */}
-                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}>
-                          {!docDay ? (
-                            <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
-                          ) : (
-                            <DayTimeline
-                              day={docDay}
-                              employeeId={emp.employeeId}
-                              dense
-                              onBook={onBook}
-                              onOpenAppointment={onOpenAppointment}
-                              dragMovedRef={isDragMovedRef}
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                right: -2,
+                                bottom: -2,
+                                width: 10,
+                                height: 10,
+                                borderRadius: "50%",
+                                border: "2px solid",
+                                borderColor: "background.paper",
+                                bgcolor: STATUS_DOT[sum.status],
+                              }}
                             />
-                          )}
-                        </Box>
+                          </Box>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}>
+                              {emp.fullName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: "0.6875rem" }}>
+                              {specName ?? t("slots.specialist")}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </Stack>
+
+                      {/* Таймлайн окон и приёмов за день */}
+                      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1 }}>
+                        {!docDay ? (
+                          <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>
+                        ) : (
+                          <DayTimeline
+                            day={docDay}
+                            employeeId={emp.employeeId}
+                            dense
+                            onBook={onBook}
+                            onOpenAppointment={onOpenAppointment}
+                            dragMovedRef={isDragMovedRef}
+                          />
+                        )}
                       </Box>
-                    );
-                  })}
-                </Box>
-              );
-            })()}
-          </Box>
-          ) : (
-            <>
-              {/* Шапка врача */}
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                spacing={1.5}
-                sx={{ px: 2, py: 1.5, borderBottom: "1px solid", borderColor: "divider", flexShrink: 0 }}
-              >
-                <Stack direction="row" alignItems="center" spacing={1.5} sx={{ minWidth: 0 }}>
-                  <Box
-                    sx={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: "11px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#fff",
-                      fontSize: "0.8125rem",
-                      fontWeight: 600,
-                      bgcolor: avatarColor(selectedDoc.emp.fullName),
-                      flexShrink: 0,
-                    }}
-                  >
-                    {initials(selectedDoc.emp.fullName)}
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="subtitle1" fontWeight={600} noWrap>
-                      {selectedDoc.emp.fullName}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {specId ? specs.find((s) => s.id === specId)?.name ?? "" : t("slots.specialist")}
-                    </Typography>
-                  </Box>
-                </Stack>
-
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="inherit"
-                  startIcon={<KeyboardArrowLeftOutlined sx={{ fontSize: 16 }} />}
-                  onClick={() => setSelDocId(null)}
-                  sx={{ textTransform: "none", fontSize: "0.75rem" }}
-                >
-                  {t("slots.backToGrid")}
-                </Button>
-              </Stack>
-
-              {/* Таймлайн окон и приёмов выбранного дня */}
-              <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.5 }}>
-                {!selectedDay ? (
-                  <Alert severity="info" icon={false}>{t("slots.noShiftsForSpecialist")}</Alert>
-                ) : (
-                  <DayTimeline
-                    day={selectedDay}
-                    employeeId={selectedDoc.emp.employeeId}
-                    onBook={onBook}
-                    onOpenAppointment={onOpenAppointment}
-                  />
-                )}
+                    </Box>
+                  );
+                })}
               </Box>
-            </>
-          )}
+            );
+          })()}
         </Box>
       </Box>
     </Box>

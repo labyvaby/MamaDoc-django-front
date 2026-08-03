@@ -31,7 +31,7 @@ import "dayjs/locale/ru";
 
 dayjs.locale("ru");
 
-import { useCanChecker, useCan } from "../../hooks/useCan";
+import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
@@ -376,13 +376,6 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     { mode: "cancel" | "delete"; appt: DjangoAppointment } | null
   >(null);
   const [confirmBusy, setConfirmBusy] = React.useState(false);
-  const canViewConclusions = useCan([
-    "medical.conclusions.view",
-    "medical.conclusions.create",
-    "medical.conclusions.update",
-    "medical.conclusions.manage",
-  ]);
-
   const activeScope = useActiveScope();
   const branchId = activeBranch?.id ?? undefined;
 
@@ -753,7 +746,6 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       canUpdate={canUpdate}
       canManageFinance={canManageFinance}
       canViewFinance={canViewFinance}
-      canViewConclusions={canViewConclusions}
       canDelete={canDelete}
       canRecordVaccination={canRecordVaccination}
       isConclusionVisible={conclusionOpen}
