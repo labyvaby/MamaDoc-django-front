@@ -57,8 +57,10 @@ import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
+import dayjs from "dayjs";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
+import { getBookings } from "../../api/bookings";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import {
   djangoQueryKeys,
@@ -460,6 +462,84 @@ const SidebarSecondary: React.FC = () => {
     (tasksSummary?.awaitingApproval ?? 0);
   const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
 
+  // Бейдж «Брони»: заявки, ждущие подтверждения персоналом (status=pending) —
+  // и с гостевой формы /book, и из синка operator.kg. Отдельного счётчика на
+  // бэке нет, но `count` из DRF-пагинации даёт его без выгрузки строк
+  // (pageSize:1). Диапазон дат в getBookings обязателен, поэтому окно задаём
+  // сами: месяц назад — 90 дней вперёд. Прошедшие даты включены осознанно:
+  // pending на вчера — это «висяк», по которому никто не связался с пациентом,
+  // и терять его из вида нельзя (он же красит бейдж, как просрочка у задач).
+  // Окно считается раз за монтирование — после полуночи сдвинется на F5.
+  const bookingsWindow = React.useMemo(() => {
+    const today = dayjs();
+    return {
+      pastFrom: today.subtract(30, "day").format("YYYY-MM-DD"),
+      yesterday: today.subtract(1, "day").format("YYYY-MM-DD"),
+      today: today.format("YYYY-MM-DD"),
+      futureTo: today.add(90, "day").format("YYYY-MM-DD"),
+    };
+  }, []);
+  // Суперадмин без выбранной организации: запрос без organizationId уходить не
+  // должен — орг-скоупные эндпоинты отвечают на него 400 (та же причина, что
+  // enabled/needsOrg на самой странице «Брони»).
+  const bookingsBadgeEnabled =
+    can_.bookings && !permissionsLoading && (!isSuper || orgId != null);
+  // Два count-запроса вместо выгрузки строк: всего pending в окне и сколько из
+  // них на прошедшие даты (только они решают цвет).
+  const bookingsPendingQuery = useQuery({
+    queryKey: djangoQueryKeys.bookings.list({
+      badge: "pending-total",
+      orgId: orgId ?? null,
+      from: bookingsWindow.pastFrom,
+      to: bookingsWindow.futureTo,
+    }),
+    queryFn: ({ signal }) =>
+      getBookings(
+        {
+          dateFrom: bookingsWindow.pastFrom,
+          dateTo: bookingsWindow.futureTo,
+          status: "pending",
+          organizationId: orgId,
+          page: 1,
+          pageSize: 1,
+        },
+        signal,
+      ),
+    enabled: bookingsBadgeEnabled,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    // Заявки приходят извне (гостевая форма /book, синк operator.kg) — без
+    // поллинга регистратура узнала бы о новой заявке только после F5.
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const bookingsOverdueQuery = useQuery({
+    queryKey: djangoQueryKeys.bookings.list({
+      badge: "pending-overdue",
+      orgId: orgId ?? null,
+      from: bookingsWindow.pastFrom,
+      to: bookingsWindow.yesterday,
+    }),
+    queryFn: ({ signal }) =>
+      getBookings(
+        {
+          dateFrom: bookingsWindow.pastFrom,
+          dateTo: bookingsWindow.yesterday,
+          status: "pending",
+          organizationId: orgId,
+          page: 1,
+          pageSize: 1,
+        },
+        signal,
+      ),
+    enabled: bookingsBadgeEnabled,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const bookingsBadgeCount = bookingsPendingQuery.data?.count ?? 0;
+  const bookingsBadgeColor: "error" | "primary" =
+    (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
+
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
@@ -574,9 +654,10 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Брони (operator.kg, Django-mode only) */}
+        {/* Брони (гостевая форма /book + синк operator.kg, Django-mode only).
+            Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
-          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
         )}
 
         {/* Кабинет врача */}
