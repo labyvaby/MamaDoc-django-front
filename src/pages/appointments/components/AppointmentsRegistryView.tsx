@@ -540,8 +540,8 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
 
       {/* Mobile bottom sheet */}
       {isMobile && (
-        <AppBottomSheet open={!!selectedAppt} onClose={() => setSelectedAppt(null)}>
-          <Box sx={{ height: "80vh" }}>
+        <AppBottomSheet fullHeight open={!!selectedAppt} onClose={() => setSelectedAppt(null)}>
+          <Box sx={{ height: "100%" }}>
             {selectedAppt && (
               <AppointmentDetailsPanel
                 appointment={selectedAppt}
