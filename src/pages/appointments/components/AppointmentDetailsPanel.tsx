@@ -262,8 +262,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const hasPaid = !!(paidTotal && paidTotal !== "0.00" && paidTotal !== "0");
   const hasRefund = !!(refundedTotal && refundedTotal !== "0.00" && refundedTotal !== "0");
 
-  // Оплату приняли — визит де-факто состоялся, поэтому «Подтвердить»,
-  // «Пациент здесь» и запрос отзыва в шапке уже не нужны. Смотрим на деньги,
+  // Оплату приняли — визит де-факто состоялся: «Подтвердить» и «Пациент здесь»
+  // больше не нужны, а запрос отзыва, наоборот, доступен только с этого
+  // момента (см. actions ниже). Смотрим на деньги,
   // а не на статус приёма: бэк оставляет его scheduled/confirmed и после оплаты.
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
@@ -535,9 +536,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  // Запросить отзыв — низкоприоритетное действие, обычно уходит в меню «⋯»;
+  // Запросить отзыв — только после принятой оплаты: до расчёта просить отзыв
+  // не о чем. Низкоприоритетное действие, обычно уходит в меню «⋯»;
   // если запрос уже был, кнопка предлагает переотправить.
-  if (review.showButton && !isPaymentAccepted) {
+  if (review.showButton && isPaymentAccepted) {
     actions.push({
       key: "review",
       label: review.latest ? "Переотправить отзыв" : "Запросить отзыв",
