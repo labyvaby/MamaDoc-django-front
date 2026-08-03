@@ -74,6 +74,7 @@ import AppointmentProductLines from "./details/AppointmentProductLines";
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
+import { useInlineFit } from "../../../hooks/useInlineFit";
 
 /** Сколько действий шапки показывать кнопками; остальные уходят в меню «⋯». */
 const INLINE_ACTIONS_LIMIT = 3;
@@ -607,9 +608,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     });
   }
 
-  const inlineLimit = isMobile ? 2 : INLINE_ACTIONS_LIMIT;
-  const inlineActions = actions.slice(0, inlineLimit);
-  const overflowActions = actions.slice(inlineLimit);
+  // Верхняя граница — чтобы шапка не превращалась в частокол кнопок даже на
+  // широком мониторе; ниже её useInlineFit подрезает до фактически влезающего.
+  const inlineLimit = Math.min(actions.length, isMobile ? 2 : INLINE_ACTIONS_LIMIT);
+  const fit = useInlineFit(inlineLimit);
+  const inlineActions = actions.slice(0, fit.visible);
+  const overflowActions = actions.slice(fit.visible);
   const hasMenu = overflowActions.length > 0 || dangerActions.length > 0;
 
   const runFromMenu = (action: HeaderAction) => {
@@ -648,13 +652,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             "& .MuiCardHeader-action": { mt: 0, alignSelf: "center", ml: 1 },
           }}
           title={
-            /* Основные действия — кнопками, остальное в меню «⋯».
-               Кнопки переносятся на следующую строку: строка, которая
-               скроллилась вбок, обрезала «Изменить» на полуслове, и было не
-               видно, что кнопка вообще есть. Сознательный обмен: лишний ряд в
-               шапке лучше спрятанного действия.
-               «⋯» при этом вынесено из переносимого потока и прибито справа —
-               иначе оно уезжало на второй ряд и висело там одно. */
+            /* Основные действия — кнопками, остальное в меню «⋯». Ряд не
+               переносится и не скроллится: useInlineFit меряет доступную
+               ширину и оставляет ровно столько кнопок, сколько влезает целиком
+               (на 1280 колонка ~360px — это одна кнопка плюс «Отменить»).
+               «⋯» вынесено из измеряемого ряда и прибито справа. */
             <Box
               sx={{
                 display: "flex",
@@ -662,6 +664,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 flexWrap: "nowrap",
                 alignItems: "center",
                 gap: { xs: 0.5, sm: 1 },
+                // width/maxWidth обязательны: без них ряд рос по контенту и
+                // вылезал за шапку, а замер в useInlineFit не видел переполнения.
+                width: "100%",
+                maxWidth: "100%",
                 minWidth: 0,
                 // Место под крестик закрытия — он висит абсолютом в правом
                 // верхнем углу шапки, «⋯» не должно под него заезжать.
@@ -669,13 +675,19 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               }}
             >
               <Stack
+                ref={fit.ref}
                 direction="row"
                 alignItems="center"
                 useFlexGap
                 sx={{
                   gap: { xs: 0.5, sm: 1 },
-                  flexWrap: "wrap",
-                  flex: "1 1 auto",
+                  // nowrap + hidden — условие корректного замера в useInlineFit:
+                  // clientWidth = доступное место, scrollWidth = ширина кнопок.
+                  flexWrap: "nowrap",
+                  overflow: "hidden",
+                  // basis 0, а не auto: иначе ряд растёт по контенту и всегда
+                  // «влезает» сам в себя.
+                  flex: "1 1 0",
                   minWidth: 0,
                 }}
               >
