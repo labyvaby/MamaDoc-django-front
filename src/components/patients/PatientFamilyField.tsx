@@ -16,6 +16,7 @@ import {
   type DjangoFamily,
 } from "../../api/patients";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { capitalizeFullName } from "../../utility/name";
 
 type Props = {
   value: DjangoFamily | null;
@@ -54,7 +55,7 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
 
   const handleCreate = async () => {
     if (!v.validate()) return;
-    const trimmed = name.trim();
+    const trimmed = capitalizeFullName(name);
     try {
       const family = await createPatientFamily({ name: trimmed, branchId: branchId ?? null });
       setOptions((prev) => [family, ...prev]);
@@ -98,6 +99,7 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
             label="Название семьи"
             value={name}
             onChange={(e) => { setName(e.target.value); setCreateError(null); }}
+            onBlur={() => setName(capitalizeFullName(name))}
             sx={{ mt: 1 }}
             ref={v.anchor("name")}
             error={Boolean(createError) || Boolean(v.errorOf("name"))}

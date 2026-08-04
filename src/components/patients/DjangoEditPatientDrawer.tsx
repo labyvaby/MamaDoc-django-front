@@ -31,6 +31,7 @@ import { useNotification } from "@refinedev/core";
 import { CustomDatePicker, PhoneCountryCodeSelect, cascadeContainer, cascadeItem } from "../ui";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
+import { capitalizeFullName } from "../../utility/name";
 import {
   composePhone,
   parsePhone,
@@ -280,7 +281,8 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
 
   const handleSubmit = async () => {
     if (!v.validate()) return;
-    const fioTrim = fio.trim();
+    // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+    const fioTrim = capitalizeFullName(fio);
     if (!patient) return;
 
     setBusy(true);
@@ -432,6 +434,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                 <TextField
                   value={fio}
                   onChange={(e) => setFio(e.target.value)}
+                  onBlur={() => setFio(capitalizeFullName(fio))}
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"

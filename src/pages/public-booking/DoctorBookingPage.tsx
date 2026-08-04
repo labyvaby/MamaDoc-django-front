@@ -59,6 +59,7 @@ import { BOOKING_RADIUS, TILE_RADIUS, neutralTone, tileTone } from "./theme";
 import { formatDuration, formatPhone, formatSom, telHref } from "./format";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { useT } from "../../i18n/VerticalProvider";
+import { capitalizeFullName } from "../../utility/name";
 
 /** Услуга в выборе: и из карточки врача, и из available-services одна форма. */
 interface PickableService {
@@ -766,6 +767,7 @@ const GuestDialog: React.FC<{
             size="small"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onBlur={() => setName(capitalizeFullName(name))}
             required
             autoFocus
             {...v.field("name")}
@@ -811,7 +813,7 @@ const GuestDialog: React.FC<{
             disabled={submitting}
             onClick={() => {
               if (!v.validate()) return;
-              onSubmit(name.trim(), `${dial}${digits}`, comment.trim());
+              onSubmit(capitalizeFullName(name), `${dial}${digits}`, comment.trim());
             }}
             startIcon={
               submitting ? <CircularProgress size={16} color="inherit" /> : undefined

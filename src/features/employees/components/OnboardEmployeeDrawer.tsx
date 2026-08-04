@@ -47,6 +47,7 @@ import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeS
 import { CustomDatePicker, cascadeContainer, cascadeItem } from "../../../components/ui";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
 import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
+import { capitalizeFullName } from "../../../utility/name";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import {
@@ -539,9 +540,11 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
     setBusy(true);
     try {
       const composedPhone = composePhone(phoneCountry, phoneLocal);
-      const { firstName, lastName } = splitFullName(fullName);
+      // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+      const normalizedFullName = capitalizeFullName(fullName);
+      const { firstName, lastName } = splitFullName(normalizedFullName);
       const payload = {
-        fullName: fullName.trim(),
+        fullName: normalizedFullName,
         roleId: roleId as number,
         employeeBranchIds: employeeBranches.map((b) => b.id),
         organizationId: activeOrganization?.id ?? undefined,
@@ -774,7 +777,10 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 <TextField
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  onBlur={() => touch("fullName")}
+                  onBlur={() => {
+                    setFullName(capitalizeFullName(fullName));
+                    touch("fullName");
+                  }}
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"

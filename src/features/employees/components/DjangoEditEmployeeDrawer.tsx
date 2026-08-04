@@ -76,6 +76,7 @@ import {
   getPhoneLocalMaxLength,
   type PhoneCountryCode,
 } from "../../../utility/phone";
+import { capitalizeFullName } from "../../../utility/name";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import {
   validateFullName,
@@ -665,7 +666,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     try {
       // 1. Update basic fields
       await updateEmployee(empId, {
-        fullName: fullName.trim(),
+        // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+        fullName: capitalizeFullName(fullName),
         nickname: nickname.trim() || null,
         phone: composePhone(phoneCountry, phoneLocal),
         email: email.trim() || null,
@@ -1013,7 +1015,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 <TextField
                   value={fullName}
                   onChange={(e) => { setFullName(e.target.value); setServerError(null); }}
-                  onBlur={() => touch("fullName")}
+                  onBlur={() => {
+                    setFullName(capitalizeFullName(fullName));
+                    touch("fullName");
+                  }}
                   onKeyDown={submitOnEnter}
                   required
                   fullWidth
