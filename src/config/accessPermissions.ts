@@ -13,6 +13,9 @@ export const PAGE_PERMISSIONS = {
   appointmentsRegistry: "appointments.registry.view",
   doctorRoom: "appointments.doctor_room.view",
   nurseRoom: "appointments.nurse_room.view",
+  // Исторические реестры доступны только соответствующему рабочему кабинету.
+  allAppointments: "appointments.doctor_room.view",
+  allProcedures: "appointments.nurse_room.view",
   patients: "patients.view",
   employees: "staff.view",
   services: "catalog.view",

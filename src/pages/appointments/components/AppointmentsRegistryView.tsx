@@ -106,6 +106,8 @@ type Props = {
   groupEmployeeIds?: Set<number> | null;
   /** Дополнительный признак загрузки (например, справочник медсестёр). */
   extraLoading?: boolean;
+  /** Ограничить реестр приёмами текущего исполнителя. */
+  employeeId?: number | "me";
 };
 
 const defaultGetLines = (h: DjangoAppointment) => h.services.filter((sl) => sl.employee);
@@ -118,6 +120,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   isVisible,
   groupEmployeeIds = null,
   extraLoading = false,
+  employeeId,
 }) => {
   const { t } = useT("appointments");
   usePageTitle(pageTitle);
@@ -150,6 +153,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   const { data: rawAppointments = [], isLoading: loading, refetch: fetchData } = useAppointmentsList({
     dateFrom,
     dateTo,
+    employeeId,
   });
 
   const history = React.useMemo(() => {
