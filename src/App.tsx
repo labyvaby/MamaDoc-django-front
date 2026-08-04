@@ -882,7 +882,7 @@ function App() {
                         <Route
                           path="all-appointments"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllAppointmentsPage />
                               </Suspense>
@@ -892,7 +892,7 @@ function App() {
                         <Route
                           path="all-procedures"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllProceduresPage />
                               </Suspense>
