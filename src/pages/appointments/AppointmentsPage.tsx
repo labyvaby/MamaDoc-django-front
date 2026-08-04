@@ -488,10 +488,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       scheduleExceptionsQuery.data ?? [],
     );
     const segments = new Map<number, { start: string; end: string }[]>();
+    const employeeNames = new Map<number, string>();
     for (const o of occurrences) {
       const list = segments.get(o.employeeId) ?? [];
       list.push({ start: o.startTime, end: o.endTime });
       segments.set(o.employeeId, list);
+      employeeNames.set(o.employeeId, o.employeeName);
     }
     // «Расписание ведётся» = есть активное правило, покрывающее эту дату.
     // Для таких сотрудников окна ограничены сменами (нет смены — нет окон);
@@ -502,7 +504,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         scheduledIds.add(r.employeeId);
       }
     }
-    return { scheduledIds, segments };
+    return { scheduledIds, segments, employeeNames };
   }, [scheduleRulesQuery.data, scheduleExceptionsQuery.data, date, branchId]);
 
   // Привилегированный кабинет группируется строго по клиницистам своего типа

@@ -112,6 +112,8 @@ interface AppointmentListPanelProps {
   dayShifts?: {
     scheduledIds: Set<number>;
     segments: Map<number, { start: string; end: string }[]>;
+    /** Сотрудники со сменой на выбранную дату, даже если приёмов ещё нет. */
+    employeeNames: Map<number, string>;
   } | null;
 }
 
@@ -310,9 +312,22 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         }
       }
     }
+    // Новая смена может быть создана раньше первого приёма сотрудника.
+    // Добавляем таких сотрудников из расписания, чтобы они сразу появлялись
+    // в быстром фильтре регистратуры.
+    for (const [id, name] of dayShifts?.employeeNames ?? []) {
+      if ((!groupEmployeeIds || groupEmployeeIds.has(id)) && !map.has(String(id))) {
+        map.set(String(id), {
+          id: String(id),
+          name,
+          photoUrl: null,
+          nickname: null,
+        });
+      }
+    }
     console.log("availableDoctors in panel:", Array.from(map.values()));
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
-  }, [items, groupEmployeeIds]);
+  }, [items, groupEmployeeIds, dayShifts]);
 
   // ── Фильтр по статусу визита ──────────────────────────────────────────────
   // Главный вопрос стойки — «кто уже в холле»: раньше отобрать таких можно было
