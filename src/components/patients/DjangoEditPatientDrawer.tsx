@@ -37,6 +37,7 @@ import {
   formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { useCan } from "../../hooks/useCan";
@@ -467,6 +468,12 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                     const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
                     setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                      setPhoneCountryCode(code);
+                      setPhone(local);
+                    })
+                  }
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"

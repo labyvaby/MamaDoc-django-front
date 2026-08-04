@@ -26,6 +26,7 @@ import {
   parsePhone,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { useHasRole } from "../../hooks/usePermissions";
@@ -327,6 +328,12 @@ const EditPatientDrawer: React.FC<Props> = ({
                   const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
                   setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                 }}
+                onPaste={(e) =>
+                  handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                    setPhoneCountryCode(code);
+                    setPhone(local);
+                  })
+                }
                 fullWidth
                 InputProps={{
                   startAdornment: (

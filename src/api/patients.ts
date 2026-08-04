@@ -235,17 +235,28 @@ export function mergePatients(
   });
 }
 
-export function getSimilarPatients(
+/**
+ * Пациенты с таким же номером — проверка на дубль перед созданием карты.
+ *
+ * Бэк умеет только поиск подстрокой, поэтому по неполному номеру он возвращает
+ * всех, у кого совпало начало: на «996700123» приходили `+996700123405`,
+ * `+996700123011` и подобные, и форма показывала их как дубли. Совпадение по
+ * фрагменту — не дубль, поэтому ответ фильтруем у себя и оставляем только
+ * точные попадания.
+ */
+export async function getSimilarPatients(
   phone: string,
   signal?: AbortSignal,
   /** Обязателен суперпользователю: без него бэк отдаёт 400 (фикс 29.07.2026). */
   scope: Scope = {},
 ): Promise<DjangoPatient[]> {
   const last9 = phone.replace(/\D/g, "").slice(-9);
-  if (last9.length < 7) return Promise.resolve([]);
+  if (last9.length < 7) return [];
   const q = scopeParams(scope);
   q.set("search", last9);
-  return apiRequest<DjangoPatient[]>(`/patients/?${q.toString()}`, {
-    signal,
-  });
+  const found = await apiRequest<DjangoPatient[]>(`/patients/?${q.toString()}`, { signal });
+
+  // Сравниваем по последним 9 цифрам: у пациента номер может быть сохранён с
+  // кодом страны и без него, а хвост в обоих случаях одинаковый.
+  return found.filter((p) => (p.phone ?? "").replace(/\D/g, "").slice(-9) === last9);
 }

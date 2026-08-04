@@ -73,7 +73,9 @@ import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from
 import {
   parsePhone,
   composePhone,
+  formatPhoneLocalDisplay,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../../utility/phone";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
@@ -1080,12 +1082,19 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   disabled={busy}
                 />
                 <TextField
-                  value={phoneLocal}
+                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
                   onChange={(e) => {
                     const maxLen = getPhoneLocalMaxLength(phoneCountry);
                     setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
                     setServerError(null);
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountry, (code, local) => {
+                      setPhoneCountry(code);
+                      setPhoneLocal(local);
+                      setServerError(null);
+                    })
+                  }
                   onBlur={() => touch("phone")}
                   onKeyDown={submitOnEnter}
                   fullWidth
