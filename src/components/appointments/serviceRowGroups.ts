@@ -32,20 +32,23 @@ export function groupServiceRowsByEmployee<
 
   rows.forEach((row, index) => {
     const groupId = row.groupId ?? row.uid ?? String(index);
-    const key =
+    const groupingKey =
       row.employeeId !== null ? `employee-${row.employeeId}` : `group-${groupId}`;
-    const existing = byKey.get(key);
+    const existing = byKey.get(groupingKey);
     if (existing) {
       existing.rows.push({ row, index });
       return;
     }
     const group: ServiceRowGroup<T> = {
-      key,
+      // Keep the React key tied to the row block, not to the selected
+      // employee. Clearing the employee then updates the existing Autocomplete
+      // instead of remounting it and stealing focus from its input.
+      key: groupId,
       employeeId: row.employeeId,
       groupId,
       rows: [{ row, index }],
     };
-    byKey.set(key, group);
+    byKey.set(groupingKey, group);
     groups.push(group);
   });
 

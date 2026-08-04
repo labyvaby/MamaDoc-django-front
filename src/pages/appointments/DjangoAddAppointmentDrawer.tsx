@@ -729,10 +729,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       const groupId = prev.find((_, i) => targets.has(i))?.groupId;
       return prev.map((row, i) => {
         if (!targets.has(i)) return row;
+        // Удаление врача крестиком — это сброс пары «врач + услуга». При
+        // очистке самой услуги врач, наоборот, остаётся выбранным.
         const keepService =
-          row.serviceId === null ||
-          !employee ||
-          data.canEmployeeProvideService(employee.id, row.serviceId);
+          employee !== null &&
+          (row.serviceId === null ||
+            data.canEmployeeProvideService(employee.id, row.serviceId));
         return {
           ...row,
           groupId: groupId ?? row.groupId,
