@@ -31,7 +31,7 @@ import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { CustomDatePicker } from "../../../components/ui";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
@@ -536,7 +536,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                         <Typography variant="body2" color="text.secondary">
                           Дата *
                         </Typography>
-                        <DatePicker
+                        <CustomDatePicker shortYearMode="nearest"
                           value={startDate ? dayjs(startDate) : null}
                           format="DD.MM.YYYY"
                           onChange={(val) => {
@@ -609,7 +609,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                         <Typography variant="body2" color="text.secondary">
                           Дата окончания диапазона
                         </Typography>
-                        <DatePicker
+                        <CustomDatePicker shortYearMode="nearest"
                           value={endDate ? dayjs(endDate) : null}
                           format="DD.MM.YYYY"
                           onChange={(val) =>
@@ -691,7 +691,7 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                                 <Typography variant="caption" color="text.secondary">
                                   Дата окончания смены
                                 </Typography>
-                                <DatePicker
+                                <CustomDatePicker shortYearMode="nearest"
                                   value={endDate ? dayjs(endDate) : null}
                                   format="DD.MM.YYYY"
                                   onChange={(val) =>

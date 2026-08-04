@@ -171,7 +171,7 @@ const AddShiftSidebar: React.FC<Props> = ({ isOpen, onClose, onSaved }) => {
               <Typography variant="body2" color="text.secondary">
                 Дата смены
               </Typography>
-              <CustomDatePicker
+              <CustomDatePicker shortYearMode="nearest"
                 value={shiftDate ? dayjs(shiftDate) : null}
                 onChange={(val) => setShiftDate(val ? val.format('YYYY-MM-DD') : toYMD(new Date()))}
                 slotProps={{

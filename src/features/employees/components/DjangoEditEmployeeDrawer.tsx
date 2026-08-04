@@ -73,9 +73,12 @@ import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from
 import {
   parsePhone,
   composePhone,
+  formatPhoneLocalDisplay,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../../utility/phone";
+import { capitalizeFullName } from "../../../utility/name";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import {
   validateFullName,
@@ -665,7 +668,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     try {
       // 1. Update basic fields
       await updateEmployee(empId, {
-        fullName: fullName.trim(),
+        // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+        fullName: capitalizeFullName(fullName),
         nickname: nickname.trim() || null,
         phone: composePhone(phoneCountry, phoneLocal),
         email: email.trim() || null,
@@ -919,6 +923,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                             InputLabelProps: { shrink: true },
                             placeholder: "дд.мм.гггг",
                             disabled: busy,
+                            // Enter сохраняет, как в остальных полях; короткий год
+                            // перехватит CustomDatePicker и допишет век.
+                            onKeyDown: submitOnEnter,
                             onBlur: () => touch("birthDate"),
                             error: Boolean(showError("birthDate")),
                             helperText: showError("birthDate"),
@@ -968,6 +975,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                             InputLabelProps: { shrink: true },
                             placeholder: "дд.мм.гггг",
                             disabled: busy,
+                            onKeyDown: submitOnEnter,
                           },
                         }}
                       />
@@ -1013,7 +1021,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 <TextField
                   value={fullName}
                   onChange={(e) => { setFullName(e.target.value); setServerError(null); }}
-                  onBlur={() => touch("fullName")}
+                  onBlur={() => {
+                    setFullName(capitalizeFullName(fullName));
+                    touch("fullName");
+                  }}
                   onKeyDown={submitOnEnter}
                   required
                   fullWidth
@@ -1076,12 +1087,19 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   disabled={busy}
                 />
                 <TextField
-                  value={phoneLocal}
+                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
                   onChange={(e) => {
                     const maxLen = getPhoneLocalMaxLength(phoneCountry);
                     setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
                     setServerError(null);
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountry, (code, local) => {
+                      setPhoneCountry(code);
+                      setPhoneLocal(local);
+                      setServerError(null);
+                    })
+                  }
                   onBlur={() => touch("phone")}
                   onKeyDown={submitOnEnter}
                   fullWidth

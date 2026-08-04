@@ -23,6 +23,7 @@ import {
   parsePhone,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../../utility/phone";
 import SalarySettings from "./SalarySettings";
@@ -494,6 +495,13 @@ const EditEmployeeDrawer: React.FC<EditEmployeeDrawerProps> = ({ record, onClose
               setPhone(v);
               setPhoneError(v.length > 0 && v.length !== maxLen);
             }}
+            onPaste={(e) =>
+              handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                setPhoneCountryCode(code);
+                setPhone(local);
+                setPhoneError(local.length > 0 && local.length !== getPhoneLocalMaxLength(code));
+              })
+            }
             error={phone.trim().length > 0 && phoneError}
             helperText={
               phone.trim().length > 0 && phoneError

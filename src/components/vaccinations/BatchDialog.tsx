@@ -206,6 +206,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
               value={expiresAt}
               onChange={(v) => setExpiresAt(v as Dayjs | null)}
               format="DD.MM.YYYY"
+              shortYearMode="future"
               slotProps={{
                 textField: {
                   size: "small",

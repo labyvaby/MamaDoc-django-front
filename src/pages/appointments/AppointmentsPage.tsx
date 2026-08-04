@@ -1004,14 +1004,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           open={showDetails}
           onClose={() => setSelectedAppt(null)}
           PaperProps={{
-            sx: {
-              height: "85vh",
+            sx: (theme) => ({
+              // Единая высота мобильных листов — токен темы, а не хардкод:
+              // список, «Окна» и реестр открывали одну карточку на разную высоту.
+              height: theme.appLayout.drawer.bottomSheet.height,
               borderTopLeftRadius: 16,
               borderTopRightRadius: 16,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-            },
+            }),
           }}
         >
           <Box sx={{ flex: conclusionOpen ? "0 0 50%" : 1, minHeight: 0, overflow: "hidden" }}>
@@ -1040,10 +1042,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         open={slotApptId != null}
         onClose={closeSlotAppt}
         PaperProps={{
-          sx: {
+          sx: (theme) => ({
             ...(isMobile
               ? {
-                  height: "90vh",
+                  height: theme.appLayout.drawer.bottomSheet.height,
                   borderTopLeftRadius: 16,
                   borderTopRightRadius: 16,
                 }
@@ -1058,7 +1060,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             overflow: "hidden",
             display: "flex",
             flexDirection: isMobile ? "column" : "row",
-          },
+          }),
         }}
       >
         {slotAppt ? (

@@ -282,8 +282,10 @@ export function getAppTheme(
     },
     drawer: {
       bottomSheet: {
-        // Общая высота bottom-sheet на мобильных
-        height: "85vh",
+        // Общая высота bottom-sheet на мобильных. dvh, а не vh: vh считается по
+        // «большому» вьюпорту (адресная строка скрыта), из-за чего лист вылезал
+        // за видимую область на телефоне.
+        height: "85dvh",
         // Габариты "ручки" для перетаскивания
         handleWidth: 40,
         handleHeight: 4,

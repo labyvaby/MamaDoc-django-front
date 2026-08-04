@@ -36,6 +36,7 @@
     "react-hook-form": "^7.57.0",
     "react-i18next": "^17.0.11",
     "react-imask": "^7.6.1",
+    "react-qr-code": "^2.2.0",
     "react-router": "^7.0.2",
     "react-virtualized-auto-sizer": "^2.0.3",
     "react-window": "^1.8.11",

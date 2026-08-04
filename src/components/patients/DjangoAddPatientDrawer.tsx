@@ -40,12 +40,15 @@ import { useNotification } from "@refinedev/core";
 import { CustomDatePicker, PhoneCountryCodeSelect, UserAvatar, cascadeContainer, cascadeItem } from "../ui";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
+import { capitalizeFullName } from "../../utility/name";
 import {
   composePhone,
+  isPhoneLocalComplete,
   parsePhone,
   formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { useCan } from "../../hooks/useCan";
@@ -271,8 +274,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   // ── duplicate check on phone ───────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) return;
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 7) {
+    // Ждём полностью набранный номер: по префиксу бэк находит всех, у кого
+    // совпало начало, и форма показывала их как дубли, хотя это разные люди.
+    if (!isPhoneLocalComplete(phoneCountryCode, phone)) {
       setDuplicates([]);
       setDuplicateCheckError(null);
       return;
@@ -287,7 +291,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
           setDuplicates(list);
           setDuplicateCheckError(null);
         }
-      } catch (err: unknown) {
+      } catch {
         if (!ctrl.signal.aborted) {
           setDuplicates([]);
           setDuplicateCheckError(t("addDrawer.duplicateCheckFailed"));
@@ -324,7 +328,8 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   // ── submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!v.validate()) return;
-    const fioTrim = fio.trim();
+    // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+    const fioTrim = capitalizeFullName(fio);
     setBusy(true);
     setError(null);
     try {
@@ -460,6 +465,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 <TextField
                   value={fio}
                   onChange={(e) => setFio(e.target.value)}
+                  onBlur={() => setFio(capitalizeFullName(fio))}
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"
@@ -495,6 +501,12 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
                     setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                      setPhoneCountryCode(code);
+                      setPhone(local);
+                    })
+                  }
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"
@@ -557,6 +569,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                         InputLabelProps: { shrink: true },
                         placeholder: t("form.birthDatePlaceholder"),
                         disabled: busy,
+                        // Enter сохраняет, как в остальных полях. Если год введен коротко,
+                        // первое нажатие уйдет на дописывание века (см. CustomDatePicker).
+                        onKeyDown: submitOnEnter,
                       },
                     }}
                   />

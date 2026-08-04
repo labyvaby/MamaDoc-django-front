@@ -17,6 +17,7 @@ import {
   type ProfileUpdatePayload,
 } from "../../api/auth";
 import { ApiError } from "../../api/client";
+import { capitalizeFullName } from "../../utility/name";
 
 function extractErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
@@ -87,8 +88,10 @@ const EditProfileDrawer: React.FC<Props> = ({
 
     // Send empty strings as null so the backend clears the field.
     const toNullable = (s: string) => (s.trim() === "" ? null : s.trim());
+    // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+    const saved = { ...values, fullName: capitalizeFullName(values.fullName) };
     const payload: ProfileUpdatePayload = {
-      fullName: values.fullName.trim(),
+      fullName: saved.fullName,
       phone: toNullable(values.phone),
       email: toNullable(values.email),
       telegramId: toNullable(values.telegramId),
@@ -104,7 +107,7 @@ const EditProfileDrawer: React.FC<Props> = ({
 
     try {
       await updateProfile(payload);
-      onSaved(values);
+      onSaved(saved);
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -160,6 +163,9 @@ const EditProfileDrawer: React.FC<Props> = ({
               label="ФИО"
               value={values.fullName}
               onChange={set("fullName")}
+              onBlur={() =>
+                setValues((v) => ({ ...v, fullName: capitalizeFullName(v.fullName) }))
+              }
               fullWidth
               size="small"
               required

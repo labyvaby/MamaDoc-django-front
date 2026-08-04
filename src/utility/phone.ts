@@ -1,8 +1,100 @@
-export const PHONE_COUNTRY_CODES = ["+996", "+7"] as const;
+/**
+ * Телефонные номера: справочник стран, разбор, нормализация и форматирование.
+ *
+ * Один модуль на весь продукт — и на формы CRM (пациенты, сотрудники), и на
+ * публичную витрину записи. Раньше их было два: здесь поддерживались только
+ * `+996` и `+7`, а витрине нужны иностранные номера, и она завела свой
+ * справочник. Логика trunk-префиксов и длин от этого дублировалась.
+ */
 
-export type PhoneCountryCode = (typeof PHONE_COUNTRY_CODES)[number];
+/**
+ * Страна: ISO-код, код набора, название и длина национального номера
+ * (null — длина не фиксирована, проверяем только разумный диапазон).
+ *
+ * Сверху страны, откуда пациенты приезжают чаще всего; дальше — остальные
+ * направления. Список дополняется одной строкой.
+ */
+export interface PhoneCountryInfo {
+  code: string;
+  dialCode: string;
+  name: string;
+  digits: number | null;
+}
+
+const TABLE: ReadonlyArray<readonly [string, string, string, number | null]> = [
+  ["KG", "+996", "Кыргызстан", 9],
+  ["RU", "+7", "Россия", 10],
+  ["KZ", "+7", "Казахстан", 10],
+  ["UZ", "+998", "Узбекистан", 9],
+  ["TJ", "+992", "Таджикистан", 9],
+  ["TM", "+993", "Туркменистан", 8],
+  ["AZ", "+994", "Азербайджан", 9],
+  ["AM", "+374", "Армения", 8],
+  ["GE", "+995", "Грузия", 9],
+  ["BY", "+375", "Беларусь", 9],
+  ["UA", "+380", "Украина", 9],
+  ["MD", "+373", "Молдова", 8],
+  ["TR", "+90", "Турция", 10],
+  ["CN", "+86", "Китай", 11],
+  ["IN", "+91", "Индия", 10],
+  ["PK", "+92", "Пакистан", 10],
+  ["AF", "+93", "Афганистан", 9],
+  ["IR", "+98", "Иран", 10],
+  ["MN", "+976", "Монголия", 8],
+  ["KR", "+82", "Южная Корея", null],
+  ["JP", "+81", "Япония", null],
+  ["AE", "+971", "ОАЭ", 9],
+  ["SA", "+966", "Саудовская Аравия", 9],
+  ["QA", "+974", "Катар", 8],
+  ["KW", "+965", "Кувейт", 8],
+  ["IL", "+972", "Израиль", 9],
+  ["EG", "+20", "Египет", 10],
+  ["DE", "+49", "Германия", null],
+  ["PL", "+48", "Польша", 9],
+  ["CZ", "+420", "Чехия", 9],
+  ["IT", "+39", "Италия", null],
+  ["ES", "+34", "Испания", 9],
+  ["FR", "+33", "Франция", 9],
+  ["GB", "+44", "Великобритания", 10],
+  ["NL", "+31", "Нидерланды", 9],
+  ["SE", "+46", "Швеция", null],
+  ["FI", "+358", "Финляндия", null],
+  ["LT", "+370", "Литва", 8],
+  ["LV", "+371", "Латвия", 8],
+  ["EE", "+372", "Эстония", null],
+  ["US", "+1", "США", 10],
+  ["CA", "+1", "Канада", 10],
+  ["TH", "+66", "Таиланд", 9],
+  ["VN", "+84", "Вьетнам", 9],
+  ["MY", "+60", "Малайзия", null],
+  ["ID", "+62", "Индонезия", null],
+  ["AU", "+61", "Австралия", 9],
+];
+
+/** Все страны справочника. */
+export const PHONE_COUNTRIES: PhoneCountryInfo[] = TABLE.map(([code, dialCode, name, digits]) => ({
+  code,
+  dialCode,
+  name,
+  digits,
+}));
+
+/** Сколько стран показывать сразу; остальные — за пунктом «Другие страны». */
+export const PRIMARY_PHONE_COUNTRY_COUNT = 3;
+
+/**
+ * Код набора. Раньше здесь был закрытый союз `"+996" | "+7"`; теперь это любой
+ * код из справочника, но два прежних значения остаются валидными, поэтому
+ * существующие формы продолжают работать без правок.
+ */
+export type PhoneCountryCode = string;
+
+export const PHONE_COUNTRY_CODES = PHONE_COUNTRIES.map((c) => c.dialCode);
 
 export const DEFAULT_PHONE_COUNTRY_CODE: PhoneCountryCode = "+996";
+
+/** Диапазон длины для стран без фиксированной длины (E.164). */
+const FALLBACK_RANGE = { min: 6, max: 14 };
 
 export interface ParsedPhone {
   countryCode: PhoneCountryCode;
@@ -10,12 +102,24 @@ export interface ParsedPhone {
 }
 
 /**
- * Возвращает максимальную длину локальной части номера 
- * в зависимости от кода страны. (Например, для +7 это 10 цифр)
+ * Страна по коду набора. У «+7» два владельца (Россия и Казахстан) — берём
+ * первого: для длины номера и формата они не различаются.
+ */
+export function findPhoneCountry(dialCode: string): PhoneCountryInfo | undefined {
+  return PHONE_COUNTRIES.find((c) => c.dialCode === dialCode);
+}
+
+/**
+ * Максимальная длина локальной части номера для кода страны.
+ * Для незнакомого кода — верхняя граница E.164, чтобы не мешать вводу.
  */
 export function getPhoneLocalMaxLength(countryCode: PhoneCountryCode): number {
-  if (countryCode === "+7") return 10;
-  return 9; // По умолчанию для +996
+  return findPhoneCountry(countryCode)?.digits ?? FALLBACK_RANGE.max;
+}
+
+/** Точная длина номера страны; null — длина не фиксирована. */
+export function getPhoneExactLength(countryCode: PhoneCountryCode): number | null {
+  return findPhoneCountry(countryCode)?.digits ?? null;
 }
 
 /**
@@ -31,6 +135,15 @@ export function getPhoneLocalMaxLength(countryCode: PhoneCountryCode): number {
 export function normalizePhoneLocal(countryCode: PhoneCountryCode, raw: string): string {
   let digits = String(raw ?? "").replace(/[^0-9]/g, "");
 
+  // Вставили номер вместе со своим кодом страны («996700123456», «+996 700…»)
+  // — код здесь лишний, иначе он попал бы в локальную часть и номер уехал бы
+  // как «+996996700123456».
+  const bare = countryCode.replace("+", "");
+  const exact = getPhoneExactLength(countryCode);
+  if (bare && digits.startsWith(bare) && (exact == null || digits.length > exact)) {
+    digits = digits.slice(bare.length);
+  }
+
   if (countryCode === "+996") {
     digits = digits.replace(/^0+/, ""); // локальная часть KG не начинается с нуля
   } else if (countryCode === "+7") {
@@ -38,6 +151,77 @@ export function normalizePhoneLocal(countryCode: PhoneCountryCode, raw: string):
   }
 
   return digits.slice(0, getPhoneLocalMaxLength(countryCode));
+}
+
+/**
+ * Разбор вставленного номера: если в нём есть код страны — узнаём страну и
+ * отделяем её код, иначе трактуем как локальную часть текущей страны.
+ *
+ * Нужно для вставки из буфера: люди копируют номер в любом виде — «+996 700…»,
+ * «996700123456», «0700123456».
+ */
+export function parsePastedPhone(currentCode: PhoneCountryCode, raw: string): ParsedPhone {
+  const trimmed = String(raw ?? "").trim();
+  const digits = trimmed.replace(/[^0-9]/g, "");
+  if (!digits) return { countryCode: currentCode, local: "" };
+
+  const currentBare = currentCode.replace("+", "");
+  const currentExact = getPhoneExactLength(currentCode);
+  const looksLikeFull =
+    trimmed.startsWith("+") ||
+    (currentExact != null && digits.length > currentExact) ||
+    digits.startsWith(currentBare);
+
+  if (looksLikeFull) {
+    const parsed = parsePhone(digits);
+    // Разбор удался, только если после кода что-то осталось; иначе это просто
+    // местный номер, начинающийся с тех же цифр.
+    if (parsed.local) {
+      return { countryCode: parsed.countryCode, local: normalizePhoneLocal(parsed.countryCode, parsed.local) };
+    }
+  }
+  return { countryCode: currentCode, local: normalizePhoneLocal(currentCode, digits) };
+}
+
+/** Минимум от события вставки — чтобы не тянуть в утилиту типы React. */
+export interface PhonePasteEvent {
+  preventDefault: () => void;
+  clipboardData: { getData: (format: string) => string } | null;
+}
+
+/**
+ * Обработчик вставки для телефонного поля.
+ *
+ * `preventDefault` здесь обязателен: у полей стоит `maxLength` под локальную
+ * часть, и браузер обрежет «996700123456» до девяти цифр раньше, чем мы успеем
+ * отделить код страны. Поэтому вставку перехватываем и раскладываем сами.
+ */
+export function handlePhonePaste(
+  e: PhonePasteEvent,
+  currentCode: PhoneCountryCode,
+  apply: (countryCode: PhoneCountryCode, local: string) => void,
+): void {
+  const raw = e.clipboardData?.getData("text") ?? "";
+  if (!raw.trim()) return;
+  e.preventDefault();
+  const parsed = parsePastedPhone(currentCode, raw);
+  apply(parsed.countryCode, parsed.local);
+}
+
+/** Номер набран полностью для своей страны? */
+export function isPhoneLocalComplete(countryCode: PhoneCountryCode, local: string): boolean {
+  const digits = String(local ?? "").replace(/[^0-9]/g, "");
+  const exact = getPhoneExactLength(countryCode);
+  if (exact != null) return digits.length === exact;
+  return digits.length >= FALLBACK_RANGE.min && digits.length <= FALLBACK_RANGE.max;
+}
+
+/** Подсказка в поле под нужную длину: «000 000 000», «000 000 00 00». */
+export function phonePlaceholder(countryCode: PhoneCountryCode): string {
+  const digits = getPhoneExactLength(countryCode);
+  if (!digits) return "000 000 000";
+  if (digits === 10) return "000 000 00 00";
+  return "".padEnd(digits, "0").replace(/(.{3})(?=.)/g, "$1 ");
 }
 
 /**
@@ -52,9 +236,9 @@ export function formatPhoneLocalDisplay(countryCode: PhoneCountryCode, local: st
     .slice(0, getPhoneLocalMaxLength(countryCode));
 
   const groups =
-    countryCode === "+7"
+    getPhoneExactLength(countryCode) === 10
       ? [d.slice(0, 3), d.slice(3, 6), d.slice(6, 8), d.slice(8, 10)]
-      : [d.slice(0, 3), d.slice(3, 6), d.slice(6, 9)];
+      : [d.slice(0, 3), d.slice(3, 6), d.slice(6, 9), d.slice(9)];
 
   return groups.filter(Boolean).join(" ");
 }
@@ -71,64 +255,35 @@ export function formatPhoneDisplay(raw: string | null | undefined): string {
 }
 
 /**
- * Парсит полный номер телефона в формате E.164 (+кодСтраны + локальная часть)
- * в структуру { countryCode, local }.
- * Поддерживает коды +996 и +7. Для остальных вариантов
- * пытается разумно восстановить локальную часть.
+ * Парсит полный номер в формате E.164 в структуру `{ countryCode, local }`.
+ * Коды проверяем от длинных к коротким, иначе «+996…» распознался бы как «+9».
  */
 export function parsePhone(raw: string | null | undefined): ParsedPhone {
-  if (!raw) {
-    return { countryCode: DEFAULT_PHONE_COUNTRY_CODE, local: "" };
-  }
+  if (!raw) return { countryCode: DEFAULT_PHONE_COUNTRY_CODE, local: "" };
 
   const digits = String(raw).replace(/[^0-9]/g, "");
+  if (!digits) return { countryCode: DEFAULT_PHONE_COUNTRY_CODE, local: "" };
 
-  if (!digits) {
-    return { countryCode: DEFAULT_PHONE_COUNTRY_CODE, local: "" };
-  }
-
-  // +996XXXXXXXXX или 996XXXXXXXXX
-  if (digits.startsWith("996")) {
-    return {
-      countryCode: "+996",
-      local: digits.slice(3),
-    };
-  }
-
-  // +7XXXXXXXXXX или 7XXXXXXXXXX
-  if (digits.startsWith("7")) {
-    return {
-      countryCode: "+7",
-      local: digits.slice(1),
-    };
+  const byLength = [...new Set(PHONE_COUNTRY_CODES)].sort((a, b) => b.length - a.length);
+  for (const dial of byLength) {
+    const bare = dial.slice(1); // без «+»
+    if (digits.startsWith(bare)) {
+      return { countryCode: dial, local: digits.slice(bare.length) };
+    }
   }
 
   // Фоллбек: оставляем все цифры как локальную часть с дефолтным кодом
-  return {
-    countryCode: DEFAULT_PHONE_COUNTRY_CODE,
-    local: digits,
-  };
+  return { countryCode: DEFAULT_PHONE_COUNTRY_CODE, local: digits };
 }
 
 /**
  * Собирает полный номер телефона в формате E.164 (+кодСтраны + локальная часть)
- * из кода страны и локальной части (только цифры или с разделителями).
- * Если локальная часть пуста, возвращает null.
+ * из кода страны и локальной части. Если локальная часть пуста, возвращает null.
  */
 export function composePhone(countryCode: PhoneCountryCode, local: string): string | null {
   // Защита: убираем trunk-префикс и на этом шаге, даже если он просочился
   // из внешнего источника, чтобы не собрать номер вида +9960709789228.
   const normalizedLocal = normalizePhoneLocal(countryCode, local);
   if (!normalizedLocal) return null;
-
-  if (countryCode === "+996") {
-    return `+996${normalizedLocal}`;
-  }
-
-  if (countryCode === "+7") {
-    return `+7${normalizedLocal}`;
-  }
-
-  // На случай расширения списка кодов в будущем
   return `${countryCode}${normalizedLocal}`;
 }

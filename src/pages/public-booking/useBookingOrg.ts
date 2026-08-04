@@ -21,9 +21,15 @@ import { isAbortError } from "../../api/client";
 export interface BookingOrg {
   organization: OrganizationDetail | null;
   branches: BranchPreview[];
+  /**
+   * Запрос клиники завершён (успехом или неудачей). Нужен потребителям, которые
+   * ждут филиалов: пустой список сам по себе не отличает «ещё грузится» от
+   * «филиалов нет», и без этого флага их скелетон висел бы вечно.
+   */
+  loaded: boolean;
 }
 
-let orgCache: Promise<BookingOrg> | null = null;
+let orgCache: Promise<Omit<BookingOrg, "loaded">> | null = null;
 
 /**
  * Филиалы, которые показываем гостю. Публичный API отдаёт все филиалы
@@ -38,7 +44,7 @@ function publicBranches(branches: BranchPreview[]): BranchPreview[] {
   return withPhone.length ? withPhone : branches;
 }
 
-function loadBookingOrg(): Promise<BookingOrg> {
+function loadBookingOrg(): Promise<Omit<BookingOrg, "loaded">> {
   if (!orgCache) {
     orgCache = Promise.all([
       getOrganization(BOOKING_ORG_SLUG).catch(() => null),
@@ -54,17 +60,19 @@ export function useBookingOrg(): BookingOrg {
   const [state, setState] = React.useState<BookingOrg>({
     organization: null,
     branches: [],
+    loaded: false,
   });
 
   React.useEffect(() => {
     let alive = true;
     loadBookingOrg()
       .then((data) => {
-        if (alive) setState(data);
+        if (alive) setState({ ...data, loaded: true });
       })
       .catch((e) => {
         // Сеть могла лечь — не кэшируем провал, дадим следующему заходу шанс.
         if (!isAbortError(e)) orgCache = null;
+        if (alive) setState((prev) => ({ ...prev, loaded: true }));
       });
     return () => {
       alive = false;

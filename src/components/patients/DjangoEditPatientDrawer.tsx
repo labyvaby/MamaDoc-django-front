@@ -31,12 +31,14 @@ import { useNotification } from "@refinedev/core";
 import { CustomDatePicker, PhoneCountryCodeSelect, cascadeContainer, cascadeItem } from "../ui";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
+import { capitalizeFullName } from "../../utility/name";
 import {
   composePhone,
   parsePhone,
   formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { useCan } from "../../hooks/useCan";
@@ -280,7 +282,8 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
 
   const handleSubmit = async () => {
     if (!v.validate()) return;
-    const fioTrim = fio.trim();
+    // Повторно нормализуем: отправить можно по Enter, не уходя из поля.
+    const fioTrim = capitalizeFullName(fio);
     if (!patient) return;
 
     setBusy(true);
@@ -432,6 +435,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                 <TextField
                   value={fio}
                   onChange={(e) => setFio(e.target.value)}
+                  onBlur={() => setFio(capitalizeFullName(fio))}
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"
@@ -467,6 +471,12 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                     const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
                     setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                      setPhoneCountryCode(code);
+                      setPhone(local);
+                    })
+                  }
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"
@@ -529,6 +539,9 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                         InputLabelProps: { shrink: true },
                         placeholder: t("form.birthDatePlaceholder"),
                         disabled: busy,
+                        // Enter сохраняет, как в остальных полях. Если год введен коротко,
+                        // первое нажатие уйдет на дописывание века (см. CustomDatePicker).
+                        onKeyDown: submitOnEnter,
                       },
                     }}
                   />
