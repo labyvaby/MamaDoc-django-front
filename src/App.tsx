@@ -48,6 +48,7 @@ import {
   PAGE_PERMISSIONS,
   SETTINGS_TAB_PERMISSIONS,
 } from "./config/accessPermissions";
+import { useCanChecker } from "./hooks/useCan";
 import { CallNotification } from "./components/CallNotification";
 import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
@@ -193,11 +194,30 @@ const AuthHelper = () => {
 
 // Вспомогательный компонент для защиты корневого редиректа
 const RootRedirect = () => {
+  const { loading, can } = useCanChecker();
   if (window.location.hash.includes("type=recovery")) {
     return <Navigate to={"/update-password" + window.location.hash} replace />;
   }
-  // В Django-режиме корень ведёт на /appointments, а не на Supabase-only /home
-  return <Navigate to={IS_DJANGO_BACKEND ? "/appointments" : "/home"} replace />;
+  if (!IS_DJANGO_BACKEND) {
+    return <Navigate to="/home" replace />;
+  }
+  // Рабочие пространства приёмов гейтятся отдельными page-правами, поэтому
+  // корень ведёт на первое доступное: Регистратура → Кабинет врача →
+  // Процедурный кабинет. Fallback остаётся /appointments (AccessDenied
+  // подскажет запросить право, это честнее пустого экрана).
+  if (loading) {
+    return <LinearProgress />;
+  }
+  if (can(PAGE_PERMISSIONS.appointmentsRegistry)) {
+    return <Navigate to="/appointments" replace />;
+  }
+  if (can(PAGE_PERMISSIONS.doctorRoom)) {
+    return <Navigate to="/doctor" replace />;
+  }
+  if (can(PAGE_PERMISSIONS.nurseRoom)) {
+    return <Navigate to="/nurse" replace />;
+  }
+  return <Navigate to="/appointments" replace />;
 };
 
 const DjangoQueryCacheReset = () => {
@@ -559,7 +579,7 @@ function App() {
                           path="home"
                           element={
                             IS_DJANGO_BACKEND
-                              ? <Navigate to="/appointments" replace />
+                              ? <RootRedirect />
                               : (
                                 <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant']}>
                                   <Suspense fallback={<LinearProgress />}>
@@ -728,7 +748,7 @@ function App() {
                           path="doctor"
                           element={
                             IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
+                              <RequirePermission permission={PAGE_PERMISSIONS.doctorRoom}>
                                 <Suspense fallback={<LinearProgress />}>
                                   <AppointmentsPage scope="me" />
                                 </Suspense>
@@ -747,7 +767,7 @@ function App() {
                         <Route
                           path="nurse"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
+                            <RequirePermission permission={PAGE_PERMISSIONS.nurseRoom}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="nurse" />
                               </Suspense>
@@ -948,7 +968,7 @@ function App() {
                             <Route
                               path="appointments"
                               element={
-                                <RequirePermission permission={PAGE_PERMISSIONS.appointments}>
+                                <RequirePermission permission={PAGE_PERMISSIONS.appointmentsRegistry}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <AppointmentsPage />
                                   </Suspense>

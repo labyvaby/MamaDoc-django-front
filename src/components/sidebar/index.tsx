@@ -384,16 +384,20 @@ const SidebarSecondary: React.FC = () => {
   // «Организация» — справочное (пациенты, приёмы, услуги, документы).
   const can_ = {
     // МОЯ РАБОТА
+    // Три рабочих пространства приёмов гейтятся отдельными page-visibility
+    // правами (appointments.*_room/registry.view): организация сама решает в
+    // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
+    // по-прежнему требуют appointments.view.
     registratura: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.appointments))
+      ? (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry))
       : (isSuper || (!isNurse && !isDoctor())),
     bookings: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.bookings)),
-    doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
-    // Список привилегированных повторяет isPrivileged из AppointmentsPage:
-    // роут /nurse пускает по appointments.view, и сама страница показывает
-    // им приёмы всех медсестёр — скрывать пункт меню было нечем оправдать
-    // (управляющий и регистратор его не видели, хотя страница им открыта).
-    nurseRoom: isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse,
+    doctorRoom: IS_DJANGO_BACKEND
+      ? (isSuper || can(PAGE_PERMISSIONS.doctorRoom))
+      : (isSuper || (!isNurse && !isAdmin() && !isRegistrator())),
+    nurseRoom: IS_DJANGO_BACKEND
+      ? (isSuper || can(PAGE_PERMISSIONS.nurseRoom))
+      : (isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse),
     schedule: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.schedule)) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),

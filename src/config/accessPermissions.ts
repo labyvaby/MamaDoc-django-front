@@ -7,6 +7,12 @@
  */
 export const PAGE_PERMISSIONS = {
   appointments: "appointments.view",
+  // Page-visibility права трёх рабочих пространств приёмов: гейтят только
+  // пункт меню и роут. Доступ к данным по-прежнему требует appointments.view,
+  // поэтому эти права имеют смысл только вместе с ним.
+  appointmentsRegistry: "appointments.registry.view",
+  doctorRoom: "appointments.doctor_room.view",
+  nurseRoom: "appointments.nurse_room.view",
   patients: "patients.view",
   employees: "staff.view",
   services: "catalog.view",

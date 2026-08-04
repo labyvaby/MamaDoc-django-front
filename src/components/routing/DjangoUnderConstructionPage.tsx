@@ -23,7 +23,9 @@ type Props = {
 export const DjangoUnderConstructionPage: React.FC<Props> = ({
   title,
   description = "Раздел переносится на новый backend. Мы уже работаем над ним — он появится здесь в ближайшее время.",
-  backTo = "/appointments",
+  // Корень сам разрулит, какое рабочее пространство доступно пользователю
+  // (Регистратура / Кабинет врача / Процедурный кабинет).
+  backTo = "/",
 }) => {
   const theme = useTheme();
 
