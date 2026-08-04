@@ -79,24 +79,25 @@ export function CustomDatePicker(props: CustomDatePickerProps) {
    * Читаем именно текст: пока в секции года меньше четырёх цифр, MUI X считает ввод
    * невалидным и отдаёт наружу Invalid Date — из него год уже не восстановить.
    */
-  const normalizeShortYear = (target: EventTarget | null) => {
-    if (mode === "off" || !onChange) return;
+  const normalizeShortYear = (target: EventTarget | null): boolean => {
+    if (mode === "off" || !onChange) return false;
 
     // MUI X v8 рисует поле секциями-span внутри role="group", а полный текст держит
     // в скрытом input — событие приходит от секции, поэтому поднимаемся к группе.
     const text = readFieldText(target);
-    if (!text) return;
+    if (!text) return false;
 
     const format = typeof rest.format === "string" ? rest.format : DEFAULT_DATE_FORMAT;
     const iso = expandShortYearInText(text, format, mode, dayjs().year());
-    if (!iso) return;
+    if (!iso) return false;
 
     const next = dayjs(iso);
-    if (!next.isValid()) return;
-    if (isDayjsValue(value) && value.isValid() && value.isSame(next, "day")) return;
+    if (!next.isValid()) return false;
+    if (isDayjsValue(value) && value.isValid() && value.isSame(next, "day")) return false;
 
     // Второй аргумент — контекст валидации MUI X; наши обработчики его не используют.
     onChange(next as never, { validationError: null } as never);
+    return true;
   };
 
   const textFieldProps = (typeof slotProps?.textField === "function" ? undefined : slotProps?.textField) as
@@ -118,7 +119,13 @@ export function CustomDatePicker(props: CustomDatePickerProps) {
             (textFieldProps?.onBlur as ((e: React.FocusEvent<HTMLDivElement>) => void) | undefined)?.(event);
           },
           onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
-            if (event.key === "Enter") normalizeShortYear(event.target);
+            // Enter «продвигает вперёд»: сначала дописывает век, и только когда дописывать
+            // нечего — уходит форме (её onKeyDown обычно сохраняет). Совмещать нельзя:
+            // обработчик сохранения на том же событии прочитал бы ещё старую дату.
+            if (event.key === "Enter" && normalizeShortYear(event.target)) {
+              event.preventDefault();
+              return;
+            }
             (textFieldProps?.onKeyDown as ((e: React.KeyboardEvent<HTMLDivElement>) => void) | undefined)?.(event);
           },
         },

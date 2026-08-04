@@ -596,7 +596,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   onChange={(v) => setAdministeredAt(v as Dayjs | null)}
                   format="DD.MM.YYYY"
                   maxDate={dayjs()}
-                  slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                  slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />
               </Stack>
             </Stack>
@@ -692,7 +692,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   onChange={(v) => setExpiresAtManual(v as Dayjs | null)}
                   format="DD.MM.YYYY"
                   shortYearMode="future"
-                  slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                  slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />
                 <Alert severity="info" sx={{ py: 0.5 }}>
                   Внешняя прививка: склад не трогается, строка в счёт не добавляется.
