@@ -676,7 +676,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* СКУД */}
-        {can_.skud && (
+        {show("my-work") && can_.skud && (
           <SidebarSkudItem collapsed={siderCollapsed} />
         )}
 
