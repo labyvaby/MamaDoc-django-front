@@ -149,7 +149,7 @@ export const PatientSearchPage: React.FC = () => {
     data: oldConclusions,
     loading: oldConclusionsLoading,
     errorMsg: oldConclusionsError,
-  } = useOldConclusions(selected?.phone);
+  } = useOldConclusions(selected?.phone, selected?.id);
 
   // Форма создания приема
   const visit = useVisitForm(selected, {

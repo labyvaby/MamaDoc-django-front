@@ -57,7 +57,11 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
                 diagnosis: item.diagnosis || "—",
                 anamnesis: item.anamnesis || "",
                 objective: item.objective || "",
-                recommendations: item.recommendations || "—",
+                // Заключение печатаем вместе с рекомендациями: у записей старого
+                // MamaDoc основной текст лежит в conclusion, у до-Supabase базы
+                // его нет вовсе, там есть только рекомендации.
+                recommendations:
+                    [item.conclusion, item.recommendations].filter(Boolean).join("\n\n") || "—",
                 doctorFio: item.changed_by || "Врач клиники",
             };
 
@@ -84,9 +88,16 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
         >
             <CardHeader
                 title={
-                    <Typography variant="h6">
-                        Старое заключение от {dateStr}
-                    </Typography>
+                    <Stack direction="column" gap={0.25}>
+                        <Typography variant="h6">
+                            Старое заключение от {dateStr}
+                        </Typography>
+                        {item.changed_by && (
+                            <Typography variant="caption" color="text.secondary">
+                                Врач: {item.changed_by}
+                            </Typography>
+                        )}
+                    </Stack>
                 }
                 action={
                     <Stack direction="row" spacing={1}>
@@ -164,6 +175,18 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
                             </Typography>
                             <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>
                                 {item.objective}
+                            </Typography>
+                        </Box>
+                    )}
+
+                    {/* Заключение — есть только у записей старого MamaDoc */}
+                    {item.conclusion && (
+                        <Box>
+                            <Typography variant="subtitle2" color="primary" gutterBottom>
+                                Заключение
+                            </Typography>
+                            <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>
+                                {item.conclusion}
                             </Typography>
                         </Box>
                     )}
