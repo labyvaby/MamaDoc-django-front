@@ -560,6 +560,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                         InputLabelProps: { shrink: true },
                         placeholder: t("form.birthDatePlaceholder"),
                         disabled: busy,
+                        // Enter сохраняет, как в остальных полях. Если год введен коротко,
+                        // первое нажатие уйдет на дописывание века (см. CustomDatePicker).
+                        onKeyDown: submitOnEnter,
                       },
                     }}
                   />

@@ -921,6 +921,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                             InputLabelProps: { shrink: true },
                             placeholder: "дд.мм.гггг",
                             disabled: busy,
+                            // Enter сохраняет, как в остальных полях; короткий год
+                            // перехватит CustomDatePicker и допишет век.
+                            onKeyDown: submitOnEnter,
                             onBlur: () => touch("birthDate"),
                             error: Boolean(showError("birthDate")),
                             helperText: showError("birthDate"),
@@ -970,6 +973,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                             InputLabelProps: { shrink: true },
                             placeholder: "дд.мм.гггг",
                             disabled: busy,
+                            onKeyDown: submitOnEnter,
                           },
                         }}
                       />
