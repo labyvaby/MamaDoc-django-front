@@ -6,6 +6,8 @@ import {
   Button,
   Chip,
   CircularProgress,
+  FormControlLabel,
+  Checkbox,
   Divider,
   Drawer,
   IconButton,
@@ -142,6 +144,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [category, setCategory] = React.useState<ServiceCategory | "">(record.category ?? "");
   const [description, setDescription] = React.useState(record.description ?? "");
   const [isActive, setIsActive] = React.useState(record.isActive ?? true);
+  const [onlineBookingVisible, setOnlineBookingVisible] = React.useState(record.onlineBookingVisible ?? true);
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(record.imageUrl ?? null);
   const [removePhoto, setRemovePhoto] = React.useState(false);
@@ -306,6 +309,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setCategory(record.category ?? "");
       setDescription(record.description ?? "");
       setIsActive(record.isActive ?? true);
+      setOnlineBookingVisible(record.onlineBookingVisible ?? true);
       setPhotoFile(null);
       setPhotoPreview(record.imageUrl ?? null);
       setRemovePhoto(false);
@@ -369,6 +373,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         durationMinutes: durNum > 0 ? durNum : 30,
         basePrice: String(priceNum),
         isActive,
+        onlineBookingVisible,
         branchIds: selectedBranches.map((b) => b.id),
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
         ...relatedProductsPayload(
@@ -712,6 +717,16 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                     <Tab label={t("common.inactive")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
                   </Tabs>
                 </Paper>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={onlineBookingVisible}
+                      onChange={(e) => setOnlineBookingVisible(e.target.checked)}
+                      disabled={busy}
+                    />
+                  }
+                  label="Видна в онлайн-записи"
+                />
               </Stack>
             </MotionBox>
           </MotionStack>

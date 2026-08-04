@@ -122,6 +122,7 @@ export interface Service {
   durationMinutes: number;
   basePrice: string;
   isActive: boolean;
+  onlineBookingVisible: boolean;
   imageUrl: string | null;
   sortOrder: number;
   /** Категория услуги; null — без категории. */
@@ -170,6 +171,7 @@ export interface ServiceCreatePayload {
   durationMinutes?: number;
   basePrice?: string;
   isActive?: boolean;
+  onlineBookingVisible?: boolean;
   sortOrder?: number;
   /** Категория; null/отсутствие — без категории. */
   category?: ServiceCategory | null;
@@ -188,6 +190,7 @@ export interface ServiceUpdatePayload {
   durationMinutes?: number;
   basePrice?: string;
   isActive?: boolean;
+  onlineBookingVisible?: boolean;
   sortOrder?: number;
   /**
    * When present and non-empty → sync branch assignments.
@@ -308,6 +311,7 @@ function normalizeRelatedProducts(service: Service): ServiceRelatedProduct[] {
 function normalizeService(service: Service): Service {
   return {
     ...service,
+    onlineBookingVisible: service.onlineBookingVisible !== false,
     // Пока бэк не отдаёт category, поле undefined → нормализуем в null.
     category: service.category ?? null,
     relatedProductId: service.relatedProductId ?? null,

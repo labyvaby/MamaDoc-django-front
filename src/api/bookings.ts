@@ -106,9 +106,14 @@ export function getBooking(id: number, signal?: AbortSignal): Promise<BookingDet
 export function updateBookingStatus(
   id: number,
   status: BookingManageStatus,
+  options?: { patientId?: number | null; serviceIds?: number[] | null },
 ): Promise<BookingDetail> {
   return apiRequest<BookingDetail>(`/bookings/${id}/status/`, {
     method: "PATCH",
-    body: { status },
+    body: {
+      status,
+      ...(options?.patientId !== undefined ? { patientId: options.patientId } : {}),
+      ...(options?.serviceIds !== undefined ? { serviceIds: options.serviceIds } : {}),
+    },
   });
 }
