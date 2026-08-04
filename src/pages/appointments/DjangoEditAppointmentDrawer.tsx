@@ -882,10 +882,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         if (!targets.has(i) || row.hasConclusion) return row;
         const employeeId = employee?.id ?? null;
         if (employeeId === row.employeeId) return row;
+        // Удаление врача крестиком — это сброс пары «врач + услуга». При
+        // очистке самой услуги врач, наоборот, остаётся выбранным.
         const keepService =
-          row.serviceId === null ||
-          !employee ||
-          data.canEmployeeProvideService(employee.id, row.serviceId);
+          employee !== null &&
+          (row.serviceId === null ||
+            data.canEmployeeProvideService(employee.id, row.serviceId));
         return {
           ...row,
           groupId: groupId ?? row.groupId,
