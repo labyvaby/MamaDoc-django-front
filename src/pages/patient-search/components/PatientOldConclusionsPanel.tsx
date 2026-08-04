@@ -74,6 +74,10 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                     })
                                     : "Дата неизвестна";
 
+                                // У записей старого MamaDoc диагноз часто пуст,
+                                // а смысл несёт текст заключения — показываем его.
+                                const summary = item.diagnosis || item.conclusion || null;
+
                                 return (
                                     <Box
                                         key={item.id}
@@ -113,7 +117,7 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                                     ].filter(Boolean).join(" • ")}
                                                 </Typography>
                                             )}
-                                            {item.diagnosis && (
+                                            {summary && (
                                                 <Typography variant="body2" color="text.secondary" sx={{
                                                     display: '-webkit-box',
                                                     WebkitLineClamp: 2,
@@ -121,7 +125,9 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                 }}>
-                                                    <Typography component="span" fontWeight="medium" fontSize="inherit">Диагноз:</Typography> {item.diagnosis}
+                                                    <Typography component="span" fontWeight="medium" fontSize="inherit">
+                                                        {item.diagnosis ? "Диагноз:" : "Заключение:"}
+                                                    </Typography> {summary}
                                                 </Typography>
                                             )}
                                             {item.complaints && (
