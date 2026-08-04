@@ -13,7 +13,7 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { CustomDatePicker } from "../ui";
 import type { Dayjs } from "dayjs";
 
 import { getStatusLabel } from "../../config/appointmentStatuses";
@@ -88,7 +88,8 @@ export const AppointmentFilters: React.FC<Props> = ({
       alignItems={{ md: "center" }}
       sx={{ width: "100%" }}
     >
-      <DatePicker
+      <CustomDatePicker
+        shortYearMode="nearest"
         label="Дата"
         value={date}
         onChange={onDateChange}

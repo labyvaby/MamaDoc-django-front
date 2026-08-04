@@ -279,7 +279,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
                   <Typography variant="body2" color="text.secondary">
                     Дата *
                   </Typography>
-                  <CustomDatePicker
+                  <CustomDatePicker shortYearMode="nearest"
                     value={startDate ? dayjs(startDate) : null}
                     onChange={(val) => {
                       const newDate = val ? val.format('YYYY-MM-DD') : '';
@@ -384,7 +384,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
                 <Typography variant="body2" color="text.secondary">
                   Дата окончания диапазона
                 </Typography>
-                <CustomDatePicker
+                <CustomDatePicker shortYearMode="nearest"
                   value={endDate ? dayjs(endDate) : null}
                   onChange={(val) => setEndDate(val ? val.format('YYYY-MM-DD') : '')}
                   slotProps={{
@@ -453,7 +453,7 @@ const ShiftForm: React.FC<Props> = ({ initialDate, shiftToEdit, allEmployees, on
                           <Typography variant="caption" color="text.secondary">
                             Дата окончания смены
                           </Typography>
-                          <CustomDatePicker
+                          <CustomDatePicker shortYearMode="nearest"
                             value={endDate ? dayjs(endDate) : null}
                             onChange={(val) => setEndDate(val ? val.format('YYYY-MM-DD') : '')}
                             slotProps={{

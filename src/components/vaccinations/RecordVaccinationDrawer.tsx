@@ -691,6 +691,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   value={expiresAtManual}
                   onChange={(v) => setExpiresAtManual(v as Dayjs | null)}
                   format="DD.MM.YYYY"
+                  shortYearMode="future"
                   slotProps={{ textField: { fullWidth: true, size: "small" } }}
                 />
                 <Alert severity="info" sx={{ py: 0.5 }}>

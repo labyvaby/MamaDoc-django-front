@@ -374,12 +374,12 @@ const RuleFormDrawer: React.FC<{
               Период действия
             </Typography>
             <Stack ref={form.anchor("period")} direction="row" spacing={1}>
-              <CustomDatePicker
+              <CustomDatePicker shortYearMode="nearest"
                 value={dateFrom}
                 onChange={(v) => v && setDateFrom(v)}
                 slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
               />
-              <CustomDatePicker
+              <CustomDatePicker shortYearMode="nearest"
                 value={dateTo}
                 onChange={(v) => v && setDateTo(v)}
                 slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
@@ -766,12 +766,12 @@ const ExceptionDrawer: React.FC<{
               <Stack spacing={0.5}>
                 <FieldLabel>Период действия</FieldLabel>
                 <Stack ref={form.anchor("period")} direction="row" spacing={1}>
-                  <CustomDatePicker
+                  <CustomDatePicker shortYearMode="nearest"
                     value={date}
                     onChange={(v) => v && setDate(v)}
                     slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
                   />
-                  <CustomDatePicker
+                  <CustomDatePicker shortYearMode="nearest"
                     value={dateTo}
                     onChange={(v) => v && setDateTo(v)}
                     slotProps={{ textField: { size: "small", sx: { flex: 1, minWidth: 0 } } }}
@@ -787,7 +787,7 @@ const ExceptionDrawer: React.FC<{
           ) : (
             <Stack spacing={0.5}>
               <FieldLabel>Дата *</FieldLabel>
-              <CustomDatePicker
+              <CustomDatePicker shortYearMode="nearest"
                 value={date}
                 onChange={(v) => v && setDate(v)}
                 slotProps={{
