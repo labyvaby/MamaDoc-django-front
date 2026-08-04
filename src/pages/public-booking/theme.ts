@@ -11,22 +11,23 @@ import { getAppTheme } from "../../theme";
  * настройки сотрудника в CRM (localStorage: colorScheme/primaryColor/surface),
  * ни системная тема устройства гостя сюда не протекают.
  *
- * Значения ниже сняты из макета Figma «MamaDoc» (файл OJzc0IoHxZVZYJHNs31DYp,
- * экраны specialization / doctor-cards / doctors). Хардкод цветов здесь
- * намеренный и локализован в одном файле: витрина живёт по палитре макета, а не
- * по фирменному цвету организации из CRM.
+ * Эталон — работающая витрина `iwork.operator.kg` (исходники `mamadoc-book`,
+ * Next + Tailwind). Значения ниже сняты из её компонентов, а не из макета Figma
+ * и не из её `globals.css`: в самих компонентах используются другие оттенки, и
+ * именно они видны на экране.
  *
- * Шрифт макета — Poppins, но в нём нет кириллицы (в Figma русский текст
- * отрисован подставленным фолбэком), поэтому оставлен шрифт приложения.
+ * Шрифт эталона — системный стек Next; у нас остаётся шрифт приложения.
  */
 
-/** Основное действие витрины — accents/blue из макета. */
-export const BOOKING_PRIMARY = "#0088FF";
+/** Основное действие: выбранный день, слот, кнопка записи. */
+export const BOOKING_PRIMARY = "#007BFF";
+/** Наведение на основную кнопку. */
+export const BOOKING_PRIMARY_HOVER = "#0069D9";
 
-/** Основной и вторичный цвет текста макета (primary black / grey). */
+/** Основной и вторичный цвет текста. */
 const TEXT = { primary: "#312E2E", secondary: "#7A7878" };
 
-/** Поверхности витрины: холодно-серый фон страницы и белые карточки. */
+/** Поверхности: фон страницы и белые карточки. */
 const SURFACE = { default: "#F5F5F5", paper: "#FFFFFF" };
 
 /** Тема витрины. */
@@ -38,8 +39,8 @@ export function useBookingTheme(): Theme {
       cardSkin: "bordered",
       uiScale: "normal",
     });
-    // Цвета текста макета накладываем поверх: getAppTheme их не принимает,
-    // а дефолтный чёрный MUI заметно холоднее, чем #312E2E из макета.
+    // Цвета текста накладываем поверх: getAppTheme их не принимает, а дефолтный
+    // чёрный MUI заметно холоднее, чем #312E2E эталона.
     return createTheme(base, {
       palette: { text: { primary: TEXT.primary, secondary: TEXT.secondary } },
     });
@@ -48,62 +49,93 @@ export function useBookingTheme(): Theme {
 
 // ── Геометрия ────────────────────────────────────────────────────────────────
 
-/** Радиус карточек макета (врач, услуги, отзывы, слоты, плитка дня). */
-export const BOOKING_RADIUS = "10px";
-/** Радиус карточки-контейнера на экране специализаций. */
-export const PANEL_RADIUS = "20px";
-/** Радиус плиток дня/услуги. Совпадает с карточками — так в макете. */
-export const TILE_RADIUS = "10px";
-/** Чипы, слоты времени и кнопки макета — всегда pill. */
-export const PILL_RADIUS = "100px";
+/** Радиус карточек (`rounded-2xl`). */
+export const BOOKING_RADIUS = "16px";
+/** Радиус плиток дня, слотов и мелких блоков (`rounded-xl`). */
+export const TILE_RADIUS = "12px";
+/** Радиус крупных панелей. */
+export const PANEL_RADIUS = "16px";
+/** Чипы, кнопки и слоты-пилюли. */
+export const PILL_RADIUS = "999px";
 
-/** Тень карточек витрины (drop-effect макета). */
-export const BOOKING_SHADOW = "0 2px 12px rgba(105, 105, 105, 0.12)";
+/** Мягкая тень карточек (`shadow-sm`). */
+export const BOOKING_SHADOW = "0 1px 2px 0 rgba(0, 0, 0, 0.05)";
+/** Тень выбранного дня. */
+export const PICKED_DAY_SHADOW = "0 6px 16px rgba(0, 123, 255, 0.28)";
+/** Тень выбранного слота времени. */
+export const PICKED_SLOT_SHADOW = "0 4px 12px rgba(0, 123, 255, 0.3)";
+/** Тень основной кнопки на десктопе и на мобильной панели. */
+export const CTA_SHADOW = "0 8px 20px rgba(0, 123, 255, 0.3)";
+export const CTA_SHADOW_MOBILE = "0 6px 16px rgba(0, 123, 255, 0.25)";
 
-/** Рамка неактивных элементов: слот времени, «Посмотреть ещё», день без окон. */
-export const BOOKING_BORDER = "#C7C7C7";
-/** Рамка плитки специализации и карточки врача в списке. */
-export const CARD_BORDER = "#E6EAF0";
+// ── Нейтрали эталона ─────────────────────────────────────────────────────────
+
+/** Рамка карточек и плиток. */
+export const BORDER = "#E7E7EE";
+/** Рамка при наведении на доступный день. */
+export const BORDER_HOVER = "#8FC0FF";
+/** Разделители внутри карточек. */
+export const DIVIDER = "#F0F1F4";
+/** Приглушённые подписи (счётчики, дни недели). */
+export const MUTED = "#98A2B3";
+/** Текст недоступных элементов. */
+export const DISABLED_TEXT = "#C6CAD2";
+/** Совсем светлый служебный текст (длительность услуги). */
+export const FAINT_TEXT = "#B3B8C2";
 
 // ── Цвета состояний ──────────────────────────────────────────────────────────
 
-/**
- * Плитка дня в сетке записи. Три состояния из макета:
- * зелёное — выбранный день, синее — день со свободными окнами, серое — без окон.
- * Зелёный здесь значит «выбрано», а не «доступно»: доступность несёт синий.
- */
+/** Плитка дня: выбранная, доступная, без окон. */
 export const dayTone = {
-  picked: { bg: "#D7FFE3", border: "#008236", text: "#008236", chipBg: "#008236" },
-  free: {
-    bg: "#ECF1FB",
-    border: "#AAC5F2",
-    text: "#312E2E",
-    weekday: "#1A5DD0",
-    chipBg: "#1A5DD0",
-  },
-  empty: { bg: "transparent", border: "#C7C7C7", text: "#D4D4D4", chipBg: "#D4D4D4" },
+  picked: { bg: BOOKING_PRIMARY, border: BOOKING_PRIMARY, shadow: PICKED_DAY_SHADOW },
+  free: { bg: "#FFFFFF", border: BORDER },
+  empty: { bg: "#FAFAFB", border: DIVIDER },
 } as const;
 
-/** Слот времени: выбранный залит зелёным, остальные — рамкой. */
-export const slotTone = {
-  picked: { bg: "#34C759", text: "#FFFFFF", border: "#34C759" },
-  idle: { bg: "transparent", text: "#312E2E", border: "#7A7878" },
+/** Чип «N окон» внутри плитки дня. */
+export const slotsChipTone = {
+  free: { bg: "#E9F9EE", text: "#1FA84A" },
+  picked: { bg: "rgba(255, 255, 255, 0.2)", text: "#FFFFFF" },
+  empty: { bg: "transparent", text: DISABLED_TEXT },
 } as const;
+
+/** Слот времени: свободный, выбранный, занятый. */
+export const slotTone = {
+  idle: { bg: "#FFFFFF", border: BORDER, text: TEXT.primary },
+  picked: { bg: BOOKING_PRIMARY, border: BOOKING_PRIMARY, text: "#FFFFFF" },
+  busy: { bg: "#F5F6F8", border: "transparent", text: DISABLED_TEXT },
+} as const;
+
+/** Шаги мастера: пройденный — зелёный, текущий — синий, будущий — серый. */
+export const stepTone = {
+  done: "#5CB85C",
+  active: BOOKING_PRIMARY,
+  idle: { border: "#DDE1E8", text: MUTED, line: "#E7EAEF" },
+} as const;
+
+/** Строка услуги: чекбокс, подсветка выбранной, цена. */
+export const serviceTone = {
+  checked: "#5CB85C",
+  checkboxBorder: "#CBD2DC",
+  rowPicked: "#F4FAF5",
+  rowHover: "#F8FAFC",
+  pricePicked: "#2E9A46",
+} as const;
+
+/** Голубой чип: специализация врача и сумма заказа. */
+export const accentChip = { bg: "#EAF3FF", text: BOOKING_PRIMARY, border: "#DCEBFF" } as const;
 
 /**
- * Ближайшие свободные окна в карточке врача. Сегодня — зелёные, завтра — синие,
- * дальняя дата — серая: цвет кодирует «насколько скоро», а не доступность.
+ * Ближайшие свободные окна в карточке списка врачей: сегодня — зелёные,
+ * завтра — синие, дальняя дата — без заливки.
  */
 export const nearestTone = {
   today: { label: "#34C759", chipBg: "#D7FFE3", chipText: "#008236" },
   tomorrow: { label: "#1A5DD0", chipBg: "#ECF1FB", chipText: "#1A5DD0" },
-  later: { label: "#7A7878", chipBg: "#F0F0F0", chipText: "#312E2E" },
+  later: { label: "#7A7878", chipBg: "transparent", chipText: "#312E2E" },
 } as const;
 
-/** Заливка счётчика «+N» у скрытых окон. */
-export const MORE_CHIP_BG = "#A0A0A0";
-
-/** Цвет рейтинга (число и звёзды). */
+/** Цвет рейтинга. */
 export const RATING_COLOR = "#FEA500";
 
 /**
@@ -116,7 +148,19 @@ export const neutralTone = (t: Theme) => ({
   fg: alpha(t.palette.text.primary, 0.32),
 });
 
-/** Мягкая тень для hover-состояний витрины (в CRM теней нет, здесь — уместны). */
+/**
+ * Тонкий скроллбар внутри карточек. Firefox поддерживает только `scrollbar-*`,
+ * WebKit — только псевдоэлементы, поэтому заданы оба набора.
+ */
+export const THIN_SCROLLBAR = {
+  scrollbarWidth: "thin",
+  scrollbarColor: "#D5D8DE transparent",
+  "&::-webkit-scrollbar": { width: 6, height: 6 },
+  "&::-webkit-scrollbar-track": { backgroundColor: "transparent" },
+  "&::-webkit-scrollbar-thumb": { backgroundColor: "#D5D8DE", borderRadius: 999 },
+} as const;
+
+/** Мягкая тень для hover-состояний карточек списка. */
 export const hoverLift = (t: Theme) => ({
   transform: "translateY(-2px)",
   boxShadow: `0 8px 24px ${alpha(t.palette.primary.main, 0.16)}`,

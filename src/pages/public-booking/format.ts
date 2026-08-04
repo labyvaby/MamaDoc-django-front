@@ -7,11 +7,44 @@
  * Менять его во всём продукте (283 использования) — отдельная задача.
  */
 
-/** Цена гостю: «1 000 сом». Бэк отдаёт decimal строкой. */
-export function formatSom(value: string | number | null | undefined): string {
+/**
+ * Цена гостю: «1 500 сом». Эталон пишет короткое «с», но заказчик оставил
+ * привычное для пациентов «сом».
+ */
+export function formatPrice(value: string | number | null | undefined): string {
   const num = Number(value ?? 0);
   const safe = Number.isFinite(num) ? Math.round(num) : 0;
   return `${safe.toLocaleString("ru-RU")} сом`;
+}
+
+/** Русская плюрализация: 1 окно / 2 окна / 5 окон. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+/** Подпись чипа на плитке дня: «нет окон», «3 окна». */
+export function formatSlotsCount(count: number): string {
+  if (!count) return "нет окон";
+  return `${count} ${plural(count, "окно", "окна", "окон")}`;
+}
+
+/** «3 услуги» — счётчик в шапке списка и в итоге. */
+export function formatServicesCount(count: number): string {
+  return `${count} ${plural(count, "услуга", "услуги", "услуг")}`;
+}
+
+/** «12 отзывов» — рядом с рейтингом врача. */
+export function formatReviewsCount(count: number): string {
+  return `${count} ${plural(count, "отзыв", "отзыва", "отзывов")}`;
+}
+
+/** «Стаж 13 лет» — без слова «стаж», его добавляет вызывающий. */
+export function formatYears(count: number): string {
+  return `${count} ${plural(count, "год", "года", "лет")}`;
 }
 
 /** Длительность: «30 мин», «1 ч», «1 ч 30 мин». */
@@ -95,3 +128,6 @@ export function monogram(name: string): string {
   const letters = words.slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "");
   return letters.join("");
 }
+
+/** Алиас  — читается уместнее рядом с блоком времени. */
+export const formatDayLong = formatDayMonth;

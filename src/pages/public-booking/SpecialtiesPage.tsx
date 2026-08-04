@@ -1,99 +1,110 @@
 import React from "react";
-import { Box, Button, Paper, Skeleton, Stack, Typography } from "@mui/material";
+import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import { useNavigate } from "react-router";
 
 import { PublicBookingShell } from "./shell";
-import { BOOKING_RADIUS, PANEL_RADIUS, BOOKING_SHADOW, CARD_BORDER, neutralTone } from "./theme";
+import { TILE_RADIUS } from "./theme";
 import { specialtyIconUrl } from "./specialtyIcons";
 import { useSpecialties, type SpecialtyGroup } from "./useSpecialties";
 import { useT } from "../../i18n/VerticalProvider";
 
+/** Рамка и фон плитки специализации — значения эталона. */
+const TILE_BORDER = "#E6EAF0";
+const ICON_FALLBACK_BG = "#F0F4FF";
+const ICON_FALLBACK_FG = "#4A6CF7";
+
 /**
- * Иконка специализации. Для незнакомого названия картинки нет — тогда ставим
- * нейтральный значок, а не чужой рисунок: «Флеболог» с иконкой стоматолога
- * читается как ошибка данных.
+ * Плитка специализации: иконка, название и шеврон. Отдельного мобильного
+ * варианта в эталоне нет — на всех ширинах одна и та же строка, меняется только
+ * число колонок.
  */
-const SpecialtyIcon: React.FC<{ title: string }> = ({ title }) => {
-  const url = specialtyIconUrl(title);
+export const SpecialtyTile: React.FC<{
+  group: SpecialtyGroup;
+  active?: boolean;
+  onClick: () => void;
+}> = ({ group, active, onClick }) => {
+  const iconUrl = specialtyIconUrl(group.title);
+
   return (
     <Box
+      component="button"
+      type="button"
+      onClick={onClick}
+      title={group.title}
       sx={{
-        width: 32,
-        height: 32,
-        flexShrink: 0,
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        color: (t) => neutralTone(t).fg,
+        gap: 2,
+        width: "100%",
+        p: 2,
+        textAlign: "left",
+        cursor: "pointer",
+        fontFamily: "inherit",
+        // Явный цвет: у `button` он берётся из системного `buttontext`, а в
+        // теме витрины это белый — текст плитки иначе исчезает на белом фоне.
+        color: "text.primary",
+        overflow: "hidden",
+        border: 1,
+        borderRadius: TILE_RADIUS,
+        transition: "background-color .2s, border-color .2s, transform .1s",
+        ...(active
+          ? { bgcolor: "#EFF6FF", borderColor: "#007BFF" }
+          : { bgcolor: "background.paper", borderColor: TILE_BORDER }),
+        "&:active": { transform: "scale(0.97)" },
       }}
     >
-      {url ? (
+      {iconUrl ? (
         <Box
           component="img"
-          src={url}
+          src={iconUrl}
           alt=""
           loading="lazy"
-          sx={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          sx={{ width: 32, height: 32, flexShrink: 0, objectFit: "contain", display: "block" }}
         />
       ) : (
-        <MedicalServicesOutlined sx={{ fontSize: 26 }} />
+        // Иконки нет — квадрат с первой буквой, как в эталоне: чужую картинку
+        // подставлять нельзя, «Флеболог» со значком стоматолога читается ошибкой.
+        <Box
+          sx={{
+            width: 32,
+            height: 32,
+            flexShrink: 0,
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            fontWeight: 600,
+            ...(active
+              ? { bgcolor: "#DBEAFE", color: "#007BFF" }
+              : { bgcolor: ICON_FALLBACK_BG, color: ICON_FALLBACK_FG }),
+          }}
+        >
+          {group.title.charAt(0)}
+        </Box>
       )}
+
+      <Typography
+        sx={{
+          flexGrow: 1,
+          minWidth: 0,
+          fontSize: { xs: 14, md: 16 },
+          color: active ? "#007BFF" : "text.primary",
+          ...(active ? { fontWeight: 600 } : null),
+        }}
+      >
+        {group.title}
+      </Typography>
+
+      <ChevronRightOutlined sx={{ fontSize: 20, flexShrink: 0, color: "text.secondary" }} />
     </Box>
   );
 };
 
-/**
- * Плитка специализации. На десктопе это строка внутри общей карточки, на
- * мобильном — отдельная карточка со стрелкой: в макете экраны различаются
- * именно этим.
- */
-const SpecialtyTile: React.FC<{ group: SpecialtyGroup; index: number; onClick: () => void }> = ({
-  group,
-  index,
-  onClick,
-}) => (
-  <Box
-    component="button"
-    type="button"
-    onClick={onClick}
-    sx={{
-      display: "flex",
-      alignItems: "center",
-      gap: { xs: 2, md: 3.25 },
-      width: "100%",
-      px: 2,
-      py: { xs: 1.5, md: 1.25 },
-      textAlign: "left",
-      cursor: "pointer",
-      fontFamily: "inherit",
-      border: 1,
-      borderColor: CARD_BORDER,
-      borderRadius: BOOKING_RADIUS,
-      bgcolor: "background.paper",
-      transition: "border-color .2s, background-color .2s",
-      animation: "bookingFadeUp .32s ease both",
-      animationDelay: `${Math.min(index, 12) * 25}ms`,
-      "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-      "&:hover": { borderColor: "primary.main" },
-      "&:active": { transform: "scale(0.995)" },
-    }}
-  >
-    <SpecialtyIcon title={group.title} />
-    <Typography sx={{ flexGrow: 1, minWidth: 0, fontSize: 16, color: "text.primary" }}>
-      {group.title}
-    </Typography>
-    {/* Стрелка — только в мобильном макете: на десктопе строки лежат в сетке,
-        и три колонки шевронов превращают экран в частокол. */}
-    <ChevronRightOutlined
-      sx={{ display: { md: "none" }, fontSize: 20, color: "text.secondary", flexShrink: 0 }}
-    />
-  </Box>
-);
-
 const TileSkeleton: React.FC = () => (
-  <Skeleton variant="rounded" height={52} sx={{ borderRadius: BOOKING_RADIUS }} />
+  <Skeleton variant="rounded" height={64} sx={{ borderRadius: TILE_RADIUS }} />
 );
 
 /**
@@ -105,74 +116,40 @@ const SpecialtiesPage: React.FC = () => {
   const navigate = useNavigate();
   const { specialties, loading } = useSpecialties();
 
-  const openDoctors = (group?: SpecialtyGroup) =>
-    navigate(group ? `/book/doctors?specialty=${encodeURIComponent(group.key)}` : "/book/doctors");
-
   return (
-    <PublicBookingShell
-      heading={
-        <>
-          <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>
-            {t("headingSpecialties")}
-          </Box>
-          <Box component="span" sx={{ display: { xs: "inline", md: "none" } }}>
-            {t("headingSpecialtiesShort")}
-          </Box>
-        </>
-      }
-    >
-      {/* Карточка-контейнер есть только на десктопе: в мобильном макете плитки
-          лежат прямо на фоне страницы. */}
-      <Paper
-        elevation={0}
+    <PublicBookingShell heading={t("headingSpecialtiesShort")}>
+      <Box
         sx={{
-          p: { xs: 0, md: 2.5 },
-          borderRadius: PANEL_RADIUS,
-          bgcolor: { xs: "transparent", md: "background.paper" },
-          boxShadow: { xs: "none", md: BOOKING_SHADOW },
-          border: "none",
+          display: "grid",
+          gap: 1.5,
+          gridTemplateColumns: {
+            xs: "1fr",
+            md: "repeat(2, minmax(0, 1fr))",
+            lg: "repeat(3, minmax(0, 1fr))",
+          },
         }}
       >
-        <Box
-          sx={{
-            display: "grid",
-            gap: { xs: 1.25, md: 2.5 },
-            gridTemplateColumns: {
-              xs: "1fr",
-              sm: "repeat(2, minmax(0, 1fr))",
-              lg: "repeat(3, minmax(0, 1fr))",
-            },
-          }}
-        >
-          {loading
-            ? Array.from({ length: 9 }).map((_, i) => <TileSkeleton key={i} />)
-            : specialties.map((group, index) => (
-                <SpecialtyTile
-                  key={group.key}
-                  group={group}
-                  index={index}
-                  onClick={() => openDoctors(group)}
-                />
-              ))}
-        </Box>
+        {loading
+          ? Array.from({ length: 9 }).map((_, i) => <TileSkeleton key={i} />)
+          : specialties.map((group) => (
+              <SpecialtyTile
+                key={group.key}
+                group={group}
+                onClick={() =>
+                  navigate(`/book/doctors?specialty=${encodeURIComponent(group.key)}`)
+                }
+              />
+            ))}
+      </Box>
 
-        {!loading && specialties.length === 0 && (
-          <Stack alignItems="center" sx={{ py: 6, textAlign: "center" }}>
-            <MedicalServicesOutlined sx={{ fontSize: 44, color: "text.disabled" }} />
-            <Typography fontWeight={600} sx={{ mt: 1.5 }}>
-              {t("noSpecialistsFound")}
-            </Typography>
-          </Stack>
-        )}
-      </Paper>
-
-      {/* Выхода «мимо специализации» в макете нет, но без него гость обязан
-          выбрать направление, даже когда ищет конкретного врача по фамилии. */}
-      <Stack alignItems="center" sx={{ mt: { xs: 2, md: 3 } }}>
-        <Button onClick={() => openDoctors()} sx={{ fontWeight: 600 }}>
-          {t("allSpecialties")}
-        </Button>
-      </Stack>
+      {!loading && specialties.length === 0 && (
+        <Stack alignItems="center" sx={{ py: 6, textAlign: "center" }}>
+          <MedicalServicesOutlined sx={{ fontSize: 44, color: "text.disabled" }} />
+          <Typography fontWeight={600} sx={{ mt: 1.5 }}>
+            {t("noSpecialistsFound")}
+          </Typography>
+        </Stack>
+      )}
     </PublicBookingShell>
   );
 };

@@ -46,13 +46,24 @@ function groupSpecialties(lists: Array<{ id: number; title: string }[]>): Specia
  * Справочник специализаций клиники. `branchSlug` сужает его до одного филиала
  * (пустая строка — все филиалы).
  */
-export function useSpecialties(branchSlug = ""): { specialties: SpecialtyGroup[]; loading: boolean } {
-  const { branches } = useBookingOrg();
+export function useSpecialties(branchSlug = ""): {
+  specialties: SpecialtyGroup[];
+  loading: boolean;
+} {
+  const { branches, loaded } = useBookingOrg();
   const [specialties, setSpecialties] = React.useState<SpecialtyGroup[]>([]);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (!branches.length) return;
+    // Клиника ещё грузится — ждём: пустой список филиалов пока ничего не значит.
+    if (!loaded) return;
+    // Филиалов нет совсем — специализациям взяться неоткуда, и держать скелетон
+    // бесконечно нельзя.
+    if (!branches.length) {
+      setSpecialties([]);
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     const targets = branchSlug
@@ -79,7 +90,7 @@ export function useSpecialties(branchSlug = ""): { specialties: SpecialtyGroup[]
         setLoading(false);
       });
     return () => controller.abort();
-  }, [branches, branchSlug]);
+  }, [branches, branchSlug, loaded]);
 
   return { specialties, loading };
 }
