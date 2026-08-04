@@ -31,9 +31,11 @@ import { CustomDatePicker } from "../ui";
 import dayjs from "dayjs";
 import {
   composePhone,
+  isPhoneLocalComplete,
   parsePhone,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { PhoneCountryCodeSelect } from "../ui";
@@ -100,8 +102,9 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
   // ── duplicate check on phone ───────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) return;
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 7) {
+    // Ждём полностью набранный номер: по префиксу бэк находит всех, у кого
+    // совпало начало, и форма показывала их как дубли, хотя это разные люди.
+    if (!isPhoneLocalComplete(phoneCountryCode, phone)) {
       setDuplicates([]);
       setDuplicateCheckError(null);
       return;
@@ -242,6 +245,12 @@ const AddPatientDrawer: React.FC<Props> = ({ open, onClose, onCreated, initialPh
                   const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
                   setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                 }}
+                onPaste={(e) =>
+                  handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                    setPhoneCountryCode(code);
+                    setPhone(local);
+                  })
+                }
                 fullWidth
                 InputProps={{
                   startAdornment: (

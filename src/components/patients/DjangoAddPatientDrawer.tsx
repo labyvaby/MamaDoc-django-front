@@ -43,10 +43,12 @@ import { formatPatientAge } from "../../utility/age";
 import { capitalizeFullName } from "../../utility/name";
 import {
   composePhone,
+  isPhoneLocalComplete,
   parsePhone,
   formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
+  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
 import { useCan } from "../../hooks/useCan";
@@ -272,8 +274,9 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   // ── duplicate check on phone ───────────────────────────────────────────────
   React.useEffect(() => {
     if (!open) return;
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 7) {
+    // Ждём полностью набранный номер: по префиксу бэк находит всех, у кого
+    // совпало начало, и форма показывала их как дубли, хотя это разные люди.
+    if (!isPhoneLocalComplete(phoneCountryCode, phone)) {
       setDuplicates([]);
       setDuplicateCheckError(null);
       return;
@@ -288,7 +291,7 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
           setDuplicates(list);
           setDuplicateCheckError(null);
         }
-      } catch (err: unknown) {
+      } catch {
         if (!ctrl.signal.aborted) {
           setDuplicates([]);
           setDuplicateCheckError(t("addDrawer.duplicateCheckFailed"));
@@ -498,6 +501,12 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                     const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
                     setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
+                      setPhoneCountryCode(code);
+                      setPhone(local);
+                    })
+                  }
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"

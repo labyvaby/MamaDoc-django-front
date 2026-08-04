@@ -46,7 +46,13 @@ import { useT } from "../../../i18n/VerticalProvider";
 import { PhoneCountryCodeSelect } from "../../../components/ui/PhoneCountryCodeSelect";
 import { CustomDatePicker, cascadeContainer, cascadeItem } from "../../../components/ui";
 import { SectionLabel, Field, Grid2, PhotoHero, ElqrUploader, StatusBadge } from "./drawerKit";
-import { composePhone, getPhoneLocalMaxLength, type PhoneCountryCode } from "../../../utility/phone";
+import {
+  composePhone,
+  formatPhoneLocalDisplay,
+  getPhoneLocalMaxLength,
+  handlePhonePaste,
+  type PhoneCountryCode,
+} from "../../../utility/phone";
 import { capitalizeFullName } from "../../../utility/name";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
@@ -848,17 +854,26 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                   disabled={busy}
                 />
                 <TextField
-                  value={phoneLocal}
+                  value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
                   onChange={(e) => {
                     const maxLen = getPhoneLocalMaxLength(phoneCountry);
                     setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
                   }}
+                  onPaste={(e) =>
+                    handlePhonePaste(e, phoneCountry, (code, local) => {
+                      setPhoneCountry(code);
+                      setPhoneLocal(local);
+                    })
+                  }
                   onKeyDown={submitOnEnter}
                   fullWidth
                   size="small"
                   placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}
                   disabled={busy}
-                  inputProps={{ inputMode: "tel", pattern: "[0-9]*", maxLength: getPhoneLocalMaxLength(phoneCountry) }}
+                  // maxLength не ставим: значение показывается с пробелами
+                  // («700 123 456»), и лимит по числу цифр обрезал бы ввод
+                  // раньше времени — длину режет onChange.
+                  inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
                   ref={focus.anchor("phone")}
                   InputProps={{
                     endAdornment: !errors.phone && phoneLocal.length === getPhoneLocalMaxLength(phoneCountry) ? (
