@@ -1,25 +1,47 @@
 import React from "react";
 import {
+  Badge,
   Box,
   Button,
   Container,
   CssBaseline,
   GlobalStyles,
+  IconButton,
   Link as MuiLink,
   Skeleton,
   Stack,
   Typography,
 } from "@mui/material";
 import { ThemeProvider, alpha } from "@mui/material/styles";
+import ArrowBackIosNewOutlined from "@mui/icons-material/ArrowBackIosNewOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
+import NotificationsNoneOutlined from "@mui/icons-material/NotificationsNoneOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import { useNavigate } from "react-router";
 
-import { useBookingTheme, TILE_RADIUS } from "./theme";
+import { useBookingTheme, BOOKING_RADIUS } from "./theme";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { formatPhone, monogram, telHref } from "./format";
 import { useT } from "../../i18n/VerticalProvider";
+
+/**
+ * Личный кабинет гостя (вход, регистрация, уведомления, «Мои записи»).
+ *
+ * В макете шапка содержит «Войти / Регистрация», колокольчик и аватар, но за
+ * ними нет ни экранов, ни эндпоинтов: авторизации гостя в публичном API нет.
+ * Разметка готова и включается этим флагом, когда появится история записей, —
+ * до тех пор в шапке стоит рабочая кнопка звонка, а не мёртвые ссылки.
+ */
+export const BOOKING_AUTH_ENABLED = false;
+
+/**
+ * Поля страницы. Макет свёрстан на 1440 с отступами 80 — контент 1280.
+ * Container с maxWidth="xl" даёт ровно это на широком экране и сжимается сам
+ * на узких, поэтому фиксируем не ширину контента, а поля.
+ */
+export const PAGE_GUTTER = { xs: 2, sm: 3, md: 6, lg: 10 };
 
 /**
  * Возврат прокрутки документа. CRM в `App.tsx` держит `html/body/#root` в
@@ -77,158 +99,224 @@ function usePageMeta(title: string | null, description: string) {
   }, [title, description]);
 }
 
-// ── Оболочка ─────────────────────────────────────────────────────────────────
+// ── Шапка ────────────────────────────────────────────────────────────────────
 
-const Header: React.FC<{ maxWidth: "sm" | "md" | "lg" }> = ({ maxWidth }) => {
-  const { t } = useT("publicBooking");
+/** Логотип клиники; без картинки — монограмма и название текстом. */
+const Brand: React.FC = () => {
   const navigate = useNavigate();
-  const { organization, branches } = useBookingOrg();
-  const phone = primaryPhone(branches);
+  const { organization } = useBookingOrg();
   const [logoBroken, setLogoBroken] = React.useState(false);
   const showLogo = Boolean(organization?.logoUrl) && !logoBroken;
 
   return (
-    <Box
-      component="header"
-      sx={{
-        position: "sticky",
-        top: 0,
-        zIndex: (t) => t.zIndex.appBar,
-        borderBottom: 1,
-        borderColor: "divider",
-        bgcolor: "background.paper",
-      }}
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1.25}
+      onClick={() => navigate("/book")}
+      sx={{ cursor: "pointer", minWidth: 0 }}
     >
-      <Container maxWidth={maxWidth} sx={{ minHeight: 64, display: "flex", alignItems: "center" }}>
-        {/* justifyContent, а не ml:auto у кнопки: spacing у Stack задаёт детям
-            margin-left селектором с большей специфичностью и гасит его. */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          spacing={1.5}
-          sx={{ width: "100%" }}
-        >
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={1.5}
-            onClick={() => navigate("/book")}
-            sx={{ cursor: "pointer", minWidth: 0 }}
+      {showLogo ? (
+        // Логотип клиники обычно уже содержит её название — тогда дублировать
+        // его текстом не нужно, в макете шапка тоже состоит из одной картинки.
+        <Box
+          component="img"
+          src={organization?.logoUrl ?? undefined}
+          alt={organization?.name ?? ""}
+          onError={() => setLogoBroken(true)}
+          sx={{ height: 30, maxWidth: 160, objectFit: "contain", display: "block" }}
+        />
+      ) : (
+        <>
+          <Box
+            sx={{
+              width: 34,
+              height: 34,
+              flexShrink: 0,
+              borderRadius: BOOKING_RADIUS,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: 1,
+              borderColor: (t) => alpha(t.palette.primary.main, 0.25),
+              bgcolor: (t) => t.palette.primary.lighter,
+              color: "primary.onSurface",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
           >
-            {/* Логотип клиники, если бэк его отдаёт; иначе монограмма («МД») —
-                она читается как знак клиники, в отличие от дежурной иконки
-                больницы. Битую картинку тоже подменяем монограммой. */}
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                flexShrink: 0,
-                borderRadius: TILE_RADIUS,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                border: 1,
-                borderColor: (t) => alpha(t.palette.primary.main, 0.25),
-                bgcolor: (t) => t.palette.primary.lighter,
-                color: "primary.onSurface",
-                fontSize: 15,
-                fontWeight: 700,
-                letterSpacing: "0.02em",
-              }}
+            {organization ? (
+              monogram(organization.name)
+            ) : (
+              <LocalHospitalOutlined fontSize="small" />
+            )}
+          </Box>
+          {/* Пока имя клиники не пришло — скелетон, а не фолбэк: иначе
+              название на секунду «мигает» с «Онлайн-запись» на настоящее. */}
+          {organization ? (
+            <Typography
+              noWrap
+              sx={{ fontSize: { xs: 15, sm: 16 }, fontWeight: 600, letterSpacing: "-0.01em" }}
             >
-              {showLogo ? (
-                <Box
-                  component="img"
-                  src={organization?.logoUrl ?? undefined}
-                  alt={organization?.name ?? ""}
-                  onError={() => setLogoBroken(true)}
-                  sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : organization ? (
-                monogram(organization.name)
-              ) : (
-                <LocalHospitalOutlined fontSize="small" />
-              )}
-            </Box>
-            <Box sx={{ minWidth: 0 }}>
-              {/* Пока имя клиники не пришло — скелетон, а не фолбэк: иначе
-                  название на секунду «мигает» с «Онлайн-запись» на настоящее. */}
-              {organization ? (
-                <Typography
-                  noWrap
-                  sx={{
-                    fontSize: { xs: 16, sm: 17 },
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                    letterSpacing: "-0.01em",
-                  }}
-                >
-                  {organization.name}
-                </Typography>
-              ) : (
-                <Skeleton width={150} height={20} />
-              )}
-              <Typography
-                noWrap
-                sx={{
-                  mt: "1px",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "text.secondary",
-                }}
-              >
-                {t("brandSubtitle")}
-              </Typography>
-            </Box>
-          </Stack>
-
-          {phone && (
-            <Button
-              href={telHref(phone)}
-              variant="outlined"
-              size="small"
-              startIcon={<PhoneOutlined />}
-              sx={{
-                flexShrink: 0,
-                borderRadius: 99,
-                px: { xs: 1.5, sm: 2 },
-                fontWeight: 600,
-                whiteSpace: "nowrap",
-                borderColor: "divider",
-                color: "text.primary",
-                "&:hover": { borderColor: "primary.main", bgcolor: "transparent" },
-              }}
-            >
-              {/* Номер целиком — только там, где он не поджимает название. */}
-              <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
-                {formatPhone(phone)}
-              </Box>
-              <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>
-                {t("callClinic")}
-              </Box>
-            </Button>
+              {organization.name}
+            </Typography>
+          ) : (
+            <Skeleton width={130} height={20} />
           )}
-        </Stack>
-      </Container>
-    </Box>
+        </>
+      )}
+    </Stack>
   );
 };
 
-const Footer: React.FC<{ maxWidth: "sm" | "md" | "lg" }> = ({ maxWidth }) => {
+/** Правая часть шапки: личный кабинет гостя либо телефон клиники. */
+const HeaderActions: React.FC = () => {
+  const { t } = useT("publicBooking");
+  const { branches } = useBookingOrg();
+  const phone = primaryPhone(branches);
+
+  if (BOOKING_AUTH_ENABLED) {
+    return (
+      <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
+        <Stack direction="row" alignItems="center" spacing={0.75} sx={{ fontSize: 14 }}>
+          <MuiLink component="button" underline="hover" color="text.primary" sx={{ fontSize: 14 }}>
+            {t("signIn")}
+          </MuiLink>
+          <Box component="span" sx={{ color: "text.secondary" }}>
+            /
+          </Box>
+          <MuiLink component="button" underline="hover" color="text.primary" sx={{ fontSize: 14 }}>
+            {t("signUp")}
+          </MuiLink>
+        </Stack>
+        <IconButton size="small" sx={{ color: "text.primary" }}>
+          <Badge color="error" variant="dot" invisible>
+            <NotificationsNoneOutlined sx={{ fontSize: 24 }} />
+          </Badge>
+        </IconButton>
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            bgcolor: (tt) => alpha(tt.palette.text.primary, 0.08),
+            color: "text.secondary",
+          }}
+        >
+          <PersonOutlineOutlined fontSize="small" />
+        </Box>
+      </Stack>
+    );
+  }
+
+  if (!phone) return null;
+  return (
+    <Button
+      href={telHref(phone)}
+      variant="outlined"
+      size="small"
+      startIcon={<PhoneOutlined />}
+      sx={{
+        flexShrink: 0,
+        borderRadius: 99,
+        px: { xs: 1.5, sm: 2 },
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+        borderColor: "divider",
+        color: "text.primary",
+        "&:hover": { borderColor: "primary.main", bgcolor: "transparent" },
+      }}
+    >
+      {/* Номер целиком — только там, где он не поджимает название. */}
+      <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
+        {formatPhone(phone)}
+      </Box>
+      <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>
+        {t("callClinic")}
+      </Box>
+    </Button>
+  );
+};
+
+const Header: React.FC = () => (
+  <Box
+    component="header"
+    sx={{
+      position: "sticky",
+      top: 0,
+      zIndex: (t) => t.zIndex.appBar,
+      bgcolor: "background.paper",
+    }}
+  >
+    <Container maxWidth="xl" sx={{ px: PAGE_GUTTER }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1.5}
+        sx={{ minHeight: 60 }}
+      >
+        <Brand />
+        <HeaderActions />
+      </Stack>
+    </Container>
+  </Box>
+);
+
+/**
+ * Подпись экрана под шапкой («Выберите врача, чтобы посмотреть свободные окна»).
+ * На мобильных к ней добавляется стрелка возврата — в макете это единственный
+ * способ вернуться на шаг назад, отдельной навигации там нет.
+ */
+const PageHeading: React.FC<{ heading: React.ReactNode; backTo?: string }> = ({
+  heading,
+  backTo,
+}) => {
+  const navigate = useNavigate();
+  return (
+    <Stack direction="row" alignItems="center" spacing={1} sx={{ pt: { xs: 1.5, md: 3 } }}>
+      {backTo && (
+        <IconButton
+          size="small"
+          onClick={() => navigate(backTo)}
+          sx={{ ml: -0.5, color: "text.primary", display: { md: "none" } }}
+          aria-label="Назад"
+        >
+          <ArrowBackIosNewOutlined sx={{ fontSize: 18 }} />
+        </IconButton>
+      )}
+      <Typography
+        component="h1"
+        sx={{
+          fontSize: { xs: 17, md: 14 },
+          fontWeight: { xs: 600, md: 500 },
+          lineHeight: 1.35,
+          color: "text.primary",
+        }}
+      >
+        {heading}
+      </Typography>
+    </Stack>
+  );
+};
+
+// ── Подвал ───────────────────────────────────────────────────────────────────
+
+/**
+ * Адреса и телефоны филиалов. В макете подвала нет (кадры обрезаны по 1024),
+ * но гостю он нужен: без него адрес клиники на витрине взять негде.
+ */
+const Footer: React.FC = () => {
   const { organization, branches } = useBookingOrg();
   const headerPhone = primaryPhone(branches);
   if (!organization && branches.length === 0) return null;
 
   return (
-    <Box
-      component="footer"
-      sx={{ mt: "auto", borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}
-    >
-      <Container maxWidth={maxWidth} sx={{ py: 2.5 }}>
+    <Box component="footer" sx={{ mt: "auto", bgcolor: "background.paper" }}>
+      <Container maxWidth="xl" sx={{ px: PAGE_GUTTER, py: 2.5 }}>
         <Stack spacing={1}>
           {organization && (
             <Typography variant="body2" fontWeight={600}>
@@ -270,17 +358,26 @@ const Footer: React.FC<{ maxWidth: "sm" | "md" | "lg" }> = ({ maxWidth }) => {
   );
 };
 
+// ── Оболочка ─────────────────────────────────────────────────────────────────
+
 /**
  * Обёртка публичных страниц записи (`/book/*`). Рендерится вне staff-layout и
  * RequireAuth и подменяет тему CRM на тему витрины (см. `./theme.ts`): гость
  * не должен видеть тёмный интерфейс только потому, что его выбрал сотрудник.
  *
  * `pageTitle` — что стоит в заголовке вкладки перед названием клиники (имя
- * врача на его странице, «Онлайн-запись» на списке).
+ * врача на его странице, «Онлайн-запись» на списке). `heading` — подпись экрана
+ * под шапкой, `backTo` — куда ведёт мобильная стрелка возврата.
  */
 export const PublicBookingShell: React.FC<
-  React.PropsWithChildren<{ maxWidth?: "sm" | "md" | "lg"; pageTitle?: string }>
-> = ({ children, maxWidth = "lg", pageTitle }) => {
+  React.PropsWithChildren<{
+    pageTitle?: string;
+    heading?: React.ReactNode;
+    backTo?: string;
+    /** Липкая панель действия внизу экрана (мобильный футер записи). */
+    stickyBar?: React.ReactNode;
+  }>
+> = ({ children, pageTitle, heading, backTo, stickyBar }) => {
   const { t } = useT("publicBooking");
   const theme = useBookingTheme();
   const { organization } = useBookingOrg();
@@ -300,11 +397,22 @@ export const PublicBookingShell: React.FC<
           bgcolor: "background.default",
         }}
       >
-        <Header maxWidth={maxWidth} />
-        <Container maxWidth={maxWidth} sx={{ py: { xs: 2, md: 3 }, flexGrow: 1 }}>
-          {children}
+        <Header />
+        <Container
+          maxWidth="xl"
+          sx={{
+            px: PAGE_GUTTER,
+            pb: { xs: 3, md: 4 },
+            flexGrow: 1,
+            // Место под липкую панель, иначе она перекрывает последнюю карточку.
+            ...(stickyBar ? { pb: { xs: 15, md: 4 } } : null),
+          }}
+        >
+          {heading && <PageHeading heading={heading} backTo={backTo} />}
+          <Box sx={{ mt: { xs: 1.5, md: 2 } }}>{children}</Box>
         </Container>
-        <Footer maxWidth={maxWidth} />
+        {stickyBar}
+        <Footer />
       </Box>
     </ThemeProvider>
   );

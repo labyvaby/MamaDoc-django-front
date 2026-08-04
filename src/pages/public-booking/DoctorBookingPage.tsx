@@ -21,13 +21,12 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
-import ArrowForwardOutlined from "@mui/icons-material/ArrowForwardOutlined";
+import ChatBubbleOutlineOutlined from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import StarRounded from "@mui/icons-material/StarRounded";
-import WorkOutlineOutlined from "@mui/icons-material/WorkOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
@@ -35,7 +34,6 @@ import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import SchoolOutlined from "@mui/icons-material/SchoolOutlined";
 import TranslateOutlined from "@mui/icons-material/TranslateOutlined";
-import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import { useNavigate, useParams } from "react-router";
 
 import {
@@ -55,8 +53,19 @@ import {
 import { ApiError, isAbortError } from "../../api/client";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { PublicBookingShell } from "./shell";
-import { BOOKING_RADIUS, TILE_RADIUS, neutralTone, tileTone } from "./theme";
-import { formatDuration, formatPhone, formatSom, telHref } from "./format";
+import {
+  BOOKING_BORDER,
+  BOOKING_RADIUS,
+  BOOKING_SHADOW,
+  CARD_BORDER,
+  PILL_RADIUS,
+  RATING_COLOR,
+  TILE_RADIUS,
+  dayTone,
+  neutralTone,
+  slotTone,
+} from "./theme";
+import { formatDayMonth, formatDuration, formatPhone, formatSom, telHref } from "./format";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { useT } from "../../i18n/VerticalProvider";
 import { capitalizeFullName } from "../../utility/name";
@@ -69,7 +78,15 @@ interface PickableService {
   basePrice: string;
 }
 
-type Step = 1 | 2 | 3;
+/**
+ * Общий вид карточки страницы записи: белая, скруглённая, с мягкой тенью.
+ * В макете рамки у карточек нет — объём даёт только тень.
+ */
+const CARD_SX = {
+  borderRadius: BOOKING_RADIUS,
+  border: "none",
+  boxShadow: BOOKING_SHADOW,
+} as const;
 
 // ── Форматирование дат ───────────────────────────────────────────────────────
 
@@ -108,104 +125,29 @@ function formatFullDate(date: string): string {
   return `${main}, ${weekday}`;
 }
 
-// ── Индикатор шагов ──────────────────────────────────────────────────────────
-
-const StepIndicator: React.FC<{ current: Step; onGoTo: (step: Step) => void }> = ({
-  current,
-  onGoTo,
-}) => {
-  const { t } = useT("publicBooking");
-  const steps: { step: Step; label: string }[] = [
-    { step: 1, label: t("stepDate") },
-    { step: 2, label: t("stepTime") },
-    { step: 3, label: t("stepServices") },
-  ];
-
-  return (
-    <Stack direction="row" alignItems="flex-start">
-      {steps.map(({ step, label }, index) => {
-        const done = step < current;
-        const active = step === current;
-        return (
-          <React.Fragment key={step}>
-            <Stack
-              alignItems="center"
-              spacing={0.5}
-              onClick={() => (done ? onGoTo(step) : undefined)}
-              sx={{ width: 64, cursor: done ? "pointer" : "default" }}
-            >
-              <Box
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  border: 2,
-                  transition: "background-color .2s, border-color .2s, color .2s",
-                  ...(active && {
-                    bgcolor: "primary.main",
-                    borderColor: "primary.main",
-                    color: "primary.contrastText",
-                  }),
-                  // Пройденный шаг — тот же акцент, но приглушённый: зелёный
-                  // здесь вводил третий цвет и спорил с активным шагом.
-                  ...(done && {
-                    bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
-                    borderColor: (t) => alpha(t.palette.primary.main, 0.32),
-                    color: "primary.onSurface",
-                  }),
-                  ...(!active &&
-                    !done && {
-                      bgcolor: "background.paper",
-                      borderColor: "divider",
-                      color: "text.disabled",
-                    }),
-                }}
-              >
-                {done ? <CheckOutlined sx={{ fontSize: 15 }} /> : step}
-              </Box>
-              <Typography
-                variant="caption"
-                sx={{
-                  fontWeight: 600,
-                  color: active || done ? "primary.onSurface" : "text.disabled",
-                }}
-              >
-                {label}
-              </Typography>
-            </Stack>
-            {index < steps.length - 1 && (
-              <Box
-                sx={{
-                  flexGrow: 1,
-                  height: 2,
-                  mt: "13px",
-                  mx: 1,
-                  borderRadius: 1,
-                  bgcolor: (t) => (done ? alpha(t.palette.primary.main, 0.32) : t.palette.divider),
-                }}
-              />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </Stack>
-  );
-};
+/** Когда оставлен отзыв: «Вчера 12:36», «3 августа 12:36». */
+function formatReviewDate(iso: string): string {
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "";
+  const time = value.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((startOfDay.getTime() - value.getTime()) / 86_400_000);
+  if (diffDays <= 0) return `Сегодня ${time}`;
+  if (diffDays === 1) return `Вчера ${time}`;
+  const main = value.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  return `${main} ${time}`;
+}
 
 // ── Плитка дня ───────────────────────────────────────────────────────────────
 
 /**
- * Плитка дня. Три строки сверху вниз: день недели («Сегодня»/«Завтра» для
- * ближайших), дата, количество окон. Дата не повторяется дважды, день недели —
- * обычной строкой: в кружке-бейдже он был нечитаемо мелким.
+ * Плитка дня: день недели, дата и чип с числом свободных окон.
  *
- * Цвет: белая с синей рамкой — свободна, залитая синим — выбрана, серая без
- * рамки — окон нет. Одна шкала вместо прежних «голубая / зелёная / серая».
+ * Три состояния из макета. Зелёная — выбранный день, синяя — есть свободные
+ * окна, серая — окон нет. Зелёный здесь значит «выбрано», а не «доступно»:
+ * доступность несёт синий, иначе в ряду два акцента и глаз сравнивает цвета
+ * вместо чтения дат.
  */
 const DayTile: React.FC<{
   day: CalendarDay;
@@ -214,72 +156,84 @@ const DayTile: React.FC<{
 }> = ({ day, active, onClick }) => {
   const { t } = useT("publicBooking");
   const { diffDays, weekday, dayMonth } = dayParts(day.date);
-  const caption =
-    diffDays === 0 ? t("today") : diffDays === 1 ? t("tomorrow") : weekday;
+  const dateLabel = diffDays === 0 ? t("today") : diffDays === 1 ? t("tomorrow") : dayMonth;
+  const tone = active ? dayTone.picked : day.isAvailable ? dayTone.free : dayTone.empty;
 
   return (
     <ButtonBase
       disabled={!day.isAvailable}
       onClick={onClick}
-      sx={(theme) => {
-        const tone = tileTone(theme);
-        return {
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
-          gap: 0.25,
-          height: { xs: 76, lg: 84 },
-          px: 0.75,
-          py: 1,
-          border: 1,
-          borderRadius: TILE_RADIUS,
-          transition: "background-color .15s, border-color .15s, color .15s",
-          borderColor: active ? tone.pickedBorder : tone.idleBorder,
-          bgcolor: active ? tone.pickedBg : tone.idleBg,
-          color: active ? tone.pickedText : tone.idleText,
-          "&:hover": { borderColor: "primary.main" },
-          "&.Mui-disabled": {
-            bgcolor: (t) => alpha(t.palette.text.primary, 0.03),
-            borderColor: "transparent",
-            color: "text.disabled",
-          },
-        };
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: 0.5,
+        px: { xs: 1, lg: 2 },
+        py: 1,
+        minHeight: 84,
+        border: 1,
+        borderRadius: TILE_RADIUS,
+        borderColor: tone.border,
+        bgcolor: tone.bg,
+        transition: "background-color .15s, border-color .15s",
+        "&:hover:not(.Mui-disabled)": { borderColor: "primary.main" },
+        "&.Mui-disabled": { borderColor: dayTone.empty.border },
       }}
     >
-      <Typography
+      <Box sx={{ textAlign: "left", width: "100%" }}>
+        <Typography
+          sx={{
+            fontSize: 14,
+            fontWeight: 600,
+            lineHeight: 1.25,
+            textTransform: "capitalize",
+            whiteSpace: "nowrap",
+            // День недели у ближайших дат подсвечен — так глаз находит «завтра»
+            // быстрее, чем перечитывая числа.
+            color: active
+              ? dayTone.picked.text
+              : !day.isAvailable
+                ? dayTone.empty.text
+                : diffDays <= 1
+                  ? dayTone.free.weekday
+                  : "text.secondary",
+          }}
+        >
+          {weekday}
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: 14,
+            fontWeight: 600,
+            lineHeight: 1.25,
+            whiteSpace: "nowrap",
+            color: active
+              ? dayTone.picked.text
+              : day.isAvailable
+                ? dayTone.free.text
+                : dayTone.empty.text,
+          }}
+        >
+          {dateLabel}
+        </Typography>
+      </Box>
+      <Box
         sx={{
-          fontSize: 11,
+          mt: "auto",
+          minWidth: 67,
+          px: 0.5,
+          py: 0.25,
+          borderRadius: PILL_RADIUS,
+          bgcolor: tone.chipBg,
+          color: "#FFFFFF",
+          fontSize: 12,
           fontWeight: 600,
-          lineHeight: 1.2,
-          textTransform: "capitalize",
-          opacity: 0.8,
+          textAlign: "center",
           whiteSpace: "nowrap",
         }}
       >
-        {caption}
-      </Typography>
-      <Typography
-        sx={{ fontSize: { xs: 14, lg: 15 }, fontWeight: 700, lineHeight: 1.2, whiteSpace: "nowrap" }}
-      >
-        {dayMonth}
-      </Typography>
-      <Typography
-        sx={(theme) => ({
-          mt: "auto",
-          fontSize: 11,
-          fontWeight: 600,
-          whiteSpace: "nowrap",
-          // У выбранной плитки подпись наследует белый, у свободной — акцент,
-          // у недоступной остаётся серой от родителя.
-          color: active
-            ? "inherit"
-            : day.isAvailable
-              ? tileTone(theme).idleHint
-              : "inherit",
-        })}
-      >
         {day.slotsCount ? t("slots", { count: day.slotsCount }) : t("slotsNone")}
-      </Typography>
+      </Box>
     </ButtonBase>
   );
 };
@@ -293,25 +247,23 @@ const TimeSlot: React.FC<{ time: string; active: boolean; onClick: () => void }>
 }) => (
   <ButtonBase
     onClick={onClick}
-    sx={(theme) => {
-      const tone = tileTone(theme);
-      return {
-        height: 34,
-        px: 1.75,
-        borderRadius: 99,
-        border: 1,
-        fontSize: 13,
-        fontWeight: 600,
-        transition: "background-color .15s, border-color .15s, color .15s",
-        ...(active
-          ? { bgcolor: tone.pickedBg, borderColor: tone.pickedBorder, color: tone.pickedText }
-          : {
-              bgcolor: tone.idleBg,
-              borderColor: tone.idleBorder,
-              color: tone.idleText,
-              "&:hover": { bgcolor: tone.softBg, borderColor: "primary.main" },
-            }),
-      };
+    sx={{
+      py: 0.5,
+      px: 1.25,
+      minWidth: 84,
+      borderRadius: PILL_RADIUS,
+      border: 1,
+      fontSize: 14,
+      fontWeight: 600,
+      transition: "background-color .15s, border-color .15s, color .15s",
+      ...(active
+        ? { bgcolor: slotTone.picked.bg, borderColor: slotTone.picked.border, color: slotTone.picked.text }
+        : {
+            bgcolor: slotTone.idle.bg,
+            borderColor: slotTone.idle.border,
+            color: slotTone.idle.text,
+            "&:hover": { borderColor: "primary.main", color: "primary.main" },
+          }),
     }}
   >
     {time}
@@ -320,7 +272,11 @@ const TimeSlot: React.FC<{ time: string; active: boolean; onClick: () => void }>
 
 // ── Строка услуги ────────────────────────────────────────────────────────────
 
-/** Услуга — плитка-переключатель: выбранная подсвечена акцентом. */
+/**
+ * Строка услуги: чекбокс с названием слева и цена в отдельной колонке справа.
+ * Рамки у строки нет — в макете список услуг это таблица «Услуги / Цены»
+ * внутри одной карточки, а не набор плиток.
+ */
 const ServiceRow: React.FC<{
   service: PickableService;
   checked: boolean;
@@ -328,54 +284,45 @@ const ServiceRow: React.FC<{
 }> = ({ service, checked, onToggle }) => (
   <ButtonBase
     onClick={onToggle}
-    sx={(theme) => {
-      const tone = tileTone(theme);
-      return {
-        display: "grid",
-        gridTemplateColumns: "22px minmax(0, 1fr) auto",
-        alignItems: "center",
-        gap: 1.25,
-        px: 1.25,
-        py: 1,
-        border: 1,
-        borderRadius: TILE_RADIUS,
-        textAlign: "left",
-        transition: "background-color .15s, border-color .15s",
-        borderColor: checked ? "primary.main" : tone.idleBorder,
-        // Заливка мягкая, а не сплошная: в строке есть название и цена, их
-        // нужно читать, поэтому текст остаётся тёмным.
-        bgcolor: checked ? tone.softBg : "transparent",
-        "&:hover": {
-          borderColor: "primary.main",
-        },
-      };
+    sx={{
+      display: "grid",
+      gridTemplateColumns: "20px minmax(0, 1fr) auto",
+      alignItems: "center",
+      gap: 2.5,
+      py: 0.75,
+      px: 0.5,
+      borderRadius: "6px",
+      textAlign: "left",
+      transition: "background-color .15s",
+      "&:hover": { bgcolor: (t) => alpha(t.palette.text.primary, 0.04) },
     }}
   >
     <Box
       sx={{
-        width: 22,
-        height: 22,
-        borderRadius: "6px",
+        width: 20,
+        height: 20,
+        borderRadius: "4px",
         border: 1,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        borderColor: checked ? "primary.main" : (t) => alpha(t.palette.primary.main, 0.35),
-        bgcolor: checked ? "primary.main" : "transparent",
-        color: checked ? "primary.contrastText" : "transparent",
+        flexShrink: 0,
+        borderColor: checked ? slotTone.picked.bg : "#7A7878",
+        bgcolor: checked ? slotTone.picked.bg : "transparent",
+        color: checked ? "#FFFFFF" : "transparent",
       }}
     >
-      <CheckOutlined sx={{ fontSize: 15 }} />
+      <CheckOutlined sx={{ fontSize: 14 }} />
     </Box>
     <Box sx={{ minWidth: 0 }}>
-      <Typography fontSize={14} fontWeight={600} lineHeight={1.3}>
+      <Typography fontSize={14} fontWeight={500} lineHeight={1.3}>
         {service.name}
       </Typography>
       <Typography variant="caption" color="text.secondary">
         {formatDuration(service.durationMinutes)}
       </Typography>
     </Box>
-    <Typography fontSize={14} fontWeight={700} sx={{ whiteSpace: "nowrap" }}>
+    <Typography fontSize={14} fontWeight={500} sx={{ whiteSpace: "nowrap" }}>
       {formatSom(service.basePrice)}
     </Typography>
   </ButtonBase>
@@ -409,27 +356,20 @@ const Fact: React.FC<React.PropsWithChildren<{ icon: React.ReactNode }>> = ({
 const DoctorAside: React.FC<{ doctor: ProfessionalDetail }> = ({ doctor }) => {
   const { t } = useT("publicBooking");
   const [broken, setBroken] = React.useState(false);
-  const [priceOpen, setPriceOpen] = React.useState(false);
   const showPhoto = Boolean(doctor.photoUrl) && !broken;
-
-  // Прайс врача: цену «от» гость хочет знать до выбора времени, а полный
-  // список услуг он всё равно увидит на третьем шаге.
-  const minPrice = doctor.services.length
-    ? Math.min(...doctor.services.map((s) => Number(s.basePrice ?? 0)))
-    : null;
 
   /** Где принимает: «Мама Доктор · ул. Орозбекова 112». */
   const place = [doctor.branch?.name, doctor.branch?.address].filter(Boolean).join(" · ");
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, borderRadius: BOOKING_RADIUS }}>
+    <Paper elevation={0} sx={{ ...CARD_SX, p: 2.5 }}>
       <Stack direction="row" spacing={2} alignItems="stretch">
         <Box
           sx={{
-            width: { xs: 108, md: 132 },
-            height: { xs: 132, md: 164 },
+            width: { xs: 108, md: 141 },
+            height: { xs: 132, md: 168 },
             flexShrink: 0,
-            borderRadius: TILE_RADIUS,
+            borderRadius: "6px",
             overflow: "hidden",
             // Заглушка нейтральная намеренно: фирменный цвет делал врачей без
             // фото самым ярким элементом страницы.
@@ -457,62 +397,73 @@ const DoctorAside: React.FC<{ doctor: ProfessionalDetail }> = ({ doctor }) => {
           )}
         </Box>
 
-        <Stack sx={{ flexGrow: 1, minWidth: 0, py: 0.5 }}>
-          <Typography fontWeight={700} fontSize={{ xs: 15, md: 18 }} lineHeight={1.25}>
-            {doctor.fullName}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-            {doctor.specialties.join(", ")}
-          </Typography>
+        {/* Имя и специализация сверху, рейтинг и стаж прижаты к низу фото —
+            так блок выглядит собранным независимо от длины ФИО. */}
+        <Stack sx={{ flexGrow: 1, minWidth: 0, justifyContent: "space-between", gap: 1.5 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: { xs: 16, md: 18 }, fontWeight: 500, lineHeight: 1.3 }}>
+              {doctor.fullName}
+            </Typography>
+            {doctor.specialties.length > 0 && (
+              <Typography
+                sx={{ mt: 0.5, fontSize: 16, color: "text.secondary", lineHeight: 1.3 }}
+              >
+                {doctor.specialties.join(" • ")}
+              </Typography>
+            )}
+          </Box>
 
-          {/* Факты о враче идут сразу под специализацией: с mt:auto между ними
-              зияла пустота, когда фактов мало (у врача нет рейтинга и стажа).
-              Телефона здесь нет — он в шапке страницы, дублировать незачем. */}
-          <Stack spacing={0.5} sx={{ mt: 1.25 }}>
+          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
             {doctor.rating != null && (
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Stack direction="row" alignItems="center" spacing={0.25}>
-                  <StarRounded sx={{ fontSize: 18, color: "warning.main" }} />
-                  <Typography fontSize={14} fontWeight={700} color="warning.onSurface">
-                    {doctor.rating.toFixed(1)}
+              <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap">
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500, color: RATING_COLOR }}>
+                    {doctor.rating.toFixed(1).replace(".", ",")}
                   </Typography>
+                  <Rating
+                    value={doctor.rating}
+                    precision={0.1}
+                    readOnly
+                    size="small"
+                    sx={{ color: RATING_COLOR, fontSize: 16 }}
+                  />
                 </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  {doctor.ratingCount} отзывов
-                </Typography>
+                {doctor.ratingCount > 0 && (
+                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
+                    · {t("reviewsCount", { count: doctor.ratingCount })}
+                  </Typography>
+                )}
               </Stack>
             )}
             {doctor.experienceYears > 0 && (
-              <Fact icon={<WorkOutlineOutlined sx={FACT_ICON} />}>
-                {t("experienceYears", { count: doctor.experienceYears })}
-              </Fact>
-            )}
-            {place && <Fact icon={<PlaceOutlined sx={FACT_ICON} />}>{place}</Fact>}
-            {doctor.services.length > 0 && (
-              <Fact icon={<MedicalServicesOutlined sx={FACT_ICON} />}>
-                {t("servicesCount", { count: doctor.services.length })}
-                {minPrice != null && ` · ${t("priceFrom", { price: formatSom(minPrice) })}`}
-              </Fact>
-            )}
-            {doctor.education && (
-              <Fact icon={<SchoolOutlined sx={FACT_ICON} />}>{doctor.education}</Fact>
-            )}
-            {doctor.languages.length > 0 && (
-              <Fact icon={<TranslateOutlined sx={FACT_ICON} />}>
-                {doctor.languages.join(", ")}
-              </Fact>
+              <Typography sx={{ fontSize: 16, fontWeight: 500 }}>
+                {t("experienceShort", { count: doctor.experienceYears })}
+              </Typography>
             )}
           </Stack>
         </Stack>
       </Stack>
 
-      {doctor.bio && (
-        <>
-          <Divider sx={{ my: 1.5 }} />
-          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-line" }}>
-            {doctor.bio}
-          </Typography>
-        </>
+      {/* Ниже — то, чего в макете нет, но что бэк иногда отдаёт: у большинства
+          врачей эти поля пусты, а где заполнены, гостю они полезнее пустого
+          места. Порядок и размер подобраны так, чтобы не спорить с шапкой. */}
+      {(place || doctor.education || doctor.languages.length > 0 || doctor.bio) && (
+        <Stack spacing={0.5} sx={{ mt: 2 }}>
+          {place && <Fact icon={<PlaceOutlined sx={FACT_ICON} />}>{place}</Fact>}
+          {doctor.education && (
+            <Fact icon={<SchoolOutlined sx={FACT_ICON} />}>{doctor.education}</Fact>
+          )}
+          {doctor.languages.length > 0 && (
+            <Fact icon={<TranslateOutlined sx={FACT_ICON} />}>
+              {doctor.languages.join(", ")}
+            </Fact>
+          )}
+          {doctor.bio && (
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-line" }}>
+              {doctor.bio}
+            </Typography>
+          )}
+        </Stack>
       )}
 
       {!doctor.isAcceptingNew && (
@@ -520,78 +471,75 @@ const DoctorAside: React.FC<{ doctor: ProfessionalDetail }> = ({ doctor }) => {
           {t("notAcceptingNew")}
         </Alert>
       )}
-
-      {/* Прайс врача целиком: цены — то, о чём гость спрашивает по телефону.
-          На шаге «Услуги» он выбирает из них, здесь просто смотрит. */}
-      {doctor.services.length > 0 && (
-        <>
-          <Divider sx={{ my: 1.5 }} />
-          <Button
-            fullWidth
-            size="small"
-            onClick={() => setPriceOpen((prev) => !prev)}
-            endIcon={
-              <ExpandMoreOutlined
-                sx={{
-                  transition: "transform .2s",
-                  transform: priceOpen ? "rotate(180deg)" : "none",
-                }}
-              />
-            }
-            sx={{ justifyContent: "space-between", color: "text.primary", fontWeight: 600 }}
-          >
-            {t("priceListTitle")}
-          </Button>
-          <Collapse in={priceOpen} unmountOnExit>
-            <Stack spacing={0.75} sx={{ mt: 1 }}>
-              {doctor.services.map((service) => (
-                <Stack
-                  key={service.id}
-                  direction="row"
-                  spacing={1}
-                  alignItems="baseline"
-                  justifyContent="space-between"
-                >
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="body2">{service.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {formatDuration(service.durationMinutes)}
-                    </Typography>
-                  </Box>
-                  <Typography variant="body2" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
-                    {formatSom(service.basePrice)}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
-          </Collapse>
-        </>
-      )}
     </Paper>
   );
 };
 
 // ── Отзывы ───────────────────────────────────────────────────────────────────
 
+/**
+ * Отзывы о враче. Пустое состояние показываем явно (в макете — иконка и
+ * «Отзывов пока нет»): исчезающая карточка сдвигала бы всю колонку.
+ */
 const Reviews: React.FC<{ reviews: ProfessionalReview[] }> = ({ reviews }) => {
   const { t } = useT("publicBooking");
-  if (!reviews.length) return null;
+
+  if (!reviews.length) {
+    return (
+      <Paper elevation={0} sx={{ ...CARD_SX, px: 2.5, pt: 2.5, pb: 5 }}>
+        <Typography sx={{ fontSize: 20, fontWeight: 500, mb: 2 }}>{t("reviewsTitle")}</Typography>
+        <Stack alignItems="center" spacing={2}>
+          <ChatBubbleOutlineOutlined sx={{ fontSize: 64, color: "text.disabled" }} />
+          <Typography sx={{ fontSize: 16, fontWeight: 500 }}>{t("noReviews")}</Typography>
+        </Stack>
+      </Paper>
+    );
+  }
+
   return (
-    <Paper variant="outlined" sx={{ p: 2, borderRadius: BOOKING_RADIUS }}>
-      <Typography fontWeight={600} sx={{ mb: 1.5 }}>
-        {t("reviewsTitle")}
-      </Typography>
-      <Stack spacing={1.5} divider={<Divider flexItem />}>
+    <Paper elevation={0} sx={{ ...CARD_SX, p: 2.5 }}>
+      <Typography sx={{ fontSize: 20, fontWeight: 500, mb: 2 }}>{t("reviewsTitle")}</Typography>
+      <Stack spacing={2}>
         {reviews.map((r, i) => (
-          <Box key={i}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="body2" fontWeight={600}>
-                {r.patientName}
-              </Typography>
-              <Rating value={r.rating} readOnly size="small" />
+          <Box
+            key={i}
+            sx={{ p: 2, border: 1, borderColor: CARD_BORDER, borderRadius: BOOKING_RADIUS }}
+          >
+            <Stack direction="row" alignItems="center" spacing={1.5}>
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  bgcolor: (tt) => neutralTone(tt).bg,
+                  color: (tt) => neutralTone(tt).fg,
+                  fontSize: 18,
+                  fontWeight: 600,
+                }}
+              >
+                {r.patientName.charAt(0).toUpperCase()}
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 15, fontWeight: 500 }} noWrap>
+                  {r.patientName}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {formatReviewDate(r.date)}
+                </Typography>
+              </Box>
             </Stack>
+            <Rating
+              value={r.rating}
+              readOnly
+              size="small"
+              sx={{ mt: 1, color: RATING_COLOR, fontSize: 16 }}
+            />
             {r.comment && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                 {r.comment}
               </Typography>
             )}

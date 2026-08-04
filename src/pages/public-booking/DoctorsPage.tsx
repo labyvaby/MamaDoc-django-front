@@ -3,7 +3,6 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   InputAdornment,
   MenuItem,
   Paper,
@@ -14,26 +13,207 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
-import { useNavigate } from "react-router";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import { useNavigate, useSearchParams } from "react-router";
 
 import {
   BOOKING_ORG_SLUG,
   getBranchProfessionals,
-  getBranchSpecialists,
+  getProfessionalCalendar,
   getProfessionals,
+  type CalendarDay,
   type ProfessionalPreview,
 } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
 import { PublicBookingShell } from "./shell";
 import { useBookingOrg } from "./useBookingOrg";
-import { BOOKING_RADIUS, TILE_RADIUS, hoverLift, neutralTone } from "./theme";
+import { useSpecialties, type SpecialtyGroup } from "./useSpecialties";
+import { specialtyIconUrl } from "./specialtyIcons";
+import { formatDayMonth, isoInDays, todayIso } from "./format";
+import {
+  BOOKING_RADIUS,
+  BOOKING_SHADOW,
+  CARD_BORDER,
+  MORE_CHIP_BG,
+  PILL_RADIUS,
+  nearestTone,
+  neutralTone,
+} from "./theme";
 import { useT } from "../../i18n/VerticalProvider";
 
-// ── Карточка врача ────────────────────────────────────────────────────────────
+/** Сколько окон показываем в карточке до счётчика «+N». */
+const SLOTS_PREVIEW = 3;
 
-/** Фото врача во всю ширину блока; без фото — инициал на приглушённой заливке. */
+// ── Ближайшие свободные окна ─────────────────────────────────────────────────
+
+/**
+ * Ближайшие окна врача для карточки списка.
+ *
+ * Список врачей (`ProfessionalPreview`) свободных окон не содержит — их
+ * приходится добирать календарём по каждому врачу отдельно. Чтобы не пускать
+ * сотню запросов на клинику со ста врачами, грузим только когда карточка
+ * появилась в зоне видимости, и один раз на карточку.
+ *
+ * ⚠ Правильное решение — отдавать ближайшие окна прямо в списке врачей; на бэке
+ * такого поля нет, нужен тикет (см. docs/backend-public-booking-guest.md).
+ */
+function useNearestDay(idOrSlug: string | number) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [day, setDay] = React.useState<CalendarDay | null | undefined>(undefined);
+
+  React.useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const controller = new AbortController();
+    let started = false;
+
+    const load = () => {
+      if (started) return;
+      started = true;
+      getProfessionalCalendar(
+        idOrSlug,
+        { dateFrom: todayIso(), dateTo: isoInDays(13) },
+        controller.signal,
+      )
+        .then((days) => {
+          const first = days.find((d) => d.isAvailable && d.times.length > 0) ?? null;
+          setDay(first);
+        })
+        .catch((e) => {
+          // Календарь — дополнение к карточке: молча прячем строку окон, чтобы
+          // ошибка одного врача не ломала весь список.
+          if (!isAbortError(e)) setDay(null);
+        });
+    };
+
+    // IntersectionObserver может быть недоступен (старые вебвью) — тогда просто
+    // грузим сразу, это хуже по трафику, но карточка не останется пустой.
+    if (typeof IntersectionObserver === "undefined") {
+      load();
+      return () => controller.abort();
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          load();
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      controller.abort();
+    };
+  }, [idOrSlug]);
+
+  return { ref, day };
+}
+
+/** Строка «Свободные окна сегодня: 12:00 8:00 22:00 +3». */
+const NearestSlots: React.FC<{ day: CalendarDay | null | undefined; onMore: () => void }> = ({
+  day,
+  onMore,
+}) => {
+  const { t } = useT("publicBooking");
+
+  if (day === undefined) {
+    return <Skeleton width="85%" height={18} />;
+  }
+  if (!day) {
+    return (
+      <Typography sx={{ fontSize: 10, fontWeight: 500, color: "text.secondary" }}>
+        {t("freeSlotsNone")}
+      </Typography>
+    );
+  }
+
+  const today = todayIso();
+  const tomorrow = isoInDays(1);
+  const tone =
+    day.date === today
+      ? nearestTone.today
+      : day.date === tomorrow
+        ? nearestTone.tomorrow
+        : nearestTone.later;
+  const label =
+    day.date === today
+      ? t("freeSlotsToday")
+      : day.date === tomorrow
+        ? t("freeSlotsTomorrow")
+        : t("freeSlotsOn", { date: formatDayMonth(day.date) });
+
+  const shown = day.times.slice(0, SLOTS_PREVIEW);
+  const rest = day.times.length - shown.length;
+
+  return (
+    <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
+      <Typography
+        noWrap
+        sx={{ fontSize: 10, fontWeight: 500, color: tone.label, flexShrink: 0 }}
+      >
+        {label}
+      </Typography>
+      <Stack direction="row" spacing={0.25} sx={{ minWidth: 0, overflow: "hidden" }}>
+        {shown.map((time) => (
+          <Box
+            key={time}
+            sx={{
+              px: 0.75,
+              borderRadius: PILL_RADIUS,
+              bgcolor: tone.chipBg,
+              color: tone.chipText,
+              fontSize: 10,
+              fontWeight: 500,
+              lineHeight: "15px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {time}
+          </Box>
+        ))}
+      </Stack>
+      {rest > 0 && (
+        <Box
+          component="button"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMore();
+          }}
+          sx={{
+            ml: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 0.25,
+            flexShrink: 0,
+            px: 0.5,
+            border: 0,
+            cursor: "pointer",
+            borderRadius: PILL_RADIUS,
+            bgcolor: MORE_CHIP_BG,
+            color: "#FFFFFF",
+            fontFamily: "inherit",
+            fontSize: 10,
+            fontWeight: 500,
+            lineHeight: "15px",
+          }}
+        >
+          +{rest}
+          <ChevronRightOutlined sx={{ fontSize: 12 }} />
+        </Box>
+      )}
+    </Stack>
+  );
+};
+
+// ── Карточка врача ───────────────────────────────────────────────────────────
+
+/** Фото врача; без фото — инициал на приглушённой заливке. */
 const DoctorPhoto: React.FC<{ doctor: ProfessionalPreview }> = ({ doctor }) => {
   const [broken, setBroken] = React.useState(false);
   const showPhoto = Boolean(doctor.photoUrl) && !broken;
@@ -41,10 +221,11 @@ const DoctorPhoto: React.FC<{ doctor: ProfessionalPreview }> = ({ doctor }) => {
   return (
     <Box
       sx={{
+        position: "relative",
         flexShrink: 0,
-        width: { xs: 116, sm: "100%" },
-        height: { xs: "auto", sm: 196 },
-        minHeight: { xs: 132, sm: 0 },
+        width: { xs: 130, sm: "100%" },
+        height: { xs: "auto", sm: 209 },
+        minHeight: { xs: 150, sm: 0 },
         // Нейтраль, а не фирменный синий: иначе врачи без фото — самые яркие
         // в сетке, хотя показать нужно как раз тех, у кого фото есть.
         bgcolor: (t) => neutralTone(t).bg,
@@ -78,94 +259,135 @@ const DoctorPhoto: React.FC<{ doctor: ProfessionalPreview }> = ({ doctor }) => {
           </Typography>
         </Stack>
       )}
+
+      {/* Специализация — плашкой в нижнем углу фото (так в макете). На мобильном
+          она уходит под имя: поверх узкого фото подпись не помещается. */}
+      {doctor.specialty && (
+        <Box
+          sx={{
+            display: { xs: "none", sm: "block" },
+            position: "absolute",
+            right: 0,
+            bottom: 0,
+            px: 1,
+            py: 0.75,
+            bgcolor: "background.paper",
+            borderTopLeftRadius: BOOKING_RADIUS,
+            fontSize: 10,
+            fontWeight: 600,
+            color: "text.secondary",
+            maxWidth: "88%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {doctor.specialty}
+        </Box>
+      )}
     </Box>
   );
 };
 
-/**
- * Карточка врача в сетке. Имя занимает фиксированные две строки, а стаж —
- * ещё одну: иначе кнопки в соседних карточках стоят на разной высоте.
- * Специализация — в тексте карточки, а не поверх фото (там подпись наезжала
- * на границу и обрезалась).
- */
 const DoctorCard: React.FC<{
   doctor: ProfessionalPreview;
   index: number;
-  onClick: () => void;
-}> = ({ doctor, index, onClick }) => {
+  onOpen: () => void;
+}> = ({ doctor, index, onOpen }) => {
   const { t } = useT("publicBooking");
+  const { ref, day } = useNearestDay(doctor.slug || doctor.id);
 
   return (
     <Paper
-      variant="outlined"
-      onClick={onClick}
-      sx={(theme) => ({
+      ref={ref}
+      elevation={0}
+      onClick={onOpen}
+      sx={{
         display: "flex",
         flexDirection: { xs: "row", sm: "column" },
         height: "100%",
         overflow: "hidden",
-        borderRadius: TILE_RADIUS,
+        border: 1,
+        borderColor: CARD_BORDER,
+        borderRadius: BOOKING_RADIUS,
         cursor: "pointer",
-        transition: "border-color .2s, transform .2s, box-shadow .2s",
-        // Карточки появляются волной — по 30 мс на позицию, но не дольше 300 мс,
-        // иначе последние в длинной сетке приезжают заметно позже остальных.
+        transition: "border-color .2s, box-shadow .2s",
         animation: "bookingFadeUp .32s ease both",
         animationDelay: `${Math.min(index, 10) * 30}ms`,
         "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-        "&:hover": hoverLift(theme),
+        "&:hover": { borderColor: "primary.main", boxShadow: BOOKING_SHADOW },
         "&:hover .doctor-photo": { transform: "scale(1.04)" },
-        "&:active": { transform: "scale(0.985)" },
-      })}
+      }}
     >
       <DoctorPhoto doctor={doctor} />
-      <Stack sx={{ p: 1.5, flexGrow: 1, minWidth: 0, gap: 0.25 }}>
-        <Typography
-          fontWeight={600}
-          fontSize={14}
-          lineHeight={1.35}
-          sx={{
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-            minHeight: { sm: 38 },
-          }}
-        >
-          {doctor.fullName}
-        </Typography>
-        {/* Специализация и стаж занимают место даже когда пусты: у врача без
-            них кнопка иначе поднимается выше, чем у соседей по сетке.
-            Специализация — нейтральным цветом: синим она спорила с кнопкой
-            «Записаться», хотя это справка, а не действие. */}
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          fontWeight={600}
-          noWrap
-          sx={{ minHeight: { sm: 18 } }}
-        >
-          {doctor.specialty}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ minHeight: { sm: 18 } }}>
-          {doctor.experienceYears > 0
-            ? t("experienceYears", { count: doctor.experienceYears })
-            : ""}
-        </Typography>
-        <Button
-          variant="contained"
-          size="small"
-          disableElevation
-          sx={{
-            mt: 1,
-            alignSelf: "stretch",
-            borderRadius: 99,
-            fontSize: 12,
-            fontWeight: 600,
-            py: 0.5,
-          }}
-        >
-          {t("bookAction")}
-        </Button>
+
+      <Stack
+        sx={{
+          flexGrow: 1,
+          minWidth: 0,
+          justifyContent: "space-between",
+          px: 1.25,
+          pt: 1,
+          pb: 2,
+          gap: 1,
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            sx={{
+              fontSize: 14,
+              fontWeight: 500,
+              lineHeight: 1.35,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              minHeight: { sm: 38 },
+            }}
+          >
+            {doctor.fullName}
+          </Typography>
+          {/* На мобильном плашка с фото скрыта — специализация идёт строкой. */}
+          {doctor.specialty && (
+            <Typography
+              noWrap
+              sx={{
+                display: { xs: "block", sm: "none" },
+                mt: 0.25,
+                fontSize: 12,
+                color: "text.secondary",
+              }}
+            >
+              {doctor.specialty}
+            </Typography>
+          )}
+        </Box>
+
+        <Stack spacing={1} sx={{ minWidth: 0 }}>
+          <NearestSlots day={day} onMore={onOpen} />
+          <Box
+            component="span"
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              py: 0.75,
+              border: 1,
+              borderColor: "#C7C7C7",
+              borderRadius: PILL_RADIUS,
+              fontSize: 12,
+              color: "text.primary",
+              transition: "background-color .2s, border-color .2s, color .2s",
+              ".MuiPaper-root:hover &": {
+                borderColor: "primary.main",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+              },
+            }}
+          >
+            {t("bookAction")}
+          </Box>
+        </Stack>
       </Stack>
     </Paper>
   );
@@ -173,155 +395,128 @@ const DoctorCard: React.FC<{
 
 const DoctorCardSkeleton: React.FC = () => (
   <Paper
-    variant="outlined"
+    elevation={0}
     sx={{
       display: "flex",
       flexDirection: { xs: "row", sm: "column" },
       height: "100%",
       overflow: "hidden",
-      borderRadius: TILE_RADIUS,
+      border: 1,
+      borderColor: CARD_BORDER,
+      borderRadius: BOOKING_RADIUS,
     }}
   >
     <Skeleton
       variant="rectangular"
-      sx={{ width: { xs: 116, sm: "100%" }, height: { xs: 132, sm: 196 }, flexShrink: 0 }}
+      sx={{ width: { xs: 130, sm: "100%" }, height: { xs: 150, sm: 209 }, flexShrink: 0 }}
     />
-    <Stack sx={{ p: 1.5, flexGrow: 1, gap: 0.5 }}>
+    <Stack sx={{ px: 1.25, pt: 1, pb: 2, flexGrow: 1, gap: 1 }}>
       <Skeleton width="80%" height={18} />
-      <Skeleton width="50%" height={14} />
-      <Skeleton variant="rounded" height={28} sx={{ mt: "auto", borderRadius: 99 }} />
+      <Skeleton width="60%" height={14} />
+      <Skeleton variant="rounded" height={28} sx={{ mt: "auto", borderRadius: PILL_RADIUS }} />
     </Stack>
   </Paper>
 );
 
-// ── Пункт специализации (десктопная колонка фильтров) ─────────────────────────
+// ── Панель специализаций ─────────────────────────────────────────────────────
 
-/**
- * Строка списка специализаций. Раньше это была плитка с буквенным аватаром и
- * шевроном — шеврон ничего не раскрывал, а аватары превращали фильтр в стену
- * цветных квадратов. Здесь выбор показывает только заливка.
- */
-const SpecialtyItem: React.FC<{
+const SpecialtyRow: React.FC<{
   title: string;
+  icon?: string | null;
   active: boolean;
   onClick: () => void;
-}> = ({ title, active, onClick }) => (
+}> = ({ title, icon, active, onClick }) => (
   <Box
     component="button"
     type="button"
     onClick={onClick}
     sx={{
-      display: "block",
+      display: "flex",
+      alignItems: "center",
+      gap: 1.5,
       width: "100%",
-      px: 1.25,
+      px: 1.5,
       py: 1,
-      border: 0,
+      border: 1,
+      borderColor: active ? "primary.main" : CARD_BORDER,
+      borderRadius: BOOKING_RADIUS,
+      bgcolor: active ? (t) => alpha(t.palette.primary.main, 0.06) : "background.paper",
       textAlign: "left",
       cursor: "pointer",
-      borderRadius: "8px",
       fontFamily: "inherit",
-      fontSize: 14,
-      lineHeight: 1.4,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      transition: "background-color .15s, color .15s",
-      ...(active
-        ? {
-            fontWeight: 600,
-            color: (t) => t.palette.primary.onSurface,
-            bgcolor: (t) => t.palette.primary.lighter,
-          }
-        : {
-            fontWeight: 400,
-            color: (t) => t.palette.text.primary,
-            bgcolor: "transparent",
-            "&:hover": { bgcolor: (t) => alpha(t.palette.text.primary, 0.05) },
-          }),
+      transition: "border-color .15s, background-color .15s",
+      "&:hover": { borderColor: "primary.main" },
     }}
   >
-    {title}
+    {icon !== undefined && (
+      <Box
+        sx={{
+          width: 32,
+          height: 32,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: (t) => neutralTone(t).fg,
+        }}
+      >
+        {icon ? (
+          <Box
+            component="img"
+            src={icon}
+            alt=""
+            loading="lazy"
+            sx={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          />
+        ) : (
+          <MedicalServicesOutlined sx={{ fontSize: 24 }} />
+        )}
+      </Box>
+    )}
+    <Typography
+      noWrap
+      sx={{ fontSize: 14, fontWeight: active ? 600 : 400, color: "text.primary", minWidth: 0 }}
+    >
+      {title}
+    </Typography>
   </Box>
 );
 
-// ── Страница ──────────────────────────────────────────────────────────────────
-
-/**
- * Специализация в фильтре. Одно и то же название приходит из разных филиалов
- * со своими id («Дерматолог» есть и в «Мама Доктор», и в «Плюс»), поэтому
- * группируем по названию и фильтруем врачей сразу по всем его id.
- */
-interface SpecialtyGroup {
-  key: string;
-  title: string;
-  ids: number[];
-}
+// ── Страница ─────────────────────────────────────────────────────────────────
 
 const DoctorsPage: React.FC = () => {
   const { t } = useT("publicBooking");
   const navigate = useNavigate();
-  const { organization, branches } = useBookingOrg();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { branches } = useBookingOrg();
 
-  const [specialists, setSpecialists] = React.useState<SpecialtyGroup[]>([]);
-  const [activeSpecialist, setActiveSpecialist] = React.useState<string | null>(null);
   const [activeBranch, setActiveBranch] = React.useState<string>("");
+  const { specialties } = useSpecialties(activeBranch);
+
+  // Специализация живёт в адресе: экран выбора специализации переходит сюда
+  // ссылкой, и та же ссылка должна открываться из мессенджера с тем же фильтром.
+  const activeSpecialty = searchParams.get("specialty");
+  const setActiveSpecialty = (key: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (key) next.set("specialty", key);
+    else next.delete("specialty");
+    setSearchParams(next, { replace: true });
+  };
+
   const [search, setSearch] = React.useState("");
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
-
   const [doctors, setDoctors] = React.useState<ProfessionalPreview[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Специализации фильтра — только те, что есть в филиалах этой клиники.
-  // Общий справочник `/specialists/` не скоупится по организации: он отдаёт все
-  // 22 записи обеих организаций, и в фильтре висели Проктолог, Флеболог, УЗИст,
-  // к которым записаться нельзя — врачей с ними нет. При выбранном филиале
-  // список сужается до его специализаций.
+  // Выбранной специализации может не быть в новом филиале — иначе список врачей
+  // остался бы пустым без видимой причины.
   React.useEffect(() => {
-    if (!branches.length) return;
-    const controller = new AbortController();
-    const targets = activeBranch
-      ? branches.filter((b) => (b.slug || String(b.id)) === activeBranch)
-      : branches;
+    if (!activeSpecialty || !specialties.length) return;
+    if (!specialties.some((s) => s.key === activeSpecialty)) setActiveSpecialty(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specialties, activeSpecialty]);
 
-    Promise.all(
-      targets.map((b) =>
-        getBranchSpecialists(b.slug || b.id, controller.signal)
-          .then((r) => r.items)
-          .catch((e) => {
-            if (isAbortError(e)) throw e;
-            return [];
-          }),
-      ),
-    )
-      .then((lists) => {
-        const groups = new Map<string, SpecialtyGroup>();
-        for (const item of lists.flat()) {
-          const title = item.title.trim();
-          const key = title.toLowerCase();
-          if (!key) continue;
-          const group = groups.get(key);
-          if (group) {
-            if (!group.ids.includes(item.id)) group.ids.push(item.id);
-          } else {
-            groups.set(key, { key, title, ids: [item.id] });
-          }
-        }
-        const next = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title, "ru"));
-        setSpecialists(next);
-        // Выбранной специализации может не быть в новом филиале — иначе список
-        // врачей остался бы пустым без видимой причины.
-        setActiveSpecialist((current) =>
-          current && !groups.has(current) ? null : current,
-        );
-      })
-      .catch((e) => {
-        if (!isAbortError(e)) setSpecialists([]);
-      });
-    return () => controller.abort();
-  }, [branches, activeBranch]);
-
-  // Дебаунс поиска.
   React.useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 350);
     return () => clearTimeout(timer);
@@ -334,7 +529,7 @@ const DoctorsPage: React.FC = () => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const specialistIds = specialists.find((s) => s.key === activeSpecialist)?.ids;
+    const specialistIds = specialties.find((s) => s.key === activeSpecialty)?.ids;
     const base = getProfessionals(
       {
         organizationSlug: BOOKING_ORG_SLUG,
@@ -362,188 +557,119 @@ const DoctorsPage: React.FC = () => {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-    // specialists в зависимостях: при смене филиала id одной и той же
+    // specialties в зависимостях: при смене филиала id одной и той же
     // специализации меняются, и запрос должен уйти с актуальными.
-  }, [activeSpecialist, debouncedSearch, activeBranch, specialists]);
+  }, [activeSpecialty, debouncedSearch, activeBranch, specialties]);
 
-  const hasFilters = Boolean(activeSpecialist || activeBranch || debouncedSearch);
+  const hasFilters = Boolean(activeSpecialty || activeBranch || debouncedSearch);
   const resetFilters = () => {
-    setActiveSpecialist(null);
+    setActiveSpecialty(null);
     setActiveBranch("");
     setSearch("");
   };
 
-  const filtersPanel = (
-    <Stack spacing={1.5}>
-      {branches.length > 1 && (
-        <Select
-          size="small"
-          displayEmpty
-          fullWidth
-          value={activeBranch}
-          onChange={(e) => setActiveBranch(e.target.value)}
-        >
-          <MenuItem value="">{t("allBranches")}</MenuItem>
-          {branches.map((b) => (
-            <MenuItem key={b.id} value={b.slug || String(b.id)}>
-              {b.name}
-            </MenuItem>
-          ))}
-        </Select>
-      )}
-    </Stack>
+  const searchField = (
+    <TextField
+      size="small"
+      fullWidth
+      placeholder={t("searchShort")}
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      InputProps={{
+        endAdornment: (
+          <InputAdornment position="end">
+            <SearchOutlined sx={{ fontSize: 20, color: "text.secondary" }} />
+          </InputAdornment>
+        ),
+        sx: { borderRadius: BOOKING_RADIUS },
+      }}
+    />
   );
 
   return (
-    <PublicBookingShell>
-      {/* Первый экран: зачем страница, поиск и чем клиника располагает.
-          Поиск здесь, а не в боковой панели — это главное действие. */}
-      <Stack alignItems="center" spacing={2} sx={{ py: { xs: 3, md: 5 }, textAlign: "center" }}>
-        <Box>
-          <Typography
-            component="h1"
-            sx={{
-              fontSize: { xs: 26, sm: 32, md: 38 },
-              fontWeight: 700,
-              lineHeight: 1.15,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            {t("heroTitle")}
-          </Typography>
-          <Typography
-            color="text.secondary"
-            sx={{ mt: 1, mx: "auto", maxWidth: 520, fontSize: { xs: 14, sm: 16 } }}
-          >
-            {t("heroSubtitle")}
-          </Typography>
-        </Box>
-
-        <TextField
-          size="medium"
-          placeholder={t("searchPlaceholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          sx={{ width: "100%", maxWidth: 460 }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchOutlined fontSize="small" />
-              </InputAdornment>
-            ),
-          }}
-        />
-
-        {organization && (
-          <Stack
-            direction="row"
-            justifyContent="center"
-            flexWrap="wrap"
-            sx={{ color: "text.secondary", fontSize: 14, columnGap: 1, rowGap: 0.5 }}
-          >
-            <span>{t("statDoctors", { count: organization.professionalsCount })}</span>
-            <span>·</span>
-            <span>{t("statSpecialties", { count: organization.specialistsCount })}</span>
-            {branches.length > 1 && (
-              <>
-                <span>·</span>
-                <span>{t("statBranches", { count: branches.length })}</span>
-              </>
-            )}
-          </Stack>
-        )}
-      </Stack>
-
+    <PublicBookingShell
+      heading={
+        <>
+          <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>
+            {t("headingDoctors")}
+          </Box>
+          <Box component="span" sx={{ display: { xs: "inline", md: "none" } }}>
+            {t("headingDoctorsShort")}
+          </Box>
+        </>
+      }
+      backTo="/book"
+    >
       <Box
         sx={{
           display: "grid",
-          gap: 2,
+          gap: { xs: 1.5, lg: 3.75 },
           alignItems: "start",
           // minmax(0, 1fr), а не 1fr: минимальный размер колонки — min-content,
-        // и горизонтальная лента чипов внутри раздувала бы её на всю свою длину.
-        gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "280px minmax(0, 1fr)" },
+          // и длинные названия врачей раздували бы её на всю свою ширину.
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "269px minmax(0, 1fr)" },
         }}
       >
-        {/* Фильтры: на десктопе — колонка-панель, на мобильных — поиск + лента чипов */}
-        <Box sx={{ position: { lg: "sticky" }, top: { lg: 88 } }}>
+        {/* Фильтры: поиск виден всегда, список специализаций — только на
+            десктопе. На мобильном специализацию выбирают на отдельном экране
+            (/book), дублировать её лентой чипов незачем. */}
+        <Stack spacing={1.5} sx={{ position: { lg: "sticky" }, top: { lg: 76 } }}>
           <Paper
-            variant="outlined"
-            sx={{ p: { xs: 1.5, lg: 2 }, borderRadius: BOOKING_RADIUS }}
+            elevation={0}
+            sx={{
+              p: { xs: 0, lg: 2 },
+              border: { xs: "none", lg: 1 },
+              borderColor: { lg: CARD_BORDER },
+              borderRadius: BOOKING_RADIUS,
+              bgcolor: { xs: "transparent", lg: "background.paper" },
+            }}
           >
-            {filtersPanel}
+            <Stack spacing={1.5}>
+              {searchField}
 
-            {specialists.length > 0 && (
-              <Box sx={{ mt: 1.5, display: { xs: "none", lg: "block" } }}>
-                {/* «Сбросить» всегда на месте (просто выключается): появляясь и
-                    исчезая, она сдвигала список специализаций вниз-вверх. */}
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                    {t("specialtyFilter")}
-                  </Typography>
-                  <Button
-                    size="small"
-                    disabled={!hasFilters}
-                    onClick={resetFilters}
-                    sx={{ fontSize: 12, minWidth: 0, px: 0.5 }}
-                  >
-                    {t("reset")}
-                  </Button>
-                </Stack>
-                <Box sx={{ maxHeight: 420, overflowY: "auto", mt: 0.5, pr: 0.5 }}>
-                  <Stack spacing={0.25}>
-                    <SpecialtyItem
-                      title={t("allSpecialties")}
-                      active={activeSpecialist === null}
-                      onClick={() => setActiveSpecialist(null)}
-                    />
-                    {specialists.map((s) => (
-                      <SpecialtyItem
-                        key={s.key}
-                        title={s.title}
-                        active={activeSpecialist === s.key}
-                        onClick={() => setActiveSpecialist(s.key)}
+              {branches.length > 1 && (
+                <Select
+                  size="small"
+                  displayEmpty
+                  fullWidth
+                  value={activeBranch}
+                  onChange={(e) => setActiveBranch(e.target.value)}
+                  sx={{ borderRadius: BOOKING_RADIUS }}
+                >
+                  <MenuItem value="">{t("allBranches")}</MenuItem>
+                  {branches.map((b) => (
+                    <MenuItem key={b.id} value={b.slug || String(b.id)}>
+                      {b.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              )}
+
+              {specialties.length > 0 && (
+                <Box sx={{ display: { xs: "none", lg: "block" } }}>
+                  <Box sx={{ maxHeight: 520, overflowY: "auto", pr: 0.5 }}>
+                    <Stack spacing={1.25}>
+                      <SpecialtyRow
+                        title={t("allSpecialties")}
+                        active={!activeSpecialty}
+                        onClick={() => setActiveSpecialty(null)}
                       />
-                    ))}
-                  </Stack>
+                      {specialties.map((s: SpecialtyGroup) => (
+                        <SpecialtyRow
+                          key={s.key}
+                          title={s.title}
+                          icon={specialtyIconUrl(s.title)}
+                          active={activeSpecialty === s.key}
+                          onClick={() => setActiveSpecialty(s.key)}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
                 </Box>
-              </Box>
-            )}
+              )}
+            </Stack>
           </Paper>
-
-          {specialists.length > 0 && (
-            <Box
-              sx={{
-                display: { xs: "flex", lg: "none" },
-                gap: 1,
-                mt: 1.5,
-                overflowX: "auto",
-                pb: 0.5,
-                // Лента фильтров прокручивается вбок — без скрытия скроллбара
-                // она «съедала» бы вторую строку под тонкую полосу.
-                "&::-webkit-scrollbar": { display: "none" },
-                scrollbarWidth: "none",
-              }}
-            >
-              <Chip
-                label={t("allShort")}
-                color={activeSpecialist === null ? "primary" : "default"}
-                variant={activeSpecialist === null ? "filled" : "outlined"}
-                onClick={() => setActiveSpecialist(null)}
-                sx={{ flexShrink: 0 }}
-              />
-              {specialists.map((s) => (
-                <Chip
-                  key={s.key}
-                  label={s.title}
-                  color={activeSpecialist === s.key ? "primary" : "default"}
-                  variant={activeSpecialist === s.key ? "filled" : "outlined"}
-                  onClick={() => setActiveSpecialist(s.key)}
-                  sx={{ flexShrink: 0 }}
-                />
-              ))}
-            </Box>
-          )}
-        </Box>
+        </Stack>
 
         {/* Врачи */}
         <Box>
@@ -557,12 +683,12 @@ const DoctorsPage: React.FC = () => {
             <Box
               sx={{
                 display: "grid",
-                gap: 1.5,
+                gap: 2.5,
                 gridTemplateColumns: {
                   xs: "1fr",
-                  sm: "repeat(2, 1fr)",
-                  md: "repeat(3, 1fr)",
-                  lg: "repeat(4, 1fr)",
+                  sm: "repeat(2, minmax(0, 1fr))",
+                  md: "repeat(3, minmax(0, 1fr))",
+                  lg: "repeat(4, minmax(0, 1fr))",
                 },
               }}
             >
@@ -589,12 +715,12 @@ const DoctorsPage: React.FC = () => {
             <Box
               sx={{
                 display: "grid",
-                gap: 1.5,
+                gap: 2.5,
                 gridTemplateColumns: {
                   xs: "1fr",
-                  sm: "repeat(2, 1fr)",
-                  md: "repeat(3, 1fr)",
-                  lg: "repeat(4, 1fr)",
+                  sm: "repeat(2, minmax(0, 1fr))",
+                  md: "repeat(3, minmax(0, 1fr))",
+                  lg: "repeat(4, minmax(0, 1fr))",
                 },
               }}
             >
@@ -603,7 +729,7 @@ const DoctorsPage: React.FC = () => {
                   key={d.id}
                   doctor={d}
                   index={index}
-                  onClick={() => navigate(`/book/doctor/${d.slug || d.id}`)}
+                  onOpen={() => navigate(`/book/doctor/${d.slug || d.id}`)}
                 />
               ))}
             </Box>

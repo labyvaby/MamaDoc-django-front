@@ -107,6 +107,7 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
+const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
@@ -1259,6 +1260,14 @@ function App() {
                           питается публичным /api/v1 (см. src/api/publicBooking.ts). */}
                       <Route
                         path="book"
+                        element={
+                          <Suspense fallback={<LinearProgress />}>
+                            <PublicBookSpecialtiesPage />
+                          </Suspense>
+                        }
+                      />
+                      <Route
+                        path="book/doctors"
                         element={
                           <Suspense fallback={<LinearProgress />}>
                             <PublicBookDoctorsPage />

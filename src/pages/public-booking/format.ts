@@ -46,6 +46,48 @@ export function formatPhone(phone: string): string {
   return phone;
 }
 
+const MONTHS_GEN = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+];
+
+/**
+ * Дата гостю: «2026-03-13» → «13 марта». Считаем по частям строки, а не через
+ * `new Date()`: бэк присылает календарную дату без времени, и разбор её как UTC
+ * в отрицательных таймзонах сдвигает день на сутки назад.
+ */
+export function formatDayMonth(isoDate: string): string {
+  const [, month, day] = isoDate.split("-");
+  const monthName = MONTHS_GEN[Number(month) - 1];
+  if (!monthName || !day) return isoDate;
+  return `${Number(day)} ${monthName}`;
+}
+
+/** Сегодняшняя дата в формате бэка (YYYY-MM-DD) по локальному времени гостя. */
+export function todayIso(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** Дата через `days` дней от сегодня в формате бэка. */
+export function isoInDays(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /** Монограмма клиники для шапки: «Мама Доктор» → «МД». */
 export function monogram(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
