@@ -571,13 +571,80 @@ export interface CreateGuestBookingRequest {
   comment?: string;
 }
 
-/** Ответ на создание брони. Сабмит проверен вживую 03.08.2026 — форма подходит. */
+/**
+ * Ответ на создание брони — только эти пять полей (проверено на живом API
+ * 05.08.2026). Услуги, сумму, врача и филиал POST не отдаёт, хотя ответ бэка
+ * `BOOKING_AND_TEST_ENVIRONMENT.md` §3 их обещает: за ними идём в
+ * `getBookingByCode()`.
+ */
 export interface GuestBookingResult {
   id: number;
   confirmationCode: string;
   status: string;
   date: string;
   time: string;
+}
+
+/** Услуга в брони: цена — строка-decimal, как везде в публичном API. */
+export interface BookingServiceRef {
+  id: number;
+  name: string;
+  price: string;
+}
+
+/** Врач в брони — публичный минимум, без контактов. */
+export interface BookingDoctorRef {
+  id: number;
+  slug: string;
+  fullName: string;
+  photoUrl: string | null;
+  specialty: string | null;
+}
+
+/** Филиал брони: адрес и ссылки на карты для экрана «как добраться». */
+export interface BookingBranchRef {
+  id: number;
+  slug: string;
+  name: string;
+  address: string | null;
+  phones: string[];
+  twoGisUrl: string | null;
+  yandexMapsUrl: string | null;
+  googleMapsUrl: string | null;
+}
+
+/**
+ * Бронь по коду подтверждения — полная карточка (проверено на живом API
+ * 05.08.2026). ФИО и телефон пациента в публичном ответе не приходят: код знает
+ * только он сам, но бэк всё равно не отдаёт ПДн.
+ *
+ * `totalDurationMin` для брони без услуг — 30 (стандартное окно).
+ * `payment` — предоплата, `null` если её не требуется.
+ */
+export interface PublicBookingDetail {
+  id: number;
+  confirmationCode: string;
+  status: string;
+  date: string;
+  time: string;
+  totalDurationMin: number;
+  totalPrice: string;
+  services: BookingServiceRef[];
+  doctor: BookingDoctorRef | null;
+  branch: BookingBranchRef | null;
+  payment: unknown | null;
+}
+
+/**
+ * `GET /api/v1/bookings/<confirmation_code>/` — карточка брони по коду. Новые
+ * коды 10 символов (алфавит без 0/O/1/I), старые 6-символьные тоже работают.
+ * Несуществующий код → 404.
+ */
+export function getBookingByCode(
+  code: string,
+  signal?: AbortSignal,
+): Promise<PublicBookingDetail> {
+  return getItem<PublicBookingDetail>(`/bookings/${encodeURIComponent(code)}/`, signal);
 }
 
 /**

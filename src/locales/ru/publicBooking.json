@@ -132,7 +132,6 @@
   "copied": "Скопировано!",
 
   "successTitle": "{{record.nom, capitalize}} принята!",
-  "successConfirmed": "Ваша {{record.nom}} подтверждена!",
   "successHint": "Мы перезвоним, чтобы подтвердить {{visit.acc}}.",
   "confirmationCode": "Код подтверждения",
   "successDate": "Дата",
@@ -142,6 +141,7 @@
   "successSpecialty": "Специализация",
   "successServices": "{{service.nomPl, capitalize}}",
   "successAddress": "Адрес",
+  "successTotal": "Стоимость",
   "reminderOnTime": "Просим приходить вовремя: при опоздании время {{visit.gen}} может быть сокращено.",
   "reminderCancel": "Если не сможете прийти, предупредите заранее — не менее чем за 12 часов."
 }

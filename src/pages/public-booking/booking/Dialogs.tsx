@@ -11,7 +11,12 @@ import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import ShareOutlined from "@mui/icons-material/ShareOutlined";
 import QRCode from "react-qr-code";
 
-import type { GuestBookingResult, ProfessionalDetail } from "../../../api/publicBooking";
+import {
+  getBookingByCode,
+  type GuestBookingResult,
+  type ProfessionalDetail,
+  type PublicBookingDetail,
+} from "../../../api/publicBooking";
 import { useT } from "../../../i18n/VerticalProvider";
 import { capitalizeFullName } from "../../../utility/name";
 import {
@@ -34,6 +39,7 @@ import {
   phonePlaceholder,
   type PhoneCountryInfo,
 } from "../../../utility/phone";
+import { formatPrice } from "../format";
 import type { PickableService } from "./ServicesCard";
 import type { BookingChoice } from "./choice";
 
@@ -461,20 +467,40 @@ export const SuccessDialog: React.FC<{
   const { t } = useT("publicBooking");
   const [shareLabel, setShareLabel] = React.useState<string | null>(null);
   const specialty = doctor.specialties[0] ?? "";
-  const serviceNames = services.map((s) => s.name).join(", ");
+
+  // POST отдаёт только код, статус, дату и время — состав, сумму и адрес
+  // дочитываем по коду. Пока запрос идёт (или если он не удался), показываем то,
+  // что выбрал гость: экран не должен ждать сеть, чтобы что-то показать.
+  const [detail, setDetail] = React.useState<PublicBookingDetail | null>(null);
+  React.useEffect(() => {
+    if (!result.confirmationCode) return;
+    const ctrl = new AbortController();
+    getBookingByCode(result.confirmationCode, ctrl.signal)
+      .then((d) => {
+        if (!ctrl.signal.aborted) setDetail(d);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [result.confirmationCode]);
+
+  const serviceNames = (
+    detail?.services.length ? detail.services.map((s) => s.name) : services.map((s) => s.name)
+  ).join(", ");
+  const totalPrice = Number(detail?.totalPrice ?? 0);
+  const address = detail?.branch?.address ?? doctor.branch?.address ?? "";
 
   const handleShare = async () => {
     const text = [
-      t("successConfirmed"),
+      t("successTitle"),
       `${doctor.fullName}${specialty ? ` · ${specialty}` : ""}`,
       `${formatConfirmDate(result.date)} ${result.time}`,
-      doctor.branch?.address ?? "",
+      address,
       `${t("confirmationCode")}: ${result.confirmationCode}`,
     ]
       .filter(Boolean)
       .join("\n");
     try {
-      if (navigator.share) await navigator.share({ title: t("successConfirmed"), text });
+      if (navigator.share) await navigator.share({ title: t("successTitle"), text });
       else {
         await navigator.clipboard.writeText(text);
         setShareLabel(t("copied"));
@@ -543,9 +569,16 @@ export const SuccessDialog: React.FC<{
             sx={{ pb: { xs: 1, lg: 0 }, borderBottom: { xs: `1px solid ${BORDER}`, lg: "none" } }}
           >
             <CheckCircleOutlined sx={{ fontSize: { xs: 24, lg: 34 }, color: "#34C759" }} />
-            <Typography sx={{ fontSize: { xs: 16, lg: 22 }, fontWeight: 600, color: "#34C759" }}>
-              {t("successConfirmed")}
-            </Typography>
+            <Box>
+              {/* Бронь создаётся в статусе pending: подтверждает её персонал,
+                  поэтому «принята», а не «подтверждена». */}
+              <Typography sx={{ fontSize: { xs: 16, lg: 22 }, fontWeight: 600, color: "#34C759" }}>
+                {t("successTitle")}
+              </Typography>
+              <Typography sx={{ fontSize: { xs: 12, lg: 14 }, color: MUTED }}>
+                {t("successHint")}
+              </Typography>
+            </Box>
           </Stack>
 
           {/* На мобильном врач и QR идут сразу под заголовком. */}
@@ -596,9 +629,16 @@ export const SuccessDialog: React.FC<{
                   value={specialty}
                 />
               )}
+              {totalPrice > 0 && (
+                <FactRow
+                  icon={<Box sx={{ width: { xs: 16, lg: 22 } }} />}
+                  label={t("successTotal")}
+                  value={formatPrice(totalPrice)}
+                />
+              )}
             </Stack>
 
-            {doctor.branch?.address && (
+            {address && (
               <Stack
                 direction="row"
                 alignItems="flex-start"
@@ -611,7 +651,7 @@ export const SuccessDialog: React.FC<{
                     {t("successAddress")}
                   </Typography>
                   <Typography sx={{ fontSize: { xs: 12, lg: 14 }, fontWeight: 500 }}>
-                    {doctor.branch.address}
+                    {address}
                   </Typography>
                 </Box>
               </Stack>

@@ -166,10 +166,6 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
               <Field label="Сумма" value={formatKGS(b.totalPrice)} />
               <Field label="Длительность" value={`${b.totalDurationMin} мин`} />
-              <Field
-                label="Источник"
-                value={b.source === "public" ? "Витрина /book" : "operator.kg"}
-              />
             </Stack>
 
             {/* Услуги: у публичных броней — id услуг CRM, у operator.kg только имена. */}
@@ -196,7 +192,7 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
                 </Stack>
               ) : (
                 <Typography variant="caption" color="text.disabled">
-                  Нет данных об услугах
+                  Услуга не выбрана
                 </Typography>
               )}
             </Box>
@@ -204,7 +200,7 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
               <Field
                 label={t("visitInCrm")}
-                value={b.appointmentId != null ? `#${b.appointmentId}` : "не материализована"}
+                value={b.appointmentId != null ? `#${b.appointmentId}` : "еще не подтвержден"}
               />
               <Field
                 label="Синхронизирована"
