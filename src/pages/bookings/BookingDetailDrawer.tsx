@@ -25,10 +25,12 @@ import {
   getBooking,
   updateBookingStatus,
   type BookingManageStatus,
+  type BookingStatusExtras,
 } from "../../api/bookings";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { BOOKING_STATUS_META } from "./meta";
+import ConfirmBookingDialog from "./ConfirmBookingDialog";
 import { useT } from "../../i18n/VerticalProvider";
 
 interface Props {
@@ -61,12 +63,18 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
 
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+
   const mutation = useMutation({
-    mutationFn: (status: BookingManageStatus) =>
-      updateBookingStatus(bookingId as number, status),
+    mutationFn: (vars: { status: BookingManageStatus; extras?: BookingStatusExtras }) =>
+      updateBookingStatus(bookingId as number, vars.status, vars.extras),
     onSuccess: (data) => {
       queryClient.setQueryData(djangoQueryKeys.bookings.detail(data.id), data);
       queryClient.invalidateQueries({ queryKey: djangoQueryKeys.bookings.all });
+      // Подтверждение материализует приём — список приёмов и окна расписания
+      // должны увидеть его без перезагрузки страницы.
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+      setConfirmOpen(false);
       notify?.({ type: "success", message: "Статус обновлён" });
     },
     onError: (e) =>
@@ -158,10 +166,13 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
             <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
               <Field label="Сумма" value={formatKGS(b.totalPrice)} />
               <Field label="Длительность" value={`${b.totalDurationMin} мин`} />
-              <Field label="ID брони (operator)" value={b.operatorBookingId || "—"} />
+              <Field
+                label="Источник"
+                value={b.source === "public" ? "Витрина /book" : "operator.kg"}
+              />
             </Stack>
 
-            {/* Услуги (снимок из operator.kg) */}
+            {/* Услуги: у публичных броней — id услуг CRM, у operator.kg только имена. */}
             <Box>
               <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                 Услуги
@@ -214,7 +225,13 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
                       color={a.color}
                       startIcon={busy ? <CircularProgress size={14} /> : a.icon}
                       disabled={busy}
-                      onClick={() => mutation.mutate(a.status)}
+                      onClick={() =>
+                        // Подтверждение — через диалог: там выбирают карту
+                        // пациента и услуги приёма. Остальные переходы прямые.
+                        a.status === "confirmed"
+                          ? setConfirmOpen(true)
+                          : mutation.mutate({ status: a.status })
+                      }
                     >
                       {a.label}
                     </Button>
@@ -225,6 +242,16 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
           </Stack>
         )}
       </Box>
+
+      {b && (
+        <ConfirmBookingDialog
+          booking={b}
+          open={confirmOpen}
+          busy={busy}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={(extras) => mutation.mutate({ status: "confirmed", extras })}
+        />
+      )}
     </Drawer>
   );
 };

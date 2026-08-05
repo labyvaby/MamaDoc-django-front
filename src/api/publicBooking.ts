@@ -551,9 +551,13 @@ export interface CreateGuestBookingRequest {
    */
   branchId: number;
   /**
-   * Минимум одна услуга — обязательна. Бэк отклоняет пустой список
-   * (`400 validation_error`), запись «просто к врачу» не поддерживается
-   * (подтверждено бэком 03.08.2026, тикет §8.1).
+   * Минимум одна услуга. Бэк объявил поддержку брони без услуги
+   * (`BOOKING_AND_TEST_ENVIRONMENT.md`, 05.08.2026: «принимает отсутствие
+   * service_ids и пустой список», окно 30 минут), но на живом API этого нет —
+   * проверено 05.08.2026 на newcrm.pediatr.kg и test.crm.operator.kg: и
+   * `service_ids: []`, и запрос без поля → `400 validation_error`,
+   * `details.missing: ["service_ids"]`. Флаг витрины —
+   * `BOOKING_NO_SERVICE_ENABLED` в `pages/public-booking/shell.tsx`.
    */
   serviceIds: number[];
   /** YYYY-MM-DD */

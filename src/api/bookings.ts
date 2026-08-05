@@ -14,9 +14,18 @@ export type BookingStatus =
 /** Статусы, в которые персонал может перевести бронь (pending недопустим). */
 export type BookingManageStatus = Exclude<BookingStatus, "pending">;
 
+/**
+ * Откуда пришла бронь: `public` — наша витрина `/book` (нативный `/api/v1`),
+ * `operator` — интеграция с iwork.operator.kg. Проверено на живом API
+ * 05.08.2026: публичные брони приходят с `source: "public"` и
+ * `operatorBookingId: "public-<uuid>"`.
+ */
+export type BookingSource = "public" | "operator";
+
 /** Элемент списка броней (§2.1). */
 export interface BookingListItem {
   id: number;
+  /** Для публичных броней — синтетический `public-<uuid>`, не id operator.kg. */
   operatorBookingId: string;
   confirmationCode: string;
   patientName: string;
@@ -30,6 +39,7 @@ export interface BookingListItem {
   /** HH:mm */
   time: string;
   status: BookingStatus;
+  source: BookingSource;
   /** Decimal string, напр. "1500.00". */
   totalPrice: string;
   totalDurationMin: number;
@@ -38,17 +48,35 @@ export interface BookingListItem {
 }
 
 /**
- * Снимок услуги из брони operator.kg. operator отдаёт только имена —
- * price всегда null (цен по услугам источник не даёт, §0/§2.2).
+ * Снимок услуги из брони. Для броней с витрины (`source: "public"`) бэк отдаёт
+ * и `id` услуги CRM, и цену — проверено на живом API 05.08.2026
+ * (`{"id": 65, "name": "Вакцинация", "price": "1000.00"}`). Для броней
+ * operator.kg `id` может отсутствовать, а `price` быть null: источник цен по
+ * услугам не даёт.
  */
 export interface BookingServiceSnapshot {
+  /** id услуги в каталоге CRM; null у броней operator.kg. */
+  id: number | null;
   name: string;
   price: string | null;
 }
 
-/** Карточка брони (§2.2) — поля списка + услуги + время синка. */
+/**
+ * Кандидат на привязку пациента: бэк ищет по телефону брони и присылает
+ * совпадения, чтобы персонал выбрал нужного при подтверждении. Пустой массив —
+ * пациента с таким номером в CRM нет, нужно искать вручную или создавать.
+ */
+export interface BookingPatientMatch {
+  id: number;
+  fullName: string;
+  phone: string;
+}
+
+/** Карточка брони (§2.2) — поля списка + услуги, совпадения пациентов, синк. */
 export interface BookingDetail extends BookingListItem {
   services: BookingServiceSnapshot[];
+  /** Подсказки бэка по телефону брони (проверено на живом API 05.08.2026). */
+  patientMatches: BookingPatientMatch[];
   syncedAt: string | null;
 }
 
@@ -99,6 +127,23 @@ export function getBooking(id: number, signal?: AbortSignal): Promise<BookingDet
 }
 
 /**
+ * Дополнения к смене статуса. Оба поля бэк принимает (проверено на живом API
+ * 05.08.2026: PATCH с `patientId`/`serviceIds` ругается только на невалидный
+ * `status`, а не на неизвестное поле):
+ *
+ * - `patientId` — какому пациенту CRM принадлежит бронь. Кандидатов бэк сам
+ *   подсказывает в `BookingDetail.patientMatches`.
+ * - `serviceIds` — набор услуг приёма. Нужен прежде всего для брони, созданной
+ *   без услуги: услуги выбирает персонал при подтверждении.
+ *
+ * Отсутствие поля бронь не меняет, поэтому «на всякий случай» их не отправляем.
+ */
+export interface BookingStatusExtras {
+  patientId?: number;
+  serviceIds?: number[];
+}
+
+/**
  * PATCH /api/bookings/<id>/status/ — смена статуса в CRM (§2.3, право
  * bookings.manage). Допустимо: confirmed|cancelled|completed|no_show.
  * Ответ 200 — обновлённая карточка.
@@ -106,14 +151,14 @@ export function getBooking(id: number, signal?: AbortSignal): Promise<BookingDet
 export function updateBookingStatus(
   id: number,
   status: BookingManageStatus,
-  options?: { patientId?: number | null; serviceIds?: number[] | null },
+  extras: BookingStatusExtras = {},
 ): Promise<BookingDetail> {
   return apiRequest<BookingDetail>(`/bookings/${id}/status/`, {
     method: "PATCH",
     body: {
       status,
-      ...(options?.patientId !== undefined ? { patientId: options.patientId } : {}),
-      ...(options?.serviceIds !== undefined ? { serviceIds: options.serviceIds } : {}),
+      ...(extras.patientId != null ? { patientId: extras.patientId } : {}),
+      ...(extras.serviceIds ? { serviceIds: extras.serviceIds } : {}),
     },
   });
 }

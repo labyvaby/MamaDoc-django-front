@@ -36,6 +36,20 @@ import { useT } from "../../i18n/VerticalProvider";
 export const BOOKING_AUTH_ENABLED = false;
 
 /**
+ * Запись «просто к врачу», без выбора услуги (бэклог заказчика 04.08.2026).
+ * Работаем по контракту из `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026):
+ * бэк принимает пустой `service_ids` и резервирует окно 30 минут, а услуги
+ * персонал выбирает при подтверждении в CRM (`PATCH /api/bookings/<id>/status/`
+ * с `serviceIds` — эта часть уже работает).
+ *
+ * ⚠ ТРЕБУЕТ ДЕПЛОЯ БЭКА. На 05.08.2026 ни prod, ни test пустой список не
+ * принимали: `400 validation_error`, `details.missing: ["service_ids"]` — гость,
+ * не выбравший услугу, упрётся в ошибку на самом сабмите, уже введя имя и
+ * телефон. Тикет — `MamaDoc/backend_ticket_booking_deploy_gap_2026-08-05.md` §1.
+ */
+export const BOOKING_NO_SERVICE_ENABLED = true;
+
+/**
  * Поля страницы. Эталон держит контент в контейнере 1280 с отступом 16
  * (`max-w-7xl mx-auto px-4`) — повторяем.
  */
