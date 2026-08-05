@@ -93,10 +93,13 @@ const BookingCard: React.FC<{
             label={statusKey ? t(statusKey) : booking.status}
             color={STATUS_COLOR[booking.status] ?? "default"}
           />
+          {/* Префикс короткий: с «Код подтверждения:» чип не влезал в 320 px и
+              обрезал сам код — а его пациент показывает на ресепшене. */}
           <Chip
             size="small"
             variant="outlined"
-            label={`${t("confirmationCode")}: ${booking.confirmationCode}`}
+            label={`${t("my.codeShort")}: ${booking.confirmationCode}`}
+            sx={{ fontFamily: "monospace", maxWidth: "100%" }}
           />
         </Stack>
 

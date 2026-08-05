@@ -415,7 +415,7 @@ const DoctorBookingPage: React.FC = () => {
           sx={{
             display: "grid",
             gap: 2,
-            gridTemplateColumns: { xs: "1fr", lg: "550px minmax(0, 1fr)" },
+            gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "550px minmax(0, 1fr)" },
           }}
         >
           <Skeleton variant="rounded" height={220} sx={{ borderRadius: BOOKING_RADIUS }} />
@@ -595,7 +595,7 @@ const DoctorBookingPage: React.FC = () => {
           display: "grid",
           gap: 2,
           alignItems: "start",
-          gridTemplateColumns: { xs: "1fr", lg: "550px minmax(0, 1fr)" },
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "550px minmax(0, 1fr)" },
         }}
       >
         {/* Левая колонка: врач */}

@@ -443,7 +443,7 @@ const DoctorsPage: React.FC = () => {
   const cardsGrid = {
     display: "grid",
     gap: 2,
-    gridTemplateColumns: { xs: "1fr", lg: "repeat(auto-fill, minmax(200px, 230px))" },
+    gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "repeat(auto-fill, minmax(200px, 230px))" },
   } as const;
 
   return (

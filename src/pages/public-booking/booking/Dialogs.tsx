@@ -556,7 +556,7 @@ export const SuccessDialog: React.FC<{
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) 240px" },
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 240px" },
           gap: { xs: 2, lg: 3 },
           p: { xs: 2, lg: 5 },
         }}
