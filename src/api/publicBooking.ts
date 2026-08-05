@@ -81,6 +81,8 @@ interface PublicRequestOptions {
   signal?: AbortSignal;
   method?: string;
   body?: unknown;
+  /** Доп. заголовки — нужны кабинету пациента (`X-Patient-Token`). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -88,16 +90,19 @@ interface PublicRequestOptions {
  * приходят как `{ error, message, details }` — extractErrorMessage их разбирает.
  * Возвращает СЫРОЙ (snake_case) payload; распаковка/camelize — в обёртках ниже.
  */
-async function publicRawRequest<T>(
+export async function publicRawRequest<T>(
   path: string,
-  { signal, method = "GET", body }: PublicRequestOptions = {},
+  { signal, method = "GET", body, headers }: PublicRequestOptions = {},
 ): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${PUBLIC_API_BASE}${path}`, {
       method,
       signal,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...headers,
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (err) {
@@ -117,18 +122,41 @@ async function publicRawRequest<T>(
 }
 
 /** GET одиночного ресурса: `{ data }` → camelCase T. */
-async function getItem<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(path, { signal });
+export async function getItem<T>(
+  path: string,
+  signal?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const raw = await publicRawRequest<ItemEnvelope<unknown>>(path, { signal, headers });
   return camelizeDeep(raw.data) as T;
 }
 
-/** GET списка: `{ data, pagination }` → { items: T[], pagination }. */
-async function getList<T>(path: string, signal?: AbortSignal): Promise<PublicList<T>> {
-  const raw = await publicRawRequest<ListEnvelope<unknown>>(path, { signal });
+/**
+ * GET списка: `{ data, pagination }` → `{ items, pagination }`. Часть ручек
+ * (`/me/bookings/`) конверт без `pagination` — тогда подставляем размер выборки,
+ * чтобы вызывающий код не проверял поле на undefined.
+ */
+export async function getList<T>(
+  path: string,
+  signal?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<PublicList<T>> {
+  const raw = await publicRawRequest<ListEnvelope<unknown>>(path, { signal, headers });
+  const items = (raw.data ?? []).map((x) => camelizeDeep(x) as T);
   return {
-    items: (raw.data ?? []).map((x) => camelizeDeep(x) as T),
-    pagination: raw.pagination,
+    items,
+    pagination: raw.pagination ?? { page: 1, limit: items.length, total: items.length },
   };
+}
+
+/** Тело-объект в camelCase → snake_case (публичный API принимает snake). */
+export function snakeizeBody(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (v === undefined) continue;
+    out[k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = v;
+  }
+  return out;
 }
 
 // ── Общие типы ────────────────────────────────────────────────────────────────
