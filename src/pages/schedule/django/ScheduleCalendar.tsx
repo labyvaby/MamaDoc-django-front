@@ -40,6 +40,8 @@ import {
   MAX_LANES,
   MONTH_CELL_HEAD_H,
   MONTH_CELL_HEIGHT,
+  MONTH_DAY_END_MIN,
+  MONTH_DAY_START_MIN,
   hourlyOccupancy,
   packIntoLanes,
   timeToLeftPct,
@@ -50,6 +52,7 @@ import ScheduleDayTimeline from "./ScheduleDayTimeline";
 import ScheduleWeekResourceGrid from "./ScheduleWeekResourceGrid";
 import ScheduleFilters from "./ScheduleFilters";
 import { useScheduleFilters } from "./useScheduleFilters";
+import { useNowMinute } from "./useNowMinute";
 
 dayjs.extend(isoWeek);
 dayjs.locale("ru");
@@ -113,8 +116,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
-  const today = dayjs();
+  const today = useNowMinute();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const nowMin = today.hour() * 60 + today.minute();
+  const nowInWindow = nowMin >= MONTH_DAY_START_MIN && nowMin <= MONTH_DAY_END_MIN;
 
   // «День» по умолчанию: при 16+ сотрудниках это основной рабочий экран.
   const [view, setView] = React.useState<ScheduleView>("day");
@@ -135,6 +140,11 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     (employeeId: number) => employeeColorHex(employeeColorMap.get(employeeId) ?? employeeId, mode),
     [employeeColorMap, mode],
   );
+
+  // Автофокус месячной сетки на текущем дне: в 6-недельной сетке сегодняшняя
+  // неделя часто ниже линии сгиба, и открытый месяц выглядел «пустым».
+  const monthScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const todayCellRef = React.useRef<HTMLTableCellElement | null>(null);
 
   const weeks = React.useMemo(() => generateWeeksGrid(month), [month]);
   const currentWeek = React.useMemo(
@@ -225,6 +235,34 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     });
     return map;
   }, [view, isMobile, filteredOccurrencesByDate]);
+
+  const monthKey = month.format("YYYY-MM");
+  const todayKey = today.format("YYYY-MM-DD");
+
+  /**
+   * Скроллим сетку так, чтобы сегодняшняя неделя оказалась по центру. Считаем
+   * дельту по rect, а не scrollIntoView: тот тянет за собой и прокрутку страницы.
+   */
+  React.useEffect(() => {
+    if (view !== "month" || isMobile) return;
+    const raf = requestAnimationFrame(() => {
+      const container = monthScrollRef.current;
+      const cell = todayCellRef.current;
+      if (!container) return;
+      // Месяц без сегодняшнего дня показываем с начала, а не с прокрутки прошлого.
+      if (!cell) {
+        container.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      const cRect = container.getBoundingClientRect();
+      const tRect = cell.getBoundingClientRect();
+      const delta = tRect.top - cRect.top - (container.clientHeight - tRect.height) / 2;
+      container.scrollTo({ top: Math.max(0, container.scrollTop + delta), behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+    // monthKey/todayKey — а не month/today: пересчитываем при смене месяца или суток,
+    // а не каждую минуту от тикающего «сейчас».
+  }, [view, isMobile, monthKey, todayKey]);
 
   // Число уникальных сотрудников со сменами в день (реальные данные,
   // без выдумки про «кабинеты» — их в API расписания нет).
@@ -367,6 +405,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     return (
       <TableCell
         key={key}
+        ref={isToday ? todayCellRef : undefined}
         onClick={() => onDayClick(day)}
         sx={{
           verticalAlign: "top",
@@ -377,13 +416,15 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
           outline: isToday ? `2px solid ${theme.palette.primary.main}` : "none",
           outlineOffset: -2,
           cursor: "pointer",
-          bgcolor: isWeekend && isCurrentMonth
+          bgcolor: isToday
+            ? alpha(theme.palette.primary.main, 0.06)
+            : isWeekend && isCurrentMonth
             ? alpha(theme.palette.error.main, 0.02)
             : isCurrentMonth
             ? "background.paper"
             : "action.hover",
           opacity: isCurrentMonth ? 1 : 0.55,
-          "&:hover": { bgcolor: isToday ? alpha(theme.palette.primary.main, 0.05) : "action.selected" },
+          "&:hover": { bgcolor: isToday ? alpha(theme.palette.primary.main, 0.1) : "action.selected" },
         }}
       >
         <Box sx={{ position: "relative", height: "100%", width: "100%" }}>
@@ -459,6 +500,36 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                 </Typography>
               );
             })}
+
+            {/* Линия «сейчас» со стрелкой — только в ячейке сегодняшнего дня */}
+            {isToday && nowInWindow && (
+              <Box
+                sx={{
+                  position: "absolute",
+                  left: `${timeToLeftPct(nowMin)}%`,
+                  top: 8,
+                  bottom: 0,
+                  width: "2px",
+                  bgcolor: "error.main",
+                  zIndex: 3,
+                  pointerEvents: "none",
+                }}
+              >
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: -4,
+                    left: "1px",
+                    transform: "translateX(-50%)",
+                    width: 0,
+                    height: 0,
+                    borderLeft: "5px solid transparent",
+                    borderRight: "5px solid transparent",
+                    borderTop: `6px solid ${theme.palette.error.main}`,
+                  }}
+                />
+              </Box>
+            )}
 
             {/* Вертикальные направляющие */}
             {HOUR_GUIDES.map((hour) => (
@@ -582,7 +653,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
       {/* ── Десктоп (md+) ── */}
       <Box sx={{ display: { xs: "none", md: "flex" }, flex: 1, minHeight: 0, flexDirection: "column" }}>
         {view === "month" ? (
-          <TableContainer sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <TableContainer ref={monthScrollRef} sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
             <Table stickyHeader sx={{ tableLayout: "fixed", minWidth: 760 }}>
               <TableHead>
                 <TableRow>

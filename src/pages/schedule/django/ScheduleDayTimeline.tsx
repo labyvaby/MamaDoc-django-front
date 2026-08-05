@@ -3,13 +3,14 @@ import { Box, Chip, Tooltip, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
-import dayjs, { type Dayjs } from "dayjs";
+import { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
+import { useNowMinute } from "./useNowMinute";
 
 // ── Геометрия ────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,10 @@ const HOURS = Array.from({ length: 16 }, (_, i) => 7 + i); // 7..22
 
 const NAME_COL_W = 210;
 const ROW_H = 40;
-const HEADER_H = 32;
+/** Шапка в два ряда: метка «сейчас» со стрелкой сверху, шкала часов снизу. */
+const HEADER_H = 42;
+/** Отступ шкалы часов от верха шапки — под ним ряд метки текущего времени. */
+const HOUR_LABEL_TOP = 20;
 /** Ширина часа: при 16 часах даёт ~1150px — влезает без скролла на десктопе. */
 const HOUR_W = 72;
 const BODY_W = (HOURS.length - 1) * HOUR_W;
@@ -78,10 +82,12 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
   );
 
   // Линия «сейчас» — только для сегодняшнего дня и внутри рабочего окна.
-  const now = dayjs();
+  const now = useNowMinute();
   const nowMin = now.hour() * 60 + now.minute();
   const showNow = day.isSame(now, "day") && nowMin >= DAY_START_MIN && nowMin <= DAY_END_MIN;
   const nowLeft = showNow ? leftPx(nowMin) : 0;
+  // Метку у краёв поджимаем внутрь, иначе она обрезается контейнером.
+  const nowLabelShift = nowLeft < 22 ? "0%" : nowLeft > BODY_W - 22 ? "-100%" : "-50%";
 
   // Вертикальные направляющие: часовые (сплошные, идут через шапку и строки —
   // связывают полосу смены с меткой часа наверху) и получасовые (пунктир, слабее)
@@ -182,7 +188,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                 sx={{
                   position: "absolute",
                   left: x,
-                  top: "55%",
+                  top: HOUR_LABEL_TOP,
                   bottom: 0,
                   width: "1px",
                   bgcolor: "divider",
@@ -191,37 +197,78 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                 }}
               />
             ))}
-            {showNow && (
-              <Box
-                sx={{
-                  position: "absolute",
-                  left: nowLeft,
-                  top: 4,
-                  bottom: 0,
-                  width: "2px",
-                  bgcolor: "error.main",
-                  zIndex: 1,
-                }}
-              />
-            )}
             {HOURS.slice(0, -1).map((h, i) => (
               <Typography
                 key={h}
                 sx={{
                   position: "absolute",
                   left: i * HOUR_W,
-                  top: "50%",
-                  transform: "translateY(-50%)",
+                  top: HOUR_LABEL_TOP,
                   pl: 0.75,
                   fontSize: "0.68rem",
                   color: "text.disabled",
                   fontVariantNumeric: "tabular-nums",
                   userSelect: "none",
+                  lineHeight: 1.5,
                 }}
               >
                 {h}:00
               </Typography>
             ))}
+            {/* Метка «сейчас»: подпись времени + стрелка-указатель на линию */}
+            {showNow && (
+              <>
+                <Box
+                  sx={{
+                    position: "absolute",
+                    left: nowLeft,
+                    top: HOUR_LABEL_TOP + 2,
+                    bottom: 0,
+                    width: "2px",
+                    bgcolor: "error.main",
+                    zIndex: 3,
+                    pointerEvents: "none",
+                  }}
+                />
+                <Box
+                  sx={{
+                    position: "absolute",
+                    left: nowLeft,
+                    top: 1,
+                    transform: `translateX(${nowLabelShift})`,
+                    zIndex: 4,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: nowLabelShift === "0%" ? "flex-start" : nowLabelShift === "-100%" ? "flex-end" : "center",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      px: 0.5,
+                      borderRadius: "4px",
+                      bgcolor: "error.main",
+                      color: "error.contrastText",
+                      fontSize: "0.62rem",
+                      fontWeight: 700,
+                      lineHeight: 1.35,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {now.format("HH:mm")}
+                  </Typography>
+                  <Box
+                    sx={{
+                      width: 0,
+                      height: 0,
+                      borderLeft: "5px solid transparent",
+                      borderRight: "5px solid transparent",
+                      borderTop: `6px solid ${theme.palette.error.main}`,
+                    }}
+                  />
+                </Box>
+              </>
+            )}
           </Box>
         </Box>
 
@@ -264,6 +311,21 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                   size="small"
                   sx={{ height: 16, fontSize: "0.62rem", fontWeight: 700 }}
                 />
+                {/* Продолжение линии «сейчас» — иначе она рвётся на полосах групп */}
+                {showNow && (
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      left: NAME_COL_W + nowLeft,
+                      top: 0,
+                      bottom: 0,
+                      width: "2px",
+                      bgcolor: "error.main",
+                      opacity: 0.85,
+                      pointerEvents: "none",
+                    }}
+                  />
+                )}
               </Box>
 
               {!isCollapsed &&
@@ -318,8 +380,11 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                               bottom: 0,
                               width: "2px",
                               bgcolor: "error.main",
-                              opacity: 0.7,
-                              zIndex: 1,
+                              // Линия проходит поверх полос смен (zIndex 2),
+                              // иначе на плотном дне её не видно совсем.
+                              opacity: 0.85,
+                              zIndex: 3,
+                              pointerEvents: "none",
                             }}
                           />
                         )}
