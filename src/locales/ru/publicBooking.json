@@ -147,6 +147,15 @@
   "reminderOnTime": "Просим приходить вовремя: при опоздании время {{visit.gen}} может быть сокращено.",
   "reminderCancel": "Если не сможете прийти, предупредите заранее — не менее чем за 12 часов.",
 
+  "byCode": {
+    "heading": "Ваша {{record.nom}}",
+    "notFound": "{{record.nom, capitalize}} по этому коду не найдена. Проверьте ссылку или позвоните в {{org.acc}}.",
+    "duration": "· {{minutes}} мин",
+    "copy": "Копировать",
+    "yandexMaps": "Яндекс.Карты",
+    "googleMaps": "Google Карты"
+  },
+
   "auth": {
     "title": "Вход по номеру телефона",
     "phoneHint": "Пришлём код в SMS — он подтвердит, что номер ваш.",
@@ -195,6 +204,7 @@
     "cancelTitle": "Отменить {{record.acc}}?",
     "cancelQuestion": "{{record.nom, capitalize}} на {{date}}, {{time}} будет отменена. Время освободится для других пациентов.",
     "keep": "Оставить",
+    "openCard": "Открыть {{record.acc}}",
     "cancelFailed": "Не удалось отменить. Попробуйте ещё раз или позвоните в {{org.acc}}.",
     "loadFailed": "Не удалось загрузить {{record.accPl}}. Обновите страницу.",
     "sessionExpired": "Сессия истекла — войдите заново."

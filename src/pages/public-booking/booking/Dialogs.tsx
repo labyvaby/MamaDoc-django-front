@@ -483,6 +483,9 @@ export const SuccessDialog: React.FC<{
     return () => ctrl.abort();
   }, [result.confirmationCode]);
 
+  /** Ссылка на карточку записи — её и кодирует QR, и отправляет «Поделиться». */
+  const bookingUrl = `${window.location.origin}/book/b/${result.confirmationCode}`;
+
   const serviceNames = (
     detail?.services.length ? detail.services.map((s) => s.name) : services.map((s) => s.name)
   ).join(", ");
@@ -496,6 +499,7 @@ export const SuccessDialog: React.FC<{
       `${formatConfirmDate(result.date)} ${result.time}`,
       address,
       `${t("confirmationCode")}: ${result.confirmationCode}`,
+      bookingUrl,
     ]
       .filter(Boolean)
       .join("\n");
@@ -517,9 +521,10 @@ export const SuccessDialog: React.FC<{
         alignItems="center"
         sx={{ p: 1, border: `1px solid ${BORDER}`, borderRadius: TILE_RADIUS }}
       >
-        {/* QR содержит номер брони: страницы «моя запись» у нас пока нет, а по
-            коду администратор находит бронь в CRM. */}
-        <QRCode value={result.confirmationCode} size={136} level="M" />
+        {/* QR ведёт на страницу записи: пациент сканирует своим телефоном и
+            открывает карточку, администратор — сканирует ту же и видит бронь.
+            Голый код в QR читался как непонятная строка. */}
+        <QRCode value={bookingUrl} size={136} level="M" />
       </Stack>
       <Typography sx={{ mt: 0.75, fontSize: 14, fontWeight: 500, textAlign: "center" }}>
         {result.confirmationCode}

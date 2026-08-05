@@ -113,6 +113,7 @@ const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/Spec
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
+const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
@@ -1318,6 +1319,15 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicBookMyBookingsPage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Карточка записи по коду подтверждения — сюда ведёт QR. */}
+                        <Route
+                          path="book/b/:code"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookByCodePage />
                             </Suspense>
                           }
                         />

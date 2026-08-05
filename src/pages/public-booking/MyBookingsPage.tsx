@@ -75,8 +75,9 @@ function formatDate(date: string): string {
 const BookingCard: React.FC<{
   booking: MyBooking;
   onCancel: (b: MyBooking) => void;
+  onOpen: (b: MyBooking) => void;
   cancelling: boolean;
-}> = ({ booking, onCancel, cancelling }) => {
+}> = ({ booking, onCancel, onOpen, cancelling }) => {
   const { t } = useT("publicBooking");
   const statusKey = STATUS_LABEL_KEYS[booking.status];
   const price = Number(booking.totalPrice ?? 0);
@@ -150,8 +151,23 @@ const BookingCard: React.FC<{
           </Stack>
         )}
 
-        {isBookingCancellable(booking) && (
-          <Box>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          {/* Та же карточка, что открывается по QR: её показывают на ресепшене. */}
+          <Button
+            onClick={() => onOpen(booking)}
+            size="small"
+            sx={{
+              borderRadius: 99,
+              px: 2,
+              border: `1px solid ${BORDER}`,
+              color: "text.primary",
+              textTransform: "none",
+              fontWeight: 500,
+            }}
+          >
+            {t("my.openCard")}
+          </Button>
+          {isBookingCancellable(booking) && (
             <Button
               onClick={() => onCancel(booking)}
               disabled={cancelling}
@@ -167,8 +183,8 @@ const BookingCard: React.FC<{
             >
               {cancelling ? t("my.cancelling") : t("my.cancelAction")}
             </Button>
-          </Box>
-        )}
+          )}
+        </Stack>
       </Stack>
     </Paper>
   );
@@ -329,6 +345,7 @@ const MyBookingsPage: React.FC = () => {
                     key={b.id}
                     booking={b}
                     onCancel={setConfirming}
+                    onOpen={(b) => navigate(`/book/b/${b.confirmationCode}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}
@@ -345,6 +362,7 @@ const MyBookingsPage: React.FC = () => {
                     key={b.id}
                     booking={b}
                     onCancel={setConfirming}
+                    onOpen={(b) => navigate(`/book/b/${b.confirmationCode}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}

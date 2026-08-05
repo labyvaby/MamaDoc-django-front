@@ -120,6 +120,12 @@
     "accruedMonth": "Начислено за месяц:",
     "advancesPaidColon": "Выплачено авансов:",
     "totalPayableColon": "Итого к выплате:",
+    "totalByDays": "Итого по дням",
+    "accruedByDays": "Начислено по дням",
+    "accruedByDaysColon": "Начислено по дням:",
+    "monthlyOnlyHint": "Начисляется за месяц целиком, по дням не раскладывается:",
+    "otherAccruals": "Прочие начисления",
+    "countsMismatch": "Сумма по дням ({{days}}) не совпадает с месячным итогом ({{month}}) — расхождение в данных бэкенда, на расчёт зарплаты не влияет",
     "breakdown": {
       "servicePercent": "Процент по {{service.datPl}}",
       "serviceFixed": "Фикс по {{service.datPl}}",
