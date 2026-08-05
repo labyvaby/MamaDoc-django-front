@@ -20,7 +20,7 @@ import {
   type ProfessionalReview,
 } from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
-import { PublicBookingShell } from "./shell";
+import { BOOKING_NO_SERVICE_ENABLED, PublicBookingShell } from "./shell";
 import {
   BOOKING_PRIMARY,
   BOOKING_PRIMARY_HOVER,
@@ -253,9 +253,12 @@ const DoctorBookingPage: React.FC = () => {
     filteredTimes ?? (selectedDay?.times ?? []).map((time) => ({ time, busy: false }));
   const hasAvailableDay = calendar.some((d) => d.isAvailable);
 
-  // Бэк требует и услугу (пустой service_ids → 400), и филиал (branch_id → 400).
+  // Филиал обязателен всегда (без branch_id → 400), услуга — пока бэк не
+  // принимает пустой service_ids (см. BOOKING_NO_SERVICE_ENABLED).
   const branchId = doctor?.branch?.id ?? null;
-  const canBook = !doctor || (doctor.services.length > 0 && branchId !== null);
+  const canBook =
+    !doctor ||
+    ((BOOKING_NO_SERVICE_ENABLED || doctor.services.length > 0) && branchId !== null);
 
   /** Свободные времена под выбранные услуги (их суммарная длительность). */
   const reloadTimes = React.useCallback(
@@ -335,7 +338,9 @@ const DoctorBookingPage: React.FC = () => {
   const handleBook = () => {
     const dateInvalid = !selectedDate;
     const timeInvalid = !selectedTime;
-    const servicesInvalid = selectedServices.length === 0;
+    // Услуга обязательна, пока бэк не принимает пустой service_ids
+    // (см. BOOKING_NO_SERVICE_ENABLED) — иначе гость упрётся в 400 на сабмите.
+    const servicesInvalid = !BOOKING_NO_SERVICE_ENABLED && selectedServices.length === 0;
     setErrors({ date: dateInvalid, time: timeInvalid, services: servicesInvalid });
 
     if (dateInvalid) return setStep(1);

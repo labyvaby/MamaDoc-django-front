@@ -36,6 +36,22 @@ import { useT } from "../../i18n/VerticalProvider";
 export const BOOKING_AUTH_ENABLED = false;
 
 /**
+ * Запись «просто к врачу», без выбора услуги (бэклог заказчика 04.08.2026).
+ * Бэк объявил поддержку в `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026:
+ * «принимает отсутствие service_ids и пустой список», окно 30 минут), но живой
+ * API это опровергает — проверено 05.08.2026 на обоих окружениях
+ * (newcrm.pediatr.kg и test.crm.operator.kg): и `service_ids: []`, и запрос
+ * вовсе без поля отвечают `400 validation_error` с `details.missing:
+ * ["service_ids"]`.
+ *
+ * Пока флаг выключен, витрина не пускает гостя дальше без услуги — иначе он
+ * упирался бы в 400 на самом сабмите. Включить, когда бэк задеплоит: проверка —
+ * POST с `service_ids: []` создаёт бронь, а `PATCH /api/bookings/<id>/status/`
+ * с `serviceIds` достраивает её при подтверждении в CRM.
+ */
+export const BOOKING_NO_SERVICE_ENABLED = false;
+
+/**
  * Поля страницы. Эталон держит контент в контейнере 1280 с отступом 16
  * (`max-w-7xl mx-auto px-4`) — повторяем.
  */
