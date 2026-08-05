@@ -373,7 +373,11 @@ const DoctorBookingPage: React.FC = () => {
         // Тексты ошибок бэка адресованы разработчику — гостю показываем
         // понятное объяснение по коду ответа.
         if (!(e instanceof ApiError)) setSubmitError(t("bookingFailed"));
-        else if (e.status === 404 || e.status === 405) setSubmitError(t("onlineBookingSoon"));
+        // 405 — эндпоинта создания нет (было до 03.08.2026). 404 с живым POST
+        // значит другое: врач, филиал или услуга не найдены — предлагать
+        // «скоро заработает» здесь неуместно.
+        else if (e.status === 405) setSubmitError(t("onlineBookingSoon"));
+        else if (e.status === 404) setSubmitError(t("bookingTargetGone"));
         else if (e.status === 409) setSubmitError(t("slotTaken"));
         else if (e.status === 429) setSubmitError(t("tooManyAttempts"));
         else if (e.status === 400) setSubmitError(t("bookingFailed"));

@@ -2,5 +2,25 @@
   "patientLabel": "{{patient.nom, capitalize}}",
   "specialistLabel": "{{specialist.nom, capitalize}}",
   "allSpecialists": "Все {{specialist.nomPl}}",
-  "visitInCrm": "{{visit.nom, capitalize}} в CRM"
+  "visitInCrm": "{{visit.nom, capitalize}} в CRM",
+
+  "confirm": {
+    "title": "Подтверждение брони",
+    "subtitle": "Выберите карту {{patient.gen}} и услуги — из них соберётся {{visit.nom}}.",
+    "patientSection": "{{patient.nom, capitalize}}",
+    "patientPlaceholder": "Поиск по имени или телефону",
+    "patientNotFound": "Ничего не найдено",
+    "severalMatches_one": "По телефону брони найдена {{count}} карта — проверьте, что выбрана нужная.",
+    "severalMatches_few": "По телефону брони найдено {{count}} карты — проверьте, что выбрана нужная.",
+    "severalMatches_many": "По телефону брони найдено {{count}} карт — проверьте, что выбрана нужная.",
+    "noMatches": "По номеру {{phone}} карта не найдена. Найдите {{patient.acc}} вручную или создайте карту в разделе «{{patient.nomPl, capitalize}}».",
+    "servicesSection": "Услуги",
+    "servicesPlaceholder": "Выберите услуги",
+    "servicesTotal_one": "{{count}} услуга · {{sum}}",
+    "servicesTotal_few": "{{count}} услуги · {{sum}}",
+    "servicesTotal_many": "{{count}} услуг · {{sum}}",
+    "withoutPatient": "Карта не выбрана — бронь подтвердится без привязки к {{patient.dat}}.",
+    "cancel": "Отмена",
+    "submit": "Подтвердить"
+  }
 }
