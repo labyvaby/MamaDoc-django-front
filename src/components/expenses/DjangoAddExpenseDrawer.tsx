@@ -164,6 +164,18 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
 
   // ── Черновик формы ────────────────────────────────────────────────────────────
   const [draftRestored, setDraftRestored] = React.useState(false);
+  // Контекстный префилл (например, выплата зарплаты) не должен смешиваться с
+  // общим черновиком ручного добавления расхода. Ключ меняется только при
+  // реальной смене исходных данных, а не при каждом рендере родителя.
+  const prefillKey = prefill
+    ? [
+        prefill.employee?.id ?? "",
+        prefill.categoryKind ?? "",
+        prefill.cashAmount ?? "",
+        prefill.cardAmount ?? "",
+        prefill.name ?? "",
+      ].join("|")
+    : null;
 
   // ── Поэтапное раскрытие ───────────────────────────────────────────────────────
   // Сначала форма короткая: дата (уже сегодняшняя), название и категория. Суммы,
@@ -177,52 +189,53 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   // перетираем при смене категории.
   const autoNameRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (open) {
-      const draft = readFormDraft<ExpenseDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
-      if (draft) {
-        setExpenseDate(draft.expenseDate ? dayjs(draft.expenseDate) : dayjs());
-        setCategoryId(draft.categoryId);
-        setName(draft.name);
-        setCashAmount(draft.cashAmount);
-        setCardAmount(draft.cardAmount);
-        setDescription(draft.description);
-        setEmployeeInput(draft.employeeFullName ?? "");
-        const emp =
-          draft.employeeId != null
-            ? ({ id: draft.employeeId, fullName: draft.employeeFullName ?? "" } as DjangoEmployeeListItem)
-            : null;
-        setEmployeeValue(emp);
-        setEmployeeOptions(emp ? [emp] : []);
-        setDraftRestored(true);
-        // Категория уже восстановлена из черновика — не даём эффекту префилла
-        // категории (ниже) перетереть её после загрузки списка категорий.
-        prefillCategoryAppliedRef.current = true;
-      } else {
-        setExpenseDate(dayjs());
-        setCategoryId("");
-        setName(prefill?.name ?? "");
-        setCashAmount(prefill?.cashAmount ?? "");
-        setCardAmount(prefill?.cardAmount ?? "");
-        setDescription("");
-        setEmployeeInput("");
-        const emp = prefill?.employee
-          ? ({ id: prefill.employee.id, fullName: prefill.employee.fullName } as DjangoEmployeeListItem)
+    if (!open) return;
+
+    // Переданные значения всегда приоритетнее общего черновика. Это важно
+    // для последовательных выплат разным сотрудникам из отчёта по зарплате.
+    const draft = prefillKey
+      ? null
+      : readFormDraft<ExpenseDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
+    if (draft) {
+      setExpenseDate(draft.expenseDate ? dayjs(draft.expenseDate) : dayjs());
+      setCategoryId(draft.categoryId);
+      setName(draft.name);
+      setCashAmount(draft.cashAmount);
+      setCardAmount(draft.cardAmount);
+      setDescription(draft.description);
+      setEmployeeInput(draft.employeeFullName ?? "");
+      const emp =
+        draft.employeeId != null
+          ? ({ id: draft.employeeId, fullName: draft.employeeFullName ?? "" } as DjangoEmployeeListItem)
           : null;
-        setEmployeeValue(emp);
-        setEmployeeOptions(emp ? [emp] : []);
-        setDraftRestored(false);
-        prefillCategoryAppliedRef.current = false;
-      }
-      setPhotoFile(null);
-      setPhotoPreview(null);
-      setError(null);
-      setBusy(false);
-      autoNameRef.current = null;
+      setEmployeeValue(emp);
+      setEmployeeOptions(emp ? [emp] : []);
+      setDraftRestored(true);
+      // Категория уже восстановлена из черновика — не даём эффекту префилла
+      // категории (ниже) перетереть её после загрузки списка категорий.
+      prefillCategoryAppliedRef.current = true;
+    } else {
+      setExpenseDate(dayjs());
+      setCategoryId("");
+      setName(prefill?.name ?? "");
+      setCashAmount(prefill?.cashAmount ?? "");
+      setCardAmount(prefill?.cardAmount ?? "");
+      setDescription("");
+      setEmployeeInput("");
+      const emp = prefill?.employee
+        ? ({ id: prefill.employee.id, fullName: prefill.employee.fullName } as DjangoEmployeeListItem)
+        : null;
+      setEmployeeValue(emp);
+      setEmployeeOptions(emp ? [emp] : []);
+      setDraftRestored(false);
+      prefillCategoryAppliedRef.current = false;
     }
-    // Read `prefill` from closure at open time — don't reset the form mid-edit
-    // if the parent re-creates the prefill object on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    setError(null);
+    setBusy(false);
+    autoNameRef.current = null;
+  }, [open, prefillKey]);
 
   // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
   // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
@@ -247,13 +260,13 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   };
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || prefillKey) return;
     const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
-  }, [open, expenseDate, categoryId, name, cashAmount, cardAmount, description, employeeValue]);
+  }, [open, prefillKey, expenseDate, categoryId, name, cashAmount, cardAmount, description, employeeValue]);
 
   const handleClose = () => {
-    flushDraftRef.current();
+    if (!prefillKey) flushDraftRef.current();
     onClose();
   };
 
@@ -284,7 +297,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       setCategoryId(match.id);
       prefillCategoryAppliedRef.current = true;
     }
-  }, [open, prefill?.categoryKind, categoriesQuery.isLoading, activeCategories]);
+  }, [open, prefillKey, prefill?.categoryKind, categoriesQuery.isLoading, activeCategories]);
 
   // ── Employee search with debounce ─────────────────────────────────────────────
   React.useEffect(() => {
@@ -367,7 +380,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
         employeeId: employeeValue?.id ?? null,
       });
 
-      clearFormDraft(ADD_DRAFT_KEY);
+      if (!prefillKey) clearFormDraft(ADD_DRAFT_KEY);
 
       if (photoFile) {
         try {

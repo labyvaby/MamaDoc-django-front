@@ -384,16 +384,20 @@ const SidebarSecondary: React.FC = () => {
   // «Организация» — справочное (пациенты, приёмы, услуги, документы).
   const can_ = {
     // МОЯ РАБОТА
+    // Три рабочих пространства приёмов гейтятся отдельными page-visibility
+    // правами (appointments.*_room/registry.view): организация сама решает в
+    // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
+    // по-прежнему требуют appointments.view.
     registratura: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.appointments))
+      ? (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry))
       : (isSuper || (!isNurse && !isDoctor())),
     bookings: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.bookings)),
-    doctorRoom: isSuper || (!isNurse && !isAdmin() && !isRegistrator()),
-    // Список привилегированных повторяет isPrivileged из AppointmentsPage:
-    // роут /nurse пускает по appointments.view, и сама страница показывает
-    // им приёмы всех медсестёр — скрывать пункт меню было нечем оправдать
-    // (управляющий и регистратор его не видели, хотя страница им открыта).
-    nurseRoom: isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse,
+    doctorRoom: IS_DJANGO_BACKEND
+      ? (isSuper || can(PAGE_PERMISSIONS.doctorRoom))
+      : (isSuper || (!isNurse && !isAdmin() && !isRegistrator())),
+    nurseRoom: IS_DJANGO_BACKEND
+      ? (isSuper || can(PAGE_PERMISSIONS.nurseRoom))
+      : (isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse),
     schedule: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.schedule)) : true,
     skud: !IS_DJANGO_BACKEND || isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
@@ -405,8 +409,8 @@ const SidebarSecondary: React.FC = () => {
     employees: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.employees) : !isNurse),
     patients: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.patients) : !isNurse),
     vaccinations: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.vaccinations)),
-    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.appointments) : true),
-    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.appointments) : true),
+    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.allAppointments) : true),
+    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.allProcedures) : true),
     services: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.services) : true),
     documents: IS_DJANGO_BACKEND && moduleGate("documents"),
     diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
@@ -676,7 +680,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* СКУД */}
-        {can_.skud && (
+        {show("my-work") && can_.skud && (
           <SidebarSkudItem collapsed={siderCollapsed} />
         )}
 

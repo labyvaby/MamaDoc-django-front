@@ -6,7 +6,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
@@ -37,10 +37,6 @@ import { tt } from "../../i18n/t";
 // Полноценно это заменяется данными dayjs (ru) — отдельная задача, т.к.
 // в родительном падеже («января») нужна standalone-форма.
 const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
-const MONTHS_GEN = [
-  "января", "февраля", "марта", "апреля", "мая", "июня",
-  "июля", "августа", "сентября", "октября", "ноября", "декабря",
-];
 const MONTHS_NOMINATIVE = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
@@ -50,8 +46,15 @@ const MONTHS_SHORT = [
   "июл.", "авг.", "сен.", "окт.", "ноя.", "дек.",
 ];
 
-/** На сколько дней вперёд регистратор ищет окна (влезает в лимит бэка 62). */
-const HORIZON_DAYS = 14;
+/**
+ * Лента дат больше не имеет фиксированного горизонта: диапазон собирается из
+ * чанков по 30 дней (влезает в лимит бэка 62 на один запрос). По умолчанию
+ * грузим один чанк назад и один вперёд (±30 дней от сегодня); когда лента
+ * прокручивается к краю, добавляется следующий чанк в эту сторону.
+ */
+const CHUNK_DAYS = 30;
+/** За сколько пикселей до края ленты начинаем догрузку следующего чанка. */
+const STRIP_LOAD_THRESHOLD_PX = 260;
 
 /** Индекс дня недели с понедельника (Пн=0 … Вс=6), без плагина isoWeek. */
 function mondayIndex(d: Dayjs): number {
@@ -459,20 +462,24 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const theme = useTheme();
 
   const todayIso = React.useMemo(() => dayjs().format("YYYY-MM-DD"), []);
-  const dateFrom = todayIso;
-  const dateTo = React.useMemo(
-    () => dayjs().add(HORIZON_DAYS - 1, "day").format("YYYY-MM-DD"),
-    [],
-  );
+  // Сколько 30-дневных чанков загружено в прошлое и в будущее от сегодня.
+  // Чанки привязаны к «сегодня» (стабильные границы), поэтому расширение
+  // диапазона не инвалидирует уже закэшированные куски.
+  const [pastChunks, setPastChunks] = React.useState(1);
+  const [futureChunks, setFutureChunks] = React.useState(1);
 
   const [specId, setSpecId] = React.useState<number | null>(null);
   const [search, setSearch] = React.useState("");
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
   // Позволяет свернуть раскрытый список врачей под активной специальностью.
-  // Список открыт по умолчанию; повторный клик по активной группе его сворачивает.
-  const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>(null);
+  // При первом открытии остаёмся на «Все специалисты», но список врачей свёрнут.
+  const [collapsedGroup, setCollapsedGroup] = React.useState<number | "all" | null>("all");
   const stripRef = React.useRef<HTMLDivElement>(null);
+  const [isStripDragging, setIsStripDragging] = React.useState(false);
+  const stripDragStartXRef = React.useRef(0);
+  const stripScrollStartRef = React.useRef(0);
+  const stripDragMovedRef = React.useRef(false);
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
   const matrixScrollRef = React.useRef<HTMLDivElement>(null);
@@ -505,6 +512,25 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
   const handleMouseUpOrLeave = () => {
     setIsDragging(false);
+  };
+
+  const handleStripMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !stripRef.current) return;
+    setIsStripDragging(true);
+    stripDragMovedRef.current = false;
+    stripDragStartXRef.current = e.pageX;
+    stripScrollStartRef.current = stripRef.current.scrollLeft;
+  };
+
+  const handleStripMouseMove = (e: React.MouseEvent) => {
+    if (!isStripDragging || !stripRef.current) return;
+    const delta = e.pageX - stripDragStartXRef.current;
+    if (Math.abs(delta) > 4) stripDragMovedRef.current = true;
+    stripRef.current.scrollLeft = stripScrollStartRef.current - delta;
+  };
+
+  const handleStripMouseUpOrLeave = () => {
+    setIsStripDragging(false);
   };
 
   // Справочник специализаций — левый рельс.
@@ -543,27 +569,113 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     return map;
   }, [summaryQuery.data]);
 
-  // Полный диапазон окон выбранной специализации, либо всех сотрудников
-  // (specId === null — вид «Все специалисты»).
-  const availQuery = useQuery({
-    queryKey: djangoQueryKeys.scheduling.availability({
-      specializationId: specId,
-      dateFrom,
-      dateTo,
-      branchId: branchId ?? null,
-      organizationId: organizationId ?? null,
-    }),
-    queryFn: ({ signal }) =>
-      getAvailability(
-        { specializationId: specId ?? undefined, dateFrom, dateTo, branchId, organizationId },
-        signal,
-      ),
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  // Загруженный диапазон дат — набор 30-дневных чанков вокруг «сегодня».
+  // Каждый чанк — отдельный запрос availability (лимит бэка на один запрос —
+  // 62 дня), поэтому суммарный горизонт ничем не ограничен.
+  const chunks = React.useMemo(() => {
+    const list: Array<{ from: string; to: string }> = [];
+    for (let i = -pastChunks; i < futureChunks; i += 1) {
+      const from = dayjs(todayIso).add(i * CHUNK_DAYS, "day");
+      list.push({
+        from: from.format("YYYY-MM-DD"),
+        to: from.add(CHUNK_DAYS - 1, "day").format("YYYY-MM-DD"),
+      });
+    }
+    return list;
+  }, [pastChunks, futureChunks, todayIso]);
+
+  const chunkQueries = useQueries({
+    queries: chunks.map((chunk) => ({
+      queryKey: djangoQueryKeys.scheduling.availability({
+        specializationId: specId,
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        branchId: branchId ?? null,
+        organizationId: organizationId ?? null,
+      }),
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        getAvailability(
+          {
+            specializationId: specId ?? undefined,
+            dateFrom: chunk.from,
+            dateTo: chunk.to,
+            branchId,
+            organizationId,
+          },
+          signal,
+        ),
+      staleTime: DJANGO_LIST_STALE_TIME_MS,
+    })),
   });
+
+  // Догрузка к краям не должна дёргаться, пока крайний чанк ещё в полёте.
+  const pastEdgeLoading = chunkQueries[0]?.isLoading ?? false;
+  const futureEdgeLoading = chunkQueries[chunkQueries.length - 1]?.isLoading ?? false;
+  const hasAnyData = chunkQueries.some((q) => q.data);
+  const isAvailLoading = chunkQueries.some((q) => q.isLoading) && !hasAnyData;
+
+  // Один «виртуальный» ответ на весь загруженный диапазон: сотрудники те же,
+  // дни чанков склеиваются по датам; nearestFree — самый ранний будущий.
+  const chunkDataStamp = chunkQueries.map((q) => q.dataUpdatedAt).join(",");
+  const mergedEmployees = React.useMemo<EmployeeAvailability[]>(() => {
+    const byId = new Map<number, EmployeeAvailability>();
+    for (const q of chunkQueries) {
+      const data = q.data;
+      if (!data) continue;
+      for (const emp of data.employees) {
+        const existing = byId.get(emp.employeeId);
+        if (!existing) {
+          byId.set(emp.employeeId, {
+            ...emp,
+            days: [...emp.days],
+            nearestFree:
+              emp.nearestFree && emp.nearestFree.date >= todayIso ? emp.nearestFree : null,
+          });
+        } else {
+          existing.days.push(...emp.days);
+          const candidate =
+            emp.nearestFree && emp.nearestFree.date >= todayIso ? emp.nearestFree : null;
+          if (candidate && (!existing.nearestFree || candidate.date < existing.nearestFree.date)) {
+            existing.nearestFree = candidate;
+          }
+        }
+      }
+    }
+    const merged = Array.from(byId.values());
+    merged.forEach((emp) => emp.days.sort((a, b) => a.date.localeCompare(b.date)));
+    return merged;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chunkQueries пересоздаётся каждый рендер; штамп dataUpdatedAt отражает реальные изменения данных
+  }, [chunkDataStamp, todayIso]);
+
+  // Крайний чанк загрузился «пустым» — дальше в эту сторону грузить нечего,
+  // автодогрузку останавливаем (пустой край зациклил бы расширение).
+  // Критерии пустоты разные: в будущее — нет смен (расписание кончилось),
+  // в прошлое — нет ни одного приёма (история клиники исчерпана).
+  const pastExhausted = React.useMemo(() => {
+    const q = chunkQueries[0];
+    if (!q?.data) return false;
+    return !q.data.employees.some(
+      (emp) => emp.days.some((d) => (d.appointments?.length ?? 0) > 0),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- см. chunkDataStamp выше
+  }, [chunkDataStamp]);
+  const futureExhausted = React.useMemo(() => {
+    const q = chunkQueries[chunkQueries.length - 1];
+    if (!q?.data) return false;
+    return !q.data.employees.some((emp) => emp.days.some((d) => d.scheduled));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- см. chunkDataStamp выше
+  }, [chunkDataStamp]);
+
+  const extendPast = React.useCallback(() => {
+    if (!pastEdgeLoading && !pastExhausted) setPastChunks((n) => n + 1);
+  }, [pastEdgeLoading, pastExhausted]);
+  const extendFuture = React.useCallback(() => {
+    if (!futureEdgeLoading && !futureExhausted) setFutureChunks((n) => n + 1);
+  }, [futureEdgeLoading, futureExhausted]);
 
   // Врачи специальности + сводка, отсортированные «лучшие сверху».
   const docs = React.useMemo(() => {
-    const list = (availQuery.data?.employees ?? [])
+    const list = mergedEmployees
       .map((emp) => ({
         emp,
         sum: summarize(emp, todayIso),
@@ -578,7 +690,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       if (an !== bn) return an - bn;
       return a.emp.fullName.localeCompare(b.emp.fullName);
     });
-  }, [availQuery.data, search, todayIso]);
+  }, [mergedEmployees, search, todayIso]);
 
   // Сбрасываем выбор врача только если выбранного врача больше нет в отфильтрованном списке.
   React.useEffect(() => {
@@ -591,43 +703,126 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Выбор врача в рельсе — это фильтр сетки (отдельного экрана врача нет):
   // остаётся одна колонка, вид и поведение окон те же.
   const gridDocs = selectedDoc ? [selectedDoc] : docs;
-  // В навбаре оставляем только реальные смены. Выходные, отпуск и дни без
-  // расписания не должны выглядеть как даты, на которые можно записать пациента.
+  // В БУДУЩЕЕ навбар показывает только реальные смены: выходные, отпуск и дни
+  // без расписания не должны выглядеть как даты, на которые можно записать
+  // пациента. В ПРОШЛОМ — только дни, где были приёмы (история); пустые дни
+  // (смена без единого приёма или вообще без смены) в ленту не попадают.
   const selectableDays = React.useMemo(() => {
-    if (selectedDoc) {
-      return selectedDoc.emp.days.filter((day) => day.scheduled);
-    }
     const map = new Map<string, AvailabilityDay>();
-    for (const { emp } of docs) {
+    const source = selectedDoc ? [selectedDoc] : docs;
+    for (const { emp } of source) {
       for (const d of emp.days) {
-        if (d.scheduled) {
-          const existing = map.get(d.date);
-          if (!existing) {
-            map.set(d.date, { ...d });
-          } else {
-            existing.freeCount += d.freeCount;
-          }
+        const isPast = d.date < todayIso;
+        const include = isPast
+          ? (d.appointments?.length ?? 0) > 0
+          : d.scheduled;
+        if (!include) continue;
+        const existing = map.get(d.date);
+        if (!existing) {
+          map.set(d.date, { ...d });
+        } else {
+          existing.freeCount += d.freeCount;
         }
       }
     }
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [selectedDoc, docs]);
+  }, [selectedDoc, docs, todayIso]);
 
-  // День по умолчанию — ближайший с окнами.
+  // День по умолчанию — ближайший С СЕГОДНЯ день с окнами: прошлые дни теперь
+  // тоже в ленте (для просмотра), но стартовать с них нельзя.
   React.useEffect(() => {
     if (!selectableDays.length) return;
     if (selDay && selectableDays.some((day) => day.date === selDay)) return;
-    const firstFree = selectableDays.find((day) => day.freeCount > 0);
-    setSelDay(firstFree?.date ?? selectableDays[0].date ?? todayIso);
+    const upcoming = selectableDays.filter((day) => day.date >= todayIso);
+    const firstFree = upcoming.find((day) => day.freeCount > 0);
+    setSelDay(
+      firstFree?.date
+        ?? upcoming[0]?.date
+        ?? selectableDays[selectableDays.length - 1].date
+        ?? todayIso,
+    );
   }, [selectableDays, selDay, todayIso]);
 
   const selectedDay = selectableDays.find((day) => day.date === selDay) ?? null;
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
   const selectedMonthLabel = `${MONTHS_NOMINATIVE[selectedMonth.month()]} ${selectedMonth.year()}`;
 
+  // Стрелки: у края (или когда все дни влезли и скроллить нечего) они
+  // расширяют диапазон дат, иначе — обычная прокрутка ленты.
   const scrollStrip = (dir: -1 | 1) => {
-    stripRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
+    const strip = stripRef.current;
+    if (!strip) return;
+    const short = strip.scrollWidth <= strip.clientWidth + 1;
+    if (dir === -1 && (short || strip.scrollLeft < 1)) {
+      extendPast();
+      return;
+    }
+    const rightGap = strip.scrollWidth - strip.scrollLeft - strip.clientWidth;
+    if (dir === 1 && (short || rightGap < 1)) {
+      extendFuture();
+      return;
+    }
+    strip.scrollBy({ left: dir * 200, behavior: "smooth" });
   };
+
+  // Если ближайшая смена находится далеко от сегодняшней даты, выбранный день
+  // должен сразу оказаться в видимой части горизонтальной ленты. Центрируем
+  // только при смене выбранного дня, а не при каждой догрузке чанков —
+  // иначе лента «прыгала» бы обратно к выбранному дню при подгрузке краёв.
+  const centeredDayRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || !selDay) return;
+    if (centeredDayRef.current === selDay) return;
+    const dayButton = strip.querySelector<HTMLElement>(`[data-slot-date="${selDay}"]`);
+    if (!dayButton) return;
+    centeredDayRef.current = selDay;
+    const left = dayButton.offsetLeft - (strip.clientWidth - dayButton.clientWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [selDay, selectableDays]);
+
+  // ── Бесконечная лента: догрузка чанков при прокрутке к краям ──
+  // При догрузке прошлого контент добавляется СЛЕВА — компенсируем scrollLeft,
+  // чтобы лента визуально не дёргалась.
+  const stripFirstDateRef = React.useRef<string | null>(null);
+  const stripPrevWidthRef = React.useRef(0);
+  React.useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const firstDate = selectableDays[0]?.date ?? null;
+    const prevFirst = stripFirstDateRef.current;
+    if (firstDate && prevFirst && firstDate < prevFirst) {
+      strip.scrollLeft += strip.scrollWidth - stripPrevWidthRef.current;
+    }
+    stripFirstDateRef.current = firstDate;
+    stripPrevWidthRef.current = strip.scrollWidth;
+  }, [selectableDays]);
+
+  // Скролл-триггер расширения. Обязательные предохранители от лавины
+  // (короткая лента «близка» к обоим краям сразу, а каждый scroll-event
+  // без троттла раздувал диапазон до фриза вкладки):
+  //  - не чаще одного раза за кадр (rAF);
+  //  - только когда лента длиннее контейнера (короткая растёт стрелками);
+  //  - одна сторона за событие.
+  const stripTickRef = React.useRef(false);
+  const maybeExtendStrip = React.useCallback(() => {
+    if (stripTickRef.current) return;
+    stripTickRef.current = true;
+    requestAnimationFrame(() => {
+      stripTickRef.current = false;
+      const strip = stripRef.current;
+      if (!strip) return;
+      if (strip.scrollWidth <= strip.clientWidth + 1) return;
+      const rightGap = strip.scrollWidth - strip.scrollLeft - strip.clientWidth;
+      if (strip.scrollLeft < STRIP_LOAD_THRESHOLD_PX) {
+        extendPast();
+        return;
+      }
+      if (rightGap < STRIP_LOAD_THRESHOLD_PX) {
+        extendFuture();
+      }
+    });
+  }, [extendPast, extendFuture]);
 
   return (
     <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -670,8 +865,26 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 ref={stripRef}
                 direction="row"
                 spacing={0.75}
-                sx={{ overflowX: "auto", py: 0.25, px: 0.5, flex: 1, "&::-webkit-scrollbar": { height: 4 } }}
+                onMouseDown={handleStripMouseDown}
+                onMouseMove={handleStripMouseMove}
+                onMouseUp={handleStripMouseUpOrLeave}
+                onMouseLeave={handleStripMouseUpOrLeave}
+                onScroll={maybeExtendStrip}
+                sx={{
+                  overflowX: "auto",
+                  py: 0.25,
+                  px: 0.5,
+                  flex: 1,
+                  cursor: isStripDragging ? "grabbing" : "grab",
+                  userSelect: isStripDragging ? "none" : "auto",
+                  "&::-webkit-scrollbar": { height: 4 },
+                }}
               >
+                {pastEdgeLoading && (
+                  <Stack alignItems="center" justifyContent="center" sx={{ flex: "0 0 auto", px: 1 }}>
+                    <CircularProgress size={14} />
+                  </Stack>
+                )}
                 {selectableDays.map((d) => {
                   const dj = dayjs(d.date);
                   const active = d.date === selDay;
@@ -679,7 +892,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   return (
                     <Box
                       key={d.date}
-                      onClick={() => setSelDay(d.date)}
+                      data-slot-date={d.date}
+                      onClick={() => {
+                        if (stripDragMovedRef.current) return;
+                        setSelDay(d.date);
+                      }}
                       sx={{
                         flex: "0 0 auto",
                         minWidth: 60,
@@ -721,6 +938,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                     </Box>
                   );
                 })}
+                {futureEdgeLoading && (
+                  <Stack alignItems="center" justifyContent="center" sx={{ flex: "0 0 auto", px: 1 }}>
+                    <CircularProgress size={14} />
+                  </Stack>
+                )}
               </Stack>
               <Box
                 onClick={() => scrollStrip(1)}
@@ -745,6 +967,56 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
         {headerActions}
       </Stack>
 
+      {/* ── Мобильный селектор специальностей: на узких экранах вертикальный
+          рельс съедал весь экран, поэтому там он заменён горизонтальной
+          лентой чипов (врачи и так есть в сетке ниже). ── */}
+      <Box
+        sx={{
+          display: { xs: "flex", md: "none" },
+          gap: 0.75,
+          overflowX: "auto",
+          flexShrink: 0,
+          pb: 0.75,
+          "&::-webkit-scrollbar": { display: "none" },
+        }}
+      >
+        <Chip
+          size="small"
+          label={
+            summaryQuery.data
+              ? `${t("slots.allSpecialists")} · ${summaryQuery.data.overallFreeEmployeeCount}/${summaryQuery.data.overallEmployeeCount}`
+              : t("slots.allSpecialists")
+          }
+          color={specId === null ? "primary" : "default"}
+          variant={specId === null ? "filled" : "outlined"}
+          onClick={() => {
+            setSpecId(null);
+            setSelDocId(null);
+            setSelDay(null);
+          }}
+          sx={{ flexShrink: 0 }}
+        />
+        {specs.map((s) => {
+          const badge = badgeBySpec.get(s.id);
+          const active = specId === s.id;
+          return (
+            <Chip
+              key={s.id}
+              size="small"
+              label={badge ? `${s.name} · ${badge.free}/${badge.total}` : s.name}
+              color={active ? "primary" : "default"}
+              variant={active ? "filled" : "outlined"}
+              onClick={() => {
+                setSpecId(active ? null : s.id);
+                setSelDocId(null);
+                setSelDay(null);
+              }}
+              sx={{ flexShrink: 0 }}
+            />
+          );
+        })}
+      </Box>
+
       <Box
         sx={{
           flex: 1,
@@ -752,10 +1024,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
           display: "grid",
           gap: 1.5,
           gridTemplateColumns: { xs: "1fr", md: "204px 1fr" },
-          gridAutoRows: { xs: "minmax(0, auto)", md: "100%" },
+          gridAutoRows: { xs: "minmax(0, 1fr)", md: "100%" },
         }}
       >
-        {/* ── Рельс специальностей ── */}
+        {/* ── Рельс специальностей (на xs заменён чипами выше) ── */}
         <Box
           sx={{
             border: "1px solid",
@@ -763,7 +1035,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             borderRadius: "14px",
             bgcolor: "background.paper",
             overflowY: "auto",
-            display: "flex",
+            display: { xs: "none", md: "flex" },
             flexDirection: "column",
             minHeight: 0,
           }}
@@ -794,7 +1066,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           setSpecId(null);
                           setSelDocId(null);
                           setSelDay(null);
-                          setCollapsedGroup(null);
+                          setCollapsedGroup("all");
                         } else if (collapsedGroup === "all") {
                           setCollapsedGroup(null);
                         } else {
@@ -824,6 +1096,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       >
                         {t("slots.allSpecialists")}
                       </Typography>
+                      <KeyboardArrowRightOutlined
+                        sx={{
+                          fontSize: 17,
+                          flexShrink: 0,
+                          transform: collapsedGroup === "all" ? "none" : "rotate(90deg)",
+                          transition: "transform .13s ease",
+                        }}
+                      />
                       {overall && (
                         <Box
                           sx={(t) => ({
@@ -859,7 +1139,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       <DocRailList
                         docs={docs}
                         selectedId={selDocId}
-                        loading={availQuery.isLoading}
+                        loading={isAvailLoading}
                         onSelect={setSelDocId}
                       />
                     </Collapse>
@@ -912,6 +1192,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         >
                           {s.name}
                         </Typography>
+                        <KeyboardArrowRightOutlined
+                          sx={{
+                            fontSize: 17,
+                            flexShrink: 0,
+                            transform: collapsedGroup === s.id ? "none" : "rotate(90deg)",
+                            transition: "transform .13s ease",
+                          }}
+                        />
                         {badge && (
                           <Box
                             sx={(t) => ({
@@ -945,7 +1233,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         <DocRailList
                           docs={docs}
                           selectedId={selDocId}
-                          loading={availQuery.isLoading}
+                          loading={isAvailLoading}
                           onSelect={setSelDocId}
                         />
                       </Collapse>
@@ -973,11 +1261,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
           }}
         >
           <Stack
-            direction="row"
-            alignItems="center"
-            spacing={2}
+            direction={{ xs: "column", sm: "row" }}
+            alignItems={{ xs: "stretch", sm: "center" }}
+            spacing={{ xs: 1, sm: 2 }}
             sx={{
-              px: 2,
+              px: { xs: 1.25, sm: 2 },
               py: 1.25,
               borderBottom: "1px solid",
               borderColor: "divider",
@@ -990,14 +1278,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("slots.searchSpecialist")}
-              sx={{ width: { xs: 200, sm: 260 } }}
+              sx={{ width: { xs: "100%", sm: 260 } }}
               InputProps={{
                 startAdornment: (
                   <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
                 ),
               }}
             />
-            <Box>
+            <Box sx={{ display: { xs: "none", sm: "block" } }}>
               <Typography variant="subtitle1" fontWeight={600}>
                 {t("slots.grid")}{" "}
                 {specId
@@ -1011,7 +1299,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
           </Stack>
 
           {(() => {
-            const isMatrixLoading = (availQuery.isLoading || summaryQuery.isLoading) && !availQuery.data;
+            const isMatrixLoading = (isAvailLoading || summaryQuery.isLoading) && !hasAnyData;
 
             if (isMatrixLoading) {
               return (
@@ -1025,9 +1313,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             }
 
             const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
+            // Колонку врача показываем, если у него в этот день была смена
+            // ИЛИ есть приёмы: прошлые дни попадают в ленту по приёмам, и
+            // приём мог быть создан вне планового расписания.
             const activeDocsOnDay = gridDocs.filter(({ emp }) => {
               const d = emp.days.find((x) => x.date === activeDayDate);
-              return d && d.scheduled && !d.dayOff;
+              if (!d) return false;
+              if ((d.appointments?.length ?? 0) > 0) return true;
+              return d.scheduled && !d.dayOff;
             });
 
             if (docs.length === 0) {
@@ -1081,8 +1374,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       key={emp.employeeId}
                       sx={{
                         // Сетка не растягивает карточки по числу врачей:
-                        // одна, две или три карточки занимают по трети панели.
-                        flex: "0 0 33.3333%",
+                        // на десктопе — по трети панели; на телефоне колонка
+                        // почти во всю ширину и листается свайпом.
+                        flex: { xs: "0 0 78%", sm: "0 0 48%", md: "0 0 33.3333%" },
                         minWidth: 175,
                         height: "100%",
                         display: "flex",

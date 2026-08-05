@@ -210,10 +210,14 @@ export type DjangoAddAppointmentDrawerProps = {
   initialServiceId?: number | null;
   /**
    * Включать режим «Бронирование (без пациента)» при предзаполнении из окна.
-   * Вид «Окна» бронирует время без пациента; клик по «Есть окно на HH:mm» в
-   * списке — обычная запись, там пациент по-прежнему обязателен.
+   * Используется только при явном запросе вызывающей стороны.
    */
   initialBooking?: boolean;
+  /**
+   * Сразу показать всю форму, не дожидаясь выбора пациента. Используется при
+   * клике по свободному окну врача; обычное добавление остаётся пошаговым.
+   */
+  showAllFieldsInitially?: boolean;
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -227,6 +231,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   initialEmployeeId,
   initialServiceId,
   initialBooking = false,
+  showAllFieldsInitially = false,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -339,7 +344,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     setWorkMode(inferWorkMode(base));
     // Предзаполнение исполнителя/услуги: клик по свободному окну (врач +
     // услуга) либо выбранный в ленте регистратуры специалист (только врач).
-    const isSlotPrefill = Boolean(initialEmployeeId || initialServiceId);
+    const isSlotPrefill = initialEmployeeId != null || initialServiceId != null;
     if (isSlotPrefill) {
       // Бронь — только по явному запросу вызывающей стороны: она раскрывает
       // секцию услуг сразу и снимает обязательность пациента.
@@ -724,10 +729,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       const groupId = prev.find((_, i) => targets.has(i))?.groupId;
       return prev.map((row, i) => {
         if (!targets.has(i)) return row;
+        // Удаление врача крестиком — это сброс пары «врач + услуга». При
+        // очистке самой услуги врач, наоборот, остаётся выбранным.
         const keepService =
-          row.serviceId === null ||
-          !employee ||
-          data.canEmployeeProvideService(employee.id, row.serviceId);
+          employee !== null &&
+          (row.serviceId === null ||
+            data.canEmployeeProvideService(employee.id, row.serviceId));
         return {
           ...row,
           groupId: groupId ?? row.groupId,
@@ -1090,8 +1097,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
               )}
             </Stack>
 
-            {/* ── 3. Услуги (показывается только если выбран пациент или бронирование) ── */}
-            {(selectedPatient || isBooking) && (
+            {/* При клике по окну врач уже известен, поэтому форму раскрываем
+                сразу, но не переводим запись в режим бронирования. */}
+            {(selectedPatient || isBooking || showAllFieldsInitially) && (
               <>
                 <Card
                   ref={form.anchor("services")}

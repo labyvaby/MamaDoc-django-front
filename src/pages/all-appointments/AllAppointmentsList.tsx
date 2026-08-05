@@ -15,6 +15,7 @@ export const AllAppointmentsList: React.FC = () => {
       pageTitle={t("allRegistry.appointmentsPageTitle")}
       listLabel={t("allRegistry.appointmentsListLabel")}
       searchPlaceholder={t("allRegistry.appointmentsSearchPlaceholder")}
+      employeeId="me"
     />
   );
 };
