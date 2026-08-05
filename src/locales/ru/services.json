@@ -22,7 +22,8 @@
     "duration": "Длительность:",
     "durationValue": "{{minutes}} мин",
     "branches": "Филиалы:",
-    "description": "Описание"
+    "description": "Описание",
+    "hiddenOnline": "Не в онлайн-записи"
   },
   "details": {
     "durationMin": "{{minutes}} мин",
@@ -93,6 +94,8 @@
     "descriptionLabel": "Описание",
     "descriptionPlaceholder": "Добавьте описание {{service.gen}} (необязательно)",
     "statusLabel": "Статус {{service.gen}}",
+    "onlineBookingLabel": "Онлайн-запись",
+    "onlineBookingHint": "Показывать в онлайн-записи на сайте",
     "sectionPricing": "Стоимость и филиалы",
     "sectionComposition": "Расходники",
     "sectionExtra": "Дополнительно",

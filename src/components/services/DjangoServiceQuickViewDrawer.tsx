@@ -15,7 +15,7 @@ import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoneyOutlined";
 import AccessTimeIcon from "@mui/icons-material/AccessTimeOutlined";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
-import { getService } from "../../api/catalog";
+import { getService, SERVICE_ONLINE_VISIBILITY_ENABLED } from "../../api/catalog";
 import type { Service } from "../../api/catalog";
 import { formatKGS } from "../../utility/format";
 import { useT } from "../../i18n/VerticalProvider";
@@ -126,6 +126,15 @@ const DjangoServiceQuickViewDrawer: React.FC<Props> = ({ open, onClose, serviceI
                       color={service.isActive ? "success" : "default"}
                       variant="filled"
                     />
+                    {/* Видима на витрине по умолчанию — отмечаем только исключение. */}
+                    {SERVICE_ONLINE_VISIBILITY_ENABLED && !service.onlineBookingVisible && (
+                      <Chip
+                        label={t("quickView.hiddenOnline")}
+                        size="small"
+                        variant="outlined"
+                        color="warning"
+                      />
+                    )}
                   </Stack>
                 </Box>
               </Stack>

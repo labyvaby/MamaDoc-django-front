@@ -49,6 +49,18 @@ export const SERVICE_CATEGORY_OPTIONS = Object.keys(
 export const SERVICE_RELATED_PRODUCT_ENABLED = true;
 
 /**
+ * Видимость услуги на публичной витрине онлайн-записи (`online_booking_visible`,
+ * бэклог заказчика «отбор услуг»). Бэк объявил поле готовым в
+ * `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026), но на живом API это не
+ * проверено, а неизвестное поле в PATCH может обернуться 400 и уронить
+ * сохранение услуги целиком — поэтому поле уходит в запрос только под флагом.
+ *
+ * Включать после проверки на живом API: GET услуги отдаёт `onlineBookingVisible`,
+ * PATCH его сохраняет, а скрытая услуга исчезает из публичного каталога.
+ */
+export const SERVICE_ONLINE_VISIBILITY_ENABLED = false;
+
+/**
  * Состав расходников услуги — несколько товаров с количеством (заказчик
  * 29.07.2026). Бэк закрыл тикет
  * MamaDoc/backend_ticket_service_related_products_multi.md — гайд
@@ -122,6 +134,14 @@ export interface Service {
   durationMinutes: number;
   basePrice: string;
   isActive: boolean;
+  /**
+   * Показывать услугу на публичной витрине онлайн-записи (`/book`). Скрытая
+   * услуга не попадает ни в один публичный ответ (каталог, календарь,
+   * available-times/services, карточка врача) и отклоняется при создании брони.
+   * На бэке — `online_booking_visible`, у активных услуг миграция выставила
+   * `true`.
+   */
+  onlineBookingVisible: boolean;
   imageUrl: string | null;
   sortOrder: number;
   /** Категория услуги; null — без категории. */
@@ -170,6 +190,8 @@ export interface ServiceCreatePayload {
   durationMinutes?: number;
   basePrice?: string;
   isActive?: boolean;
+  /** Видимость на публичной витрине; отсутствие — дефолт бэка (`true`). */
+  onlineBookingVisible?: boolean;
   sortOrder?: number;
   /** Категория; null/отсутствие — без категории. */
   category?: ServiceCategory | null;
@@ -188,6 +210,8 @@ export interface ServiceUpdatePayload {
   durationMinutes?: number;
   basePrice?: string;
   isActive?: boolean;
+  /** Видимость на публичной витрине; отсутствие поля не меняет её. */
+  onlineBookingVisible?: boolean;
   sortOrder?: number;
   /**
    * When present and non-empty → sync branch assignments.
@@ -310,6 +334,9 @@ function normalizeService(service: Service): Service {
     ...service,
     // Пока бэк не отдаёт category, поле undefined → нормализуем в null.
     category: service.category ?? null,
+    // Дефолт бэка — true (миграция выставила его активным услугам); на
+    // окружении, где поля ещё нет, услуга считается видимой.
+    onlineBookingVisible: service.onlineBookingVisible !== false,
     relatedProductId: service.relatedProductId ?? null,
     relatedProduct: normalizeRelatedProduct(service.relatedProduct),
     relatedProducts: normalizeRelatedProducts(service),

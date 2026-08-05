@@ -13,6 +13,7 @@ import {
   MenuItem,
   Paper,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -39,6 +40,7 @@ import {
   SERVICE_CATEGORIES_ENABLED,
   SERVICE_CATEGORY_LABELS,
   SERVICE_CATEGORY_OPTIONS,
+  SERVICE_ONLINE_VISIBILITY_ENABLED,
   SERVICE_RELATED_PRODUCT_ENABLED,
   updateService,
   uploadServiceImage,
@@ -96,6 +98,7 @@ type ServiceEditDraft = {
   category: ServiceCategory | "";
   description: string;
   isActive: boolean;
+  onlineBookingVisible: boolean;
   selectedBranchIds: number[];
 };
 
@@ -120,6 +123,7 @@ function sameAsBaseline(
     a.category === b.category &&
     a.description === b.description &&
     a.isActive === b.isActive &&
+    a.onlineBookingVisible === b.onlineBookingVisible &&
     sameIdSet(a.selectedBranchIds, b.selectedBranchIds)
   );
 }
@@ -142,6 +146,9 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [category, setCategory] = React.useState<ServiceCategory | "">(record.category ?? "");
   const [description, setDescription] = React.useState(record.description ?? "");
   const [isActive, setIsActive] = React.useState(record.isActive ?? true);
+  const [onlineBookingVisible, setOnlineBookingVisible] = React.useState(
+    record.onlineBookingVisible !== false,
+  );
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(record.imageUrl ?? null);
   const [removePhoto, setRemovePhoto] = React.useState(false);
@@ -215,6 +222,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       category: record.category ?? "",
       description: record.description ?? "",
       isActive: record.isActive ?? true,
+      onlineBookingVisible: record.onlineBookingVisible !== false,
     };
     const next = draft ?? base;
     setName(next.name);
@@ -223,6 +231,8 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     setCategory(next.category);
     setDescription(next.description);
     setIsActive(next.isActive);
+    // Черновик мог быть записан до появления поля — тогда считаем услугу видимой.
+    setOnlineBookingVisible(next.onlineBookingVisible !== false);
     setDraftRestored(Boolean(draft));
     // selectedBranchIds baseline заполняется в эффекте синхронизации филиалов —
     // он выполняется следом и знает актуальный availableBranches.
@@ -261,6 +271,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       category,
       description,
       isActive,
+      onlineBookingVisible,
       selectedBranchIds: selectedBranches.map((b) => b.id),
     };
     const key = draftKeyFor(record.id);
@@ -275,7 +286,18 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     if (!open) return;
     const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
-  }, [open, record.id, name, price, durationMinutes, category, description, isActive, selectedBranches]);
+  }, [
+    open,
+    record.id,
+    name,
+    price,
+    durationMinutes,
+    category,
+    description,
+    isActive,
+    onlineBookingVisible,
+    selectedBranches,
+  ]);
 
   const handleClose = () => {
     flushDraftRef.current();
@@ -293,6 +315,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setCategory(b.category);
       setDescription(b.description);
       setIsActive(b.isActive);
+      setOnlineBookingVisible(b.onlineBookingVisible);
       setSelectedBranches(availableBranches.filter((br) => b.selectedBranchIds.includes(br.id)));
     }
     setDraftRestored(false);
@@ -306,6 +329,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setCategory(record.category ?? "");
       setDescription(record.description ?? "");
       setIsActive(record.isActive ?? true);
+      setOnlineBookingVisible(record.onlineBookingVisible !== false);
       setPhotoFile(null);
       setPhotoPreview(record.imageUrl ?? null);
       setRemovePhoto(false);
@@ -369,6 +393,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         durationMinutes: durNum > 0 ? durNum : 30,
         basePrice: String(priceNum),
         isActive,
+        ...(SERVICE_ONLINE_VISIBILITY_ENABLED ? { onlineBookingVisible } : {}),
         branchIds: selectedBranches.map((b) => b.id),
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
         ...relatedProductsPayload(
@@ -712,6 +737,35 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                     <Tab label={t("common.inactive")} sx={(theme) => ({ ...toggleTabStyles(theme, theme.palette.action.disabledBackground), minHeight: 32, py: 0, px: 2, "&.Mui-selected": { bgcolor: "action.selected", color: "text.primary" } })} />
                   </Tabs>
                 </Paper>
+
+                {/* Видимость на публичной витрине /book. Скрытая услуга не
+                    попадает ни в один публичный ответ бэка и не проходит при
+                    создании брони. */}
+                {SERVICE_ONLINE_VISIBILITY_ENABLED && (
+                  <Paper
+                    elevation={0}
+                    variant="outlined"
+                    sx={{
+                      p: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 1,
+                    }}
+                  >
+                    <Stack spacing={0.25}>
+                      <Typography variant="body2">{t("form.onlineBookingLabel")}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {t("form.onlineBookingHint")}
+                      </Typography>
+                    </Stack>
+                    <Switch
+                      checked={onlineBookingVisible}
+                      onChange={(e) => setOnlineBookingVisible(e.target.checked)}
+                      disabled={busy}
+                    />
+                  </Paper>
+                )}
               </Stack>
             </MotionBox>
           </MotionStack>
