@@ -597,6 +597,24 @@ export interface CreateGuestBookingRequest {
   patientPhone: string;
   /** Опциональный комментарий пациента. */
   comment?: string;
+  /**
+   * Карта пациента, на которую садится бронь (A7). Бэк принимает её только
+   * вместе с пациентским токеном и только из списка этого токена, поэтому
+   * передаётся с `patientToken`.
+   *
+   * Привязка работает — проверено на тесте 05.08.2026 косвенно, но однозначно:
+   * у брони, созданной с `patient_id`, CRM отдаёт `patientMatches: []`, а у
+   * брони с тем же телефоном без него — два совпадения. Бэк не ищет карту,
+   * когда она уже известна.
+   *
+   * ⚠ Имя и телефон всё равно обязательны: запрос с одним `patient_id` отвечает
+   * `400 details.missing: ["patient_name","patient_phone"]`. Поэтому фронт
+   * подставляет их из карты сам; просьба брать из карты на бэке — §4 тикета
+   * `backend_ticket_booking_patient_cabinet_2026-08-05.md`.
+   */
+  patientId?: number;
+  /** Токен пациента; без него бэк проигнорирует `patientId`. */
+  patientToken?: string;
 }
 
 /**
@@ -687,6 +705,7 @@ export async function createGuestBooking(
   const raw = await publicRawRequest<ItemEnvelope<unknown>>(`/bookings/`, {
     method: "POST",
     signal,
+    headers: req.patientToken ? { "X-Patient-Token": req.patientToken } : undefined,
     body: {
       professional_id: req.professionalId,
       branch_id: req.branchId,
@@ -696,6 +715,7 @@ export async function createGuestBooking(
       patient_name: req.patientName,
       patient_phone: req.patientPhone,
       comment: req.comment,
+      ...(req.patientId != null ? { patient_id: req.patientId } : {}),
     },
   });
   return camelizeDeep(raw.data) as GuestBookingResult;

@@ -3,6 +3,7 @@ import { Alert, Box, Button, Skeleton, Stack, Typography } from "@mui/material";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
+import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import { useNavigate, useParams } from "react-router";
 
@@ -21,6 +22,7 @@ import {
 } from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
 import { BOOKING_NO_SERVICE_ENABLED, PublicBookingShell } from "./shell";
+import { usePatientSession } from "./PatientSession";
 import {
   BOOKING_PRIMARY,
   BOOKING_PRIMARY_HOVER,
@@ -147,6 +149,8 @@ const DoctorBookingPage: React.FC = () => {
   const { branches } = useBookingOrg();
   /** Телефон клиники — на него уводим, когда записаться онлайн нельзя. */
   const clinicPhone = primaryPhone(branches);
+  /** Вошедший пациент: его карта заменяет ручной ввод имени и телефона (A7). */
+  const { session, selectedPatient } = usePatientSession();
 
   const [doctor, setDoctor] = React.useState<ProfessionalDetail | null>(null);
   const [reviews, setReviews] = React.useState<ProfessionalReview[]>([]);
@@ -348,10 +352,21 @@ const DoctorBookingPage: React.FC = () => {
     if (servicesInvalid) return setStep(3);
 
     setSubmitError(null);
+    // Вошедшему пациенту с выбранной картой контакты вводить незачем — они уже
+    // есть в сессии. Диалог остаётся доступен через «Записать другого».
+    if (session && selectedPatient) {
+      submitBooking(selectedPatient.fullName, session.phone, "", selectedPatient.id);
+      return;
+    }
     setGuestOpen(true);
   };
 
-  const handleSubmit = (name: string, phone: string, comment: string) => {
+  const submitBooking = (
+    name: string,
+    phone: string,
+    comment: string,
+    patientId?: number,
+  ) => {
     if (!doctor || !branchId || !selectedDate || !selectedTime) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -364,6 +379,8 @@ const DoctorBookingPage: React.FC = () => {
       patientName: name,
       patientPhone: phone,
       comment: comment || undefined,
+      // Бронь садится на карту пациента только вместе с его токеном.
+      ...(patientId != null && session ? { patientId, patientToken: session.token } : {}),
     })
       .then((res) => {
         setResult(res);
@@ -385,6 +402,9 @@ const DoctorBookingPage: React.FC = () => {
       })
       .finally(() => setSubmitting(false));
   };
+
+  const handleGuestSubmit = (name: string, phone: string, comment: string) =>
+    submitBooking(name, phone, comment);
 
   // ── Состояния загрузки и ошибок ────────────────────────────────────────────
 
@@ -436,6 +456,48 @@ const DoctorBookingPage: React.FC = () => {
   ) : null;
 
   const showBookButton = calendarLoading || hasAvailableDay;
+
+  /**
+   * Кому оформляется запись, когда пациент вошёл: имя из выбранной карты вместо
+   * повторного ввода контактов. «Записать другого» возвращает обычную форму —
+   * с одного номера часто записывают и себя, и родственника без своей карты.
+   */
+  const bookingFor =
+    session && selectedPatient ? (
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="center"
+        flexWrap="wrap"
+        gap={0.75}
+        sx={{ fontSize: 13 }}
+      >
+        <PersonOutlineOutlined sx={{ fontSize: 16, color: MUTED }} />
+        <Typography component="span" sx={{ fontSize: 13, color: MUTED }}>
+          {t("bookingFor")}
+        </Typography>
+        <Typography component="span" sx={{ fontSize: 13, fontWeight: 600 }}>
+          {selectedPatient.fullName}
+        </Typography>
+        <Box
+          component="button"
+          type="button"
+          onClick={() => setGuestOpen(true)}
+          sx={{
+            border: 0,
+            bgcolor: "transparent",
+            p: 0,
+            fontFamily: "inherit",
+            fontSize: 13,
+            color: BOOKING_PRIMARY,
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          {t("bookForOther")}
+        </Box>
+      </Stack>
+    ) : null;
 
   const scheduleBlock = (
     <Box sx={{ position: "relative" }}>
@@ -516,6 +578,7 @@ const DoctorBookingPage: React.FC = () => {
                 </Typography>
               )}
             </Stack>
+            {bookingFor}
             <BookButton onClick={handleBook} loading={submitting} fullWidth />
           </Box>
         ) : undefined
@@ -609,6 +672,7 @@ const DoctorBookingPage: React.FC = () => {
                     {totalPrice > 0 && <SummaryChip accent>{formatPrice(totalPrice)}</SummaryChip>}
                   </Stack>
                 )}
+                {bookingFor}
                 {submitError && (
                   <Typography sx={{ fontSize: 14, color: "error.main", textAlign: "center" }}>
                     {submitError}
@@ -640,7 +704,7 @@ const DoctorBookingPage: React.FC = () => {
         submitting={submitting}
         error={submitError}
         onClose={() => setGuestOpen(false)}
-        onSubmit={handleSubmit}
+        onSubmit={handleGuestSubmit}
       />
 
       {result && (

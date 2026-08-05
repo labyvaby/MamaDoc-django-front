@@ -142,6 +142,8 @@
   "successServices": "{{service.nomPl, capitalize}}",
   "successAddress": "Адрес",
   "successTotal": "Стоимость",
+  "bookingFor": "Записываем:",
+  "bookForOther": "другого {{patient.acc}}",
   "reminderOnTime": "Просим приходить вовремя: при опоздании время {{visit.gen}} может быть сокращено.",
   "reminderCancel": "Если не сможете прийти, предупредите заранее — не менее чем за 12 часов.",
 
