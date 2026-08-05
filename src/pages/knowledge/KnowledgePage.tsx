@@ -2,13 +2,21 @@ import React from "react";
 import {
   Alert,
   Box,
+  Breadcrumbs,
   Button,
   Chip,
   Card,
+  Divider,
+  IconButton,
+  Link,
+  ListItemIcon,
+  ListItemText,
+  Menu,
   MenuItem,
   Skeleton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -20,12 +28,16 @@ import {
 } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import PostAddOutlined from "@mui/icons-material/PostAddOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import FolderOffOutlined from "@mui/icons-material/FolderOffOutlined";
+import CreateNewFolderOutlined from "@mui/icons-material/CreateNewFolderOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useModuleGate } from "../../hooks/useModuleGate";
@@ -40,18 +52,27 @@ import {
   cascadeItem,
 } from "../../components/ui";
 import {
+  KNOWLEDGE_FOLDERS_FROM_BACKEND,
   KNOWLEDGE_USE_MOCKS,
   createKnowledgeArticle,
   getKnowledgeArticles,
   getKnowledgeCategories,
+  getKnowledgeFolderCounts,
+  getKnowledgeFolders,
   getKnowledgeSeries,
   groupArticleFeed,
+  setArticleFolder,
+  withLocalFolders,
   type KnowledgeArticleListItem,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
+import ArticleDraggable from "./ArticleDraggable";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
 import CategoriesDialog from "./CategoriesDialog";
 import FeedCard from "./FeedCard";
+import FolderTile from "./FolderTile";
+import FoldersDialog from "./FoldersDialog";
+import { ARTICLE_DND_TYPE, readDraggedArticleIds } from "./folders";
 import SeriesCard from "./SeriesCard";
 import { useReadArticles } from "./useReadArticles";
 
@@ -84,6 +105,12 @@ const feedGridSx = {
   },
   gap: 1.5,
 } as const;
+
+/**
+ * Сетка папок — те же колонки, что у ленты, но плитка низкая: папка несёт
+ * только название и счётчик, обложки у неё нет.
+ */
+const folderGridSx = { ...feedGridSx, mb: 0.5 } as const;
 
 /** Скелетон карточки ленты: превью 16:9 + две строки текста. */
 const FeedCardSkeleton: React.FC = () => (
@@ -126,6 +153,32 @@ const KnowledgePage: React.FC = () => {
   const [sort, setSort] = React.useState<SortKey>("recent");
   const debouncedSearch = useDebouncedValue(search.trim());
 
+  /**
+   * Открытая папка живёт в URL (`?folder=12`), а не в стейте: так на папку можно
+   * дать ссылку, а возврат со страницы статьи (кнопкой браузера или «Назад»)
+   * приводит обратно в папку, а не в корень.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const folderParam = searchParams.get("folder");
+  const openFolderId = folderParam && /^\d+$/.test(folderParam) ? Number(folderParam) : null;
+
+  const openFolder = React.useCallback(
+    (id: number | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (id == null) next.delete("folder");
+      else next.set("folder", String(id));
+      setSearchParams(next);
+    },
+    [searchParams, setSearchParams],
+  );
+
+  /**
+   * Версия локальных папок: пока бэк не отдаёт `folderId`, привязки лежат в
+   * localStorage и react-query о них ничего не знает. Инкремент после каждого
+   * перемещения — сигнал пересчитать папки статей и счётчики плиток.
+   */
+  const [foldersVersion, setFoldersVersion] = React.useState(0);
+
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.knowledge.all });
 
@@ -136,12 +189,42 @@ const KnowledgePage: React.FC = () => {
   });
   const categories = React.useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
 
+  const foldersQuery = useQuery({
+    queryKey: djangoQueryKeys.knowledge.folders({ orgId: orgId ?? null }),
+    queryFn: ({ signal }) => getKnowledgeFolders({ organizationId: orgId }, signal),
+  });
+  const folders = React.useMemo(() => foldersQuery.data ?? [], [foldersQuery.data]);
+
+  const currentFolder = React.useMemo(
+    () => folders.find((f) => f.id === openFolderId) ?? null,
+    [folders, openFolderId],
+  );
+
+  /**
+   * Папку удалили под открытой ссылкой — возвращаем в корень, иначе человек
+   * остался бы в пустой папке без названия и без выхода, кроме «Назад».
+   */
+  React.useEffect(() => {
+    if (openFolderId != null && !foldersQuery.isLoading && !currentFolder) {
+      openFolder(null);
+    }
+  }, [openFolderId, currentFolder, foldersQuery.isLoading, openFolder]);
+
   // Без manage бэк и так отдаёт только published — дублируем для моков.
   const publishedFilter = canManage ? undefined : true;
+
+  /**
+   * Фильтр папки уходит на сервер только когда бэк его понимает. Пока нет —
+   * грузим ту же выборку, что и в корне, и отбираем статьи папки на клиенте
+   * (папку статьи знает только localStorage), поэтому и в ключе запроса папки
+   * нет: иначе вход в каждую папку перезапрашивал бы одни и те же статьи.
+   */
+  const serverFolder = KNOWLEDGE_FOLDERS_FROM_BACKEND ? openFolderId ?? undefined : undefined;
 
   const articlesQuery = useInfiniteQuery({
     queryKey: djangoQueryKeys.knowledge.articles({
       category: categoryFilter,
+      folder: serverFolder ?? "any",
       search: debouncedSearch,
       orgId: orgId ?? null,
     }),
@@ -150,6 +233,7 @@ const KnowledgePage: React.FC = () => {
       getKnowledgeArticles(
         {
           category: categoryFilter === "all" ? undefined : categoryFilter,
+          folder: serverFolder,
           search: debouncedSearch || undefined,
           isPublished: publishedFilter,
           page: pageParam,
@@ -164,12 +248,43 @@ const KnowledgePage: React.FC = () => {
     placeholderData: keepPreviousData,
   });
 
-  const articles = React.useMemo(
-    () => articlesQuery.data?.pages.flatMap((p) => p.results) ?? [],
-    [articlesQuery.data],
-  );
+  const articles = React.useMemo(() => {
+    const loaded = articlesQuery.data?.pages.flatMap((p) => p.results) ?? [];
+    // Папка статьи приходит из localStorage, пока её не отдаёт бэк.
+    return withLocalFolders(loaded, folders, orgId);
+    // foldersVersion — внешний сигнал: перемещение статьи меняет localStorage,
+    // а не данные запроса, поэтому иначе лента не перерисовалась бы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articlesQuery.data, folders, orgId, foldersVersion]);
+
   const total = articlesQuery.data?.pages[0]?.count ?? 0;
   const allLoaded = !articlesQuery.hasNextPage;
+
+  /**
+   * Что показываем в ленте:
+   *   • в папке — только её статьи;
+   *   • в корне — только статьи вне папок (разложенные лежат внутри плиток);
+   *   • при поиске — всё найденное, включая содержимое папок: спрятать находку
+   *     внутрь папки значило бы показать «ничего не найдено» на глазах у
+   *     найденного.
+   * Когда бэк научится фильтру `?folder=`, отбор в папке уедет на сервер.
+   */
+  const visibleArticles = React.useMemo(() => {
+    if (debouncedSearch) return articles;
+    if (openFolderId != null) {
+      return KNOWLEDGE_FOLDERS_FROM_BACKEND
+        ? articles
+        : articles.filter((a) => a.folderId === openFolderId);
+    }
+    return articles.filter((a) => a.folderId == null);
+  }, [articles, openFolderId, debouncedSearch]);
+
+  /** Счётчики плиток: с бэка (когда появится) или по локальным привязкам. */
+  const folderCounts = React.useMemo(() => {
+    const local = getKnowledgeFolderCounts(orgId);
+    return new Map(folders.map((f) => [f.id, f.articleCount ?? local.get(f.id) ?? 0]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folders, orgId, foldersVersion]);
 
   /**
    * Счётчики у чипов разделов. Бэк агрегата не отдаёт, но `count` в ответе
@@ -212,7 +327,7 @@ const KnowledgePage: React.FC = () => {
    * серии значило бы «ничего не найдено» на глазах у найденного.
    */
   const feed = React.useMemo(() => {
-    const sorted = sortArticles(articles, sort);
+    const sorted = sortArticles(visibleArticles, sort);
     if (debouncedSearch) {
       return sorted.map((article) => ({
         kind: "article" as const,
@@ -221,7 +336,7 @@ const KnowledgePage: React.FC = () => {
       }));
     }
     return groupArticleFeed(sorted);
-  }, [articles, sort, debouncedSearch]);
+  }, [visibleArticles, sort, debouncedSearch]);
 
   const feedLoading = articlesQuery.isLoading;
   const feedEmpty = feed.length === 0;
@@ -247,6 +362,44 @@ const KnowledgePage: React.FC = () => {
   };
 
   const [categoriesOpen, setCategoriesOpen] = React.useState(false);
+  const [foldersOpen, setFoldersOpen] = React.useState(false);
+
+  /**
+   * Меню выбора папки — путь для тач-устройств: нативного HTML5-перетаскивания
+   * на телефоне нет, и без меню папки были бы там только для чтения.
+   */
+  const [moveMenu, setMoveMenu] = React.useState<{
+    anchor: HTMLElement;
+    articleIds: number[];
+  } | null>(null);
+
+  /** Положить статьи в папку (folderId: null — вынуть из папки). */
+  const moveArticles = React.useCallback(
+    async (articleIds: number[], folderId: number | null) => {
+      try {
+        // Последовательно: у серии частей несколько, и на живом API это PATCH'и —
+        // параллельные запросы к одному ресурсу без нужды.
+        for (const id of articleIds) {
+          await setArticleFolder(id, folderId, orgId);
+        }
+        setFoldersVersion((v) => v + 1);
+        if (KNOWLEDGE_FOLDERS_FROM_BACKEND) invalidate();
+        const target = folderId != null ? folders.find((f) => f.id === folderId)?.name : null;
+        notify?.({
+          type: "success",
+          message: target ? `Перенесено в «${target}»` : "Убрано из папки",
+        });
+      } catch (err) {
+        notify?.({ type: "error", message: getErrorMessage(err) });
+      }
+    },
+    // invalidate — стабильная замыкающая функция над queryClient
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orgId, folders, notify],
+  );
+
+  /** Плитки папок показываем только в корне: внутри папки и в поиске они лишние. */
+  const showFolders = openFolderId == null && !debouncedSearch && folders.length > 0;
 
   // Существующие серии — подсказка автокомплита в редакторе.
   const seriesQuery = useQuery({
@@ -271,14 +424,24 @@ const KnowledgePage: React.FC = () => {
         loading={articlesQuery.isFetching}
         actions={
           canManage ? (
-            <Button
-              variant="outlined"
-              startIcon={<CategoryOutlined />}
-              onClick={() => setCategoriesOpen(true)}
-              sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
-            >
-              Разделы
-            </Button>
+            <Stack direction="row" gap={1} sx={{ flexShrink: 0 }}>
+              <Button
+                variant="outlined"
+                startIcon={<CreateNewFolderOutlined />}
+                onClick={() => setFoldersOpen(true)}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Папки
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<CategoryOutlined />}
+                onClick={() => setCategoriesOpen(true)}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Разделы
+              </Button>
+            </Stack>
           ) : undefined
         }
       />
@@ -297,6 +460,52 @@ const KnowledgePage: React.FC = () => {
           pb: 1.5,
         })}
       >
+        {/* Хлебные крошки открытой папки. «База знаний» — ещё и зона сброса:
+            карточку, брошенную на неё, вынимаем из папки. */}
+        {openFolderId != null && (
+          <MotionBox
+            variants={cascadeItem}
+            sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 34 }}
+          >
+            <Tooltip title="Ко всем материалам">
+              <IconButton size="small" onClick={() => openFolder(null)}>
+                <ArrowBackOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Breadcrumbs sx={{ flex: 1, minWidth: 0 }}>
+              <Link
+                component="button"
+                underline="hover"
+                color="text.secondary"
+                onClick={() => openFolder(null)}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes(ARTICLE_DND_TYPE)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const ids = readDraggedArticleIds(e.dataTransfer);
+                  if (ids.length > 0) void moveArticles(ids, null);
+                }}
+                sx={{ background: "none", border: 0, p: 0, cursor: "pointer", font: "inherit" }}
+              >
+                База знаний
+              </Link>
+              <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
+                <FolderOutlined sx={{ fontSize: 18, color: "primary.main" }} />
+                {currentFolder ? (
+                  <Typography variant="body2" fontWeight={600} noWrap>
+                    {currentFolder.name}
+                  </Typography>
+                ) : (
+                  <Skeleton variant="text" width={120} />
+                )}
+              </Stack>
+            </Breadcrumbs>
+          </MotionBox>
+        )}
+
         {/* Фильтр по разделам + сортировка */}
         <MotionBox
           variants={cascadeItem}
@@ -362,19 +571,70 @@ const KnowledgePage: React.FC = () => {
               {getErrorMessage(articlesQuery.error)}
             </Alert>
           )}
-          {!feedLoading && feedEmpty && (
+
+          {/* Папки: только в корне. Плитка — цель перетаскивания карточек. */}
+          {showFolders && (
+            <Box sx={{ mb: 2 }}>
+              <Typography
+                variant="overline"
+                color="text.secondary"
+                component="div"
+                sx={{ mb: 0.75 }}
+              >
+                Папки
+              </Typography>
+              <Box sx={folderGridSx}>
+                {folders.map((folder) => (
+                  <FolderTile
+                    key={folder.id}
+                    name={folder.name}
+                    count={folderCounts.get(folder.id) ?? 0}
+                    onOpen={() => openFolder(folder.id)}
+                    onDropArticles={
+                      canManage ? (ids) => void moveArticles(ids, folder.id) : undefined
+                    }
+                    onEdit={canManage ? () => setFoldersOpen(true) : undefined}
+                  />
+                ))}
+              </Box>
+              {feed.length > 0 && (
+                <Typography
+                  variant="overline"
+                  color="text.secondary"
+                  component="div"
+                  sx={{ mt: 2, mb: 0.75 }}
+                >
+                  Статьи вне папок
+                </Typography>
+              )}
+            </Box>
+          )}
+
+          {/* Пустая лента в корне при наличии папок — норма (всё разложено),
+              подсказку в этом случае не показываем. */}
+          {!feedLoading && feedEmpty && (openFolderId != null || !!debouncedSearch || !showFolders) && (
             <ListEmptyState
-              icon={<MenuBookOutlined />}
-              title={debouncedSearch ? "Ничего не найдено" : "Материалов пока нет"}
+              icon={openFolderId != null ? <FolderOffOutlined /> : <MenuBookOutlined />}
+              title={
+                debouncedSearch
+                  ? "Ничего не найдено"
+                  : openFolderId != null
+                  ? "В этой папке пока нет статей"
+                  : "Материалов пока нет"
+              }
               description={
                 debouncedSearch
                   ? "Попробуйте изменить запрос или снять фильтр по разделу."
+                  : openFolderId != null
+                  ? canManage
+                    ? "Перетащите карточку статьи на папку в общем списке — или воспользуйтесь кнопкой на карточке."
+                    : "Статьи появятся здесь, когда их сюда сложат."
                   : canManage
                   ? "Соберите здесь инструкции для команды — в статьи можно вставлять картинки и видео с YouTube, а длинный материал разбить на части."
                   : "Здесь появятся инструкции вашей организации."
               }
               action={
-                canManage && !debouncedSearch ? (
+                canManage && !debouncedSearch && openFolderId == null ? (
                   <Button
                     variant="outlined"
                     startIcon={<PostAddOutlined />}
@@ -389,27 +649,42 @@ const KnowledgePage: React.FC = () => {
           <Box sx={feedGridSx}>
             {feedLoading &&
               Array.from({ length: 8 }).map((_, i) => <FeedCardSkeleton key={`s_${i}`} />)}
-            {feed.map((item) =>
-              item.kind === "series" ? (
-                <SeriesCard
+            {feed.map((item) => {
+              // Серию переносим целиком: её части иначе расползутся по папкам, и
+              // в корне серия схлопнется в неполную карточку.
+              const articleIds =
+                item.kind === "series"
+                  ? item.series.parts.map((p) => p.article.id)
+                  : [item.article.id];
+              return (
+                <ArticleDraggable
                   key={item.key}
-                  series={item.series}
-                  orgId={orgId}
-                  isRead={isRead}
-                  highlight={debouncedSearch}
-                  onOpen={(id) => navigate(`/knowledge/${id}`)}
-                />
-              ) : (
-                <FeedCard
-                  key={item.key}
-                  article={item.article}
-                  orgId={orgId}
-                  read={isRead(item.article.id)}
-                  highlight={debouncedSearch}
-                  onOpen={(id) => navigate(`/knowledge/${id}`)}
-                />
-              ),
-            )}
+                  articleIds={articleIds}
+                  enabled={canManage}
+                  onMoveClick={
+                    canManage ? (anchor) => setMoveMenu({ anchor, articleIds }) : undefined
+                  }
+                >
+                  {item.kind === "series" ? (
+                    <SeriesCard
+                      series={item.series}
+                      orgId={orgId}
+                      isRead={isRead}
+                      highlight={debouncedSearch}
+                      onOpen={(id) => navigate(`/knowledge/${id}`)}
+                    />
+                  ) : (
+                    <FeedCard
+                      article={item.article}
+                      orgId={orgId}
+                      read={isRead(item.article.id)}
+                      highlight={debouncedSearch}
+                      onOpen={(id) => navigate(`/knowledge/${id}`)}
+                    />
+                  )}
+                </ArticleDraggable>
+              );
+            })}
           </Box>
 
           {/* Дозагрузка: раньше лента молча обрезалась на сотне материалов */}
@@ -444,6 +719,57 @@ const KnowledgePage: React.FC = () => {
         onSubmit={handleArticleSubmit}
       />
       <CategoriesDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
+      <FoldersDialog open={foldersOpen} onClose={() => setFoldersOpen(false)} />
+
+      {/* Выбор папки без перетаскивания — путь для телефона и планшета. */}
+      <Menu
+        open={moveMenu !== null}
+        anchorEl={moveMenu?.anchor ?? null}
+        onClose={() => setMoveMenu(null)}
+      >
+        {folders.map((folder) => (
+          <MenuItem
+            key={folder.id}
+            onClick={() => {
+              if (moveMenu) void moveArticles(moveMenu.articleIds, folder.id);
+              setMoveMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <FolderOutlined fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{folder.name}</ListItemText>
+          </MenuItem>
+        ))}
+        {folders.length === 0 && (
+          <MenuItem
+            onClick={() => {
+              setMoveMenu(null);
+              setFoldersOpen(true);
+            }}
+          >
+            <ListItemIcon>
+              <CreateNewFolderOutlined fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Создать первую папку</ListItemText>
+          </MenuItem>
+        )}
+        {/* «Вынести» показываем только внутри папки: в корне статья и так вне папок. */}
+        {openFolderId != null && folders.length > 0 && <Divider />}
+        {openFolderId != null && (
+          <MenuItem
+            onClick={() => {
+              if (moveMenu) void moveArticles(moveMenu.articleIds, null);
+              setMoveMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <FolderOffOutlined fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Убрать из папки</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
     </Box>
   );
 };

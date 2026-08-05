@@ -81,6 +81,8 @@ interface PublicRequestOptions {
   signal?: AbortSignal;
   method?: string;
   body?: unknown;
+  /** Доп. заголовки — нужны кабинету пациента (`X-Patient-Token`). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -88,16 +90,19 @@ interface PublicRequestOptions {
  * приходят как `{ error, message, details }` — extractErrorMessage их разбирает.
  * Возвращает СЫРОЙ (snake_case) payload; распаковка/camelize — в обёртках ниже.
  */
-async function publicRawRequest<T>(
+export async function publicRawRequest<T>(
   path: string,
-  { signal, method = "GET", body }: PublicRequestOptions = {},
+  { signal, method = "GET", body, headers }: PublicRequestOptions = {},
 ): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${PUBLIC_API_BASE}${path}`, {
       method,
       signal,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...headers,
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (err) {
@@ -117,18 +122,41 @@ async function publicRawRequest<T>(
 }
 
 /** GET одиночного ресурса: `{ data }` → camelCase T. */
-async function getItem<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(path, { signal });
+export async function getItem<T>(
+  path: string,
+  signal?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const raw = await publicRawRequest<ItemEnvelope<unknown>>(path, { signal, headers });
   return camelizeDeep(raw.data) as T;
 }
 
-/** GET списка: `{ data, pagination }` → { items: T[], pagination }. */
-async function getList<T>(path: string, signal?: AbortSignal): Promise<PublicList<T>> {
-  const raw = await publicRawRequest<ListEnvelope<unknown>>(path, { signal });
+/**
+ * GET списка: `{ data, pagination }` → `{ items, pagination }`. Часть ручек
+ * (`/me/bookings/`) конверт без `pagination` — тогда подставляем размер выборки,
+ * чтобы вызывающий код не проверял поле на undefined.
+ */
+export async function getList<T>(
+  path: string,
+  signal?: AbortSignal,
+  headers?: Record<string, string>,
+): Promise<PublicList<T>> {
+  const raw = await publicRawRequest<ListEnvelope<unknown>>(path, { signal, headers });
+  const items = (raw.data ?? []).map((x) => camelizeDeep(x) as T);
   return {
-    items: (raw.data ?? []).map((x) => camelizeDeep(x) as T),
-    pagination: raw.pagination,
+    items,
+    pagination: raw.pagination ?? { page: 1, limit: items.length, total: items.length },
   };
+}
+
+/** Тело-объект в camelCase → snake_case (публичный API принимает snake). */
+export function snakeizeBody(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (v === undefined) continue;
+    out[k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = v;
+  }
+  return out;
 }
 
 // ── Общие типы ────────────────────────────────────────────────────────────────
@@ -569,15 +597,100 @@ export interface CreateGuestBookingRequest {
   patientPhone: string;
   /** Опциональный комментарий пациента. */
   comment?: string;
+  /**
+   * Карта пациента, на которую садится бронь (A7). Бэк принимает её только
+   * вместе с пациентским токеном и только из списка этого токена, поэтому
+   * передаётся с `patientToken`.
+   *
+   * Привязка работает — проверено на тесте 05.08.2026 косвенно, но однозначно:
+   * у брони, созданной с `patient_id`, CRM отдаёт `patientMatches: []`, а у
+   * брони с тем же телефоном без него — два совпадения. Бэк не ищет карту,
+   * когда она уже известна.
+   *
+   * ⚠ Имя и телефон всё равно обязательны: запрос с одним `patient_id` отвечает
+   * `400 details.missing: ["patient_name","patient_phone"]`. Поэтому фронт
+   * подставляет их из карты сам; просьба брать из карты на бэке — §4 тикета
+   * `backend_ticket_booking_patient_cabinet_2026-08-05.md`.
+   */
+  patientId?: number;
+  /** Токен пациента; без него бэк проигнорирует `patientId`. */
+  patientToken?: string;
 }
 
-/** Ответ на создание брони. Сабмит проверен вживую 03.08.2026 — форма подходит. */
+/**
+ * Ответ на создание брони — только эти пять полей (проверено на живом API
+ * 05.08.2026). Услуги, сумму, врача и филиал POST не отдаёт, хотя ответ бэка
+ * `BOOKING_AND_TEST_ENVIRONMENT.md` §3 их обещает: за ними идём в
+ * `getBookingByCode()`.
+ */
 export interface GuestBookingResult {
   id: number;
   confirmationCode: string;
   status: string;
   date: string;
   time: string;
+}
+
+/** Услуга в брони: цена — строка-decimal, как везде в публичном API. */
+export interface BookingServiceRef {
+  id: number;
+  name: string;
+  price: string;
+}
+
+/** Врач в брони — публичный минимум, без контактов. */
+export interface BookingDoctorRef {
+  id: number;
+  slug: string;
+  fullName: string;
+  photoUrl: string | null;
+  specialty: string | null;
+}
+
+/** Филиал брони: адрес и ссылки на карты для экрана «как добраться». */
+export interface BookingBranchRef {
+  id: number;
+  slug: string;
+  name: string;
+  address: string | null;
+  phones: string[];
+  twoGisUrl: string | null;
+  yandexMapsUrl: string | null;
+  googleMapsUrl: string | null;
+}
+
+/**
+ * Бронь по коду подтверждения — полная карточка (проверено на живом API
+ * 05.08.2026). ФИО и телефон пациента в публичном ответе не приходят: код знает
+ * только он сам, но бэк всё равно не отдаёт ПДн.
+ *
+ * `totalDurationMin` для брони без услуг — 30 (стандартное окно).
+ * `payment` — предоплата, `null` если её не требуется.
+ */
+export interface PublicBookingDetail {
+  id: number;
+  confirmationCode: string;
+  status: string;
+  date: string;
+  time: string;
+  totalDurationMin: number;
+  totalPrice: string;
+  services: BookingServiceRef[];
+  doctor: BookingDoctorRef | null;
+  branch: BookingBranchRef | null;
+  payment: unknown | null;
+}
+
+/**
+ * `GET /api/v1/bookings/<confirmation_code>/` — карточка брони по коду. Новые
+ * коды 10 символов (алфавит без 0/O/1/I), старые 6-символьные тоже работают.
+ * Несуществующий код → 404.
+ */
+export function getBookingByCode(
+  code: string,
+  signal?: AbortSignal,
+): Promise<PublicBookingDetail> {
+  return getItem<PublicBookingDetail>(`/bookings/${encodeURIComponent(code)}/`, signal);
 }
 
 /**
@@ -592,6 +705,7 @@ export async function createGuestBooking(
   const raw = await publicRawRequest<ItemEnvelope<unknown>>(`/bookings/`, {
     method: "POST",
     signal,
+    headers: req.patientToken ? { "X-Patient-Token": req.patientToken } : undefined,
     body: {
       professional_id: req.professionalId,
       branch_id: req.branchId,
@@ -601,6 +715,7 @@ export async function createGuestBooking(
       patient_name: req.patientName,
       patient_phone: req.patientPhone,
       comment: req.comment,
+      ...(req.patientId != null ? { patient_id: req.patientId } : {}),
     },
   });
   return camelizeDeep(raw.data) as GuestBookingResult;

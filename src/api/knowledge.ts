@@ -1,5 +1,14 @@
 import { apiRequest } from "./client";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
+import {
+  localAssignments,
+  localCreateFolder,
+  localDeleteFolder,
+  localFolderCounts,
+  localFolders,
+  localSetArticleFolder,
+  localUpdateFolder,
+} from "./knowledgeFoldersLocal";
 
 /**
  * Модуль «База знаний» — статьи (rich-text, TipTap → HTML). Видео вставляются
@@ -71,6 +80,13 @@ export interface KnowledgeArticleListItem {
   /** Денормализованное имя серии (для карточек ленты, без похода за деталями). */
   seriesName: string | null;
   partNumber: number | null;
+  /**
+   * Папка, в которую сложена статья — см. раздел «Папки» ниже. Бэк поля пока не
+   * отдаёт (undefined): до реализации тикета лента подставляет его из локального
+   * хранилища через `withLocalFolders`.
+   */
+  folderId?: number | null;
+  folderName?: string | null;
 }
 
 export interface KnowledgeArticle extends KnowledgeArticleListItem {
@@ -87,6 +103,12 @@ export interface KnowledgeArticlesResponse {
 
 export interface KnowledgeArticlesFilters {
   category?: number;
+  /**
+   * Папка. Отправляется только при KNOWLEDGE_FOLDERS_FROM_BACKEND: пока фильтра
+   * нет, бэк молча игнорирует неизвестный параметр и вернул бы весь список —
+   * то есть «статьи папки» показали бы всё подряд.
+   */
+  folder?: number;
   /** Поиск по title+content (на бэке). */
   search?: string;
   /** manage-only: без права бэк отдаёт только published. */
@@ -322,6 +344,147 @@ export function groupArticleFeed(articles: KnowledgeArticleListItem[]): Knowledg
     feed.push({ kind: "series", key: `s${group.key}`, series: group });
   }
   return feed;
+}
+
+// ── Папки ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Папка — произвольная группировка статей, которую админ собирает руками
+ * (перетаскиванием карточки на плитку). Это ТРЕТЬЕ измерение рядом с двумя
+ * существующими, и оба остаются в UI:
+ *   • раздел (`categoryId`) — кому адресован материал, чипы-фильтры над лентой;
+ *   • серия (`seriesId` + `partNumber`) — один материал, разбитый на части;
+ *   • папка (`folderId`) — «положил рядом, потому что так удобно искать».
+ *
+ * Бэк папок пока не умеет: тикет `MamaDoc/backend_ticket_knowledge_folders.md`
+ * (нужны сущность `/knowledge/folders/`, поле `folderId` у статьи, фильтр
+ * `?folder=` и способ получить статьи ВНЕ папок). Пока флаг выключен, папки и
+ * привязки живут в localStorage — см. `api/knowledgeFoldersLocal.ts`; это режим
+ * для показа и проверки UX, данные не общие для команды.
+ */
+export const KNOWLEDGE_FOLDERS_FROM_BACKEND = false;
+
+export interface KnowledgeFolder {
+  id: number;
+  name: string;
+  position: number;
+  isActive: boolean;
+  /**
+   * Число статей в папке. Просим у бэка (п. 5 тикета), чтобы не делать по
+   * запросу на плитку; пока считается локально — см. getKnowledgeFolderCounts.
+   */
+  articleCount?: number;
+}
+
+export interface KnowledgeFolderPayload {
+  name: string;
+  position?: number;
+  isActive?: boolean;
+}
+
+export function getKnowledgeFolders(
+  params: { organizationId?: number } = {},
+  signal?: AbortSignal,
+): Promise<KnowledgeFolder[]> {
+  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
+    return Promise.resolve(localFolders(params.organizationId));
+  }
+  const q = new URLSearchParams();
+  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
+  const qs = q.toString();
+  return apiRequest<KnowledgeFolder[]>(`/knowledge/folders/${qs ? `?${qs}` : ""}`, { signal });
+}
+
+export function createKnowledgeFolder(
+  payload: KnowledgeFolderPayload,
+  organizationId?: number,
+): Promise<KnowledgeFolder> {
+  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
+    return Promise.resolve(localCreateFolder(payload, organizationId));
+  }
+  return apiRequest<KnowledgeFolder>(withOrg("/knowledge/folders/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateKnowledgeFolder(
+  folderId: number,
+  payload: Partial<KnowledgeFolderPayload>,
+  organizationId?: number,
+): Promise<KnowledgeFolder> {
+  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
+    return Promise.resolve(localUpdateFolder(folderId, payload, organizationId));
+  }
+  return apiRequest<KnowledgeFolder>(
+    withOrg(`/knowledge/folders/${folderId}/`, organizationId),
+    { method: "PATCH", body: payload },
+  );
+}
+
+export function deleteKnowledgeFolder(
+  folderId: number,
+  organizationId?: number,
+): Promise<void> {
+  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
+    localDeleteFolder(folderId, organizationId);
+    return Promise.resolve();
+  }
+  return apiRequest<void>(withOrg(`/knowledge/folders/${folderId}/`, organizationId), {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Положить статью в папку или вынуть её (folderId: null).
+ *
+ * ⚠ На живом API это PATCH статьи, и очистка через `null` бэком не подтверждена
+ * (в задачах `null` поле НЕ очищает — там нужны явные флаги). Пункт 3 тикета.
+ */
+export function setArticleFolder(
+  articleId: number,
+  folderId: number | null,
+  organizationId?: number,
+): Promise<void> {
+  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
+    localSetArticleFolder(articleId, folderId, organizationId);
+    return Promise.resolve();
+  }
+  return apiRequest<void>(withOrg(`/knowledge/articles/${articleId}/`, organizationId), {
+    method: "PATCH",
+    body: { folderId },
+  });
+}
+
+/**
+ * Счётчики статей по папкам для плиток. Пока бэк не отдаёт `articleCount`,
+ * считаем по локальным привязкам (полностью, а не по загруженным страницам).
+ */
+export function getKnowledgeFolderCounts(organizationId?: number): Map<number, number> {
+  return KNOWLEDGE_FOLDERS_FROM_BACKEND ? new Map() : localFolderCounts(organizationId);
+}
+
+/**
+ * Проставляет статьям папку из локального хранилища, пока бэк не отдаёт поле.
+ * После включения флага возвращает статьи как есть — папка придёт с бэка.
+ */
+export function withLocalFolders<T extends KnowledgeArticleListItem>(
+  articles: T[],
+  folders: KnowledgeFolder[],
+  organizationId?: number,
+): T[] {
+  if (KNOWLEDGE_FOLDERS_FROM_BACKEND) return articles;
+  const assignments = localAssignments(organizationId);
+  const nameById = new Map(folders.map((f) => [f.id, f.name]));
+  return articles.map((article) => {
+    const folderId = assignments.get(article.id) ?? null;
+    return {
+      ...article,
+      folderId,
+      // Папку удалили, а привязка осталась — считаем статью «вне папок».
+      folderName: folderId != null ? nameById.get(folderId) ?? null : null,
+    };
+  });
 }
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -628,6 +791,10 @@ export function getKnowledgeArticles(
   }
   const q = new URLSearchParams();
   if (filters.category != null) q.set("category", String(filters.category));
+  // Фильтр папки шлём только когда бэк его понимает: иначе он молча вернёт всё.
+  if (KNOWLEDGE_FOLDERS_FROM_BACKEND && filters.folder != null) {
+    q.set("folder", String(filters.folder));
+  }
   if (filters.search) q.set("search", filters.search);
   if (filters.isPublished != null) q.set("isPublished", String(filters.isPublished));
   if (filters.page != null) q.set("page", String(filters.page));

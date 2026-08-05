@@ -3,18 +3,20 @@ import { Box, Chip, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
-import dayjs, { type Dayjs } from "dayjs";
+import { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
+import { useNowMinute } from "./useNowMinute";
 
 const NAME_COL_W = 210;
 const DAY_COL_MIN_W = 96;
 const ROW_H = 44;
-const HEADER_H = 36;
+/** Шапка в два ряда: день недели и метка «сейчас» со стрелкой у сегодняшней даты. */
+const HEADER_H = 46;
 
 // Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00).
 const shortTime = (t: string) => {
@@ -41,7 +43,7 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
-  const today = dayjs();
+  const today = useNowMinute();
   const { collapsed, toggle } = useCollapsedGroups();
 
   const weekOccurrences = React.useMemo(
@@ -110,11 +112,14 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
+                gap: 0.25,
                 cursor: onDayClick ? "pointer" : "default",
                 bgcolor: isToday ? alpha(theme.palette.primary.main, 0.1) : "background.paper",
                 borderBottom: "2px solid",
                 borderLeft: "1px solid",
                 borderColor: "divider",
+                // Красная подложка шапки — вместе со стрелкой отмечает колонку сегодня.
+                borderBottomColor: isToday ? theme.palette.error.main : theme.palette.divider,
                 "&:hover": { bgcolor: "action.hover" },
               }}
             >
@@ -130,6 +135,34 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
               >
                 {d.format("dd")} {d.format("D")}
               </Typography>
+              {/* «Сейчас»: текущее время + стрелка вниз — указывает на колонку сегодня */}
+              {isToday && (
+                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", pointerEvents: "none" }}>
+                  <Typography
+                    sx={{
+                      px: 0.5,
+                      borderRadius: "4px",
+                      bgcolor: "error.main",
+                      color: "error.contrastText",
+                      fontSize: "0.6rem",
+                      fontWeight: 700,
+                      lineHeight: 1.35,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {today.format("HH:mm")}
+                  </Typography>
+                  <Box
+                    sx={{
+                      width: 0,
+                      height: 0,
+                      borderLeft: "5px solid transparent",
+                      borderRight: "5px solid transparent",
+                      borderTop: `6px solid ${theme.palette.error.main}`,
+                    }}
+                  />
+                </Box>
+              )}
             </Box>
           );
         })}
@@ -219,8 +252,10 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                               borderBottom: "1px solid",
                               borderLeft: "1px solid",
                               borderColor: "divider",
+                              // Колонку сегодня держим на фоне, а не на красных
+                              // границах: 1px-линия сливалась с границей соседнего дня.
                               bgcolor: isToday
-                                ? alpha(theme.palette.primary.main, 0.04)
+                                ? alpha(theme.palette.primary.main, 0.08)
                                 : di >= 5
                                 ? alpha(theme.palette.error.main, 0.02)
                                 : "transparent",

@@ -27,6 +27,7 @@ import { useLocation, useNavigate } from "react-router";
 
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
+import { PatientSessionProvider } from "./pages/public-booking/PatientSession";
 import { AchievementToast } from "./components/achievements/AchievementToast";
 import { AnnouncementBanner } from "./components/announcements/AnnouncementBanner";
 import { FloatingTopBanners } from "./components/layout/FloatingTopBanners";
@@ -111,6 +112,8 @@ const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const PublicBookSpecialtiesPage = lazy(() => import("./pages/public-booking/SpecialtiesPage"));
 const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsPage"));
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
+const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
+const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
@@ -1277,31 +1280,58 @@ function App() {
                         }
                       />
                       {/* Публичная онлайн-запись (/book/*) — вне RequireAuth,
-                          питается публичным /api/v1 (см. src/api/publicBooking.ts). */}
+                          питается публичным /api/v1 (см. src/api/publicBooking.ts).
+                          PatientSessionProvider держит токен пациента отдельно от
+                          сессии сотрудника: витрина живёт на том же домене, что CRM. */}
                       <Route
-                        path="book"
                         element={
-                          <Suspense fallback={<LinearProgress />}>
-                            <PublicBookSpecialtiesPage />
-                          </Suspense>
+                          <PatientSessionProvider>
+                            <Outlet />
+                          </PatientSessionProvider>
                         }
-                      />
-                      <Route
-                        path="book/doctors"
-                        element={
-                          <Suspense fallback={<LinearProgress />}>
-                            <PublicBookDoctorsPage />
-                          </Suspense>
-                        }
-                      />
-                      <Route
-                        path="book/doctor/:idOrSlug"
-                        element={
-                          <Suspense fallback={<LinearProgress />}>
-                            <PublicBookDoctorPage />
-                          </Suspense>
-                        }
-                      />
+                      >
+                        <Route
+                          path="book"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookSpecialtiesPage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
+                          path="book/doctors"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookDoctorsPage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
+                          path="book/doctor/:idOrSlug"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookDoctorPage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
+                          path="book/me"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookMyBookingsPage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Карточка записи по коду подтверждения — сюда ведёт QR. */}
+                        <Route
+                          path="book/b/:code"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicBookByCodePage />
+                            </Suspense>
+                          }
+                        />
+                      </Route>
                       <Route
                         element={
                           <ClientSessionProvider>

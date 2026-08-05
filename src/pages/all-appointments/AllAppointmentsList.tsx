@@ -6,16 +6,21 @@
  */
 import React from "react";
 import AppointmentsRegistryView from "../appointments/components/AppointmentsRegistryView";
+import { useSeesOwnAppointmentsOnly } from "../appointments/useOwnScope";
 import { useT } from "../../i18n/VerticalProvider";
 
 export const AllAppointmentsList: React.FC = () => {
   const { t } = useT("appointments");
+  // Сужаем реестр до своих приёмов только непривилегированному клиницисту:
+  // у управляющих ролей и суперпользователя employee-профиля нет, для них
+  // employeeId=me вернул бы пустой список.
+  const seesOwnOnly = useSeesOwnAppointmentsOnly();
   return (
     <AppointmentsRegistryView
       pageTitle={t("allRegistry.appointmentsPageTitle")}
       listLabel={t("allRegistry.appointmentsListLabel")}
       searchPlaceholder={t("allRegistry.appointmentsSearchPlaceholder")}
-      employeeId="me"
+      employeeId={seesOwnOnly ? "me" : undefined}
     />
   );
 };

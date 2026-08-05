@@ -8,6 +8,7 @@ import {
   Table,
   TableBody,
   TableHead,
+  TableFooter,
   CircularProgress,
   alpha,
   useTheme,
@@ -29,7 +30,9 @@ import "dayjs/locale/ru";
 
 import { formatKGS } from "../../../../utility/format";
 import {
+  getBonuses,
   getEmployeeDailyDetails,
+  type PayrollBonus,
   type PayrollRow,
   type EmployeeDailyDetailRow,
 } from "../../../../api/payroll";
@@ -127,6 +130,28 @@ function earningsBreakdown(row: PayrollRow, t: TFunc): { label: string; value: s
     .map(([label, v]) => ({ label, value: v as string }));
 }
 
+/**
+ * Части «Начислено», которые бэк считает за месяц целиком и по дням не
+ * раскладывает (в `/employees/<id>/details/` их нет вовсе): заработок за
+ * распределённые приёмы, товары, уборки, надбавка. Без них итог дневной
+ * таблицы не сходится с месячным — особенно у регистраторов, у которых «за
+ * приёмы» и есть основной заработок.
+ */
+function monthlyOnlyBreakdown(row: PayrollRow, t: TFunc): { label: string; value: string }[] {
+  const parts: [string, string | undefined][] = [
+    [t("row.breakdown.forAppointments"), row.appointmentPay],
+    [t("row.breakdown.products"), row.productPay],
+    [t("row.breakdown.cleaning"), row.cleaningEarnings],
+    [t("row.breakdown.bonus"), row.bonus],
+  ];
+  return parts
+    .filter(([, v]) => parseFloat(v || "0") > 0)
+    .map(([label, v]) => ({ label, value: v as string }));
+}
+
+const sumBy = (rows: EmployeeDailyDetailRow[], pick: (d: EmployeeDailyDetailRow) => string) =>
+  rows.reduce((s, d) => s + parseFloat(pick(d) || "0"), 0);
+
 interface SalaryReportRowProps {
   row: PayrollRow;
   year: number;
@@ -165,6 +190,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const totalHours = parseFloat(row.dayHours || "0") + parseFloat(row.nightHours || "0");
   const hasHours = parseFloat(row.dayHours || "0") > 0 || parseFloat(row.nightHours || "0") > 0;
   const breakdown = earningsBreakdown(row, t);
+  const monthlyOnly = monthlyOnlyBreakdown(row, t);
 
   // payable — есть остаток к выплате; paid — начислено, но авансы всё покрыли; none — начислений нет.
   const netPayable = Math.round(parseFloat(row.netSalary || "0"));
@@ -205,6 +231,56 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
         setDetailLoading(false);
       });
   }, [open, row.employeeId, year, month, organizationId, branchId]);
+
+  // Надбавки за месяц: в отчёте это одна сумма в колонке «Надбавка», а за что
+  // она начислена — видно только в журнале /payroll/bonuses/. Тянем при
+  // раскрытии, чтобы в детализации была причина, а не молчаливая цифра.
+  const hasBonus = parseFloat(row.bonus || "0") > 0;
+  const [bonuses, setBonuses] = useState<PayrollBonus[]>([]);
+  const bonusesFetchedRef = useRef<string>("");
+  useEffect(() => {
+    if (!open || !hasBonus) return;
+    const cacheKey = `${row.employeeId}-${year}-${month}`;
+    if (bonusesFetchedRef.current === cacheKey) return;
+    bonusesFetchedRef.current = cacheKey;
+
+    getBonuses({ year, month, employeeId: row.employeeId, organizationId })
+      .then(setBonuses)
+      .catch((err) => {
+        // Не критично: сумма надбавки и без журнала показана в сводке.
+        console.warn("Failed to load bonuses:", err);
+      });
+  }, [open, hasBonus, row.employeeId, year, month, organizationId]);
+
+  // Итоги дневной таблицы. Сверяются с месячными: Σ hoursSum = hourlyPay,
+  // Σ percentSum = процент + фикс по услугам, Σ expensesSum = авансы.
+  const dayTotals = {
+    dayHours: sumBy(dailyData, (d) => d.dayHours),
+    nightHours: sumBy(dailyData, (d) => d.nightHours),
+    hoursSum: sumBy(dailyData, (d) => d.hoursSum),
+    appointments: dailyData.reduce((s, d) => s + (d.appointmentsCount || 0), 0),
+    createdBy: dailyData.reduce((s, d) => s + (d.createdByCount || 0), 0),
+    percentSum: sumBy(dailyData, (d) => d.percentSum),
+    expensesSum: sumBy(dailyData, (d) => d.expensesSum),
+    totalSalary: sumBy(dailyData, (d) => d.totalSalary),
+  };
+  // Начислено по дням — до вычета авансов (в totalSalary дня аванс уже вычтен).
+  const accruedByDays = dayTotals.hoursSum + dayTotals.percentSum;
+  // Без дневных строк сверка «по дням + месячные» превратилась бы в «по дням 0
+  // + всё прочее» — тогда показываем прежний состав начислений.
+  const hasDaily = dailyData.length > 0;
+  const monthlyOnlySum = monthlyOnly.reduce((s, p) => s + parseFloat(p.value || "0"), 0);
+  // Счётчик приёмов в дневной разбивке расходится с месячным (проверено на
+  // проде: у регистратора 36 по дням против 40 за месяц) — это расхождение
+  // бэкенда, помечаем, чтобы не читалось как ошибка витрины.
+  const countsByDays = isRegistrator ? dayTotals.createdBy : dayTotals.appointments;
+  const countsInMonth = isRegistrator ? row.createdByCount : row.appointmentsCount;
+  const countsMismatch = dailyData.length > 0 && countsByDays !== countsInMonth;
+  // Остаток, который не объясняется ни днями, ни месячными частями. Обычно 0;
+  // показываем строкой, чтобы сводка не «не сходилась» молча.
+  const unexplained =
+    parseFloat(row.earnings || "0") - accruedByDays - monthlyOnlySum;
+  const hasUnexplained = Math.abs(unexplained) >= 1;
 
   const collapseRef = useRef<HTMLDivElement>(null);
 
@@ -432,6 +508,68 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
                   }}
                 >
+                  {hasDaily ? (
+                    <>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {t("row.accruedByDays")}
+                        </Typography>
+                        <Typography variant="body2" fontWeight={700}>
+                          {formatKGS(String(accruedByDays))}
+                        </Typography>
+                      </Stack>
+                      {monthlyOnly.length > 0 && (
+                        <>
+                          <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: "0.6rem", mb: 0.5 }}>
+                            {t("row.monthlyOnlyHint")}
+                          </Typography>
+                          {monthlyOnly.map((p) => (
+                            <Stack key={p.label} direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                                {p.label}
+                              </Typography>
+                              <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
+                                + {formatKGS(p.value)}
+                              </Typography>
+                            </Stack>
+                          ))}
+                        </>
+                      )}
+                      {hasBonus && bonuses.map((b) => (
+                        <Stack key={b.id} direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ mb: 0.5, pl: 2 }}>
+                          <Typography variant="caption" color="text.disabled" noWrap sx={{ fontSize: "0.6rem", minWidth: 0 }}>
+                            {dayjs(b.createdAt).format("DD.MM")} · {b.reason || t("bonusDrawer.noReason")}
+                          </Typography>
+                          <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6rem", flexShrink: 0 }}>
+                            {formatKGS(b.amount)}
+                          </Typography>
+                        </Stack>
+                      ))}
+                      {hasUnexplained && (
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                            {t("row.otherAccruals")}
+                          </Typography>
+                          <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
+                            {unexplained > 0 ? "+ " : "− "}
+                            {formatKGS(String(Math.abs(unexplained)))}
+                          </Typography>
+                        </Stack>
+                      )}
+                    </>
+                  ) : (
+                    breakdown.map((p) => (
+                      <Stack key={p.label} direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                          {t("row.inclLower", { label: p.label.toLowerCase() })}
+                        </Typography>
+                        <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
+                          {formatKGS(p.value)}
+                        </Typography>
+                      </Stack>
+                    ))
+                  )}
+                  <Divider sx={{ my: 0.75 }} />
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
                       {t("row.earnings")}
@@ -440,22 +578,12 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.earnings)}
                     </Typography>
                   </Stack>
-                  {breakdown.map((p) => (
-                    <Stack key={p.label} direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, pl: 1 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
-                        {t("row.inclLower", { label: p.label.toLowerCase() })}
-                      </Typography>
-                      <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
-                        {formatKGS(p.value)}
-                      </Typography>
-                    </Stack>
-                  ))}
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
                       {t("row.totalAdvances")}
                     </Typography>
                     <Typography variant="body2" fontWeight={700} color="error.main">
-                      {formatKGS(row.advances)}
+                      − {formatKGS(row.advances)}
                     </Typography>
                   </Stack>
                   <Divider sx={{ my: 0.75 }} />
@@ -738,15 +866,60 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         </TableRow>
                       ))}
                     </TableBody>
+                    <TableFooter>
+                      <TableRow
+                        sx={{
+                          bgcolor: alpha(theme.palette.primary.main, 0.06),
+                          "& .MuiTableCell-root": {
+                            fontWeight: 800,
+                            color: "text.primary",
+                            fontSize: "0.8125rem",
+                            borderTop: `1px solid ${theme.palette.divider}`,
+                          },
+                        }}
+                      >
+                        <TableCell>{t("row.totalByDays")}</TableCell>
+                        {!periodSettings?.merge_night_into_day ? (
+                          <>
+                            <TableCell align="center">{dayTotals.dayHours.toFixed(1)}</TableCell>
+                            <TableCell align="center">{dayTotals.nightHours.toFixed(1)}</TableCell>
+                          </>
+                        ) : (
+                          <TableCell align="center">
+                            {(dayTotals.dayHours + dayTotals.nightHours).toFixed(1)}
+                          </TableCell>
+                        )}
+                        <TableCell align="right">{formatKGS(String(dayTotals.hoursSum))}</TableCell>
+                        <TableCell align="center" sx={{ color: isRegistrator ? "success.main" : undefined }}>
+                          <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5}>
+                            <span>{countsByDays}</span>
+                            {countsMismatch && (
+                              <Tooltip
+                                title={t("row.countsMismatch", { days: countsByDays, month: countsInMonth })}
+                              >
+                                <ReportProblemIcon sx={{ color: "warning.main", fontSize: "0.85rem" }} />
+                              </Tooltip>
+                            )}
+                          </Stack>
+                        </TableCell>
+                        <TableCell align="right">{formatKGS(String(dayTotals.percentSum))}</TableCell>
+                        <TableCell align="right" sx={{ color: dayTotals.expensesSum > 0 ? "error.main" : undefined }}>
+                          {dayTotals.expensesSum > 0 ? formatKGS(String(dayTotals.expensesSum)) : "—"}
+                        </TableCell>
+                        <TableCell align="right">{formatKGS(String(dayTotals.totalSalary))}</TableCell>
+                      </TableRow>
+                    </TableFooter>
                   </Table>
                   )}
 
-                  {/* Summary Box — показываем при любых начислениях (в т.ч. только уборки, без дневных строк) */}
+                  {/* Сверка: дневная таблица + месячные части = «Начислено за
+                      месяц». Без неё итог по дням не сходится с месячным — у
+                      регистраторов заработок за приёмы бэк по дням не даёт. */}
                   {parseFloat(row.earnings || "0") > 0 && (
                   <Box
                     sx={{
                       ml: "auto",
-                      width: 320,
+                      width: 380,
                       p: 2,
                       borderRadius: 2,
                       bgcolor: alpha(theme.palette.primary.main, 0.05),
@@ -754,22 +927,70 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     }}
                   >
                     <Stack spacing={1}>
+                      {hasDaily ? (
+                        <>
+                          <Stack direction="row" justifyContent="space-between">
+                            <Typography variant="body2" color="text.secondary">{t("row.accruedByDaysColon")}</Typography>
+                            <Typography variant="body2" fontWeight={700}>{formatKGS(String(accruedByDays))}</Typography>
+                          </Stack>
+
+                          {monthlyOnly.length > 0 && (
+                            <>
+                              <Typography variant="caption" color="text.disabled" sx={{ pt: 0.5 }}>
+                                {t("row.monthlyOnlyHint")}
+                              </Typography>
+                              {monthlyOnly.map((p) => (
+                                <Stack key={p.label} direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
+                                  <Typography variant="caption" color="text.secondary">{p.label}</Typography>
+                                  <Typography variant="caption" fontWeight={700}>+ {formatKGS(p.value)}</Typography>
+                                </Stack>
+                              ))}
+                            </>
+                          )}
+
+                          {/* За что именно начислена надбавка — из журнала надбавок. */}
+                          {hasBonus && bonuses.length > 0 && (
+                            <Stack spacing={0.25} sx={{ pl: 3 }}>
+                              {bonuses.map((b) => (
+                                <Stack key={b.id} direction="row" justifyContent="space-between" spacing={1}>
+                                  <Typography variant="caption" color="text.disabled" noWrap sx={{ minWidth: 0 }}>
+                                    {dayjs(b.createdAt).format("DD.MM")} · {b.reason || t("bonusDrawer.noReason")}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.disabled" flexShrink={0}>
+                                    {formatKGS(b.amount)}
+                                  </Typography>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          )}
+
+                          {hasUnexplained && (
+                            <Stack direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
+                              <Typography variant="caption" color="text.secondary">{t("row.otherAccruals")}</Typography>
+                              <Typography variant="caption" fontWeight={700}>
+                                {unexplained > 0 ? "+ " : "− "}
+                                {formatKGS(String(Math.abs(unexplained)))}
+                              </Typography>
+                            </Stack>
+                          )}
+                        </>
+                      ) : (
+                        breakdown.map((p) => (
+                          <Stack key={p.label} direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
+                            <Typography variant="caption" color="text.secondary">{t("row.inclLowerColon", { label: p.label.toLowerCase() })}</Typography>
+                            <Typography variant="caption" fontWeight={700}>{formatKGS(p.value)}</Typography>
+                          </Stack>
+                        ))
+                      )}
+
+                      <Divider />
                       <Stack direction="row" justifyContent="space-between">
                         <Typography variant="body2" color="text.secondary">{t("row.accruedMonth")}</Typography>
                         <Typography variant="body2" fontWeight={700}>{formatKGS(row.earnings)}</Typography>
                       </Stack>
-                      {/* Часть начислений (за распределённые приёмы, уборки,
-                          надбавки) считается за месяц целиком и по дням не
-                          раскладывается — поэтому показываем состав. */}
-                      {breakdown.map((p) => (
-                        <Stack key={p.label} direction="row" justifyContent="space-between" sx={{ pl: 1.5 }}>
-                          <Typography variant="caption" color="text.secondary">{t("row.inclLowerColon", { label: p.label.toLowerCase() })}</Typography>
-                          <Typography variant="caption" fontWeight={700}>{formatKGS(p.value)}</Typography>
-                        </Stack>
-                      ))}
                       <Stack direction="row" justifyContent="space-between">
                         <Typography variant="body2" color="text.secondary">{t("row.advancesPaidColon")}</Typography>
-                        <Typography variant="body2" fontWeight={700} color="error.main">{formatKGS(row.advances)}</Typography>
+                        <Typography variant="body2" fontWeight={700} color="error.main">− {formatKGS(row.advances)}</Typography>
                       </Stack>
                       <Divider />
                       <Stack direction="row" justifyContent="space-between">

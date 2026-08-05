@@ -6,6 +6,8 @@ import {
   CssBaseline,
   GlobalStyles,
   IconButton,
+  Menu,
+  MenuItem,
   Skeleton,
   Stack,
   Typography,
@@ -14,26 +16,31 @@ import { ThemeProvider } from "@mui/material/styles";
 import ArrowBackIosNewOutlined from "@mui/icons-material/ArrowBackIosNewOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
-import NotificationsNoneOutlined from "@mui/icons-material/NotificationsNoneOutlined";
+import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import { useNavigate } from "react-router";
 
-import { useBookingTheme, BOOKING_PRIMARY, MUTED } from "./theme";
+import { useBookingTheme, BOOKING_PRIMARY, BORDER, MUTED } from "./theme";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { formatPhone, monogram, telHref } from "./format";
+import { usePatientSession } from "./PatientSession";
+import { PatientAuthDialog } from "./booking/PatientAuthDialog";
 import { useT } from "../../i18n/VerticalProvider";
 
 /**
- * Личный кабинет гостя: «История записей», уведомления, аватар.
+ * Личный кабинет пациента: вход по SMS, «Мои записи», выбор карты.
  *
- * В эталоне (`iwork.operator.kg`) шапка состоит из них, но за ними стоит его
- * собственный API с авторизацией по SMS. В нашем публичном API этого нет —
- * разметка готова и включается флагом, когда бэк отдаст кабинет (тикет
- * `MamaDoc/backend_ticket_public_booking_phase3.md`). Пока флаг выключен,
- * справа стоит рабочая кнопка звонка, а не мёртвые ссылки.
+ * Бэк реализовал контур (`/api/v1/auth/*`, `/api/v1/me*`, токен в
+ * `X-Patient-Token`) — проверено живым входом на тесте 05.08.2026. Уведомлений
+ * в первом релизе нет: пушей/подписок бэк не отдаёт, колокольчик из эталона
+ * рисовать нечем.
+ *
+ * ⚠ Требует задеплоенного booking-контура: на окружении без него ручки отвечают
+ * 404, и вход просто не сработает (см. тикет
+ * `MamaDoc/backend_ticket_booking_deploy_gap_2026-08-05.md`).
  */
-export const BOOKING_AUTH_ENABLED = false;
+export const BOOKING_AUTH_ENABLED = true;
 
 /**
  * Запись «просто к врачу», без выбора услуги (бэклог заказчика 04.08.2026).
@@ -175,50 +182,120 @@ const Brand: React.FC = () => {
   );
 };
 
-/** Правая часть шапки: личный кабинет гостя либо телефон клиники. */
+/** Правая часть шапки: кабинет пациента (если включён) плюс телефон клиники. */
 const HeaderActions: React.FC = () => {
   const { t } = useT("publicBooking");
   const { branches } = useBookingOrg();
   const phone = primaryPhone(branches);
+  const navigate = useNavigate();
+  const { session, selectedPatient, selectPatient, signOut } = usePatientSession();
+  const [authOpen, setAuthOpen] = React.useState(false);
+  const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
 
   if (BOOKING_AUTH_ENABLED) {
     return (
-      <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={0.75}
-          sx={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "#333",
-            cursor: "pointer",
-            transition: "color .2s",
-            "&:hover": { color: BOOKING_PRIMARY },
-          }}
-        >
-          <HistoryOutlined sx={{ fontSize: 16 }} />
-          {t("bookingHistory")}
-        </Stack>
-        <IconButton size="small" sx={{ color: "#333" }}>
-          <NotificationsNoneOutlined sx={{ fontSize: 22 }} />
-        </IconButton>
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            bgcolor: "#F0F4FF",
-            border: "1px solid #D0DCFF",
-            color: "#7FA8FF",
-          }}
-        >
-          <PersonOutlineOutlined sx={{ fontSize: 22 }} />
-        </Box>
+      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ flexShrink: 0 }}>
+        {session ? (
+          <>
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              onClick={() => navigate("/book/me")}
+              sx={{
+                display: { xs: "none", sm: "flex" },
+                fontSize: 14,
+                fontWeight: 500,
+                color: "#333",
+                cursor: "pointer",
+                transition: "color .2s",
+                "&:hover": { color: BOOKING_PRIMARY },
+              }}
+            >
+              <HistoryOutlined sx={{ fontSize: 16 }} />
+              {t("auth.myBookings")}
+            </Stack>
+            <Box
+              onClick={(e) => setMenuAnchor(e.currentTarget)}
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                cursor: "pointer",
+                bgcolor: "#F0F4FF",
+                border: "1px solid #D0DCFF",
+                color: BOOKING_PRIMARY,
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              {selectedPatient ? monogram(selectedPatient.fullName) : <PersonOutlineOutlined sx={{ fontSize: 22 }} />}
+            </Box>
+            <Menu
+              anchorEl={menuAnchor}
+              open={Boolean(menuAnchor)}
+              onClose={() => setMenuAnchor(null)}
+              slotProps={{ paper: { sx: { minWidth: 220 } } }}
+            >
+              {/* Карты одного номера: переключение без повторного SMS. */}
+              {session.patients.map((p) => (
+                <MenuItem
+                  key={p.id}
+                  selected={p.id === selectedPatient?.id}
+                  onClick={() => {
+                    selectPatient(p.id);
+                    setMenuAnchor(null);
+                  }}
+                >
+                  <Typography sx={{ fontSize: 14 }}>{p.fullName}</Typography>
+                </MenuItem>
+              ))}
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  navigate("/book/me");
+                }}
+                sx={{ borderTop: `1px solid ${BORDER}` }}
+              >
+                <HistoryOutlined sx={{ fontSize: 18, mr: 1, color: MUTED }} />
+                <Typography sx={{ fontSize: 14 }}>{t("auth.myBookings")}</Typography>
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  signOut();
+                }}
+              >
+                <LogoutOutlined sx={{ fontSize: 18, mr: 1, color: MUTED }} />
+                <Typography sx={{ fontSize: 14 }}>{t("auth.signOut")}</Typography>
+              </MenuItem>
+            </Menu>
+          </>
+        ) : (
+          <Button
+            onClick={() => setAuthOpen(true)}
+            variant="outlined"
+            size="small"
+            startIcon={<PersonOutlineOutlined />}
+            sx={{
+              flexShrink: 0,
+              borderRadius: 99,
+              px: { xs: 1.5, sm: 2 },
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              borderColor: "divider",
+              color: "text.primary",
+              "&:hover": { borderColor: BOOKING_PRIMARY, bgcolor: "transparent" },
+            }}
+          >
+            {t("auth.signIn")}
+          </Button>
+        )}
+        <PatientAuthDialog open={authOpen} onClose={() => setAuthOpen(false)} />
       </Stack>
     );
   }
