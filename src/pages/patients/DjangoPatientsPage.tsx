@@ -9,7 +9,6 @@ import {
   useTheme,
 } from "@mui/material";
 import { motion } from "framer-motion";
-import ConstructionOutlined from "@mui/icons-material/ConstructionOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -46,39 +45,10 @@ import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDr
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
 import FaceCaptureDrawer from "./components/FaceCaptureDrawer";
-
-
-// ── "В разработке" placeholder for Old conclusions tab ───────────────────────
-
-const OldConclusionsPlaceholder: React.FC = () => {
-  const { t } = useT("patients");
-  return (
-  <Box
-    sx={{
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 1.5,
-      p: 3,
-      color: "text.secondary",
-      border: "1px dashed",
-      borderColor: "divider",
-      borderRadius: 1,
-      bgcolor: "background.paper",
-    }}
-  >
-    <ConstructionOutlined sx={{ fontSize: 36, color: "primary.onSurface", opacity: 0.7 }} />
-    <Typography variant="subtitle1" fontWeight={600} align="center">
-      {t("oldConclusions.title")}
-    </Typography>
-    <Typography variant="body2" align="center" sx={{ maxWidth: 320 }}>
-      {t("oldConclusions.description")}
-    </Typography>
-  </Box>
-  );
-};
+import PatientOldConclusionsPanel from "../patient-search/components/PatientOldConclusionsPanel";
+import OldConclusionDetailsCard from "../patient-search/components/OldConclusionDetailsCard";
+import { useOldConclusions } from "../patient-search/useOldConclusions";
+import type { OldConclusion } from "../patient-search/useOldConclusions";
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
@@ -130,6 +100,15 @@ const DjangoPatientsPage: React.FC = () => {
 
   const [selected, setSelected] = React.useState<DjangoPatient | null>(null);
 
+  // Архивные заключения загружаются по телефону и id выбранной карточки.
+  // Телефон сохраняет совместимость с историей старых систем, а id покрывает
+  // записи, которые были привязаны уже после изменения номера пациента.
+  const {
+    data: oldConclusions,
+    loading: oldConclusionsLoading,
+    errorMsg: oldConclusionsError,
+  } = useOldConclusions(selected?.phone, selected?.id);
+
   // ── Selected patient: balance + history (Django API, AbortSignal) ──────────
   const [balance, setBalance] = React.useState<PatientBalance | null>(null);
   const [history, setHistory] = React.useState<DjangoAppointment[]>([]);
@@ -141,6 +120,7 @@ const DjangoPatientsPage: React.FC = () => {
   const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
+  const [oldConclusionDetail, setOldConclusionDetail] = React.useState<OldConclusion | null>(null);
   // Колонка заключения внутри дровера деталей приёма (как третья колонка на «Записях»).
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
   const [mergeOpen, setMergeOpen] = React.useState(false);
@@ -355,6 +335,16 @@ const DjangoPatientsPage: React.FC = () => {
     <PatientVaccinationsPanel patient={selected} />
   );
 
+  const oldConclusionsNode = (
+    <PatientOldConclusionsPanel
+      selected={!!selected}
+      loading={oldConclusionsLoading}
+      errorMsg={oldConclusionsError}
+      data={oldConclusions}
+      onClick={(item) => setOldConclusionDetail(item)}
+    />
+  );
+
   const listNode = (
     <PatientListPanel
       loading={loadingData}
@@ -433,7 +423,7 @@ const DjangoPatientsPage: React.FC = () => {
                 <Box sx={{ flex: 1, minHeight: 0 }}>
                   {tabletTab === "card" && cardNode}
                   {tabletTab === "history" && historyNode}
-                  {tabletTab === "old" && <OldConclusionsPlaceholder />}
+                  {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                 </Box>
               </>
@@ -459,7 +449,7 @@ const DjangoPatientsPage: React.FC = () => {
               </Box>
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 {desktopRightTab === "history" && historyNode}
-                {desktopRightTab === "old" && <OldConclusionsPlaceholder />}
+                {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
               </Box>
             </MotionBox>
@@ -481,11 +471,28 @@ const DjangoPatientsPage: React.FC = () => {
           <Box sx={{ p: 2 }}>
             {mobileTab === "card" && cardNode}
             {mobileTab === "history" && historyNode}
-            {mobileTab === "old" && <OldConclusionsPlaceholder />}
+            {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
           </Box>
         </AppBottomSheet>
       )}
+
+      {/* Детали архивного заключения */}
+      <Drawer
+        anchor="right"
+        open={!!oldConclusionDetail}
+        onClose={() => setOldConclusionDetail(null)}
+        PaperProps={{
+          sx: { width: { xs: "100%", sm: 520 }, maxWidth: "100%" },
+        }}
+      >
+        <OldConclusionDetailsCard
+          item={oldConclusionDetail}
+          patientFio={selected?.fullName ?? null}
+          patientDob={selected?.birthDate ?? null}
+          onClose={() => setOldConclusionDetail(null)}
+        />
+      </Drawer>
 
       {/* Add patient drawer (new UX: photo, INN, blacklist) */}
       <DjangoAddPatientDrawer
