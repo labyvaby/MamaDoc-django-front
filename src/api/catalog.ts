@@ -50,15 +50,18 @@ export const SERVICE_RELATED_PRODUCT_ENABLED = true;
 
 /**
  * Видимость услуги на публичной витрине онлайн-записи (`online_booking_visible`,
- * бэклог заказчика «отбор услуг»). Бэк объявил поле готовым в
- * `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026), но на живом API это не
- * проверено, а неизвестное поле в PATCH может обернуться 400 и уронить
- * сохранение услуги целиком — поэтому поле уходит в запрос только под флагом.
+ * бэклог заказчика «отбор услуг»). Работаем по контракту из
+ * `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026): GET отдаёт
+ * `onlineBookingVisible`, PATCH его сохраняет, скрытая услуга исчезает из
+ * публичных ответов.
  *
- * Включать после проверки на живом API: GET услуги отдаёт `onlineBookingVisible`,
- * PATCH его сохраняет, а скрытая услуга исчезает из публичного каталога.
+ * ⚠ ТРЕБУЕТ ДЕПЛОЯ БЭКА. На 05.08.2026 ни prod, ни test поля не знали, и PATCH
+ * отвечал `400 Object contains unknown field 'onlineBookingVisible'`, отклоняя
+ * запрос целиком — вместе с ценой, филиалами и расходниками. На таком окружении
+ * форма услуги не сохраняется вообще. Не выпускать на прод раньше бэка; тикет —
+ * `MamaDoc/backend_ticket_booking_deploy_gap_2026-08-05.md` §3.
  */
-export const SERVICE_ONLINE_VISIBILITY_ENABLED = false;
+export const SERVICE_ONLINE_VISIBILITY_ENABLED = true;
 
 /**
  * Состав расходников услуги — несколько товаров с количеством (заказчик

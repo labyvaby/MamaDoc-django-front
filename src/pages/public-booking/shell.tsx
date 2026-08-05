@@ -37,19 +37,17 @@ export const BOOKING_AUTH_ENABLED = false;
 
 /**
  * Запись «просто к врачу», без выбора услуги (бэклог заказчика 04.08.2026).
- * Бэк объявил поддержку в `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026:
- * «принимает отсутствие service_ids и пустой список», окно 30 минут), но живой
- * API это опровергает — проверено 05.08.2026 на обоих окружениях
- * (newcrm.pediatr.kg и test.crm.operator.kg): и `service_ids: []`, и запрос
- * вовсе без поля отвечают `400 validation_error` с `details.missing:
- * ["service_ids"]`.
+ * Работаем по контракту из `BOOKING_AND_TEST_ENVIRONMENT.md` (05.08.2026):
+ * бэк принимает пустой `service_ids` и резервирует окно 30 минут, а услуги
+ * персонал выбирает при подтверждении в CRM (`PATCH /api/bookings/<id>/status/`
+ * с `serviceIds` — эта часть уже работает).
  *
- * Пока флаг выключен, витрина не пускает гостя дальше без услуги — иначе он
- * упирался бы в 400 на самом сабмите. Включить, когда бэк задеплоит: проверка —
- * POST с `service_ids: []` создаёт бронь, а `PATCH /api/bookings/<id>/status/`
- * с `serviceIds` достраивает её при подтверждении в CRM.
+ * ⚠ ТРЕБУЕТ ДЕПЛОЯ БЭКА. На 05.08.2026 ни prod, ни test пустой список не
+ * принимали: `400 validation_error`, `details.missing: ["service_ids"]` — гость,
+ * не выбравший услугу, упрётся в ошибку на самом сабмите, уже введя имя и
+ * телефон. Тикет — `MamaDoc/backend_ticket_booking_deploy_gap_2026-08-05.md` §1.
  */
-export const BOOKING_NO_SERVICE_ENABLED = false;
+export const BOOKING_NO_SERVICE_ENABLED = true;
 
 /**
  * Поля страницы. Эталон держит контент в контейнере 1280 с отступом 16
