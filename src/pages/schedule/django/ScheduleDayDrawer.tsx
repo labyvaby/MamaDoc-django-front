@@ -5,6 +5,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import type { Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
@@ -23,6 +24,8 @@ export interface ScheduleDayDrawerProps {
   onMarkDayOff: (employeeId: number) => Promise<void>;
   /** Удаление добавленной вручную смены (исключение kind="extra"). */
   onDeleteShift: (exceptionId: number) => Promise<void>;
+  /** Редактирование смены только на выбранную дату. */
+  onEditOccurrence: (occurrence: DayOccurrence) => void;
   onAddShift: () => void;
 }
 
@@ -36,6 +39,7 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
   canManage,
   onMarkDayOff,
   onDeleteShift,
+  onEditOccurrence,
   onAddShift,
 }) => {
   const theme = useTheme();
@@ -77,7 +81,7 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
               const employee = employeesById.get(occ.employeeId);
               const occKey = `${occ.kind}_${occ.sourceId}_${occ.startTime}`;
               const busy = busyKey === occKey;
-              const isExtra = occ.kind === "extra";
+              const isExtra = occ.kind === "extra" || occ.kind === "override";
               return (
                 <Box
                   key={occKey}
@@ -111,35 +115,52 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                       <Typography variant="body2" color="text.secondary">
                         {occ.startTime}–{occ.endTime}
                       </Typography>
-                      {occ.kind === "extra" && (
-                        <Chip label="Смена" size="small" color="success" variant="outlined" />
+                      {isExtra && (
+                        <Chip
+                          label={occ.kind === "override" ? "Изменено на день" : "Смена"}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                        />
                       )}
                     </Stack>
                   </Box>
                   {canManage && (
-                    <Button
-                      size="small"
-                      color="error"
-                      variant="text"
-                      startIcon={
-                        busy ? (
-                          <CircularProgress size={14} color="inherit" />
-                        ) : isExtra ? (
-                          <DeleteOutline fontSize="small" />
-                        ) : (
-                          <EventBusyOutlined fontSize="small" />
-                        )
-                      }
-                      disabled={busy}
-                      onClick={() =>
-                        isExtra
-                          ? runAction(occKey, () => onDeleteShift(occ.sourceId))
-                          : runAction(occKey, () => onMarkDayOff(occ.employeeId))
-                      }
-                      sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                    >
-                      {isExtra ? "Удалить" : "Выходной"}
-                    </Button>
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                      <Button
+                        size="small"
+                        variant="text"
+                        startIcon={<EditOutlined fontSize="small" />}
+                        disabled={busy}
+                        onClick={() => onEditOccurrence(occ)}
+                        sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                      >
+                        Изменить
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="text"
+                        startIcon={
+                          busy ? (
+                            <CircularProgress size={14} color="inherit" />
+                          ) : isExtra ? (
+                            <DeleteOutline fontSize="small" />
+                          ) : (
+                            <EventBusyOutlined fontSize="small" />
+                          )
+                        }
+                        disabled={busy}
+                        onClick={() =>
+                          isExtra
+                            ? runAction(occKey, () => onDeleteShift(occ.sourceId))
+                            : runAction(occKey, () => onMarkDayOff(occ.employeeId))
+                        }
+                        sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                      >
+                        {isExtra ? "Удалить" : "Выходной"}
+                      </Button>
+                    </Stack>
                   )}
                 </Box>
               );

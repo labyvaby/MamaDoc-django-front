@@ -305,7 +305,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
           {segments.map((s) => {
             const occ = s.occ;
             const c = colorOf(occ.employeeId);
-            const isExtra = occ.kind === "extra";
+            const isExtra = occ.kind === "extra" || occ.kind === "override";
             const left = timeToLeftPct(s.startMin);
             const width = Math.max(timeToLeftPct(s.endMin) - left, 3);
             const emp = employeesById.get(occ.employeeId);
@@ -709,7 +709,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                   Сотрудников в смене: {staffCount(occs)}
                 </Typography>
                 <Stack spacing={0.75}>
-                  {occs.map((occ) => (
+                  {occs.map((occ) => {
+                    const isExtra = occ.kind === "extra" || occ.kind === "override";
+                    return (
                     <Stack
                       key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
                       direction="row"
@@ -729,14 +731,15 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                       <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
                         {occ.employeeName}
                       </Typography>
-                      {occ.kind === "extra" && (
+                      {isExtra && (
                         <Chip label="доп." size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: "0.6rem", flexShrink: 0 }} />
                       )}
                       <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                         {timeRange(occ)}
                       </Typography>
                     </Stack>
-                  ))}
+                    );
+                  })}
                 </Stack>
               </>
             );

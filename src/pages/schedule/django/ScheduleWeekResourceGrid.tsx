@@ -233,7 +233,7 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                               dayOccs.map((occ) => (
                                 <Tooltip
                                   key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
-                                  title={`${occ.startTime}–${occ.endTime}${occ.kind === "extra" ? " (доп. смена)" : ""}`}
+                                  title={`${occ.startTime}–${occ.endTime}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
                                   arrow
                                 >
                                   <Box
@@ -249,7 +249,7 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                       // (жалоба заказчика 14.07.2026).
                                       bgcolor: c,
                                       border:
-                                        occ.kind === "extra"
+                                  occ.kind !== "rule"
                                           ? `1.5px dashed ${theme.palette.background.paper}`
                                           : undefined,
                                     }}

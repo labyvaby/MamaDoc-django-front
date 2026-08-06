@@ -9,8 +9,8 @@ export interface DayOccurrence {
   employeeName: string;
   startTime: string; // HH:mm
   endTime: string;
-  kind: "rule" | "extra";
-  /** ruleId для kind="rule", exceptionId для kind="extra" — чтобы открыть источник. */
+  kind: "rule" | "extra" | "override";
+  /** ruleId для правила, exceptionId для точечного исключения. */
   sourceId: number;
 }
 
@@ -37,7 +37,7 @@ function splitByLunch(
 /**
  * Вычисляет фактические смены на конкретный день из недельных правил
  * с учётом исключений (day_off/vacation отменяют смену по правилу,
- * extra добавляет отдельную смену). Правил и исключений на бэке нет
+ * extra добавляет отдельную смену, override заменяет правило на дату). Правил и исключений на бэке нет
  * как готового "расписания на день" — материализуем на фронте.
  * Обеденный перерыв разрезает смену на два сегмента.
  */
@@ -51,7 +51,9 @@ export function computeDayOccurrences(
 
   const exceptionsToday = exceptions.filter((e) => e.date === dateStr);
   const cancelledEmployeeIds = new Set(
-    exceptionsToday.filter((e) => e.kind === "day_off" || e.kind === "vacation").map((e) => e.employeeId),
+    exceptionsToday
+      .filter((e) => e.kind === "day_off" || e.kind === "vacation" || e.kind === "override")
+      .map((e) => e.employeeId),
   );
 
   const occurrences: DayOccurrence[] = [];
@@ -75,13 +77,13 @@ export function computeDayOccurrences(
   }
 
   for (const exc of exceptionsToday) {
-    if (exc.kind !== "extra") continue;
+    if (exc.kind !== "extra" && exc.kind !== "override") continue;
     occurrences.push({
       employeeId: exc.employeeId,
       employeeName: exc.employeeName,
       startTime: exc.startTime ?? "00:00",
       endTime: exc.endTime ?? "23:59",
-      kind: "extra",
+      kind: exc.kind,
       sourceId: exc.id,
     });
   }

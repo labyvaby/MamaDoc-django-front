@@ -2,7 +2,7 @@ import { apiRequest } from "./client";
 
 // ── Types (mirror server/apps/scheduling/api/payloads.py) ─────────────────────
 
-export type ScheduleExceptionKind = "day_off" | "vacation" | "extra";
+export type ScheduleExceptionKind = "day_off" | "vacation" | "extra" | "override";
 
 export interface ScheduleRule {
   id: number;
@@ -72,6 +72,15 @@ export interface ScheduleExceptionWrite {
   comment?: string;
   branchId?: number | null;
   organizationId?: number | null;
+}
+
+export interface ScheduleExceptionPatch {
+  date?: string;
+  kind?: ScheduleExceptionKind;
+  startTime?: string;
+  endTime?: string;
+  comment?: string;
+  branchId?: number;
 }
 
 export interface AvailabilitySlot {
@@ -217,6 +226,16 @@ export function createScheduleException(
 ): Promise<ScheduleException> {
   return apiRequest<ScheduleException>("/scheduling/exceptions/", {
     method: "POST",
+    body: payload,
+  });
+}
+
+export function updateScheduleException(
+  exceptionId: number,
+  payload: ScheduleExceptionPatch,
+): Promise<ScheduleException> {
+  return apiRequest<ScheduleException>(`/scheduling/exceptions/${exceptionId}/`, {
+    method: "PATCH",
     body: payload,
   });
 }

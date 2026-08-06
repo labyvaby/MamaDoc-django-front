@@ -158,6 +158,25 @@ describe("computeDayOccurrences", () => {
       const occs = computeDayOccurrences(THU, [], [exc]);
       expect(occs[0]).toMatchObject({ startTime: "00:00", endTime: "23:59" });
     });
+
+    it("override заменяет правило только на выбранную дату", () => {
+      const exc = exception({
+        id: 300,
+        kind: "override",
+        startTime: "11:00",
+        endTime: "15:00",
+      });
+      const occs = computeDayOccurrences(THU, [rule()], [exc]);
+      expect(occs).toEqual([
+        expect.objectContaining({
+          kind: "override",
+          sourceId: 300,
+          startTime: "11:00",
+          endTime: "15:00",
+        }),
+      ]);
+      expect(computeDayOccurrences(FRI, [rule()], [exc])).toHaveLength(1);
+    });
   });
 
   it("собирает смены нескольких сотрудников", () => {

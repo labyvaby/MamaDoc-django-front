@@ -331,7 +331,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           return (
                             <Tooltip
                               key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
-                              title={`${occ.employeeName}: ${occ.startTime}–${occ.endTime}${occ.kind === "extra" ? " (доп.)" : ""}`}
+                              title={`${occ.employeeName}: ${occ.startTime}–${occ.endTime}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
                               arrow
                             >
                               <Box
@@ -347,7 +347,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                   // см. комментарий в ScheduleWeekResourceGrid.
                                   bgcolor: c,
                                   border:
-                                    occ.kind === "extra"
+                                    occ.kind !== "rule"
                                       ? `1.5px dashed ${theme.palette.background.paper}`
                                       : undefined,
                                   display: "flex",
