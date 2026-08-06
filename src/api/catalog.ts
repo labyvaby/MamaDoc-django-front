@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { tt } from "../i18n/t";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -400,11 +401,14 @@ export function deleteService(id: number): Promise<void> {
  */
 export async function uploadServiceImage(id: number, file: File): Promise<Service> {
   const form = new FormData();
-  form.append("image", file);
-  const service = await apiRequest<Service>(`/catalog/services/${id}/image/`, {
-    method: "PUT",
-    formData: form,
-  });
+  // Ужимаем и переводим в jpg: тяжёлый снимок бэк отвергает — см. api/uploads.ts.
+  form.append("image", await preparePhotoOrThrow(file));
+  const service = await withUploadErrors(() =>
+    apiRequest<Service>(`/catalog/services/${id}/image/`, {
+      method: "PUT",
+      formData: form,
+    }),
+  );
   return normalizeService(service);
 }
 

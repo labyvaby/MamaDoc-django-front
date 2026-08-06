@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
@@ -302,7 +303,7 @@ export interface CreateCleaningRecordPayload {
   organizationId?: number;
 }
 
-export function createCleaningRecord(
+export async function createCleaningRecord(
   payload: CreateCleaningRecordPayload,
 ): Promise<CleaningRecord> {
   if (CLEANING_USE_MOCKS) {
@@ -335,11 +336,17 @@ export function createCleaningRecord(
   // Явное назначение исполнителя — только cleaning.manage; бэк должен принять
   // поле employee и разрешить создание записи менеджеру (см. тикет).
   if (payload.employeeId != null) formData.append("employee", String(payload.employeeId));
-  for (const photo of payload.photos) formData.append("photos", photo);
-  return apiRequest<CleaningRecord>(withOrg("/cleaning/records/", payload.organizationId), {
-    method: "POST",
-    formData,
-  });
+  // Подготовка обязательна и здесь: iPhone отдаёт HEIC, который бэк отклоняет
+  // по расширению имени файла (см. api/uploads.ts).
+  for (const photo of payload.photos) {
+    formData.append("photos", await preparePhotoOrThrow(photo));
+  }
+  return withUploadErrors(() =>
+    apiRequest<CleaningRecord>(withOrg("/cleaning/records/", payload.organizationId), {
+      method: "POST",
+      formData,
+    }),
+  );
 }
 
 export function approveCleaningRecord(

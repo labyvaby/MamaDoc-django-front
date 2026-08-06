@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { DEFAULT_VERTICAL, type Vertical } from "../i18n/types";
 import { isVertical } from "../i18n/glossary";
 
@@ -139,16 +140,21 @@ export function updateOrganization(
  * `logo`; ≤ 5 МБ, jpg/jpeg/png/webp/svg). Возвращает обновлённую организацию
  * с новым logoUrl. Право: organization.update.
  */
-export function uploadOrganizationLogo(
+export async function uploadOrganizationLogo(
   id: number,
   file: File,
 ): Promise<DjangoOrganization> {
   const formData = new FormData();
-  formData.append("logo", file);
-  return apiRequest<DjangoOrganizationWire>(`/organization/${id}/logo/`, {
-    method: "PUT",
-    formData,
-  }).then(normalizeOrganization);
+  // keepAlpha — у логотипов прозрачный фон, jpeg залил бы его белым.
+  // svg подготовка пропускает как есть (см. api/uploads.ts).
+  formData.append("logo", await preparePhotoOrThrow(file, { keepAlpha: true }));
+  const wire = await withUploadErrors(() =>
+    apiRequest<DjangoOrganizationWire>(`/organization/${id}/logo/`, {
+      method: "PUT",
+      formData,
+    }),
+  );
+  return normalizeOrganization(wire);
 }
 
 /** DELETE /organization/<id>/logo/ — удаление логотипа. Возвращает 204. */
@@ -161,13 +167,16 @@ export function deleteOrganizationLogo(id: number): Promise<void> {
  * (multipart, поле `logo`; ≤ 5 МБ, jpg/jpeg/png/webp/svg). Возвращает
  * обновлённый филиал. Контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_branch_logo.md.
  */
-export function uploadBranchLogo(id: number, file: File): Promise<DjangoBranch> {
+export async function uploadBranchLogo(id: number, file: File): Promise<DjangoBranch> {
   const formData = new FormData();
-  formData.append("logo", file);
-  return apiRequest<DjangoBranchWire>(`/organization/branches/${id}/logo/`, {
-    method: "PUT",
-    formData,
-  }).then(normalizeBranch);
+  formData.append("logo", await preparePhotoOrThrow(file, { keepAlpha: true }));
+  const wire = await withUploadErrors(() =>
+    apiRequest<DjangoBranchWire>(`/organization/branches/${id}/logo/`, {
+      method: "PUT",
+      formData,
+    }),
+  );
+  return normalizeBranch(wire);
 }
 
 /** DELETE /organization/branches/<id>/logo/ — удаление логотипа филиала, 204. */

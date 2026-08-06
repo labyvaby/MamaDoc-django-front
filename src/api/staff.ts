@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 // ── Nested helpers ───────────────────────────────────────────────────────────
 
@@ -391,16 +392,20 @@ export function onboardEmployee(
 
 // ── API functions — Photo ─────────────────────────────────────────────────────
 
-export function uploadEmployeePhoto(
+export async function uploadEmployeePhoto(
   employeeId: number,
   file: File,
 ): Promise<DjangoEmployee> {
   const formData = new FormData();
-  formData.append("photo", file);
-  return apiRequest<DjangoEmployee>(
-    `/staff/employees/${employeeId}/photo/`,
-    { method: "PUT", formData },
-  ).then(normalizeEmployee);
+  // Ужимаем и переводим в jpg: тяжёлый снимок с телефона бэк отвергает — см. api/uploads.ts.
+  formData.append("photo", await preparePhotoOrThrow(file));
+  const employee = await withUploadErrors(() =>
+    apiRequest<DjangoEmployee>(
+      `/staff/employees/${employeeId}/photo/`,
+      { method: "PUT", formData },
+    ),
+  );
+  return normalizeEmployee(employee);
 }
 
 export function deleteEmployeePhoto(employeeId: number): Promise<void> {
@@ -411,16 +416,21 @@ export function deleteEmployeePhoto(employeeId: number): Promise<void> {
 
 // ── API functions — elQR ──────────────────────────────────────────────────────
 
-export function uploadEmployeeElqr(
+export async function uploadEmployeeElqr(
   employeeId: number,
   file: File,
 ): Promise<DjangoEmployee> {
   const formData = new FormData();
-  formData.append("elqr", file);
-  return apiRequest<DjangoEmployee>(
-    `/staff/employees/${employeeId}/elqr/`,
-    { method: "PUT", formData },
-  ).then(normalizeEmployee);
+  // Скрин elQR обычно лёгкий и подготовку проходит без изменений; тяжёлое фото
+  // документа ужмётся — иначе бэк обрубит запрос по размеру.
+  formData.append("elqr", await preparePhotoOrThrow(file));
+  const employee = await withUploadErrors(() =>
+    apiRequest<DjangoEmployee>(
+      `/staff/employees/${employeeId}/elqr/`,
+      { method: "PUT", formData },
+    ),
+  );
+  return normalizeEmployee(employee);
 }
 
 export function deleteEmployeeElqr(employeeId: number): Promise<void> {

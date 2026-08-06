@@ -51,6 +51,12 @@ import {
   parseBackendError,
   type Expense,
 } from "../../api/expenses";
+import {
+  prepareImageForUpload,
+  PHOTO_ACCEPT,
+  PHOTO_SOURCE_MAX_BYTES,
+  PHOTO_SOURCE_MAX_MB,
+} from "../../utility/imageCompression";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
 
@@ -89,8 +95,8 @@ const DetailRow: React.FC<{ label: string; value?: string | null; children?: Rea
 
 // ── ExpenseDetailCard ──────────────────────────────────────────────────────────
 
-const PHOTO_ACCEPT = "image/jpeg,image/jpg,image/png,image/webp";
-const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+// accept и потолок исходника — общие для всех загрузок фото (utility/imageCompression):
+// выбранный снимок ужимается и переводится в jpg перед отправкой на бэк.
 
 const ExpenseDetailCard: React.FC<{
   expense: Expense | null;
@@ -109,14 +115,21 @@ const ExpenseDetailCard: React.FC<{
 
   const handlePhotoFile = async (file: File) => {
     if (!expense) return;
-    if (file.size > PHOTO_MAX_BYTES) {
-      setPhotoError("Фото не должно превышать 5 МБ");
+    if (file.size > PHOTO_SOURCE_MAX_BYTES) {
+      setPhotoError(`Фото не должно превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
       return;
     }
     setPhotoError(null);
     setPhotoUploading(true);
     try {
-      const updated = await uploadExpensePhoto(expense.id, file);
+      // Снимок с телефона (3–5 МБ, на iPhone — HEIC) бэк не принимает:
+      // ужимаем до безопасного размера и переводим в jpg перед отправкой.
+      const prepared = await prepareImageForUpload(file);
+      if (!prepared) {
+        setPhotoError("Не удалось обработать это фото — попробуйте другое или снимите заново");
+        return;
+      }
+      const updated = await uploadExpensePhoto(expense.id, prepared);
       onPhotoUploaded(updated);
     } catch (e) {
       setPhotoError(parseBackendError(e));

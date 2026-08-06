@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoIfImage, withUploadErrors } from "./uploads";
 
 /**
  * Модуль внутренних заявок/задач.
@@ -574,7 +575,7 @@ export function addTaskComment(
   });
 }
 
-export function uploadTaskAttachment(
+export async function uploadTaskAttachment(
   taskId: number,
   file: File,
   commentId?: number,
@@ -596,12 +597,15 @@ export function uploadTaskAttachment(
     return mockDelay(attachment);
   }
   const formData = new FormData();
-  formData.append("file", file);
+  // Картинку ужимаем и переводим в jpg (см. api/uploads.ts), прочие файлы — как есть.
+  formData.append("file", await preparePhotoIfImage(file));
   if (commentId != null) formData.append("commentId", String(commentId));
-  return apiRequest<TaskAttachment>(withOrg(`/tasks/${taskId}/attachments/`, organizationId), {
-    method: "POST",
-    formData,
-  });
+  return withUploadErrors(() =>
+    apiRequest<TaskAttachment>(withOrg(`/tasks/${taskId}/attachments/`, organizationId), {
+      method: "POST",
+      formData,
+    }),
+  );
 }
 
 // ── API: категории (справочник) ────────────────────────────────────────────────

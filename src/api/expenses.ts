@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -176,11 +177,18 @@ export function voidExpense(expenseId: number, payload: VoidExpensePayload): Pro
   });
 }
 
-export function uploadExpensePhoto(expenseId: number, file: File): Promise<Expense> {
+/**
+ * Прикрепление чека к расходу. Снимок с телефона ужимаем и переводим в jpg
+ * (см. api/uploads.ts): бэк принимает только jpg/png/webp и роняет запрос
+ * тяжелее ~2.5 МБ ещё до вьюхи.
+ */
+export async function uploadExpensePhoto(expenseId: number, file: File): Promise<Expense> {
   const formData = new FormData();
-  formData.append("photo", file);
-  return apiRequest<Expense>(`/finance/expenses/${expenseId}/photo/`, {
-    method: "PUT",
-    formData,
-  });
+  formData.append("photo", await preparePhotoOrThrow(file));
+  return withUploadErrors(() =>
+    apiRequest<Expense>(`/finance/expenses/${expenseId}/photo/`, {
+      method: "PUT",
+      formData,
+    }),
+  );
 }

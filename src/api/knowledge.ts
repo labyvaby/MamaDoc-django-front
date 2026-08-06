@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoIfImage, withUploadErrors } from "./uploads";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
@@ -143,15 +144,18 @@ export interface KnowledgeAttachment {
   url: string;
 }
 
-export function uploadKnowledgeImage(
+export async function uploadKnowledgeImage(
   file: File,
   organizationId?: number,
 ): Promise<KnowledgeAttachment> {
   const formData = new FormData();
-  formData.append("file", file);
-  return apiRequest<KnowledgeAttachment>(
-    withOrg("/knowledge/attachments/", organizationId),
-    { method: "POST", formData },
+  // Ужимаем и переводим в jpg: тяжёлый снимок бэк отвергает — см. api/uploads.ts.
+  formData.append("file", await preparePhotoIfImage(file));
+  return withUploadErrors(() =>
+    apiRequest<KnowledgeAttachment>(
+      withOrg("/knowledge/attachments/", organizationId),
+      { method: "POST", formData },
+    ),
   );
 }
 
