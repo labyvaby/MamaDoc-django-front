@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { getStatusChipState, OVERDUE_GRACE_MS } from "./statusChipState";
+import "../../i18n";
+import {
+  getStatusChipState,
+  resolveAppointmentDisplayState,
+  OVERDUE_GRACE_MS,
+} from "./statusChipState";
 import type { AppointmentStatusSource } from "./statusChipState";
 
 /**
@@ -237,6 +242,116 @@ describe("чип долга", () => {
   it("не показывается при нулевом остатке", () => {
     expect(
       state({ status: "scheduled", paymentStatus: "paid", paidTotal: "1600.00", debt: "0.00" }).debtAmount,
+    ).toBeNull();
+  });
+});
+
+describe("единое состояние приёма (счётчики и фильтры дня)", () => {
+  // Фильтр «Пациент здесь» отбирал приёмы по сырому статусу из базы, а строка
+  // после оплаты статус прячет — выбранный фильтр показывал строки с одним
+  // лишь «Оплачено». Состояние обязано совпадать с главным чипом строки.
+  const displayState = (over: Partial<AppointmentStatusSource>) =>
+    resolveAppointmentDisplayState(appt(over));
+
+  it("незакрытый чек — состояние равно статусу визита", () => {
+    expect(displayState({ status: "arrived", paymentStatus: "unpaid" })).toBe("arrived");
+    expect(displayState({ status: "in_progress" })).toBe("in_progress");
+  });
+
+  it("полная оплата уводит приём из статусов визита в «Оплачено»", () => {
+    // ВРЕМЕННОЕ бизнес-правило: бэк не закрывает визиты явным статусом,
+    // поэтому закрытый чек считаем операционным концом приёма.
+    expect(
+      displayState({ status: "arrived", paymentStatus: "paid", paidTotal: "1600.00" }),
+    ).toBe("paid");
+    expect(
+      displayState({ status: "in_progress", paymentStatus: "paid", paidTotal: "300.00" }),
+    ).toBe("paid");
+  });
+
+  it("частичная оплата приём не закрывает", () => {
+    expect(
+      displayState({
+        status: "arrived",
+        paymentStatus: "partial",
+        paidTotal: "500.00",
+        debt: "1100.00",
+        totalAmount: "1600.00",
+      }),
+    ).toBe("arrived");
+  });
+
+  it("«Завершено» без оплаты остаётся в «Завершено»", () => {
+    expect(displayState({ status: "completed", paymentStatus: "unpaid" })).toBe("completed");
+  });
+
+  it("полностью оплаченный «Завершено» уходит в «Оплачено» — оплата приоритетнее", () => {
+    // Осознанный выбор: строка такого приёма показывает один чип «Оплачено»
+    // (чип «Завершено» скрыт за закрытым чеком), и корзина фильтра обязана
+    // совпадать со строкой, а не с сырым статусом из базы.
+    expect(
+      displayState({ status: "completed", paymentStatus: "paid", paidTotal: "1600.00" }),
+    ).toBe("paid");
+  });
+
+  it("предоплата уводит даже будущий приём в «Оплачено» — цена временного правила", () => {
+    // Пациент оплатил заранее, но ещё не пришёл (или ещё сидит в кабинете):
+    // без явного признака закрытия визита на бэке предоплату не отличить от
+    // закрытого приёма. Кнопка «Принять оплату» датой не ограничена, так что
+    // сценарий реален. Если предоплата станет рабочим процессом — нужен
+    // явный статус закрытия на бэке и правка resolveAppointmentDisplayState.
+    expect(
+      displayState({ status: "scheduled", paymentStatus: "paid", paidTotal: "1600.00" }),
+    ).toBe("paid");
+    expect(
+      displayState({ status: "confirmed", paymentStatus: "paid", paidTotal: "1600.00" }),
+    ).toBe("paid");
+  });
+
+  it("отмена и неявка не маскируются оплатой", () => {
+    expect(
+      displayState({ status: "canceled", paymentStatus: "paid", paidTotal: "1600.00" }),
+    ).toBe("canceled");
+    expect(
+      displayState({ status: "no_show", paymentStatus: "paid", paidTotal: "1600.00" }),
+    ).toBe("no_show");
+  });
+
+  it("скидка на всю сумму закрывает приём в «Со скидкой», а не в «Оплачено»", () => {
+    expect(
+      displayState({
+        status: "arrived",
+        paymentStatus: "discounted",
+        paidTotal: "0.00",
+        totalAmount: "1600.00",
+        discountAmount: "1600.00",
+      }),
+    ).toBe("discounted");
+  });
+
+  it("частичная скидка без оплаты — статус визита остаётся", () => {
+    expect(
+      displayState({
+        status: "arrived",
+        paymentStatus: "discounted",
+        paidTotal: "0.00",
+        totalAmount: "1600.00",
+        discountAmount: "800.00",
+      }),
+    ).toBe("arrived");
+  });
+
+  it("legacy-статусы Supabase классифицируются так же", () => {
+    const legacyArrived = "Пациент здесь" as AppointmentStatusSource["status"];
+    expect(
+      displayState({ status: legacyArrived, paymentStatus: "paid", paidTotal: "300.00" }),
+    ).toBe("paid");
+    expect(displayState({ status: legacyArrived })).toBe("arrived");
+  });
+
+  it("неизвестный статус в корзины не попадает", () => {
+    expect(
+      displayState({ status: "что-то странное" as AppointmentStatusSource["status"] }),
     ).toBeNull();
   });
 });
