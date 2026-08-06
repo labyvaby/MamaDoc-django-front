@@ -122,6 +122,9 @@ export const PatientAuthDialog: React.FC<{
   const describeError = (e: unknown): string => {
     const code = patientErrorCode(e);
     if (code === "invalid_code" || code === "code_expired") return t("auth.codeInvalid");
+    // Клиники с таким slug нет — чинить нечего ни пациенту, ни повтором:
+    // отправляем звонить в регистратуру, а не «попробуйте ещё раз».
+    if (code === "organization_not_found") return t("auth.orgNotFound");
     if (e instanceof ApiError && e.status === 429) return t("tooManyAttempts");
     return t("auth.failed");
   };

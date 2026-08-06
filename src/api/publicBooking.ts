@@ -579,13 +579,14 @@ export interface CreateGuestBookingRequest {
    */
   branchId: number;
   /**
-   * Минимум одна услуга. Бэк объявил поддержку брони без услуги
-   * (`BOOKING_AND_TEST_ENVIRONMENT.md`, 05.08.2026: «принимает отсутствие
-   * service_ids и пустой список», окно 30 минут), но на живом API этого нет —
-   * проверено 05.08.2026 на newcrm.pediatr.kg и test.crm.operator.kg: и
-   * `service_ids: []`, и запрос без поля → `400 validation_error`,
-   * `details.missing: ["service_ids"]`. Флаг витрины —
-   * `BOOKING_NO_SERVICE_ENABLED` в `pages/public-booking/shell.tsx`.
+   * Услуги брони. Обязательность зависит от окружения — проверено пустым POST
+   * (ответ перечисляет обязательные поля в `details.missing`):
+   *   • test.crm.operator.kg (06.08.2026) — `missing: [professional_id,
+   *     branch_id, date, time]`: брони без услуги бэк уже принимает;
+   *   • newcrm.pediatr.kg (там же) — в `missing` ещё и `patient_name`,
+   *     `patient_phone`, `service_ids`: на проде релиз не выложен.
+   * Поэтому витрина с `BOOKING_NO_SERVICE_ENABLED` выпускается только после
+   * деплоя прода (тикет `backend_ticket_booking_deploy_gap_2026-08-05.md` §1).
    */
   serviceIds: number[];
   /** YYYY-MM-DD */
@@ -607,10 +608,11 @@ export interface CreateGuestBookingRequest {
    * брони с тем же телефоном без него — два совпадения. Бэк не ищет карту,
    * когда она уже известна.
    *
-   * ⚠ Имя и телефон всё равно обязательны: запрос с одним `patient_id` отвечает
-   * `400 details.missing: ["patient_name","patient_phone"]`. Поэтому фронт
-   * подставляет их из карты сам; просьба брать из карты на бэке — §4 тикета
-   * `backend_ticket_booking_patient_cabinet_2026-08-05.md`.
+   * §4 тикета `backend_ticket_booking_patient_cabinet_2026-08-05.md` закрыт: с
+   * `patient_id` имя и телефон бэк берёт из карты и в теле их не ждёт (тест,
+   * 06.08.2026). Мы их всё равно шлём — на проде релиза ещё нет, и без них
+   * запрос там упадёт с `400 details.missing`, а лишними на новом контракте они
+   * не будут.
    */
   patientId?: number;
   /** Токен пациента; без него бэк проигнорирует `patientId`. */

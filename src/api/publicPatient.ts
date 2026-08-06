@@ -34,6 +34,9 @@ export type PatientAuthErrorCode =
   | "invalid_code"
   | "code_expired"
   | "validation_error"
+  /** Организации с таким slug нет — ошибка конфигурации витрины, не пациента. */
+  | "organization_not_found"
+  | "patient_not_found"
   | "not_found";
 
 /** Код ошибки из ответа бэка (`{error, message, details}`), если он есть. */
@@ -61,9 +64,10 @@ export interface OtpRequestResult {
  * `POST /auth/otp/request/` — SMS с кодом. Организация обязательна: пул
  * пациентов у каждой клиники свой.
  *
- * ⚠ Организация передаётся именно как `organization_slug`. На несуществующий
- * slug бэк отвечает `400 «organization и phone обязательны»` — сообщение
- * выглядит как «поле не передано», хотя поле принято, просто клиника не найдена.
+ * Организация передаётся как `organization_slug`. Неизвестный slug теперь даёт
+ * `404 organization_not_found` (проверено на тесте 06.08.2026; до контракта от
+ * 05.08.2026 это был 400 «organization и phone обязательны» — ошибка выглядела
+ * как «поле не передано», хотя дело было в самой клинике).
  */
 export function requestPatientOtp(
   phone: string,
@@ -177,16 +181,18 @@ export function getPatientMe(token: string, signal?: AbortSignal): Promise<{ pat
 }
 
 /**
- * Запись пациента в кабинете. Поля те же, что у брони по коду.
- *
- * ⚠ Привязки к конкретной карте бэк не отдаёт (нет `patientId`), поэтому
- * разделить историю по профилям на клиенте нельзя — показываем все записи
- * номера. Тикет: §1 `backend_ticket_booking_patient_cabinet_2026-08-05.md`.
+ * Запись пациента в кабинете. Поля те же, что у брони по коду, плюс карта, на
+ * которой она сидит (§1 тикета закрыт — контракт от 05.08.2026).
  */
 export interface MyBooking {
   id: number;
   confirmationCode: string;
   status: string;
+  /**
+   * Карта пациента, за которую сделана запись. `null` — бронь оставлена гостем
+   * до входа: она привязана к номеру, а не к карте.
+   */
+  patientId: number | null;
   /** YYYY-MM-DD */
   date: string;
   /** HH:MM */
@@ -200,19 +206,41 @@ export interface MyBooking {
   payment: unknown | null;
 }
 
+export interface MyBookingsFilters {
+  /** Только записи этой карты; допускается лишь карта текущего токена. */
+  patientId?: number;
+  /** Серверный срез по времени; `upcoming` не отдаёт отменённые/завершённые. */
+  status?: "upcoming" | "past";
+  page?: number;
+  limit?: number;
+}
+
 /**
  * `GET /me/bookings/` — записи по номеру, включая созданные гостем до входа
  * (привязка по телефону работает, проверено: в списке есть брони с 6-символьными
  * кодами из старой генерации).
  *
- * ⚠ Параметры `patient_id` и `status=upcoming|past` бэк игнорирует — возвращает
- * один и тот же набор. Фильтруем на клиенте (`splitBookingsByTime`).
+ * Фильтры `patient_id`/`status` и пагинация бэком реализованы (контракт от
+ * 05.08.2026; раньше параметры игнорировались). Неизвестная карта →
+ * `patient_not_found`, неизвестный статус → `validation_error`.
+ *
+ * ⚠ Страница кабинета фильтры по карте НЕ использует: не проверено, попадают ли
+ * в такую выдачу гостевые брони номера (у них `patientId: null`) — потерять их
+ * из списка нельзя, поэтому отбор по выбранной карте делается на клиенте.
+ * Пагинацию просим с запасом: по умолчанию бэк отдаёт `limit: 20`.
  */
 export function getMyBookings(
   token: string,
+  filters: MyBookingsFilters = {},
   signal?: AbortSignal,
 ): Promise<PublicList<MyBooking>> {
-  return getList<MyBooking>(`/me/bookings/`, signal, authHeaders(token));
+  const q = new URLSearchParams();
+  if (filters.patientId != null) q.set("patient_id", String(filters.patientId));
+  if (filters.status) q.set("status", filters.status);
+  if (filters.page != null) q.set("page", String(filters.page));
+  if (filters.limit != null) q.set("limit", String(filters.limit));
+  const qs = q.toString();
+  return getList<MyBooking>(`/me/bookings/${qs ? `?${qs}` : ""}`, signal, authHeaders(token));
 }
 
 /**
@@ -244,9 +272,23 @@ function isPast(b: MyBooking): boolean {
 }
 
 /**
- * Разделение на предстоящие и прошедшие — на клиенте, потому что `?status=`
- * бэк игнорирует. Отменённые и завершённые уходят в «прошедшие» независимо от
- * даты: активной записью они не являются.
+ * Записи выбранной карты. Брони без карты (`patientId: null`) — гостевые заявки
+ * этого номера: их показываем при любом выбранном профиле, потому что чьи они,
+ * не знает и бэк, а спрятать их значило бы потерять запись из кабинета.
+ */
+export function filterBookingsForPatient(
+  items: MyBooking[],
+  patientId: number | null,
+): MyBooking[] {
+  if (patientId == null) return items;
+  return items.filter((b) => b.patientId == null || b.patientId === patientId);
+}
+
+/**
+ * Разделение на предстоящие и прошедшие — на клиенте: серверный `?status=`
+ * есть, но он режет выдачу, а кабинет показывает оба списка сразу и одним
+ * запросом. Отменённые и завершённые уходят в «прошедшие» независимо от даты:
+ * активной записью они не являются.
  */
 export function splitBookingsByTime(items: MyBooking[]): {
   upcoming: MyBooking[];
