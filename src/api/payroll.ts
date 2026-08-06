@@ -52,6 +52,12 @@ export interface EmployeeDailyDetailRow {
   nightHoursSum: string;
   hoursSum: string;
   appointmentsCount: number;
+  /**
+   * Доля распределённых приёмов за этот день (дробная: приём делится между
+   * регистраторами смены). С 05.08.2026 бэк раскладывает месячную
+   * распределяемую часть по датам — раньше здесь всегда лежал "0.00"; сумма по
+   * дням сходится с месячным отчётом с точностью до округления.
+   */
   distributedAppointments: string;
   createdByCount: number;
   percentSum: string;

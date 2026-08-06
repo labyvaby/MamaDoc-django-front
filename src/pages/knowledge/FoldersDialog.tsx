@@ -25,7 +25,6 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { ConfirmDialog } from "../../components/ui";
 import {
-  KNOWLEDGE_FOLDERS_FROM_BACKEND,
   createKnowledgeFolder,
   deleteKnowledgeFolder,
   getKnowledgeFolders,
@@ -178,13 +177,6 @@ const FoldersDialog: React.FC<FoldersDialogProps> = ({ open, onClose }) => {
             ленте. Порядок папок меняется перетаскиванием. При удалении папки статьи
             не теряются — вернутся в общий список.
           </Typography>
-
-          {!KNOWLEDGE_FOLDERS_FROM_BACKEND && (
-            <Alert severity="info">
-              Папки пока сохраняются только в этом браузере: на сервере поля для них
-              ещё нет (тикет бэкенду отправлен). Коллеги их не увидят.
-            </Alert>
-          )}
 
           <Stack direction="row" gap={1}>
             <TextField

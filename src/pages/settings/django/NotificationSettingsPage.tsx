@@ -72,11 +72,19 @@ const DjangoNotificationSettingsPage: React.FC = () => {
     sms: t("notifications.channels.sms"),
     whatsapp: t("notifications.channels.whatsapp"),
   };
+  // Подпись поля смещения зависит от типа правила: «через» у уведомлений о
+  // событии и «за» у напоминаний. Сам список правил и их названия приходят с
+  // бэка (typeLabel) — новые типы (booking_*, контракт от 05.08.2026)
+  // появляются на странице сами, здесь только уточнение подписи.
   const TIMING_LABEL: Record<string, string> = {
     created_10m: t("notifications.timing.created_10m"),
     reminder_2h: t("notifications.timing.reminder_2h"),
     appointment_change: t("notifications.timing.appointment_change"),
     appointment_cancel: t("notifications.timing.appointment_cancel"),
+    booking_created: t("notifications.timing.booking_created"),
+    booking_confirmed: t("notifications.timing.booking_confirmed"),
+    booking_cancelled: t("notifications.timing.booking_cancelled"),
+    booking_reminder: t("notifications.timing.booking_reminder"),
   };
 
   const canView = useCan("notifications.manage");

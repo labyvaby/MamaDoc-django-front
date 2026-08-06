@@ -136,6 +136,10 @@ function earningsBreakdown(row: PayrollRow, t: TFunc): { label: string; value: s
  * распределённые приёмы, товары, уборки, надбавка. Без них итог дневной
  * таблицы не сходится с месячным — особенно у регистраторов, у которых «за
  * приёмы» и есть основной заработок.
+ *
+ * ⚠ По дням с 05.08.2026 раскладывается только СЧЁТЧИК распределённых приёмов
+ * (`distributedAppointments`), но не деньги за них (`appointmentPay`) — их в
+ * дневном ответе по-прежнему нет.
  */
 function monthlyOnlyBreakdown(row: PayrollRow, t: TFunc): { label: string; value: string }[] {
   const parts: [string, string | undefined][] = [
@@ -151,6 +155,16 @@ function monthlyOnlyBreakdown(row: PayrollRow, t: TFunc): { label: string; value
 
 const sumBy = (rows: EmployeeDailyDetailRow[], pick: (d: EmployeeDailyDetailRow) => string) =>
   rows.reduce((s, d) => s + parseFloat(pick(d) || "0"), 0);
+
+/**
+ * Распределённые приёмы — доля, а не штука: один приём делится между
+ * регистраторами смены, и по дням выходит «1,5». Целое показываем без хвоста,
+ * дробное — с одним знаком, иначе округление до штук врало бы в сумме.
+ */
+const formatShare = (value: string | number): string => {
+  const n = typeof value === "number" ? value : parseFloat(value || "0");
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+};
 
 interface SalaryReportRowProps {
   row: PayrollRow;
@@ -218,6 +232,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
               parseFloat(d.nightHours || "0") > 0 ||
               d.appointmentsCount > 0 ||
               d.createdByCount > 0 ||
+              parseFloat(d.distributedAppointments || "0") > 0 ||
               parseFloat(d.percentSum || "0") > 0 ||
               parseFloat(d.expensesSum || "0") > 0 ||
               parseFloat(d.totalSalary || "0") > 0,
@@ -260,6 +275,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
     hoursSum: sumBy(dailyData, (d) => d.hoursSum),
     appointments: dailyData.reduce((s, d) => s + (d.appointmentsCount || 0), 0),
     createdBy: dailyData.reduce((s, d) => s + (d.createdByCount || 0), 0),
+    distributed: sumBy(dailyData, (d) => d.distributedAppointments),
     percentSum: sumBy(dailyData, (d) => d.percentSum),
     expensesSum: sumBy(dailyData, (d) => d.expensesSum),
     totalSalary: sumBy(dailyData, (d) => d.totalSalary),
@@ -276,6 +292,12 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const countsByDays = isRegistrator ? dayTotals.createdBy : dayTotals.appointments;
   const countsInMonth = isRegistrator ? row.createdByCount : row.appointmentsCount;
   const countsMismatch = dailyData.length > 0 && countsByDays !== countsInMonth;
+  // Распределяемую часть бэк раскладывает по дням с 05.08.2026 (раньше в днях
+  // всегда лежал 0.00). Сумма должна сходиться с месячной «с учётом
+  // округления» — расхождение больше половины приёма помечаем.
+  const distributedMismatch =
+    dailyData.length > 0 &&
+    Math.abs(dayTotals.distributed - parseFloat(row.distributedAppointments || "0")) > 0.5;
   // Остаток, который не объясняется ни днями, ни месячными частями. Обычно 0;
   // показываем строкой, чтобы сводка не «не сходилась» молча.
   const unexplained =
@@ -459,14 +481,24 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         </Stack>
                       </Grid2>
                       {isRegistrator ? (
-                        <Grid2 size={4}>
-                          <Typography variant="caption" color="success.main" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
-                            {t("row.createdShort")}
-                          </Typography>
-                          <Typography variant="body2" fontWeight={700} color="success.main">
-                            {day.createdByCount}
-                          </Typography>
-                        </Grid2>
+                        <>
+                          <Grid2 size={4}>
+                            <Typography variant="caption" color="success.main" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
+                              {t("row.createdShort")}
+                            </Typography>
+                            <Typography variant="body2" fontWeight={700} color="success.main">
+                              {day.createdByCount}
+                            </Typography>
+                          </Grid2>
+                          <Grid2 size={4}>
+                            <Typography variant="caption" color="info.main" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
+                              {t("row.distributedShort")}
+                            </Typography>
+                            <Typography variant="body2" fontWeight={700} color="info.main">
+                              {formatShare(day.distributedAppointments)}
+                            </Typography>
+                          </Grid2>
+                        </>
                       ) : (
                         <Grid2 size={4}>
                           <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem", display: "block", mb: 0.5 }}>
@@ -819,7 +851,10 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         )}
                         <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.hourlyPay")}</TableCell>
                         {isRegistrator ? (
-                          <TableCell align="center" sx={{ fontWeight: 800, color: "success.main" }}>{t("row.createdAppointments")}</TableCell>
+                          <>
+                            <TableCell align="center" sx={{ fontWeight: 800, color: "success.main" }}>{t("row.createdAppointments")}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 800, color: "info.main" }}>{t("row.distributedShort")}</TableCell>
+                          </>
                         ) : (
                           <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.allAppointmentsFull")}</TableCell>
                         )}
@@ -850,9 +885,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                           )}
                           <TableCell align="right">{formatKGS(day.hoursSum)}</TableCell>
                           {isRegistrator ? (
-                            <TableCell align="center" sx={{ color: "success.main", fontWeight: 700 }}>
-                              {day.createdByCount}
-                            </TableCell>
+                            <>
+                              <TableCell align="center" sx={{ color: "success.main", fontWeight: 700 }}>
+                                {day.createdByCount}
+                              </TableCell>
+                              <TableCell align="center" sx={{ color: "info.main", fontWeight: 700 }}>
+                                {formatShare(day.distributedAppointments)}
+                              </TableCell>
+                            </>
                           ) : (
                             <TableCell align="center">{day.appointmentsCount}</TableCell>
                           )}
@@ -902,6 +942,23 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                             )}
                           </Stack>
                         </TableCell>
+                        {isRegistrator && (
+                          <TableCell align="center" sx={{ color: "info.main" }}>
+                            <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5}>
+                              <span>{formatShare(dayTotals.distributed)}</span>
+                              {distributedMismatch && (
+                                <Tooltip
+                                  title={t("row.countsMismatch", {
+                                    days: formatShare(dayTotals.distributed),
+                                    month: formatShare(row.distributedAppointments),
+                                  })}
+                                >
+                                  <ReportProblemIcon sx={{ color: "warning.main", fontSize: "0.85rem" }} />
+                                </Tooltip>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        )}
                         <TableCell align="right">{formatKGS(String(dayTotals.percentSum))}</TableCell>
                         <TableCell align="right" sx={{ color: dayTotals.expensesSum > 0 ? "error.main" : undefined }}>
                           {dayTotals.expensesSum > 0 ? formatKGS(String(dayTotals.expensesSum)) : "—"}

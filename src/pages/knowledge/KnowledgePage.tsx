@@ -52,17 +52,14 @@ import {
   cascadeItem,
 } from "../../components/ui";
 import {
-  KNOWLEDGE_FOLDERS_FROM_BACKEND,
   KNOWLEDGE_USE_MOCKS,
   createKnowledgeArticle,
   getKnowledgeArticles,
   getKnowledgeCategories,
-  getKnowledgeFolderCounts,
   getKnowledgeFolders,
   getKnowledgeSeries,
   groupArticleFeed,
   setArticleFolder,
-  withLocalFolders,
   type KnowledgeArticleListItem,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
@@ -172,13 +169,6 @@ const KnowledgePage: React.FC = () => {
     [searchParams, setSearchParams],
   );
 
-  /**
-   * Версия локальных папок: пока бэк не отдаёт `folderId`, привязки лежат в
-   * localStorage и react-query о них ничего не знает. Инкремент после каждого
-   * перемещения — сигнал пересчитать папки статей и счётчики плиток.
-   */
-  const [foldersVersion, setFoldersVersion] = React.useState(0);
-
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.knowledge.all });
 
@@ -214,12 +204,15 @@ const KnowledgePage: React.FC = () => {
   const publishedFilter = canManage ? undefined : true;
 
   /**
-   * Фильтр папки уходит на сервер только когда бэк его понимает. Пока нет —
-   * грузим ту же выборку, что и в корне, и отбираем статьи папки на клиенте
-   * (папку статьи знает только localStorage), поэтому и в ключе запроса папки
-   * нет: иначе вход в каждую папку перезапрашивал бы одни и те же статьи.
+   * Отбор по папке — на сервере (`?folder=<id>` / `?folder=none`):
+   *   • в папке — только её статьи;
+   *   • в корне — только статьи вне папок (разложенные лежат внутри плиток);
+   *   • при поиске — фильтр снимаем: искать надо и внутри папок, иначе находка
+   *     превратилась бы в «ничего не найдено» на глазах у найденного.
    */
-  const serverFolder = KNOWLEDGE_FOLDERS_FROM_BACKEND ? openFolderId ?? undefined : undefined;
+  const serverFolder: number | "none" | undefined = debouncedSearch
+    ? undefined
+    : openFolderId ?? "none";
 
   const articlesQuery = useInfiniteQuery({
     queryKey: djangoQueryKeys.knowledge.articles({
@@ -248,43 +241,46 @@ const KnowledgePage: React.FC = () => {
     placeholderData: keepPreviousData,
   });
 
-  const articles = React.useMemo(() => {
-    const loaded = articlesQuery.data?.pages.flatMap((p) => p.results) ?? [];
-    // Папка статьи приходит из localStorage, пока её не отдаёт бэк.
-    return withLocalFolders(loaded, folders, orgId);
-    // foldersVersion — внешний сигнал: перемещение статьи меняет localStorage,
-    // а не данные запроса, поэтому иначе лента не перерисовалась бы.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [articlesQuery.data, folders, orgId, foldersVersion]);
+  /** Лента: отбор по папке сделал сервер, здесь статьи уже нужные. */
+  const visibleArticles = React.useMemo(
+    () => articlesQuery.data?.pages.flatMap((p) => p.results) ?? [],
+    [articlesQuery.data],
+  );
 
-  const total = articlesQuery.data?.pages[0]?.count ?? 0;
   const allLoaded = !articlesQuery.hasNextPage;
 
-  /**
-   * Что показываем в ленте:
-   *   • в папке — только её статьи;
-   *   • в корне — только статьи вне папок (разложенные лежат внутри плиток);
-   *   • при поиске — всё найденное, включая содержимое папок: спрятать находку
-   *     внутрь папки значило бы показать «ничего не найдено» на глазах у
-   *     найденного.
-   * Когда бэк научится фильтру `?folder=`, отбор в папке уедет на сервер.
-   */
-  const visibleArticles = React.useMemo(() => {
-    if (debouncedSearch) return articles;
-    if (openFolderId != null) {
-      return KNOWLEDGE_FOLDERS_FROM_BACKEND
-        ? articles
-        : articles.filter((a) => a.folderId === openFolderId);
-    }
-    return articles.filter((a) => a.folderId == null);
-  }, [articles, openFolderId, debouncedSearch]);
+  /** Счётчики плиток считает бэк (`articleCount`) — по запросу на плитку не ходим. */
+  const folderCounts = React.useMemo(
+    () => new Map(folders.map((f) => [f.id, f.articleCount ?? 0])),
+    [folders],
+  );
 
-  /** Счётчики плиток: с бэка (когда появится) или по локальным привязкам. */
-  const folderCounts = React.useMemo(() => {
-    const local = getKnowledgeFolderCounts(orgId);
-    return new Map(folders.map((f) => [f.id, f.articleCount ?? local.get(f.id) ?? 0]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folders, orgId, foldersVersion]);
+  /**
+   * Чип «Все» — по всем статьям организации, а не по текущей выборке: в корне
+   * лента показывает только статьи вне папок, и её `count` занижал бы итог на
+   * всё разложенное по папкам.
+   */
+  const totalQuery = useQuery({
+    queryKey: djangoQueryKeys.knowledge.articles({
+      countOf: "all",
+      search: debouncedSearch,
+      orgId: orgId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getKnowledgeArticles(
+        {
+          search: debouncedSearch || undefined,
+          isPublished: publishedFilter,
+          page: 1,
+          pageSize: 1,
+          organizationId: orgId,
+        },
+        signal,
+      ),
+    select: (r) => r.count,
+    placeholderData: keepPreviousData,
+  });
+  const total = totalQuery.data ?? 0;
 
   /**
    * Счётчики у чипов разделов. Бэк агрегата не отдаёт, но `count` в ответе
@@ -382,8 +378,9 @@ const KnowledgePage: React.FC = () => {
         for (const id of articleIds) {
           await setArticleFolder(id, folderId, orgId);
         }
-        setFoldersVersion((v) => v + 1);
-        if (KNOWLEDGE_FOLDERS_FROM_BACKEND) invalidate();
+        // Инвалидируем весь модуль: у папок изменился articleCount, а статья
+        // ушла из выборки корня (`?folder=none`) в выборку папки.
+        invalidate();
         const target = folderId != null ? folders.find((f) => f.id === folderId)?.name : null;
         notify?.({
           type: "success",
@@ -699,7 +696,7 @@ const KnowledgePage: React.FC = () => {
                 {articlesQuery.isFetchingNextPage ? "Загрузка…" : "Показать ещё"}
               </Button>
               <Typography variant="caption" color="text.secondary">
-                Показано {articles.length} из {total}
+                Показано {visibleArticles.length} из {total}
                 {sort !== "recent" && " · сортировка применяется к загруженным"}
               </Typography>
             </Stack>

@@ -22,6 +22,7 @@ import { useNavigate } from "react-router";
 
 import {
   cancelMyBooking,
+  filterBookingsForPatient,
   getMyBookings,
   isBookingCancellable,
   isPatientTokenInvalid,
@@ -218,7 +219,9 @@ const MyBookingsPage: React.FC = () => {
       }
       setLoading(true);
       setError(null);
-      getMyBookings(token, signal)
+      // limit с запасом: по умолчанию бэк отдаёт 20 записей, а история приёмов
+      // за годы в клинике длиннее — «прошедшие» иначе молча обрезались бы.
+      getMyBookings(token, { limit: 100 }, signal)
         .then((res) => {
           if (signal?.aborted) return;
           setItems(res.items);
@@ -264,7 +267,14 @@ const MyBookingsPage: React.FC = () => {
     }
   };
 
-  const { upcoming, past } = React.useMemo(() => splitBookingsByTime(items), [items]);
+  // Записи выбранной карты: на одном номере их часто несколько (дети записаны
+  // на телефон родителя). Гостевые брони номера остаются видны при любой карте.
+  const visible = React.useMemo(
+    () => filterBookingsForPatient(items, selectedPatient?.id ?? null),
+    [items, selectedPatient],
+  );
+
+  const { upcoming, past } = React.useMemo(() => splitBookingsByTime(visible), [visible]);
 
   // Диалог держим смонтированным независимо от состояния сессии: он переживает
   // вход и остаётся на шаге выбора карты, когда на номере их несколько.
@@ -314,7 +324,7 @@ const MyBookingsPage: React.FC = () => {
           <Stack alignItems="center" sx={{ py: 6 }}>
             <CircularProgress />
           </Stack>
-        ) : items.length === 0 ? (
+        ) : visible.length === 0 ? (
           <Stack spacing={2} alignItems="center" sx={{ py: 6, textAlign: "center" }}>
             <EventOutlined sx={{ fontSize: 44, color: MUTED }} />
             <Typography sx={{ fontSize: 15, color: MUTED }}>{t("my.empty")}</Typography>

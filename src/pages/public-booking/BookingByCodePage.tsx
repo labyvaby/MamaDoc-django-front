@@ -14,7 +14,7 @@ import { getBookingByCode, type PublicBookingDetail } from "../../api/publicBook
 import { ApiError, isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
-import { formatPrice } from "./format";
+import { bookingCodeUrl, formatPrice } from "./format";
 import { BOOKING_PRIMARY, BOOKING_RADIUS, BOOKING_SHADOW, BORDER, MUTED } from "./theme";
 
 /**
@@ -240,7 +240,9 @@ const BookingByCodePage: React.FC = () => {
                   </Button>
                 </Stack>
                 <Box sx={{ p: 1.5, bgcolor: "#FFFFFF", borderRadius: 2, border: `1px solid ${BORDER}` }}>
-                  <QRCode value={window.location.href} size={148} level="M" />
+                  {/* Не window.location.href: страницу могли открыть с тестового
+                      стенда или локально, а QR показывают на ресепшене. */}
+                  <QRCode value={bookingCodeUrl(booking.confirmationCode)} size={148} level="M" />
                 </Box>
               </Stack>
 

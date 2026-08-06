@@ -245,6 +245,10 @@
       "reminder_2h": "Отправить за (мин)",
       "appointment_change": "Задержка (мин)",
       "appointment_cancel": "Задержка (мин)",
+      "booking_created": "Отправить через (мин)",
+      "booking_confirmed": "Отправить через (мин)",
+      "booking_cancelled": "Задержка (мин)",
+      "booking_reminder": "Отправить за (мин)",
       "default": "Смещение (мин)"
     },
     "messageTextLabel": "Текст сообщения",

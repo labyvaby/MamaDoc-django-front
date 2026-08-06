@@ -49,10 +49,12 @@ export const BOOKING_AUTH_ENABLED = true;
  * персонал выбирает при подтверждении в CRM (`PATCH /api/bookings/<id>/status/`
  * с `serviceIds` — эта часть уже работает).
  *
- * ⚠ ТРЕБУЕТ ДЕПЛОЯ БЭКА. На 05.08.2026 ни prod, ни test пустой список не
- * принимали: `400 validation_error`, `details.missing: ["service_ids"]` — гость,
- * не выбравший услугу, упрётся в ошибку на самом сабмите, уже введя имя и
- * телефон. Тикет — `MamaDoc/backend_ticket_booking_deploy_gap_2026-08-05.md` §1.
+ * ⚠ ТРЕБУЕТ ДЕПЛОЯ ПРОДА. На тесте фича проверена целиком (06.08.2026: запись
+ * без услуги → `201`, бронь `services: []`, `totalPrice: "0.00"`,
+ * `totalDurationMin: 30`, в кабинете «Услуги подберём на приёме»), а на
+ * newcrm.pediatr.kg `service_ids` остаётся в `missing`: гость, не выбравший
+ * услугу, упрётся в 400 на самом сабмите, уже введя имя и телефон. Тикет —
+ * `MamaDoc/backend_ticket_booking_deploy_gap_2026-08-05.md` §1.
  */
 export const BOOKING_NO_SERVICE_ENABLED = true;
 
