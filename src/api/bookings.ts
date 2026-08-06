@@ -1,5 +1,22 @@
 import { apiRequest } from "./client";
 
+/**
+ * Скоупинг броней по филиалу — на 06.08.2026 бэком не реализован (тикет
+ * `MamaDoc/backend_ticket_bookings_branch_scoping.md`). Проверено на живом API
+ * (test и prod одинаково): `GET /bookings/` не отдаёт `branchId`/`branchName` и
+ * молча игнорирует `?branchId` — выдача одна и та же для любого филиала и даже
+ * для несуществующего (`branchId=999` → `200`, тот же `count`).
+ *
+ * Флага «включить фильтр» здесь нет намеренно: `branchId` уходит в запрос
+ * всегда (сейчас безвреден, а после деплоя бэка фильтрация заработает без
+ * релиза фронта), а UI определяет готовность по факту — есть ли филиал в
+ * ответе (`bookingHasBranch`). Так интерфейс не обещает разделение, которого
+ * ещё нет, и не показывает пустую колонку «Филиал».
+ */
+export function bookingHasBranch(b: BookingListItem): boolean {
+  return b.branchId != null || !!b.branchName;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Backend contract: docs `bookings-contract.md` (operator.kg integration,
 // CRM-сторона). Все имена полей — camelCase. CRM = source of truth.
@@ -45,6 +62,12 @@ export interface BookingListItem {
   totalDurationMin: number;
   /** Привязка к CRM-приёму. */
   appointmentId: number | null;
+  /**
+   * Филиал брони. Бэк ещё не сериализует эти поля (06.08.2026) — отсюда `?:`;
+   * появление хотя бы одного из них и означает, что скоупинг заработал.
+   */
+  branchId?: number | null;
+  branchName?: string | null;
 }
 
 /**
@@ -96,6 +119,8 @@ export interface BookingsFilters {
   /** По имени/телефону пациента и коду подтверждения. */
   search?: string;
   organizationId?: number;
+  /** Активный филиал. Бэк его пока игнорирует — см. комментарий в начале файла. */
+  branchId?: number;
   page?: number;
   pageSize?: number;
 }
@@ -115,6 +140,9 @@ export function getBookings(
   if (filters.search) q.set("search", filters.search);
   if (filters.organizationId != null) {
     q.set("organizationId", String(filters.organizationId));
+  }
+  if (filters.branchId != null) {
+    q.set("branchId", String(filters.branchId));
   }
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
