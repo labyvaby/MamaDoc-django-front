@@ -31,6 +31,9 @@ import { mockDelay, paginate, withOrg } from "./mockUtils";
  * KNOWLEDGE_IMAGE_UPLOAD_ENABLED и тикет
  * MamaDoc/backend_ticket_knowledge_images.md.
  *
+ * PDF в статьях — ссылкой с меткой `title="pdf"`; загрузка файлом ждёт бэк
+ * (см. раздел «PDF-вложения» ниже и KNOWLEDGE_PDF_UPLOAD_ENABLED).
+ *
  * ⚠ Открытый вопрос (не подтверждён на живом API — на проде нет черновиков):
  * фильтр публикации шлём как isPublished (camelCase, консистентно с остальными
  * DMR-полями/фильтрами модуля). Если бэк ждёт иное имя — черновики не
@@ -157,6 +160,79 @@ export async function uploadKnowledgeImage(
       { method: "POST", formData },
     ),
   );
+}
+
+// ── PDF-вложения в статьях ────────────────────────────────────────────────────
+
+/**
+ * PDF хранится в `content` обычной ссылкой с меткой `title="pdf"`:
+ * `<a href="/media/…/pamyatka.pdf" title="pdf">Памятка.pdf</a>`.
+ * Отдельной сущности «вложение» у бэка нет, а `title` — один из атрибутов,
+ * которые санитайзер оставляет (тот же приём, что и у обложки, см. COVER_TITLE).
+ *
+ * Проверено живым POST /knowledge/articles/ (06.08.2026, тест, орг. 1):
+ *   • `<a href title>` сохраняется, бэк добавляет `rel="noopener noreferrer nofollow"`;
+ *   • относительный `/media/x.pdf` и абсолютный `https://…` — оба проходят;
+ *   • `data-*` и `download` вырезаются (поэтому имя файла живёт текстом ссылки,
+ *     а не атрибутом), обёртка `<div>` вокруг ссылки разворачивается;
+ *   • `<iframe src="/media/x.pdf">` вырезается целиком — встроенный просмотрщик
+ *     внутри статьи невозможен, PDF открывается по ссылке в новой вкладке.
+ */
+export const PDF_LINK_TITLE = "pdf";
+
+/**
+ * ⚠ Загрузка PDF файлом на бэке ещё не разрешена: тот же
+ * `POST /knowledge/attachments/`, что принимает картинки, на .pdf отвечает
+ * `400 {"detail":[{"msg":"file: Недопустимый формат. Разрешены: .gif, .jpeg,
+ * .jpg, .png, .webp"}]}` (проверено 06.08.2026 на тесте, орг. 1; отдельных
+ * путей `/knowledge/files|documents|uploads/` нет — 404). Тикет:
+ * `MamaDoc/backend_ticket_knowledge_pdf.md`.
+ *
+ * Пока флаг выключен — в редакторе доступна вставка PDF по ссылке (например на
+ * файл из модуля «Документы», где pdf уже принимается). После ответа бэка
+ * включаем флаг — заработают кнопка «Загрузить PDF» и перетаскивание файла.
+ */
+export const KNOWLEDGE_PDF_UPLOAD_ENABLED = false;
+
+/** Предел размера файла — тот же, что у документов организации (см. api/documents.ts). */
+export const KNOWLEDGE_PDF_MAX_MB = 25;
+
+/**
+ * Загрузка произвольного файла (PDF) на тот же эндпоинт вложений. В отличие от
+ * uploadKnowledgeImage файл не ужимается и не переводится в jpg — отдаём как есть.
+ */
+export async function uploadKnowledgeFile(
+  file: File,
+  organizationId?: number,
+): Promise<KnowledgeAttachment> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return withUploadErrors(() =>
+    apiRequest<KnowledgeAttachment>(
+      withOrg("/knowledge/attachments/", organizationId),
+      { method: "POST", formData },
+    ),
+  );
+}
+
+/** Похоже ли на PDF по расширению (query-строку игнорируем). */
+export function isPdfUrl(url: string): boolean {
+  const path = url.trim().split(/[?#]/)[0];
+  return /\.pdf$/i.test(path);
+}
+
+/**
+ * Имя для подписи ссылки, выведенное из URL («…/2026/08/pamyatka.pdf» →
+ * «pamyatka.pdf»). Пустая строка — если из URL ничего осмысленного не достать.
+ */
+export function fileNameFromUrl(url: string): string {
+  const path = url.trim().split(/[?#]/)[0];
+  const last = path.split("/").filter(Boolean).pop() ?? "";
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
 }
 
 // ── Обложка статьи ────────────────────────────────────────────────────────────

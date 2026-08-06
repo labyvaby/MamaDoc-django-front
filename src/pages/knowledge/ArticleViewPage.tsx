@@ -30,6 +30,7 @@ import { formatDateRu } from "../../utility/format";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { ConfirmDialog } from "../../components/ui";
 import {
+  PDF_LINK_TITLE,
   deleteKnowledgeArticle,
   getKnowledgeArticle,
   getKnowledgeCategories,
@@ -39,6 +40,7 @@ import {
   updateKnowledgeArticle,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
+import { pdfCardStyles } from "./pdfCard";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
 import { SeriesFooterNav, SeriesHeader } from "./SeriesNav";
 import { useArticleSeries } from "./useArticleSeries";
@@ -50,7 +52,10 @@ interface TocItem {
   level: 2 | 3;
 }
 
-/** Извлекает оглавление из h2/h3 контента и проставляет им id для якорей. */
+/**
+ * Извлекает оглавление из h2/h3 контента и проставляет им id для якорей;
+ * попутно готовит к показу PDF-вложения (ссылки с меткой title="pdf").
+ */
 function processArticleHtml(html: string): { html: string; toc: TocItem[] } {
   if (typeof DOMParser === "undefined") return { html, toc: [] };
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -60,6 +65,13 @@ function processArticleHtml(html: string): { html: string; toc: TocItem[] } {
     el.id = id;
     const text = (el.textContent ?? "").trim();
     if (text) toc.push({ id, text, level: el.tagName === "H2" ? 2 : 3 });
+  });
+  // Файл открывается в новой вкладке: уходить со статьи на просмотр PDF
+  // (и терять прочитанное место) незачем. target бэк не сохраняет — ставим тут.
+  doc.body.querySelectorAll(`a[title="${PDF_LINK_TITLE}"]`).forEach((el) => {
+    el.setAttribute("target", "_blank");
+    el.setAttribute("rel", "noopener noreferrer");
+    if (!(el.textContent ?? "").trim()) el.textContent = "Файл PDF";
   });
   return { html: doc.body.innerHTML, toc };
 }
@@ -123,34 +135,43 @@ const ArticleViewPage: React.FC = () => {
   const showToc = processed.toc.length >= 2;
 
   // ── Прогресс чтения ───────────────────────────────────────────────────────
-  const articleRef = React.useRef<HTMLDivElement | null>(null);
+  // Страница скроллит себя сама (см. корневой Box): лейаут приложения —
+  // childrenBox с фиксированной высотой и overflow:hidden, поэтому без своего
+  // контейнера длинная статья просто обрезалась бы без полосы прокрутки.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [progress, setProgress] = React.useState(0);
+
+  // Следующая статья открывается с начала: контейнер переиспользуется при
+  // переходе между частями серии, иначе часть 2 открылась бы с середины.
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [articleId]);
 
   React.useEffect(() => {
     if (!article) return;
+    const el = scrollRef.current;
+    if (!el) return;
     let raf = 0;
     const update = () => {
-      const el = articleRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const total = rect.height - window.innerHeight;
-      const passed = Math.min(Math.max(-rect.top, 0), Math.max(total, 0));
-      setProgress(total > 80 ? passed / total : 1);
+      const total = el.scrollHeight - el.clientHeight;
+      // Короткая статья без прокрутки считается прочитанной сразу.
+      setProgress(total > 80 ? Math.min(el.scrollTop / total, 1) : 1);
     };
     const onScroll = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(update);
     };
     update();
-    // capture=true: контент скроллится во вложенном контейнере лейаута, не на window.
-    window.addEventListener("scroll", onScroll, true);
+    el.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", onScroll, true);
+      el.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [article]);
+    // processed.html в deps: пока картинки/эмбеды не отрисованы, scrollHeight
+    // ещё не финальный — пересчитываем и после смены содержимого.
+  }, [article, processed.html]);
 
   // Дочитал — отмечаем прочитанной. Порог, а не факт открытия: иначе часть
   // засчиталась бы за прочитанную от случайного клика, и «продолжить с части N»
@@ -213,7 +234,18 @@ const ArticleViewPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: { xs: 1, md: 2 }, maxWidth: showToc ? 1120 : 880, mx: "auto" }}>
+    <Box
+      ref={scrollRef}
+      sx={{
+        height: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+        p: { xs: 1, md: 2 },
+        // Колонка текста по центру: ограничиваем содержимое, а не сам скроллер,
+        // иначе полоса прокрутки уехала бы от края экрана.
+        "& > *": { maxWidth: showToc ? 1120 : 880, mx: "auto" },
+      }}
+    >
       {/* Прогресс чтения */}
       {article && (
         <Box
@@ -313,7 +345,6 @@ const ArticleViewPage: React.FC = () => {
           />
         )}
         <Paper
-          ref={articleRef}
           variant="outlined"
           sx={{ p: { xs: 2, md: 4 }, borderRadius: "14px" }}
         >
@@ -383,6 +414,8 @@ const ArticleViewPage: React.FC = () => {
                 overflowX: "auto",
               },
               "& a": { color: "primary.main" },
+              // PDF-вложение — карточка с меткой формата (см. pdfCard.ts).
+              [`& a[title="${PDF_LINK_TITLE}"]`]: pdfCardStyles(theme),
               "& img": { maxWidth: "100%", borderRadius: 1.5 },
               // Видео в статье (@tiptap/extension-youtube).
               "& div[data-youtube-video]": {
