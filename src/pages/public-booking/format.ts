@@ -18,6 +18,9 @@ export const BOOKING_PUBLIC_ORIGIN: string =
   import.meta.env.VITE_BOOKING_PUBLIC_ORIGIN ||
   (typeof window !== "undefined" ? window.location.origin : "");
 
+/** Главная витрины онлайн-записи — этот адрес дают пациентам. */
+export const BOOKING_SHOWCASE_URL = `${BOOKING_PUBLIC_ORIGIN}/book`;
+
 /** Ссылка на карточку записи по коду подтверждения. */
 export function bookingCodeUrl(code: string): string {
   return `${BOOKING_PUBLIC_ORIGIN}/book/b/${encodeURIComponent(code)}`;

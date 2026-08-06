@@ -10,6 +10,7 @@ import {
   IconButton,
   Paper,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -17,6 +18,7 @@ import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import CancelOutlined from "@mui/icons-material/CancelOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import PersonOffOutlined from "@mui/icons-material/PersonOffOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
@@ -29,6 +31,7 @@ import {
 } from "../../api/bookings";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
+import { bookingCodeUrl } from "../public-booking/format";
 import { BOOKING_STATUS_META } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
 import { useT } from "../../i18n/VerticalProvider";
@@ -132,7 +135,21 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
               {statusMeta && (
                 <Chip label={statusMeta.label} color={statusMeta.color} size="small" />
               )}
-              <Chip label={`Код: ${b.confirmationCode}`} size="small" variant="outlined" />
+              {/* Чип-ссылка ведёт на ту же карточку записи, что видит пациент
+                  по QR из подтверждения — удобно свериться при звонке. */}
+              <Tooltip title="Открыть карточку записи на сайте">
+                <Chip
+                  component="a"
+                  href={bookingCodeUrl(b.confirmationCode)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  clickable
+                  label={`Код: ${b.confirmationCode}`}
+                  size="small"
+                  variant="outlined"
+                  icon={<OpenInNewOutlined sx={{ fontSize: 14 }} />}
+                />
+              </Tooltip>
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center">

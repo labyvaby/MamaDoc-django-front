@@ -10,6 +10,7 @@ import {
   Skeleton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -26,6 +27,9 @@ import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
+import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 
 import { DateRangeField, PageHeader, UserAvatar, type DateRangePreset } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -45,6 +49,7 @@ import {
 } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
+import { BOOKING_SHOWCASE_URL } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
 import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
@@ -162,6 +167,69 @@ const StatTile: React.FC<{
     </Box>
   </Stack>
 );
+
+/**
+ * Ссылка на публичную витрину онлайн-записи: регистратуре её диктуют пациентам
+ * и вставляют в соцсети, поэтому рядом с открытием — копирование адреса.
+ */
+const ShowcaseLink: React.FC = () => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(BOOKING_SHOWCASE_URL);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* буфер недоступен (нет https / отказ в правах) — адрес виден в тултипе */
+    }
+  };
+
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      sx={(t) => ({
+        borderRadius: "10px",
+        border: 1,
+        borderColor: "divider",
+        bgcolor: subtleBg(t),
+        overflow: "hidden",
+        flexShrink: 0,
+      })}
+    >
+      <Tooltip title={BOOKING_SHOWCASE_URL}>
+        <Button
+          component="a"
+          href={BOOKING_SHOWCASE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          size="small"
+          startIcon={<StorefrontOutlinedIcon fontSize="small" />}
+          sx={{
+            textTransform: "none",
+            color: "text.primary",
+            fontWeight: 500,
+            px: 1.25,
+            borderRadius: 0,
+          }}
+        >
+          Сайт записи
+        </Button>
+      </Tooltip>
+      <Box sx={{ width: "1px", alignSelf: "stretch", bgcolor: "divider" }} />
+      <Tooltip title={copied ? "Ссылка скопирована" : "Скопировать ссылку"}>
+        <IconButton size="small" onClick={handleCopy} sx={{ borderRadius: 0, px: 1 }}>
+          {copied ? (
+            <CheckOutlinedIcon fontSize="small" color="success" />
+          ) : (
+            <ContentCopyOutlinedIcon fontSize="small" />
+          )}
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+};
 
 // ── Пресеты дат ───────────────────────────────────────────────────────────────
 
@@ -481,6 +549,7 @@ const BookingsPage: React.FC = () => {
         onSearchChange={setSearchInput}
         searchPlaceholder="Имя, телефон или код"
         loading={query.isFetching}
+        actions={<ShowcaseLink />}
       />
 
       {needsOrg ? (
