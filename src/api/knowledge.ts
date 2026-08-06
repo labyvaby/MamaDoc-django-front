@@ -1,14 +1,5 @@
 import { apiRequest } from "./client";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
-import {
-  localAssignments,
-  localCreateFolder,
-  localDeleteFolder,
-  localFolderCounts,
-  localFolders,
-  localSetArticleFolder,
-  localUpdateFolder,
-} from "./knowledgeFoldersLocal";
 
 /**
  * Модуль «База знаний» — статьи (rich-text, TipTap → HTML). Видео вставляются
@@ -80,13 +71,9 @@ export interface KnowledgeArticleListItem {
   /** Денормализованное имя серии (для карточек ленты, без похода за деталями). */
   seriesName: string | null;
   partNumber: number | null;
-  /**
-   * Папка, в которую сложена статья — см. раздел «Папки» ниже. Бэк поля пока не
-   * отдаёт (undefined): до реализации тикета лента подставляет его из локального
-   * хранилища через `withLocalFolders`.
-   */
-  folderId?: number | null;
-  folderName?: string | null;
+  /** Папка, в которую сложена статья — см. раздел «Папки» ниже. */
+  folderId: number | null;
+  folderName: string | null;
 }
 
 export interface KnowledgeArticle extends KnowledgeArticleListItem {
@@ -103,12 +90,8 @@ export interface KnowledgeArticlesResponse {
 
 export interface KnowledgeArticlesFilters {
   category?: number;
-  /**
-   * Папка. Отправляется только при KNOWLEDGE_FOLDERS_FROM_BACKEND: пока фильтра
-   * нет, бэк молча игнорирует неизвестный параметр и вернул бы весь список —
-   * то есть «статьи папки» показали бы всё подряд.
-   */
-  folder?: number;
+  /** Папка: id — статьи этой папки, "none" — статьи вне папок. */
+  folder?: number | "none";
   /** Поиск по title+content (на бэке). */
   search?: string;
   /** manage-only: без права бэк отдаёт только published. */
@@ -356,22 +339,25 @@ export function groupArticleFeed(articles: KnowledgeArticleListItem[]): Knowledg
  *   • серия (`seriesId` + `partNumber`) — один материал, разбитый на части;
  *   • папка (`folderId`) — «положил рядом, потому что так удобно искать».
  *
- * Бэк папок пока не умеет: тикет `MamaDoc/backend_ticket_knowledge_folders.md`
- * (нужны сущность `/knowledge/folders/`, поле `folderId` у статьи, фильтр
- * `?folder=` и способ получить статьи ВНЕ папок). Пока флаг выключен, папки и
- * привязки живут в localStorage — см. `api/knowledgeFoldersLocal.ts`; это режим
- * для показа и проверки UX, данные не общие для команды.
+ * Бэк закрыл тикет `MamaDoc/backend_ticket_knowledge_folders.md`
+ * (BACKEND_CONTRACTS_2026-08-05.md): CRUD `/knowledge/folders/` — папки
+ * принадлежат организации и не зависят от филиала, у статьи есть
+ * `folderId`/`folderName` (подтверждено живым GET 05.08.2026, орг. 1), фильтр
+ * списка `?folder=<id>` и `?folder=none` (статьи вне папок). Удаление папки
+ * статьи не трогает — у них `folderId` становится `null`.
+ *
+ * ⚠ Суперпользователю `organizationId` обязателен и здесь: без него
+ * `/knowledge/folders/` отвечает 400 (проверено там же) — как в tasks.
  */
-export const KNOWLEDGE_FOLDERS_FROM_BACKEND = false;
-
 export interface KnowledgeFolder {
   id: number;
   name: string;
   position: number;
   isActive: boolean;
   /**
-   * Число статей в папке. Просим у бэка (п. 5 тикета), чтобы не делать по
-   * запросу на плитку; пока считается локально — см. getKnowledgeFolderCounts.
+   * Число статей в папке — бэк считает сам, чтобы не делать по запросу на
+   * плитку. Поле объявлено в контракте; на живом API форму папки увидеть не
+   * удалось (папок в орг. 1 не было), поэтому читаем с фолбэком на 0.
    */
   articleCount?: number;
 }
@@ -386,9 +372,6 @@ export function getKnowledgeFolders(
   params: { organizationId?: number } = {},
   signal?: AbortSignal,
 ): Promise<KnowledgeFolder[]> {
-  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
-    return Promise.resolve(localFolders(params.organizationId));
-  }
   const q = new URLSearchParams();
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
   const qs = q.toString();
@@ -399,9 +382,6 @@ export function createKnowledgeFolder(
   payload: KnowledgeFolderPayload,
   organizationId?: number,
 ): Promise<KnowledgeFolder> {
-  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
-    return Promise.resolve(localCreateFolder(payload, organizationId));
-  }
   return apiRequest<KnowledgeFolder>(withOrg("/knowledge/folders/", organizationId), {
     method: "POST",
     body: payload,
@@ -413,9 +393,6 @@ export function updateKnowledgeFolder(
   payload: Partial<KnowledgeFolderPayload>,
   organizationId?: number,
 ): Promise<KnowledgeFolder> {
-  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
-    return Promise.resolve(localUpdateFolder(folderId, payload, organizationId));
-  }
   return apiRequest<KnowledgeFolder>(
     withOrg(`/knowledge/folders/${folderId}/`, organizationId),
     { method: "PATCH", body: payload },
@@ -426,64 +403,25 @@ export function deleteKnowledgeFolder(
   folderId: number,
   organizationId?: number,
 ): Promise<void> {
-  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
-    localDeleteFolder(folderId, organizationId);
-    return Promise.resolve();
-  }
   return apiRequest<void>(withOrg(`/knowledge/folders/${folderId}/`, organizationId), {
     method: "DELETE",
   });
 }
 
 /**
- * Положить статью в папку или вынуть её (folderId: null).
+ * Положить статью в папку или вынуть её (`folderId: null`).
  *
- * ⚠ На живом API это PATCH статьи, и очистка через `null` бэком не подтверждена
- * (в задачах `null` поле НЕ очищает — там нужны явные флаги). Пункт 3 тикета.
+ * Это PATCH самой статьи; очистка идёт значением `null` (контракт от
+ * 05.08.2026), отдельного tri-state флага, как в задачах, здесь нет.
  */
 export function setArticleFolder(
   articleId: number,
   folderId: number | null,
   organizationId?: number,
 ): Promise<void> {
-  if (!KNOWLEDGE_FOLDERS_FROM_BACKEND) {
-    localSetArticleFolder(articleId, folderId, organizationId);
-    return Promise.resolve();
-  }
   return apiRequest<void>(withOrg(`/knowledge/articles/${articleId}/`, organizationId), {
     method: "PATCH",
     body: { folderId },
-  });
-}
-
-/**
- * Счётчики статей по папкам для плиток. Пока бэк не отдаёт `articleCount`,
- * считаем по локальным привязкам (полностью, а не по загруженным страницам).
- */
-export function getKnowledgeFolderCounts(organizationId?: number): Map<number, number> {
-  return KNOWLEDGE_FOLDERS_FROM_BACKEND ? new Map() : localFolderCounts(organizationId);
-}
-
-/**
- * Проставляет статьям папку из локального хранилища, пока бэк не отдаёт поле.
- * После включения флага возвращает статьи как есть — папка придёт с бэка.
- */
-export function withLocalFolders<T extends KnowledgeArticleListItem>(
-  articles: T[],
-  folders: KnowledgeFolder[],
-  organizationId?: number,
-): T[] {
-  if (KNOWLEDGE_FOLDERS_FROM_BACKEND) return articles;
-  const assignments = localAssignments(organizationId);
-  const nameById = new Map(folders.map((f) => [f.id, f.name]));
-  return articles.map((article) => {
-    const folderId = assignments.get(article.id) ?? null;
-    return {
-      ...article,
-      folderId,
-      // Папку удалили, а привязка осталась — считаем статью «вне папок».
-      folderName: folderId != null ? nameById.get(folderId) ?? null : null,
-    };
   });
 }
 
@@ -514,6 +452,8 @@ const mockArticles: MockArticle[] = [
     seriesId: null,
     seriesName: null,
     partNumber: null,
+    folderId: null,
+    folderName: null,
     // Видео в статье — HTML, который генерирует @tiptap/extension-youtube.
     content:
       "<p>Полный тур по системе: приёмы, пациенты, расписание.</p>" +
@@ -532,6 +472,8 @@ const mockArticles: MockArticle[] = [
     seriesId: null,
     seriesName: null,
     partNumber: null,
+    folderId: null,
+    folderName: null,
     content:
       "<h2>Порядок оформления</h2><p>Пациент подходит к стойке регистратуры. Проверяем карточку в системе: <b>Все пациенты → Поиск по телефону</b>.</p><ol><li>Если пациент новый — создаём карточку (ФИО, дата рождения, телефон).</li><li>Выбираем врача и услугу.</li><li>Печатаем талон и провожаем в кабинет.</li></ol><blockquote><p>Оплата — только после приёма, кроме процедур по прейскуранту.</p></blockquote>",
     createdAt: "2026-07-01T09:00:00Z",
@@ -547,6 +489,8 @@ const mockArticles: MockArticle[] = [
     seriesId: null,
     seriesName: null,
     partNumber: null,
+    folderId: null,
+    folderName: null,
     content:
       "<p>Чек-лист перед сменой:</p><ul><li>Проверить автоклав (журнал циклов).</li><li>Разложить инструменты по наборам.</li><li>Отметить в журнале стерилизации.</li></ul><p><i>Ответственная — старшая медсестра смены.</i></p>",
     createdAt: "2026-07-05T08:00:00Z",
@@ -563,6 +507,8 @@ const mockArticles: MockArticle[] = [
     seriesId: 900,
     seriesName: "Работа с кассой",
     partNumber: 1,
+    folderId: null,
+    folderName: null,
     content:
       "<p>Смену открывает администратор, который первым вышел на работу.</p><h2>Порядок действий</h2><ol><li>Включить ККМ и дождаться загрузки.</li><li>Пробить X-отчёт, сверить остаток с журналом.</li><li>Внести разменные деньги и записать сумму.</li></ol><p>Если остаток не сошёлся — не открывать смену и позвонить бухгалтеру.</p>",
     createdAt: "2026-07-14T09:00:00Z",
@@ -578,6 +524,8 @@ const mockArticles: MockArticle[] = [
     seriesId: 900,
     seriesName: "Работа с кассой",
     partNumber: 2,
+    folderId: null,
+    folderName: null,
     content:
       "<p>Оплата принимается после приёма, кроме процедур по прейскуранту.</p><h2>Наличные</h2><p>Пересчитать при пациенте, пробить чек, выдать сдачу вместе с чеком.</p><h2>Карта</h2><p>Сумма на терминале должна совпадать с суммой в системе до копейки.</p>",
     createdAt: "2026-07-15T09:00:00Z",
@@ -593,6 +541,8 @@ const mockArticles: MockArticle[] = [
     seriesId: 900,
     seriesName: "Работа с кассой",
     partNumber: 3,
+    folderId: null,
+    folderName: null,
     content:
       "<p>Смена закрывается в день её открытия, переносить на завтра нельзя.</p><h2>Z-отчёт</h2><p>Снять Z-отчёт, подшить в журнал, расписаться.</p><h2>Инкассация</h2><p>Сумму сверх разменного фонда сдать старшему администратору под роспись.</p>",
     createdAt: "2026-07-16T09:00:00Z",
@@ -608,6 +558,8 @@ const mockArticles: MockArticle[] = [
     seriesId: null,
     seriesName: null,
     partNumber: null,
+    folderId: null,
+    folderName: null,
     content: "<p>Черновик: правила открытия/закрытия смены, инкассация…</p>",
     createdAt: "2026-07-12T15:00:00Z",
     updatedAt: "2026-07-12T15:00:00Z",
@@ -779,6 +731,8 @@ export function getKnowledgeArticles(
   if (KNOWLEDGE_USE_MOCKS) {
     let list = [...mockArticles];
     if (filters.category != null) list = list.filter((a) => a.categoryId === filters.category);
+    if (filters.folder === "none") list = list.filter((a) => a.folderId == null);
+    else if (filters.folder != null) list = list.filter((a) => a.folderId === filters.folder);
     if (filters.search) {
       const s = filters.search.toLowerCase();
       list = list.filter(
@@ -791,10 +745,7 @@ export function getKnowledgeArticles(
   }
   const q = new URLSearchParams();
   if (filters.category != null) q.set("category", String(filters.category));
-  // Фильтр папки шлём только когда бэк его понимает: иначе он молча вернёт всё.
-  if (KNOWLEDGE_FOLDERS_FROM_BACKEND && filters.folder != null) {
-    q.set("folder", String(filters.folder));
-  }
+  if (filters.folder != null) q.set("folder", String(filters.folder));
   if (filters.search) q.set("search", filters.search);
   if (filters.isPublished != null) q.set("isPublished", String(filters.isPublished));
   if (filters.page != null) q.set("page", String(filters.page));
@@ -827,6 +778,8 @@ export interface KnowledgeArticlePayload {
   /** Серия статьи; null (в паре с partNumber: null) — отвязать от серии. */
   seriesId?: number | null;
   partNumber?: number | null;
+  /** Папка статьи; null — вынуть из папки (см. setArticleFolder). */
+  folderId?: number | null;
 }
 
 export function createKnowledgeArticle(
@@ -846,6 +799,8 @@ export function createKnowledgeArticle(
       seriesId: payload.seriesId ?? null,
       seriesName: resolveSeriesName(payload.seriesId),
       partNumber: payload.partNumber ?? null,
+      folderId: payload.folderId ?? null,
+      folderName: null,
       createdAt: now,
       updatedAt: now,
     };

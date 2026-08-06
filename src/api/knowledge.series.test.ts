@@ -23,6 +23,8 @@ const article = (
   seriesId: null,
   seriesName: null,
   partNumber: null,
+  folderId: null,
+  folderName: null,
   ...overrides,
 });
 
