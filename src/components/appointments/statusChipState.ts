@@ -7,6 +7,7 @@
  */
 import type { DjangoAppointment } from "../../api/appointments";
 import { resolveStatusCode } from "../../config/appointmentStatuses";
+import type { StatusCode } from "../../config/appointmentStatuses";
 import { discountPercentOf } from "../../utility/format";
 
 /** Приёму нужны только эти поля — компонент принимает и укороченные формы
@@ -160,4 +161,40 @@ export function getStatusChipState(
     isOverdue,
     paymentStyleStatus,
   };
+}
+
+/**
+ * Единое вычисляемое состояние приёма — то, каким главным чипом строка
+ * отвечает на вопрос «что с этим приёмом». По нему же обязаны считать
+ * счётчики и фильтры дня (AppointmentListPanel): раньше они классифицировали
+ * по сырому статусу из базы, и фильтр «Пациент здесь» отбирал строки, на
+ * которых видно одно лишь «Оплачено» — бэк при оплате статус визита не
+ * меняет, а строка после закрытия чека прячет его чип.
+ *
+ * В приёме смешаны три сущности: статус визита (ожидаем / здесь / на приёме),
+ * статус оплаты и фактическое состояние процесса (открыт или закрыт). Явного
+ * «закрыт» бэк не даёт — completed он не проставляет (см. шапку
+ * AppointmentStatusChips), поэтому действует ВРЕМЕННОЕ бизнес-правило:
+ * полностью закрытый чек = операционно закрытый приём. Пациент, оплативший
+ * заранее и ещё сидящий в кабинете, уйдёт из «Пациент здесь» в «Оплачено» —
+ * осознанная цена правила. Когда бэк научится закрывать визит явным статусом,
+ * заменить правило нужно будет только здесь.
+ *
+ * Возвращает:
+ *   • canceled / no_show — всегда, даже по закрытому чеку (деньги к возврату);
+ *   • "paid" — чек закрыт оплатой (нал, безнал, смешанная);
+ *   • "discounted" — чек закрыт скидкой на всю сумму без внесённых денег;
+ *   • иначе код статуса визита; null — статус неизвестен.
+ */
+export function resolveAppointmentDisplayState(
+  appt: AppointmentStatusSource,
+): StatusCode | null {
+  const code = resolveStatusCode(appt.status);
+  if (code && ALWAYS_VISIBLE_STATUS_CODES.has(code)) return code;
+
+  const { showStatusChip, showPayChip } = getStatusChipState(appt);
+  // Чек не закрыт (или статус неизвестен) — состояние приёма и есть статус
+  // визита, ровно тот чип, который виден в строке.
+  if (showStatusChip) return code;
+  return showPayChip ? "paid" : "discounted";
 }
