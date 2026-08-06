@@ -23,6 +23,7 @@ import {
     deleteGalleryImage,
 } from "../../../api/warehouse";
 import { ApiError, isAbortError } from "../../../api/client";
+import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
 const MAX_IMAGES = 5;
 
@@ -297,7 +298,7 @@ export const DjangoProductGallery: React.FC<Props> = ({ productId, onChanged }) 
             <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
+                accept={PHOTO_ACCEPT}
                 multiple
                 style={{ display: "none" }}
                 onChange={(e) => {

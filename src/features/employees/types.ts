@@ -48,6 +48,8 @@ export type Employee = {
   passport_photos?: string[] | null;
   /** Professional type — NOT RBAC role */
   clinicalRole?: "doctor" | "nurse" | "other" | null;
+  /** Виден ли сотрудник на публичной витрине онлайн-записи (`/book`). */
+  onlineBookingEnabled?: boolean | null;
 
   created_at?: string;
   updated_at?: string;

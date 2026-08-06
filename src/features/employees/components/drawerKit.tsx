@@ -8,6 +8,7 @@ import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutl
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import { UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
+import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
 /** Заголовок секции дравера: акцентная полоса + подпись + тонкая линия + опц. трейлинг. */
 export const SectionLabel: React.FC<{ title: string; trailing?: React.ReactNode }> = ({
@@ -298,7 +299,7 @@ export const PhotoHero: React.FC<{
       <input
         id={inputId}
         type="file"
-        accept="image/*"
+        accept={PHOTO_ACCEPT}
         style={{ display: "none" }}
         disabled={disabled}
         onChange={(e) => onPickPhoto(e.target.files && e.target.files[0] ? e.target.files[0] : null)}

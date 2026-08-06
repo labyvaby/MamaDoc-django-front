@@ -10,6 +10,7 @@ import {
   Skeleton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -26,6 +27,10 @@ import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
+import StorefrontOutlinedIcon from "@mui/icons-material/StorefrontOutlined";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 
 import { DateRangeField, PageHeader, UserAvatar, type DateRangePreset } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -34,6 +39,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import {
   getBookings,
+  bookingHasBranch,
   type BookingListItem,
   type BookingStatus,
 } from "../../api/bookings";
@@ -45,6 +51,7 @@ import {
 } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
+import { BOOKING_SHOWCASE_URL } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
 import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
@@ -163,6 +170,69 @@ const StatTile: React.FC<{
   </Stack>
 );
 
+/**
+ * Ссылка на публичную витрину онлайн-записи: регистратуре её диктуют пациентам
+ * и вставляют в соцсети, поэтому рядом с открытием — копирование адреса.
+ */
+const ShowcaseLink: React.FC = () => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(BOOKING_SHOWCASE_URL);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* буфер недоступен (нет https / отказ в правах) — адрес виден в тултипе */
+    }
+  };
+
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      sx={(t) => ({
+        borderRadius: "10px",
+        border: 1,
+        borderColor: "divider",
+        bgcolor: subtleBg(t),
+        overflow: "hidden",
+        flexShrink: 0,
+      })}
+    >
+      <Tooltip title={BOOKING_SHOWCASE_URL}>
+        <Button
+          component="a"
+          href={BOOKING_SHOWCASE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          size="small"
+          startIcon={<StorefrontOutlinedIcon fontSize="small" />}
+          sx={{
+            textTransform: "none",
+            color: "text.primary",
+            fontWeight: 500,
+            px: 1.25,
+            borderRadius: 0,
+          }}
+        >
+          Сайт записи
+        </Button>
+      </Tooltip>
+      <Box sx={{ width: "1px", alignSelf: "stretch", bgcolor: "divider" }} />
+      <Tooltip title={copied ? "Ссылка скопирована" : "Скопировать ссылку"}>
+        <IconButton size="small" onClick={handleCopy} sx={{ borderRadius: 0, px: 1 }}>
+          {copied ? (
+            <CheckOutlinedIcon fontSize="small" color="success" />
+          ) : (
+            <ContentCopyOutlinedIcon fontSize="small" />
+          )}
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+};
+
 // ── Пресеты дат ───────────────────────────────────────────────────────────────
 
 type DatePreset = { key: string; label: string; from: () => Dayjs; to: () => Dayjs };
@@ -206,6 +276,7 @@ const BookingsPage: React.FC = () => {
   const {
     isSuperAdmin,
     activeOrganization,
+    activeBranch,
     memberships,
     loading: permLoading,
   } = usePermissions();
@@ -214,6 +285,20 @@ const BookingsPage: React.FC = () => {
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
   const organizationId = activeOrganization?.id ?? undefined;
   const orgKey = activeOrganization?.id ?? null;
+  // Активный филиал уходит в запрос всегда: сегодня бэк его игнорирует, а после
+  // деплоя скоупинга фильтрация включится без релиза фронта (см. комментарий в
+  // api/bookings.ts). В queryKey он тоже нужен — иначе после деплоя кэш отдал бы
+  // выдачу предыдущего филиала.
+  const branchId = activeBranch?.id ?? undefined;
+  const branchKey = branchId ?? null;
+  // Признак мультифилиальной организации — только для подписи «Все филиалы»:
+  // одиночной клинике сообщать нечего.
+  const hasSeveralBranches = React.useMemo(() => {
+    const active = (memberships ?? []).find(
+      (m) => m.organization?.id === activeOrganization?.id,
+    );
+    return (active?.branches ?? []).length > 1;
+  }, [memberships, activeOrganization?.id]);
 
   // ── Filters ──
   const [dateFrom, setDateFrom] = React.useState(() => dayjs().startOf("month"));
@@ -234,7 +319,7 @@ const BookingsPage: React.FC = () => {
   // Сброс на первую страницу при смене фильтров.
   React.useEffect(() => {
     setPage(0);
-  }, [dateFrom, dateTo, status, doctorId, search, orgKey]);
+  }, [dateFrom, dateTo, status, doctorId, search, orgKey, branchKey]);
 
   const fromStr = dateFrom.format("YYYY-MM-DD");
   const toStr = dateTo.format("YYYY-MM-DD");
@@ -269,10 +354,16 @@ const BookingsPage: React.FC = () => {
     doctorId: doctorId === "" ? undefined : doctorId,
     search: search || undefined,
     organizationId,
+    branchId,
   };
 
   const query = useQuery({
-    queryKey: djangoQueryKeys.bookings.list({ ...filters, orgId: orgKey, page: page + 1 }),
+    queryKey: djangoQueryKeys.bookings.list({
+      ...filters,
+      orgId: orgKey,
+      branch: branchKey,
+      page: page + 1,
+    }),
     queryFn: ({ signal }) =>
       getBookings({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal),
     enabled,
@@ -288,11 +379,13 @@ const BookingsPage: React.FC = () => {
     doctorId: doctorId === "" ? undefined : doctorId,
     search: search || undefined,
     organizationId,
+    branchId,
   };
   const statsQuery = useQuery({
     queryKey: djangoQueryKeys.bookings.list({
       ...statsFilters,
       orgId: orgKey,
+      branch: branchKey,
       stats: true,
     }),
     queryFn: async ({ signal }) => {
@@ -320,6 +413,24 @@ const BookingsPage: React.FC = () => {
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
+
+  /**
+   * Начал ли бэк отдавать филиал брони. Пока не отдаёт — колонку «Филиал» не
+   * рисуем (была бы пустой у каждой строки), а в фильтрах показываем честный
+   * чип «Все филиалы». Смотрим на всю известную выборку, а не на одну строку:
+   * текущая страница может быть пустой.
+   */
+  const branchScopingLive = React.useMemo(() => {
+    const sample = [
+      ...(statsQuery.data?.all ?? []),
+      ...(query.data?.results ?? []),
+    ];
+    return sample.some(bookingHasBranch);
+  }, [statsQuery.data, query.data]);
+
+  /** Пустой выборке предупреждать не о чем. */
+  const hasAnyBooking =
+    (query.data?.results?.length ?? 0) > 0 || (statsQuery.data?.all?.length ?? 0) > 0;
 
   const statusCounts = React.useMemo(() => {
     const counts: Partial<Record<BookingStatus, number>> = {};
@@ -390,6 +501,23 @@ const BookingsPage: React.FC = () => {
         ),
       },
       { field: "doctorName", headerName: t("specialistLabel"), flex: 1, minWidth: 150, sortable: false },
+      // Филиал показываем только когда бэк его отдаёт: до этого колонка была бы
+      // пустой у каждой брони.
+      ...(branchScopingLive
+        ? [
+            {
+              field: "branchName",
+              headerName: "Филиал",
+              width: 160,
+              sortable: false,
+              renderCell: ({ row }) => (
+                <Typography variant="body2" color="text.secondary" noWrap>
+                  {row.branchName || "—"}
+                </Typography>
+              ),
+            } satisfies GridColDef<BookingListItem>,
+          ]
+        : []),
       {
         field: "date",
         headerName: "Дата и время",
@@ -445,7 +573,7 @@ const BookingsPage: React.FC = () => {
         renderCell: ({ row }) => <StatusChip status={row.status} />,
       },
     ],
-    [todayStr, t],
+    [todayStr, t, branchScopingLive],
   );
 
   if (!permLoading && !canView) return <AccessDenied />;
@@ -481,6 +609,7 @@ const BookingsPage: React.FC = () => {
         onSearchChange={setSearchInput}
         searchPlaceholder="Имя, телефон или код"
         loading={query.isFetching}
+        actions={<ShowcaseLink />}
       />
 
       {needsOrg ? (
@@ -537,6 +666,29 @@ const BookingsPage: React.FC = () => {
               >
                 Сбросить
               </Button>
+            )}
+
+            {/* Пока бэк не отдаёт филиал брони, список — по всей организации.
+                Говорим это прямо: иначе сотрудник филиала считает чужие заявки
+                своими. Чип исчезает сам, как только филиал появится в ответе. */}
+            {!branchScopingLive && hasSeveralBranches && hasAnyBooking && (
+              <Tooltip title="Онлайн-записи пока не разделены по филиалам: сервер не отдаёт филиал брони. Здесь заявки всей организации.">
+                <Chip
+                  size="small"
+                  icon={<InfoOutlinedIcon fontSize="small" />}
+                  label="Все филиалы"
+                  sx={(t) => ({
+                    height: 30,
+                    borderRadius: "8px",
+                    fontWeight: 500,
+                    border: 1,
+                    borderColor: "divider",
+                    color: "text.secondary",
+                    bgcolor: subtleBg(t),
+                    "& .MuiChip-icon": { color: "text.disabled" },
+                  })}
+                />
+              </Tooltip>
             )}
           </Stack>
 
@@ -705,6 +857,7 @@ const BookingsPage: React.FC = () => {
                           display="block"
                         >
                           {b.doctorName || "—"}
+                          {branchScopingLive && b.branchName ? ` · ${b.branchName}` : ""}
                         </Typography>
                         <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
                           <Typography variant="caption" color="text.secondary">

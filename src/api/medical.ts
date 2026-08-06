@@ -1,4 +1,5 @@
 import { apiRequest, apiRequestWithHeaders } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { parseBackendError } from "./appointments";
 
 
@@ -222,13 +223,16 @@ export function deleteDiagnosis(id: number): Promise<void> {
  * Uploads one image (multipart, field `photo`) and returns its public URL.
  * The caller appends the URL to the conclusion's photoUrls and saves it.
  */
-export function uploadConclusionPhoto(file: File): Promise<{ url: string }> {
+export async function uploadConclusionPhoto(file: File): Promise<{ url: string }> {
   const form = new FormData();
-  form.append("photo", file);
-  return apiRequest<{ url: string }>("/medical/conclusion-photos/", {
-    method: "POST",
-    formData: form,
-  });
+  // Ужимаем и переводим в jpg: тяжёлый снимок бэк отвергает — см. api/uploads.ts.
+  form.append("photo", await preparePhotoOrThrow(file));
+  return withUploadErrors(() =>
+    apiRequest<{ url: string }>("/medical/conclusion-photos/", {
+      method: "POST",
+      formData: form,
+    }),
+  );
 }
 
 /** A reusable conclusion text template owned by the calling doctor. */

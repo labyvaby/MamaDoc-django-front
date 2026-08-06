@@ -9,6 +9,7 @@ import { alpha } from "@mui/material/styles";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import { UserAvatar } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
+import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 
 export type PatientPhotoUploaderProps = {
   photoFile: File | null;
@@ -96,7 +97,7 @@ const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
         <input
           id={inputId}
           type="file"
-          accept="image/*"
+          accept={PHOTO_ACCEPT}
           disabled={disabled}
           style={{ display: "none" }}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {

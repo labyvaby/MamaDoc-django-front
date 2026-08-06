@@ -40,6 +40,7 @@ import { useFormValidation } from "../../../hooks/useFormValidation";
 import { AppCard, cascadeContainer, cascadeItem } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
+import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
 const noSpinnersSx = {
     "& input[type=number]": { MozAppearance: "textfield" },
@@ -400,7 +401,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                     <input
                                         id="django-product-photo-input"
                                         type="file"
-                                        accept="image/*"
+                                        accept={PHOTO_ACCEPT}
                                         style={{ display: "none" }}
                                         onChange={(e) => {
                                             const f = e.target.files?.[0] || null;

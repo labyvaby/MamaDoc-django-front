@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 // ── Types (mirror Django payloads, rename='camel') ───────────────────────────
 
@@ -338,10 +339,13 @@ export async function uploadProductImage(
     file: File,
 ): Promise<DjangoProduct> {
     const formData = new FormData();
-    formData.append("image", file);
-    const raw = await apiRequest<RawProduct>(
-        `/warehouse/products/${id}/image/`,
-        { method: "PUT", formData },
+    // Ужимаем и переводим в jpg: тяжёлый снимок бэк отвергает — см. api/uploads.ts.
+    formData.append("image", await preparePhotoOrThrow(file));
+    const raw = await withUploadErrors(() =>
+        apiRequest<RawProduct>(
+            `/warehouse/products/${id}/image/`,
+            { method: "PUT", formData },
+        ),
     );
     return mapProduct(raw);
 }
@@ -366,15 +370,17 @@ export function getProductGallery(
 }
 
 /** Загрузка нового изображения в галерею (максимум 5 на товар). */
-export function uploadGalleryImage(
+export async function uploadGalleryImage(
     productId: number,
     file: File,
 ): Promise<DjangoProductImage> {
     const formData = new FormData();
-    formData.append("image", file);
-    return apiRequest<DjangoProductImage>(
-        `/warehouse/products/${productId}/gallery/`,
-        { method: "POST", formData },
+    formData.append("image", await preparePhotoOrThrow(file));
+    return withUploadErrors(() =>
+        apiRequest<DjangoProductImage>(
+            `/warehouse/products/${productId}/gallery/`,
+            { method: "POST", formData },
+        ),
     );
 }
 

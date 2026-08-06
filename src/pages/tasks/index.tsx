@@ -56,6 +56,7 @@ import {
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
@@ -1273,7 +1274,7 @@ const TasksPage: React.FC = () => {
           <input
             ref={cameraInputRef}
             type="file"
-            accept="image/*"
+            accept={PHOTO_ACCEPT}
             capture="environment"
             hidden
             onChange={(e) => {

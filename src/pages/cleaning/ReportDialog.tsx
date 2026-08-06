@@ -24,10 +24,11 @@ import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { compressImage } from "../../utility/imageCompression";
+import { prepareImageForUpload, PHOTO_ACCEPT } from "../../utility/imageCompression";
 import {
   CLEANING_MAX_PHOTOS,
   CLEANING_PHOTO_MAX_SIZE_MB,
+  CLEANING_PHOTO_TARGET_BYTES,
   createCleaningRecord,
   getCleaningEmployees,
   type CleaningType,
@@ -123,20 +124,29 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
       return;
     }
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
+      // HEIC с iPhone приходит с пустым type — проверяем и по расширению.
+      const looksLikeImage =
+        file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+      if (!looksLikeImage) {
         setError("Можно прикладывать только изображения.");
+        return;
+      }
+      if (file.size > CLEANING_PHOTO_MAX_SIZE_MB * 1024 * 1024) {
+        setError(`Фото «${file.name}» больше ${CLEANING_PHOTO_MAX_SIZE_MB} МБ.`);
         return;
       }
     }
     const compressed: { file: File; url: string }[] = [];
     for (const file of files) {
-      const result = await compressImage(file);
-      const outFile =
-        result instanceof File ? result : new File([result], file.name, { type: "image/jpeg" });
-      if (outFile.size > CLEANING_PHOTO_MAX_SIZE_MB * 1024 * 1024) {
+      // Ужимаем сразу при выборе: превью показывает то, что реально уйдёт на
+      // бэк, а HEIC становится jpg (иначе превью пустое везде, кроме Safari).
+      const outFile = await prepareImageForUpload(file, {
+        maxBytes: CLEANING_PHOTO_TARGET_BYTES,
+      });
+      if (!outFile) {
         // Освобождаем URL уже созданных превью, иначе они утекут.
         compressed.forEach((p) => URL.revokeObjectURL(p.url));
-        setError(`Фото «${file.name}» больше ${CLEANING_PHOTO_MAX_SIZE_MB} МБ.`);
+        setError(`Не удалось обработать фото «${file.name}» — попробуйте другое.`);
         return;
       }
       compressed.push({ file: outFile, url: URL.createObjectURL(outFile) });
@@ -331,7 +341,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
             type="file"
             hidden
             multiple
-            accept="image/*"
+            accept={PHOTO_ACCEPT}
             onChange={handlePhotosSelect}
           />
           {error && <Alert severity="error">{error}</Alert>}

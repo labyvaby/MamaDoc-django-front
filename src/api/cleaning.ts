@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
@@ -95,7 +96,16 @@ export interface CleaningSummaryRow {
 // Валидации зеркалят тикет: бэк — источник правды, фронт проверяет до отправки.
 export const CLEANING_MIN_PHOTOS = 1;
 export const CLEANING_MAX_PHOTOS = 15;
-export const CLEANING_PHOTO_MAX_SIZE_MB = 10;
+export const CLEANING_PHOTO_MAX_SIZE_MB = 25;
+
+/**
+ * Фотоотчёт уходит одним multipart-запросом, а бэк ограничивает весь запрос
+ * 25 МБ. При 15 фото это ~1.5 МБ на снимок — до этого размера и ужимаем,
+ * вместо общего потолка в 8 МБ.
+ */
+export const CLEANING_PHOTO_TARGET_BYTES = Math.floor(
+  (22 * 1024 * 1024) / CLEANING_MAX_PHOTOS,
+);
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -302,7 +312,7 @@ export interface CreateCleaningRecordPayload {
   organizationId?: number;
 }
 
-export function createCleaningRecord(
+export async function createCleaningRecord(
   payload: CreateCleaningRecordPayload,
 ): Promise<CleaningRecord> {
   if (CLEANING_USE_MOCKS) {
@@ -335,11 +345,19 @@ export function createCleaningRecord(
   // Явное назначение исполнителя — только cleaning.manage; бэк должен принять
   // поле employee и разрешить создание записи менеджеру (см. тикет).
   if (payload.employeeId != null) formData.append("employee", String(payload.employeeId));
-  for (const photo of payload.photos) formData.append("photos", photo);
-  return apiRequest<CleaningRecord>(withOrg("/cleaning/records/", payload.organizationId), {
-    method: "POST",
-    formData,
-  });
+  // Ужимаем плотнее обычного: 15 снимков должны уместиться в 25 МБ на запрос.
+  for (const photo of payload.photos) {
+    formData.append(
+      "photos",
+      await preparePhotoOrThrow(photo, { maxBytes: CLEANING_PHOTO_TARGET_BYTES }),
+    );
+  }
+  return withUploadErrors(() =>
+    apiRequest<CleaningRecord>(withOrg("/cleaning/records/", payload.organizationId), {
+      method: "POST",
+      formData,
+    }),
+  );
 }
 
 export function approveCleaningRecord(

@@ -36,6 +36,7 @@ import {
   type AppointmentOverlapMode,
 } from "../../api/organization";
 import { ApiError } from "../../api/client";
+import { PHOTO_ACCEPT, PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
 import { SUPPORTED_VERTICALS } from "../../i18n/glossary";
 import type { Vertical } from "../../i18n/types";
@@ -205,7 +206,9 @@ const OrganizationSettingsPage: React.FC = () => {
       setLogoError(t("organization.logoTypeError"));
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    // Тяжёлый файл не отсекаем: uploadOrganizationLogo сам ужимает картинку
+    // под лимит бэка (api/uploads.ts), здесь только защита от совсем гигантских.
+    if (file.size > PHOTO_SOURCE_MAX_BYTES) {
       setLogoError(t("organization.logoSizeError"));
       return;
     }
@@ -327,7 +330,7 @@ const OrganizationSettingsPage: React.FC = () => {
               <input
                 ref={logoInputRef}
                 type="file"
-                accept="image/*"
+                accept={PHOTO_ACCEPT}
                 hidden
                 onChange={handleLogoSelect}
               />

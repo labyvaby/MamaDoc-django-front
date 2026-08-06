@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import { Scope, scopeParams } from "./scope";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -201,16 +202,19 @@ export function updatePatient(
   });
 }
 
-export function uploadPatientPhoto(
+export async function uploadPatientPhoto(
   patientId: number,
   file: File,
 ): Promise<DjangoPatient> {
   const form = new FormData();
-  form.append("photo", file);
-  return apiRequest<DjangoPatient>(`/patients/${patientId}/photo/`, {
-    method: "PUT",
-    formData: form,
-  });
+  // Ужимаем и переводим в jpg: тяжёлый снимок с телефона бэк отвергает — см. api/uploads.ts.
+  form.append("photo", await preparePhotoOrThrow(file));
+  return withUploadErrors(() =>
+    apiRequest<DjangoPatient>(`/patients/${patientId}/photo/`, {
+      method: "PUT",
+      formData: form,
+    }),
+  );
 }
 
 export function deletePatientPhoto(patientId: number): Promise<void> {

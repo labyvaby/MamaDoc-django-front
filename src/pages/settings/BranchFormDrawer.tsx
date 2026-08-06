@@ -39,6 +39,7 @@ import {
 } from "../../api/organization";
 import { useT } from "../../i18n/VerticalProvider";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
+import { PHOTO_ACCEPT, PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
 
 const NAME_MAX = 255;
 const PHONE_MAX = 50;
@@ -418,7 +419,9 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
       setLogoError(t("branchForm.logoTypeError"));
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    // Тяжёлый файл не отсекаем: uploadBranchLogo сам ужимает картинку под
+    // лимит бэка (api/uploads.ts), здесь только защита от совсем гигантских.
+    if (file.size > PHOTO_SOURCE_MAX_BYTES) {
       setLogoError(t("branchForm.logoSizeError"));
       return;
     }
@@ -586,7 +589,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                 <input
                   ref={logoInputRef}
                   type="file"
-                  accept="image/*"
+                  accept={PHOTO_ACCEPT}
                   hidden
                   onChange={handleLogoSelect}
                 />

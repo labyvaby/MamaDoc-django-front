@@ -29,6 +29,7 @@ import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWall
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
@@ -48,9 +49,16 @@ import {
   getExpenseCategories,
   voidExpense,
   uploadExpensePhoto,
+  deleteExpensePhoto,
   parseBackendError,
   type Expense,
 } from "../../api/expenses";
+import {
+  prepareImageForUpload,
+  PHOTO_ACCEPT,
+  PHOTO_SOURCE_MAX_BYTES,
+  PHOTO_SOURCE_MAX_MB,
+} from "../../utility/imageCompression";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
 
@@ -89,17 +97,19 @@ const DetailRow: React.FC<{ label: string; value?: string | null; children?: Rea
 
 // ── ExpenseDetailCard ──────────────────────────────────────────────────────────
 
-const PHOTO_ACCEPT = "image/jpeg,image/jpg,image/png,image/webp";
-const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+// accept и потолок исходника — общие для всех загрузок фото (utility/imageCompression):
+// выбранный снимок ужимается и переводится в jpg перед отправкой на бэк.
 
 const ExpenseDetailCard: React.FC<{
   expense: Expense | null;
   canManage: boolean;
   onVoid: (exp: Expense) => void;
   onPhotoUploaded: (exp: Expense) => void;
-}> = ({ expense, canManage, onVoid, onPhotoUploaded }) => {
+  onPhotoDeleted: (exp: Expense) => void;
+}> = ({ expense, canManage, onVoid, onPhotoUploaded, onPhotoDeleted }) => {
   const theme = useTheme();
   const [photoUploading, setPhotoUploading] = React.useState(false);
+  const [photoDeleting, setPhotoDeleting] = React.useState(false);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
   const photoInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -109,20 +119,43 @@ const ExpenseDetailCard: React.FC<{
 
   const handlePhotoFile = async (file: File) => {
     if (!expense) return;
-    if (file.size > PHOTO_MAX_BYTES) {
-      setPhotoError("Фото не должно превышать 5 МБ");
+    if (file.size > PHOTO_SOURCE_MAX_BYTES) {
+      setPhotoError(`Фото не должно превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
       return;
     }
     setPhotoError(null);
     setPhotoUploading(true);
     try {
-      const updated = await uploadExpensePhoto(expense.id, file);
+      // Тяжёлый снимок ужимаем и переводим в jpg — иначе долгая отправка с
+      // телефона, а HEIC не показать в превью (см. utility/imageCompression).
+      const prepared = await prepareImageForUpload(file);
+      if (!prepared) {
+        setPhotoError("Не удалось обработать это фото — попробуйте другое или снимите заново");
+        return;
+      }
+      // PUT заменяет уже прикреплённое фото — отдельного эндпоинта нет.
+      const updated = await uploadExpensePhoto(expense.id, prepared);
       onPhotoUploaded(updated);
     } catch (e) {
       setPhotoError(parseBackendError(e));
     } finally {
       setPhotoUploading(false);
       if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const handlePhotoDelete = async () => {
+    if (!expense) return;
+    setPhotoError(null);
+    setPhotoDeleting(true);
+    try {
+      await deleteExpensePhoto(expense.id);
+      // Бэк отвечает 204 без тела — обновляем расход на месте.
+      onPhotoDeleted({ ...expense, photoUrl: null });
+    } catch (e) {
+      setPhotoError(parseBackendError(e));
+    } finally {
+      setPhotoDeleting(false);
     }
   };
 
@@ -225,33 +258,46 @@ const ExpenseDetailCard: React.FC<{
             flexWrap: "wrap",
           }}
         >
-          {/* Прикрепить фото — только если фото ещё нет */}
-          {!expense.photoUrl && (
-            <>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept={PHOTO_ACCEPT}
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void handlePhotoFile(f);
-                }}
-              />
+          {/* Фото: прикрепить, а если уже есть — заменить или удалить */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept={PHOTO_ACCEPT}
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handlePhotoFile(f);
+            }}
+          />
+          <Stack direction="row" spacing={1} sx={{ flex: 1, flexWrap: "wrap", gap: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={photoUploading ? <CircularProgress size={14} color="inherit" /> : <ImageOutlined sx={{ fontSize: 16 }} />}
+              onClick={() => { setPhotoError(null); photoInputRef.current?.click(); }}
+              disabled={photoUploading || photoDeleting}
+              sx={{ textTransform: "none" }}
+            >
+              {photoUploading
+                ? "Загрузка..."
+                : expense.photoUrl
+                  ? "Заменить фото"
+                  : "Прикрепить фото"}
+            </Button>
+            {expense.photoUrl && (
               <Button
                 size="small"
                 variant="outlined"
-                startIcon={photoUploading ? <CircularProgress size={14} color="inherit" /> : <ImageOutlined sx={{ fontSize: 16 }} />}
-                onClick={() => { setPhotoError(null); photoInputRef.current?.click(); }}
-                disabled={photoUploading}
+                color="error"
+                startIcon={photoDeleting ? <CircularProgress size={14} color="inherit" /> : <DeleteOutlineOutlined sx={{ fontSize: 16 }} />}
+                onClick={() => void handlePhotoDelete()}
+                disabled={photoUploading || photoDeleting}
                 sx={{ textTransform: "none" }}
               >
-                {photoUploading ? "Загрузка..." : "Прикрепить фото"}
+                {photoDeleting ? "Удаление..." : "Удалить фото"}
               </Button>
-            </>
-          )}
-          {/* Заполнитель, чтобы кнопка аннулирования была справа когда нет фото-кнопки */}
-          {expense.photoUrl && <Box sx={{ flex: 1 }} />}
+            )}
+          </Stack>
 
           <Tooltip title="Аннулировать расход">
             <IconButton
@@ -939,6 +985,10 @@ const DjangoExpensesPage: React.FC = () => {
                         setSelectedExpense(updated);
                         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
                       }}
+                      onPhotoDeleted={(updated) => {
+                        setSelectedExpense(updated);
+                        void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+                      }}
                     />
                   </Box>
                 </Grid2>
@@ -965,6 +1015,10 @@ const DjangoExpensesPage: React.FC = () => {
                   canManage={canManage}
                   onVoid={setVoidTarget}
                   onPhotoUploaded={(updated) => {
+                    setSelectedExpense(updated);
+                    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+                  }}
+                  onPhotoDeleted={(updated) => {
                     setSelectedExpense(updated);
                     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
                   }}

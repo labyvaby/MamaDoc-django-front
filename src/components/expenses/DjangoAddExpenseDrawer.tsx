@@ -32,6 +32,12 @@ import { useSnackbar } from "notistack";
 import { CustomDatePicker, AppBottomSheet } from "../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import {
+  prepareImageForUpload,
+  PHOTO_ACCEPT,
+  PHOTO_SOURCE_MAX_BYTES,
+  PHOTO_SOURCE_MAX_MB,
+} from "../../utility/imageCompression";
+import {
   createExpense,
   uploadExpensePhoto,
   getExpenseCategories,
@@ -345,16 +351,25 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   };
 
   // ── Photo pick ────────────────────────────────────────────────────────────────
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Снимок с телефона (3–5 МБ, на iPhone ещё и HEIC) бэк не принимает, поэтому
+  // ужимаем и переводим в jpg сразу при выборе — см. prepareImageForUpload.
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Сбрасываем value, иначе повторный выбор того же файла не даст onChange.
+    e.target.value = "";
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Фото не должно превышать 5 МБ");
+    if (file.size > PHOTO_SOURCE_MAX_BYTES) {
+      setError(`Фото не должно превышать ${PHOTO_SOURCE_MAX_MB} МБ`);
       return;
     }
-    setPhotoFile(file);
-    const url = URL.createObjectURL(file);
-    setPhotoPreview(url);
+    setError(null);
+    const prepared = await prepareImageForUpload(file);
+    if (!prepared) {
+      setError("Не удалось обработать это фото — попробуйте другое или сделайте снимок заново");
+      return;
+    }
+    setPhotoFile(prepared);
+    setPhotoPreview(URL.createObjectURL(prepared));
   };
 
   // ── Submit ────────────────────────────────────────────────────────────────────
@@ -704,9 +719,9 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               <input
                 ref={photoInputRef}
                 type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp"
+                accept={PHOTO_ACCEPT}
                 style={{ display: "none" }}
-                onChange={handlePhotoChange}
+                onChange={(e) => void handlePhotoChange(e)}
               />
               {photoPreview ? (
                 <Box sx={{ position: "relative", width: "100%", height: 160, borderRadius: "10px", overflow: "hidden", border: "1px solid", borderColor: "divider" }}>

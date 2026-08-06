@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -176,11 +177,28 @@ export function voidExpense(expenseId: number, payload: VoidExpensePayload): Pro
   });
 }
 
-export function uploadExpensePhoto(expenseId: number, file: File): Promise<Expense> {
+/**
+ * Прикрепление или замена чека у расхода (PUT перезаписывает существующее фото
+ * с 06.08.2026, прежнего 409 больше нет). Снимок ужимаем и переводим в jpg —
+ * см. api/uploads.ts. Право: finance.expense.manage.
+ */
+export async function uploadExpensePhoto(expenseId: number, file: File): Promise<Expense> {
   const formData = new FormData();
-  formData.append("photo", file);
-  return apiRequest<Expense>(`/finance/expenses/${expenseId}/photo/`, {
-    method: "PUT",
-    formData,
+  formData.append("photo", await preparePhotoOrThrow(file));
+  return withUploadErrors(() =>
+    apiRequest<Expense>(`/finance/expenses/${expenseId}/photo/`, {
+      method: "PUT",
+      formData,
+    }),
+  );
+}
+
+/**
+ * Удаление фото расхода. Право: finance.expense.manage.
+ * Бэк отвечает 204 — расход обновляем на месте, сбрасывая photoUrl.
+ */
+export function deleteExpensePhoto(expenseId: number): Promise<void> {
+  return apiRequest<void>(`/finance/expenses/${expenseId}/photo/`, {
+    method: "DELETE",
   });
 }
