@@ -39,7 +39,7 @@ import {
   phonePlaceholder,
   type PhoneCountryInfo,
 } from "../../../utility/phone";
-import { formatPrice } from "../format";
+import { bookingCodeUrl, formatPrice } from "../format";
 import type { PickableService } from "./ServicesCard";
 import type { BookingChoice } from "./choice";
 
@@ -484,7 +484,7 @@ export const SuccessDialog: React.FC<{
   }, [result.confirmationCode]);
 
   /** Ссылка на карточку записи — её и кодирует QR, и отправляет «Поделиться». */
-  const bookingUrl = `${window.location.origin}/book/b/${result.confirmationCode}`;
+  const bookingUrl = bookingCodeUrl(result.confirmationCode);
 
   const serviceNames = (
     detail?.services.length ? detail.services.map((s) => s.name) : services.map((s) => s.name)

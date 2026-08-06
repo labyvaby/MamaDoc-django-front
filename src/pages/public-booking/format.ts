@@ -8,6 +8,22 @@
  */
 
 /**
+ * Публичный адрес витрины для ссылок, которые уходят наружу (QR в подтверждении,
+ * «Поделиться»). По умолчанию — текущий origin, но его мало: с локальной машины
+ * получается `http://localhost:5178`, который не откроется на телефоне, а с
+ * тестового стенда — `test.crm.operator.kg`, куда пациента вести нельзя.
+ * Поэтому боевой адрес задаётся `VITE_BOOKING_PUBLIC_ORIGIN`.
+ */
+export const BOOKING_PUBLIC_ORIGIN: string =
+  import.meta.env.VITE_BOOKING_PUBLIC_ORIGIN ||
+  (typeof window !== "undefined" ? window.location.origin : "");
+
+/** Ссылка на карточку записи по коду подтверждения. */
+export function bookingCodeUrl(code: string): string {
+  return `${BOOKING_PUBLIC_ORIGIN}/book/b/${encodeURIComponent(code)}`;
+}
+
+/**
  * Цена гостю: «1 500 сом». Эталон пишет короткое «с», но заказчик оставил
  * привычное для пациентов «сом».
  */
