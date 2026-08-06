@@ -38,24 +38,31 @@ import { formatPhoneDisplay } from "../../../utility/phone";
 import { useT } from "../../../i18n/VerticalProvider";
 import { agree } from "../../../i18n/formatters";
 import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
+import { resolveAppointmentDisplayState } from "../../../components/appointments/statusChipState";
 import {
   getStatusAccent,
   getStatusLabel,
-  resolveStatusCode,
 } from "../../../config/appointmentStatuses";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 
 /**
- * Статусы визита, по которым можно отфильтровать день. Порядок — ход визита,
- * а не алфавит: регистратор читает ленту слева направо как шкалу времени.
- * Показываем только те, что в этом дне действительно есть.
+ * Состояния приёма, по которым можно отфильтровать день. Порядок — ход
+ * визита, а не алфавит: регистратор читает ленту слева направо как шкалу
+ * времени, от записи до закрытого чека; отмена и неявка — сход с дистанции,
+ * в конце. Показываем только те, что в этом дне действительно есть.
+ *
+ * «Оплачено» и «Со скидкой» — не статусы визита, а операционно закрытые
+ * приёмы (см. resolveAppointmentDisplayState): сюда уходят строки, у которых
+ * чип статуса визита уже скрыт за закрытым чеком.
  */
-const VISIT_FILTER_CODES: StatusCode[] = [
+const DAY_FILTER_CODES: StatusCode[] = [
   "scheduled",
   "confirmed",
   "arrived",
   "in_progress",
   "completed",
+  "paid",
+  "discounted",
   "canceled",
   "no_show",
 ];
@@ -329,29 +336,32 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [items, groupEmployeeIds, dayShifts]);
 
-  // ── Фильтр по статусу визита ──────────────────────────────────────────────
+  // ── Фильтр по состоянию приёма ────────────────────────────────────────────
   // Главный вопрос стойки — «кто уже в холле»: раньше отобрать таких можно было
-  // только глазами по всему списку. Фильтруем по каноническому коду, а не по
-  // метке: метка зависит от вертикали бизнеса.
+  // только глазами по всему списку. Счётчики и отбор считают по единому
+  // состоянию приёма (resolveAppointmentDisplayState) — тому же, каким строка
+  // выбирает свой главный чип. По сырому статусу из базы нельзя: бэк при
+  // оплате его не меняет, и «Пациент здесь · N» набирался давно оплаченными
+  // строками, на которых написано одно лишь «Оплачено».
   const [statusFilter, setStatusFilter] = React.useState<StatusCode | null>(null);
 
   React.useEffect(() => {
     setStatusFilter(null);
   }, [titleDate]);
 
-  // Отбираем только статусы, которые сегодня реально встречаются: пустой чип
+  // Отбираем только состояния, которые сегодня реально встречаются: пустой чип
   // «Неявка · 0» занимал бы место и ничего не сообщал.
   const statusCounts = React.useMemo(() => {
     const counts = new Map<StatusCode, number>();
     for (const appt of items) {
-      const code = resolveStatusCode(appt.status);
+      const code = resolveAppointmentDisplayState(appt);
       if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
     }
     return counts;
   }, [items]);
 
   const statusChips = React.useMemo(
-    () => VISIT_FILTER_CODES.filter((code) => (statusCounts.get(code) ?? 0) > 0),
+    () => DAY_FILTER_CODES.filter((code) => (statusCounts.get(code) ?? 0) > 0),
     [statusCounts],
   );
 
@@ -364,7 +374,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       );
     }
     if (statusFilter) {
-      list = list.filter((appt) => resolveStatusCode(appt.status) === statusFilter);
+      list = list.filter((appt) => resolveAppointmentDisplayState(appt) === statusFilter);
     }
     return list;
   }, [items, selectedDoctor, statusFilter]);
@@ -633,9 +643,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               </Box>
             )}
 
-            {/* Фильтр по статусу визита: «Пациент здесь · 3» и т.п. Цвета —
-                из той же палитры, что и чипы в строках, иначе клик по фильтру
-                приводил бы к списку другого цвета. */}
+            {/* Фильтр по состоянию приёма: «Пациент здесь · 3», «Оплачено · 5»
+                и т.п. Цвета — из той же палитры, что и чипы в строках, иначе
+                клик по фильтру приводил бы к списку другого цвета. */}
             {statusChips.length > 0 && (
               <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mt: -1 }}>
                 {statusChips.map((code) => {
