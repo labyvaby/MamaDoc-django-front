@@ -48,8 +48,10 @@ import {
   deleteScheduleRule,
   getScheduleExceptions,
   createScheduleException,
+  updateScheduleException,
   deleteScheduleException,
   type ScheduleRule,
+  type ScheduleException,
   type ScheduleExceptionKind,
 } from "../../../api/scheduling";
 import { parseBackendError } from "../../../api/appointments";
@@ -57,6 +59,7 @@ import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/qu
 import ScheduleCalendar from "./ScheduleCalendar";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import ScheduleDayDrawer from "./ScheduleDayDrawer";
+import SchedulePointEditDialog, { type SchedulePointEditValues } from "./SchedulePointEditDialog";
 import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
 import { useEmployeeColorMap } from "./employeeColors";
 
@@ -66,6 +69,7 @@ const KIND_LABELS: Record<ScheduleExceptionKind, string> = {
   day_off: "Выходной",
   vacation: "Отпуск",
   extra: "Смена",
+  override: "Замена смены",
 };
 
 function weekdaysLabel(weekdays: number[]): string {
@@ -946,6 +950,13 @@ const DjangoSchedulePage: React.FC = () => {
   }>({ open: false, kind: "day_off", title: "Исключение из расписания", date: null });
   const [selectedDay, setSelectedDay] = React.useState<Dayjs | null>(null);
   const [dayDrawerOpen, setDayDrawerOpen] = React.useState(false);
+  const [pointEdit, setPointEdit] = React.useState<{
+    occurrence: DayOccurrence;
+    existing: ScheduleException | null;
+    startTime: string;
+    endTime: string;
+    comment: string;
+  } | null>(null);
 
   // Правила/исключения скоупятся по активному филиалу на сервере (branchId =
   // этот филиал ИЛИ общие, branchId=null) — тикет
@@ -1101,6 +1112,57 @@ const DjangoSchedulePage: React.FC = () => {
 
   const handleAddShiftForSelectedDay = () => {
     openExceptionDialog({ kind: "extra", title: "Добавить смену", date: selectedDay });
+  };
+
+  const handleEditOccurrence = (occurrence: DayOccurrence) => {
+    const existing = occurrence.kind === "rule"
+      ? null
+      : monthExceptions.find((exception) => exception.id === occurrence.sourceId) ?? null;
+    const rule = occurrence.kind === "rule"
+      ? rules.find((item) => item.id === occurrence.sourceId)
+      : null;
+    setPointEdit({
+      occurrence,
+      existing,
+      // For a rule split by lunch, edit the whole original shift. The
+      // override replaces the rule for the date, not just one lunch segment.
+      startTime: rule?.startTime ?? existing?.startTime ?? occurrence.startTime,
+      endTime: rule?.endTime ?? existing?.endTime ?? occurrence.endTime,
+      comment: rule?.comment ?? existing?.comment ?? "",
+    });
+  };
+
+  const handleSavePointEdit = async (values: SchedulePointEditValues) => {
+    if (!selectedDay || !pointEdit) return;
+    const date = selectedDay.format("YYYY-MM-DD");
+    try {
+      if (pointEdit.existing) {
+        await updateScheduleException(pointEdit.existing.id, {
+          date,
+          kind: pointEdit.existing.kind,
+          startTime: values.startTime,
+          endTime: values.endTime,
+          comment: values.comment,
+          ...(pointEdit.existing.branchId != null ? { branchId: pointEdit.existing.branchId } : {}),
+        });
+      } else {
+        await createScheduleException({
+          employeeId: pointEdit.occurrence.employeeId,
+          date,
+          kind: "override",
+          startTime: values.startTime,
+          endTime: values.endTime,
+          comment: values.comment,
+          organizationId: orgId,
+          branchId,
+        });
+      }
+      invalidate();
+      notify?.({ type: "success", message: "Точечное расписание сохранено" });
+    } catch (e) {
+      notify?.({ type: "error", message: "Ошибка", description: parseBackendError(e) });
+      throw e;
+    }
   };
 
   return (
@@ -1395,7 +1457,7 @@ const DjangoSchedulePage: React.FC = () => {
                           label={KIND_LABELS[exc.kind]}
                           size="small"
                           variant="outlined"
-                          color={exc.kind === "extra" ? "success" : "default"}
+                          color={exc.kind === "extra" || exc.kind === "override" ? "success" : "default"}
                         />
                       </TableCell>
                       <TableCell sx={{ fontFamily: "monospace" }}>
@@ -1454,7 +1516,19 @@ const DjangoSchedulePage: React.FC = () => {
         canManage={canManage}
         onMarkDayOff={handleMarkDayOff}
         onDeleteShift={handleDeleteShift}
+        onEditOccurrence={handleEditOccurrence}
         onAddShift={handleAddShiftForSelectedDay}
+      />
+      <SchedulePointEditDialog
+        open={pointEdit !== null}
+        onClose={() => setPointEdit(null)}
+        employeeName={pointEdit?.occurrence.employeeName ?? ""}
+        date={selectedDay}
+        initialStartTime={pointEdit?.startTime ?? "09:00"}
+        initialEndTime={pointEdit?.endTime ?? "17:00"}
+        initialComment={pointEdit?.comment}
+        existing={pointEdit?.existing !== null && pointEdit?.existing !== undefined}
+        onSave={handleSavePointEdit}
       />
     </Box>
   );
