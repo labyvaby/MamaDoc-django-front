@@ -9,7 +9,9 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
+  Paper,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -159,6 +161,7 @@ type EditableDraftFields = {
   email: string;
   status: "active" | "inactive";
   clinicalRole: "doctor" | "nurse" | "other";
+  onlineBookingEnabled: boolean;
   telegramId: string;
   instagram: string;
   birthDate: string;
@@ -187,6 +190,7 @@ function sameAsBaseline(a: EditableDraftFields, b: EditableDraftFields): boolean
     a.email === b.email &&
     a.status === b.status &&
     a.clinicalRole === b.clinicalRole &&
+    a.onlineBookingEnabled === b.onlineBookingEnabled &&
     a.telegramId === b.telegramId &&
     a.instagram === b.instagram &&
     a.birthDate === b.birthDate &&
@@ -240,6 +244,13 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
+  // Видимость на витрине онлайн-записи. Дефолт true — как миграция бэка у врачей;
+  // на окружении без поля сотрудник считается видимым (флаг ничего не скрывает).
+  const [onlineBookingEnabled, setOnlineBookingEnabled] = React.useState(true);
+  // Знает ли бэк это поле. Пока релиз брони не везде выложен: на окружении без
+  // поля переключатель не показываем и в PATCH не шлём — неизвестное поле бэк
+  // отклоняет вместе со всем запросом, и карточка перестала бы сохраняться.
+  const [onlineBookingSupported, setOnlineBookingSupported] = React.useState(false);
   const [telegramId, setTelegramId] = React.useState("");
   const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
@@ -373,6 +384,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         ? record.clinicalRole
         : "other",
     );
+    setOnlineBookingEnabled(record.onlineBookingEnabled !== false);
+    setOnlineBookingSupported(record.onlineBookingEnabled != null);
     setTelegramId(record.telegram_id || "");
     setInstagram(record.instagram || "");
     setBirthDate(record.birth_date || "");
@@ -420,6 +433,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setElqrExisting(full.elqrUrl || null);
         setElqrPreview(full.elqrUrl || null);
         setClinicalRole(full.clinicalRole ?? "other");
+        setOnlineBookingEnabled(full.onlineBookingEnabled !== false);
+        setOnlineBookingSupported(full.onlineBookingEnabled != null);
         setSpecializations(full.specializations ?? []);
         setOperationalBranches(full.operationalBranches ?? []);
         initialBranchIdsRef.current = serializeBranchIds(full.operationalBranches ?? []);
@@ -438,6 +453,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           email: record.email || "",
           status: record.status === "inactive" ? "inactive" : "active",
           clinicalRole: full.clinicalRole ?? "other",
+          onlineBookingEnabled: full.onlineBookingEnabled !== false,
           telegramId: full.telegramId || "",
           instagram: full.instagram || "",
           birthDate: full.birthDate || "",
@@ -461,6 +477,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           setEmail(draft.email);
           setStatus(draft.status);
           setClinicalRole(draft.clinicalRole);
+          // Черновик мог быть записан до появления поля — тогда считаем врача видимым.
+          setOnlineBookingEnabled(draft.onlineBookingEnabled !== false);
           setTelegramId(draft.telegramId);
           setInstagram(draft.instagram);
           setBirthDate(draft.birthDate);
@@ -588,6 +606,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       email,
       status,
       clinicalRole,
+      onlineBookingEnabled,
       telegramId,
       instagram,
       birthDate,
@@ -617,8 +636,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     return () => clearTimeout(id);
   }, [
     record, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
-    telegramId, instagram, birthDate, hiredAt, bankAccountNumber, inn, address, notes,
-    bank, bik, operationalBranches,
+    onlineBookingEnabled, telegramId, instagram, birthDate, hiredAt, bankAccountNumber,
+    inn, address, notes, bank, bik, operationalBranches,
   ]);
 
   const handleClose = () => {
@@ -639,6 +658,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       setEmail(b.email);
       setStatus(b.status);
       setClinicalRole(b.clinicalRole);
+      setOnlineBookingEnabled(b.onlineBookingEnabled);
       setTelegramId(b.telegramId);
       setInstagram(b.instagram);
       setBirthDate(b.birthDate);
@@ -675,6 +695,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         email: email.trim() || null,
         status,
         clinicalRole,
+        // Только если бэк знает поле (см. onlineBookingSupported).
+        ...(onlineBookingSupported && { onlineBookingEnabled }),
         telegramId: telegramId.trim() || null,
         instagram: instagram.trim().replace(/^@/, "") || null,
         notes: notes.trim() || null,
@@ -816,6 +838,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         photo_url: updated.photoUrl || null,
         role_id: updated.role ? String(updated.role.id) : null,
         clinicalRole: updated.clinicalRole ?? "other",
+        onlineBookingEnabled: updated.onlineBookingEnabled ?? null,
         updated_at: updated.updatedAt,
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
@@ -1303,6 +1326,37 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                 <MenuItem value="other">{t("clinicalRole.other")}</MenuItem>
               </TextField>
             </Field>
+
+            {/* Видимость на публичной витрине /book. Показываем только врачам:
+                бэк отдаёт публично лишь clinical_role="doctor", у остальных флаг
+                ничего не изменил бы. Скрытый врач пропадает и из списка, и по
+                прямой ссылке (404). */}
+            {onlineBookingSupported && clinicalRole === "doctor" && (
+              <Paper
+                elevation={0}
+                variant="outlined"
+                sx={{
+                  p: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1,
+                }}
+              >
+                <Stack spacing={0.25}>
+                  <Typography variant="body2">Онлайн-запись</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Показывать врача на сайте записи. Нужна хотя бы одна услуга с
+                    включённой онлайн-записью — иначе врача не покажем.
+                  </Typography>
+                </Stack>
+                <Switch
+                  checked={onlineBookingEnabled}
+                  onChange={(e) => setOnlineBookingEnabled(e.target.checked)}
+                  disabled={busy}
+                />
+              </Paper>
+            )}
 
             {/* ── Операционные филиалы ── */}
             <Field

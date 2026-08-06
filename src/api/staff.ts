@@ -24,6 +24,17 @@ export interface DjangoSpecializationShort {
 /** Professional type of employee — NOT an RBAC role. */
 export type ClinicalRole = "doctor" | "nurse" | "other";
 
+// ── Онлайн-запись ────────────────────────────────────────────────────────────
+//
+// `onlineBookingEnabled` — видимость сотрудника на публичной витрине записи
+// (`/api/v1/professionals/`, поле бэка `online_booking_enabled`). Контракт —
+// `MamaDoc/backend_ticket_public_booking_phase3.md` §C2; проверен на живом API
+// test.crm.operator.kg 06.08.2026: GET отдаёт поле в списке и детали, PATCH его
+// сохраняет. Миграция выставила `true` всем врачам с `clinicalRole="doctor"`.
+//
+// ⚠ Флага мало: врач не показывается на витрине, если он не `doctor`, или если
+// у него нет ни одной услуги с `onlineBookingVisible` (см. `api/catalog.ts`).
+
 // ── Employee shapes ──────────────────────────────────────────────────────────
 
 /** Full employee (GET /employees/<id>/, POST, PATCH) */
@@ -56,6 +67,14 @@ export interface DjangoEmployee {
   elqrUrl: string | null;
   status: "active" | "inactive" | "fired";
   clinicalRole: ClinicalRole;
+  /**
+   * Виден ли сотрудник на публичной витрине онлайн-записи. `undefined` —
+   * окружение без релиза брони (поля нет): считаем сотрудника видимым и не шлём
+   * флаг обратно, иначе PATCH упадёт с `400 unknown field` и отклонит всю форму.
+   */
+  onlineBookingEnabled?: boolean;
+  /** Требуется ли предоплата при записи к этому врачу (Paylink, отдельная фича). */
+  prepaymentRequired?: boolean;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -76,6 +95,14 @@ export interface DjangoEmployeeListItem {
   nickname: string;
   status: "active" | "inactive" | "fired";
   clinicalRole: ClinicalRole;
+  /**
+   * Виден ли сотрудник на публичной витрине онлайн-записи. `undefined` —
+   * окружение без релиза брони (поля нет): считаем сотрудника видимым и не шлём
+   * флаг обратно, иначе PATCH упадёт с `400 unknown field` и отклонит всю форму.
+   */
+  onlineBookingEnabled?: boolean;
+  /** Требуется ли предоплата при записи к этому врачу (Paylink, отдельная фича). */
+  prepaymentRequired?: boolean;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -166,6 +193,8 @@ export interface UpdateEmployeePayload {
   bank?: string | null;
   bik?: string | null;
   clinicalRole?: ClinicalRole;
+  /** Видимость на публичной витрине; отсутствие поля её не меняет. */
+  onlineBookingEnabled?: boolean;
   /** Полный набор операционных филиалов (замена целиком); не слать, если не менялся. */
   employeeBranchIds?: number[];
 }
