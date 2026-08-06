@@ -39,7 +39,7 @@ import {
 } from "../../api/organization";
 import { useT } from "../../i18n/VerticalProvider";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
-import { PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
+import { PHOTO_ACCEPT, PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
 
 const NAME_MAX = 255;
 const PHONE_MAX = 50;
@@ -589,7 +589,7 @@ export const BranchFormDrawer: React.FC<BranchFormDrawerProps> = ({
                 <input
                   ref={logoInputRef}
                   type="file"
-                  accept="image/*"
+                  accept={PHOTO_ACCEPT}
                   hidden
                   onChange={handleLogoSelect}
                 />

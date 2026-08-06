@@ -178,9 +178,9 @@ export function voidExpense(expenseId: number, payload: VoidExpensePayload): Pro
 }
 
 /**
- * Прикрепление чека к расходу. Снимок с телефона ужимаем и переводим в jpg
- * (см. api/uploads.ts): бэк принимает только jpg/png/webp и роняет запрос
- * тяжелее ~2.5 МБ ещё до вьюхи.
+ * Прикрепление или замена чека у расхода (PUT перезаписывает существующее фото
+ * с 06.08.2026, прежнего 409 больше нет). Снимок ужимаем и переводим в jpg —
+ * см. api/uploads.ts. Право: finance.expense.manage.
  */
 export async function uploadExpensePhoto(expenseId: number, file: File): Promise<Expense> {
   const formData = new FormData();
@@ -191,4 +191,14 @@ export async function uploadExpensePhoto(expenseId: number, file: File): Promise
       formData,
     }),
   );
+}
+
+/**
+ * Удаление фото расхода. Право: finance.expense.manage.
+ * Бэк отвечает 204 — расход обновляем на месте, сбрасывая photoUrl.
+ */
+export function deleteExpensePhoto(expenseId: number): Promise<void> {
+  return apiRequest<void>(`/finance/expenses/${expenseId}/photo/`, {
+    method: "DELETE",
+  });
 }

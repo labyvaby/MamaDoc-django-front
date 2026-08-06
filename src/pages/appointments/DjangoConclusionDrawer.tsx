@@ -50,6 +50,7 @@ import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
 import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
@@ -1316,7 +1317,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                       type="file"
                       hidden
                       multiple
-                      accept="image/*"
+                      accept={PHOTO_ACCEPT}
                       onChange={handlePhotoUpload}
                     />
                   </Button>

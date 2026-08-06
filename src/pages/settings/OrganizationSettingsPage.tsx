@@ -36,7 +36,7 @@ import {
   type AppointmentOverlapMode,
 } from "../../api/organization";
 import { ApiError } from "../../api/client";
-import { PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
+import { PHOTO_ACCEPT, PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
 import { SUPPORTED_VERTICALS } from "../../i18n/glossary";
 import type { Vertical } from "../../i18n/types";
@@ -330,7 +330,7 @@ const OrganizationSettingsPage: React.FC = () => {
               <input
                 ref={logoInputRef}
                 type="file"
-                accept="image/*"
+                accept={PHOTO_ACCEPT}
                 hidden
                 onChange={handleLogoSelect}
               />

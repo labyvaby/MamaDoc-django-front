@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import { useT } from "../../i18n/VerticalProvider";
+import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 
 export type ServicePhotoUploaderProps = {
   photoFile: File | null;
@@ -66,7 +67,7 @@ const ServicePhotoUploader: React.FC<ServicePhotoUploaderProps> = ({
           <input
             id={inputId}
             type="file"
-            accept="image/*"
+            accept={PHOTO_ACCEPT}
             style={{ display: "none" }}
             onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
               const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;

@@ -2,16 +2,16 @@
  * uploads.ts
  * Общая обвязка загрузки картинок на бэк.
  *
- * Зачем: Django обрубает multipart-запрос тяжелее DATA_UPLOAD_MAX_MEMORY_SIZE
- * (2.5 МБ) ещё до вьюхи и отдаёт HTML «Bad Request (400)» без JSON, а около
- * 4 МБ прокси возвращает 502. Снимок с телефона весит 3–5 МБ, на iPhone ещё и
- * приходит в HEIC, который бэк отклоняет по расширению. Пользователь при этом
- * видел бесполезное «Проверьте правильность заполнения полей» (воспроизведено
- * на проде 06.08.2026 на PUT /finance/expenses/<id>/photo/).
+ * Бэк (main 4f8f4d4, 06.08.2026) принимает jpg/jpeg/png/webp/heic/heif до
+ * 25 МБ, на превышение отвечает 413 с JSON `detail[0].msg`, а у jpg/png/webp
+ * проверяет реальное содержимое — переименовать файл не поможет. Такие ответы
+ * клиент показывает как есть (extractErrorMessage разбирает detail).
  *
- * Поэтому любую картинку перед отправкой прогоняем через prepareImageForUpload
- * (ужать + перевести в jpg), а необъяснимые ответы сервера переводим в текст,
- * по которому понятно, что делать.
+ * Картинку всё равно прогоняем через prepareImageForUpload: тяжёлый снимок
+ * долго уходит по мобильному интернету, а HEIC не показать в превью нигде,
+ * кроме Safari. Ответ без JSON-тела (обрыв на прокси) переводим в текст про
+ * размер — до фикса бэка это выглядело как «Проверьте правильность заполнения
+ * полей», см. MamaDoc/backend_ticket_upload_limits.md.
  */
 import { ApiError } from "./client";
 import { prepareImageForUpload } from "../utility/imageCompression";
@@ -28,10 +28,12 @@ const TOO_LARGE_MESSAGE =
  * API, отдельная ветка обработки ему не нужна.
  *
  * `keepAlpha` — для логотипов и прочей графики с прозрачностью.
+ * `maxBytes` — когда в одном запросе уходит пачка файлов и в 25 МБ на запрос
+ * нужно уложиться всем вместе (фотоотчёт уборки).
  */
 export async function preparePhotoOrThrow(
   file: File,
-  options: { keepAlpha?: boolean } = {},
+  options: { keepAlpha?: boolean; maxBytes?: number } = {},
 ): Promise<File> {
   const prepared = await prepareImageForUpload(file, options);
   if (!prepared) throw new ApiError(PREPARE_FAILED_MESSAGE, 0, null);

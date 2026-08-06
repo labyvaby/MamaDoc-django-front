@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
 export type PassportPhotoUploaderProps = {
     photos: string[]; // URLs of already uploaded photos
@@ -85,7 +86,7 @@ const PassportPhotoUploader: React.FC<PassportPhotoUploaderProps> = ({
                         <input
                             id={inputId}
                             type="file"
-                            accept="image/*"
+                            accept={PHOTO_ACCEPT}
                             style={{ display: "none" }}
                             onChange={handleFileChange}
                         />

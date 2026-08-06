@@ -19,6 +19,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
 import { subtleBg } from "../../theme/uiHelpers";
+import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import DueDateField, { type DueValue } from "./DueDateField";
 import {
   createTask,
@@ -381,7 +382,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
             ref={fileInputRef}
             type="file"
             hidden
-            accept="image/*"
+            accept={PHOTO_ACCEPT}
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
           <AppButton
