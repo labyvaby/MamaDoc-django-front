@@ -31,18 +31,26 @@ export const VISIT_FILTER_CODES: StatusCode[] = [
  * appointmentStatuses — иначе фильтр «Долг» желтел бы при красном чипе в строке
  * (та же конвенция, что в реестрах: AppointmentsRegistryView).
  *
- * «Не оплачено» и «Возврат» своего чипа в строке не имеют и остаются
- * нейтральными: красить треть дня красным не за что — приём просто ещё не
- * оплачен.
+ * «Оплачено» стоит первым: это главный фильтр конца смены, и в переносящемся
+ * ряду чипов он не должен уезжать во вторую строку.
+ *
+ * «Не оплачено» чипа здесь нет: в дне это большинство записей, и чип с самым
+ * большим счётчиком отбирал бы почти весь список — то есть ничего не сообщал.
+ * ⚠ Список заодно задаёт допустимые значения URL-параметра `pay`
+ * (useReceptionFilters), поэтому `?pay=unpaid` теперь отбраковывается — это
+ * осознанно: фильтра, который нельзя снять кликом по чипу, быть не должно.
+ * В реестрах (AppointmentsRegistryView) свой набор чипов, «Не оплачено» там
+ * осталось.
+ *
+ * «Возврат» своего чипа в строке не имеет и остаётся нейтральным.
  */
 export const PAYMENT_FILTER_OPTIONS: {
   value: PaymentStatus;
   /** Код статуса, из которого берётся цвет; null — нейтральный чип. */
   statusCode: StatusCode | null;
 }[] = [
-  { value: "unpaid", statusCode: null },
-  { value: "partial", statusCode: "debt" },
   { value: "paid", statusCode: "paid" },
+  { value: "partial", statusCode: "debt" },
   { value: "discounted", statusCode: "discounted" },
   { value: "refunded", statusCode: null },
 ];
