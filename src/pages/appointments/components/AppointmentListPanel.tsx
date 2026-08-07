@@ -40,7 +40,7 @@ import { formatPhoneDisplay } from "../../../utility/phone";
 import { useT } from "../../../i18n/VerticalProvider";
 import { agree } from "../../../i18n/formatters";
 import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
-import { resolveStatusCode } from "../../../config/appointmentStatuses";
+import { resolveAppointmentDisplayState } from "../../../components/appointments/statusChipState";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentFilterChips from "./AppointmentFilterChips";
@@ -447,10 +447,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
   // Счётчики обеих осей считаются от одной базы (поиск + специалист), а не друг
   // от друга: иначе цифры прыгали бы при каждом клике по соседней оси.
+  //
+  // Ось визита считает по единому состоянию приёма (resolveAppointmentDisplayState),
+  // а не по сырому статусу из базы: бэк при оплате статус не меняет, а строка
+  // после закрытия чека его чип прячет — «Пациент здесь · N» набирался давно
+  // оплаченными строками, на которых написано одно лишь «Оплачено». Такие
+  // приёмы теперь не попадают ни в один чип визита и видны на оси денег.
   const statusCounts = React.useMemo(() => {
     const counts = new Map<StatusCode, number>();
     for (const appt of doctorScopedItems) {
-      const code = resolveStatusCode(appt.status);
+      const code = resolveAppointmentDisplayState(appt);
       if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
     }
     return counts;
@@ -469,7 +475,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     let list = doctorScopedItems;
     if (selectedStatuses.length > 0) {
       list = list.filter((appt) => {
-        const code = resolveStatusCode(appt.status);
+        const code = resolveAppointmentDisplayState(appt);
         return code != null && selectedStatuses.includes(code);
       });
     }
