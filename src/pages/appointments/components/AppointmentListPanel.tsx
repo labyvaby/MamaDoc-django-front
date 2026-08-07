@@ -1,17 +1,19 @@
 import React from "react";
 import {
   Avatar,
+  Badge,
   Box,
+  Button,
   Card,
   CardContent,
   CardHeader,
   Chip,
   Divider,
-  IconButton,
   LinearProgress,
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
@@ -38,27 +40,12 @@ import { formatPhoneDisplay } from "../../../utility/phone";
 import { useT } from "../../../i18n/VerticalProvider";
 import { agree } from "../../../i18n/formatters";
 import AppointmentStatusChips from "../../../components/appointments/AppointmentStatusChips";
-import {
-  getStatusAccent,
-  getStatusLabel,
-  resolveStatusCode,
-} from "../../../config/appointmentStatuses";
+import { resolveStatusCode } from "../../../config/appointmentStatuses";
 import type { StatusCode } from "../../../config/appointmentStatuses";
-
-/**
- * Статусы визита, по которым можно отфильтровать день. Порядок — ход визита,
- * а не алфавит: регистратор читает ленту слева направо как шкалу времени.
- * Показываем только те, что в этом дне действительно есть.
- */
-const VISIT_FILTER_CODES: StatusCode[] = [
-  "scheduled",
-  "confirmed",
-  "arrived",
-  "in_progress",
-  "completed",
-  "canceled",
-  "no_show",
-];
+import type { PaymentStatus } from "../../../api/payments";
+import AppointmentFilterChips from "./AppointmentFilterChips";
+import { employeeMoneyTotals, matchesAppointmentSearch } from "./listFilters";
+import { AppBottomSheet } from "../../../components/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,9 +80,44 @@ interface AppointmentListPanelProps {
    * (не undefined), панель использует его вместо внутреннего состояния,
    * а изменения сообщает через onDoctorFilterChange. Нужно реестрам
    * («Все приёмы»/«Все процедуры»), где счётчик в тулбаре учитывает выбор.
+   *
+   * Контракт — employee id, а не ФИО: по имени полные однофамильцы сливались в
+   * одну группу и в один фильтр.
    */
-  doctorFilter?: string | null;
-  onDoctorFilterChange?: (name: string | null) => void;
+  doctorFilter?: number | null;
+  onDoctorFilterChange?: (employeeId: number | null) => void;
+  /**
+   * Клиентский поиск по пациенту, телефону, услуге и исполнителю. Панель
+   * фильтрует им items до подсчёта чипов, поэтому счётчики всегда описывают то,
+   * что видно. Пусто/undefined — поиск выключен.
+   */
+  searchQuery?: string;
+  /**
+   * Фильтры статуса визита и оплаты — управляемые (страница держит их в URL).
+   * Не переданы → панель ведёт своё состояние (реестры, кабинеты).
+   */
+  statusFilter?: StatusCode[];
+  onStatusFilterChange?: (codes: StatusCode[]) => void;
+  paymentFilter?: PaymentStatus[];
+  onPaymentFilterChange?: (values: PaymentStatus[]) => void;
+  /**
+   * Сброс обеих осей сразу. Отдельный колбэк, а не два вызова подряд: владелец
+   * состояния может складывать их в одно обновление (страница пишет фильтры в
+   * URL, где два подряд setSearchParams перетирают друг друга).
+   */
+  onResetChipFilters?: () => void;
+  /**
+   * Показывать ось «деньги» в ряду чипов. Реестры её не включают: там свои
+   * чипы-сводки по оплате живут снаружи панели.
+   */
+  showPaymentFilter?: boolean;
+  /** Показывать суммы (начислено / оплачено) в заголовке группы исполнителя. */
+  showGroupTotals?: boolean;
+  /**
+   * Счётчик «показано N из M» в шапке панели. Реестры его выключают: там тот же
+   * счётчик уже стоит в своём тулбаре над списком.
+   */
+  showFilteredCount?: boolean;
   /**
    * Если задано — группировать и считать исполнителей только по этим employee id.
    * Процедурный кабинет передаёт сюда id медсестёр, чтобы совместный приём
@@ -270,21 +292,33 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   hideDoctorStrip = false,
   doctorFilter,
   onDoctorFilterChange,
+  searchQuery = "",
+  statusFilter,
+  onStatusFilterChange,
+  paymentFilter,
+  onPaymentFilterChange,
+  onResetChipFilters,
+  showPaymentFilter = false,
+  showGroupTotals = false,
+  showFilteredCount = true,
   groupEmployeeIds = null,
   dayShifts = null,
 }) => {
   const { t, term } = useT("appointments");
   const theme = useTheme();
+  // Границу «телефон/десктоп» ставим по md: в теме проекта sm = 360, и телефон
+  // в него попадает (см. theme.ts).
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const titleDate = date ? date.format("DD.MM.YYYY") : "";
 
   // ── Doctor filter state: управляемый (doctorFilter) или внутренний ────────
   const isDoctorControlled = doctorFilter !== undefined;
-  const [internalDoctor, setInternalDoctor] = React.useState<string | null>(null);
-  const selectedDoctor = isDoctorControlled ? doctorFilter : internalDoctor;
-  const setSelectedDoctor = React.useCallback(
-    (name: string | null) => {
-      if (!isDoctorControlled) setInternalDoctor(name);
-      onDoctorFilterChange?.(name);
+  const [internalDoctor, setInternalDoctor] = React.useState<number | null>(null);
+  const selectedDoctorId = isDoctorControlled ? doctorFilter : internalDoctor;
+  const setSelectedDoctorId = React.useCallback(
+    (employeeId: number | null) => {
+      if (!isDoctorControlled) setInternalDoctor(employeeId);
+      onDoctorFilterChange?.(employeeId);
     },
     [isDoctorControlled, onDoctorFilterChange],
   );
@@ -295,16 +329,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
   // ── Build doctor list from appointments (id → name, photoUrl) ─────────────
   const availableDoctors = React.useMemo(() => {
-    const map = new Map<string, { id: string; name: string; photoUrl: string | null; nickname: string | null }>();
+    const map = new Map<number, { id: number; name: string; photoUrl: string | null; nickname: string | null }>();
     for (const appt of items) {
       for (const sl of appt.services) {
         if (
           sl.employee &&
           (!groupEmployeeIds || groupEmployeeIds.has(sl.employee.id)) &&
-          !map.has(String(sl.employee.id))
+          !map.has(sl.employee.id)
         ) {
-          map.set(String(sl.employee.id), {
-            id: String(sl.employee.id),
+          map.set(sl.employee.id, {
+            id: sl.employee.id,
             name: sl.employee.fullName,
             photoUrl: sl.employee.photoUrl,
             nickname: sl.employee.nickname,
@@ -316,105 +350,201 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     // Добавляем таких сотрудников из расписания, чтобы они сразу появлялись
     // в быстром фильтре регистратуры.
     for (const [id, name] of dayShifts?.employeeNames ?? []) {
-      if ((!groupEmployeeIds || groupEmployeeIds.has(id)) && !map.has(String(id))) {
-        map.set(String(id), {
-          id: String(id),
-          name,
-          photoUrl: null,
-          nickname: null,
-        });
+      if ((!groupEmployeeIds || groupEmployeeIds.has(id)) && !map.has(id)) {
+        map.set(id, { id, name, photoUrl: null, nickname: null });
       }
     }
-    console.log("availableDoctors in panel:", Array.from(map.values()));
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [items, groupEmployeeIds, dayShifts]);
 
-  // ── Фильтр по статусу визита ──────────────────────────────────────────────
-  // Главный вопрос стойки — «кто уже в холле»: раньше отобрать таких можно было
-  // только глазами по всему списку. Фильтруем по каноническому коду, а не по
-  // метке: метка зависит от вертикали бизнеса.
-  const [statusFilter, setStatusFilter] = React.useState<StatusCode | null>(null);
+  // ── Фильтры статуса визита и оплаты ───────────────────────────────────────
+  // Главные вопросы стойки — «кто уже в холле» и «с кого ещё не взяли деньги»:
+  // раньше отобрать таких можно было только глазами по всему списку. Фильтруем
+  // по каноническому коду, а не по метке: метка зависит от вертикали бизнеса.
+  const isStatusControlled = statusFilter !== undefined;
+  const [internalStatuses, setInternalStatuses] = React.useState<StatusCode[]>([]);
+  const selectedStatuses = isStatusControlled ? statusFilter : internalStatuses;
+  const setSelectedStatuses = React.useCallback(
+    (codes: StatusCode[]) => {
+      if (!isStatusControlled) setInternalStatuses(codes);
+      onStatusFilterChange?.(codes);
+    },
+    [isStatusControlled, onStatusFilterChange],
+  );
+
+  const isPaymentControlled = paymentFilter !== undefined;
+  const [internalPayments, setInternalPayments] = React.useState<PaymentStatus[]>([]);
+  const selectedPayments = isPaymentControlled ? paymentFilter : internalPayments;
+  const setSelectedPayments = React.useCallback(
+    (values: PaymentStatus[]) => {
+      if (!isPaymentControlled) setInternalPayments(values);
+      onPaymentFilterChange?.(values);
+    },
+    [isPaymentControlled, onPaymentFilterChange],
+  );
 
   React.useEffect(() => {
-    setStatusFilter(null);
-  }, [titleDate]);
+    if (!isStatusControlled) setInternalStatuses([]);
+    if (!isPaymentControlled) setInternalPayments([]);
+  }, [titleDate, isStatusControlled, isPaymentControlled]);
 
-  // Отбираем только статусы, которые сегодня реально встречаются: пустой чип
-  // «Неявка · 0» занимал бы место и ничего не сообщал.
+  // ── Отбор: поиск → исполнитель → чипы ─────────────────────────────────────
+  // Порядок важен: счётчики чипов считаются на середине цепочки, поэтому при
+  // выбранном специалисте они описывают только его приёмы (иначе «Долг · 7» на
+  // фильтре одного врача означал бы долги всей клиники).
+  const searchedItems = React.useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    return items.filter((appt) => matchesAppointmentSearch(appt, searchQuery));
+  }, [items, searchQuery]);
+
+  const doctorScopedItems = React.useMemo(() => {
+    if (selectedDoctorId == null) return searchedItems;
+    return searchedItems.filter((appt) =>
+      appt.services.some((sl) => sl.employee?.id === selectedDoctorId),
+    );
+  }, [searchedItems, selectedDoctorId]);
+
+  // Счётчики обеих осей считаются от одной базы (поиск + специалист), а не друг
+  // от друга: иначе цифры прыгали бы при каждом клике по соседней оси.
   const statusCounts = React.useMemo(() => {
     const counts = new Map<StatusCode, number>();
-    for (const appt of items) {
+    for (const appt of doctorScopedItems) {
       const code = resolveStatusCode(appt.status);
       if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
     }
     return counts;
-  }, [items]);
+  }, [doctorScopedItems]);
 
-  const statusChips = React.useMemo(
-    () => VISIT_FILTER_CODES.filter((code) => (statusCounts.get(code) ?? 0) > 0),
-    [statusCounts],
-  );
-
-  // ── Filter items by selected doctor ──────────────────────────────────────
-  const filteredItems = React.useMemo(() => {
-    let list = items;
-    if (selectedDoctor) {
-      list = list.filter((appt) =>
-        appt.services.some((sl) => sl.employee?.fullName === selectedDoctor),
-      );
+  const paymentCounts = React.useMemo(() => {
+    const counts = new Map<PaymentStatus, number>();
+    for (const appt of doctorScopedItems) {
+      const s = appt.paymentStatus;
+      if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
     }
-    if (statusFilter) {
-      list = list.filter((appt) => resolveStatusCode(appt.status) === statusFilter);
+    return counts;
+  }, [doctorScopedItems]);
+
+  const filteredItems = React.useMemo(() => {
+    let list = doctorScopedItems;
+    if (selectedStatuses.length > 0) {
+      list = list.filter((appt) => {
+        const code = resolveStatusCode(appt.status);
+        return code != null && selectedStatuses.includes(code);
+      });
+    }
+    if (selectedPayments.length > 0) {
+      list = list.filter(
+        (appt) => appt.paymentStatus != null && selectedPayments.includes(appt.paymentStatus),
+      );
     }
     return list;
-  }, [items, selectedDoctor, statusFilter]);
+  }, [doctorScopedItems, selectedStatuses, selectedPayments]);
 
-  // ── Group by doctor name → list of appointments ───────────────────────────
-  // Mirrors оригинал: каждый приём попадает в группу каждого участвующего врача
+  const toggleStatus = React.useCallback(
+    (code: StatusCode) =>
+      setSelectedStatuses(
+        selectedStatuses.includes(code)
+          ? selectedStatuses.filter((c) => c !== code)
+          : [...selectedStatuses, code],
+      ),
+    [selectedStatuses, setSelectedStatuses],
+  );
+
+  const togglePayment = React.useCallback(
+    (value: PaymentStatus) =>
+      setSelectedPayments(
+        selectedPayments.includes(value)
+          ? selectedPayments.filter((v) => v !== value)
+          : [...selectedPayments, value],
+      ),
+    [selectedPayments, setSelectedPayments],
+  );
+
+  const resetChipFilters = React.useCallback(() => {
+    if (onResetChipFilters) {
+      if (!isStatusControlled) setInternalStatuses([]);
+      if (!isPaymentControlled) setInternalPayments([]);
+      onResetChipFilters();
+      return;
+    }
+    setSelectedStatuses([]);
+    setSelectedPayments([]);
+  }, [
+    onResetChipFilters,
+    isStatusControlled,
+    isPaymentControlled,
+    setSelectedStatuses,
+    setSelectedPayments,
+  ]);
+
+  // Сколько записей дня скрыто фильтрами. Без этой строки отфильтрованный
+  // список выглядит как «в этот день почти никого нет».
+  const activeChipCount = selectedStatuses.length + selectedPayments.length;
+  const isFiltered = filteredItems.length !== items.length;
+
+  const [filterSheetOpen, setFilterSheetOpen] = React.useState(false);
+
+  // Выбранного специалиста нет среди тех, кто работает в этот день (фильтр
+  // пережил смену даты) — ни одна аватарка не подсвечена, и пустой список
+  // выглядел бы как «сегодня никого».
+  const orphanDoctorFilter =
+    selectedDoctorId != null && !availableDoctors.some((d) => d.id === selectedDoctorId);
+
+  // ── Group by employee → list of appointments ──────────────────────────────
+  // Mirrors оригинал: каждый приём попадает в группу каждого участвующего
+  // исполнителя. Ключ группы — employee id (null = «без специалиста»): по ФИО
+  // полные однофамильцы сливались в одну группу.
   const rawGroups = React.useMemo(() => {
-    const groups: Record<string, DjangoAppointment[]> = {};
+    const groups = new Map<
+      number | null,
+      { employeeId: number | null; name: string; appts: DjangoAppointment[] }
+    >();
+
+    const push = (employeeId: number | null, name: string, appt: DjangoAppointment) => {
+      let group = groups.get(employeeId);
+      if (!group) {
+        group = { employeeId, name, appts: [] };
+        groups.set(employeeId, group);
+      }
+      group.appts.push(appt);
+    };
 
     for (const appt of filteredItems) {
-      const names = Array.from(
-        new Set(
-          appt.services
-            .filter(
-              (sl) =>
-                sl.employee != null &&
-                (!groupEmployeeIds || groupEmployeeIds.has(sl.employee.id)),
-            )
-            .map((sl) => sl.employee!.fullName),
-        ),
-      );
+      const participants = new Map<number, string>();
+      for (const sl of appt.services) {
+        if (sl.employee && (!groupEmployeeIds || groupEmployeeIds.has(sl.employee.id))) {
+          participants.set(sl.employee.id, sl.employee.fullName);
+        }
+      }
 
-      if (names.length === 0) {
+      if (participants.size === 0) {
         // В процедурном кабинете приёмы без совпадения с медсёстрами не показываем.
         if (groupEmployeeIds) continue;
-        const key = t("list.noSpecialistGroup");
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(appt);
+        push(null, t("list.noSpecialistGroup"), appt);
       } else {
-        for (const name of names) {
-          if (!groups[name]) groups[name] = [];
-          groups[name].push(appt);
-        }
+        for (const [id, name] of participants) push(id, name, appt);
       }
     }
 
-    return groups;
+    return Array.from(groups.values());
   }, [filteredItems, groupEmployeeIds, t]);
 
   // ── Build render list per group: sort by time + insert gap slots ──────────
   const groupedItemsWithGaps = React.useMemo(() => {
-    const result: Record<string, RenderItem[]> = {};
+    const result: {
+      employeeId: number | null;
+      name: string;
+      appts: DjangoAppointment[];
+      renderItems: RenderItem[];
+    }[] = [];
 
-    Object.entries(rawGroups).forEach(([docName, appts]) => {
+    rawGroups.forEach(({ employeeId: groupEmployeeId, name: docName, appts }) => {
       const sorted = [...appts].sort((a, b) =>
         dayjs(a.scheduledAt).valueOf() - dayjs(b.scheduledAt).valueOf(),
       );
 
       if (!onAddSlot) {
-        result[docName] = sorted;
+        result.push({ employeeId: groupEmployeeId, name: docName, appts: sorted, renderItems: sorted });
         return;
       }
 
@@ -425,19 +555,6 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       // slotAvailability.ts: модель занятости должна совпадать с серверной.
       const activeIntervals = busyIntervals(sorted);
       const isCoveredByActive = (t: number) => isSlotCovered(activeIntervals, t);
-
-      // Исполнитель группы: нужен и для рабочих часов, и для предзаполнения
-      // формы при клике по окну. Группы строятся по имени, id берём из первой
-      // строки услуги с этим именем.
-      let groupEmployeeId: number | null = null;
-      outer: for (const a of sorted) {
-        for (const sl of a.services) {
-          if (sl.employee && sl.employee.fullName === docName) {
-            groupEmployeeId = sl.employee.id;
-            break outer;
-          }
-        }
-      }
 
       // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
       // (например, «Есть окно на 16:00» при графике до 16:00). Если расписание
@@ -509,7 +626,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         }
       }
 
-      if (renderItems.length > 0) result[docName] = renderItems;
+      if (renderItems.length > 0) {
+        result.push({ employeeId: groupEmployeeId, name: docName, appts: sorted, renderItems });
+      }
     });
 
     return result;
@@ -544,7 +663,19 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     scrollContainerRef.current.scrollLeft = scrollLeftRef.current - (x - startX.current) * 2;
   };
 
-  const groupEntries = Object.entries(groupedItemsWithGaps);
+  const groupEntries = groupedItemsWithGaps;
+
+  const chipRow = (
+    <AppointmentFilterChips
+      statusCounts={statusCounts}
+      selectedStatuses={selectedStatuses}
+      onToggleStatus={toggleStatus}
+      paymentCounts={showPaymentFilter ? paymentCounts : undefined}
+      selectedPayments={selectedPayments}
+      onTogglePayment={showPaymentFilter ? togglePayment : undefined}
+      onReset={resetChipFilters}
+    />
+  );
 
   return (
     <Card variant="outlined" sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -557,9 +688,21 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         }}
         title={
           <Stack direction="column" gap={2} sx={{ width: "100%" }}>
-            <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
-              {t("list.title", { date: titleDate })}
-            </Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
+                {t("list.title", { date: titleDate })}
+              </Typography>
+              {/* Сколько записей скрыто фильтрами: без этой строки отобранный
+                  день выглядит как «сегодня почти никого нет». */}
+              {showFilteredCount && isFiltered && (
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {t("registry.filteredCount", {
+                    shown: filteredItems.length,
+                    total: items.length,
+                  })}
+                </Typography>
+              )}
+            </Stack>
 
             {!hideDoctorStrip && availableDoctors.length > 0 && (
               <Box
@@ -585,7 +728,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                 <Stack
                   spacing={0.25}
                   alignItems="center"
-                  onClick={() => setSelectedDoctor(null)}
+                  onClick={() => setSelectedDoctorId(null)}
                   sx={{ cursor: "pointer", minWidth: 56 }}
                 >
                   <Box
@@ -594,14 +737,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       height: 48,
                       borderRadius: "50%",
                       border:
-                        selectedDoctor === null
+                        selectedDoctorId === null
                           ? `3px solid ${theme.palette.primary.main}`
                           : `1.5px solid ${theme.palette.divider}`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      bgcolor: selectedDoctor === null ? "primary.main" : "transparent",
-                      color: selectedDoctor === null ? "primary.contrastText" : "text.secondary",
+                      bgcolor: selectedDoctorId === null ? "primary.main" : "transparent",
+                      color: selectedDoctorId === null ? "primary.contrastText" : "text.secondary",
                       transition: "all 0.2s ease",
                     }}
                   >
@@ -611,7 +754,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                   </Box>
                   <Typography
                     variant="caption"
-                    sx={{ fontWeight: selectedDoctor === null ? 700 : 500, fontSize: "0.75rem" }}
+                    sx={{ fontWeight: selectedDoctorId === null ? 700 : 500, fontSize: "0.75rem" }}
                   >
                     {t("filters.all")}
                   </Typography>
@@ -623,9 +766,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                     name={doc.name}
                     nickname={doc.nickname}
                     photoUrl={doc.photoUrl ?? undefined}
-                    isActive={selectedDoctor === doc.name}
+                    isActive={selectedDoctorId === doc.id}
                     onClick={() =>
-                      setSelectedDoctor(selectedDoctor === doc.name ? null : doc.name)
+                      setSelectedDoctorId(selectedDoctorId === doc.id ? null : doc.id)
                     }
                   />
                 ))}
@@ -633,45 +776,43 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               </Box>
             )}
 
-            {/* Фильтр по статусу визита: «Пациент здесь · 3» и т.п. Цвета —
-                из той же палитры, что и чипы в строках, иначе клик по фильтру
-                приводил бы к списку другого цвета. */}
-            {statusChips.length > 0 && (
-              <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mt: -1 }}>
-                {statusChips.map((code) => {
-                  const active = statusFilter === code;
-                  const accent = getStatusAccent(code, theme);
-                  return (
-                    <Chip
-                      key={code}
-                      size="small"
-                      clickable
-                      onClick={() => setStatusFilter(active ? null : code)}
-                      label={`${getStatusLabel(code)} · ${statusCounts.get(code) ?? 0}`}
-                      sx={(th) => ({
-                        height: 24,
-                        fontWeight: 500,
-                        border: 1,
-                        borderColor: active ? alpha(accent.main, 0.4) : "divider",
-                        color: active ? accent.text : "text.secondary",
-                        bgcolor: active
-                          ? alpha(accent.main, th.palette.mode === "dark" ? 0.16 : 0.08)
-                          : "transparent",
-                        "&:hover": {
-                          bgcolor: alpha(accent.main, th.palette.mode === "dark" ? 0.22 : 0.12),
-                        },
-                      })}
-                    />
-                  );
-                })}
-              </Stack>
+            {/* Фильтр специалиста переживает смену даты (он в URL), поэтому в
+                другом дне он может указывать на того, кто в этот день не
+                работает: без подсказки это выглядит как пустой день. */}
+            {!hideDoctorStrip && orphanDoctorFilter && (
+              <Box sx={{ mt: -1 }}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  label={t("list.doctorNotInDay")}
+                  onDelete={() => setSelectedDoctorId(null)}
+                  sx={{ height: 24, fontWeight: 500 }}
+                />
+              </Box>
+            )}
+
+            {/* Фильтры «ход визита | деньги». На телефоне ряд чипов не влезает
+                рядом с лентой исполнителей — там вместо него кнопка, а сами
+                чипы переезжают в лист снизу. */}
+            {isMobile ? (
+              <Box sx={{ mt: -1 }}>
+                <Badge badgeContent={activeChipCount} color="primary">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<FilterListOutlined fontSize="small" />}
+                    onClick={() => setFilterSheetOpen(true)}
+                    sx={{ textTransform: "none" }}
+                  >
+                    {t("filters.button")}
+                  </Button>
+                </Badge>
+              </Box>
+            ) : (
+              <Box sx={{ mt: -1 }}>{chipRow}</Box>
             )}
           </Stack>
-        }
-        action={
-          <IconButton aria-label={t("filters.button")} sx={{ display: "none" }}>
-            <FilterListOutlined />
-          </IconButton>
         }
       />
 
@@ -703,11 +844,15 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           </Typography>
         ) : (
           <Stack spacing={0}>
-            {groupEntries.map(([docName, groupItems]) => {
+            {groupEntries.map(({ employeeId: groupEmployeeId, name: docName, appts, renderItems: groupItems }) => {
               const apptCount = groupItems.filter((i) => !isGap(i)).length;
+              // Деньги группы — по строкам услуг этого исполнителя (см.
+              // employeeMoneyTotals): чек совместного приёма иначе попал бы в
+              // обе группы целиком.
+              const money = showGroupTotals ? employeeMoneyTotals(appts, groupEmployeeId) : null;
               return (
-                <Box key={docName}>
-                  {/* ── Group header: имя врача + каунтер ── */}
+                <Box key={groupEmployeeId ?? "__no_specialist__"}>
+                  {/* ── Group header: имя врача + каунтер + деньги ── */}
                   <Box
                     sx={{
                       px: 2,
@@ -716,20 +861,29 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       borderTop: "1px solid",
                       borderBottom: "1px solid",
                       borderColor: "divider",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
                     }}
                   >
-                    <Typography variant="subtitle2" fontWeight="bold">
-                      {docName}
-                    </Typography>
-                    <Chip
-                      label={t("list.count", { count: apptCount })}
-                      size="small"
-                      variant="outlined"
-                      sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper" }}
-                    />
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                      <Typography variant="subtitle2" fontWeight="bold" noWrap>
+                        {docName}
+                      </Typography>
+                      <Chip
+                        label={t("list.count", { count: apptCount })}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper", flexShrink: 0 }}
+                      />
+                    </Stack>
+                    {/* Суммы отдельной строкой, а не в ряд с именем: заголовок
+                        группы узкий (панель — половина экрана), и в одну строку
+                        длинное ФИО с двумя суммами не помещается. */}
+                    {money != null && money.accrued > 0 && (
+                      <Typography variant="caption" color="text.secondary">
+                        {formatKGS(money.accrued)}
+                        {" · "}
+                        {t("list.groupPaid", { amount: formatKGS(Math.round(money.paid)) })}
+                      </Typography>
+                    )}
                   </Box>
 
                   {/* ── Строки приёмов / gap-слоты ── */}
@@ -909,6 +1063,25 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           </Stack>
         )}
       </CardContent>
+
+      {/* Мобильный лист фильтров: те же чипы, что в шапке на десктопе. */}
+      <AppBottomSheet open={isMobile && filterSheetOpen} onClose={() => setFilterSheetOpen(false)}>
+        <Box sx={{ px: 2, pb: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
+            {t("filters.button")}
+          </Typography>
+          <AppointmentFilterChips
+            statusCounts={statusCounts}
+            selectedStatuses={selectedStatuses}
+            onToggleStatus={toggleStatus}
+            paymentCounts={showPaymentFilter ? paymentCounts : undefined}
+            selectedPayments={selectedPayments}
+            onTogglePayment={showPaymentFilter ? togglePayment : undefined}
+            onReset={resetChipFilters}
+            wrap
+          />
+        </Box>
+      </AppBottomSheet>
     </Card>
   );
 });

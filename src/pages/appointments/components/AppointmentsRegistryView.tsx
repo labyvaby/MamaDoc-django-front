@@ -144,8 +144,9 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   const [filterDrawerOpen, setFilterDrawerOpen] = React.useState(false);
   const [paymentFilter, setPaymentFilter] = React.useState<PaymentFilter>("all");
   // Выбор исполнителя в ленте аватарок панели (управляемый режим) — нужен
-  // здесь, чтобы счётчик в тулбаре учитывал выбранного сотрудника.
-  const [doctorFilter, setDoctorFilter] = React.useState<string | null>(null);
+  // здесь, чтобы счётчик в тулбаре учитывал выбранного сотрудника. Контракт
+  // ленты — employee id (по ФИО однофамильцы сливались).
+  const [doctorFilter, setDoctorFilter] = React.useState<number | null>(null);
 
   // ── Data ───────────────────────────────────────────────────────────────────
   const dateFrom = filters.month
@@ -243,9 +244,9 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   // Для счётчика в тулбаре: тот же фильтр по исполнителю, что панель
   // применяет внутри к items (сам список фильтрует панель).
   const doctorFilteredCount = React.useMemo(() => {
-    if (!doctorFilter) return displayList.length;
+    if (doctorFilter == null) return displayList.length;
     return displayList.filter((h) =>
-      h.services.some((sl) => sl.employee?.fullName === doctorFilter),
+      h.services.some((sl) => sl.employee?.id === doctorFilter),
     ).length;
   }, [displayList, doctorFilter]);
 
@@ -515,6 +516,9 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                   // в тулбаре учитывал выбор.
                   doctorFilter={doctorFilter}
                   onDoctorFilterChange={setDoctorFilter}
+                  // Счётчик отфильтрованных здесь уже стоит в тулбаре над
+                  // списком — второй в шапке панели дублировал бы его.
+                  showFilteredCount={false}
                   groupEmployeeIds={groupEmployeeIds}
                   onSelect={(appt) => setSelectedAppt((prev) => (prev?.id === appt.id ? null : appt))}
                   onEdit={setEditTarget}
