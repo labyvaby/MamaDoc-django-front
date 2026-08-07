@@ -965,13 +965,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                         sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper", flexShrink: 0 }}
                       />
                     </Stack>
-                    {/* Суммы отдельной строкой, а не в ряд с именем: заголовок
-                        группы узкий (панель — половина экрана), и в одну строку
-                        длинное ФИО с двумя суммами не помещается. */}
-                    {money != null && money.accrued > 0 && (
+                    {/* Только оплаченные деньги: начисленную сумму в заголовке
+                        группы не показываем — она смешивала выставленные счета с
+                        реально полученными. Отдельной строкой, а не в ряд с
+                        именем: заголовок узкий (панель — половина экрана). */}
+                    {money != null && money.paid > 0 && (
                       <Typography variant="caption" color="text.secondary">
-                        {formatKGS(money.accrued)}
-                        {" · "}
                         {t("list.groupPaid", { amount: formatKGS(Math.round(money.paid)) })}
                       </Typography>
                     )}
