@@ -63,6 +63,13 @@ let inFlight: Promise<void> | null = null;
 const listeners = new Set<(s: GlobalState) => void>();
 const COOLDOWN_MS = 10_000; // не чаще, чем раз в 10 секунд по принудительным событиям
 
+// Поколение авторизации. Увеличивается каждый раз, когда контекст сессии
+// применён из «свежего» источника (логин, OTP, смена филиала). Ответ
+// /auth/me/, который стартовал ДО этого момента, относится к прошлой сессии —
+// применять его нельзя: типичная гонка при входе (запрос без cookie уходит с
+// экрана логина, отвечает 401 уже после успешного входа и обнуляет права).
+let authEpoch = 0;
+
 const notify = () => {
   for (const fn of listeners) fn(globalState);
 };
@@ -76,23 +83,12 @@ const setGlobal = (patch: Partial<GlobalState>) => {
 // переводим приложение в unauthenticated, RequireAuth уведёт на /login.
 // Без этого пользователь видел бесконечные «Ошибка загрузки» до полного F5.
 if (IS_DJANGO_BACKEND && typeof window !== 'undefined') {
+  // Разлогиниваем не по самому событию, а по проверке: 401 мог прийти от
+  // запроса, стартовавшего до входа (гонка на экране логина). fetchPermissions
+  // сам переведёт в unauthenticated, если /auth/me/ тоже отвечает 401.
   window.addEventListener('mamadoc:api-unauthorized', () => {
     if (globalState.authStatus !== 'authenticated') return;
-    setGlobal({
-      role: null,
-      employee: null,
-      permissions: [],
-      memberships: [],
-      activeMembership: null,
-      activeOrganization: null,
-      activeBranch: null,
-      activeEmployee: null,
-      enabledModules: [],
-      loading: false,
-      loaded: true,
-      authStatus: 'unauthenticated',
-      authError: null,
-    });
+    void fetchPermissions({ force: true });
   });
 
   // Права роли могли измениться, пока вкладка была неактивна (например,
@@ -199,10 +195,35 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
  * Единая точка записи — предотвращает дублирование запросов.
  */
 export function applyMeResponse(meData: MeResponse): void {
+  authEpoch += 1;
   setGlobal({
     ...buildStateFromMe(meData),
     lastFetchedAt: Date.now(),
   });
+}
+
+/**
+ * Перечитывает /auth/me/ и применяет ответ, игнорируя cooldown и уже летящий
+ * запрос (он мог стартовать до входа). Вызывается сразу после логина/OTP:
+ * ответ /auth/login/ отражает не весь активный контекст сессии, из-за чего
+ * интерфейс сразу после входа мог показывать «нет доступа» до перезагрузки.
+ * Никогда не бросает: при недоступности сервера контекст, применённый из
+ * ответа логина, остаётся в силе.
+ */
+export async function refreshAuthContext(): Promise<void> {
+  if (!IS_DJANGO_BACKEND) return;
+  const snapshot = globalState;
+  await fetchPermissions({ force: true, fresh: true });
+
+  // Свежий /auth/me/ не подтвердил сессию (401 из-за не успевшей примениться
+  // cookie, сетевой сбой) — не рушим только что выполненный вход: оставляем
+  // контекст из ответа логина, дальше сработают обычные механизмы (401 на
+  // рабочих запросах уведёт на /login).
+  if (snapshot.authStatus === 'authenticated' && globalState.authStatus !== 'authenticated') {
+    authEpoch += 1;
+    globalState = { ...snapshot, loading: false, lastFetchedAt: Date.now() };
+    notify();
+  }
 }
 
 /**
@@ -218,6 +239,7 @@ export async function switchContext(payload: SwitchContextPayload): Promise<MeRe
   setGlobal({ switching: true });
   try {
     const meData = await switchAuthContext(payload);
+    authEpoch += 1;
     setGlobal({
       ...buildStateFromMe(meData),
       switching: false,
@@ -239,17 +261,27 @@ const extractPermissions = (rolePermissions: RolePermissionsRow[] | null | undef
   }) ?? [];
 };
 
-async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
-  const { force = false } = opts;
+async function fetchPermissions(opts: { force?: boolean; fresh?: boolean } = {}): Promise<void> {
+  const { force = false, fresh = false } = opts;
 
-  // Уже идёт запрос — дождёмся его
-  if (inFlight) return inFlight;
+  // Уже идёт запрос — дождёмся его. Исключение: fresh — нужен именно новый
+  // запрос, потому что летящий мог стартовать до смены сессии.
+  if (inFlight) {
+    if (!fresh) return inFlight;
+    await inFlight.catch(() => undefined);
+    if (inFlight) return inFlight;
+  }
 
   // Троттлинг даже для форсированных событий (чтобы не спамить при Alt+Tab)
   const now = Date.now();
   if (!force && globalState.loaded && (now - globalState.lastFetchedAt < COOLDOWN_MS)) {
     return;
   }
+
+  // Поколение на момент старта: если пока запрос летел, контекст применили из
+  // более свежего источника (логин/смена филиала) — ответ не применяем.
+  const epoch = authEpoch;
+  const isStale = () => epoch !== authEpoch;
 
   inFlight = (async () => {
     try {
@@ -261,6 +293,7 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
       if (IS_DJANGO_BACKEND) {
         try {
           const meData = (await getCurrentUser()) as MeResponse | null;
+          if (isStale()) return;
           if (!meData || !meData.user) {
             // Backend вернул null или некорректный ответ
             setGlobal({
@@ -272,6 +305,7 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
           }
           setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
         } catch (err) {
+          if (isStale()) return;
           const isApiError = err instanceof ApiError;
           const status = isApiError ? err.status : -1;
 
@@ -287,15 +321,19 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
             });
           } else {
             // 5xx, network (status=0), timeout — сервер временно недоступен.
-            // НЕ очищаем ранее загруженный tenant context.
+            // НЕ очищаем ранее загруженный tenant context. Если контекст уже
+            // применён (вошли и работаем), разовый сбой /auth/me/ не должен
+            // подменять весь интерфейс плашкой — оставляем authenticated,
+            // ошибку покажут сами упавшие запросы.
             const errMsg = isApiError
               ? `Сервер недоступен (${status || 'сеть'})`
               : 'Сетевая ошибка';
+            const keepAuthenticated = globalState.authStatus === 'authenticated';
             setGlobal({
               loading: false,
               loaded: globalState.loaded, // сохраняем предыдущее значение
-              authStatus: 'unavailable',
-              authError: errMsg,
+              authStatus: keepAuthenticated ? 'authenticated' : 'unavailable',
+              authError: keepAuthenticated ? null : errMsg,
             });
           }
         }
