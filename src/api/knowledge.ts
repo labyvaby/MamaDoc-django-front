@@ -181,18 +181,15 @@ export async function uploadKnowledgeImage(
 export const PDF_LINK_TITLE = "pdf";
 
 /**
- * ⚠ Загрузка PDF файлом на бэке ещё не разрешена: тот же
- * `POST /knowledge/attachments/`, что принимает картинки, на .pdf отвечает
- * `400 {"detail":[{"msg":"file: Недопустимый формат. Разрешены: .gif, .jpeg,
- * .jpg, .png, .webp"}]}` (проверено 06.08.2026 на тесте, орг. 1; отдельных
- * путей `/knowledge/files|documents|uploads/` нет — 404). Тикет:
- * `MamaDoc/backend_ticket_knowledge_pdf.md`.
+ * Загрузка PDF файлом — тот же `POST /knowledge/attachments/`, что принимает
+ * картинки. Бэк разрешил .pdf по тикету `MamaDoc/backend_ticket_knowledge_pdf.md`
+ * (до 25 МБ, право `knowledge.manage`, ответ `{url}`), флаг включён 07.08.2026.
  *
- * Пока флаг выключен — в редакторе доступна вставка PDF по ссылке (например на
- * файл из модуля «Документы», где pdf уже принимается). После ответа бэка
- * включаем флаг — заработают кнопка «Загрузить PDF» и перетаскивание файла.
+ * При выключенном флаге в редакторе остаётся только вставка PDF по ссылке —
+ * например на файл из модуля «Документы»; кнопка «Загрузить PDF» и
+ * перетаскивание файла скрыты.
  */
-export const KNOWLEDGE_PDF_UPLOAD_ENABLED = false;
+export const KNOWLEDGE_PDF_UPLOAD_ENABLED = true;
 
 /** Предел размера файла — тот же, что у документов организации (см. api/documents.ts). */
 export const KNOWLEDGE_PDF_MAX_MB = 25;
