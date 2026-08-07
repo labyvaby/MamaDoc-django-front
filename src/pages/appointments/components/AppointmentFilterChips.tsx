@@ -1,6 +1,9 @@
 /**
- * Ряд чипов-фильтров списка приёмов: ход визита и деньги в одной строке,
+ * Ряд чипов-фильтров списка приёмов: деньги и ход визита в одной строке,
  * разделённые вертикальной чертой.
+ *
+ * Деньги идут первыми: «Оплачено» — главный фильтр конца смены, и в конце
+ * ряда он тонул среди статусов визита, которых в загруженном дне до пяти.
  *
  * Оси намеренно живут рядом, а не в двух строках: шапка списка и так занята
  * лентой исполнителей, а второй ряд отъедал бы у самого списка ~64px на
@@ -65,11 +68,13 @@ const AppointmentFilterChips: React.FC<Props> = ({
   if (visitChips.length === 0 && moneyChips.length === 0 && !hasActive) return null;
 
   const chipSx = (accent: { main: string; text: string } | null, active: boolean) => ({
-    height: 24,
+    height: 26,
     fontWeight: 500,
     flexShrink: 0,
     border: 1,
     borderColor: active ? alpha(accent?.main ?? theme.palette.primary.main, 0.4) : "divider",
+    // Метка неактивного чипа — приглушённая, но не «выключенная»: цвет статуса
+    // несёт точка, а пять разноцветных подписей в ряду спорили бы друг с другом.
     color: active ? accent?.text ?? theme.palette.primary.main : "text.secondary",
     bgcolor: active
       ? alpha(
@@ -77,6 +82,7 @@ const AppointmentFilterChips: React.FC<Props> = ({
           theme.palette.mode === "dark" ? 0.16 : 0.08,
         )
       : "transparent",
+    "& .MuiChip-label": { px: 1 },
     "&:hover": {
       bgcolor: active
         ? alpha(
@@ -87,26 +93,82 @@ const AppointmentFilterChips: React.FC<Props> = ({
     },
   });
 
+  /**
+   * Содержимое чипа: точка статуса · метка · счётчик отдельным бейджем.
+   *
+   * Раньше счётчик был частью строки («Оплачено · 111») и читался как часть
+   * названия. Отдельный бейдж отделяет «что фильтруем» от «сколько таких», а
+   * `tabular-nums` держит ширину цифр постоянной: счётчики пересчитываются на
+   * каждом обновлении списка (heartbeat 2.5с), и пропорциональные цифры
+   * дёргали бы весь ряд при смене 99 → 100.
+   */
+  const chipContent = (
+    accent: { main: string; text: string } | null,
+    label: string,
+    count: number,
+    active: boolean,
+  ) => (
+    <Stack direction="row" alignItems="center" gap={0.75}>
+      <Box
+        sx={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          flexShrink: 0,
+          // Нейтральные статусы (возврат) точки-«светофора» не заслуживают:
+          // это не состояние дня, а редкий случай.
+          bgcolor: accent?.main ?? theme.palette.text.disabled,
+          opacity: active ? 1 : 0.75,
+        }}
+      />
+      <Box component="span">{label}</Box>
+      <Box
+        component="span"
+        sx={{
+          fontSize: 11,
+          lineHeight: "16px",
+          minWidth: 16,
+          px: 0.5,
+          borderRadius: "6px",
+          textAlign: "center",
+          fontVariantNumeric: "tabular-nums",
+          bgcolor: active
+            ? alpha(accent?.main ?? theme.palette.primary.main, 0.24)
+            : subtleBg(theme, true),
+          color: active ? "inherit" : "text.secondary",
+        }}
+      >
+        {count}
+      </Box>
+    </Stack>
+  );
+
   return (
     <Stack
       direction="row"
       alignItems="center"
       gap={0.75}
       // Чипы переносятся, а не скроллятся: в загруженном дне бывает 5 статусов
-      // визита, и ось денег уезжала за край панели — «Оплачено» просто не было
-      // видно, хотя это один из главных фильтров конца смены.
+      // визита, и второй набор уезжал за край панели — часть фильтров просто
+      // не была видна.
       sx={{ flexWrap: "wrap" }}
     >
-      {visitChips.map((code) => {
-        const active = selectedStatuses.includes(code);
+      {moneyChips.map((o) => {
+        const active = selectedPayments.includes(o.value);
+        const accent = o.statusCode ? getStatusAccent(o.statusCode, theme) : null;
         return (
           <Chip
-            key={code}
+            key={o.value}
             size="small"
             clickable
-            onClick={() => onToggleStatus(code)}
-            label={`${getStatusLabel(code)} · ${statusCounts.get(code) ?? 0}`}
-            sx={chipSx(getStatusAccent(code, theme), active)}
+            onClick={() => onTogglePayment?.(o.value)}
+            label={chipContent(
+              accent,
+              t(`registry.payFilter.${o.value}`),
+              paymentCounts?.get(o.value) ?? 0,
+              active,
+            )}
+            sx={chipSx(accent, active)}
           />
         );
       })}
@@ -115,16 +177,22 @@ const AppointmentFilterChips: React.FC<Props> = ({
         <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.25, flexShrink: 0 }} />
       )}
 
-      {moneyChips.map((o) => {
-        const active = selectedPayments.includes(o.value);
+      {visitChips.map((code) => {
+        const active = selectedStatuses.includes(code);
+        const accent = getStatusAccent(code, theme);
         return (
           <Chip
-            key={o.value}
+            key={code}
             size="small"
             clickable
-            onClick={() => onTogglePayment?.(o.value)}
-            label={`${t(`registry.payFilter.${o.value}`)} · ${paymentCounts?.get(o.value) ?? 0}`}
-            sx={chipSx(o.statusCode ? getStatusAccent(o.statusCode, theme) : null, active)}
+            onClick={() => onToggleStatus(code)}
+            label={chipContent(
+              accent,
+              getStatusLabel(code),
+              statusCounts.get(code) ?? 0,
+              active,
+            )}
+            sx={chipSx(accent, active)}
           />
         );
       })}
@@ -141,7 +209,7 @@ const AppointmentFilterChips: React.FC<Props> = ({
             icon={<ClearIcon sx={{ fontSize: 14 }} />}
             onClick={onReset}
             label={t("filters.reset")}
-            sx={{ height: 24, fontWeight: 500, color: "text.secondary" }}
+            sx={{ height: 26, fontWeight: 500, color: "text.secondary" }}
           />
         </Box>
       )}
