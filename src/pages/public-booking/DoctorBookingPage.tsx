@@ -178,6 +178,8 @@ const DoctorBookingPage: React.FC = () => {
    * даже если время сбросилось сменой даты, — поведение эталона.
    */
   const [servicesUnlocked, setServicesUnlocked] = React.useState(false);
+  /** Блок услуг раскрывается под расписанием — подводим к нему взгляд. */
+  const servicesRef = React.useRef<HTMLDivElement | null>(null);
   const [errors, setErrors] = React.useState({ date: false, time: false, services: false });
 
   const [reviewsOpen, setReviewsOpen] = React.useState(false);
@@ -229,6 +231,13 @@ const DoctorBookingPage: React.FC = () => {
       .finally(() => setCalendarLoading(false));
     return () => controller.abort();
   }, [doctor, idOrSlug]);
+
+  // Первое раскрытие блока услуг: он теперь ниже расписания и на телефоне
+  // остаётся за краем экрана — иначе гость не заметит, что появился шаг 3.
+  React.useEffect(() => {
+    if (!servicesUnlocked) return;
+    servicesRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [servicesUnlocked]);
 
   const allServices: PickableService[] = React.useMemo(
     () =>
@@ -605,7 +614,7 @@ const DoctorBookingPage: React.FC = () => {
           onOpenReviews={() => setReviewsOpen(true)}
         />
 
-        {/* Правая колонка: шаги, услуги, расписание, действие */}
+        {/* Правая колонка: шаги, расписание, услуги, действие */}
         <Stack spacing={1.5}>
           {!canBook ? (
             <Alert severity="info">{t("bookingUnavailable")}</Alert>
@@ -613,10 +622,17 @@ const DoctorBookingPage: React.FC = () => {
             <>
               <StepIndicator current={step} />
 
-              {/* Услуги стоят НАД расписанием — так в эталоне: выбранное время
-                  остаётся на виду, а услуги подстраиваются под него. */}
+              {scheduleBlock}
+
+              {!hasAvailableDay && !calendarLoading && (
+                <Alert severity="info">{t("noSlotsAvailable")}</Alert>
+              )}
+
+              {/* Услуги идут ПОСЛЕ расписания: порядок шагов сверху вниз —
+                  дата → время → услуги, блок раскрывается под выбранным окном. */}
               {servicesUnlocked && (
                 <Box
+                  ref={servicesRef}
                   sx={{
                     position: "relative",
                     borderRadius: BOOKING_RADIUS,
@@ -634,12 +650,6 @@ const DoctorBookingPage: React.FC = () => {
                     loading={servicesLoading}
                   />
                 </Box>
-              )}
-
-              {scheduleBlock}
-
-              {!hasAvailableDay && !calendarLoading && (
-                <Alert severity="info">{t("noSlotsAvailable")}</Alert>
               )}
 
               {/* Итог и кнопка — десктоп; на мобильном они в липкой панели. */}
