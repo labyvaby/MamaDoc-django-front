@@ -12,6 +12,8 @@
 import React from "react";
 import {
   Box,
+  Card,
+  Divider,
   Paper,
   Typography,
   Grid2,
@@ -46,6 +48,7 @@ import { formatConsumptionWarnings } from "../../../components/appointments/cons
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentListPanel from "./AppointmentListPanel";
 import AppointmentDetailsPanel from "./AppointmentDetailsPanel";
+import DjangoConclusionSlotsPanel from "../DjangoConclusionSlotsPanel";
 import DjangoEditAppointmentDrawer from "../DjangoEditAppointmentDrawer";
 import DjangoPaymentDrawer from "../DjangoPaymentDrawer";
 import RegistryFilterDrawer, {
@@ -170,6 +173,21 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
+  // Заключение — отдельная колонка рядом с деталями (как на странице приёмов).
+  // Без этого состояния кнопка «Заключение» в карточке ничего не делала.
+  const [conclusionOpen, setConclusionOpen] = React.useState(false);
+
+  // Выбор другого приёма закрывает колонку заключения: иначе рядом с новой
+  // карточкой осталось бы заключение предыдущего пациента.
+  const handleSelect = React.useCallback((appt: DjangoAppointment) => {
+    setSelectedAppt((prev) => (prev?.id === appt.id ? null : appt));
+    setConclusionOpen(false);
+  }, []);
+
+  const closeDetails = React.useCallback(() => {
+    setSelectedAppt(null);
+    setConclusionOpen(false);
+  }, []);
 
   // Sync selected with fresh data
   React.useEffect(() => {
@@ -328,9 +346,11 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
       canViewFinance={canViewFinance}
       onEdit={setEditTarget}
       onPay={setPaymentTarget}
+      isConclusionVisible={conclusionOpen}
+      onToggleConclusion={() => setConclusionOpen((v) => !v)}
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
-      onClose={() => setSelectedAppt(null)}
+      onClose={closeDetails}
     />
   ) : (
     <Box
@@ -385,9 +405,9 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
         })}
       >
         <Grid2 container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-          {/* LEFT: list */}
+          {/* LEFT: list (сужается, когда рядом открыта колонка заключения) */}
           <Grid2
-            size={{ xs: 12, md: 5 }}
+            size={{ xs: 12, md: conclusionOpen ? 4 : 5 }}
             sx={(t) => ({
               position: { md: "sticky" },
               top: { md: t.spacing(2) },
@@ -520,7 +540,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                   // списком — второй в шапке панели дублировал бы его.
                   showFilteredCount={false}
                   groupEmployeeIds={groupEmployeeIds}
-                  onSelect={(appt) => setSelectedAppt((prev) => (prev?.id === appt.id ? null : appt))}
+                  onSelect={handleSelect}
                   onEdit={setEditTarget}
                   onPay={setPaymentTarget}
                 />
@@ -528,10 +548,10 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
             </Paper>
           </Grid2>
 
-          {/* RIGHT: details */}
+          {/* RIGHT: details (+ колонка заключения по кнопке «Заключение») */}
           {!isMobile && (
             <Grid2
-              size={{ xs: 12, md: 7 }}
+              size={{ xs: 12, md: conclusionOpen ? 8 : 7 }}
               sx={(t) => ({
                 position: { md: "sticky" },
                 top: { md: t.spacing(2) },
@@ -539,9 +559,36 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
                 height: {
                   md: `calc(100dvh - ${t.appLayout.viewportOffset.employees.desktopOffset}px)`,
                 },
+                display: "flex",
+                gap: 2,
+                minWidth: 0,
               })}
             >
-              {detailsPanel}
+              <Box sx={{ flex: 1, minWidth: 0, height: "100%", overflow: "hidden" }}>
+                {detailsPanel}
+              </Box>
+              {conclusionOpen && selectedAppt && (
+                <Box
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    height: "100%",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <Card
+                    variant="outlined"
+                    sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}
+                  >
+                    <DjangoConclusionSlotsPanel
+                      appointmentId={selectedAppt.id}
+                      onClose={() => setConclusionOpen(false)}
+                    />
+                  </Card>
+                </Box>
+              )}
             </Grid2>
           )}
         </Grid2>
@@ -549,19 +596,45 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
 
       {/* Mobile bottom sheet */}
       {isMobile && (
-        <AppBottomSheet fullHeight open={!!selectedAppt} onClose={() => setSelectedAppt(null)}>
-          <Box sx={{ height: "100%" }}>
+        <AppBottomSheet fullHeight open={!!selectedAppt} onClose={closeDetails}>
+          <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
             {selectedAppt && (
-              <AppointmentDetailsPanel
-                appointment={selectedAppt}
-                canUpdate={canUpdate}
-                canManageFinance={canManageFinance}
-                canViewFinance={canViewFinance}
-                onEdit={setEditTarget}
-                onPay={setPaymentTarget}
-                onArrived={handleArrived}
-                onClose={() => setSelectedAppt(null)}
-              />
+              <>
+                <Box sx={{ flex: conclusionOpen ? "0 0 50%" : 1, minHeight: 0, overflow: "hidden" }}>
+                  <AppointmentDetailsPanel
+                    appointment={selectedAppt}
+                    canUpdate={canUpdate}
+                    canManageFinance={canManageFinance}
+                    canViewFinance={canViewFinance}
+                    isConclusionVisible={conclusionOpen}
+                    onToggleConclusion={() => setConclusionOpen((v) => !v)}
+                    onEdit={setEditTarget}
+                    onPay={setPaymentTarget}
+                    onArrived={handleArrived}
+                    onClose={closeDetails}
+                  />
+                </Box>
+                {/* На мобиле заключение открывается снизу под деталями. */}
+                {conclusionOpen && (
+                  <>
+                    <Divider />
+                    <Box
+                      sx={{
+                        flex: "1 1 50%",
+                        minHeight: 0,
+                        overflow: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <DjangoConclusionSlotsPanel
+                        appointmentId={selectedAppt.id}
+                        onClose={() => setConclusionOpen(false)}
+                      />
+                    </Box>
+                  </>
+                )}
+              </>
             )}
           </Box>
         </AppBottomSheet>

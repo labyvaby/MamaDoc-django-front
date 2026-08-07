@@ -4,6 +4,7 @@ import { supabase } from "../../utility/supabaseClient";
 import { Box, CircularProgress, Typography } from "@mui/material";
 import dayjs from "dayjs";
 import { generateConclusionPDF } from "../../utility/pdfGenerator";
+import { formatQuantity } from "../../utility/format";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { loadDjangoPrintData } from "./djangoPrintData";
 
@@ -68,9 +69,11 @@ export const ConclusionPrintPage: React.FC = () => {
                     appointmentDate: d.appt.scheduledAt
                         ? dayjs(d.appt.scheduledAt).format("DD.MM.YYYY HH:mm")
                         : "—",
-                    weight: c?.weightKg ?? "—",
-                    height: c?.heightCm ?? "—",
-                    temperature: c?.temperature ?? "—",
+                    // Бэк отдаёт decimal-строки («5.50»), в бланке нужен
+                    // человеческий вид: «5,5 кг», «114 см».
+                    weight: formatQuantity(c?.weightKg),
+                    height: formatQuantity(c?.heightCm),
+                    temperature: formatQuantity(c?.temperature),
                     complaints: d.appt.complaints ?? "—",
                     doctorComplaints: c?.complaints ?? d.appt.doctorComplaints ?? "—",
                     diagnosis: diagnosisStr,

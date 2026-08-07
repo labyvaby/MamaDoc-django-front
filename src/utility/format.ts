@@ -25,6 +25,20 @@ export const formatQuantity = (value: number | string | null | undefined): strin
 };
 
 /**
+ * Decimal-строка бэка («5.50», «114.00») в короткую форму для поля `type=number`:
+ * «5.5», «114». Разделитель — точка: браузер сам покажет запятую в ru-локали, а
+ * запятая в `value` числового поля обнулила бы его. Пустое значение → "".
+ */
+export const trimDecimalInput = (
+  value: number | string | null | undefined,
+): string => {
+  if (value === null || value === undefined || value === "") return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return String(Math.round(num * 1000) / 1000);
+};
+
+/**
  * Процент скидки от суммы до скидки; null — считать не из чего.
  *
  * Единая точка расчёта: процент показывают чип приёма, строка «Итого» в списке
