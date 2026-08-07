@@ -44,7 +44,11 @@ import { resolveStatusCode } from "../../../config/appointmentStatuses";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentFilterChips from "./AppointmentFilterChips";
-import { employeeMoneyTotals, matchesAppointmentSearch } from "./listFilters";
+import {
+  employeeMoneyTotals,
+  firstFreeSlotInSegment,
+  matchesAppointmentSearch,
+} from "./listFilters";
 import { AppBottomSheet } from "../../../components/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -174,13 +178,26 @@ type DoctorStoryItemProps = {
   photoUrl?: string | null;
   isActive: boolean;
   onClick: () => void;
+  /**
+   * У сотрудника в этот день нет ни одной записи — он в ленте потому, что у
+   * него смена по графику. Приглушаем, иначе непонятно, почему он здесь.
+   */
+  dimmed?: boolean;
 };
 
-const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, nickname, photoUrl, isActive, onClick }) => {
+const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({
+  name,
+  nickname,
+  photoUrl,
+  isActive,
+  onClick,
+  dimmed = false,
+}) => {
   const theme = useTheme();
+  const { t } = useT("appointments");
   const displayName = nickname || name.split(" ")[0];
 
-  return (
+  const bubble = (
     <Stack
       spacing={0.25}
       alignItems="center"
@@ -189,6 +206,9 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, nickname, photo
         cursor: "pointer",
         minWidth: 56,
         transition: "all 0.2s ease",
+        // Выбранный сотрудник не приглушается: активный фильтр должен читаться
+        // однозначно, даже если записей у него нет.
+        opacity: dimmed && !isActive ? 0.45 : 1,
         "&:active": { transform: "scale(0.92)" },
       }}
     >
@@ -200,7 +220,11 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, nickname, photo
           borderRadius: "50%",
           padding: "3px",
           background: isActive ? theme.palette.primary.main : "transparent",
-          border: isActive ? "none" : `1.5px solid ${theme.palette.divider}`,
+          border: isActive
+            ? "none"
+            : dimmed
+              ? `1.5px dashed ${theme.palette.divider}`
+              : `1.5px solid ${theme.palette.divider}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -238,6 +262,12 @@ const DoctorStoryItem: React.FC<DoctorStoryItemProps> = ({ name, nickname, photo
         {displayName}
       </Typography>
     </Stack>
+  );
+
+  return dimmed && !isActive ? (
+    <Tooltip title={t("list.onShiftNoBookings")}>{bubble}</Tooltip>
+  ) : (
+    bubble
   );
 };
 
@@ -329,29 +359,40 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
   // ── Build doctor list from appointments (id → name, photoUrl) ─────────────
   const availableDoctors = React.useMemo(() => {
-    const map = new Map<number, { id: number; name: string; photoUrl: string | null; nickname: string | null }>();
+    const map = new Map<
+      number,
+      { id: number; name: string; photoUrl: string | null; nickname: string | null; apptCount: number }
+    >();
     for (const appt of items) {
+      // Один приём считается сотруднику один раз, даже если у него в нём
+      // несколько строк услуг.
+      const seen = new Set<number>();
       for (const sl of appt.services) {
-        if (
-          sl.employee &&
-          (!groupEmployeeIds || groupEmployeeIds.has(sl.employee.id)) &&
-          !map.has(sl.employee.id)
-        ) {
+        if (!sl.employee) continue;
+        if (groupEmployeeIds && !groupEmployeeIds.has(sl.employee.id)) continue;
+        if (seen.has(sl.employee.id)) continue;
+        seen.add(sl.employee.id);
+
+        const existing = map.get(sl.employee.id);
+        if (existing) {
+          existing.apptCount += 1;
+        } else {
           map.set(sl.employee.id, {
             id: sl.employee.id,
             name: sl.employee.fullName,
             photoUrl: sl.employee.photoUrl,
             nickname: sl.employee.nickname,
+            apptCount: 1,
           });
         }
       }
     }
     // Новая смена может быть создана раньше первого приёма сотрудника.
     // Добавляем таких сотрудников из расписания, чтобы они сразу появлялись
-    // в быстром фильтре регистратуры.
+    // в быстром фильтре регистратуры (в ленте они приглушены — записей нет).
     for (const [id, name] of dayShifts?.employeeNames ?? []) {
       if ((!groupEmployeeIds || groupEmployeeIds.has(id)) && !map.has(id)) {
-        map.set(id, { id, name, photoUrl: null, nickname: null });
+        map.set(id, { id, name, photoUrl: null, nickname: null, apptCount: 0 });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
@@ -481,6 +522,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   // список выглядит как «в этот день почти никого нет».
   const activeChipCount = selectedStatuses.length + selectedPayments.length;
   const isFiltered = filteredItems.length !== items.length;
+  // Отбор по существующим записям (чипы или поиск). Фильтр по специалисту сюда
+  // не входит: выбрать свободного врача и увидеть его окна — нормальный сценарий.
+  const hasNarrowingFilters = activeChipCount > 0 || searchQuery.trim().length > 0;
 
   const [filterSheetOpen, setFilterSheetOpen] = React.useState(false);
 
@@ -631,8 +675,48 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       }
     });
 
+    // ── Свободные смены: сотрудник в графике, записей нет ─────────────────────
+    // Раньше такой сотрудник был виден только в ленте аватарок, а по клику
+    // показывал «Нет записей» — то есть врач, к которому как раз надо
+    // записывать, выглядел как тупик. Показываем его группой с окнами.
+    //
+    // Под фильтрами и поиском эти группы скрыты: отбирая «Долг» или конкретного
+    // пациента, регистратор спрашивает про существующие записи, и пустая смена
+    // была бы шумом.
+    if (onAddSlot && dayShifts && date && !hasNarrowingFilters) {
+      for (const [employeeId, name] of dayShifts.employeeNames) {
+        if (groupEmployeeIds && !groupEmployeeIds.has(employeeId)) continue;
+        if (selectedDoctorId != null && selectedDoctorId !== employeeId) continue;
+        if (result.some((g) => g.employeeId === employeeId)) continue;
+
+        const slots: RenderItem[] = [];
+        for (const seg of dayShifts.segments.get(employeeId) ?? []) {
+          const slot = firstFreeSlotInSegment(date, seg);
+          if (!slot) continue;
+          slots.push({
+            isGap: true,
+            id: `shift-${employeeId}-${seg.start}`,
+            timeStr: slot.format("HH:mm"),
+            dateIso: slot.format("YYYY-MM-DDTHH:mm"),
+            employeeId,
+          });
+        }
+        if (slots.length > 0) {
+          result.push({ employeeId, name, appts: [], renderItems: slots });
+        }
+      }
+    }
+
     return result;
-  }, [rawGroups, onAddSlot, dayShifts]);
+  }, [
+    rawGroups,
+    onAddSlot,
+    dayShifts,
+    date,
+    hasNarrowingFilters,
+    groupEmployeeIds,
+    selectedDoctorId,
+  ]);
 
   // ── Drag-scroll for doctor strip ──────────────────────────────────────────
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -767,6 +851,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                     nickname={doc.nickname}
                     photoUrl={doc.photoUrl ?? undefined}
                     isActive={selectedDoctorId === doc.id}
+                    dimmed={doc.apptCount === 0}
                     onClick={() =>
                       setSelectedDoctorId(selectedDoctorId === doc.id ? null : doc.id)
                     }
@@ -868,7 +953,13 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                         {docName}
                       </Typography>
                       <Chip
-                        label={t("list.count", { count: apptCount })}
+                        // Группа свободной смены: «0 приёмов» звучит как отчёт
+                        // о неудаче, а тут смысл обратный — время свободно.
+                        label={
+                          apptCount === 0
+                            ? t("list.onShiftNoBookings")
+                            : t("list.count", { count: apptCount })
+                        }
                         size="small"
                         variant="outlined"
                         sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper", flexShrink: 0 }}

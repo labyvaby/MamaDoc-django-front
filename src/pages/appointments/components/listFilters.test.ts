@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
+import dayjs from "dayjs";
 
-import { employeeMoneyTotals, matchesAppointmentSearch } from "./listFilters";
+import {
+  employeeMoneyTotals,
+  firstFreeSlotInSegment,
+  matchesAppointmentSearch,
+} from "./listFilters";
 import type { DjangoAppointment } from "../../../api/appointments";
 
 /**
@@ -72,6 +77,43 @@ describe("matchesAppointmentSearch", () => {
   it("не считает совпадением чужой номер и пустой запрос пропускает всех", () => {
     expect(matchesAppointmentSearch(target, "777123456")).toBe(false);
     expect(matchesAppointmentSearch(target, "   ")).toBe(true);
+  });
+});
+
+describe("firstFreeSlotInSegment", () => {
+  const day = dayjs("2026-08-07");
+  const shift = { start: "10:00", end: "16:30" };
+
+  it("до начала смены предлагает её начало", () => {
+    const slot = firstFreeSlotInSegment(day, shift, dayjs("2026-08-07T08:15"));
+    expect(slot?.format("HH:mm")).toBe("10:00");
+  });
+
+  // Предлагать 14:07 бессмысленно — регистратор мыслит сеткой получасов.
+  it("посреди смены округляет текущее время вверх до получаса", () => {
+    expect(firstFreeSlotInSegment(day, shift, dayjs("2026-08-07T14:07"))?.format("HH:mm")).toBe("14:30");
+    expect(firstFreeSlotInSegment(day, shift, dayjs("2026-08-07T14:30"))?.format("HH:mm")).toBe("14:30");
+    expect(firstFreeSlotInSegment(day, shift, dayjs("2026-08-07T14:31"))?.format("HH:mm")).toBe("15:00");
+  });
+
+  it("не предлагает окно, когда смена уже кончилась", () => {
+    expect(firstFreeSlotInSegment(day, shift, dayjs("2026-08-07T16:30"))).toBeNull();
+    expect(firstFreeSlotInSegment(day, shift, dayjs("2026-08-07T18:00"))).toBeNull();
+  });
+
+  // Прошедший день: записать туда нельзя, группа свободной смены не появится.
+  it("для прошедшей даты окна нет", () => {
+    expect(firstFreeSlotInSegment(dayjs("2026-08-01"), shift, dayjs("2026-08-07T09:00"))).toBeNull();
+  });
+
+  it("для будущей даты берёт начало смены независимо от времени суток", () => {
+    const slot = firstFreeSlotInSegment(dayjs("2026-08-20"), shift, dayjs("2026-08-07T23:50"));
+    expect(slot?.format("YYYY-MM-DD HH:mm")).toBe("2026-08-20 10:00");
+  });
+
+  it("отбрасывает некорректный отрезок", () => {
+    expect(firstFreeSlotInSegment(day, { start: "16:00", end: "16:00" }, dayjs("2026-08-07T09:00"))).toBeNull();
+    expect(firstFreeSlotInSegment(day, { start: "оk", end: "16:00" }, dayjs("2026-08-07T09:00"))).toBeNull();
   });
 });
 

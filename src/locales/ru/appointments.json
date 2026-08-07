@@ -87,6 +87,7 @@
     "noSpecialistGroup": "Без {{specialist.gen}}",
     "groupPaid": "оплачено {{amount}}",
     "doctorNotInDay": "{{specialist.nom, capitalize}} не ведёт приём в этот день",
+    "onShiftNoBookings": "Нет записей",
     "searchPlaceholder": "{{patient.nom, capitalize}}, телефон, {{service.nom}}",
     "night": "Ночной",
     "fullDiscount": "Скидка 100%",

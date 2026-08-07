@@ -5,6 +5,8 @@
  * можно ошибиться молча: поиск, который не смотрит в телефон, и сумма по
  * специалисту, которая задваивается на совместном приёме, выглядят рабочими.
  */
+import dayjs, { type Dayjs } from "dayjs";
+
 import type { AppointmentServiceLine, DjangoAppointment } from "../../../api/appointments";
 import type { PaymentStatus } from "../../../api/payments";
 import type { StatusCode } from "../../../config/appointmentStatuses";
@@ -44,6 +46,44 @@ export const PAYMENT_FILTER_OPTIONS: {
   { value: "discounted", statusCode: "discounted" },
   { value: "refunded", statusCode: null },
 ];
+
+/** Шаг сетки записи: как и длительность приёма по умолчанию (slotAvailability). */
+const SLOT_STEP_MINUTES = 30;
+
+/**
+ * Первое время, на которое ещё можно записать внутри отрезка смены.
+ *
+ * Нужно для сотрудника, у которого смена есть, а записей нет: без этого он
+ * виден в ленте, но при выборе показывает пустой экран — записать «к
+ * свободному врачу» через список нельзя. Прошедшее время не предлагаем
+ * (у смены, которая уже началась, отсчёт идёт от ближайшего получаса), а
+ * закончившийся отрезок не даёт слота вовсе.
+ *
+ * `now` параметром — чтобы поведение можно было проверить тестом.
+ */
+export function firstFreeSlotInSegment(
+  day: Dayjs,
+  segment: { start: string; end: string },
+  now: Dayjs = dayjs(),
+): Dayjs | null {
+  const [startH, startM] = segment.start.split(":").map(Number);
+  const [endH, endM] = segment.end.split(":").map(Number);
+  if ([startH, startM, endH, endM].some((n) => !Number.isFinite(n))) return null;
+
+  const segStart = day.hour(startH).minute(startM).second(0).millisecond(0);
+  const segEnd = day.hour(endH).minute(endM).second(0).millisecond(0);
+  if (!segEnd.isAfter(segStart)) return null;
+
+  // Округление «сейчас» вверх до шага сетки: предлагать 14:07 бессмысленно.
+  const minutesIntoStep = now.minute() % SLOT_STEP_MINUTES;
+  const roundedNow = now
+    .second(0)
+    .millisecond(0)
+    .add(minutesIntoStep === 0 ? 0 : SLOT_STEP_MINUTES - minutesIntoStep, "minute");
+
+  const candidate = roundedNow.isAfter(segStart) ? roundedNow : segStart;
+  return candidate.isBefore(segEnd) ? candidate : null;
+}
 
 /** Только цифры — номера в базе лежат в разном формате (+996, 0555, пробелы). */
 const digitsOnly = (s: string) => s.replace(/\D/g, "");
