@@ -457,6 +457,23 @@ export function updateTask(
   });
 }
 
+/**
+ * Безвозвратное удаление задачи (право `tasks.manage`).
+ *
+ * ⚠ Вызывать только под флагом `TASKS_DELETE_ENABLED` (см. pages/tasks/meta):
+ * бэк метод не реализовал — `DELETE /api/tasks/{id}/` отвечает 405
+ * «Метод 'DELETE' не разрешён, разрешённые: ['GET', 'PATCH']» (проверено
+ * 07.08.2026). Тикет — `MamaDoc/backend_ticket_tasks_delete.md`.
+ */
+export function deleteTask(taskId: number, organizationId?: number): Promise<void> {
+  if (TASKS_USE_MOCKS) {
+    const idx = mockTasks.findIndex((t) => t.id === taskId);
+    if (idx >= 0) mockTasks.splice(idx, 1);
+    return mockDelay(undefined);
+  }
+  return apiRequest<void>(withOrg(`/tasks/${taskId}/`, organizationId), { method: "DELETE" });
+}
+
 // ── API: действия со статусами ─────────────────────────────────────────────────
 
 export function takeTask(taskId: number, organizationId?: number): Promise<Task> {

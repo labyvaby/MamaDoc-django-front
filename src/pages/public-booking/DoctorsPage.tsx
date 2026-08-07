@@ -31,6 +31,21 @@ import { useT } from "../../i18n/VerticalProvider";
 /** Сколько окон помещается в карточку до счётчика «+N». */
 const SLOTS_PREVIEW = 3;
 
+/*
+ * Резерв высоты под переменные части карточки. Без него карточки в списке
+ * получаются разной высоты: ФИО занимает одну или две строки, специализация
+ * может отсутствовать, а строка окон — одну строку («окон нет», скелетон) или
+ * две (метка над чипами на узком экране). В горизонтальной раскладке высоту
+ * карточки диктует именно этот текст, и разнобой сразу виден.
+ */
+
+/** Две строки ФИО при lineHeight 1.35. */
+const NAME_MIN_H = "2.7em";
+/** Строка специализации. */
+const SPECIALTY_MIN_H = 18;
+/** Строка окон: на узком экране метка над чипами, на широком — в один ряд. */
+const SLOTS_MIN_H = { xs: 44, lg: 24 };
+
 // ── Ближайшие свободные окна ─────────────────────────────────────────────────
 
 /**
@@ -106,12 +121,30 @@ const AvailabilityRow: React.FC<{ day: CalendarDay | null | undefined; onMore: (
 }) => {
   const { t } = useT("publicBooking");
 
-  if (day === undefined) return <Skeleton width="85%" height={18} sx={{ my: 1 }} />;
+  // Общая геометрия всех состояний строки: место под окна зарезервировано
+  // одинаково, даже когда окон нет или они ещё грузятся.
+  const boxSx = {
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    minHeight: SLOTS_MIN_H,
+    mt: 1.25,
+    mb: 1,
+  } as const;
+
+  if (day === undefined)
+    return (
+      <Box sx={boxSx}>
+        <Skeleton width="85%" height={18} />
+      </Box>
+    );
   if (!day) {
     return (
-      <Typography sx={{ my: 1, fontSize: 12, fontWeight: 500, color: "text.secondary" }}>
-        {t("freeSlotsNone")}
-      </Typography>
+      <Box sx={boxSx}>
+        <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary" }}>
+          {t("freeSlotsNone")}
+        </Typography>
+      </Box>
     );
   }
 
@@ -128,7 +161,7 @@ const AvailabilityRow: React.FC<{ day: CalendarDay | null | undefined; onMore: (
       direction={{ xs: "column", lg: "row" }}
       alignItems={{ lg: "center" }}
       spacing={{ xs: 0.5, lg: 0.75 }}
-      sx={{ mt: 1.25, mb: 1 }}
+      sx={{ ...boxSx, justifyContent: { xs: "center", lg: "flex-start" } }}
     >
       <Box
         sx={{
@@ -308,6 +341,7 @@ const DoctorCardItem: React.FC<{ doctor: ProfessionalPreview; onOpen: () => void
               fontSize: 14,
               fontWeight: 500,
               lineHeight: 1.35,
+              minHeight: NAME_MIN_H,
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
@@ -316,18 +350,20 @@ const DoctorCardItem: React.FC<{ doctor: ProfessionalPreview; onOpen: () => void
           >
             {doctor.fullName}
           </Typography>
-          {doctor.specialty && (
-            <Typography
-              sx={{
-                display: { lg: "none" },
-                fontSize: 12,
-                fontWeight: 600,
-                color: "text.secondary",
-              }}
-            >
-              {doctor.specialty}
-            </Typography>
-          )}
+          {/* Строка занимает место и у врача без специализации — иначе его
+              карточка ниже соседних. */}
+          <Typography
+            noWrap
+            sx={{
+              display: { lg: "none" },
+              minHeight: SPECIALTY_MIN_H,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "text.secondary",
+            }}
+          >
+            {doctor.specialty || " "}
+          </Typography>
         </Box>
 
         <Box sx={{ mt: "auto", overflow: "hidden" }}>
@@ -367,12 +403,17 @@ const CardSkeleton: React.FC = () => (
   >
     <Skeleton
       variant="rectangular"
-      sx={{ width: { xs: 129, lg: "100%" }, height: { xs: 150, lg: 209 }, flexShrink: 0 }}
+      sx={{ width: { xs: 129, lg: "100%" }, height: { xs: "auto", lg: 209 }, flexShrink: 0 }}
     />
-    <Stack sx={{ flexGrow: 1, p: 1.25, gap: 1 }}>
-      <Skeleton width="80%" height={18} />
-      <Skeleton width="55%" height={14} />
-      <Skeleton variant="rounded" height={28} sx={{ mt: "auto", borderRadius: 999 }} />
+    {/* Те же резервы высоты, что в карточке, — иначе список «прыгает» после
+        загрузки. */}
+    <Stack sx={{ flexGrow: 1, p: 1.25 }}>
+      <Skeleton width="80%" sx={{ minHeight: NAME_MIN_H }} />
+      <Skeleton width="55%" sx={{ minHeight: SPECIALTY_MIN_H }} />
+      <Box sx={{ mt: "auto" }}>
+        <Skeleton width="85%" sx={{ minHeight: SLOTS_MIN_H, my: 1 }} />
+        <Skeleton variant="rounded" height={30} sx={{ borderRadius: 999 }} />
+      </Box>
     </Stack>
   </Box>
 );

@@ -5,6 +5,10 @@ import {
   Button,
   ButtonBase,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Fab,
   IconButton,
   MenuItem,
@@ -24,15 +28,18 @@ import { motion, useMotionValue, useTransform } from "framer-motion";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import CancelOutlined from "@mui/icons-material/CancelOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FiberNewOutlined from "@mui/icons-material/FiberNewOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
@@ -66,6 +73,7 @@ import { subtleBg } from "../../theme/uiHelpers";
 import {
   approveTask,
   completeTask,
+  deleteTask,
   getMyTaskStats,
   getTaskCategories,
   getTasks,
@@ -75,6 +83,7 @@ import {
   type TaskPriority,
   type TaskStatus,
   type TasksFilters,
+  type TasksResponse,
 } from "../../api/tasks";
 import {
   djangoQueryKeys,
@@ -89,23 +98,28 @@ import {
   dueInfo,
   formatDateTime,
   relativeTime,
+  TASK_ARCHIVE_STATUSES,
   TASK_PRIORITY_OPTIONS,
   TASK_STATUS_OPTIONS,
+  TASKS_DELETE_ENABLED,
   TASKS_REFRESH_MS,
 } from "./meta";
 import TaskBoard from "./TaskBoard";
 
 const PAGE_SIZE = 20;
 
-type TasksTab = "board" | "mine" | "my-requests";
+type TasksTab = "board" | "mine" | "my-requests" | "archive";
 type TasksView = "board" | "table";
 /** Быстрые пресеты по сроку поверх произвольного периода. */
 type QuickDue = "" | "overdue" | "today" | "week";
+/** Что показывать в архиве: обе закрытые группы или одну из них. */
+type ArchiveStatus = "all" | "done" | "cancelled";
 
 const TABS: { id: TasksTab; label: string; icon: React.ElementType }[] = [
   { id: "board", label: "Доска", icon: DashboardOutlined },
   { id: "mine", label: "Мои задачи", icon: PersonOutlined },
   { id: "my-requests", label: "Мои заявки", icon: SendOutlined },
+  { id: "archive", label: "Архив", icon: Inventory2Outlined },
 ];
 
 const VIEWS: { id: TasksView; label: string; icon: React.ElementType }[] = [
@@ -399,6 +413,7 @@ const TasksPage: React.FC = () => {
     () => (sessionStorage.getItem("tasks-view") as TasksView) ?? "board",
   );
   const [status, setStatus] = React.useState<TaskStatus | "">("");
+  const [archiveStatus, setArchiveStatus] = React.useState<ArchiveStatus>("all");
   const [categoryId, setCategoryId] = React.useState<number | "">("");
   const [priority, setPriority] = React.useState<TaskPriority | "">("");
   /** Быстрый фильтр по сроку: перекрывает произвольный период. */
@@ -414,11 +429,24 @@ const TasksPage: React.FC = () => {
   const [cameraFile, setCameraFile] = React.useState<File | null>(null);
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
+  /** Задача, для которой открыт диалог подтверждения удаления. */
+  const [pendingDelete, setPendingDelete] = React.useState<Task | null>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
+
+  const isArchive = tab === "archive";
+  /** Удаление доступно только ответственному за задачи и только из архива. */
+  const canDelete = canManage && TASKS_DELETE_ENABLED;
 
   const handleTabChange = (t: TasksTab) => {
     setTab(t);
     sessionStorage.setItem("tasks-tab", t);
+    // В архиве статус задаёт сегмент «Все закрытые / Исполненные / Отменённые»,
+    // а фильтры по сроку бессмысленны — иначе они бы молча резали выборку.
+    if (t === "archive") {
+      setStatus("");
+      setQuickDue("");
+      setDueRange(null);
+    }
   };
 
   const handleViewChange = (v: TasksView) => {
@@ -447,7 +475,7 @@ const TasksPage: React.FC = () => {
 
   React.useEffect(() => {
     setPage(0);
-  }, [tab, status, categoryId, priority, search, dueRange, createdRange, quickDue, ordering]);
+  }, [tab, status, archiveStatus, categoryId, priority, search, dueRange, createdRange, quickDue, ordering]);
 
   /** Быстрый пресет разворачивается в те же dueFrom/dueTo, что и период. */
   const quickDueRange = React.useMemo((): { from?: string; to?: string } => {
@@ -467,19 +495,41 @@ const TasksPage: React.FC = () => {
     }
   }, [quickDue]);
 
+  /** Период по дате подачи доступен в «Моих заявках» и в архиве. */
+  const createdFilterOn = tab === "my-requests" || isArchive;
+
   const filters: TasksFilters = {
-    status: status === "" ? undefined : status,
+    status: isArchive
+      ? archiveStatus === "all"
+        ? undefined // подставляется в queryFn: серверный `status` — одно значение
+        : archiveStatus
+      : status === ""
+      ? undefined
+      : status,
     categoryId: categoryId === "" ? undefined : categoryId,
     priority: priority === "" ? undefined : priority,
     assignee: tab === "mine" ? "me" : undefined,
     author: tab === "my-requests" ? "me" : undefined,
     search: search || undefined,
-    dueFrom: quickDue ? quickDueRange.from : dueRange ? dueRange.from.format("YYYY-MM-DD") : undefined,
-    dueTo: quickDue ? quickDueRange.to : dueRange ? dueRange.to.format("YYYY-MM-DD") : undefined,
-    // Дата подачи имеет смысл только для «Моих заявок».
-    createdFrom: tab === "my-requests" && createdRange ? createdRange.from.format("YYYY-MM-DD") : undefined,
-    createdTo: tab === "my-requests" && createdRange ? createdRange.to.format("YYYY-MM-DD") : undefined,
-    ordering,
+    dueFrom: isArchive
+      ? undefined
+      : quickDue
+      ? quickDueRange.from
+      : dueRange
+      ? dueRange.from.format("YYYY-MM-DD")
+      : undefined,
+    dueTo: isArchive
+      ? undefined
+      : quickDue
+      ? quickDueRange.to
+      : dueRange
+      ? dueRange.to.format("YYYY-MM-DD")
+      : undefined,
+    createdFrom: createdFilterOn && createdRange ? createdRange.from.format("YYYY-MM-DD") : undefined,
+    createdTo: createdFilterOn && createdRange ? createdRange.to.format("YYYY-MM-DD") : undefined,
+    // В архиве «умная» сортировка (просрочка → приоритет) смысла не имеет:
+    // закрытые задачи листают по свежести.
+    ordering: isArchive ? "created" : ordering,
     organizationId: orgId,
   };
 
@@ -489,14 +539,44 @@ const TasksPage: React.FC = () => {
   const enabled = !permLoading && canList;
 
   const query = useQuery({
-    queryKey: djangoQueryKeys.tasks.list({ ...filters, tab, page: page + 1 }),
-    queryFn: ({ signal }) => getTasks({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal),
+    queryKey: djangoQueryKeys.tasks.list({
+      ...filters,
+      tab,
+      archiveStatus: isArchive ? archiveStatus : undefined,
+      page: page + 1,
+    }),
+    queryFn: async ({ signal }): Promise<TasksResponse> => {
+      // «Все закрытые» — две выборки вместо одной: серверный `status` принимает
+      // единственное значение (второй параметр перетирает первый, запятая даёт
+      // пустой список — проверено на API 07.08.2026). Обе отсортированы по
+      // одному ключу (ordering=created), поэтому топ-N объединения гарантированно
+      // лежит в объединении топ-N каждой — срез по странице корректен.
+      if (isArchive && archiveStatus === "all") {
+        const need = (page + 1) * PAGE_SIZE;
+        const parts = await Promise.all(
+          TASK_ARCHIVE_STATUSES.map((s) =>
+            getTasks({ ...filters, status: s, page: 1, pageSize: need }, signal),
+          ),
+        );
+        const merged = parts
+          .flatMap((p) => p.results)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const start = page * PAGE_SIZE;
+        return {
+          results: merged.slice(start, start + PAGE_SIZE),
+          count: parts.reduce((sum, p) => sum + p.count, 0),
+          next: null,
+          previous: null,
+        };
+      }
+      return getTasks({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal);
+    },
     enabled: enabled && !boardMode,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     // Задачи разбирают несколько человек одновременно — держим список живым,
-    // иначе кнопки действий бьют в уже изменившийся статус.
-    refetchInterval: TASKS_REFRESH_MS,
+    // иначе кнопки действий бьют в уже изменившийся статус. Архив статичен.
+    refetchInterval: isArchive ? false : TASKS_REFRESH_MS,
     refetchOnWindowFocus: true,
   });
 
@@ -545,6 +625,18 @@ const TasksPage: React.FC = () => {
   });
 
   const runAction = (action: RowAction, taskId: number) => rowMutation.mutate({ action, taskId });
+
+  const deleteMutation = useMutation({
+    mutationFn: (task: Task) => deleteTask(task.id, orgId),
+    onSuccess: () => {
+      setPendingDelete(null);
+      invalidateTasks();
+    },
+    onError: (e) => {
+      setPendingDelete(null);
+      setActionError(e instanceof Error ? e.message : "Не удалось удалить задачу");
+    },
+  });
 
   /** «Взять/Возобновить» — доступно для new/paused (свободная / моя / manage). */
   const getTakeAction = React.useCallback(
@@ -595,10 +687,12 @@ const TasksPage: React.FC = () => {
     search !== "" ||
     quickDue !== "" ||
     dueRange != null ||
-    createdRange != null;
+    createdRange != null ||
+    (isArchive && archiveStatus !== "all");
 
   const handleResetFilters = () => {
     setStatus("");
+    setArchiveStatus("all");
     setCategoryId("");
     setPriority("");
     setSearchInput("");
@@ -608,7 +702,47 @@ const TasksPage: React.FC = () => {
   };
 
   const columns = React.useMemo<GridColDef<Task>[]>(
-    () => [
+    () => {
+      /** В архиве срок не актуален — важнее, когда задачу закрыли. */
+      const closedColumn: GridColDef<Task> = {
+        field: "updatedAt",
+        headerName: "Закрыта",
+        width: 150,
+        sortable: false,
+        renderCell: ({ row }) => (
+          <Tooltip title={formatDateTime(row.updatedAt)}>
+            <Typography variant="body2" color="text.secondary">
+              {relativeTime(row.updatedAt)}
+            </Typography>
+          </Tooltip>
+        ),
+      };
+
+      const deleteColumn: GridColDef<Task> = {
+        field: "actions",
+        headerName: "",
+        width: 64,
+        sortable: false,
+        align: "center",
+        renderCell: ({ row }) => (
+          <Tooltip title="Удалить задачу безвозвратно">
+            <IconButton
+              size="small"
+              aria-label="Удалить задачу"
+              disabled={deleteMutation.isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPendingDelete(row);
+              }}
+              sx={{ color: "text.secondary", "&:hover": { color: "error.main" } }}
+            >
+              <DeleteOutlineOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ),
+      };
+
+      const base: GridColDef<Task>[] = [
       {
         field: "title",
         headerName: "Задача",
@@ -635,35 +769,37 @@ const TasksPage: React.FC = () => {
         sortable: false,
         renderCell: ({ row }) => <TaskPriorityChip priority={row.priority} />,
       },
-      {
-        field: "dueDate",
-        headerName: "Срок",
-        width: 150,
-        sortable: false,
-        renderCell: ({ row }) => {
-          const due = dueInfo(row.dueDate, row.status);
-          if (!due) {
-            return (
-              <Typography variant="body2" color="text.disabled">
-                —
-              </Typography>
-            );
-          }
-          return (
-            <Tooltip title={`Срок: ${due.exact}`}>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : undefined,
-                  fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
-                }}
-              >
-                {due.text}
-              </Typography>
-            </Tooltip>
-          );
-        },
-      },
+      isArchive
+        ? closedColumn
+        : {
+            field: "dueDate",
+            headerName: "Срок",
+            width: 150,
+            sortable: false,
+            renderCell: ({ row }) => {
+              const due = dueInfo(row.dueDate, row.status);
+              if (!due) {
+                return (
+                  <Typography variant="body2" color="text.disabled">
+                    —
+                  </Typography>
+                );
+              }
+              return (
+                <Tooltip title={`Срок: ${due.exact}`}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : undefined,
+                      fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
+                    }}
+                  >
+                    {due.text}
+                  </Typography>
+                </Tooltip>
+              );
+            },
+          },
       {
         field: "assigneeName",
         headerName: "Исполнитель",
@@ -690,34 +826,43 @@ const TasksPage: React.FC = () => {
         sortable: false,
         renderCell: ({ row }) => <TaskStatusChip status={row.status} />,
       },
-      {
-        field: "actions",
-        headerName: "",
-        width: 150,
-        sortable: false,
-        renderCell: ({ row }) => {
-          const action = getTakeAction(row) ?? getCompleteAction(row);
-          if (!action) return null;
-          return (
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={action.icon}
-              disabled={rowMutation.isPending}
-              onClick={(e) => {
-                e.stopPropagation();
-                runAction(action, row.id);
-              }}
-              sx={{ textTransform: "none", borderRadius: "8px" }}
-            >
-              {action.label}
-            </Button>
-          );
-        },
-      },
-    ],
+    ];
+
+      // В архиве задача закрыта — рабочих действий нет, остаётся удаление.
+      if (isArchive) {
+        if (canDelete) base.push(deleteColumn);
+      } else {
+        base.push({
+          field: "actions",
+          headerName: "",
+          width: 150,
+          sortable: false,
+          renderCell: ({ row }) => {
+            const action = getTakeAction(row) ?? getCompleteAction(row);
+            if (!action) return null;
+            return (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={action.icon}
+                disabled={rowMutation.isPending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  runAction(action, row.id);
+                }}
+                sx={{ textTransform: "none", borderRadius: "8px" }}
+              >
+                {action.label}
+              </Button>
+            );
+          },
+        });
+      }
+
+      return base;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getTakeAction, getCompleteAction, rowMutation.isPending],
+    [getTakeAction, getCompleteAction, rowMutation.isPending, isArchive, canDelete, deleteMutation.isPending],
   );
 
   if (!permLoading && !canList) return <AccessDenied />;
@@ -727,21 +872,32 @@ const TasksPage: React.FC = () => {
   const summary = summaryQuery.data;
   const myStats = myStatsQuery.data;
 
+  /** Текст пустого списка зависит от вкладки. */
+  const emptyText =
+    tab === "mine"
+      ? "У вас нет назначенных задач"
+      : tab === "my-requests"
+      ? "Вы ещё не подавали заявок"
+      : isArchive
+      ? "В архиве пусто — закрытых задач нет"
+      : "Задач не найдено";
+
   const NoRowsOverlay = () => (
     <Stack alignItems="center" justifyContent="center" sx={{ height: "100%", opacity: 0.75 }}>
-      <AssignmentOutlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+      {isArchive ? (
+        <Inventory2Outlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+      ) : (
+        <AssignmentOutlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        {tab === "mine"
-          ? "У вас нет назначенных задач"
-          : tab === "my-requests"
-          ? "Вы ещё не подавали заявок"
-          : "Задач не найдено"}
+        {emptyText}
       </Typography>
       {hasActiveFilters ? (
         <Button size="small" onClick={handleResetFilters} sx={{ textTransform: "none" }}>
           Сбросить фильтры
         </Button>
       ) : (
+        !isArchive &&
         canCreate && (
           <Button size="small" onClick={() => setCreateOpen(true)} sx={{ textTransform: "none" }}>
             Подать первую заявку
@@ -914,6 +1070,30 @@ const TasksPage: React.FC = () => {
 
         {/* ── Быстрые фильтры ── */}
         <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" sx={{ mb: 1.25 }}>
+          {isArchive ? (
+            <>
+              <FilterChip
+                label="Все закрытые"
+                icon={<Inventory2Outlined sx={{ fontSize: 15 }} />}
+                active={archiveStatus === "all"}
+                onClick={() => setArchiveStatus("all")}
+              />
+              <FilterChip
+                label="Исполненные"
+                icon={<DoneAllOutlined sx={{ fontSize: 15 }} />}
+                active={archiveStatus === "done"}
+                onClick={() => setArchiveStatus("done")}
+              />
+              <FilterChip
+                label="Отменённые"
+                icon={<CancelOutlined sx={{ fontSize: 15 }} />}
+                tone="error"
+                active={archiveStatus === "cancelled"}
+                onClick={() => setArchiveStatus("cancelled")}
+              />
+            </>
+          ) : (
+          <>
           <FilterChip
             label="Просрочено"
             icon={<WarningAmberOutlined sx={{ fontSize: 15 }} />}
@@ -982,12 +1162,15 @@ const TasksPage: React.FC = () => {
               {ordering === "smart" ? "Умная сортировка" : "Сначала новые"}
             </Button>
           </Tooltip>
+          </>
+          )}
         </Stack>
 
         {/* ── Фильтры ── */}
         <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center" sx={{ mb: 1.5 }}>
-          {/* На канбане статус — это колонка, отдельный селект только запутывает. */}
-          {!boardMode && (
+          {/* На канбане статус — это колонка, в архиве — сегмент выше;
+              отдельный селект в обоих случаях только запутывает. */}
+          {!boardMode && !isArchive && (
             <TextField
               select
               size="small"
@@ -1037,8 +1220,9 @@ const TasksPage: React.FC = () => {
             ))}
           </TextField>
 
-          {/* Срок: опционально, чтобы не скрывать задачи без due_date */}
-          {dueRange ? (
+          {/* Срок: опционально, чтобы не скрывать задачи без due_date.
+              В архиве срок не фильтрует — задачи уже закрыты. */}
+          {isArchive ? null : dueRange ? (
             <Stack direction="row" alignItems="center" gap={0.25}>
               <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
                 Срок:
@@ -1076,8 +1260,8 @@ const TasksPage: React.FC = () => {
             </Button>
           )}
 
-          {/* Дата подачи — только в «Моих заявках» */}
-          {tab === "my-requests" &&
+          {/* Дата подачи — в «Моих заявках» и в архиве */}
+          {createdFilterOn &&
             (createdRange ? (
               <Stack direction="row" alignItems="center" gap={0.25}>
                 <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
@@ -1162,19 +1346,20 @@ const TasksPage: React.FC = () => {
               </Stack>
             ) : rows.length === 0 ? (
               <Stack alignItems="center" sx={{ py: 6, opacity: 0.75 }}>
-                <AssignmentOutlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+                {isArchive ? (
+                  <Inventory2Outlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+                ) : (
+                  <AssignmentOutlined sx={{ fontSize: 52, color: "text.disabled", mb: 1.5 }} />
+                )}
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  {tab === "mine"
-                    ? "У вас нет назначенных задач"
-                    : tab === "my-requests"
-                    ? "Вы ещё не подавали заявок"
-                    : "Задач не найдено"}
+                  {emptyText}
                 </Typography>
                 {hasActiveFilters ? (
                   <Button size="small" onClick={handleResetFilters} sx={{ textTransform: "none" }}>
                     Сбросить фильтры
                   </Button>
                 ) : (
+                  !isArchive &&
                   canCreate && (
                     <Button size="small" onClick={() => setCreateOpen(true)} sx={{ textTransform: "none" }}>
                       Подать первую заявку
@@ -1332,6 +1517,30 @@ const TasksPage: React.FC = () => {
         canUpdate={canUpdate}
         meEmployeeId={meEmployeeId}
       />
+
+      {/* ── Подтверждение удаления ── */}
+      <Dialog open={pendingDelete != null} onClose={() => setPendingDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Удалить задачу?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            «{pendingDelete?.title}» будет удалена безвозвратно вместе с комментариями, вложениями и
+            историей статусов. Восстановить её нельзя.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <AppButton variant="outlined" onClick={() => setPendingDelete(null)}>
+            Отмена
+          </AppButton>
+          <AppButton
+            variant="contained"
+            color="error"
+            disabled={deleteMutation.isPending}
+            onClick={() => pendingDelete && deleteMutation.mutate(pendingDelete)}
+          >
+            Удалить
+          </AppButton>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

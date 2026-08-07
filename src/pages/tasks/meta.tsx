@@ -24,6 +24,21 @@ export const TASKS_REFRESH_MS = 60_000;
  */
 export const TASKS_DUE_TIME_ENABLED = false;
 
+/**
+ * Удаление задачи из архива (право `tasks.manage`).
+ *
+ * ⚠ Выключено: бэк метод не реализовал — `DELETE /api/tasks/{id}/` отвечает 405
+ * «Метод 'DELETE' не разрешён, разрешённые: ['GET', 'PATCH']» (проверено на
+ * тестовом контуре 07.08.2026). Эндпоинтов `archive`/`restore` и флага
+ * `isArchived` в модели тоже нет — поэтому «Архив» на фронте собран из закрытых
+ * статусов (done + cancelled), а не из отдельного признака.
+ * Включить, когда бэк закроет тикет `MamaDoc/backend_ticket_tasks_delete.md`.
+ */
+export const TASKS_DELETE_ENABLED = false;
+
+/** Статусы, попадающие в «Архив»: задача закрыта и в работу не вернётся. */
+export const TASK_ARCHIVE_STATUSES = ["done", "cancelled"] as const satisfies readonly TaskStatus[];
+
 /** Палитра-тон MUI для статуса/приоритета (null — нейтральный). */
 export type ToneName = "warning" | "info" | "success" | "error" | null;
 

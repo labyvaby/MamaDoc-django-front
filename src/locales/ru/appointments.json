@@ -71,7 +71,8 @@
   "filters": {
     "all": "Все",
     "allStatuses": "Все статусы",
-    "button": "Фильтры"
+    "button": "Фильтры",
+    "reset": "Сбросить"
   },
   "list": {
     "title": "{{visit.nomPl, capitalize}} ({{date}})",
@@ -84,6 +85,10 @@
     "count_few": "{{count}} {{visit.gen}}",
     "count_many": "{{count}} {{visit.genPl}}",
     "noSpecialistGroup": "Без {{specialist.gen}}",
+    "groupPaid": "оплачено {{amount}}",
+    "doctorNotInDay": "{{specialist.nom, capitalize}} не ведёт приём в этот день",
+    "onShiftNoBookings": "Нет записей",
+    "searchPlaceholder": "{{patient.nom, capitalize}}, телефон, {{service.nom}}",
     "night": "Ночной",
     "fullDiscount": "Скидка 100%",
     "discounted": "Со скидкой",

@@ -24,7 +24,7 @@ import {
   requestOtp as djangoRequestOtp,
   verifyOtp as djangoVerifyOtp,
 } from "../../api";
-import { applyMeResponse, usePermissions } from "../../hooks/usePermissions";
+import { applyMeResponse, refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
 import { ApiError } from "../../api/client";
 import { IS_DJANGO_BACKEND } from "../../config/backend";
@@ -409,7 +409,11 @@ const LoginPage: React.FC = () => {
         saveAuthPhone(fullPhone);
         setRedirecting(true);
         markBranchPickerPending();
+        // Редирект делаем сами — ниже, после синхронизации контекста;
+        // эффект по authStatus не должен увести раньше времени.
+        didDjangoRedirect.current = true;
         applyMeResponse(meData);
+        await refreshAuthContext();
         navigate(redirectTo, { replace: true });
       } catch (err: unknown) {
         if (err instanceof ApiError && err.status === 401) {
@@ -501,11 +505,16 @@ const LoginPage: React.FC = () => {
       const normalizedEmail = email.trim().toLowerCase();
       if (IS_DJANGO_BACKEND) {
         // djangoLogin возвращает MeResponse — сразу заполняем глобальный state,
-        // второй GET /auth/me/ не нужен
+        // чтобы не мигать экраном загрузки, и следом сверяемся с /auth/me/:
+        // ответ логина не всегда несёт весь активный контекст сессии (права,
+        // модули, филиал), из-за чего интерфейс сразу после входа показывал
+        // «нет доступа» до ручной перезагрузки страницы.
         const meData = await djangoLogin(normalizedEmail, password);
         setRedirecting(true);
         markBranchPickerPending();
+        didDjangoRedirect.current = true;
         applyMeResponse(meData);
+        await refreshAuthContext();
         navigate(redirectTo, { replace: true });
         return;
       }

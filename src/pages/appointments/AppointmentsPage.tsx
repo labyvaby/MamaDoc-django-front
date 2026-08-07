@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   Card,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -14,16 +13,13 @@ import {
   DialogTitle,
   Divider,
   Drawer,
-  IconButton,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import dayjs, { type Dayjs } from "dayjs";
@@ -74,6 +70,7 @@ import { PageHeader, DateNavigation } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAppointmentsAutoSync } from "../../hooks/useAppointmentsAutoSync";
 import { useT } from "../../i18n/VerticalProvider";
+import { useReceptionFilters } from "./useReceptionFilters";
 
 // ── data hooks ────────────────────────────────────────────────────────────────
 
@@ -287,8 +284,26 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [date, setDate] = React.useState<Dayjs>(dayjs());
+  // Поиск по дню — клиентский (день загружен целиком), поэтому серверный
+  // параметр search остаётся пустым: фильтрует AppointmentListPanel.
   const search = "";
-  const [nightOnly, setNightOnly] = React.useState(false);
+  const [nightOnly] = React.useState(false);
+
+  // ── Фильтры дня (URL) ──────────────────────────────────────────────────────
+  // Живут в query-параметрах, а не в состоянии: иначе отбор терялся при
+  // перезагрузке и при смене даты, а регистратор листает дни именно чтобы
+  // посмотреть загрузку одного специалиста. Плюс ссылку можно передать коллеге.
+  const {
+    searchQuery,
+    setSearchQuery,
+    doctorFilter,
+    setDoctorFilter,
+    statusFilter,
+    setStatusFilter,
+    paymentFilter,
+    setPaymentFilter,
+    resetChipFilters,
+  } = useReceptionFilters();
 
   // DateNavigation (shared with the original Регистратура) works in string dates
   const dateStr = date.format("YYYY-MM-DD");
@@ -317,16 +332,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       booking: boolean;
     } | null
   >(null);
-  // Выбранный в ленте аватарок исполнитель. Держим на странице (а не внутри
-  // AppointmentListPanel), потому что «Добавить приём» подставляет его в
-  // исполнителя первой строки услуг: регистратор, отобравший день по врачу,
-  // почти всегда записывает именно к нему. Контракт ленты — ФИО.
-  const [doctorFilter, setDoctorFilter] = React.useState<string | null>(null);
-  // Лента сбрасывалась при смене даты своим внутренним состоянием; в
-  // управляемом режиме сброс делаем сами, поведение то же.
-  React.useEffect(() => {
-    setDoctorFilter(null);
-  }, [dateStr]);
+  // Выбранный в ленте аватарок исполнитель живёт в URL (см. useReceptionFilters):
+  // «Добавить приём» подставляет его в исполнителя первой строки услуг —
+  // регистратор, отобравший день по врачу, почти всегда записывает именно к нему.
+  // При смене даты фильтр НЕ сбрасывается: дни листают как раз для того, чтобы
+  // посмотреть загрузку одного специалиста, а о скрытых записях сообщает
+  // счётчик «показано N из M» в шапке списка.
   // Клик по занятому времени в виде «Окна»: карточка приёма открывается дровером
   // поверх сетки. Сетка знает только id приёма (и он может быть на другой дате,
   // чем список дня), поэтому карточка грузится отдельным запросом по id.
@@ -526,18 +537,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     );
   }, [items, clinicalRoleScope, clinicianIds]);
 
-  // Исполнитель, выбранный в ленте, в виде employee id — для предзаполнения
-  // формы записи. Лента фильтрует по ФИО, поэтому id ищем в тех же приёмах,
-  // из которых она построена. Полных однофамильцев лента и так не различает.
-  const filterEmployeeId = React.useMemo<number | null>(() => {
-    if (!doctorFilter) return null;
-    for (const appt of visibleItems) {
-      for (const sl of appt.services) {
-        if (sl.employee?.fullName === doctorFilter) return sl.employee.id;
-      }
-    }
-    return null;
-  }, [doctorFilter, visibleItems]);
+  // Исполнитель, выбранный в ленте, — сразу employee id: он же идёт в
+  // предзаполнение формы записи.
+  const filterEmployeeId = doctorFilter;
 
   // Группировка: привилегированный кабинет — строго по клиницистам своего типа;
   // клиницист в своём кабинете — по себе. Иначе (Регистратура) — по всем участникам.
@@ -798,6 +800,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
             dateNavigation={
               <DateNavigation date={dateStr} setDate={handleSetDate} dayCounts={dayCounts} />
             }
+            showSearch
+            searchVal={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder={t("list.searchPlaceholder")}
             loading={loading}
             actions={
               <Stack direction="row" spacing={1} alignItems="center">
@@ -928,6 +934,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               hideDoctorStrip={hideEmployeeStrip}
               doctorFilter={doctorFilter}
               onDoctorFilterChange={setDoctorFilter}
+              searchQuery={searchQuery}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              paymentFilter={paymentFilter}
+              onPaymentFilterChange={setPaymentFilter}
+              onResetChipFilters={resetChipFilters}
+              showPaymentFilter
+              showGroupTotals
               groupEmployeeIds={groupEmployeeIds}
               dayShifts={dayShifts}
             />

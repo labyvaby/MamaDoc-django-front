@@ -26,6 +26,7 @@ import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
 import ReplayOutlined from "@mui/icons-material/ReplayOutlined";
 import CancelOutlined from "@mui/icons-material/CancelOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
@@ -43,6 +44,7 @@ import {
   approveTask,
   cancelTask,
   completeTask,
+  deleteTask,
   getTask,
   getTaskCategories,
   pauseTask,
@@ -71,6 +73,7 @@ import {
   TASK_PRIORITY_OPTIONS,
   TASK_SOURCE_META,
   TASK_STATUS_META,
+  TASKS_DELETE_ENABLED,
 } from "../../pages/tasks/meta";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { TaskPriorityChip, TaskStatusChip } from "./TaskChips";
@@ -345,6 +348,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   const [reasonText, setReasonText] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.tasks.detail(taskId ?? 0),
@@ -435,6 +439,19 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить изменения"),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteTask(taskId!, orgId),
+    onSuccess: () => {
+      setConfirmDelete(false);
+      invalidate();
+      onClose();
+    },
+    onError: (e) => {
+      setConfirmDelete(false);
+      setError(e instanceof Error ? e.message : "Не удалось удалить задачу");
+    },
+  });
+
   const commentMutation = useMutation({
     mutationFn: () => addTaskComment(taskId!, commentText.trim(), orgId),
     onSuccess: () => {
@@ -476,6 +493,12 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
   const closed = status === "done" || status === "cancelled";
   /** Править может автор своей открытой заявки и держатель tasks.manage. */
   const canEdit = task != null && !closed && (canManage || isAuthor);
+  /**
+   * Удалять может только tasks.manage и только уже закрытую (архивную) задачу:
+   * открытую сперва отменяют — так в истории остаётся причина, а исполнитель
+   * не теряет задачу из-под рук.
+   */
+  const canDelete = TASKS_DELETE_ENABLED && canManage && task != null && closed;
 
   const actions: { key: string; label: string; icon: React.ReactNode; primary?: boolean; onClick: () => void }[] = [];
   if (task && taskId != null && status) {
@@ -551,6 +574,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
     setError(null);
     setCommentText("");
     setEditing(false);
+    setConfirmDelete(false);
     closeReasonDialog();
     onClose();
   };
@@ -607,6 +631,18 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
           <Tooltip title="Изменить задачу">
             <IconButton size="small" onClick={startEditing} aria-label="Изменить задачу">
               <EditOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        {canDelete && !editing && (
+          <Tooltip title="Удалить задачу безвозвратно">
+            <IconButton
+              size="small"
+              onClick={() => setConfirmDelete(true)}
+              aria-label="Удалить задачу"
+              sx={{ color: "text.secondary", "&:hover": { color: "error.main" } }}
+            >
+              <DeleteOutlineOutlined fontSize="small" />
             </IconButton>
           </Tooltip>
         )}
@@ -976,6 +1012,30 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
           </AppButton>
           <AppButton variant="contained" onClick={submitReason}>
             Подтвердить
+          </AppButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Подтверждение удаления ── */}
+      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Удалить задачу?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            «{task?.title}» будет удалена безвозвратно вместе с комментариями, вложениями и историей
+            статусов. Восстановить её нельзя.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <AppButton variant="outlined" onClick={() => setConfirmDelete(false)}>
+            Отмена
+          </AppButton>
+          <AppButton
+            variant="contained"
+            color="error"
+            disabled={deleteMutation.isPending}
+            onClick={() => deleteMutation.mutate()}
+          >
+            Удалить
           </AppButton>
         </DialogActions>
       </Dialog>

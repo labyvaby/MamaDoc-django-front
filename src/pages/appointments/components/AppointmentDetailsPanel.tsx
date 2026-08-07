@@ -686,6 +686,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           flexDirection: "column",
           overflow: "hidden",
           boxSizing: "border-box",
+          // Крестик шапки висит абсолютом — якорь для него должна давать сама
+          // карточка. Без этого он цеплялся за первого позиционированного
+          // предка (sticky-колонку страницы) и уезжал к её правому краю —
+          // в реестре при открытом заключении вставал рядом с его крестиком.
+          position: "relative",
           m: 0,
           p: 0,
         }}

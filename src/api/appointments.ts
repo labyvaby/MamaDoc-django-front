@@ -272,8 +272,15 @@ export interface AppointmentServiceLine {
   id: number;
   service: AppointmentServiceShort | null;
   employee: AppointmentEmployeeShort | null;
-  /** Effective unit price for this line */
+  /**
+   * Effective unit price for this line.
+   * ⚠ Живой ответ /appointments/ и /appointments/home/ это поле НЕ отдаёт
+   * (проверено 07.08.2026) — считать деньги строки следует от `lineTotal`
+   * с фолбэком на `unitPrice`/`service.basePrice`.
+   */
   price: string;
+  /** Сумма строки, посчитанная бэком: `unitPrice × quantity − discountAmount`. */
+  lineTotal?: string;
   /** Duration snapshot — always set after migration 0012 */
   durationMinutes: number;
   quantity: number;

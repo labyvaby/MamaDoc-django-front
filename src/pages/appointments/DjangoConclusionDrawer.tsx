@@ -50,6 +50,7 @@ import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { formatQuantity, trimDecimalInput } from "../../utility/format";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
 import { tt } from "../../i18n/t";
@@ -205,14 +206,21 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
   max,
   disabled,
 }) => {
-  const fmt = (n: number) => (step < 1 ? n.toFixed(1) : String(n));
+  // Шаг дробный (вес, температура) — сложение даёт хвост вида 5.6000000000000005.
+  const fmt = (n: number) => String(Math.round(n * 100) / 100);
   const dec = () => {
-    const cur = value === "" ? min : parseFloat(value) || 0;
+    // Пустое поле — «не измеряли»: минус не должен подставлять туда минимум.
+    if (value === "") return;
+    const cur = parseFloat(value) || 0;
     onChange(fmt(Math.max(min, cur - step)));
   };
   const inc = () => {
-    const cur = value === "" ? min : parseFloat(value) || 0;
-    const next = cur + step;
+    // Первый плюс на пустом поле ставит нижнюю границу (1 кг, 34 °C), а не шаг.
+    if (value === "") {
+      onChange(fmt(min));
+      return;
+    }
+    const next = (parseFloat(value) || 0) + step;
     if (max !== undefined && next > max) return;
     onChange(fmt(next));
   };
@@ -253,7 +261,9 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
           inputProps={{
             style: { textAlign: "center", padding: "8px 4px" },
             min,
-            step,
+            // step="any": шаг кнопок ±1 не должен делать введённые вручную
+            // 5,5 кг и 57,5 см невалидными для браузера (stepMismatch).
+            step: "any",
             max,
           }}
           sx={{
@@ -351,6 +361,20 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     setStatus(body.status ?? "draft");
   };
 
+  // Ключ гидратации. Пересобирать форму нужно при открытии, смене строки услуги,
+  // переключении просмотр↔правка и при появлении НОВЫХ серверных данных — но не
+  // на каждый новый объект `conclusion` из react-query и не на каждую подгрузку
+  // каталога МКБ-10. Раньше `catalog` и сам объект стояли в зависимостях, и
+  // любой поиск диагноза (или рефетч слотов) посреди заполнения молча затирал
+  // форму — первыми страдали вес и рост, их вбивают в первые секунды.
+  const hydrationKey = [
+    open ? "open" : "closed",
+    readOnly ? "ro" : "rw",
+    serviceLineId,
+    conclusion?.id ?? 0,
+    conclusion?.updatedAt ?? "",
+  ].join("|");
+
   // ── populate from existing conclusion / local draft ───────────────────────
   React.useEffect(() => {
     if (!open) {
@@ -429,9 +453,11 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             );
           }),
           photoUrls: conclusion.photoUrls ?? [],
-          weightKg: conclusion.weightKg ?? "",
-          heightCm: conclusion.heightCm ?? "",
-          temperature: conclusion.temperature ?? "",
+          // Бэк хранит decimal и отдаёт «5.50»/«114.00» — в поле и в подпись
+          // это должно попадать как «5.5»/«114».
+          weightKg: trimDecimalInput(conclusion.weightKg),
+          heightCm: trimDecimalInput(conclusion.heightCm),
+          temperature: trimDecimalInput(conclusion.temperature),
           internalComment: conclusion.internalComment ?? "",
           status: conclusion.status ?? "draft",
         }
@@ -452,7 +478,33 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     baselineRef.current = JSON.stringify(body);
     hydratedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, readOnly, conclusion, catalog, serviceLineId]);
+  }, [hydrationKey]);
+
+  // Каталог МКБ-10 приходит уже после гидратации: дозаполняем выбранные
+  // диагнозы настоящими записями каталога, не трогая остальные поля формы.
+  // Baseline правим тем же движением — иначе техническая замена объекта
+  // диагноза выглядела бы как правка врача и плодила пустые черновики.
+  React.useEffect(() => {
+    if (!open || catalog.length === 0) return;
+    setSelectedDiagnoses((prev) => {
+      let changed = false;
+      const next = prev.map((d) => {
+        if (d.id > 0) return d;
+        const fromCatalog = catalog.find((c) => c.code === d.code);
+        if (!fromCatalog) return d;
+        changed = true;
+        return fromCatalog;
+      });
+      if (!changed) return prev;
+      try {
+        const baseline = JSON.parse(baselineRef.current) as ConclusionDraftBody;
+        baselineRef.current = JSON.stringify({ ...baseline, selectedDiagnoses: next });
+      } catch {
+        /* baseline ещё не собран — следующая гидратация его перезапишет */
+      }
+      return next;
+    });
+  }, [open, catalog]);
 
   // ── autosave draft to localStorage (1 заключение = 1 запись) ──────────────
   React.useEffect(() => {
@@ -890,12 +942,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 <Stack direction="row" spacing={3} justifyContent="space-around">
                   <Box textAlign="center">
                     <Typography variant="caption" color="text.secondary">{t("conclusion.weight")}</Typography>
-                    <Typography variant="h6">{weightKg ? t("conclusion.weightWithUnit", { value: weightKg }) : "—"}</Typography>
+                    <Typography variant="h6">{weightKg ? t("conclusion.weightWithUnit", { value: formatQuantity(weightKg) }) : "—"}</Typography>
                   </Box>
                   <Divider orientation="vertical" flexItem />
                   <Box textAlign="center">
                     <Typography variant="caption" color="text.secondary">{t("conclusion.height")}</Typography>
-                    <Typography variant="h6">{heightCm ? t("conclusion.heightWithUnit", { value: heightCm }) : "—"}</Typography>
+                    <Typography variant="h6">{heightCm ? t("conclusion.heightWithUnit", { value: formatQuantity(heightCm) }) : "—"}</Typography>
                   </Box>
                   <Divider orientation="vertical" flexItem />
                   <Box textAlign="center">
@@ -904,7 +956,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                       variant="h6"
                       color={parseFloat(temperature) > 37 ? "error.main" : "text.primary"}
                     >
-                      {temperature ? `${temperature} °C` : "—"}
+                      {temperature ? `${formatQuantity(temperature)} °C` : "—"}
                     </Typography>
                   </Box>
                 </Stack>
@@ -1034,7 +1086,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 value={heightCm}
                 onChange={setHeightCm}
                 step={1}
-                min={0}
+                // Нижняя граница кнопок совпадает с validateVitals: иначе минус
+                // доводил поле до 0 и сохранение падало на «от 1 до 999».
+                min={1}
                 max={999}
                 disabled={readOnly}
               />
@@ -1043,8 +1097,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 suffix={t("conclusion.weightUnit")}
                 value={weightKg}
                 onChange={setWeightKg}
-                step={1}
-                min={0}
+                // Педиатрия: вес младенца меняется десятыми долями килограмма.
+                step={0.1}
+                min={1}
                 max={999}
                 disabled={readOnly}
               />
