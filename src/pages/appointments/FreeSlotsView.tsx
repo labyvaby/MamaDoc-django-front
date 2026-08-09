@@ -673,7 +673,13 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     if (!futureEdgeLoading && !futureExhausted) setFutureChunks((n) => n + 1);
   }, [futureEdgeLoading, futureExhausted]);
 
-  // Врачи специальности + сводка, отсортированные «лучшие сверху».
+  // Врачи специальности + сводка, по алфавиту ФИО.
+  //
+  // Раньше список шёл «лучшие сверху» — сначала те, у кого сегодня есть
+  // свободные окна, затем по ближайшей дате. Регистратуре это мешает: она
+  // ищет конкретного врача по фамилии, а его место в списке съезжало от
+  // загруженности дня, и глазами приходилось искать заново. Свободность
+  // никуда не делась — она видна на самой карточке врача и в сетке.
   const docs = React.useMemo(() => {
     const list = mergedEmployees
       .map((emp) => ({
@@ -682,14 +688,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
       }));
     const q = search.trim().toLowerCase();
     const filtered = q ? list.filter((x) => x.emp.fullName.toLowerCase().includes(q)) : list;
-    return filtered.sort((a, b) => {
-      const byToday = Number(b.sum.todayFree > 0) - Number(a.sum.todayFree > 0);
-      if (byToday) return byToday;
-      const an = a.sum.nearest ? dayjs(a.sum.nearest.date).valueOf() : Infinity;
-      const bn = b.sum.nearest ? dayjs(b.sum.nearest.date).valueOf() : Infinity;
-      if (an !== bn) return an - bn;
-      return a.emp.fullName.localeCompare(b.emp.fullName);
-    });
+    return filtered.sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "ru"));
   }, [mergedEmployees, search, todayIso]);
 
   // Сбрасываем выбор врача только если выбранного врача больше нет в отфильтрованном списке.
