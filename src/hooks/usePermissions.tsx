@@ -63,6 +63,11 @@ let inFlight: Promise<void> | null = null;
 const listeners = new Set<(s: GlobalState) => void>();
 const COOLDOWN_MS = 10_000; // не чаще, чем раз в 10 секунд по принудительным событиям
 
+// Requests started on the login screen must not overwrite a context applied
+// from a successful login if they finish after that login.
+let authEpoch = 0;
+let authRecoveryInFlight = false;
+
 const notify = () => {
   for (const fn of listeners) fn(globalState);
 };
@@ -78,21 +83,22 @@ const setGlobal = (patch: Partial<GlobalState>) => {
 if (IS_DJANGO_BACKEND && typeof window !== 'undefined') {
   window.addEventListener('mamadoc:api-unauthorized', () => {
     if (globalState.authStatus !== 'authenticated') return;
-    setGlobal({
-      role: null,
-      employee: null,
-      permissions: [],
-      memberships: [],
-      activeMembership: null,
-      activeOrganization: null,
-      activeBranch: null,
-      activeEmployee: null,
-      enabledModules: [],
-      loading: false,
-      loaded: true,
-      authStatus: 'unauthenticated',
-      authError: null,
-    });
+    // This 401 may belong to a request that started before login. Wait for
+    // that request, then re-check once instead of clearing fresh permissions.
+    // If the re-check is also 401, fetchPermissions changes authStatus and we
+    // do not start an endless retry loop.
+    if (authRecoveryInFlight) return;
+    authRecoveryInFlight = true;
+    void (async () => {
+      try {
+        if (inFlight) await inFlight.catch(() => undefined);
+        if (globalState.authStatus === 'authenticated') {
+          await fetchPermissions({ force: true });
+        }
+      } finally {
+        authRecoveryInFlight = false;
+      }
+    })();
   });
 
   // Права роли могли измениться, пока вкладка была неактивна (например,
@@ -199,6 +205,7 @@ function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
  * Единая точка записи — предотвращает дублирование запросов.
  */
 export function applyMeResponse(meData: MeResponse): void {
+  authEpoch += 1;
   setGlobal({
     ...buildStateFromMe(meData),
     lastFetchedAt: Date.now(),
@@ -218,6 +225,7 @@ export async function switchContext(payload: SwitchContextPayload): Promise<MeRe
   setGlobal({ switching: true });
   try {
     const meData = await switchAuthContext(payload);
+    authEpoch += 1;
     setGlobal({
       ...buildStateFromMe(meData),
       switching: false,
@@ -251,6 +259,9 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
     return;
   }
 
+  const epoch = authEpoch;
+  const isStale = () => epoch !== authEpoch;
+
   inFlight = (async () => {
     try {
       // Если это перезагрузка (уже loaded: true), не показываем loading
@@ -261,6 +272,7 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
       if (IS_DJANGO_BACKEND) {
         try {
           const meData = (await getCurrentUser()) as MeResponse | null;
+          if (isStale()) return;
           if (!meData || !meData.user) {
             // Backend вернул null или некорректный ответ
             setGlobal({
@@ -272,6 +284,7 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
           }
           setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
         } catch (err) {
+          if (isStale()) return;
           const isApiError = err instanceof ApiError;
           const status = isApiError ? err.status : -1;
 
@@ -291,11 +304,12 @@ async function fetchPermissions(opts: { force?: boolean } = {}): Promise<void> {
             const errMsg = isApiError
               ? `Сервер недоступен (${status || 'сеть'})`
               : 'Сетевая ошибка';
+            const keepAuthenticated = globalState.authStatus === 'authenticated';
             setGlobal({
               loading: false,
               loaded: globalState.loaded, // сохраняем предыдущее значение
-              authStatus: 'unavailable',
-              authError: errMsg,
+              authStatus: keepAuthenticated ? 'authenticated' : 'unavailable',
+              authError: keepAuthenticated ? null : errMsg,
             });
           }
         }
