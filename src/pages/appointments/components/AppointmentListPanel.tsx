@@ -958,28 +958,34 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       <Typography variant="subtitle2" fontWeight="bold" noWrap>
                         {docName}
                       </Typography>
-                      <Chip
-                        // Группа свободной смены: «0 приёмов» звучит как отчёт
-                        // о неудаче, а тут смысл обратный — время свободно.
-                        label={
+                      {/* В чипе — деньги, а не счётчик приёмов: регистратуре
+                          важнее видеть кассу по специалисту. Количество ушло в
+                          тултип, чтобы не потерялось. Только оплаченные деньги:
+                          начисленную сумму не показываем — она смешивала
+                          выставленные счета с реально полученными. */}
+                      <Tooltip
+                        title={
                           apptCount === 0
                             ? t("list.onShiftNoBookings")
                             : t("list.count", { count: apptCount })
                         }
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper", flexShrink: 0 }}
-                      />
+                      >
+                        <Chip
+                          // Группа свободной смены: «0 сом» читается как провал
+                          // дня, а смысл обратный — время свободно.
+                          label={
+                            apptCount === 0
+                              ? t("list.onShiftNoBookings")
+                              : money != null
+                                ? formatKGS(Math.round(money.paid))
+                                : t("list.count", { count: apptCount })
+                          }
+                          size="small"
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: "0.7rem", fontWeight: 700, bgcolor: "background.paper", flexShrink: 0 }}
+                        />
+                      </Tooltip>
                     </Stack>
-                    {/* Только оплаченные деньги: начисленную сумму в заголовке
-                        группы не показываем — она смешивала выставленные счета с
-                        реально полученными. Отдельной строкой, а не в ряд с
-                        именем: заголовок узкий (панель — половина экрана). */}
-                    {money != null && money.paid > 0 && (
-                      <Typography variant="caption" color="text.secondary">
-                        {t("list.groupPaid", { amount: formatKGS(Math.round(money.paid)) })}
-                      </Typography>
-                    )}
                   </Box>
 
                   {/* ── Строки приёмов / gap-слоты ── */}
