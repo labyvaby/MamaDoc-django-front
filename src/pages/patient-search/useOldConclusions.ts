@@ -30,10 +30,15 @@ export type OldConclusion = {
   changed_at: string | null;
   changed_by: string | null;
   ask_for_feedback: boolean;
-  /** Из какой системы запись: до-Supabase база или старый MamaDoc. */
-  source?: "legacy_db" | "supabase";
-  /** Текст заключения врача — есть только у записей старого MamaDoc. */
+  /**
+   * Откуда запись: до-Supabase база, старый MamaDoc или текущая система
+   * (`current` — живое заключение, в том числе сделанное в другом филиале).
+   */
+  source?: "legacy_db" | "supabase" | "current";
+  /** Текст заключения врача — у записей до-Supabase базы его нет. */
   conclusion?: string | null;
+  /** Филиал, где сделана запись. Есть только у живых заключений. */
+  branch_name?: string | null;
 };
 
 /** Ответ Django: GET /api/medical/legacy-conclusions/ (camelCase). */
@@ -119,13 +124,81 @@ function fromDjango(row: DjangoLegacyConclusion): OldConclusion {
   };
 }
 
+/** Живое заключение: GET /api/medical/patient-conclusions/ (без финансов). */
+type DjangoPatientConclusion = {
+  id: number;
+  appointmentId: number;
+  serviceLineId: number;
+  occurredAt: string;
+  branch: { id: number; name: string };
+  doctor: { id: number; fullName: string } | null;
+  serviceName: string;
+  complaints: string;
+  anamnesis: string;
+  objective: string;
+  conclusion: string;
+  diagnosisData: Array<{ title?: string; diagnosis_code?: string }>;
+  photoUrls: string[];
+  weightKg: string | null;
+  heightCm: string | null;
+  temperature: string | null;
+  status: "draft" | "completed";
+  canEdit: boolean;
+};
+
+function diagnosisFromData(
+  items: Array<{ title?: string; diagnosis_code?: string }> | undefined,
+): string | null {
+  if (!Array.isArray(items) || !items.length) return null;
+  const parts = items
+    .map((d) => [d.diagnosis_code, d.title].filter(Boolean).join(" "))
+    .filter(Boolean);
+  return parts.length ? parts.join("; ") : null;
+}
+
+function fromLiveConclusion(row: DjangoPatientConclusion): OldConclusion {
+  return {
+    // Префикс, чтобы id живого заключения не столкнулся с id архивной записи.
+    id: `live-${row.id}`,
+    legacy_id: null,
+    appointment_id: String(row.appointmentId),
+    patient_number: null,
+    height_cm: num(row.heightCm),
+    weight_kg: num(row.weightKg),
+    temperature: num(row.temperature),
+    complaints: orNull(row.complaints),
+    diagnosis: diagnosisFromData(row.diagnosisData),
+    diagnosis_catalog: null,
+    anamnesis: orNull(row.anamnesis),
+    objective: orNull(row.objective),
+    recommendations: null,
+    doctor_comment: null,
+    document_path: null,
+    patient_document_path: null,
+    photo: row.photoUrls?.length ? row.photoUrls[0] : null,
+    changed_at: row.occurredAt,
+    changed_by: row.doctor?.fullName ?? null,
+    ask_for_feedback: false,
+    source: "current",
+    conclusion: orNull(row.conclusion),
+    branch_name: row.branch?.name ?? null,
+  };
+}
+
 /**
- * Архив заключений пациента.
+ * Вся история заключений пациента: архив прошлых систем плюс живые записи
+ * текущей системы.
  *
- * Ищем и по телефону, и по id карточки: телефон — основной ключ архива (в
+ * Архив ищем и по телефону, и по id карточки: телефон — его основной ключ (в
  * старых системах связь с пациентом была только по номеру, и семейный номер
  * покрывает несколько детей), а patientId добирает записи, у которых номер
  * успели изменить уже после переноса.
+ *
+ * Живые заключения берутся отдельным запросом, потому что список приёмов
+ * ограничен филиалами пользователя (он же питает кассу и отчёты), а
+ * медицинская история при общем реестре пациентов не должна разрезаться по
+ * филиалам — иначе врач видит заключения 2023 года и не видит осмотр коллеги
+ * из соседнего филиала. Этот эндпоинт не отдаёт ни одного финансового поля.
  */
 export function useOldConclusions(patientPhone?: string, patientId?: number | string) {
   const [data, setData] = React.useState<OldConclusion[]>([]);
@@ -177,11 +250,38 @@ async function fetchFromDjango(
   // Один номер может нести длинную историю (в архиве есть карточки с сотнями
   // записей), поэтому берём верхнюю границу эндпоинта, а не страницу по 100.
   params.set("limit", "500");
-  const rows = await apiRequest<DjangoLegacyConclusion[]>(
-    `/medical/legacy-conclusions/?${params.toString()}`,
-    { signal },
-  );
-  return (rows ?? []).map(fromDjango);
+
+  // Живые заключения — только когда известна карточка. Один упавший запрос не
+  // должен обнулить весь список: архив полезен и без свежих записей, и наоборот.
+  const [archive, live] = await Promise.all([
+    apiRequest<DjangoLegacyConclusion[]>(
+      `/medical/legacy-conclusions/?${params.toString()}`,
+      { signal },
+    ).catch((err) => {
+      if (isAbortError(err)) throw err;
+      return [] as DjangoLegacyConclusion[];
+    }),
+    patientId
+      ? apiRequest<DjangoPatientConclusion[]>(
+          `/medical/patient-conclusions/?patientId=${encodeURIComponent(String(patientId))}&limit=500`,
+          { signal },
+        ).catch((err) => {
+          if (isAbortError(err)) throw err;
+          return [] as DjangoPatientConclusion[];
+        })
+      : Promise.resolve([] as DjangoPatientConclusion[]),
+  ]);
+
+  const merged = [
+    ...(live ?? []).map(fromLiveConclusion),
+    ...(archive ?? []).map(fromDjango),
+  ];
+  // Новее — выше; записи без даты (в архиве такие есть) уходят в конец.
+  return merged.sort((a, b) => {
+    if (!a.changed_at) return 1;
+    if (!b.changed_at) return -1;
+    return b.changed_at.localeCompare(a.changed_at);
+  });
 }
 
 /** Прежний путь — прямой запрос в Supabase. Остаётся для supabase-режима. */

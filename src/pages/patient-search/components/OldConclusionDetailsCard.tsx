@@ -90,11 +90,14 @@ const OldConclusionDetailsCard: React.FC<Props> = ({ item, patientFio, patientDo
                 title={
                     <Stack direction="column" gap={0.25}>
                         <Typography variant="h6">
-                            Старое заключение от {dateStr}
+                            {item.source === "current" ? "Заключение" : "Старое заключение"} от {dateStr}
                         </Typography>
-                        {item.changed_by && (
+                        {(item.changed_by || item.branch_name) && (
                             <Typography variant="caption" color="text.secondary">
-                                Врач: {item.changed_by}
+                                {[
+                                    item.changed_by ? `Врач: ${item.changed_by}` : null,
+                                    item.branch_name,
+                                ].filter(Boolean).join(" • ")}
                             </Typography>
                         )}
                     </Stack>

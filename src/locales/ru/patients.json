@@ -8,8 +8,8 @@
     "card": "{{card.nom, capitalize}}",
     "history": "История",
     "historyFull": "История {{visit.genPl}}",
-    "old": "Старые зак.",
-    "oldFull": "Старые {{conclusion.nomPl}}",
+    "old": "Заключения",
+    "oldFull": "{{conclusion.nomPl, capitalize}}",
     "vaccinations": "{{vaccine.nomPl, capitalize}}"
   },
   "placeholders": {
