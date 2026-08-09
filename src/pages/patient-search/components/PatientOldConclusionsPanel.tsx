@@ -34,7 +34,7 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                     <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ px: 2, pt: 2, pb: 1.5 }}>
                         <Stack direction="row" alignItems="center" gap={1.25}>
                             <FolderOpenOutlined color="primary" />
-                            <Typography variant="h6">Старые заключения</Typography>
+                            <Typography variant="h6">Заключения</Typography>
                         </Stack>
                         {selected && !loading && !errorMsg && data.length > 0 && (
                             <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
@@ -51,7 +51,7 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                         <ListEmptyState
                             icon={<FolderOpenOutlined />}
                             title="Пациент не выбран"
-                            description="Выберите пациента слева, чтобы увидеть старые заключения"
+                            description="Выберите пациента слева, чтобы увидеть его заключения"
                         />
                     ) : loading ? (
                         <ListLoadingSkeleton rows={4} />
@@ -60,8 +60,8 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                     ) : data.length === 0 ? (
                         <ListEmptyState
                             icon={<FolderOpenOutlined />}
-                            title="Нет старых заключений"
-                            description="Архивных записей по этому пациенту не найдено"
+                            title="Нет заключений"
+                            description="По этому пациенту нет ни архивных, ни текущих записей"
                         />
                     ) : (
                         <Stack spacing={0.75}>
@@ -73,6 +73,10 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                         year: "numeric",
                                     })
                                     : "Дата неизвестна";
+
+                                // У записей старого MamaDoc диагноз часто пуст,
+                                // а смысл несёт текст заключения — показываем его.
+                                const summary = item.diagnosis || item.conclusion || null;
 
                                 return (
                                     <Box
@@ -101,9 +105,23 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                         })}
                                     >
                                         <Stack direction="column" gap={0.5}>
-                                            <Typography variant="subtitle2" fontWeight={600}>
-                                                {dateStr}
-                                            </Typography>
+                                            <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
+                                                <Typography variant="subtitle2" fontWeight={600}>
+                                                    {dateStr}
+                                                </Typography>
+                                                {/* Филиал есть только у живых записей — он объясняет,
+                                                    почему заключение не видно в истории приёмов. */}
+                                                {item.branch_name && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {item.branch_name}
+                                                    </Typography>
+                                                )}
+                                                {item.changed_by && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {item.changed_by}
+                                                    </Typography>
+                                                )}
+                                            </Stack>
                                             {(!!item.weight_kg || !!item.height_cm || !!item.temperature) && (
                                                 <Typography variant="body2" color="text.secondary">
                                                     {[
@@ -113,7 +131,7 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                                     ].filter(Boolean).join(" • ")}
                                                 </Typography>
                                             )}
-                                            {item.diagnosis && (
+                                            {summary && (
                                                 <Typography variant="body2" color="text.secondary" sx={{
                                                     display: '-webkit-box',
                                                     WebkitLineClamp: 2,
@@ -121,7 +139,9 @@ const PatientOldConclusionsPanel: React.FC<Props> = ({
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                 }}>
-                                                    <Typography component="span" fontWeight="medium" fontSize="inherit">Диагноз:</Typography> {item.diagnosis}
+                                                    <Typography component="span" fontWeight="medium" fontSize="inherit">
+                                                        {item.diagnosis ? "Диагноз:" : "Заключение:"}
+                                                    </Typography> {summary}
                                                 </Typography>
                                             )}
                                             {item.complaints && (
