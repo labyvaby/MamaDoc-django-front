@@ -56,6 +56,7 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/аллерголог/, "allergolog"],
   [/венеролог/, "venerolog"],
   [/проктолог|колопроктолог/, "proktolog"],
+  [/уролог/, "urolog"],
 ];
 
 /** Иконка специализации по её названию; null — подходящей картинки нет. */
