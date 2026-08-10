@@ -15,7 +15,7 @@
  * onChange — на этот момент состояние у родителя ещё старое (без последней
  * цифры). Обработчик обязан брать код из аргумента, а не из своего state.
  *
- * Длина кода (length) по умолчанию 6 — совпадает и с Supabase, и с Django SMS.
+ * Длина кода (length) по умолчанию 6 — соответствует Django SMS.
  */
 import React from "react";
 import { Stack, TextField } from "@mui/material";

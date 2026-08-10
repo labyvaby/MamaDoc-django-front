@@ -27,8 +27,6 @@ import {
 import { applyMeResponse, refreshAuthContext, usePermissions } from "../../hooks/usePermissions";
 import { markBranchPickerPending } from "../../components/auth/BranchPickerDialog";
 import { ApiError } from "../../api/client";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
-import { supabase } from "../../utility/supabaseClient";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
 import AximoLogo from "../../components/auth/AximoLogo";
@@ -42,7 +40,6 @@ import {
   parsePhone,
   type PhoneCountryCode,
 } from "../../utility/phone";
-import { ROLE_HOME_PAGES, type RoleName } from "../../types/rbac";
 import { subtleBg } from "../../theme";
 
 // Формат таймера кулдауна: секунды → "M:SS".
@@ -90,7 +87,7 @@ const saveAuthPhone = (fullPhone: string) => {
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const redirectTo = params.get("to") || "/home";
+  const redirectTo = params.get("to") || "/appointments";
 
   const [authMethod, setAuthMethod] = React.useState<"email" | "phone">(readSavedAuthMethod);
 
@@ -112,7 +109,6 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null);
-  const [isResetting, setIsResetting] = React.useState(false);
   const [resendCooldown, setResendCooldown] = React.useState(0);
   const [redirecting, setRedirecting] = React.useState(false);
 
@@ -123,52 +119,15 @@ const LoginPage: React.FC = () => {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
-  // Django-режим: слушаем authStatus из глобального state (уже инициализирован)
   const { authStatus } = usePermissions();
   const didDjangoRedirect = React.useRef(false);
   React.useEffect(() => {
-    if (!IS_DJANGO_BACKEND) return;
     if (didDjangoRedirect.current) return;
     if (authStatus === 'authenticated') {
       didDjangoRedirect.current = true;
       navigate(redirectTo, { replace: true });
     }
   }, [authStatus, navigate, redirectTo]);
-
-  React.useEffect(() => {
-    if (IS_DJANGO_BACKEND) return;
-
-    (async () => {
-      // ПРОВЕРКА: Если мы пришли по ссылке восстановления пароля, УВОДИМ на страницу смены пароля
-      if (window.location.hash.includes("type=recovery")) {
-        navigate("/update-password" + window.location.hash);
-        return;
-      }
-
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session) {
-          const { data: employeeData } = await supabase
-            .from('Employees')
-            .select(`roles ( name )`)
-            .eq('auth_user_id', data.session.user.id)
-            .maybeSingle();
-
-          const roleName = Array.isArray(employeeData?.roles)
-            ? employeeData?.roles[0]?.name
-            : (employeeData?.roles as unknown as { name?: string })?.name;
-
-          if (roleName && ROLE_HOME_PAGES[roleName as RoleName]) {
-            navigate(ROLE_HOME_PAGES[roleName as RoleName], { replace: true });
-          } else {
-            navigate(redirectTo, { replace: true });
-          }
-        }
-      } catch {
-        // ignore
-      }
-    })();
-  }, [navigate, redirectTo]);
 
   const handleMethodChange = (_: React.SyntheticEvent, newValue: "email" | "phone") => {
     setAuthMethod(newValue);
@@ -209,95 +168,10 @@ const LoginPage: React.FC = () => {
       message = String((error as { message: unknown }).message);
     }
 
-    // Перевод распространённых ошибок Supabase
-    if (message.includes("Invalid credentials")) return "Неверный логин или пароль";
-    if (message.includes("Authentication required")) return "Необходимо войти в систему";
-    if (message.includes("Invalid login credentials")) return "Неверный email или пароль";
-    if (message.includes("User not found")) return "Пользователь с таким Email не найден";
-    if (message.includes("Email not confirmed")) return "Email не подтверждён. Пожалуйста, проверьте почту";
     if (message.includes("Rate limit exceeded")) {
       return "Приносим извинения: запрос временно не выполнился. Обновите страницу и попробуйте снова";
     }
-    if (message.includes("Auth session missing")) return "Сессия авторизации отсутствует или истекла. Пожалуйста, перейдите по ссылке из письма снова";
-
     return message;
-  };
-
-  const handleLoginSuccess = async (userId: string, extra?: { email?: string; phone?: string }) => {
-    try {
-      setLoading(true);
-      setErrorMsg(null);
-
-      // 1. Пытаемся найти сотрудника по всем каналам (ID, Email, Телефон)
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('Employees')
-        .select('id, auth_user_id, email, phone, roles(name)')
-        .or(`auth_user_id.eq.${userId}${extra?.email ? `,email.eq.${extra.email}` : ''}${extra?.phone ? `,phone.ilike.%${extra.phone.slice(-9)}` : ''}`)
-        .maybeSingle();
-
-      if (employeeError) {
-        console.error("Employee fetch error:", employeeError);
-      }
-
-      // 2. Если сотрудник найден, но не привязан к текущему сессионному ID — ПРИВЯЗЫВАЕМ
-      if (employeeData && employeeData.auth_user_id !== userId) {
-        try {
-          // Используем Edge Function для привязки, так как у неё есть права на изменение auth_user_id
-          const { error: linkError } = await supabase.functions.invoke('admin-create-user', {
-            body: {
-              phone: employeeData.phone,
-              email: employeeData.email,
-              link_to_auth_id: userId // Добавляем флаг привязки (нужно будет проверить поддержку в функции)
-            }
-          });
-
-          if (linkError) {
-            console.warn("Edge Function linking failed, falling back to direct update:", linkError);
-            // Если функция не поддержала новый флаг, пробуем напрямую (может не сработать из-за RLS)
-            await supabase.from('Employees').update({ auth_user_id: userId }).eq('id', employeeData.id);
-          }
-        } catch (e) {
-          console.error("Linking attempt failed:", e);
-        }
-      }
-
-      // 3. Снова запрашиваем данные, чтобы убедиться в наличии роли и статуса
-      const { data: finalEmployee } = await supabase
-        .from('Employees')
-        .select('*, roles(name)')
-        .eq('auth_user_id', userId)
-        .maybeSingle();
-
-      const employee = finalEmployee || employeeData;
-
-      if (!employee) {
-        console.warn("No employee record for user", userId);
-        await supabase.auth.signOut();
-        setErrorMsg("Доступ запрещен. Ваш профиль сотрудника не найден в системе.");
-        return;
-      }
-
-      if (employee.status && employee.status !== 'active') {
-        await supabase.auth.signOut();
-        setErrorMsg("Доступ закрыт. Ваша учётная запись деактивирована. Обратитесь к администратору.");
-        return;
-      }
-
-      const roleObj = Array.isArray(employee.roles) ? employee.roles[0] : employee.roles;
-      const roleName = roleObj?.name;
-
-      if (roleName && ROLE_HOME_PAGES[roleName as RoleName]) {
-        navigate(ROLE_HOME_PAGES[roleName as RoleName], { replace: true });
-      } else {
-        navigate(redirectTo, { replace: true });
-      }
-
-    } catch (e) {
-      console.error("Login success handler failed:", e);
-      setErrorMsg("Ошибка при проверке прав. Попробуйте обновить страницу.");
-    } finally {
-      setLoading(false);
-    }
   };
 
 
@@ -325,59 +199,11 @@ const LoginPage: React.FC = () => {
       return;
     }
 
-    if (IS_DJANGO_BACKEND) {
-      try {
-        await djangoRequestOtp(fullPhone);
-        setIsOtpSent(true);
-        setLastSentPhone(fullPhone);
-        setInfoMsg("Если номер зарегистрирован, на него отправлен код.");
-        setResendCooldown(OTP_RESEND_COOLDOWN);
-      } catch (err: unknown) {
-        setErrorMsg(getErrorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    // Name validation removed
-
-
     try {
-      // 1. Проверяем, есть ли такой сотрудник в базе вообще
-      // Извлекаем последние 9 цифр для надежного поиска
-      const last9 = fullPhone.slice(-9);
-
-      const { data: existingEmployee, error: checkError } = await supabase
-        .from('Employees')
-        .select('id')
-        .ilike('phone', `%${last9}`)
-        .maybeSingle();
-
-      if (checkError && checkError.code !== 'PGRST116' && !checkError.message.includes('permission denied')) {
-        console.error("Database check error:", checkError);
-      }
-
-      // Если RLS блокирует анонимную проверку, мы временно пропускаем её, 
-      // чтобы не блокировать вход (пока админ не применит SQL-фикс на базу)
-      const isBlockedByRls = checkError?.message?.includes('permission denied');
-
-      if (!existingEmployee && !isBlockedByRls) {
-        setErrorMsg("Доступ запрещен. Ваш номер телефона не зарегистрирован в системе. Обратитесь к администратору.");
-        setLoading(false);
-        return;
-      }
-
-      // 2. Если сотрудник есть — отправляем OTP
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: fullPhone,
-      });
-
-      if (error) throw error;
-
+      await djangoRequestOtp(fullPhone);
       setIsOtpSent(true);
       setLastSentPhone(fullPhone);
-      setInfoMsg("Код отправлен!");
+      setInfoMsg("Если номер зарегистрирован, на него отправлен код.");
       setResendCooldown(OTP_RESEND_COOLDOWN);
     } catch (err: unknown) {
       setErrorMsg(getErrorMessage(err));
@@ -403,45 +229,15 @@ const LoginPage: React.FC = () => {
       return;
     }
 
-    if (IS_DJANGO_BACKEND) {
-      try {
-        const meData = await djangoVerifyOtp(fullPhone, code);
-        saveAuthPhone(fullPhone);
-        setRedirecting(true);
-        markBranchPickerPending();
-        // Редирект делаем сами — ниже, после синхронизации контекста;
-        // эффект по authStatus не должен увести раньше времени.
-        didDjangoRedirect.current = true;
-        applyMeResponse(meData);
-        await refreshAuthContext();
-        navigate(redirectTo, { replace: true });
-      } catch (err: unknown) {
-        if (err instanceof ApiError && err.status === 401) {
-          setErrorMsg("Неверный или истёкший код. Запросите новый.");
-        } else {
-          setErrorMsg(getErrorMessage(err));
-        }
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: fullPhone,
-        token: code,
-        type: "sms",
-      });
-
-      if (error) throw error;
-      console.log("Успех:", data);
+      const meData = await djangoVerifyOtp(fullPhone, code);
       saveAuthPhone(fullPhone);
-      if (data.session?.user?.id) {
-        await handleLoginSuccess(data.session.user.id, { phone: fullPhone });
-      } else {
-        navigate(redirectTo, { replace: true });
-      }
+      setRedirecting(true);
+      markBranchPickerPending();
+      didDjangoRedirect.current = true;
+      applyMeResponse(meData);
+      await refreshAuthContext();
+      navigate(redirectTo, { replace: true });
     } catch (err: unknown) {
       setErrorMsg(getErrorMessage(err));
     } finally {
@@ -468,7 +264,7 @@ const LoginPage: React.FC = () => {
   // Без этой строки в SMS вызов просто никогда не резолвится (не ловит SMS) —
   // безвредно, ручной ввод кода продолжает работать.
   React.useEffect(() => {
-    if (!isOtpSent || !IS_DJANGO_BACKEND) return;
+    if (!isOtpSent) return;
     if (!("OTPCredential" in window)) return;
     const controller = new AbortController();
     (async () => {
@@ -501,57 +297,17 @@ const LoginPage: React.FC = () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      // Сразу пробуем войти. Проверка связи с Сотрудником будет в handleLoginSuccess.
-      const normalizedEmail = email.trim().toLowerCase();
-      if (IS_DJANGO_BACKEND) {
-        // djangoLogin возвращает MeResponse — сразу заполняем глобальный state,
-        // чтобы не мигать экраном загрузки, и следом сверяемся с /auth/me/:
-        // ответ логина не всегда несёт весь активный контекст сессии (права,
-        // модули, филиал), из-за чего интерфейс сразу после входа показывал
-        // «нет доступа» до ручной перезагрузки страницы.
-        const meData = await djangoLogin(normalizedEmail, password);
-        setRedirecting(true);
-        markBranchPickerPending();
-        didDjangoRedirect.current = true;
-        applyMeResponse(meData);
-        await refreshAuthContext();
-        navigate(redirectTo, { replace: true });
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-      if (error) throw error;
-      if (data.session?.user?.id) {
-        await handleLoginSuccess(data.session.user.id, { email: normalizedEmail });
-      } else {
-        navigate(redirectTo, { replace: true });
-      }
-    } catch (err: unknown) {
-      setErrorMsg(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResetRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) {
-      setErrorMsg("Введите Email для сброса пароля");
-      return;
-    }
-    setLoading(true);
-    setErrorMsg(null);
-    setInfoMsg(null);
-    try {
-      // В Django-режиме сброс по почте недоступен (кнопка скрыта, форма
-      // недостижима), поэтому этот путь исполняется только в Supabase-режиме.
-      const normalizedEmail = email.trim().toLowerCase();
-      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: `${window.location.origin}/update-password`,
-      });
-      if (error) throw error;
-      setInfoMsg("Ссылка для сброса пароля отправлена на ваш Email");
-      setIsResetting(false);
+      const rawLogin = email.trim();
+      const normalizedLogin = rawLogin.includes("@")
+        ? rawLogin.toLowerCase()
+        : rawLogin;
+      const meData = await djangoLogin(normalizedLogin, password);
+      setRedirecting(true);
+      markBranchPickerPending();
+      didDjangoRedirect.current = true;
+      applyMeResponse(meData);
+      await refreshAuthContext();
+      navigate(redirectTo, { replace: true });
     } catch (err: unknown) {
       setErrorMsg(getErrorMessage(err));
     } finally {
@@ -563,7 +319,8 @@ const LoginPage: React.FC = () => {
   // уже что-то ввёл, но значение ещё неполное/некорректное.
   const phoneMaxLen = getPhoneLocalMaxLength(phoneCountryCode);
   const phoneIncomplete = phoneLocal.length > 0 && phoneLocal.length < phoneMaxLen;
-  const emailInvalid = email.trim().length > 0 && !EMAIL_RE.test(email.trim());
+  const emailInvalid =
+    email.trim().includes("@") && !EMAIL_RE.test(email.trim());
 
   // Сбрасываем ошибку сразу при правке поля, а не только при смене вкладки.
   const clearError = () => setErrorMsg((prev) => (prev ? null : prev));
@@ -621,7 +378,7 @@ const LoginPage: React.FC = () => {
             })}
           >
             <Tab iconPosition="start" icon={<PhoneIphoneIcon fontSize="small" />} label="Телефон" value="phone" />
-            <Tab iconPosition="start" icon={<EmailIcon fontSize="small" />} label="Email" value="email" />
+            <Tab iconPosition="start" icon={<EmailIcon fontSize="small" />} label="Логин" value="email" />
           </Tabs>
         </Box>
 
@@ -751,11 +508,10 @@ const LoginPage: React.FC = () => {
         {/* --- ВКЛАДКА EMAIL --- */}
         {authMethod === "email" && (
           <Stack spacing={2}>
-            {!isResetting ? (
-              <Stack component="form" onSubmit={handleEmailSubmit} spacing={2}>
+            <Stack component="form" onSubmit={handleEmailSubmit} spacing={2}>
                 <TextField
-                  label="Email"
-                  type="email"
+                  label="Email или логин"
+                  type="text"
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
@@ -763,7 +519,7 @@ const LoginPage: React.FC = () => {
                   }}
                   required
                   fullWidth
-                  autoComplete="email"
+                  autoComplete="username"
                   error={emailInvalid}
                   helperText={emailInvalid ? "Введите корректный email" : " "}
                   InputProps={{
@@ -813,86 +569,21 @@ const LoginPage: React.FC = () => {
                 >
                   {redirecting ? "Входим…" : loading ? "Вход..." : "Войти"}
                 </Button>
-                {IS_DJANGO_BACKEND ? (
-                  // Восстановление по почте на Django не подключено, а тикет бэку
-                  // заводить не хотим. Но забывший пароль всё равно может войти по
-                  // SMS-коду и сменить пароль в профиле — ведём его туда.
+                {
                   <Button
                     variant="text"
                     size="small"
                     onClick={() => {
                       setAuthMethod("phone");
-                      setIsResetting(false);
                       setErrorMsg(null);
-                      setInfoMsg(null);
+                      setInfoMsg("Введите номер телефона, привязанный к вашему аккаунту.");
                     }}
                     sx={{ textTransform: 'none' }}
                   >
                     Не помните пароль? Войдите по SMS-коду
                   </Button>
-                ) : (
-                  <Button
-                    variant="text"
-                    size="small"
-                    onClick={() => {
-                      setIsResetting(true);
-                      setErrorMsg(null);
-                      setInfoMsg(null);
-                    }}
-                    sx={{ textTransform: 'none' }}
-                  >
-                    Забыли пароль?
-                  </Button>
-                )}
-              </Stack>
-            ) : (
-              <Stack component="form" onSubmit={handleResetRequest} spacing={2}>
-                <Typography variant="body2" sx={{ mb: 1 }}>
-                  Введите ваш Email, и мы отправим вам ссылку для восстановления пароля.
-                </Typography>
-                <TextField
-                  label="Email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    clearError();
-                  }}
-                  required
-                  fullWidth
-                  autoFocus
-                  autoComplete="email"
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <EmailIcon fontSize="small" color="action" />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={loading}
-                  fullWidth
-                  startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
-                >
-                  {loading ? "Отправка..." : "Сбросить пароль"}
-                </Button>
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={() => {
-                    setIsResetting(false);
-                    setErrorMsg(null);
-                    setInfoMsg(null);
-                  }}
-                  sx={{ textTransform: 'none' }}
-                >
-                  Вернуться к входу
-                </Button>
-              </Stack>
-            )}
+                }
+            </Stack>
           </Stack>
         )}
         <Typography

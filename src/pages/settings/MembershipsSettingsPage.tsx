@@ -170,6 +170,11 @@ function MembershipFormDrawer({
                   {membership.email}
                 </Typography>
               )}
+              {membership.phone && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Телефон: {membership.phone}
+                </Typography>
+              )}
               {membership.isOwner && (
                 <Chip
                   label={t("memberships.owner")}
@@ -318,6 +323,11 @@ function MembershipRow({ membership, onEdit, canEdit }: MembershipRowProps) {
             {membership.email}
           </Typography>
         )}
+        {membership.phone && (
+          <Typography variant="caption" color="text.secondary" display="block">
+            Телефон: {membership.phone}
+          </Typography>
+        )}
       </Box>
 
       {/* Role */}
@@ -448,6 +458,7 @@ const MembershipsSettingsPage: React.FC = () => {
       (m) =>
         m.username.toLowerCase().includes(q) ||
         m.email.toLowerCase().includes(q) ||
+        (m.phone ?? "").toLowerCase().includes(q) ||
         (m.role?.name ?? "").toLowerCase().includes(q),
     );
   }, [orgMemberships, search]);

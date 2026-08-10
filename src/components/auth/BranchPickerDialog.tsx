@@ -18,7 +18,6 @@ import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 
 import { usePermissions } from "../../hooks/usePermissions";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import type { RbacBranch } from "../../api/auth";
 
 /**
@@ -81,7 +80,6 @@ export const BranchPickerDialog: React.FC = () => {
   // Решаем судьбу флага, как только контекст загружен: >1 филиала — открываем
   // диалог, иначе молча снимаем флаг (выбирать не из чего).
   React.useEffect(() => {
-    if (!IS_DJANGO_BACKEND) return;
     if (authStatus !== "authenticated") return;
     if (!activeMembership) return;
     if (!isPending()) return;
@@ -92,8 +90,6 @@ export const BranchPickerDialog: React.FC = () => {
       clearPending();
     }
   }, [authStatus, activeMembership, branches]);
-
-  if (!IS_DJANGO_BACKEND) return null;
 
   const finish = () => {
     clearPending();

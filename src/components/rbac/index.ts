@@ -4,6 +4,5 @@
  */
 
 export { CanAccess } from './CanAccess';
-export { ProtectedRoute } from './ProtectedRoute';
 export { RequirePermission } from './RequirePermission';
 export { AccessDenied } from './AccessDenied';

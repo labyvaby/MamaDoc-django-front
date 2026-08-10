@@ -1,32 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { getCurrentUser, switchAuthContext } from '../api';
-import type {
-  MeResponse,
-  RbacMembership,
-  RbacOrganization,
-  RbacBranch,
-  ActiveEmployee,
-  SwitchContextPayload,
-} from '../api/auth';
-import { ApiError } from '../api/client';
-import { IS_DJANGO_BACKEND } from '../config/backend';
-import { supabase } from '../utility/supabaseClient';
-import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from '../types/rbac';
-import { getModuleCodeForPermission } from '../utils/moduleMapping';
-
-// Глобальное кэширование прав, чтобы исключить повторные запросы из разных мест
-// и не триггерить рефетч при сворачивании/возврате вкладки.
+import { useCallback, useEffect, useState } from "react";
+import { getCurrentUser, switchAuthContext } from "../api";
+import type { MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
+import { ApiError } from "../api/client";
+import type { Role, Permission, UserPermissions, RoleName, PermissionCheck, AuthStatus } from "../types/rbac";
+import { getModuleCodeForPermission } from "../utils/moduleMapping";
 
 type GlobalState = {
   role: Role | null;
   employee: any | null;
   permissions: Permission[];
   loading: boolean;
-  loaded: boolean; // хотя бы одна загрузка уже была (успех/неуспех)
-  lastFetchedAt: number; // timestamp последней попытки
+  loaded: boolean;
+  lastFetchedAt: number;
   employeeId?: string | null;
-  currentUserId?: string | null;
-  // ── Django-only active context ──────────────────────────────────────────
   memberships: RbacMembership[];
   activeMembership: RbacMembership | null;
   activeOrganization: RbacOrganization | null;
@@ -34,647 +20,188 @@ type GlobalState = {
   activeEmployee: ActiveEmployee;
   switching: boolean;
   enabledModules: string[];
-  // ── Django auth status ──────────────────────────────────────────────────
   authStatus: AuthStatus;
   authError: string | null;
 };
 
 let globalState: GlobalState = {
-  role: null,
-  employee: null,
-  permissions: [],
-  loading: true, // Начинаем с loading: true, чтобы не показывать контент до загрузки
-  loaded: false,
-  lastFetchedAt: 0,
-  employeeId: null,
-  currentUserId: null,
-  memberships: [],
-  activeMembership: null,
-  activeOrganization: null,
-  activeBranch: null,
-  activeEmployee: null,
-  switching: false,
-  enabledModules: [],
-  authStatus: 'loading',
-  authError: null,
+  role: null, employee: null, permissions: [], loading: true, loaded: false,
+  lastFetchedAt: 0, employeeId: null, memberships: [], activeMembership: null,
+  activeOrganization: null, activeBranch: null, activeEmployee: null,
+  switching: false, enabledModules: [], authStatus: "loading", authError: null,
 };
-
 let inFlight: Promise<void> | null = null;
-const listeners = new Set<(s: GlobalState) => void>();
-const COOLDOWN_MS = 10_000; // не чаще, чем раз в 10 секунд по принудительным событиям
-
-// Поколение авторизации. Увеличивается каждый раз, когда контекст сессии
-// применён из «свежего» источника (логин, OTP, смена филиала). Ответ
-// /auth/me/, который стартовал ДО этого момента, относится к прошлой сессии —
-// применять его нельзя: типичная гонка при входе (запрос без cookie уходит с
-// экрана логина, отвечает 401 уже после успешного входа и обнуляет права).
+const listeners = new Set<(state: GlobalState) => void>();
+const COOLDOWN_MS = 10_000;
 let authEpoch = 0;
+const notify = () => listeners.forEach((listener) => listener(globalState));
+const setGlobal = (patch: Partial<GlobalState>) => { globalState = { ...globalState, ...patch }; notify(); };
 
-const notify = () => {
-  for (const fn of listeners) fn(globalState);
-};
-
-const setGlobal = (patch: Partial<GlobalState>) => {
-  globalState = { ...globalState, ...patch };
-  notify();
-};
-
-// Протухшая сессия: любой API-запрос вернул 401 (событие из api/client.ts) —
-// переводим приложение в unauthenticated, RequireAuth уведёт на /login.
-// Без этого пользователь видел бесконечные «Ошибка загрузки» до полного F5.
-if (IS_DJANGO_BACKEND && typeof window !== 'undefined') {
-  // Разлогиниваем не по самому событию, а по проверке: 401 мог прийти от
-  // запроса, стартовавшего до входа (гонка на экране логина). fetchPermissions
-  // сам переведёт в unauthenticated, если /auth/me/ тоже отвечает 401.
-  window.addEventListener('mamadoc:api-unauthorized', () => {
-    if (globalState.authStatus !== 'authenticated') return;
-    void fetchPermissions({ force: true });
-  });
-
-  // Права роли могли измениться, пока вкладка была неактивна (например,
-  // администратор выдал роли новые доступы) — при возврате фокуса
-  // перечитываем /auth/me/. fetchPermissions сам троттлит (COOLDOWN_MS),
-  // так что Alt+Tab не спамит запросами.
-  const refetchOnReturn = () => {
-    if (globalState.authStatus !== 'authenticated') return;
-    void fetchPermissions();
-  };
-  window.addEventListener('focus', refetchOnReturn);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') refetchOnReturn();
-  });
-  window.addEventListener('mamadoc:api-forbidden', refetchOnReturn);
-  window.addEventListener('mamadoc:rbac-changed', () => {
-    if (globalState.authStatus !== 'authenticated') return;
-    void fetchPermissions({ force: true });
-  });
-}
-
-type RolePermissionsRow = { permissions?: Permission | Permission[] | null };
-
-/**
- * Build a partial GlobalState patch from a Django /api/auth/me/ response.
- * Used both by the initial fetch and by switchContext().
- */
 function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
   const { user, activeMembership } = meData;
-  const permCodes = Array.isArray(meData.permissions) ? meData.permissions : [];
-  const memberships = Array.isArray(meData.memberships)
-    ? meData.memberships.map((membership) => ({
-        ...membership,
-        branches: Array.isArray(membership.branches) ? membership.branches : [],
-        permissions: Array.isArray(membership.permissions) ? membership.permissions : [],
-      }))
-    : [];
-  const normalizedActiveMembership = activeMembership
-    ? {
-        ...activeMembership,
-        branches: Array.isArray(activeMembership.branches) ? activeMembership.branches : [],
-        permissions: Array.isArray(activeMembership.permissions) ? activeMembership.permissions : [],
-      }
-    : null;
-  const activeEmployee = meData.activeEmployee ?? null;
-
-  const roleName: RoleName = user.isSuperuser
-    ? 'superadmin'
-    : activeMembership?.isOwner
-    ? 'owner'
-    : activeMembership?.role?.code
-    ? (activeMembership.role.code as RoleName)
-    : user.isStaff
-    ? 'admin'
-    : 'registrator';
-
-  const role: Role = {
-    id: String(normalizedActiveMembership?.id ?? user.id),
-    name: roleName,
-    display_name: normalizedActiveMembership?.role?.name ?? roleName,
-    description: 'Django RBAC user',
-    created_at: '',
-    updated_at: '',
-  };
-
-  const permissions: Permission[] = permCodes.map((code) => ({
-    id: code,
-    name: code,
-    display_name: code,
-    description: '',
-    resource: code.split('.')[0] ?? code,
-    action: code.split('.')[1] ?? '',
-    created_at: '',
+  const memberships = (meData.memberships ?? []).map((membership) => ({
+    ...membership,
+    branches: Array.isArray(membership.branches) ? membership.branches : [],
+    permissions: Array.isArray(membership.permissions) ? membership.permissions : [],
   }));
-
+  const normalizedMembership = activeMembership ? {
+    ...activeMembership,
+    branches: Array.isArray(activeMembership.branches) ? activeMembership.branches : [],
+    permissions: Array.isArray(activeMembership.permissions) ? activeMembership.permissions : [],
+  } : null;
+  const roleName: RoleName = user.isSuperuser ? "superadmin" : normalizedMembership?.isOwner ? "owner" : (normalizedMembership?.role?.code as RoleName | undefined) ?? (user.isStaff ? "admin" : "registrator");
+  const role: Role = {
+    id: String(normalizedMembership?.id ?? user.id), name: roleName,
+    display_name: normalizedMembership?.role?.name ?? roleName,
+    description: "Django RBAC user", created_at: "", updated_at: "",
+  };
+  const permissions: Permission[] = (meData.permissions ?? []).map((code) => ({
+    id: code, name: code, display_name: code, description: "",
+    resource: code.split(".")[0] ?? code, action: code.split(".")[1] ?? "",
+    created_at: "",
+  }));
   return {
     role,
-    employee: activeEmployee
-      ? { ...activeEmployee, roles: role }
-      : {
-          id: user.id,
-          fullName: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username,
-          email: user.email,
-          roles: role,
-        },
-    permissions,
-    loaded: true,
-    loading: false,
-    employeeId: String(user.id),
-    currentUserId: String(user.id),
-    memberships,
-    activeMembership: normalizedActiveMembership,
-    activeOrganization: meData.activeOrganization ?? null,
-    activeBranch: meData.activeBranch ?? null,
-    activeEmployee,
-    enabledModules: Array.isArray(meData.enabledModules) ? meData.enabledModules : [],
-    authStatus: 'authenticated' as AuthStatus,
-    authError: null,
+    employee: meData.activeEmployee ? { ...meData.activeEmployee, roles: role } : { id: user.id, fullName: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username, email: user.email, roles: role },
+    permissions, loaded: true, loading: false, employeeId: String(user.id),
+    memberships, activeMembership: normalizedMembership,
+    activeOrganization: meData.activeOrganization ?? null, activeBranch: meData.activeBranch ?? null,
+    activeEmployee: meData.activeEmployee ?? null,
+    enabledModules: meData.enabledModules ?? [], authStatus: "authenticated" as AuthStatus, authError: null,
   };
 }
 
-/**
- * Заполнить глобальный state из MeResponse (после login или /auth/me/).
- * Единая точка записи — предотвращает дублирование запросов.
- */
 export function applyMeResponse(meData: MeResponse): void {
   authEpoch += 1;
-  setGlobal({
-    ...buildStateFromMe(meData),
-    lastFetchedAt: Date.now(),
-  });
+  setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
 }
 
-/**
- * Перечитывает /auth/me/ и применяет ответ, игнорируя cooldown и уже летящий
- * запрос (он мог стартовать до входа). Вызывается сразу после логина/OTP:
- * ответ /auth/login/ отражает не весь активный контекст сессии, из-за чего
- * интерфейс сразу после входа мог показывать «нет доступа» до перезагрузки.
- * Никогда не бросает: при недоступности сервера контекст, применённый из
- * ответа логина, остаётся в силе.
- */
+async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = {}): Promise<void> {
+  const { force = false, fresh = false } = options;
+  if (inFlight) {
+    if (!fresh) return inFlight;
+    await inFlight.catch(() => undefined);
+  }
+  const now = Date.now();
+  if (!force && globalState.loaded && now - globalState.lastFetchedAt < COOLDOWN_MS) return;
+  const epoch = authEpoch;
+  inFlight = (async () => {
+    try {
+      setGlobal({ loading: !globalState.loaded, lastFetchedAt: Date.now() });
+      const meData = await getCurrentUser();
+      if (epoch !== authEpoch) return;
+      if (!meData?.user) {
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null });
+      } else {
+        setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
+      }
+    } catch (error) {
+      if (epoch !== authEpoch) return;
+      const status = error instanceof ApiError ? error.status : -1;
+      if (status === 401) {
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null });
+      } else {
+        const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
+        const authenticated = globalState.authStatus === "authenticated";
+        setGlobal({ loading: false, authStatus: authenticated ? "authenticated" : "unavailable", authError: authenticated ? null : message });
+      }
+    } finally {
+      inFlight = null;
+    }
+  })();
+  return inFlight;
+}
+
 export async function refreshAuthContext(): Promise<void> {
-  if (!IS_DJANGO_BACKEND) return;
   const snapshot = globalState;
   await fetchPermissions({ force: true, fresh: true });
-
-  // Свежий /auth/me/ не подтвердил сессию (401 из-за не успевшей примениться
-  // cookie, сетевой сбой) — не рушим только что выполненный вход: оставляем
-  // контекст из ответа логина, дальше сработают обычные механизмы (401 на
-  // рабочих запросах уведёт на /login).
-  if (snapshot.authStatus === 'authenticated' && globalState.authStatus !== 'authenticated') {
+  // A real 401 means the session cookie was not accepted (or has expired).
+  // Do not restore the optimistic login state in that case; otherwise the app
+  // navigates into a protected page and only fails on its first API request.
+  // Temporary network/server failures remain recoverable and keep the context
+  // received from the successful login response.
+  if (
+    snapshot.authStatus === "authenticated" &&
+    globalState.authStatus === "unavailable"
+  ) {
     authEpoch += 1;
     globalState = { ...snapshot, loading: false, lastFetchedAt: Date.now() };
     notify();
   }
 }
 
-/**
- * Switches active membership/branch via POST /api/auth/context/ and updates
- * the global permissions cache with the response. Throws on backend rejection
- * so callers can show an error toast without leaving the cache in a bad state.
- */
 export async function switchContext(payload: SwitchContextPayload): Promise<MeResponse> {
-  if (!IS_DJANGO_BACKEND) {
-    throw new Error('switchContext is only available in Django backend mode');
-  }
-
   setGlobal({ switching: true });
   try {
     const meData = await switchAuthContext(payload);
     authEpoch += 1;
-    setGlobal({
-      ...buildStateFromMe(meData),
-      switching: false,
-      lastFetchedAt: Date.now(),
-    });
-    window.dispatchEvent(new Event('mamadoc:django-context-switched'));
+    setGlobal({ ...buildStateFromMe(meData), switching: false, lastFetchedAt: Date.now() });
+    window.dispatchEvent(new Event("mamadoc:django-context-switched"));
     return meData;
-  } catch (err) {
+  } catch (error) {
     setGlobal({ switching: false });
-    throw err;
+    throw error;
   }
 }
 
-const extractPermissions = (rolePermissions: RolePermissionsRow[] | null | undefined): Permission[] => {
-  return rolePermissions?.flatMap((rp) => {
-    const perms = rp?.permissions;
-    if (!perms) return [] as Permission[];
-    return Array.isArray(perms) ? perms : [perms];
-  }) ?? [];
-};
-
-async function fetchPermissions(opts: { force?: boolean; fresh?: boolean } = {}): Promise<void> {
-  const { force = false, fresh = false } = opts;
-
-  // Уже идёт запрос — дождёмся его. Исключение: fresh — нужен именно новый
-  // запрос, потому что летящий мог стартовать до смены сессии.
-  if (inFlight) {
-    if (!fresh) return inFlight;
-    await inFlight.catch(() => undefined);
-    if (inFlight) return inFlight;
-  }
-
-  // Троттлинг даже для форсированных событий (чтобы не спамить при Alt+Tab)
-  const now = Date.now();
-  if (!force && globalState.loaded && (now - globalState.lastFetchedAt < COOLDOWN_MS)) {
-    return;
-  }
-
-  // Поколение на момент старта: если пока запрос летел, контекст применили из
-  // более свежего источника (логин/смена филиала) — ответ не применяем.
-  const epoch = authEpoch;
-  const isStale = () => epoch !== authEpoch;
-
-  inFlight = (async () => {
-    try {
-      // Если это перезагрузка (уже loaded: true), не показываем loading
-      // чтобы избежать "моргания" UI при переключении вкладок
-      const showLoading = !globalState.loaded;
-      setGlobal({ loading: showLoading, lastFetchedAt: Date.now() });
-
-      if (IS_DJANGO_BACKEND) {
-        try {
-          const meData = (await getCurrentUser()) as MeResponse | null;
-          if (isStale()) return;
-          if (!meData || !meData.user) {
-            // Backend вернул null или некорректный ответ
-            setGlobal({
-              role: null, employee: null, permissions: [],
-              loading: false, loaded: true,
-              authStatus: 'unauthenticated', authError: null,
-            });
-            return;
-          }
-          setGlobal({ ...buildStateFromMe(meData), lastFetchedAt: Date.now() });
-        } catch (err) {
-          if (isStale()) return;
-          const isApiError = err instanceof ApiError;
-          const status = isApiError ? err.status : -1;
-
-          if (status === 401) {
-            // Нет сессии — чистый logout, очищаем всё
-            setGlobal({
-              role: null, employee: null, permissions: [],
-              memberships: [], activeMembership: null,
-              activeOrganization: null, activeBranch: null, activeEmployee: null,
-              enabledModules: [],
-              loading: false, loaded: true,
-              authStatus: 'unauthenticated', authError: null,
-            });
-          } else {
-            // 5xx, network (status=0), timeout — сервер временно недоступен.
-            // НЕ очищаем ранее загруженный tenant context. Если контекст уже
-            // применён (вошли и работаем), разовый сбой /auth/me/ не должен
-            // подменять весь интерфейс плашкой — оставляем authenticated,
-            // ошибку покажут сами упавшие запросы.
-            const errMsg = isApiError
-              ? `Сервер недоступен (${status || 'сеть'})`
-              : 'Сетевая ошибка';
-            const keepAuthenticated = globalState.authStatus === 'authenticated';
-            setGlobal({
-              loading: false,
-              loaded: globalState.loaded, // сохраняем предыдущее значение
-              authStatus: keepAuthenticated ? 'authenticated' : 'unavailable',
-              authError: keepAuthenticated ? null : errMsg,
-            });
-          }
-        }
-        return;
-      }
-
-      // 1) Текущая сессия (без отдельного запроса user)
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      const user = sessionData?.session?.user ?? null;
-
-      // OPTIMIZATION: If user is same and data already loaded, don't refetch
-      if (!force && globalState.loaded && globalState.currentUserId === user?.id) {
-        setGlobal({ loading: false });
-        return;
-      }
-
-      if (sessionError || !user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, currentUserId: null });
-        return;
-      }
-
-      // 2) Загружаем сотрудника и права (Объединенный запрос)
-      // Пытаемся сразу найти по auth_user_id. Если нет — ищем через таблицу связей.
-      const buildSelect = () => `
-        *,
-        roles (
-          id,
-          name,
-          display_name,
-          description,
-          created_at,
-          updated_at,
-          role_permissions (
-            permissions (
-              id,
-              name,
-              display_name,
-              description,
-              resource,
-              action,
-              created_at
-            )
-          )
-        )
-      `;
-
-      let { data: employee, error: employeeError } = await supabase
-        .from('Employees')
-        .select(buildSelect())
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
-
-      // Fallback: search by email or phone from session user if not found by id
-      if (!employee && !employeeError) {
-        const filters = [];
-        if (user.email) filters.push(`email.eq.${user.email}`);
-        if (user.phone) filters.push(`phone.ilike.%${user.phone.slice(-9)}`);
-
-        if (filters.length > 0) {
-          const { data: fallbackEmp } = await supabase
-            .from('Employees')
-            .select(buildSelect())
-            .or(filters.join(','))
-            .maybeSingle();
-
-          if (fallbackEmp) {
-            employee = fallbackEmp as any;
-          }
-        }
-      }
-
-      if (!employee && !employeeError) {
-        // Пытаемся через таблицу связей
-        const { data: linkData } = await supabase
-          .from('employee_auth_links')
-          .select('employee_id')
-          .eq('auth_user_id', user.id)
-          .maybeSingle();
-
-        if (linkData?.employee_id) {
-          const res = await supabase
-            .from('Employees')
-            .select(buildSelect())
-            .eq('id', linkData.employee_id)
-            .maybeSingle();
-          employee = res.data as any;
-          employeeError = res.error as any;
-        }
-      }
-
-      if (employeeError || !employee || !(employee as any).roles) {
-        // Нет записи сотрудника или роли — кэшируем отрицательный результат
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, currentUserId: user.id });
-        return;
-      }
-
-      const emp = employee as any;
-      const userRole = emp.roles as unknown as Role & {
-        role_permissions?: RolePermissionsRow[] | null;
-      };
-
-      const perms = extractPermissions(userRole.role_permissions ?? []);
-      setGlobal({
-        role: userRole,
-        employee: emp, // Store full employee object
-        permissions: perms,
-        loading: false,
-        loaded: true,
-        employeeId: emp.id,
-        currentUserId: user.id
-      });
-    } catch (error) {
-      // Supabase-ветка: любая ошибка — считаем сессию недействительной
-      console.error('Ошибка загрузки прав доступа (Supabase):', error);
-      setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true });
-    } finally {
-      inFlight = null;
-    }
-  })();
-
-  return inFlight;
-}
-
-/**
- * Принудительно повторяет Django /auth/me/ без перезагрузки страницы.
- * Сбрасывает cooldown, чтобы запрос прошёл немедленно.
- */
 export function retryAuth(): void {
-  if (!IS_DJANGO_BACKEND) return;
-  // Сбрасываем lastFetchedAt, чтобы обойти COOLDOWN_MS
   globalState = { ...globalState, lastFetchedAt: 0 };
   void fetchPermissions({ force: true });
 }
 
-let authSub: { unsubscribe: () => void } | null = null;
-function ensureAuthSubscription() {
-  if (IS_DJANGO_BACKEND) return;
-
-  if (authSub) return;
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((event) => {
-    switch (event) {
-      case 'SIGNED_IN':
-        // Форсируем только если это новый пользователь (сменился user.id)
-        // Если тот же пользователь (TOKEN_REFRESHED маскируется как SIGNED_IN) — не сбрасываем
-        void supabase.auth.getSession().then(({ data }) => {
-          const newUserId = data?.session?.user?.id ?? null;
-          if (newUserId !== globalState.currentUserId) {
-            setGlobal({ loaded: false, currentUserId: null });
-            void fetchPermissions({ force: true });
-          }
-        });
-        break;
-      case 'USER_UPDATED':
-        // При USER_UPDATED (например, смена фокуса может провоцировать проверку токена)
-        // НЕ делаем force рефетч, если ID пользователя тот же.
-        void fetchPermissions({ force: false });
-        break;
-      case 'SIGNED_OUT':
-        // Очищаем данные; повторная загрузка пойдёт при следующем SIGNED_IN
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, currentUserId: null });
-        break;
-      case 'INITIAL_SESSION':
-      case 'TOKEN_REFRESHED':
-      default:
-        // Игнорируем, чтобы не дёргать лишние рефетчи на фокусе/обновлении токена
-        break;
-    }
-  });
-  authSub = subscription;
-
-  // После того как useAuthIdentitySync сделал linking, он диспатчит это событие.
-  // Форсируем перезагрузку прав с новым auth_user_id.
-  window.addEventListener('auth-identity-synced', () => {
-    setGlobal({ loaded: false, currentUserId: null });
-    void fetchPermissions({ force: true });
-  });
+if (typeof window !== "undefined") {
+  const refetch = () => { if (globalState.authStatus === "authenticated") void fetchPermissions(); };
+  window.addEventListener("mamadoc:api-unauthorized", () => void fetchPermissions({ force: true }));
+  window.addEventListener("mamadoc:api-forbidden", refetch);
+  window.addEventListener("mamadoc:rbac-changed", () => void fetchPermissions({ force: true }));
+  window.addEventListener("focus", refetch);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refetch(); });
 }
 
-/**
- * Хук для работы с правами доступа пользователя.
- * Использует глобальный кэш и троттлинг, чтобы исключить дубликаты.
- */
 export const usePermissions = (): UserPermissions & PermissionCheck => {
   const [state, setState] = useState<GlobalState>(globalState);
-
   useEffect(() => {
     listeners.add(setState);
-    ensureAuthSubscription();
-
-    // Инициируем загрузку только если ещё не загружали (или был сброс)
-    if (!globalState.loaded) {
-      void fetchPermissions();
-    }
-
-    return () => {
-      listeners.delete(setState);
-    };
+    if (!globalState.loaded) void fetchPermissions();
+    return () => { listeners.delete(setState); };
   }, []);
-
-  // Хелперы
-  const hasPermission = useCallback(
-    (permission: string | string[]): boolean => {
-      if (state.loading) return false;
-      if (!state.permissions.length) return false;
-      if (state.role?.name === 'superadmin') return true;
-      const permissionsToCheck = Array.isArray(permission) ? permission : [permission];
-      return permissionsToCheck.some((perm) => state.permissions.some((p) => p.name === perm));
-    },
-    [state.loading, state.permissions, state.role]
-  );
-
-  const hasAnyPermission = useCallback(
-    (perms: string[]): boolean => {
-      if (state.loading) return false;
-      if (!state.permissions.length) return false;
-      if (state.role?.name === 'superadmin') return true;
-      return perms.some((perm) => state.permissions.some((p) => p.name === perm));
-    },
-    [state.loading, state.permissions, state.role]
-  );
-
-  const hasAllPermissions = useCallback(
-    (perms: string[]): boolean => {
-      if (state.loading) return false;
-      if (!state.permissions.length) return false;
-      if (state.role?.name === 'superadmin') return true;
-      return perms.every((perm) => state.permissions.some((p) => p.name === perm));
-    },
-    [state.loading, state.permissions, state.role]
-  );
-
-  const hasRole = useCallback(
-    (roleName: RoleName | RoleName[]): boolean => {
-      if (state.loading) return false;
-      if (!state.role) return false;
-
-      const rolesToCheck = Array.isArray(roleName) ? roleName : [roleName];
-      // У владельца организации roleName выше схлопывается в 'owner' и
-      // затирает выданную ему роль (isOwner проверяется раньше role.code) —
-      // из-за этого все роль-гейты видели его как «никого»: ни admin, ни
-      // accountant. Матчим обе: и 'owner', и реальный код роли membership.
-      const currentRoleNames = [
-        state.role.name?.toLowerCase().trim(),
-        state.activeMembership?.role?.code?.toLowerCase().trim(),
-      ].filter(Boolean);
-
-      return rolesToCheck.some((r) => currentRoleNames.includes(r.toLowerCase()));
-    },
-    [state.loading, state.role, state.activeMembership]
-  );
-
-  const isSuperAdmin = useCallback(() => state.role?.name === 'superadmin', [state.role]);
-  const isAdmin = useCallback(
-    () => hasRole(['superadmin', 'admin', 'administrator']),
-    [hasRole],
-  );
-  const isRegistrator = useCallback(() => hasRole(['receptionist', 'registrator']), [hasRole]);
-  const isDoctor = useCallback(() => hasRole('doctor'), [hasRole]);
-
-  const hasModule = useCallback(
-    (moduleCode: string): boolean => {
-      if (!IS_DJANGO_BACKEND) return true;
-      if (state.role?.name === 'superadmin') return true;
-      return state.enabledModules.includes(moduleCode);
-    },
-    [state.enabledModules, state.role]
-  );
-
-  const canAccess = useCallback(
-    (permissionCode: string): boolean => {
-      if (!IS_DJANGO_BACKEND) return hasPermission(permissionCode);
-      if (state.role?.name === 'superadmin') return true;
-      if (!hasPermission(permissionCode)) return false;
-      const moduleCode = getModuleCodeForPermission(permissionCode);
-      if (moduleCode === null) return true;
-      return state.enabledModules.includes(moduleCode);
-    },
-    [hasPermission, state.enabledModules, state.role]
-  );
-
-  const canManageEmployees = useCallback(
-    () => (
-      IS_DJANGO_BACKEND
-        ? canAccess('staff.update')
-        : hasRole(['superadmin', 'admin', 'receptionist', 'registrator'])
-    ),
-    [canAccess, hasRole],
-  );
-  const canManageExpenses = useCallback(
-    () => (
-      IS_DJANGO_BACKEND
-        ? canAccess('finance.expense.manage')
-        : hasRole(['superadmin', 'admin', 'registrator', 'receptionist', 'manager'])
-    ),
-    [canAccess, hasRole],
-  );
-
+  const hasPermission = useCallback((permission: string | string[]) => {
+    if (state.loading || !state.permissions.length) return false;
+    if (state.role?.name === "superadmin") return true;
+    const requested = Array.isArray(permission) ? permission : [permission];
+    return requested.some((code) => state.permissions.some((item) => item.name === code));
+  }, [state.loading, state.permissions, state.role]);
+  const hasAnyPermission = useCallback((permissions: string[]) => permissions.some(hasPermission), [hasPermission]);
+  const hasAllPermissions = useCallback((permissions: string[]) => permissions.every(hasPermission), [hasPermission]);
+  const hasRole = useCallback((roleName: RoleName | RoleName[]) => {
+    if (state.loading || !state.role) return false;
+    const names = [state.role.name, state.activeMembership?.role?.code].filter(Boolean).map((name) => String(name).toLowerCase());
+    const requested = Array.isArray(roleName) ? roleName : [roleName];
+    return requested.some((name) => names.includes(name.toLowerCase()));
+  }, [state.loading, state.role, state.activeMembership]);
+  const isSuperAdmin = useCallback(() => state.role?.name === "superadmin", [state.role]);
+  const isAdmin = useCallback(() => hasRole(["superadmin", "admin", "administrator"]), [hasRole]);
+  const isRegistrator = useCallback(() => hasRole(["receptionist", "registrator"]), [hasRole]);
+  const isDoctor = useCallback(() => hasRole("doctor"), [hasRole]);
+  const hasModule = useCallback((code: string) => state.role?.name === "superadmin" || state.enabledModules.includes(code), [state.enabledModules, state.role]);
+  const canAccess = useCallback((code: string) => {
+    if (state.role?.name === "superadmin") return true;
+    if (!hasPermission(code)) return false;
+    const module = getModuleCodeForPermission(code);
+    return module === null || state.enabledModules.includes(module);
+  }, [hasPermission, state.enabledModules, state.role]);
+  const canManageEmployees = useCallback(() => canAccess("staff.update"), [canAccess]);
+  const canManageExpenses = useCallback(() => canAccess("finance.expense.manage"), [canAccess]);
   return {
-    role: state.role,
-    permissions: state.permissions,
-    loading: state.loading,
-    employeeId: state.employeeId,
-    hasPermission,
-    hasAnyPermission,
-    hasAllPermissions,
-    hasRole,
-    isSuperAdmin,
-    isAdmin,
-    isRegistrator,
-    isDoctor,
-    isNurse: useCallback(() => hasRole('nurse'), [hasRole]),
-    canManageEmployees,
-    canManageExpenses,
-    employee: state.employee,
-    // Active Django context — null/empty in Supabase mode.
-    memberships: state.memberships,
-    activeMembership: state.activeMembership,
-    activeOrganization: state.activeOrganization,
-    activeBranch: state.activeBranch,
-    activeEmployee: state.activeEmployee,
-    switching: state.switching,
-    switchContext,
-    enabledModules: state.enabledModules,
-    hasModule,
-    canAccess,
-    // Django auth status
-    authStatus: state.authStatus,
-    authError: state.authError,
-    retryAuth,
+    role: state.role, permissions: state.permissions, loading: state.loading, employeeId: state.employeeId,
+    hasPermission, hasAnyPermission, hasAllPermissions, hasRole, isSuperAdmin, isAdmin, isRegistrator, isDoctor,
+    isNurse: useCallback(() => hasRole("nurse"), [hasRole]), canManageEmployees, canManageExpenses,
+    employee: state.employee, memberships: state.memberships, activeMembership: state.activeMembership,
+    activeOrganization: state.activeOrganization, activeBranch: state.activeBranch, activeEmployee: state.activeEmployee,
+    switching: state.switching, switchContext, enabledModules: state.enabledModules, hasModule, canAccess,
+    authStatus: state.authStatus, authError: state.authError, retryAuth,
   };
 };
 
-/** Быстрые хелперы */
-export const useHasPermission = (permission: string | string[]): boolean => {
-  const { hasPermission } = usePermissions();
-  return hasPermission(permission);
-};
-
-export const useHasRole = (roleName: RoleName | RoleName[]): boolean => {
-  const { hasRole } = usePermissions();
-  return hasRole(roleName);
-};
+export const useHasPermission = (permission: string | string[]) => usePermissions().hasPermission(permission);
+export const useHasRole = (roleName: RoleName | RoleName[]) => usePermissions().hasRole(roleName);

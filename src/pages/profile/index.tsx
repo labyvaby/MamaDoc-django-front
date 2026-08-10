@@ -34,7 +34,6 @@ import { useCanChecker } from "../../hooks/useCan";
 import { PageHeader, AppCard, UserAvatar, InfoTile } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { getCurrentUser } from "../../api/auth";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import ChangePasswordCard from "./ChangePasswordCard";
 import EditProfileDrawer, { type ProfileFormValues } from "./EditProfileDrawer";
 import ProfileDocumentsBlock from "./ProfileDocumentsBlock";
@@ -179,7 +178,7 @@ const ProfilePage: React.FC = () => {
 
   // Настоящий employee id берём из /auth/me (activeEmployee.id).
   const [empId, setEmpId] = React.useState<number | null>(null);
-  const hasDjangoEmp = IS_DJANGO_BACKEND && empId != null;
+  const hasDjangoEmp = empId != null;
 
   const [view, setView] = React.useState<ProfileView>(() => deriveView(empFromPerms));
 
@@ -192,7 +191,6 @@ const ProfilePage: React.FC = () => {
 
     setView(deriveView(empFromPerms));
 
-    if (!IS_DJANGO_BACKEND) return;
     getCurrentUser()
       .then((me) => {
         if (me.activeEmployee) {
@@ -249,7 +247,7 @@ const ProfilePage: React.FC = () => {
     },
   ];
 
-  if (IS_DJANGO_BACKEND && can("achievements.view")) {
+  if (can("achievements.view")) {
     tabs.push({
       key: "achievements",
       label: "Достижения",
@@ -275,7 +273,7 @@ const ProfilePage: React.FC = () => {
     });
   }
 
-  if (IS_DJANGO_BACKEND) {
+  {
     tabs.push({
       key: "security",
       label: "Безопасность",

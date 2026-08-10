@@ -81,6 +81,8 @@ export interface RbacMembership {
   userId: number;
   username: string;
   email: string;
+  /** Phone from the employee card in the same organization. */
+  phone?: string;
   organizationId: number;
   role: RbacRoleShort | null;
   isOwner: boolean;
