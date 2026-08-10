@@ -21,7 +21,8 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import { useBookingTheme, BOOKING_PRIMARY, BORDER, MUTED } from "./theme";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
-import { useBookingNav } from "./orgSlug";
+import { useBookingNav, useBookingOrgSlug } from "./orgSlug";
+import { BOOKING_ORG_SLUG, type OrganizationDetail } from "../../api/publicBooking";
 import { formatPhone, monogram, telHref } from "./format";
 import { usePatientSession } from "./PatientSession";
 import { PatientAuthDialog } from "./booking/PatientAuthDialog";
@@ -85,6 +86,39 @@ const scrollableDocument = (
   />
 );
 
+// ── Бренд клиники ────────────────────────────────────────────────────────────
+
+/**
+ * Логотип клиники для шапки и превью ссылки, иконка вкладки.
+ *
+ * Публичный API организации логотип не отдаёт (в ответе прода есть только
+ * `name`, `phones`, счётчики), поэтому для организации по умолчанию берём файлы
+ * из `public/`. Чужой клинике (`?org=`) фолбэка нет намеренно: показать ей
+ * логотип «Мама Доктора» хуже, чем нейтральную монограмму. Как только бэк
+ * начнёт отдавать `logoUrl`, ветка с файлами станет ненужной сама собой.
+ */
+const BOOKING_LOGO_URL = import.meta.env.VITE_BOOKING_LOGO_URL || "/og-image.png";
+const BOOKING_ICON_URL = import.meta.env.VITE_BOOKING_ICON_URL || "/booking-icon.png";
+
+interface BookingBrand {
+  /** Логотип для шапки; `null` — рисуем монограмму. */
+  logoUrl: string | null;
+  /** Иконка вкладки; `null` — оставляем иконку CRM. */
+  iconUrl: string | null;
+}
+
+function useBookingBrand(organization: OrganizationDetail | null): BookingBrand {
+  const orgSlug = useBookingOrgSlug();
+  const isDefaultOrg = orgSlug === BOOKING_ORG_SLUG;
+  return React.useMemo(
+    () => ({
+      logoUrl: organization?.logoUrl || (isDefaultOrg ? BOOKING_LOGO_URL : null),
+      iconUrl: organization?.logoUrl || (isDefaultOrg ? BOOKING_ICON_URL : null),
+    }),
+    [organization?.logoUrl, isDefaultOrg],
+  );
+}
+
 // ── Заголовок вкладки и мета-теги ────────────────────────────────────────────
 
 function upsertMeta(attr: "name" | "property", key: string, value: string) {
@@ -98,24 +132,77 @@ function upsertMeta(attr: "name" | "property", key: string, value: string) {
   el.content = value;
 }
 
+/** Абсолютный адрес: og:image по относительному пути мессенджеры не тянут. */
+function absoluteUrl(path: string): string {
+  try {
+    return new URL(path, window.location.origin).toString();
+  } catch {
+    return path;
+  }
+}
+
 /**
  * Заголовок вкладки и og-теги витрины. Ссылку на запись присылают в мессенджере,
- * поэтому дефолтный титул CRM («Aximo») здесь не годится: гость должен видеть
- * клинику и врача. Титул CRM восстанавливаем при уходе со страницы.
+ * поэтому дефолтный титул CRM («Aximo CRM») здесь не годится: гость должен
+ * видеть клинику и врача. Значения CRM восстанавливаем при уходе со страницы —
+ * иначе после возврата в CRM во вкладке остаётся описание витрины.
+ *
+ * ⚠ Это работает только для уже открытой вкладки. Краулеры мессенджеров JS не
+ * выполняют и читают статические теги из `index.html` (см. комментарий там):
+ * превью ссылки одинаково для всех страниц витрины и описывает организацию по
+ * умолчанию. Персональное превью врача требует серверного рендеринга.
  */
-function usePageMeta(title: string | null, description: string) {
+function usePageMeta(title: string | null, description: string, imageUrl: string | null) {
   React.useEffect(() => {
     if (!title) return;
-    const previous = document.title;
-    document.title = title;
-    upsertMeta("name", "description", description);
-    upsertMeta("property", "og:title", title);
-    upsertMeta("property", "og:description", description);
-    upsertMeta("property", "og:type", "website");
-    return () => {
-      document.title = previous;
+    const previousTitle = document.title;
+    const previousMeta = new Map<HTMLMetaElement, string>();
+    const set = (attr: "name" | "property", key: string, value: string) => {
+      const el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`);
+      if (el && !previousMeta.has(el)) previousMeta.set(el, el.content);
+      upsertMeta(attr, key, value);
     };
-  }, [title, description]);
+
+    document.title = title;
+    set("name", "description", description);
+    set("property", "og:type", "website");
+    set("property", "og:title", title);
+    set("property", "og:description", description);
+    set("property", "og:url", window.location.href);
+    if (imageUrl) set("property", "og:image", absoluteUrl(imageUrl));
+
+    return () => {
+      document.title = previousTitle;
+      previousMeta.forEach((value, el) => {
+        el.content = value;
+      });
+    };
+  }, [title, description, imageUrl]);
+}
+
+/**
+ * Иконка вкладки на время показа витрины. Гость видит вкладку клиники, а не
+ * логотип CRM. Иконки CRM снимаем и возвращаем целиком: у них разные `type`
+ * (ico и svg), подменить один `href` нельзя — браузер отрисует не то.
+ */
+function useFavicon(href: string | null) {
+  React.useEffect(() => {
+    if (!href) return;
+    const replaced = Array.from(
+      document.head.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]'),
+    );
+    replaced.forEach((link) => link.remove());
+
+    const link = document.createElement("link");
+    link.rel = "icon";
+    link.href = href;
+    document.head.appendChild(link);
+
+    return () => {
+      link.remove();
+      replaced.forEach((prev) => document.head.appendChild(prev));
+    };
+  }, [href]);
 }
 
 // ── Шапка ────────────────────────────────────────────────────────────────────
@@ -124,8 +211,13 @@ function usePageMeta(title: string | null, description: string) {
 const Brand: React.FC = () => {
   const { go } = useBookingNav();
   const { organization } = useBookingOrg();
+  const brand = useBookingBrand(organization);
   const [logoBroken, setLogoBroken] = React.useState(false);
+  const [iconBroken, setIconBroken] = React.useState(false);
+  // Логотип из API — готовая шапка клиники, её показываем целиком. Локальный
+  // файл — квадратный знак, он идёт значком рядом с названием.
   const showLogo = Boolean(organization?.logoUrl) && !logoBroken;
+  const showIcon = Boolean(brand.iconUrl) && !iconBroken;
 
   return (
     <Stack
@@ -155,11 +247,21 @@ const Brand: React.FC = () => {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              bgcolor: "#F0F4FF",
-              color: "#4A6CF7",
+              overflow: "hidden",
+              ...(showIcon
+                ? null
+                : { bgcolor: "#F0F4FF", color: "#4A6CF7" }),
             }}
           >
-            {organization ? (
+            {showIcon ? (
+              <Box
+                component="img"
+                src={brand.iconUrl ?? undefined}
+                alt={organization?.name ?? ""}
+                onError={() => setIconBroken(true)}
+                sx={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+              />
+            ) : organization ? (
               <Typography sx={{ fontSize: 12, fontWeight: 700 }}>
                 {monogram(organization.name)}
               </Typography>
@@ -402,9 +504,15 @@ export const PublicBookingShell: React.FC<
   const { t } = useT("publicBooking");
   const theme = useBookingTheme();
   const { organization } = useBookingOrg();
+  const brand = useBookingBrand(organization);
 
-  const head = pageTitle || t("brandTitle");
-  usePageMeta(organization ? `${head} — ${organization.name}` : head, t("metaDescription"));
+  // «Иванов Иван — Онлайн-запись — Мама Доктор»: на странице врача без слова
+  // «запись» вкладка не объясняет, куда попал гость.
+  const title = [pageTitle, t("brandTitle"), organization?.name]
+    .filter(Boolean)
+    .join(" — ");
+  usePageMeta(title, t("metaDescription"), brand.logoUrl);
+  useFavicon(brand.iconUrl);
 
   return (
     <ThemeProvider theme={theme}>

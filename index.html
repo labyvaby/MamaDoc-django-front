@@ -7,7 +7,6 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex,nofollow" />
     <meta name="theme-color" content="#159c91" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
     <meta
@@ -15,6 +14,36 @@
       content="Aximo CRM — система для управления процессами, клиентами и командой."
     />
     <title>Aximo CRM</title>
+
+    <!--
+      Превью ссылки в мессенджерах. Краулеры WhatsApp/Telegram/Facebook не
+      выполняют JS, поэтому og-теги, которые витрина ставит на лету
+      (`usePageMeta` в src/pages/public-booking/shell.tsx), им не видны — они
+      читают ровно этот файл. Ссылку наружу присылают именно на онлайн-запись,
+      поэтому статические og описывают её, а не CRM: иначе пациент получает
+      карточку «Aximo CRM — система для управления процессами».
+
+      Значения подставляет плагин bookingMeta() в vite.config.ts из
+      VITE_BOOKING_ORG_NAME / VITE_BOOKING_PUBLIC_ORIGIN.
+
+      ⚠ Превью одинаково для всех страниц /book — под конкретного врача его не
+      сделать без серверного рендеринга (см. docs/booking-share-preview.md).
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="__BOOKING_ORG_NAME__" />
+    <meta property="og:title" content="Онлайн-запись — __BOOKING_ORG_NAME__" />
+    <meta
+      property="og:description"
+      content="Запишитесь к врачу онлайн: выберите специалиста и удобное время, клиника подтвердит запись по телефону."
+    />
+    <meta property="og:url" content="__BOOKING_ORIGIN__/book" />
+    <meta property="og:image" content="__BOOKING_ORIGIN__/og-image.png" />
+    <meta property="og:image:width" content="1196" />
+    <meta property="og:image:height" content="1196" />
+    <meta property="og:image:alt" content="__BOOKING_ORG_NAME__" />
+    <meta property="og:locale" content="ru_RU" />
+    <!-- Логотип квадратный: large_image обрезал бы его по бокам. -->
+    <meta name="twitter:card" content="summary" />
     <!--
       Раннее применение темы до загрузки React, чтобы не было белой вспышки
       при обновлении страницы в тёмной теме. Логика и значения должны
