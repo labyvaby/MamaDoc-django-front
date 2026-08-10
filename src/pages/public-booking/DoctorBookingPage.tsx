@@ -5,7 +5,7 @@ import EventOutlined from "@mui/icons-material/EventOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
-import { useNavigate, useParams } from "react-router";
+import { useParams } from "react-router";
 
 import {
   createGuestBooking,
@@ -22,6 +22,7 @@ import {
 } from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
 import { BOOKING_NO_SERVICE_ENABLED, PublicBookingShell } from "./shell";
+import { useBookingNav } from "./orgSlug";
 import { usePatientSession } from "./PatientSession";
 import {
   BOOKING_PRIMARY,
@@ -145,7 +146,7 @@ const BookButton: React.FC<{
 const DoctorBookingPage: React.FC = () => {
   const { t } = useT("publicBooking");
   const { idOrSlug = "" } = useParams<{ idOrSlug: string }>();
-  const navigate = useNavigate();
+  const { go } = useBookingNav();
   const { branches } = useBookingOrg();
   /** Телефон клиники — на него уводим, когда записаться онлайн нельзя. */
   const clinicPhone = primaryPhone(branches);
@@ -441,7 +442,7 @@ const DoctorBookingPage: React.FC = () => {
         <Button
           sx={{ mt: 2 }}
           startIcon={<ArrowBackOutlined />}
-          onClick={() => navigate("/book/doctors")}
+          onClick={() => go("/book/doctors")}
         >
           {t("backToList")}
         </Button>
@@ -722,7 +723,7 @@ const DoctorBookingPage: React.FC = () => {
           result={result}
           doctor={doctor}
           services={chosenServices}
-          onClose={() => navigate("/book/doctors")}
+          onClose={() => go("/book/doctors")}
         />
       )}
     </PublicBookingShell>

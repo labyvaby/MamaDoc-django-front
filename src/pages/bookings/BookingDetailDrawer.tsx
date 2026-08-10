@@ -32,6 +32,7 @@ import {
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { bookingCodeUrl } from "../public-booking/format";
+import { usePermissions } from "../../hooks/usePermissions";
 import { BOOKING_STATUS_META } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
 import { useT } from "../../i18n/VerticalProvider";
@@ -58,6 +59,8 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
   const open = bookingId != null;
   const queryClient = useQueryClient();
   const { open: notify } = useNotification();
+  // Витрина одна на все организации — карточку записи открываем в своей клинике.
+  const { activeOrganization } = usePermissions();
 
   const query = useQuery({
     queryKey: bookingId != null ? djangoQueryKeys.bookings.detail(bookingId) : ["bookings", "none"],
@@ -140,7 +143,7 @@ const BookingDetailDrawer: React.FC<Props> = ({ bookingId, canManage, onClose })
               <Tooltip title="Открыть карточку записи на сайте">
                 <Chip
                   component="a"
-                  href={bookingCodeUrl(b.confirmationCode)}
+                  href={bookingCodeUrl(b.confirmationCode, activeOrganization?.slug)}
                   target="_blank"
                   rel="noopener noreferrer"
                   clickable

@@ -8,13 +8,14 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import QRCode from "react-qr-code";
-import { useNavigate, useParams } from "react-router";
+import { useParams } from "react-router";
 
 import { getBookingByCode, type PublicBookingDetail } from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
 import { bookingCodeUrl, formatPrice } from "./format";
+import { useBookingNav } from "./orgSlug";
 import { BOOKING_PRIMARY, BOOKING_RADIUS, BOOKING_SHADOW, BORDER, MUTED } from "./theme";
 
 /**
@@ -60,7 +61,7 @@ const Row: React.FC<{ icon: React.ReactNode; children: React.ReactNode }> = ({ i
 const BookingByCodePage: React.FC = () => {
   const { t } = useT("publicBooking");
   const { code = "" } = useParams<{ code: string }>();
-  const navigate = useNavigate();
+  const { orgSlug, go } = useBookingNav();
 
   const [booking, setBooking] = React.useState<PublicBookingDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -122,7 +123,7 @@ const BookingByCodePage: React.FC = () => {
           <>
             <Alert severity="warning">{t("byCode.notFound")}</Alert>
             <Button
-              onClick={() => navigate("/book")}
+              onClick={() => go("/book")}
               sx={{
                 alignSelf: "flex-start",
                 px: 3,
@@ -242,7 +243,7 @@ const BookingByCodePage: React.FC = () => {
                 <Box sx={{ p: 1.5, bgcolor: "#FFFFFF", borderRadius: 2, border: `1px solid ${BORDER}` }}>
                   {/* Не window.location.href: страницу могли открыть с тестового
                       стенда или локально, а QR показывают на ресепшене. */}
-                  <QRCode value={bookingCodeUrl(booking.confirmationCode)} size={148} level="M" />
+                  <QRCode value={bookingCodeUrl(booking.confirmationCode, orgSlug)} size={148} level="M" />
                 </Box>
               </Stack>
 

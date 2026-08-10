@@ -7,6 +7,7 @@ import {
   type PatientCard,
   type PatientSessionResult,
 } from "../../api/publicPatient";
+import { useBookingOrgSlug } from "./orgSlug";
 
 /**
  * Сессия пациента на витрине: токен, доступные карты и выбранная карта.
@@ -21,7 +22,15 @@ import {
  * записи» показывают всё, что привязано к номеру.
  */
 
-const STORAGE_KEY = "mamadoc:booking:patient-session";
+/**
+ * Ключ хранения скоупится клиникой: витрины разных организаций живут на одном
+ * домене, а токен пациента выдаётся под конкретную организацию — общий ключ
+ * означал бы, что вход в «Мама Доктор» подставляет чужой токен в «Клинику 21»
+ * (там он не годится: бэк ответит 401 и молча выкинет пациента).
+ */
+function storageKey(orgSlug: string): string {
+  return `mamadoc:booking:patient-session:${orgSlug}`;
+}
 
 interface StoredSession {
   token: string;
@@ -47,9 +56,9 @@ interface PatientSessionValue {
 
 const PatientSessionContext = React.createContext<PatientSessionValue | null>(null);
 
-function readStored(): StoredSession | null {
+function readStored(orgSlug: string): StoredSession | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(orgSlug));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredSession;
     if (!parsed?.token) return null;
@@ -61,22 +70,35 @@ function readStored(): StoredSession | null {
   }
 }
 
-function writeStored(session: StoredSession | null): void {
+function writeStored(orgSlug: string, session: StoredSession | null): void {
   try {
-    if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    else localStorage.removeItem(STORAGE_KEY);
+    if (session) localStorage.setItem(storageKey(orgSlug), JSON.stringify(session));
+    else localStorage.removeItem(storageKey(orgSlug));
   } catch {
     // приватный режим / переполненное хранилище — сессия останется в памяти
   }
 }
 
 export const PatientSessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [session, setSession] = React.useState<StoredSession | null>(() => readStored());
+  const orgSlug = useBookingOrgSlug();
+  const [session, setSession] = React.useState<StoredSession | null>(() => readStored(orgSlug));
 
-  const update = React.useCallback((next: StoredSession | null) => {
-    setSession(next);
-    writeStored(next);
-  }, []);
+  const update = React.useCallback(
+    (next: StoredSession | null) => {
+      setSession(next);
+      writeStored(orgSlug, next);
+    },
+    [orgSlug],
+  );
+
+  // Открыли витрину другой клиники — берём её сессию (обычно её нет: вход
+  // в каждой организации свой).
+  const knownOrgRef = React.useRef(orgSlug);
+  React.useEffect(() => {
+    if (knownOrgRef.current === orgSlug) return;
+    knownOrgRef.current = orgSlug;
+    setSession(readStored(orgSlug));
+  }, [orgSlug]);
 
   // Токен мог быть отозван на бэке (logout с другого устройства, ручной сброс) —
   // проверяем один раз при загрузке и молча выходим, если он больше не годен.
@@ -101,7 +123,7 @@ export const PatientSessionProvider: React.FC<{ children: React.ReactNode }> = (
               patients: me.patients,
               selectedPatientId: chosenGone ? (me.patients[0]?.id ?? null) : prev.selectedPatientId,
             };
-            writeStored(next);
+            writeStored(orgSlug, next);
             return next;
           });
         }
