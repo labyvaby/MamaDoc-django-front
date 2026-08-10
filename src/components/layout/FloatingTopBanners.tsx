@@ -4,7 +4,6 @@ import { AnimatePresence } from "framer-motion";
 
 import { ProfileCompletionBanner } from "../profile/ProfileCompletionBanner";
 import { AttendanceReminder } from "../attendance/AttendanceReminder";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 
 /**
  * Плавающий стек уведомлений сверху по центру под шапкой.
@@ -13,8 +12,6 @@ import { IS_DJANGO_BACKEND } from "../../config/backend";
  * и аккуратно выстраиваются по вертикали друг под другом без наложения.
  */
 export const FloatingTopBanners: React.FC = () => {
-  if (!IS_DJANGO_BACKEND) return null;
-
   return (
     <Portal>
       <Box
@@ -36,8 +33,8 @@ export const FloatingTopBanners: React.FC = () => {
         })}
       >
         <AnimatePresence mode="sync">
-          <ProfileCompletionBanner />
-          <AttendanceReminder />
+          <ProfileCompletionBanner key="profile-completion" />
+          <AttendanceReminder key="attendance-reminder" />
         </AnimatePresence>
       </Box>
     </Portal>
