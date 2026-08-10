@@ -374,6 +374,18 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 /** `{id_or_slug}`: число трактуется как PK, строка — как slug. */
 export type IdOrSlug = number | string;
 
+/**
+ * Ссылка на объект для `{id_or_slug}`. Slug предпочтительнее (человекочитаемый
+ * адрес), но только если он не выглядит числом: бэк разбирает такую строку как
+ * PK. У филиала «Клиники 21» slug именно такой — «21», и запрос за его
+ * специализациями уходил к несуществующему филиалу №21 и возвращал 404, из-за
+ * чего витрина оставалась без специализаций.
+ */
+export function idOrSlugRef(entity: { id: number; slug?: string | null }): IdOrSlug {
+  const slug = entity.slug?.trim();
+  return slug && !/^\d+$/.test(slug) ? slug : entity.id;
+}
+
 // ── Каталог: функции (§2) ─────────────────────────────────────────────────────
 
 export function getSpecialists(

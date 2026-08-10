@@ -1,21 +1,23 @@
 import React from "react";
 
 import {
-  BOOKING_ORG_SLUG,
   getOrganization,
   getOrganizationBranches,
   type BranchPreview,
   type OrganizationDetail,
 } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
+import { useBookingOrgSlug } from "./orgSlug";
 
 /**
  * Клиника витрины `/book/*`: название для шапки, филиалы — для телефонов,
- * адресов и фильтра списка врачей.
+ * адресов и фильтра списка врачей. Какая именно клиника — говорит адрес
+ * (см. `./orgSlug.ts`).
  *
- * Обе страницы показывают одну и ту же клинику, поэтому запрос делаем один раз
- * на загрузку вкладки и держим в модульном кэше: переход «список → врач → назад»
- * не должен дёргать сеть заново.
+ * Все страницы витрины показывают одну и ту же клинику, поэтому запрос делаем
+ * один раз на загрузку вкладки и держим в модульном кэше: переход «список →
+ * врач → назад» не должен дёргать сеть заново. Кэш — по slug: на одном домене
+ * живут витрины разных организаций.
  */
 
 export interface BookingOrg {
@@ -29,7 +31,7 @@ export interface BookingOrg {
   loaded: boolean;
 }
 
-let orgCache: Promise<Omit<BookingOrg, "loaded">> | null = null;
+const orgCache = new Map<string, Promise<Omit<BookingOrg, "loaded">>>();
 
 /**
  * Филиалы, которые показываем гостю. Публичный API отдаёт все филиалы
@@ -44,19 +46,21 @@ function publicBranches(branches: BranchPreview[]): BranchPreview[] {
   return withPhone.length ? withPhone : branches;
 }
 
-function loadBookingOrg(): Promise<Omit<BookingOrg, "loaded">> {
-  if (!orgCache) {
-    orgCache = Promise.all([
-      getOrganization(BOOKING_ORG_SLUG).catch(() => null),
-      getOrganizationBranches(BOOKING_ORG_SLUG)
-        .then((r) => publicBranches(r.items))
-        .catch(() => [] as BranchPreview[]),
-    ]).then(([organization, branches]) => ({ organization, branches }));
-  }
-  return orgCache;
+function loadBookingOrg(orgSlug: string): Promise<Omit<BookingOrg, "loaded">> {
+  const cached = orgCache.get(orgSlug);
+  if (cached) return cached;
+  const pending = Promise.all([
+    getOrganization(orgSlug).catch(() => null),
+    getOrganizationBranches(orgSlug)
+      .then((r) => publicBranches(r.items))
+      .catch(() => [] as BranchPreview[]),
+  ]).then(([organization, branches]) => ({ organization, branches }));
+  orgCache.set(orgSlug, pending);
+  return pending;
 }
 
 export function useBookingOrg(): BookingOrg {
+  const orgSlug = useBookingOrgSlug();
   const [state, setState] = React.useState<BookingOrg>({
     organization: null,
     branches: [],
@@ -65,19 +69,21 @@ export function useBookingOrg(): BookingOrg {
 
   React.useEffect(() => {
     let alive = true;
-    loadBookingOrg()
+    // Смена клиники в адресе: старые название и филиалы показывать нельзя.
+    setState({ organization: null, branches: [], loaded: false });
+    loadBookingOrg(orgSlug)
       .then((data) => {
         if (alive) setState({ ...data, loaded: true });
       })
       .catch((e) => {
         // Сеть могла лечь — не кэшируем провал, дадим следующему заходу шанс.
-        if (!isAbortError(e)) orgCache = null;
+        if (!isAbortError(e)) orgCache.delete(orgSlug);
         if (alive) setState((prev) => ({ ...prev, loaded: true }));
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [orgSlug]);
 
   return state;
 }

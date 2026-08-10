@@ -1,6 +1,6 @@
 import React from "react";
 
-import { getBranchSpecialists, type BranchPreview } from "../../api/publicBooking";
+import { getBranchSpecialists, idOrSlugRef, type BranchPreview } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
 import { useBookingOrg } from "./useBookingOrg";
 
@@ -67,12 +67,12 @@ export function useSpecialties(branchSlug = ""): {
     const controller = new AbortController();
     setLoading(true);
     const targets = branchSlug
-      ? branches.filter((b: BranchPreview) => (b.slug || String(b.id)) === branchSlug)
+      ? branches.filter((b: BranchPreview) => String(idOrSlugRef(b)) === branchSlug)
       : branches;
 
     Promise.all(
       targets.map((b) =>
-        getBranchSpecialists(b.slug || b.id, controller.signal)
+        getBranchSpecialists(idOrSlugRef(b), controller.signal)
           .then((r) => r.items)
           .catch((e) => {
             if (isAbortError(e)) throw e;

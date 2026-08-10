@@ -11,12 +11,12 @@ import {
 } from "@mui/material";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 import {
-  BOOKING_ORG_SLUG,
   getProfessionalCalendar,
   getProfessionals,
+  idOrSlugRef,
   type CalendarDay,
   type ProfessionalPreview,
 } from "../../api/publicBooking";
@@ -24,6 +24,7 @@ import { isAbortError } from "../../api/client";
 import { PublicBookingShell } from "./shell";
 import { SpecialtyTile } from "./SpecialtiesPage";
 import { useSpecialties, type SpecialtyGroup } from "./useSpecialties";
+import { useBookingNav } from "./orgSlug";
 import { formatDayMonth, isoInDays, todayIso } from "./format";
 import { BORDER, TILE_RADIUS, nearestTone } from "./theme";
 import { useT } from "../../i18n/VerticalProvider";
@@ -259,7 +260,7 @@ const DoctorCardItem: React.FC<{ doctor: ProfessionalPreview; onOpen: () => void
   onOpen,
 }) => {
   const { t } = useT("publicBooking");
-  const { ref, day } = useNearestDay(doctor.slug || doctor.id);
+  const { ref, day } = useNearestDay(idOrSlugRef(doctor));
   const [photoBroken, setPhotoBroken] = React.useState(false);
   const showPhoto = Boolean(doctor.photoUrl) && !photoBroken;
 
@@ -422,7 +423,7 @@ const CardSkeleton: React.FC = () => (
 
 const DoctorsPage: React.FC = () => {
   const { t } = useT("publicBooking");
-  const navigate = useNavigate();
+  const { orgSlug, go } = useBookingNav();
   const [searchParams, setSearchParams] = useSearchParams();
   const { specialties } = useSpecialties();
 
@@ -462,7 +463,7 @@ const DoctorsPage: React.FC = () => {
     const specialistIds = specialties.find((s) => s.key === activeSpecialty)?.ids;
     getProfessionals(
       {
-        organizationSlug: BOOKING_ORG_SLUG,
+        organizationSlug: orgSlug,
         specialistIds: specialistIds?.length ? specialistIds : undefined,
         search: debouncedSearch || undefined,
         limit: 100,
@@ -478,7 +479,7 @@ const DoctorsPage: React.FC = () => {
     return () => controller.abort();
     // specialties в зависимостях: id специализации известны только после
     // загрузки справочника, и запрос должен уйти с актуальными.
-  }, [activeSpecialty, debouncedSearch, specialties]);
+  }, [activeSpecialty, debouncedSearch, specialties, orgSlug]);
 
   const hasFilters = Boolean(activeSpecialty || debouncedSearch);
   const cardsGrid = {
@@ -573,7 +574,7 @@ const DoctorsPage: React.FC = () => {
                 <DoctorCardItem
                   key={d.id}
                   doctor={d}
-                  onOpen={() => navigate(`/book/doctor/${d.slug || d.id}`)}
+                  onOpen={() => go(`/book/doctor/${idOrSlugRef(d)}`)}
                 />
               ))}
             </Box>

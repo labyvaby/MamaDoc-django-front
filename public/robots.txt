@@ -1,2 +1,14 @@
+# CRM закрыта от сканирования целиком, открыта только публичная онлайн-запись
+# (/book). Правило Allow длиннее Disallow, поэтому для /book выигрывает оно.
+#
+# Ассеты открыты намеренно: без JS и CSS краулер не отрендерит витрину, а без
+# доступа к картинке не соберётся превью ссылки в WhatsApp/Facebook — их
+# краулер (facebookexternalhit) уважает robots.txt.
 User-agent: *
 Disallow: /
+Allow: /book
+Allow: /assets/
+Allow: /og-image.png
+Allow: /booking-icon.png
+Allow: /favicon.ico
+Allow: /favicon.svg

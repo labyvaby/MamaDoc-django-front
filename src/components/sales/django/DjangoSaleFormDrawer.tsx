@@ -207,10 +207,10 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     // Филиалы — только когда нужен явный выбор (org-wide создание).
     useEffect(() => {
         if (!open || !showBranchSelect) return;
-        getBranches()
+        getBranches(orgId)
             .then((rows) => setBranches(rows.filter((b) => b.isActive)))
             .catch((e) => console.error("Failed to load branches", e));
-    }, [open, showBranchSelect]);
+    }, [open, showBranchSelect, orgId]);
 
     // Reset / prefill on open + восстановление черновика. Список позиций
     // (productLines) не входит в черновик — восстанавливается только из

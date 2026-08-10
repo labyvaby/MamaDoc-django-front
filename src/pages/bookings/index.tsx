@@ -19,6 +19,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
+import "dayjs/locale/ru";
 
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
@@ -51,7 +52,7 @@ import {
 } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
-import { BOOKING_SHOWCASE_URL } from "../public-booking/format";
+import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
 import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
@@ -173,13 +174,18 @@ const StatTile: React.FC<{
 /**
  * Ссылка на публичную витрину онлайн-записи: регистратуре её диктуют пациентам
  * и вставляют в соцсети, поэтому рядом с открытием — копирование адреса.
+ *
+ * Адрес строится по активной организации: витрина одна на весь CRM, и без слага
+ * клиники «Клиника 21» открывала витрину организации по умолчанию — с чужими
+ * врачами и филиалами.
  */
-const ShowcaseLink: React.FC = () => {
+const ShowcaseLink: React.FC<{ orgSlug: string | null }> = ({ orgSlug }) => {
   const [copied, setCopied] = React.useState(false);
+  const url = bookingShowcaseUrl(orgSlug);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(BOOKING_SHOWCASE_URL);
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -200,10 +206,10 @@ const ShowcaseLink: React.FC = () => {
         flexShrink: 0,
       })}
     >
-      <Tooltip title={BOOKING_SHOWCASE_URL}>
+      <Tooltip title={url}>
         <Button
           component="a"
-          href={BOOKING_SHOWCASE_URL}
+          href={url}
           target="_blank"
           rel="noopener noreferrer"
           size="small"
@@ -237,6 +243,12 @@ const ShowcaseLink: React.FC = () => {
 
 type DatePreset = { key: string; label: string; from: () => Dayjs; to: () => Dayjs };
 
+/** «Август» вместо обезличенного «Месяц» — подпись пресета текущего месяца. */
+const currentMonthLabel = (): string => {
+  const name = dayjs().locale("ru").format("MMMM");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+};
+
 const DATE_PRESETS: DatePreset[] = [
   { key: "today", label: "Сегодня", from: () => dayjs(), to: () => dayjs() },
   {
@@ -253,7 +265,11 @@ const DATE_PRESETS: DatePreset[] = [
   },
   {
     key: "month",
-    label: "Месяц",
+    // Ленивый геттер: подпись месяца не должна «застыть» на месяце загрузки
+    // вкладки — сессия может пережить смену месяца.
+    get label() {
+      return currentMonthLabel();
+    },
     from: () => dayjs().startOf("month"),
     to: () => dayjs().endOf("month"),
   },
@@ -262,7 +278,9 @@ const DATE_PRESETS: DatePreset[] = [
 // Пресеты для единого поля-диапазона (та же семантика, что и чипы выше).
 const BOOKING_RANGE_PRESETS: DateRangePreset[] = DATE_PRESETS.map((p) => ({
   key: p.key,
-  label: p.label,
+  get label() {
+    return p.label;
+  },
   range: () => [p.from(), p.to()],
 }));
 
@@ -609,7 +627,7 @@ const BookingsPage: React.FC = () => {
         onSearchChange={setSearchInput}
         searchPlaceholder="Имя, телефон или код"
         loading={query.isFetching}
-        actions={<ShowcaseLink />}
+        actions={<ShowcaseLink orgSlug={activeOrganization?.slug ?? null} />}
       />
 
       {needsOrg ? (

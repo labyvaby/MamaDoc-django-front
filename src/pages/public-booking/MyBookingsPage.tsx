@@ -18,8 +18,6 @@ import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
-import { useNavigate } from "react-router";
-
 import {
   cancelMyBooking,
   filterBookingsForPatient,
@@ -34,6 +32,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { usePatientSession } from "./PatientSession";
 import { PatientAuthDialog } from "./booking/PatientAuthDialog";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
+import { useBookingNav } from "./orgSlug";
 import { formatPrice } from "./format";
 import { BOOKING_PRIMARY, BOOKING_RADIUS, BOOKING_SHADOW, BORDER, MUTED } from "./theme";
 
@@ -193,7 +192,7 @@ const BookingCard: React.FC<{
 
 const MyBookingsPage: React.FC = () => {
   const { t } = useT("publicBooking");
-  const navigate = useNavigate();
+  const { go } = useBookingNav();
   const { session, selectedPatient } = usePatientSession();
   const [items, setItems] = React.useState<MyBooking[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -329,7 +328,7 @@ const MyBookingsPage: React.FC = () => {
             <EventOutlined sx={{ fontSize: 44, color: MUTED }} />
             <Typography sx={{ fontSize: 15, color: MUTED }}>{t("my.empty")}</Typography>
             <Button
-              onClick={() => navigate("/book")}
+              onClick={() => go("/book")}
               sx={{
                 px: 3,
                 py: 1.25,
@@ -355,7 +354,7 @@ const MyBookingsPage: React.FC = () => {
                     key={b.id}
                     booking={b}
                     onCancel={setConfirming}
-                    onOpen={(b) => navigate(`/book/b/${b.confirmationCode}`)}
+                    onOpen={(b) => go(`/book/b/${b.confirmationCode}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}
@@ -372,7 +371,7 @@ const MyBookingsPage: React.FC = () => {
                     key={b.id}
                     booking={b}
                     onCancel={setConfirming}
-                    onOpen={(b) => navigate(`/book/b/${b.confirmationCode}`)}
+                    onOpen={(b) => go(`/book/b/${b.confirmationCode}`)}
                     cancelling={cancellingId === b.id}
                   />
                 ))}

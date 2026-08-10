@@ -40,6 +40,7 @@ import {
   type PhoneCountryInfo,
 } from "../../../utility/phone";
 import { bookingCodeUrl, formatPrice } from "../format";
+import { useBookingOrgSlug } from "../orgSlug";
 import type { PickableService } from "./ServicesCard";
 import type { BookingChoice } from "./choice";
 
@@ -465,6 +466,8 @@ export const SuccessDialog: React.FC<{
   onClose: () => void;
 }> = ({ result, doctor, services, onClose }) => {
   const { t } = useT("publicBooking");
+  // Ссылка уходит наружу (QR, «Поделиться») — клинику в ней теряем.
+  const orgSlug = useBookingOrgSlug();
   const [shareLabel, setShareLabel] = React.useState<string | null>(null);
   const specialty = doctor.specialties[0] ?? "";
 
@@ -484,7 +487,7 @@ export const SuccessDialog: React.FC<{
   }, [result.confirmationCode]);
 
   /** Ссылка на карточку записи — её и кодирует QR, и отправляет «Поделиться». */
-  const bookingUrl = bookingCodeUrl(result.confirmationCode);
+  const bookingUrl = bookingCodeUrl(result.confirmationCode, orgSlug);
 
   const serviceNames = (
     detail?.services.length ? detail.services.map((s) => s.name) : services.map((s) => s.name)

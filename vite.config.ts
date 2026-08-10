@@ -20,6 +20,26 @@ const getFrontendCommitCount = (): number => {
   }
 };
 
+/**
+ * Мета-теги превью ссылки в index.html. Краулеры мессенджеров не выполняют JS,
+ * поэтому название клиники и адрес картинки должны попасть в HTML на сборке —
+ * то, что витрина ставит в рантайме, им не видно.
+ *
+ * Плейсхолдеры намеренно в стиле `__NAME__`, а не `%VITE_NAME%`: Vite сам
+ * подставляет только переменные с префиксом VITE_ и ругается, если такой нет,
+ * а нам нужны дефолты.
+ */
+const bookingMeta = (env: Record<string, string>) => ({
+  name: "booking-meta",
+  transformIndexHtml: (html: string) =>
+    html
+      .replaceAll("__BOOKING_ORG_NAME__", env.VITE_BOOKING_ORG_NAME || "Мама Доктор")
+      .replaceAll(
+        "__BOOKING_ORIGIN__",
+        (env.VITE_BOOKING_PUBLIC_ORIGIN || "https://newcrm.pediatr.kg").replace(/\/+$/, ""),
+      ),
+});
+
 const rewriteDevCookie = (cookie: string): string =>
   cookie
     .replace(/;\s*Domain=[^;]*/gi, "")
@@ -31,7 +51,7 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET;
 
   return {
-    plugins: [react()],
+    plugins: [react(), bookingMeta(env)],
     define: {
       __APP_FRONTEND_COMMIT_COUNT__: JSON.stringify(getFrontendCommitCount()),
     },

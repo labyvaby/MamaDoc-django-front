@@ -100,8 +100,10 @@ export const AnnouncementsSettingsPage: React.FC = () => {
   const employees = employeesData?.results ?? [];
 
   const { data: branches = [] } = useQuery<DjangoBranch[]>({
-    queryKey: djangoQueryKeys.organization.branches,
-    queryFn: getBranches,
+    // orgId в ключе и в запросе: без него суперюзеру/мультиорг-пользователю
+    // в выбор филиалов попадают чужие организации (см. getBranches).
+    queryKey: [...djangoQueryKeys.organization.branches, activeOrganization?.id],
+    queryFn: () => getBranches(activeOrganization?.id),
     enabled: canManage && openFormDialog,
   });
 
