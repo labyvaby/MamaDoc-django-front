@@ -19,6 +19,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
+import "dayjs/locale/ru";
 
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
@@ -242,6 +243,12 @@ const ShowcaseLink: React.FC<{ orgSlug: string | null }> = ({ orgSlug }) => {
 
 type DatePreset = { key: string; label: string; from: () => Dayjs; to: () => Dayjs };
 
+/** «Август» вместо обезличенного «Месяц» — подпись пресета текущего месяца. */
+const currentMonthLabel = (): string => {
+  const name = dayjs().locale("ru").format("MMMM");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+};
+
 const DATE_PRESETS: DatePreset[] = [
   { key: "today", label: "Сегодня", from: () => dayjs(), to: () => dayjs() },
   {
@@ -258,7 +265,11 @@ const DATE_PRESETS: DatePreset[] = [
   },
   {
     key: "month",
-    label: "Месяц",
+    // Ленивый геттер: подпись месяца не должна «застыть» на месяце загрузки
+    // вкладки — сессия может пережить смену месяца.
+    get label() {
+      return currentMonthLabel();
+    },
     from: () => dayjs().startOf("month"),
     to: () => dayjs().endOf("month"),
   },
@@ -267,7 +278,9 @@ const DATE_PRESETS: DatePreset[] = [
 // Пресеты для единого поля-диапазона (та же семантика, что и чипы выше).
 const BOOKING_RANGE_PRESETS: DateRangePreset[] = DATE_PRESETS.map((p) => ({
   key: p.key,
-  label: p.label,
+  get label() {
+    return p.label;
+  },
   range: () => [p.from(), p.to()],
 }));
 
