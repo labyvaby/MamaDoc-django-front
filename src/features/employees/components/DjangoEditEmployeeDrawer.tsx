@@ -508,7 +508,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     }
 
     // Справочник филиалов организации — для набора операционных доступов.
-    getBranches()
+    // orgId обязателен: без него суперюзеру/мультиорг-пользователю в список
+    // попадают филиалы чужих организаций (см. getBranches).
+    getBranches(orgId)
       .then((list) => {
         if (!ctrl.signal.aborted) {
           setAllBranches(list.map((b) => ({ id: b.id, name: b.name })));
