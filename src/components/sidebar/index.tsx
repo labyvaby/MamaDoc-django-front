@@ -40,7 +40,6 @@ import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
-import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
@@ -67,15 +66,11 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
   DJANGO_POLL_INTERVAL_MS,
 } from "../../api/queryKeys";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
-import { supabase } from "../../utility/supabaseClient";
 import { Link as RouterLink, useLocation } from "react-router";
 import { useMobileSidebar } from "./mobile-context";
 import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
 import { usePermissions } from "../../hooks/usePermissions";
-import { useWorkShift } from "../../hooks/useWorkShift";
-import { useSkudActions } from "../../hooks/useSkudActions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
@@ -139,13 +134,13 @@ export const Sidebar: React.FC = () => {
       {isMobile && <MobileSidebarHeader />}
       {isDesktop && <DesktopSidebarHeader />}
       <Divider sx={{ my: 0.5 }} />
-      {IS_DJANGO_BACKEND && (
+      {
         <ActiveContextSwitcher
           onSwitched={() => {
             if (isMobile) setMobileOpen(false);
           }}
         />
-      )}
+      }
     </>
   );
 
@@ -348,8 +343,7 @@ const SidebarSecondary: React.FC = () => {
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  useWorkShift();
-  const { hasRole, isNurse: isNurseFunc, isAdmin, isRegistrator, isDoctor, isSuperAdmin, activeEmployee, loading: permissionsLoading } = usePermissions();
+  const { isSuperAdmin, activeEmployee, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const hasVisibleSettingsTab = Object.entries(
@@ -360,9 +354,7 @@ const SidebarSecondary: React.FC = () => {
       : can(permission),
   );
   const orgId = useApiOrgId();
-  const isNurse = isNurseFunc();
   const isSuper = isSuperAdmin();
-  const hasAccessToCashbox = isSuper || hasRole(['admin', 'superadmin', 'accountant', 'receptionist']);
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -388,54 +380,41 @@ const SidebarSecondary: React.FC = () => {
     // правами (appointments.*_room/registry.view): организация сама решает в
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
-    registratura: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry))
-      : (isSuper || (!isNurse && !isDoctor())),
-    bookings: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.bookings)),
-    doctorRoom: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.doctorRoom))
-      : (isSuper || (!isNurse && !isAdmin() && !isRegistrator())),
-    nurseRoom: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.nurseRoom))
-      : (isSuper || isAdmin() || isRegistrator() || hasRole("manager") || isNurse),
-    schedule: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.schedule)) : true,
-    skud: !IS_DJANGO_BACKEND || isSuper || can(PAGE_PERMISSIONS.attendance),
-    cleaning: IS_DJANGO_BACKEND && moduleGate("cleaning"),
-    tasks: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.tasks)),
-    expenses: !IS_DJANGO_BACKEND || isSuper || can(PAGE_PERMISSIONS.expenses),
-    knowledge: IS_DJANGO_BACKEND && moduleGate("knowledge"),
-    achievements: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.achievements)),
+    registratura: isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry),
+    bookings: isSuper || can(PAGE_PERMISSIONS.bookings),
+    doctorRoom: isSuper || can(PAGE_PERMISSIONS.doctorRoom),
+    nurseRoom: isSuper || can(PAGE_PERMISSIONS.nurseRoom),
+    schedule: isSuper || can(PAGE_PERMISSIONS.schedule),
+    skud: isSuper || can(PAGE_PERMISSIONS.attendance),
+    cleaning: moduleGate("cleaning"),
+    tasks: isSuper || can(PAGE_PERMISSIONS.tasks),
+    expenses: isSuper || can(PAGE_PERMISSIONS.expenses),
+    knowledge: moduleGate("knowledge"),
+    achievements: isSuper || can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
-    employees: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.employees) : !isNurse),
-    patients: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.patients) : !isNurse),
-    vaccinations: IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.vaccinations)),
-    allAppointments: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.allAppointments) : true),
-    allProcedures: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.allProcedures) : true),
-    services: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.services) : true),
-    documents: IS_DJANGO_BACKEND && moduleGate("documents"),
-    diagnoses: !IS_DJANGO_BACKEND && (isSuper || isDoctor()),
+    employees: isSuper || can(PAGE_PERMISSIONS.employees),
+    patients: isSuper || can(PAGE_PERMISSIONS.patients),
+    vaccinations: isSuper || can(PAGE_PERMISSIONS.vaccinations),
+    allAppointments: isSuper || can(PAGE_PERMISSIONS.allAppointments),
+    allProcedures: isSuper || can(PAGE_PERMISSIONS.allProcedures),
+    services: isSuper || can(PAGE_PERMISSIONS.services),
+    documents: moduleGate("documents"),
     // СКЛАДЫ
-    products: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.products) : true),
-    sales: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.sales) : (isAdmin() || isRegistrator())),
-    storage: isSuper || (IS_DJANGO_BACKEND ? can(PAGE_PERMISSIONS.warehouses) : isAdmin()),
+    products: isSuper || can(PAGE_PERMISSIONS.products),
+    sales: isSuper || can(PAGE_PERMISSIONS.sales),
+    storage: isSuper || can(PAGE_PERMISSIONS.warehouses),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
-    salaryReports: IS_DJANGO_BACKEND
-      ? (isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null))
-      : true,
+    salaryReports: isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
     // В Django-режиме гейтим правом, а не ролью: роль-гейт скрывал «Отчеты»
     // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
-    reports: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.reports))
-      : (isSuper || isAdmin() || hasRole(["accountant"])),
-    cashbox: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.cashbox)) : hasAccessToCashbox,
-    load: IS_DJANGO_BACKEND ? (isSuper || can(PAGE_PERMISSIONS.reports)) : isSuper,
-    notifications: IS_DJANGO_BACKEND
-      ? (isSuper || can(PAGE_PERMISSIONS.notifications))
-      : isSuper,
-    settings: IS_DJANGO_BACKEND && hasVisibleSettingsTab,
+    reports: isSuper || can(PAGE_PERMISSIONS.reports),
+    cashbox: isSuper || can(PAGE_PERMISSIONS.cashbox),
+    load: isSuper || can(PAGE_PERMISSIONS.reports),
+    notifications: isSuper || can(PAGE_PERMISSIONS.notifications),
+    settings: hasVisibleSettingsTab,
   };
 
   // Бейдж «Задачи»: счётчик + срочность цветом.
@@ -547,7 +526,7 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents || can_.diagnoses,
+    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
@@ -651,7 +630,7 @@ const SidebarSecondary: React.FC = () => {
         {/* Регистратура — в Django-mode ведёт на /appointments */}
         {show("my-work") && can_.registratura && (
           <SidebarMenuItem
-            to={IS_DJANGO_BACKEND ? "/appointments" : "/home"}
+            to="/appointments"
             icon={<HomeOutlined />}
             label="Регистратура"
             collapsed={siderCollapsed}
@@ -733,7 +712,7 @@ const SidebarSecondary: React.FC = () => {
         {/* Все пациенты */}
         {show("org") && can_.patients && (
           <SidebarMenuItem
-            to={IS_DJANGO_BACKEND ? "/patients" : "/patient-search"}
+            to="/patients"
             icon={<SearchOutlined />}
             label={t("allPatients")}
             collapsed={siderCollapsed}
@@ -763,11 +742,6 @@ const SidebarSecondary: React.FC = () => {
         {/* Документы организации (Django-mode only, пока на моках) */}
         {show("org") && can_.documents && (
           <SidebarMenuItem to="/documents" icon={<FolderOutlined />} label="Документы" collapsed={siderCollapsed} />
-        )}
-
-        {/* Диагнозы (только Supabase: в Django справочник живёт в Настройках) */}
-        {show("org") && can_.diagnoses && (
-          <SidebarMenuItem to="/settings/diagnoses" icon={<ScienceOutlined />} label="Диагнозы" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -804,7 +778,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Отзывы (Django-mode only) */}
-        {show("management") && IS_DJANGO_BACKEND && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
+        {show("management") && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 
@@ -831,9 +805,7 @@ const SidebarSecondary: React.FC = () => {
             label="Настройки"
             collapsed={siderCollapsed}
             excludePaths={
-              IS_DJANGO_BACKEND
-                ? ["/settings/notifications"]
-                : ["/settings/notifications", "/settings/diagnoses"]
+              ["/settings/notifications"]
             }
           />
         )}
@@ -1060,20 +1032,6 @@ const SkudItemView: React.FC<{
   return <SidebarMenuItem to="/work-shifts" icon={<AccessTimeOutlined />} label={labelContent} collapsed={false} />;
 };
 
-const LegacySidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
-  const { currentShift, handleStartShift, handleEndShift, actionLoading, isIpCorrect } = useSkudActions();
-  return (
-    <SkudItemView
-      collapsed={collapsed}
-      hasShift={Boolean(currentShift)}
-      isIpCorrect={isIpCorrect}
-      actionLoading={actionLoading}
-      onStart={handleStartShift}
-      onStop={handleEndShift}
-    />
-  );
-};
-
 const DjangoSidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
   const { currentShift, handleStartShift, handleEndShift, actionLoading, isIpCorrect } =
     useDjangoSkudActions();
@@ -1089,12 +1047,7 @@ const DjangoSidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed })
   );
 };
 
-const SidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) =>
-  IS_DJANGO_BACKEND ? (
-    <DjangoSidebarSkudItem collapsed={collapsed} />
-  ) : (
-    <LegacySidebarSkudItem collapsed={collapsed} />
-  );
+const SidebarSkudItem: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => <DjangoSidebarSkudItem collapsed={collapsed} />;
 
 // Bottom area (copyright / version)
 const SidebarFooter: React.FC = () => {
@@ -1112,11 +1065,7 @@ const SidebarFooter: React.FC = () => {
 
   const handleConfirmLogout = async () => {
     try {
-      if (IS_DJANGO_BACKEND) {
-        await djangoLogout();
-      } else {
-        await supabase.auth.signOut();
-      }
+      await djangoLogout();
       window.location.href = '/login';
     } catch (e) {
       console.error("Logout error:", e);

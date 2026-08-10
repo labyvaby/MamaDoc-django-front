@@ -1,21 +1,21 @@
 # MamaDoc Django Front
 
-Separate frontend workspace for migrating the MamaDoc UI from Supabase to a
-Django backend.
+React-фронтенд медицинской CRM MamaDoc, подключённый к Django REST API.
 
-This folder is intentionally disconnected from the production MamaDoc git/deploy
-setup. Keep production credentials out of `.env.local`.
-
-## Development
+## Запуск
 
 ```bash
 npm install
 npm run dev
 ```
 
-Expected local API:
+По умолчанию dev-сервер доступен на `http://localhost:5177`, а `/api` проксируется на `http://localhost:8000`.
 
-```env
-VITE_BACKEND_MODE="django"
-VITE_API_URL="http://localhost:8000/api"
+Проверки:
+
+```bash
+npx tsc --noEmit
+npm run build
 ```
+
+Основной слой запросов находится в `src/api/`, страницы — в `src/pages/`, доменная логика — в `src/features/`.

@@ -1,20 +1,8 @@
 import React from "react";
 import type { EmployesRow } from "../types";
-import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { getDjangoEmployees, getDjangoEmployee } from "../../../api/staff";
 import { mapDjangoListItemToRow, mapDjangoFullToRow } from "../viewModel";
 import { usePermissions } from "../../../hooks/usePermissions";
-
-// Supabase-only helpers: loaded dynamically so supabaseClient stays out of Django bundle
-async function _supabaseFetchEmployees(supabase: any, table: string): Promise<EmployesRow[]> {
-  const { data, error } = await supabase.from(table).select("*").order("updated_at", { ascending: false });
-  if (error) throw error;
-  const { mapAnyToEmployee } = await import("../api");
-  const raw = Array.isArray(data) ? (data as unknown[]) : [];
-  return raw
-    .map((r) => typeof r === "object" && r !== null ? mapAnyToEmployee(r as Record<string, unknown>) : null)
-    .filter((x): x is EmployesRow => x !== null);
-}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -110,7 +98,7 @@ export function useEmployeesPageState() {
       }
       setErrorMsg(null);
 
-      if (IS_DJANGO_BACKEND) {
+      {
         const result = await getDjangoEmployees(
           {
             search: qDebounced.trim() || undefined,
@@ -135,14 +123,6 @@ export function useEmployeesPageState() {
         setTotalCount(result.count);
         setHasMore(result.nextPage !== null);
         setCurrentPage(page);
-      } else {
-        const { supabase } = await import("../../../utility/supabaseClient");
-        const { EMPLOYEES_SOURCE } = await import("../api");
-        const mapped = await _supabaseFetchEmployees(supabase, EMPLOYEES_SOURCE);
-        if (ctrl.signal.aborted) return;
-        if (requestContextKey !== currentContextKeyRef.current) return;
-        setAllItems(mapped);
-        setHasMore(false);
       }
     } catch (e: unknown) {
       if ((e as Error)?.name === "AbortError") return;
@@ -172,9 +152,9 @@ export function useEmployeesPageState() {
     }
   }, [contextKey]);
 
-  // Load full employee details in Django mode when selected in list
+  // Load full employee details when selected in list
   React.useEffect(() => {
-    if (!IS_DJANGO_BACKEND || !detailsOpen?.id) return;
+    if (!detailsOpen?.id) return;
 
     // If we already have full details loaded, skip request
     if (detailsOpen._fullDetailsLoaded) return;
@@ -202,10 +182,10 @@ export function useEmployeesPageState() {
   }, [detailsOpen?.id]);
 
   // Initial fetch + re-fetch when search or context changes.
-  // In Django mode: wait until activeMembership is resolved — avoids unauthenticated or
+  // Wait until active membership is resolved — avoids unauthenticated or
   // pre-context requests that would return wrong-org data.
   React.useEffect(() => {
-    if (IS_DJANGO_BACKEND && !membershipId) {
+    if (!membershipId) {
       // Membership not yet resolved — clear stale state, don't fire request
       setAllItems([]);
       setLoading(false);
@@ -223,17 +203,10 @@ export function useEmployeesPageState() {
     }
   }, [hasMore, loadingMore, loading, currentPage, fetchEmployees]);
 
-  // Filtered items (client-side search in Supabase mode; server-side in Django mode)
+  // Search is applied by the API.
   const filtered = React.useMemo(() => {
-    if (IS_DJANGO_BACKEND) return allItems; // server already filtered
-    if (!q.trim()) return allItems;
-    const term = q.trim().toLowerCase();
-    return allItems.filter(
-      (e) =>
-        (e.full_name || "").toLowerCase().includes(term) ||
-        (e.phone || "").toLowerCase().includes(term)
-    );
-  }, [allItems, q]);
+    return allItems;
+  }, [allItems]);
 
   const publicSetItems = React.useCallback(
     (updater: EmployesRow[] | ((prev: EmployesRow[]) => EmployesRow[])) => {

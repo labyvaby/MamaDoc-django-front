@@ -26,12 +26,9 @@ import React from "react";
 import { useNavigate } from "react-router";
 import { useMobileSidebar } from "../sidebar/mobile-context";
 import { useRefresh } from "../../contexts/refresh-context";
-import { supabase } from "../../utility/supabaseClient";
 import { useTitleContext } from "../../contexts/title-context";
-import { mapAnyToEmployee, fetchEmployeeSpecialization } from "../../features/employees/api";
+import type { ActiveEmployee } from "../../api/auth";
 import { Employee } from "../../features/employees/types";
-import { DB_TABLES } from "../../utility/constants";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { UserAvatar } from "../ui";
 import { subtleBg } from "../../theme";
 
@@ -88,6 +85,28 @@ const ProfileInfoRow: React.FC<{
   </Box>
 );
 
+function mapActiveEmployeeToHeaderEmployee(
+  employee: NonNullable<ActiveEmployee>,
+): Employee {
+  return {
+    id: String(employee.id),
+    full_name: employee.fullName,
+    phone: employee.phone,
+    email: employee.email,
+    nickname: employee.nickname,
+    birth_date: employee.birthDate,
+    photo_url: employee.photoUrl,
+    telegram_id: employee.telegramId,
+    bank_account_number: employee.bankAccountNumber,
+    inn: employee.inn,
+    instagram: employee.instagram,
+    address: employee.address,
+    bank: employee.bank,
+    bik: employee.bik,
+    status: employee.status,
+  };
+}
+
 export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
   sticky = true,
 }) => {
@@ -104,22 +123,12 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
 
   React.useEffect(() => {
     if (empFromPerms) {
-      setEmployee(mapAnyToEmployee(empFromPerms));
+      setEmployee(mapActiveEmployeeToHeaderEmployee(empFromPerms));
       const r = empFromPerms.roles || role;
       if (r) {
         setRoleInfo(r);
-        if (!IS_DJANGO_BACKEND && r.name === "doctor" && empFromPerms.id) {
-          fetchEmployeeSpecialization(String(empFromPerms.id)).then(async (specId) => {
-            if (specId) {
-              const { data: sData } = await supabase
-                .from(DB_TABLES.SPECIALIZATIONS)
-                .select("name")
-                .eq("id", specId)
-                .single();
-              if (sData) setSpecializationName(sData.name);
-            }
-          });
-        }
+        const specialization = (empFromPerms as ActiveEmployee & { specializations?: { name?: string }[] }).specializations?.[0]?.name;
+        setSpecializationName(specialization ?? null);
       }
     } else {
       setEmployee(null);

@@ -5,7 +5,6 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import type { EmployesRow } from "../types";
-import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { useT } from "../../../i18n/VerticalProvider";
@@ -22,7 +21,6 @@ export type EmployeeListProps = {
   hasMore?: boolean;
   loadingMore?: boolean;
   isGrouped?: boolean;
-  roles?: any[];
   /** id выбранного сотрудника — для подсветки строки. */
   selectedId?: string | null;
 };
@@ -54,7 +52,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   loading,
   loadingMore,
   isGrouped,
-  roles = [],
   selectedId,
 }) => {
   const { t } = useT("employees");
@@ -114,17 +111,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
         ? t("list.status.inactive").toLowerCase()
         : e.status;
 
-    let roleText: string;
-    if (IS_DJANGO_BACKEND) {
-      roleText =
-        getEmployeePosition(e, t).label || statusText || t("list.fallbackEmployee");
-    } else {
-      const roleObj = roles.find((r) => r.id === e.role_id);
-      roleText =
-        roleObj?.display_name ||
-        roleObj?.name ||
-        (e.role_id === "doctor" ? "Доктор" : e.role_id === "admin" ? "Управляющий" : statusText || "Сотрудник");
-    }
+    const roleText =
+      getEmployeePosition(e, t).label || statusText || t("list.fallbackEmployee");
 
     const photoUrl = e.photo_url || null;
     const hasPassports = Boolean(e.passport_photos && e.passport_photos.length > 0);
@@ -257,8 +245,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   const getGroupedItems = () => {
     if (!isGrouped) return items.map(renderItem);
 
-    if (IS_DJANGO_BACKEND) {
-      // Группируем по должности (см. position.ts), а не по роли доступа: иначе
+    {
+      // Группируем по должности, а не по роли доступа.
       // медсестра с доступом врача попадала в группу «Врач» с подписью
       // «Медсестра» в строке.
       const grouped: Record<
@@ -290,40 +278,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
       });
       return elements;
     }
-
-    // Supabase: группировка по role_id из массива roles
-    const grouped: Record<string, EmployesRow[]> = {};
-    items.forEach((item) => {
-      const gId = item.role_id || "other";
-      if (!grouped[gId]) grouped[gId] = [];
-      grouped[gId].push(item);
-    });
-
-    const elements: React.ReactNode[] = [];
-    roles.forEach((role) => {
-      if (grouped[role.id] && grouped[role.id].length > 0) {
-        elements.push(
-          <GroupHeader
-            key={`header-${role.id}`}
-            title={role.display_name || role.name}
-            count={grouped[role.id].length}
-            first={elements.length === 0}
-          />,
-        );
-        grouped[role.id].forEach((item) => elements.push(renderItem(item)));
-        delete grouped[role.id];
-      }
-    });
-
-    const others = Object.values(grouped).flat();
-    if (others.length > 0) {
-      elements.push(
-        <GroupHeader key="header-other" title="Прочие" count={others.length} first={elements.length === 0} />,
-      );
-      others.forEach((item) => elements.push(renderItem(item)));
-    }
-
-    return elements;
   };
 
   return (

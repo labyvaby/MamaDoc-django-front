@@ -16,8 +16,8 @@ type Props = {
 };
 
 /**
- * Заглушка для разделов, которые в Django-режиме ещё не мигрированы с Supabase.
- * Не дёргает Supabase / Refine dataProvider — это чистый presentational-компонент,
+ * Заглушка для разделов, которые ещё не подключены к Django API.
+ * Не выполняет запросов — это чистый presentational-компонент,
  * поэтому раздел остаётся в меню и открывается без ErrorBoundary и без websocket.
  */
 export const DjangoUnderConstructionPage: React.FC<Props> = ({

@@ -12,7 +12,6 @@ import {
   djangoQueryKeys,
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../api/queryKeys";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { useCanChecker } from "../../hooks/useCan";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { AchievementBadge } from "./AchievementBadge";
@@ -33,13 +32,13 @@ export const AchievementToast: React.FC = () => {
   const unseenQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.unseen,
     queryFn: ({ signal }) => getUnseenAchievements(orgId, signal),
-    enabled: IS_DJANGO_BACKEND && can("achievements.view"),
+    enabled: can("achievements.view"),
     staleTime: Infinity,
   });
   const definitionsQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.definitions,
     queryFn: ({ signal }) => getAchievementDefinitions(signal),
-    enabled: IS_DJANGO_BACKEND && (unseenQuery.data?.length ?? 0) > 0,
+    enabled: (unseenQuery.data?.length ?? 0) > 0,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 

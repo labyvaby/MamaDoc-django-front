@@ -4,7 +4,6 @@
  * Django-API version of AddPatientDrawer.
  * Fields: photo, ФИО, phone, birth date, ИНН, blacklist (role-gated).
  * Duplicate warning Collapse in footer.
- * No Supabase calls.
  */
 
 import React from "react";

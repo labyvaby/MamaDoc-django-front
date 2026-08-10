@@ -341,7 +341,7 @@ describe("единое состояние приёма (счётчики и фи
     ).toBe("arrived");
   });
 
-  it("legacy-статусы Supabase классифицируются так же", () => {
+  it("старые русские статусы классифицируются так же", () => {
     const legacyArrived = "Пациент здесь" as AppointmentStatusSource["status"];
     expect(
       displayState({ status: legacyArrived, paymentStatus: "paid", paidTotal: "300.00" }),

@@ -1,18 +1,5 @@
-/**
- * ServicePhotoUploader.tsx
- * Презентационный блок загрузки фотографии услуги.
- * Отвечает только за UI: карточка с аватаром-превью, текстом и скрытым input type="file".
- * Вся логика выбора файла делегируется через onPickPhoto.
- */
 import React from "react";
-import {
-  Stack,
-  Typography,
-  Card,
-  CardContent,
-  Avatar,
-  Box,
-} from "@mui/material";
+import { Avatar, Box, Card, CardContent, Stack, Typography } from "@mui/material";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import { useT } from "../../i18n/VerticalProvider";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
@@ -20,64 +7,22 @@ import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 export type ServicePhotoUploaderProps = {
   photoFile: File | null;
   photoPreview: string | null;
-  inputId?: string; // можно переопределить id инпута
+  inputId?: string;
   onPickPhoto: (file: File | null) => void;
 };
 
-const ServicePhotoUploader: React.FC<ServicePhotoUploaderProps> = ({
-  photoPreview,
-  inputId = "add-service-file-input",
-  onPickPhoto,
-}) => {
+const ServicePhotoUploader: React.FC<ServicePhotoUploaderProps> = ({ photoPreview, inputId = "service-file-input", onPickPhoto }) => {
   const { t } = useT("services");
-  return (
-    <Stack spacing={0.5}>
-      <Typography variant="body2" color="text.secondary">
-        {t("photo.label")}
-      </Typography>
-      <Card variant="outlined" sx={{ borderStyle: "dashed" }}>
-        <CardContent
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 1.5,
-            py: 2,
-            cursor: "pointer",
-          }}
-          onClick={() => {
-            const el = document.getElementById(inputId) as HTMLInputElement | null;
-            el?.click();
-          }}
-        >
-          <Avatar
-            variant="rounded"
-            src={photoPreview || undefined}
-            sx={{ width: 48, height: 48 }}
-          >
-            <PhotoCameraOutlined />
-          </Avatar>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-              {photoPreview ? t("photo.change") : t("photo.add")}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {t("photo.optional")}
-            </Typography>
-          </Box>
-          <input
-            id={inputId}
-            type="file"
-            accept={PHOTO_ACCEPT}
-            style={{ display: "none" }}
-            onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
-              const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-              onPickPhoto(f);
-            }}
-          />
-        </CardContent>
-      </Card>
-    </Stack>
-  );
+  return <Stack spacing={0.5}>
+    <Typography variant="body2" color="text.secondary">{t("photo.label")}</Typography>
+    <Card variant="outlined" sx={{ borderStyle: "dashed" }}>
+      <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 2, cursor: "pointer" }} onClick={() => document.getElementById(inputId)?.click()}>
+        <Avatar variant="rounded" src={photoPreview || undefined}><PhotoCameraOutlined /></Avatar>
+        <Box sx={{ flex: 1 }}><Typography variant="subtitle1" fontWeight={600}>{photoPreview ? t("photo.change") : t("photo.add")}</Typography><Typography variant="body2" color="text.secondary">{t("photo.optional")}</Typography></Box>
+        <input id={inputId} type="file" accept={PHOTO_ACCEPT} hidden onChange={(event) => onPickPhoto(event.target.files?.[0] ?? null)} />
+      </CardContent>
+    </Card>
+  </Stack>;
 };
 
 export default ServicePhotoUploader;

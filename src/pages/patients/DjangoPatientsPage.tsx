@@ -1,9 +1,9 @@
 import React from "react";
 import {
   Box,
+  Drawer,
   CircularProgress,
   Divider,
-  Drawer,
   Typography,
   useMediaQuery,
   useTheme,
@@ -31,8 +31,6 @@ import {
   type PatientBalance,
 } from "../../api/patientBalance";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
-import type { RbacBranch } from "../../api/auth";
-import { useNotification } from "@refinedev/core";
 
 import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
@@ -43,18 +41,13 @@ import AppointmentDetailsPanel from "../appointments/components/AppointmentDetai
 import DjangoConclusionSlotsPanel from "../appointments/DjangoConclusionSlotsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
-import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
 import FaceCaptureDrawer from "./components/FaceCaptureDrawer";
-import PatientOldConclusionsPanel from "../patient-search/components/PatientOldConclusionsPanel";
-import OldConclusionDetailsCard from "../patient-search/components/OldConclusionDetailsCard";
-import { useOldConclusions } from "../patient-search/useOldConclusions";
-import type { OldConclusion } from "../patient-search/useOldConclusions";
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
 const MotionBox = motion(Box);
 
-type RightTabKey = "card" | "history" | "old" | "vaccinations";
+type RightTabKey = "card" | "history" | "vaccinations";
 
 const DjangoPatientsPage: React.FC = () => {
   const { t } = useT("patients");
@@ -80,7 +73,6 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
-  const branches: RbacBranch[] = activeMembership?.branches ?? [];
   const defaultBranchId = activeBranch?.id ?? null;
 
   // ── List data ──────────────────────────────────────────────────────────────
@@ -100,15 +92,6 @@ const DjangoPatientsPage: React.FC = () => {
 
   const [selected, setSelected] = React.useState<DjangoPatient | null>(null);
 
-  // Архивные заключения загружаются по телефону и id выбранной карточки.
-  // Телефон сохраняет совместимость с историей старых систем, а id покрывает
-  // записи, которые были привязаны уже после изменения номера пациента.
-  const {
-    data: oldConclusions,
-    loading: oldConclusionsLoading,
-    errorMsg: oldConclusionsError,
-  } = useOldConclusions(selected?.phone, selected?.id);
-
   // ── Selected patient: balance + history (Django API, AbortSignal) ──────────
   const [balance, setBalance] = React.useState<PatientBalance | null>(null);
   const [history, setHistory] = React.useState<DjangoAppointment[]>([]);
@@ -120,10 +103,8 @@ const DjangoPatientsPage: React.FC = () => {
   const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
-  const [oldConclusionDetail, setOldConclusionDetail] = React.useState<OldConclusion | null>(null);
   // Колонка заключения внутри дровера деталей приёма (как третья колонка на «Записях»).
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
-  const [mergeOpen, setMergeOpen] = React.useState(false);
   const [faceOpen, setFaceOpen] = React.useState(false);
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -186,13 +167,6 @@ const DjangoPatientsPage: React.FC = () => {
     if (loadingData || !hasMore || inFlightRef.current) return;
     void fetchChunk(patients.length, debouncedSearch);
   }, [loadingData, hasMore, patients.length, debouncedSearch, fetchChunk]);
-
-  // Reload from the top (after create/merge/etc).
-  const reload = React.useCallback(() => {
-    setPatients([]);
-    setHasMore(true);
-    void fetchChunk(0, debouncedSearch);
-  }, [debouncedSearch, fetchChunk]);
 
   // Keep selected patient in sync with fresh list data (without losing selection)
   React.useEffect(() => {
@@ -273,14 +247,7 @@ const DjangoPatientsPage: React.FC = () => {
   const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
-  const handleMerge = () => { if (selected) setMergeOpen(true); };
   const handleFace = () => { if (selected) setFaceOpen(true); };
-
-  const handleMerged = () => {
-    setMergeOpen(false);
-    setSelected(null);
-    reload();
-  };
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
@@ -312,7 +279,6 @@ const DjangoPatientsPage: React.FC = () => {
       lastComplaints={lastComplaints}
       onEdit={canUpdate ? handleEdit : undefined}
       onTopUp={canManageFinance ? () => setTopUpOpen(true) : undefined}
-      onMerge={canUpdate ? handleMerge : undefined}
       onFace={canUpdate ? handleFace : undefined}
     />
   );
@@ -333,16 +299,6 @@ const DjangoPatientsPage: React.FC = () => {
 
   const vaccinationsNode = (
     <PatientVaccinationsPanel patient={selected} />
-  );
-
-  const oldConclusionsNode = (
-    <PatientOldConclusionsPanel
-      selected={!!selected}
-      loading={oldConclusionsLoading}
-      errorMsg={oldConclusionsError}
-      data={oldConclusions}
-      onClick={(item) => setOldConclusionDetail(item)}
-    />
   );
 
   const listNode = (
@@ -367,14 +323,12 @@ const DjangoPatientsPage: React.FC = () => {
   const fullTabDefs: { key: RightTabKey; label: string }[] = [
     { key: "card", label: t("tabs.card") },
     { key: "history", label: t("tabs.history") },
-    { key: "old", label: t("tabs.old") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
   ];
 
-  // Десктоп: карточка уже отдельной колонкой, правая колонка — только история/архив.
+  // Десктоп: карточка уже отдельной колонкой, правая колонка — история/вакцинации.
   const rightTabDefs: { key: RightTabKey; label: string }[] = [
     { key: "history", label: t("tabs.historyFull") },
-    { key: "old", label: t("tabs.oldFull") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
   ];
 
@@ -412,7 +366,7 @@ const DjangoPatientsPage: React.FC = () => {
           {listNode}
         </MotionBox>
 
-        {/* Tablet (md–lg): single right column with tabs Карточка / История / Старые */}
+         {/* Tablet (md–lg): single right column with tabs Карточка / История */}
         {isTablet && (
           <MotionBox variants={cascadeItem} sx={{ flex: "7 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
             {selected ? (
@@ -423,7 +377,6 @@ const DjangoPatientsPage: React.FC = () => {
                 <Box sx={{ flex: 1, minHeight: 0 }}>
                   {tabletTab === "card" && cardNode}
                   {tabletTab === "history" && historyNode}
-                  {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                 </Box>
               </>
@@ -433,7 +386,7 @@ const DjangoPatientsPage: React.FC = () => {
           </MotionBox>
         )}
 
-        {/* Desktop (>= lg): three columns — card + (history / old conclusions tabs) */}
+        {/* Desktop (>= lg): three columns — card + history/vaccinations tabs */}
         {isDesktop && (
           <>
             <MotionBox variants={cascadeItem} sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>
@@ -449,7 +402,6 @@ const DjangoPatientsPage: React.FC = () => {
               </Box>
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 {desktopRightTab === "history" && historyNode}
-                {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
               </Box>
             </MotionBox>
@@ -471,28 +423,10 @@ const DjangoPatientsPage: React.FC = () => {
           <Box sx={{ p: 2 }}>
             {mobileTab === "card" && cardNode}
             {mobileTab === "history" && historyNode}
-            {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
           </Box>
         </AppBottomSheet>
       )}
-
-      {/* Детали архивного заключения */}
-      <Drawer
-        anchor="right"
-        open={!!oldConclusionDetail}
-        onClose={() => setOldConclusionDetail(null)}
-        PaperProps={{
-          sx: { width: { xs: "100%", sm: 520 }, maxWidth: "100%" },
-        }}
-      >
-        <OldConclusionDetailsCard
-          item={oldConclusionDetail}
-          patientFio={selected?.fullName ?? null}
-          patientDob={selected?.birthDate ?? null}
-          onClose={() => setOldConclusionDetail(null)}
-        />
-      </Drawer>
 
       {/* Add patient drawer (new UX: photo, INN, blacklist) */}
       <DjangoAddPatientDrawer
@@ -599,13 +533,6 @@ const DjangoPatientsPage: React.FC = () => {
         )}
       </Drawer>
 
-      {/* Объединение дублей пациентов */}
-      <MergePatientDrawer
-        open={mergeOpen}
-        onClose={() => setMergeOpen(false)}
-        initialPatient={selected}
-        onMerged={handleMerged}
-      />
     </Box>
   );
 };

@@ -23,7 +23,6 @@ import routerProvider, {
 } from "@refinedev/react-router";
 
 import { Outlet, Route, Routes, Navigate } from "react-router";
-import { useLocation, useNavigate } from "react-router";
 
 import { Header } from "./components/header";
 import { Sidebar } from "./components/sidebar";
@@ -35,14 +34,12 @@ import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { RefreshProvider } from "./contexts/refresh-context";
-import { ClientSessionProvider } from "./contexts/client-session-context";
 import { TitleProvider } from "./contexts/title-context";
 import { PageCacheProvider } from "./contexts/page-cache-context";
 import "./i18n";
 import { VerticalProvider } from "./i18n/VerticalProvider";
 import { tt } from "./i18n/t";
 import { RequireAuth } from "./components/auth/RequireAuth";
-import { ProtectedRoute } from "./components/rbac/ProtectedRoute";
 import { RequirePermission } from "./components/rbac/RequirePermission";
 import { RequireModule } from "./components/rbac/RequireModule";
 import {
@@ -50,49 +47,30 @@ import {
   SETTINGS_TAB_PERMISSIONS,
 } from "./config/accessPermissions";
 import { useCanChecker } from "./hooks/useCan";
-import { CallNotification } from "./components/CallNotification";
 import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
 import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import { useAuthIdentitySync } from "./hooks/useAuthIdentitySync";
-import { IS_DJANGO_BACKEND } from "./config/backend";
 import { djangoQueryKeys } from "./api/queryKeys";
 import { ApiError } from "./api/client";
-import { LegacyRouteGuard } from "./components/routing/LegacyRouteGuard";
 import { djangoDataProvider } from "./config/djangoDataProvider";
-// 🔥 SUPABASE — только в Supabase-mode
-import { dataProvider } from "@refinedev/supabase";
-import { supabase } from "./utility/supabaseClient";
 
 // ОПТИМИЗАЦИЯ: Все страницы загружаются через lazy() для code splitting
 const UnderConstruction = lazy(() =>
   import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
 );
-const HomePage = lazy(() => import("./pages/home"));
-const PatientSearchPage = lazy(() => import("./pages/patient-search"));
-const ExpensesListPage = lazy(() => import("./pages/expenses"));
 const EmployeesPage = lazy(() => import("./pages/employes"));
-const ServicesPage = lazy(() => import("./pages/services"));
-const ProductsPage = lazy(() => import("./pages/products"));
-const StoragePage = lazy(() => import("./pages/storage"));
-const WarehousesPage = lazy(() => import("./pages/warehouses"));
+const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
-const SalesPage = lazy(() => import("./pages/sales"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
-const SchedulePage = lazy(() => import("./pages/SchedulePage"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
-const WorkShiftsPage = lazy(() => import("./pages/work-shifts"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
-const DoctorWorkPage = lazy(() => import("./pages/doctor"));
-const SkudSettingsPage = lazy(() => import("./pages/settings/SkudSettingsPage").then(module => ({ default: module.SkudSettingsPage })));
 const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSettingsPage"));
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
-const CashboxPage = lazy(() => import("./pages/cashbox"));
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
@@ -117,13 +95,8 @@ const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingBy
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
-const ReportsPage = lazy(() => import("./pages/reports"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
-const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
-const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const PatientsPage = lazy(() => import("./pages/patients"));
-const DiagnosesPage = lazy(() => import("./pages/admin/DiagnosesPage"));
-const NotificationSettingsPage = lazy(() => import("./pages/settings/NotificationSettingsPage").then(module => ({ default: module.NotificationSettingsPage })));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
@@ -134,77 +107,13 @@ const SpecializationsSettingsPage = lazy(() => import("./pages/settings/Speciali
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
-const SalaryReportsPage = lazy(() => import("./pages/salary-reports"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
-import UpdatePasswordPage from "./pages/auth/update-password";
-const ClientLoginPage = lazy(() => import("./pages/client/login"));
-const ClientProfilePage = lazy(() => import("./pages/client/profile"));
-const SsoPage = lazy(() => import("./pages/auth/sso"));
-const AuthCallbackPage = lazy(() => import("./pages/auth/callback"));
 const ProfilePage = lazy(() => import("./pages/profile"));
 
-
-// Вспомогательный компонент для обработки глобальных событий аутентификации
-const AuthHelper = () => {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (IS_DJANGO_BACKEND) return;
-
-    // 1. Слушаем события изменения состояния авторизации
-    let lastUserId: string | null = null;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const currentUserId = session?.user?.id ?? null;
-      if (event === "SIGNED_OUT" || (event === "SIGNED_IN" && lastUserId !== null && lastUserId !== currentUserId)) {
-        // Очищаем черновики только при реальном выходе или смене пользователя
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith("conclusion_draft_")) keysToRemove.push(key);
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-      }
-      lastUserId = currentUserId;
-      if (event === "PASSWORD_RECOVERY") {
-        console.log("AuthHelper: PASSWORD_RECOVERY event detected");
-        // Принудительно уходим на страницу смены пароля, сохраняя хэш для Supabase
-        navigate("/update-password" + window.location.hash);
-      }
-    });
-
-    // 2. Дополнительная проверка хэша в URL (иногда событие может проскочить слишком быстро или не сработать)
-    const checkHash = () => {
-      // Если мы на любой странице кроме смены пароля, но в URL есть признаки восстановления
-      if (window.location.hash.includes("type=recovery") && !window.location.pathname.includes("update-password")) {
-        console.log("AuthHelper: Hash check found recovery token, redirecting...");
-        navigate("/update-password" + window.location.hash);
-      }
-    };
-
-    checkHash(); // Сразу при загрузке
-    const interval = setInterval(checkHash, 1000);
-
-    const timeout = setTimeout(() => clearInterval(interval), 10000);
-
-    return () => {
-      subscription.unsubscribe();
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [navigate]);
-
-  return null;
-};
 
 // Вспомогательный компонент для защиты корневого редиректа
 const RootRedirect = () => {
   const { loading, can } = useCanChecker();
-  if (window.location.hash.includes("type=recovery")) {
-    return <Navigate to={"/update-password" + window.location.hash} replace />;
-  }
-  if (!IS_DJANGO_BACKEND) {
-    return <Navigate to="/home" replace />;
-  }
   // Рабочие пространства приёмов гейтятся отдельными page-правами, поэтому
   // корень ведёт на первое доступное: Регистратура → Кабинет врача →
   // Процедурный кабинет. Fallback остаётся /appointments (AccessDenied
@@ -228,8 +137,6 @@ const DjangoQueryCacheReset = () => {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!IS_DJANGO_BACKEND) return;
-
     const reset = () => {
       void queryClient.removeQueries({ queryKey: djangoQueryKeys.all });
     };
@@ -256,8 +163,6 @@ const DjangoContextRemount = ({ children }: { children: ReactNode }) => {
   const [contextVersion, setContextVersion] = useState(0);
 
   useEffect(() => {
-    if (!IS_DJANGO_BACKEND) return;
-
     const bump = () => setContextVersion((v) => v + 1);
     window.addEventListener("mamadoc:django-context-switched", bump);
     return () => {
@@ -278,20 +183,6 @@ const renderSider = () => <Sidebar />;
 function App() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // Auto-link phone-login UUID to existing employee record on first sign-in
-  useAuthIdentitySync();
-
-  // ПРИНУДИТЕЛЬНЫЙ ПЕРЕХВАТ ВОССТАНОВЛЕНИЯ
-  // Это срабатывает на самом верхнем уровне React-приложения
-  useEffect(() => {
-    if (window.location.hash.includes("type=recovery") && !location.pathname.includes("update-password")) {
-      console.log("App Top-Level: Recovery token detected, force redirecting to /update-password...");
-      navigate("/update-password" + window.location.hash, { replace: true });
-    }
-  }, [location.pathname, navigate]);
 
   // ОПТИМИЗАЦИЯ: Более умный prefetch с приоритизацией
   useEffect(() => {
@@ -300,35 +191,19 @@ function App() {
 
     // Приоритет 1: Самые часто используемые страницы
     const prefetchPriority = () => {
-      if (IS_DJANGO_BACKEND) {
-        import("./pages/appointments/AppointmentsPage");
-        import("./pages/employes");
-        return;
-      }
-      import("./pages/home");
-      import("./pages/expenses");
+      import("./pages/appointments/AppointmentsPage");
+      import("./pages/employes");
     };
 
     // Приоритет 2: Менее важные страницы загружаем позже
     const prefetchSecondary = () => {
-      if (IS_DJANGO_BACKEND) {
-        import("./pages/services");
-        import("./pages/patients");
-        return;
-      }
-      import("./pages/employes");
-      import("./pages/services");
-      import("./pages/products");
+      import("./pages/services/DjangoServicesPage");
+      import("./pages/patients");
     };
 
     // Приоритет 3: Редко используемые страницы загружаем в последнюю очередь
     const prefetchTertiary = () => {
-      if (IS_DJANGO_BACKEND) {
-        import("./pages/settings/RolesSettingsPage");
-        return;
-      }
-      import("./pages/storage");
-      import("./pages/warehouses");
+      import("./pages/settings/RolesSettingsPage");
     };
 
     if (typeof ric === "function") {
@@ -385,22 +260,14 @@ function App() {
                   localeText={ruRU.components.MuiLocalizationProvider.defaultProps.localeText}
                 >
                   <Refine
-                    dataProvider={IS_DJANGO_BACKEND ? djangoDataProvider : dataProvider(supabase)}
+                    dataProvider={djangoDataProvider}
                     notificationProvider={useNotificationProvider}
                     routerProvider={routerProvider}
                     resources={[
                       {
                         name: "Appointments",
-                        list: "/home",
-                        show: "/home/appointments/:id",
-                      },
-                      {
-                        name: "categories",
-                        list: "/categories",
-                        create: "/categories/create",
-                        edit: "/categories/edit/:id",
-                        show: "/categories/show/:id",
-                        meta: { canDelete: true },
+                        list: "/appointments",
+                        show: "/appointments/:id",
                       },
                       {
                         name: "Expenses",
@@ -484,8 +351,13 @@ function App() {
                       },
                       {
                         name: "all-appointments",
-                        list: "/all-appointments",
+                        list: "/appointments",
                         meta: { label: tt("sidebar:allAppointments") }
+                      },
+                      {
+                        name: "all-procedures",
+                        list: "/nurse",
+                        meta: { label: "Все процедуры" }
                       },
                       {
                         name: "bookings",
@@ -509,11 +381,6 @@ function App() {
                         meta: { label: "Мои достижения" }
                       },
                       {
-                        name: "all-procedures",
-                        list: "/all-procedures",
-                        meta: { label: "Все процедуры" }
-                      },
-                      {
                         name: "diagnoses",
                         list: "/settings/diagnoses",
                         meta: { label: "Диагнозы" }
@@ -535,7 +402,6 @@ function App() {
                               // лишь создаст ещё один отклонённый запрос.
                               retry: (failureCount, error) =>
                                 !(
-                                  IS_DJANGO_BACKEND &&
                                   error instanceof ApiError &&
                                   error.status === 429
                                 ) && failureCount < 1,
@@ -564,7 +430,7 @@ function App() {
                               >
                                 <DjangoContextRemount>
                                   <>
-                                    {IS_DJANGO_BACKEND && <AnnouncementBanner />}
+                                    <AnnouncementBanner />
                                      <Outlet />
                                      <FloatingTopBanners />
                                   </>
@@ -579,193 +445,113 @@ function App() {
                         }
                       >
                         <Route index element={<RootRedirect />} />
+                        <Route path="home" element={<RootRedirect />} />
+                        <Route path="patient-search" element={<Navigate to="/patients" replace />} />
                         <Route
-                          path="home"
+                          path="all-appointments"
                           element={
-                            IS_DJANGO_BACKEND
-                              ? <RootRedirect />
-                              : (
-                                <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant']}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <HomePage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              )
+                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AppointmentsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
-                          path="patient-search"
+                          path="all-procedures"
                           element={
-                            <LegacyRouteGuard redirectTo="/patients">
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'manager', 'owner', 'receptionist', 'registrator', 'accountant', 'doctor', 'nurse']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <PatientSearchPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            </LegacyRouteGuard>
+                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AppointmentsPage scope="nurse" />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="patients"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.patients}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <PatientsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <PatientsPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.patients}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <PatientsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="expenses"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.expenses}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoExpensesPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <ExpensesListPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.expenses}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoExpensesPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="employees"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.employees}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <EmployeesPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <EmployeesPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.employees}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <EmployeesPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="services"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.services}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <ServicesPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <ServicesPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.services}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <ServicesPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="products"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.products}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoProductsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <ProductsPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.products}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoProductsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
 
                         <Route
                           path="storage"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              // «Движение товара» объединено с «Складом» в «Остатки».
-                              // Старый путь /storage редиректит на /warehouses.
-                              <Navigate to="/warehouses" replace />
-                            ) : (
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <StoragePage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <Navigate to="/warehouses" replace />
                           }
                         />
                         <Route
                           path="warehouses"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoWarehousesPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <WarehousesPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoWarehousesPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="schedule"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.schedule}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoSchedulePage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute deniedRoles={[]}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <SchedulePage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.schedule}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoSchedulePage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="doctor"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.doctorRoom}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <AppointmentsPage scope="me" />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <LegacyRouteGuard title="Кабинет врача в разработке">
-                                <ProtectedRoute allowedRoles={['doctor']}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <DoctorWorkPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.doctorRoom}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AppointmentsPage scope="me" />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
@@ -781,21 +567,11 @@ function App() {
                         <Route
                           path="work-shifts"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.attendance}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoWorkShiftsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <LegacyRouteGuard title="СКУД в разработке">
-                                <ProtectedRoute deniedRoles={[]}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <WorkShiftsPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.attendance}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoWorkShiftsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
@@ -809,152 +585,61 @@ function App() {
                         <Route
                           path="sales"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.sales}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoSalesPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'registrator', 'receptionist']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <SalesPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.sales}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoSalesPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="cashbox"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoCashboxPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant', 'receptionist']}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <CashboxPage />
-                                </Suspense>
-                              </ProtectedRoute>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoCashboxPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="reports"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.reports}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoReportsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <LegacyRouteGuard title="Отчеты в разработке">
-                                <ProtectedRoute allowedRoles={['admin', 'superadmin', 'accountant']}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <ReportsPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.reports}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoReportsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
                           path="salary-reports"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.payroll}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoSalaryReportsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <LegacyRouteGuard title="Отчет по ЗП в разработке">
-                                <ProtectedRoute deniedRoles={[]}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <SalaryReportsPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            )
-                          }
-                        />
-                        <Route
-                          path="all-appointments"
-                          element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
+                            <RequirePermission permission={PAGE_PERMISSIONS.payroll}>
                               <Suspense fallback={<LinearProgress />}>
-                                <AllAppointmentsPage />
+                                <DjangoSalaryReportsPage />
                               </Suspense>
                             </RequirePermission>
                           }
                         />
-                        <Route
-                          path="all-procedures"
-                          element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
-                              <Suspense fallback={<LinearProgress />}>
-                                <AllProceduresPage />
-                              </Suspense>
-                            </RequirePermission>
-                          }
-                        />
-
                         <Route
                           path="settings/skud"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.attendanceSettings}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoSkudSettingsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <LegacyRouteGuard redirectTo="/settings">
-                                <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <SkudSettingsPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.attendanceSettings}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoSkudSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
-                        {!IS_DJANGO_BACKEND && (
-                          <Route
-                            path="settings/diagnoses"
-                            element={
-                              <LegacyRouteGuard title="Диагнозы в разработке">
-                                <ProtectedRoute allowedRoles={['superadmin', 'doctor']}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <DiagnosesPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            }
-                          />
-                        )}
                         <Route
                           path="settings/notifications"
                           element={
-                            IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.notifications}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DjangoNotificationSettingsPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
-                              <LegacyRouteGuard title="Уведомления в разработке">
-                                <ProtectedRoute allowedRoles={['superadmin']}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <NotificationSettingsPage />
-                                  </Suspense>
-                                </ProtectedRoute>
-                              </LegacyRouteGuard>
-                            )
+                            <RequirePermission permission={PAGE_PERMISSIONS.notifications}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoNotificationSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
@@ -967,8 +652,7 @@ function App() {
                             </RequirePermission>
                           }
                         />
-                        {IS_DJANGO_BACKEND && (
-                          <>
+                        <>
                             <Route
                               path="appointments"
                               element={
@@ -1211,8 +895,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                          </>
-                        )}
+                        </>
                         <Route
                           path="access-denied"
                           element={
@@ -1235,17 +918,11 @@ function App() {
                         path="print/conclusion/:id"
                         element={
                           <RequireAuth>
-                            {IS_DJANGO_BACKEND ? (
-                              <RequirePermission permission={PAGE_PERMISSIONS.conclusionPrint}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <ConclusionPrintPage />
-                                </Suspense>
-                              </RequirePermission>
-                            ) : (
+                            <RequirePermission permission={PAGE_PERMISSIONS.conclusionPrint}>
                               <Suspense fallback={<LinearProgress />}>
                                 <ConclusionPrintPage />
                               </Suspense>
-                            )}
+                            </RequirePermission>
                           </RequireAuth>
                         }
                       />
@@ -1269,7 +946,7 @@ function App() {
                       />
                       <Route
                         path="update-password"
-                        element={<UpdatePasswordPage />}
+                        element={<Navigate to="/profile" replace />}
                       />
                       <Route
                         path="review/:token"
@@ -1332,52 +1009,10 @@ function App() {
                           }
                         />
                       </Route>
-                      <Route
-                        element={
-                          <ClientSessionProvider>
-                            <Outlet />
-                          </ClientSessionProvider>
-                        }
-                      >
-                        <Route
-                          path="auth/callback"
-                          element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <AuthCallbackPage />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="sso"
-                          element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <SsoPage />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="client/login"
-                          element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <ClientLoginPage />
-                            </Suspense>
-                          }
-                        />
-                        <Route
-                          path="client/profile"
-                          element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <ClientProfilePage />
-                            </Suspense>
-                          }
-                        />
-                      </Route>
                     </Routes>
 
-                    <AuthHelper />
                     <DjangoQueryCacheReset />
                     <RateLimitDialog />
-                    <CallNotification />
                     <RefineKbar />
                     <UnsavedChangesNotifier />
                     <DocumentTitleHandler

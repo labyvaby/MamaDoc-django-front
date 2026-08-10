@@ -1,7 +1,7 @@
 /**
  * PatientListPanel — левая колонка «Все пациенты» (Django mode).
  * Презентационный компонент: список пациентов с аватаром-инициалами,
- * ФИО, телефоном и подсветкой выбранного. Без Supabase / Refine.
+ * ФИО, телефоном и подсветкой выбранного.
  */
 import React from "react";
 import { Box, CircularProgress, Stack, Tooltip, Typography } from "@mui/material";

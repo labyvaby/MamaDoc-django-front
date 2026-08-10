@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Divider,
   Stack,
@@ -47,14 +47,10 @@ import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import type { EmployesRow } from "../types";
 import { getEmployeePosition } from "../position";
-import type { ServiceRow as ServiceDto } from "../../../services/services";
 
 import { formatDateRu } from "../../../utility/format";
 import { getEmployeeServices } from "../../../api/staff";
-import { useOne } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
-import { DB_TABLES } from "../../../utility/constants";
-import { IS_DJANGO_BACKEND } from "../../../config/backend";
 import { AppButton, UserAvatar, InfoTile } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -82,19 +78,8 @@ import {
   usePayrollReportMonth,
 } from "../hooks/useEmployeeRelated";
 
-// Supabase-only helpers: loaded dynamically so supabaseClient stays out of Django bundle
-async function _loadSupabaseServiceIds(empId: string): Promise<string[]> {
-  const { fetchEmployeeServiceIds } = await import("../api");
-  return fetchEmployeeServiceIds(empId);
-}
-async function _loadSupabaseSpecialization(empId: string): Promise<string> {
-  const { fetchEmployeeSpecialization } = await import("../api");
-  return (await fetchEmployeeSpecialization(empId)) || "";
-}
-
 export type EmployeeCardProps = {
   emp: EmployesRow | null;
-  allServices: ServiceDto[];
   /** Django-only: открыть drawer управления услугами */
   onOpenServices?: (employeeId: number, employeeName: string) => void;
   /** Открыть редактирование карточки */
@@ -252,7 +237,6 @@ const TileStat: React.FC<{ loading: boolean; error: boolean; value: string; unit
 
 const EmployeeCard: React.FC<EmployeeCardProps> = ({
   emp,
-  allServices,
   onOpenServices,
   onEdit,
 }) => {
@@ -283,7 +267,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   // ── Живые показатели «связанных данных» за текущий месяц ────────────────────
   // Общие хуки с модалками (одинаковые queryKey → один запрос на кеш).
-  const relatedBase = IS_DJANGO_BACKEND && empIdNum > 0;
+  const relatedBase = empIdNum > 0;
   const shiftsQ = useEmployeeShiftsMonth(
     empIdNum,
     relatedBase && (canViewAttendance || isOwnCard),
@@ -314,7 +298,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const monthNetSalary = toNum(payrollRow?.netSalary);
 
   // Бейджи достижений коллеги — только полученные, без прогресса (ТЗ достижений).
-  const achievementsEnabled = IS_DJANGO_BACKEND && empIdNum > 0 && canViewAchievements;
+  const achievementsEnabled = empIdNum > 0 && canViewAchievements;
   const employeeAchievementsQuery = useQuery({
     queryKey: djangoQueryKeys.achievements.employee(empIdNum),
     queryFn: ({ signal }) => getEmployeeAchievements(empIdNum, apiOrgId, signal),
@@ -349,7 +333,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   const catalogQuery = useQuery({
     queryKey: ["django", "catalog", "services", "card-images", apiOrgId ?? null],
     queryFn: ({ signal }) => getServices(orgWide(apiOrgId), undefined, signal),
-    enabled: IS_DJANGO_BACKEND,
+    enabled: true,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -372,103 +356,27 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
       }
       return [];
     },
-    enabled: IS_DJANGO_BACKEND && empIdNum > 0,
+    enabled: empIdNum > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
 
-  // Legacy Supabase services loading
-  const [legacyFetchedServiceIds, setLegacyFetchedServiceIds] = useState<string[]>([]);
-  const [isLoadingLegacyServices, setIsLoadingLegacyServices] = useState(false);
-
-  useEffect(() => {
-    if (IS_DJANGO_BACKEND) return;
-    if (!emp?.id) {
-      setLegacyFetchedServiceIds([]);
-      return;
-    }
-
-    const loadServices = async () => {
-      setIsLoadingLegacyServices(true);
-      try {
-        const ids = await _loadSupabaseServiceIds(emp.id);
-        setLegacyFetchedServiceIds(ids);
-      } catch (err) {
-        console.error("Ошибка загрузки услуг сотрудника:", err);
-        setLegacyFetchedServiceIds([]);
-      } finally {
-        setIsLoadingLegacyServices(false);
-      }
-    };
-
-    loadServices();
-  }, [emp?.id, emp?.updated_at]);
-
-  const isLoadingServices = IS_DJANGO_BACKEND ? djangoServicesQuery.isFetching : isLoadingLegacyServices;
-
-  // Supabase-only: роль через useOne (в Django-режиме хук вызывается, но disabled)
-  const { result: roleData } = useOne<{ id: string; name: string; display_name: string }>({
-    resource: DB_TABLES.ROLES,
-    id: emp?.role_id || "",
-    queryOptions: {
-      enabled: !IS_DJANGO_BACKEND && !!emp?.role_id,
-    },
-  });
-
-  // Supabase-only: специализация через useOne (в Django-режиме хук вызывается, но disabled)
-  const [localSpecId, setLocalSpecId] = useState<string>("");
-  useEffect(() => {
-    if (!IS_DJANGO_BACKEND && emp?.id && roleData?.name === "doctor") {
-      _loadSupabaseSpecialization(emp.id).then((id) => setLocalSpecId(id));
-    } else {
-      setLocalSpecId("");
-    }
-  }, [emp?.id, roleData?.name, emp]);
-
-  const { result: specData } = useOne<{ id: string; name: string }>({
-    resource: DB_TABLES.SPECIALIZATIONS,
-    id: localSpecId,
-    queryOptions: {
-      enabled: !IS_DJANGO_BACKEND && !!localSpecId,
-    },
-  });
-
   // ── Вычисляем отображаемую роль ───────────────────────────────────────────
   let roleDisplayName = "";
-  let isDoctor = false;
   // Роль доступа, противоречащая клинической (медсестра с доступом врача) —
   // показываем отдельным чипом, чтобы не терять информацию о правах.
   let conflictingAccessRole: string | null = null;
 
-  if (IS_DJANGO_BACKEND) {
-    const dr = emp?._djangoRole;
-    if (dr) {
-      // Подпись — должность (см. position.ts), а не название роли доступа
-      const position = getEmployeePosition(emp, t);
-      roleDisplayName = position.label;
-      conflictingAccessRole = position.conflictingAccessRole;
-      isDoctor = dr.code === "doctor";
-    }
-  } else {
-    const getRoleDisplayName = (r?: { name: string; display_name: string }) => {
-      if (!r) return "";
-      if (r.display_name) return r.display_name;
-      switch (r.name) {
-        case "doctor": return "Врач";
-        case "nurse": return "Медсестра";
-        case "admin": return "Управляющий";
-        case "receptionist": return "Регистратор";
-        case "accountant": return "Бухгалтер";
-        default: return "Сотрудник";
-      }
-    };
-    roleDisplayName = getRoleDisplayName(roleData);
-    isDoctor = roleData?.name === "doctor";
+  const dr = emp?._djangoRole;
+  if (dr) {
+    // Подпись — должность, а не название роли доступа.
+    const position = getEmployeePosition(emp, t);
+    roleDisplayName = position.label;
+    conflictingAccessRole = position.conflictingAccessRole;
   }
 
   // Специализации для Django-режима
-  const djangoSpecs = IS_DJANGO_BACKEND ? (emp?._djangoSpecializations ?? []) : [];
-  const supabaseSpecName = !IS_DJANGO_BACKEND ? specData?.name : undefined;
+  const djangoSpecs = emp?._djangoSpecializations ?? [];
 
   const fio = emp?.full_name || emp?.id || "";
   const phone = emp?.phone || "";
@@ -488,45 +396,9 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
     ? t("list.status.fired")
     : status || "—";
 
-  type UnknownRecord = Record<string, unknown>;
-  const isRecord = (v: unknown): v is UnknownRecord =>
-    typeof v === "object" && v !== null;
-
-  const getSafeId = (service: ServiceDto | UnknownRecord): string => {
-    if (isRecord(service)) {
-      const raw =
-        (service as UnknownRecord)["ID"] ?? (service as UnknownRecord)["id"];
-      if (typeof raw === "string" || typeof raw === "number") return String(raw);
-    }
-    return "";
-  };
-
-  const getSafeName = (service: ServiceDto | UnknownRecord): string => {
-    if (isRecord(service)) {
-      const rawName =
-        (service as UnknownRecord)["name"] ??
-        (service as UnknownRecord)["service_name"];
-      if (typeof rawName === "string" && rawName.trim().length > 0)
-        return rawName;
-    }
-    const id = getSafeId(service);
-    return id || "Без названия";
-  };
-
   const servicesForEmployee = React.useMemo(() => {
-    if (IS_DJANGO_BACKEND) {
-      return djangoServicesQuery.data ?? [];
-    }
-    if (legacyFetchedServiceIds.length === 0 || allServices.length === 0)
-      return [] as { id: string; name: string }[];
-
-    return legacyFetchedServiceIds.map((linkId): { id: string; name: string } => {
-      const link = String(linkId);
-      const svc = allServices.find((s) => getSafeId(s) === link);
-      if (svc) return { id: link, name: getSafeName(svc) };
-      return { id: link, name: `ID: ${link}` };
-    });
-  }, [djangoServicesQuery.data, legacyFetchedServiceIds, allServices]);
+    return djangoServicesQuery.data ?? [];
+  }, [djangoServicesQuery.data]);
 
   const formatBank = (v: string) => v.replace(/(.{4})/g, "$1 ").trim();
 
@@ -818,31 +690,20 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             )}
 
             {/* Специализации */}
-            {((IS_DJANGO_BACKEND && djangoSpecs.length > 0) ||
-              (!IS_DJANGO_BACKEND && isDoctor && supabaseSpecName)) && (
+            {djangoSpecs.length > 0 && (
               <Box>
                 <SectionHeader icon={<WorkOutlined />} title={t("card.sections.specializations")} />
                 <Stack direction="row" flexWrap="wrap" gap={1}>
-                  {IS_DJANGO_BACKEND
-                    ? djangoSpecs.map((sp) => (
-                        <Chip
-                          key={sp.id}
-                          label={sp.name}
-                          size="small"
-                          icon={<WorkOutlined />}
-                          variant="outlined"
-                          sx={{ borderRadius: "7px", height: 30 }}
-                        />
-                      ))
-                    : supabaseSpecName && (
-                        <Chip
-                          label={supabaseSpecName}
-                          size="small"
-                          icon={<WorkOutlined />}
-                          variant="outlined"
-                          sx={{ borderRadius: "7px", height: 30 }}
-                        />
-                      )}
+                  {djangoSpecs.map((sp) => (
+                    <Chip
+                      key={sp.id}
+                      label={sp.name}
+                      size="small"
+                      icon={<WorkOutlined />}
+                      variant="outlined"
+                      sx={{ borderRadius: "7px", height: 30 }}
+                    />
+                  ))}
                 </Stack>
               </Box>
             )}
@@ -949,7 +810,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             </Modal>
 
             {/* Связанные данные — своё видит всегда, чужое по правам */}
-            {IS_DJANGO_BACKEND && empIdNum > 0 &&
+            {empIdNum > 0 &&
               (canViewAttendance || canViewExpenses || canViewPayroll || isOwnCard) && (
               <Box>
                 <SectionHeader
@@ -1063,7 +924,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 title={t("card.sections.employeeServices")}
                 action={
                   <Stack direction="row" alignItems="center" gap={1}>
-                    {isLoadingServices && <CircularProgress size={16} />}
+                    {djangoServicesQuery.isFetching && <CircularProgress size={16} />}
                     {onOpenServices && emp && (
                       <AppButton
                         size="small"
@@ -1153,7 +1014,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 </Box>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  {isLoadingServices ? t("card.loadingServices") : t("card.noServices")}
+                  {djangoServicesQuery.isFetching ? t("card.loadingServices") : t("card.noServices")}
                 </Typography>
               )}
             </Box>

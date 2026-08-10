@@ -53,7 +53,6 @@ import {
 } from "../../theme";
 import { usePermissions } from "../../hooks/usePermissions";
 import { updateOrganization } from "../../api/organization";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 
 const SCHEME_OPTIONS: { value: ColorScheme; label: string; icon: React.ReactNode }[] = [
   { value: "light", label: "День", icon: <LightModeOutlined fontSize="small" /> },
@@ -306,7 +305,7 @@ const ThemeCustomizerContent: React.FC<{
       if (patch.uiScale) setUiScale(patch.uiScale);
       if (patch.sidebarDensity) setSidebarDensity(patch.sidebarDensity);
 
-      if (canManageOrgTheme && activeOrganization?.id && IS_DJANGO_BACKEND) {
+      if (canManageOrgTheme && activeOrganization?.id) {
         const newThemeConfig = {
           colorScheme: nextScheme,
           primaryColor: nextPrimary,
@@ -343,7 +342,7 @@ const ThemeCustomizerContent: React.FC<{
 
   const handleReset = React.useCallback(() => {
     reset();
-    if (canManageOrgTheme && activeOrganization?.id && IS_DJANGO_BACKEND) {
+    if (canManageOrgTheme && activeOrganization?.id) {
       const defaultThemeConfig = {
         colorScheme: "system",
         primaryColor: DEFAULT_PRIMARY,

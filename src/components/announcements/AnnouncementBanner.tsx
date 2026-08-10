@@ -5,7 +5,6 @@ import CloseIcon from "@mui/icons-material/Close";
 
 import { getActiveAnnouncements, ActiveAnnouncement } from "../../api/announcements";
 import { djangoQueryKeys, DJANGO_POLL_INTERVAL_MS } from "../../api/queryKeys";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import { usePermissions } from "../../hooks/usePermissions";
 
 function getDismissedMap(storageKey: string): Record<number, string> {
@@ -43,7 +42,7 @@ export const AnnouncementBanner: React.FC = () => {
   const { data: announcements = [] } = useQuery<ActiveAnnouncement[]>({
     queryKey: djangoQueryKeys.announcements.active,
     queryFn: getActiveAnnouncements,
-    enabled: IS_DJANGO_BACKEND,
+    enabled: true,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
   });
@@ -53,7 +52,7 @@ export const AnnouncementBanner: React.FC = () => {
     return !dismissedAt || dismissedAt !== item.updatedAt;
   });
 
-  if (!IS_DJANGO_BACKEND || !activeAnnouncement) {
+  if (!activeAnnouncement) {
     return null;
   }
 

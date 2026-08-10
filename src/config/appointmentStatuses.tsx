@@ -104,7 +104,7 @@ export type StatusCode =
 
 /**
  * Всё, что может прийти в статусе, → канонический код.
- * Ключи в нижнем регистре: слаги Django, legacy-значения Supabase (русские
+ * Ключи в нижнем регистре: слаги Django и значения из старых записей (русские
  * строки из APPOINTMENT_STATUSES) и исторические алиасы.
  */
 const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
@@ -127,7 +127,7 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   free: "free",
   debt: "debt",
   insurance: "insurance",
-  // legacy-значения Supabase (русские строки, приходят из старых данных)
+  // Старые русские значения, которые могут приходить из исторических данных.
   "ожидаем": "scheduled",
   "подтверждён": "confirmed",
   "подтвержден": "confirmed",
@@ -209,7 +209,7 @@ const ALL_STATUS_CODES = Object.keys(STATUS_VISUAL) as StatusCode[];
 /**
  * Резолв произвольного значения статуса в канонический код (или null).
  *
- * Принимает слаг бэка, legacy-значение Supabase и уже отображаемую метку —
+ * Принимает слаг бэка, старое значение и уже отображаемую метку —
  * последнее важно, потому что по коду встречается двойное преобразование
  * `getStatusConfig(normalizeDjangoStatus(status))`. Метка терминологична
  * («Пациент здесь» / «Клиент здесь»), поэтому статичной таблицей алиасов её

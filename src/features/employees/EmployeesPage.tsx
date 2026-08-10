@@ -1,4 +1,3 @@
-import { useList } from "@refinedev/core";
 import React from "react";
 import {
   Box,
@@ -17,24 +16,9 @@ import EmployeeServicesDrawer from "./components/EmployeeServicesDrawer";
 import DjangoEditEmployeeDrawer from "./components/DjangoEditEmployeeDrawer";
 import DjangoFireEmployeeDialog from "./components/DjangoFireEmployeeDialog";
 import { useEmployeesPageState } from "./hooks/useEmployeesPage";
-import { fetchServices, type ServiceRow as ServiceDto } from "../../services/services";
 import { AppBottomSheet, PageHeader } from "../../components/ui";
-import { usePermissions } from "../../hooks/usePermissions";
 import { useCan } from "../../hooks/useCan";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import type { EmployesRow } from "./types";
-
-// Supabase-only drawers — imported lazily so they don't pull Supabase into
-// the Django bundle. In Django mode they are never rendered.
-const AddEmployeeDrawer = React.lazy(
-  () => import("./components/AddEmployeeDrawer"),
-);
-const EditEmployeeDrawer = React.lazy(
-  () => import("./components/EditEmployeeDrawer"),
-);
-const DeleteEmployeeDialog = React.lazy(
-  () => import("./components/DeleteEmployeeDialog"),
-);
 
 const EmployeesPage: React.FC = () => {
   const { t } = useT("employees");
@@ -57,9 +41,6 @@ const EmployeesPage: React.FC = () => {
     [],
   );
 
-  const { canManageEmployees, isAdmin } = usePermissions();
-
-  // Django RBAC permissions
   const canStaffView = useCan("staff.view");
   const canStaffCreate = useCan("staff.create");
   const canStaffUpdate = useCan("staff.update");
@@ -67,46 +48,18 @@ const EmployeesPage: React.FC = () => {
   const canMembershipsCreate = useCan("rbac.memberships.create");
   const canMembershipsUpdate = useCan("rbac.memberships.update");
 
-  const canOnboard =
-    IS_DJANGO_BACKEND && canStaffCreate && (canMembershipsCreate || canMembershipsUpdate);
-  const canEdit = IS_DJANGO_BACKEND ? canStaffUpdate : canManageEmployees();
-  const canFire = IS_DJANGO_BACKEND ? canStaffDelete : isAdmin() && canManageEmployees();
-  // Django: «Добавить сотрудника» открывает OnboardEmployeeDrawer
-  const handleAddClick = IS_DJANGO_BACKEND
-    ? (canOnboard ? () => setOnboardOpen(true) : undefined)
-    : (canManageEmployees() ? () => state.setAddOpen(true) : undefined);
+  const canOnboard = canStaffCreate && (canMembershipsCreate || canMembershipsUpdate);
+  const canEdit = canStaffUpdate;
+  const canFire = canStaffDelete;
+  const handleAddClick = canOnboard ? () => setOnboardOpen(true) : undefined;
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
-  const [allServices, setAllServices] = React.useState<ServiceDto[]>([]);
-
-  // Supabase-only: roles via Refine (disabled in Django mode)
-  const { result: rolesData } = useList({
-    resource: "roles",
-    queryOptions: { enabled: !IS_DJANGO_BACKEND },
-  });
-  const roles = rolesData?.data || [];
-
-  React.useEffect(() => {
-    if (IS_DJANGO_BACKEND) return; // Django карточка не нужен внешний список услуг
-    let cancelled = false;
-    (async () => {
-      try {
-        const items = await fetchServices();
-        if (!cancelled) setAllServices(items);
-      } catch (e) {
-        console.error("Fetch services error:", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Guard: в Django-режиме нужен staff.view
-  if (IS_DJANGO_BACKEND && !canStaffView) {
+  if (!canStaffView) {
     return (
       <Box sx={{ p: 4, textAlign: "center" }}>
         <Typography color="text.secondary">
@@ -177,7 +130,6 @@ const EmployeesPage: React.FC = () => {
               hasMore={state.hasMore}
               loadingMore={state.loadingMore}
               isGrouped
-              roles={roles}
               selectedId={state.detailsOpen?.id ?? null}
             />
           </Grid>
@@ -199,12 +151,9 @@ const EmployeesPage: React.FC = () => {
                 {state.detailsOpen ? (
                   <EmployeeCard
                     emp={state.detailsOpen}
-                    allServices={allServices}
                     onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
                     onOpenServices={
-                      IS_DJANGO_BACKEND
-                        ? (id, name) => openServicesDrawer(id, name)
-                        : undefined
+                      (id, name) => openServicesDrawer(id, name)
                     }
                   />
                 ) : (
@@ -238,20 +187,16 @@ const EmployeesPage: React.FC = () => {
           <Box sx={{ p: 2 }}>
             <EmployeeCard
               emp={state.detailsOpen}
-              allServices={allServices}
               onEdit={canEdit ? (e) => state.setEditOpen(e) : undefined}
               onOpenServices={
-                IS_DJANGO_BACKEND
-                  ? (id, name) => openServicesDrawer(id, name)
-                  : undefined
+                (id, name) => openServicesDrawer(id, name)
               }
             />
           </Box>
         </AppBottomSheet>
       )}
 
-      {/* --- DJANGO: Services drawer --- */}
-      {IS_DJANGO_BACKEND && servicesDrawer.employeeId > 0 && (
+      {servicesDrawer.employeeId > 0 && (
         <EmployeeServicesDrawer
           open={servicesDrawer.open}
           onClose={closeServicesDrawer}
@@ -269,20 +214,15 @@ const EmployeesPage: React.FC = () => {
         />
       )}
 
-      {/* --- DJANGO: Onboard drawer --- */}
-      {IS_DJANGO_BACKEND && (
-        <OnboardEmployeeDrawer
+      <OnboardEmployeeDrawer
           open={onboardOpen}
           onClose={() => setOnboardOpen(false)}
           onCreated={(row: EmployesRow) => {
             state.setItems((prev) => [row, ...prev]);
           }}
         />
-      )}
 
-      {/* --- DJANGO: Edit drawer --- */}
-      {IS_DJANGO_BACKEND && (
-        <DjangoEditEmployeeDrawer
+      <DjangoEditEmployeeDrawer
           record={state.editOpen}
           onClose={() => state.setEditOpen(null)}
           onUpdated={(updated) => {
@@ -294,11 +234,8 @@ const EmployeesPage: React.FC = () => {
             }
           }}
         />
-      )}
 
-      {/* --- DJANGO: Fire dialog --- */}
-      {IS_DJANGO_BACKEND && (
-        <DjangoFireEmployeeDialog
+      <DjangoFireEmployeeDialog
           record={state.deleteOpen}
           onClose={() => state.setDeleteOpen(null)}
           onFired={(id) => {
@@ -316,37 +253,7 @@ const EmployeesPage: React.FC = () => {
             state.setDeleteOpen(null);
           }}
         />
-      )}
 
-      {/* --- SUPABASE: Legacy drawers (not rendered in Django mode) --- */}
-      {!IS_DJANGO_BACKEND && (
-        <React.Suspense fallback={null}>
-          <AddEmployeeDrawer
-            open={state.addOpen}
-            onClose={() => state.setAddOpen(false)}
-            onCreated={(rec) => state.setItems((pr) => [rec, ...pr])}
-          />
-          <EditEmployeeDrawer
-            record={state.editOpen}
-            onClose={() => state.setEditOpen(null)}
-            onUpdated={(rec) => {
-              state.setItems((pr) =>
-                pr.map((x) => (x.id === rec.id ? rec : x)),
-              );
-              if (state.detailsOpen?.id === rec.id) {
-                state.setDetailsOpen(rec);
-              }
-            }}
-          />
-          <DeleteEmployeeDialog
-            record={state.deleteOpen}
-            onClose={() => state.setDeleteOpen(null)}
-            onDeleted={(id) =>
-              state.setItems((pr) => pr.filter((x) => x.id !== id))
-            }
-          />
-        </React.Suspense>
-      )}
     </Box>
   );
 };

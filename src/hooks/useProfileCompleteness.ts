@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { usePermissions } from "./usePermissions";
 import { getCurrentUser, DjangoUser } from "../api/auth";
-import { IS_DJANGO_BACKEND } from "../config/backend";
 import { useLocation } from "react-router";
 
 export type MissingFieldItem = {
@@ -40,9 +39,7 @@ export function useProfileCompleteness() {
     }
   }, [storageKey]);
 
-  // Load user profile details if in Django mode
   useEffect(() => {
-    if (!IS_DJANGO_BACKEND) return;
     let isMounted = true;
     getCurrentUser()
       .then((me) => {
@@ -115,7 +112,6 @@ export function useProfileCompleteness() {
   const isProfilePage = location.pathname === "/profile";
 
   const shouldShowBanner =
-    IS_DJANGO_BACKEND &&
     hasCriticalMissing &&
     !dismissedToday &&
     !isProfilePage;

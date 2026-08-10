@@ -104,7 +104,7 @@ export function packIntoLanes(occs: DayOccurrence[]): PackedLane[] {
 /**
  * Почасовая загрузка: число уникальных сотрудников в смене в каждый час 07..21.
  * (В API расписания нет «кабинетов», поэтому загрузку меряем людьми, а не
- * долей занятых кабинетов, как в исходном supabase-редизайне.)
+ * долей занятых кабинетов.)
  */
 export function hourlyOccupancy(occs: DayOccurrence[]): number[] {
   return OCCUPANCY_HOURS.map((h) => {

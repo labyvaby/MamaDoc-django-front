@@ -24,7 +24,6 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 
 import { usePermissions } from "../../hooks/usePermissions";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
 import type { RbacBranch, RbacMembership } from "../../api/auth";
 
 /**
@@ -62,7 +61,6 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  if (!IS_DJANGO_BACKEND) return null;
 
   const totalBranches = memberships.reduce(
     (acc, m) => acc + (m.branches?.length ?? 0),

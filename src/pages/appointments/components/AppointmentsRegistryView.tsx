@@ -7,7 +7,7 @@
  *   - фильтр по сотруднику — лента аватарок внутри AppointmentListPanel
  *     (как в «Регистратуре»), отдельной ленты чипов нет;
  *   - период и услуга — в Drawer «Фильтры» с бейджем активных фильтров.
- * Data layer: Django REST API (getAppointments), без Supabase.
+ * Data layer: Django REST API (getAppointments).
  */
 import React from "react";
 import {
@@ -38,7 +38,6 @@ import { PageHeader, AppBottomSheet } from "../../../components/ui";
 import { useCanChecker } from "../../../hooks/useCan";
 import { subtleBg } from "../../../theme";
 import {
-  getAppointments,
   updateAppointment,
   parseBackendError,
   type DjangoAppointment,

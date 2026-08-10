@@ -6,10 +6,6 @@
 .env.test.local
 .env.production.local
 .env.backup
-supabase/.env
-supabase/config.toml.local
-.supabase/
-supabase/.temp/
 *.key
 *.pem
 *.p12
@@ -62,7 +58,6 @@ e2e-results/
 
 # Database
 *.sql
-!supabase/migrations/*.sql
 *.db
 *.sqlite
 *.sqlite3
@@ -152,8 +147,6 @@ docker-compose.override.yml
 .dockerignore.local
 
 # Project specific
-explore-supabase.js
-supabase-mcp.ts
 explore-*.js
 *-exploration.js
 experiments/

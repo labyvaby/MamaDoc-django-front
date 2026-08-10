@@ -22,13 +22,13 @@ export interface RoutePermissionConfig {
 export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
   // Главная страница - доступна всем авторизованным
   {
-    path: '/home',
+    path: '/appointments',
     allowedRoles: ['superadmin', 'admin', 'doctor', 'receptionist', 'accountant'],
   },
 
   // Поиск пациентов - доступен всем кроме бухгалтера
   {
-    path: '/patient-search',
+    path: '/patients',
     allowedRoles: ['superadmin', 'admin', 'doctor', 'receptionist'],
     requiredPermissions: [PERMISSIONS.PATIENTS_LIST],
   },

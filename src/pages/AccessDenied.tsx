@@ -17,7 +17,7 @@ export const AccessDenied: React.FC = () => {
   };
 
   const handleGoHome = () => {
-    navigate('/home');
+    navigate('/appointments');
   };
 
   return (

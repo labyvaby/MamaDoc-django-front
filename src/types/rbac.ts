@@ -26,16 +26,16 @@ export interface Role {
 
 // Домашние страницы для каждой роли
 export const ROLE_HOME_PAGES: Record<RoleName, string> = {
-  superadmin: '/home',
-  admin: '/home',
-  administrator: '/home',
+  superadmin: '/appointments',
+  admin: '/appointments',
+  administrator: '/appointments',
   doctor: '/doctor',
   nurse: '/nurse',
-  receptionist: '/home',
-  registrator: '/home',
-  accountant: '/home',
-  manager: '/home',
-  owner: '/home',
+  receptionist: '/appointments',
+  registrator: '/appointments',
+  accountant: '/appointments',
+  manager: '/appointments',
+  owner: '/appointments',
 };
 
 // Типы ресурсов системы
@@ -94,7 +94,7 @@ export interface UserPermissions {
   hasModule?: (moduleCode: string) => boolean;
   /** Combined check: hasPermission AND hasModule (Django mode). */
   canAccess?: (permissionCode: string) => boolean;
-  // ── Django active context (optional, undefined in Supabase mode) ──
+  // ── Активный контекст организации и филиала ──
   /** Memberships available to the current user. */
   memberships?: import('../api/auth').RbacMembership[];
   activeMembership?: import('../api/auth').RbacMembership | null;

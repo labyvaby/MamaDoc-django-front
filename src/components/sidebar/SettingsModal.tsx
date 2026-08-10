@@ -14,10 +14,7 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import SettingsSystemDaydreamOutlined from "@mui/icons-material/SettingsSystemDaydreamOutlined";
 import { logout as djangoLogout } from "../../api";
 import { useAppVersion } from "../../api/appVersion";
-import { IS_DJANGO_BACKEND } from "../../config/backend";
-import { supabase } from "../../utility/supabaseClient";
 import { ColorModeContext } from "../../contexts/color-mode";
-import { CanAccess } from "../rbac/CanAccess";
 import { Link as RouterLink } from "react-router";
 import { useCan } from "../../hooks/useCan";
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
@@ -38,11 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleLogout = async () => {
     try {
-      if (IS_DJANGO_BACKEND) {
-        await djangoLogout();
-      } else {
-        await supabase.auth.signOut();
-      }
+      await djangoLogout();
     } finally {
       onClose();
       window.location.href = '/login';
@@ -72,16 +65,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <Divider />
       <DialogContent sx={{ pb: 3 }}>
         <Stack spacing={2}>
-          {IS_DJANGO_BACKEND ? (
-            canManageSkud ? skudSettingsButton : null
-          ) : (
-            <CanAccess roles={['admin', 'superadmin']}>
-              {skudSettingsButton}
-            </CanAccess>
-          )}
+          {canManageSkud ? skudSettingsButton : null}
 
-          {IS_DJANGO_BACKEND ? (
-            canManageNotifications ? (
+          {canManageNotifications ? (
               <Button
                 variant="outlined"
                 fullWidth
@@ -92,21 +78,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 Настройка уведомлений
               </Button>
-            ) : null
-          ) : (
-            <CanAccess roles={['superadmin']}>
-              <Button
-                variant="outlined"
-                fullWidth
-                component={RouterLink}
-                to="/settings/notifications"
-                onClick={onClose}
-                startIcon={<NotificationsOutlined />}
-              >
-                Настройка уведомлений
-              </Button>
-            </CanAccess>
-          )}
+            ) : null}
 
           <Button
             variant="outlined"

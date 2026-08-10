@@ -1,5 +1,8 @@
 import html2pdf from "html2pdf.js";
 import { tt } from "../i18n/t";
+import { A4_WIDTH_MM, pdfFileName } from "./pdfLayout";
+
+export { pdfFileName } from "./pdfLayout";
 
 export type ConclusionPDFData = {
   patientFio: string;
@@ -26,6 +29,44 @@ export type CertificatePDFData = {
   organizationName?: string;
 };
 
+/**
+ * Общие опции html2pdf.
+ *
+ * 🔴 НЕ добавлять сюда `windowWidth` / `scrollX` / `scrollY` и НЕ уносить
+ * контейнер за пределы экрана (`position: fixed; left: -10000px`): html2canvas
+ * снимает область по координатам элемента в документе, и для элемента вне
+ * вьюпорта снимок получается ПУСТЫМ — PDF выходил из одной белой страницы
+ * (проверено 10.08.2026, это была регрессия). Контейнер должен оставаться в
+ * обычном потоке документа; фиксированная геометрия достигается размерами в
+ * мм, которые от вьюпорта не зависят.
+ */
+const pdfOptions = (filename: string) => ({
+  margin: [0, 0, 0, 0] as [number, number, number, number], // Отступы заданы padding-ом контейнера.
+  filename,
+  image: { type: "jpeg" as const, quality: 0.98 },
+  html2canvas: { scale: 2 },
+  jsPDF: { unit: "mm" as const, format: "a4" as const, orientation: "portrait" as const },
+});
+
+/**
+ * Отрендерить готовый HTML документа в PDF-Blob.
+ *
+ * Контейнер живёт в обычном потоке  (см. предупреждение выше) и
+ * удаляется в , даже если html2pdf упал.
+ */
+const renderPdf = async (html: string, filename: string): Promise<Blob> => {
+  const container = document.createElement("div");
+  container.setAttribute("aria-hidden", "true");
+  container.innerHTML = html;
+  document.body.appendChild(container);
+  try {
+    const blob = await html2pdf().set(pdfOptions(filename)).from(container).output("blob");
+    return blob as Blob;
+  } finally {
+    document.body.removeChild(container);
+  }
+};
+
 const toPrintableString = (value: unknown) => String(value ?? "");
 
 const escapeHtml = (value: unknown) =>
@@ -44,10 +85,21 @@ const renderPrintableBlock = (value?: unknown, fallback = "—", extraStyles = "
   const content = normalized.length > 0 ? normalized : fallback;
   const styleSuffix = extraStyles ? ` ${extraStyles}` : "";
 
-  return `<div style="white-space: pre-wrap;${styleSuffix}">${escapeHtml(content)}</div>`;
+  // overflow-wrap: длинные слова/номера (названия препаратов, ссылки) должны
+  // переноситься, а не выпирать за правый край страницы.
+  return (
+    `<div style="white-space: pre-wrap; overflow-wrap: anywhere;${styleSuffix}">`
+    + `${escapeHtml(content)}</div>`
+  );
 };
 
-export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Blob> => {
+/**
+ * HTML документа «Заключение».
+ *
+ * Один источник для PDF и для экранного предпросмотра: то, что видит врач на
+ * экране, попадает в файл без расхождений.
+ */
+export const buildConclusionHtml = (data: ConclusionPDFData): string => {
   const {
     patientFio,
     patientDob,
@@ -64,33 +116,33 @@ export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Bl
     doctorFio,
   } = data;
 
-  const container = document.createElement("div");
-
   // Очищаем значения от прочерков для корректного отображения единиц измерения
   const heightDisplay = height && height !== "—" ? height : "";
   const weightDisplay = weight && weight !== "—" ? weight : "";
   const tempDisplay = temperature && temperature !== "—" ? temperature : "";
 
-  container.innerHTML = `
+  return `
     <div
       style="
-        width: 190mm;
+        box-sizing: border-box;
+        width: ${A4_WIDTH_MM}mm;
         margin: 0 auto;
         font-family: Arial, sans-serif;
         font-size: 11pt;
         line-height: 1.1;
         color: #000;
         padding: 50mm 15mm 20mm 10mm;
+        overflow-wrap: anywhere;
       "
     >
       <div style="margin-bottom: 1.5mm;"><b>${escapeHtml(tt("print:patientFioLabel"))}</b> ${escapeHtml(patientFio)}</div>
       <div style="margin-bottom: 1.5mm;"><b>Дата рождения:</b> ${escapeHtml(patientDob)}</div>
       <div style="margin-bottom: 5mm;"><b>${escapeHtml(tt("print:visitDateTimeLabel"))}</b> ${escapeHtml(appointmentDate)}</div>
 
-      <div style="margin-bottom: 5mm; display: flex;">
-        <div style="width: 45mm;"><b>Рост:</b> ${heightDisplay ? `${escapeHtml(heightDisplay)} см` : ""}</div>
-        <div style="width: 45mm;"><b>Вес:</b> ${weightDisplay ? `${escapeHtml(weightDisplay)} кг` : ""}</div>
-        <div><b>Температура:</b> ${tempDisplay ? `${escapeHtml(tempDisplay)} C°` : ""}</div>
+      <div style="margin-bottom: 5mm; display: flex; gap: 4mm;">
+        <div style="flex: 0 0 45mm;"><b>Рост:</b> ${heightDisplay ? `${escapeHtml(heightDisplay)} см` : ""}</div>
+        <div style="flex: 0 0 45mm;"><b>Вес:</b> ${weightDisplay ? `${escapeHtml(weightDisplay)} кг` : ""}</div>
+        <div style="flex: 1; min-width: 0;"><b>Температура:</b> ${tempDisplay ? `${escapeHtml(tempDisplay)} C°` : ""}</div>
       </div>
 
       <div style="margin-bottom: 2mm;">
@@ -118,9 +170,9 @@ export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Bl
         <div style="margin-top: 1.5mm;">${renderPrintableBlock(recommendations)}</div>
       </div>
 
-      <div style="margin-top: 8mm; display: flex; justify-content: space-between; align-items: flex-start;">
-        <div style="flex: 1;"><b>${escapeHtml(tt("print:specialistLabel"))}</b> ${escapeHtml(doctorFio)}</div>
-        <div style="width: 70mm;">
+      <div style="margin-top: 8mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm;">
+        <div style="flex: 1; min-width: 0;"><b>${escapeHtml(tt("print:specialistLabel"))}</b> ${escapeHtml(doctorFio)}</div>
+        <div style="flex: 0 0 70mm;">
           <div style="display: flex; justify-content: space-between;">
             <b>Подпись:</b>
             <span></span>
@@ -130,28 +182,13 @@ export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Bl
       </div>
     </div>
   `;
-
-  document.body.appendChild(container);
-
-  try {
-    const pdfBlob = await html2pdf()
-      .set({
-        margin: [0, 0, 0, 0], // Отступы уже заданы в контейнере padding-ом
-        filename: `conclusion_${patientFio.replace(/\s+/g, '_')}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      })
-      .from(container)
-      .output("blob");
-
-    return pdfBlob as Blob;
-  } finally {
-    document.body.removeChild(container);
-  }
 };
 
-export const generateCertificatePDF = async (data: CertificatePDFData): Promise<Blob> => {
+export const generateConclusionPDF = async (data: ConclusionPDFData): Promise<Blob> =>
+  renderPdf(buildConclusionHtml(data), pdfFileName("conclusion", data.patientFio));
+
+/** HTML документа «Медицинская справка» (см. buildConclusionHtml). */
+export const buildCertificateHtml = (data: CertificatePDFData): string => {
   const {
     patientFio,
     patientDob,
@@ -162,12 +199,11 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
   } = data;
   const certificateOrganization = escapeHtml(organizationName || "Aximo CRM");
 
-  const container = document.createElement("div");
-
-  container.innerHTML = `
+  return `
     <div
       style="
-        width: 190mm;
+        box-sizing: border-box;
+        width: ${A4_WIDTH_MM}mm;
         margin: 0 auto;
         font-family: Arial, sans-serif;
         font-size: 14pt;
@@ -176,6 +212,7 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
         padding: 40mm 15mm 20mm 15mm;
         position: relative;
         overflow: hidden;
+        overflow-wrap: anywhere;
       "
     >
       <!-- Watermark -->
@@ -203,10 +240,10 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
 
       <div style="margin-top: 15mm; margin-bottom: 8mm;">
         <div style="margin-bottom: 3mm;">
-          Ф.И.О. <span style="display: inline-block; border-bottom: 1px solid #000; min-width: 100mm;">${escapeHtml(patientFio)}</span>
+          Ф.И.О. <span style="display: inline-block; border-bottom: 1px solid #000; min-width: 100mm; max-width: 100%;">${escapeHtml(patientFio)}</span>
         </div>
         <div>
-          Дата рождения: <span style="display: inline-block; border-bottom: 1px solid #000; min-width: 50mm;">${escapeHtml(patientDob)}</span>
+          Дата рождения: <span style="display: inline-block; border-bottom: 1px solid #000; min-width: 50mm; max-width: 100%;">${escapeHtml(patientDob)}</span>
         </div>
       </div>
 
@@ -229,30 +266,14 @@ export const generateCertificatePDF = async (data: CertificatePDFData): Promise<
       </div>
 
       <div style="margin-top: 15mm; display: flex; justify-content: flex-end; align-items: flex-start;">
-        <div style="width: 50mm; text-align: center;">
+        <div style="flex: 0 0 50mm; text-align: center;">
           <div style="border-bottom: 1px solid #000; height: 10mm;"></div>
           <div style="font-size: 9pt; color: #666; margin-top: 1mm;">(подпись)</div>
         </div>
       </div>
     </div>
   `;
-
-  document.body.appendChild(container);
-
-  try {
-    const pdfBlob = await html2pdf()
-      .set({
-        margin: [0, 0, 0, 0],
-        filename: `certificate_${patientFio.replace(/\s+/g, '_')}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      })
-      .from(container)
-      .output("blob");
-
-    return pdfBlob as Blob;
-  } finally {
-    document.body.removeChild(container);
-  }
 };
+
+export const generateCertificatePDF = async (data: CertificatePDFData): Promise<Blob> =>
+  renderPdf(buildCertificateHtml(data), pdfFileName("certificate", data.patientFio));

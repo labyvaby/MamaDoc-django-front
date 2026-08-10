@@ -32,7 +32,7 @@ describe("resolveStatusCode", () => {
     // алиасы слагов
     ["waiting", "arrived"],
     ["cancelled", "canceled"],
-    // legacy-значения Supabase (русские строки в данных)
+    // Старые русские значения в исторических данных.
     [APPOINTMENT_STATUSES.EXPECTED, "scheduled"],
     [APPOINTMENT_STATUSES.CONFIRMED, "confirmed"],
     [APPOINTMENT_STATUSES.PATIENT_ARRIVED, "arrived"],

@@ -462,6 +462,8 @@ export interface DjangoAppointment {
   services: AppointmentServiceLine[];
   /** Goods sold within this visit (deducted from the warehouse). */
   productLines: AppointmentProductLine[];
+  /** True after the one-time performer price override was consumed. */
+  priceOverrideUsed?: boolean;
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
@@ -1040,6 +1042,24 @@ export function updateAppointment(
     method: "PATCH",
     body: denormalizeUpdatePayload(payload),
   }).then(normalizeAppointment);
+}
+
+/**
+ * Change the price of the current doctor's service line once within an
+ * appointment. The backend enforces permission, performer ownership and the
+ * one-time limit transactionally.
+ */
+export function overrideAppointmentServicePrice(
+  appointmentId: number,
+  payload: { serviceLineId: number; unitPrice: string | number },
+): Promise<DjangoAppointment> {
+  return apiRequest<RawAppointment>(
+    `/appointments/${appointmentId}/price-override/`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  ).then(normalizeAppointment);
 }
 
 /**
