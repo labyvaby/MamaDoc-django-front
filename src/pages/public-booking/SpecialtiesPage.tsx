@@ -2,12 +2,11 @@ import React from "react";
 import { Box, Skeleton, Stack, Typography } from "@mui/material";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
-import { useNavigate } from "react-router";
-
 import { PublicBookingShell } from "./shell";
 import { TILE_RADIUS } from "./theme";
 import { specialtyIconUrl } from "./specialtyIcons";
 import { useSpecialties, type SpecialtyGroup } from "./useSpecialties";
+import { useBookingNav } from "./orgSlug";
 import { useT } from "../../i18n/VerticalProvider";
 
 /** Рамка и фон плитки специализации — значения эталона. */
@@ -113,7 +112,7 @@ const TileSkeleton: React.FC = () => (
  */
 const SpecialtiesPage: React.FC = () => {
   const { t } = useT("publicBooking");
-  const navigate = useNavigate();
+  const { go } = useBookingNav();
   const { specialties, loading } = useSpecialties();
 
   return (
@@ -135,9 +134,7 @@ const SpecialtiesPage: React.FC = () => {
               <SpecialtyTile
                 key={group.key}
                 group={group}
-                onClick={() =>
-                  navigate(`/book/doctors?specialty=${encodeURIComponent(group.key)}`)
-                }
+                onClick={() => go(`/book/doctors?specialty=${encodeURIComponent(group.key)}`)}
               />
             ))}
       </Box>

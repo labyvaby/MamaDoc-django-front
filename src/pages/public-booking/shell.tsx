@@ -19,10 +19,9 @@ import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
-import { useNavigate } from "react-router";
-
 import { useBookingTheme, BOOKING_PRIMARY, BORDER, MUTED } from "./theme";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
+import { useBookingNav } from "./orgSlug";
 import { formatPhone, monogram, telHref } from "./format";
 import { usePatientSession } from "./PatientSession";
 import { PatientAuthDialog } from "./booking/PatientAuthDialog";
@@ -123,7 +122,7 @@ function usePageMeta(title: string | null, description: string) {
 
 /** Логотип клиники; без картинки — монограмма и название текстом. */
 const Brand: React.FC = () => {
-  const navigate = useNavigate();
+  const { go } = useBookingNav();
   const { organization } = useBookingOrg();
   const [logoBroken, setLogoBroken] = React.useState(false);
   const showLogo = Boolean(organization?.logoUrl) && !logoBroken;
@@ -133,7 +132,7 @@ const Brand: React.FC = () => {
       direction="row"
       alignItems="center"
       spacing={1}
-      onClick={() => navigate("/book")}
+      onClick={() => go("/book")}
       sx={{ cursor: "pointer", minWidth: 0 }}
     >
       {showLogo ? (
@@ -189,7 +188,7 @@ const HeaderActions: React.FC = () => {
   const { t } = useT("publicBooking");
   const { branches } = useBookingOrg();
   const phone = primaryPhone(branches);
-  const navigate = useNavigate();
+  const { go } = useBookingNav();
   const { session, selectedPatient, selectPatient, signOut } = usePatientSession();
   const [authOpen, setAuthOpen] = React.useState(false);
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
@@ -203,7 +202,7 @@ const HeaderActions: React.FC = () => {
               direction="row"
               alignItems="center"
               spacing={0.75}
-              onClick={() => navigate("/book/me")}
+              onClick={() => go("/book/me")}
               sx={{
                 display: { xs: "none", sm: "flex" },
                 fontSize: 14,
@@ -259,7 +258,7 @@ const HeaderActions: React.FC = () => {
               <MenuItem
                 onClick={() => {
                   setMenuAnchor(null);
-                  navigate("/book/me");
+                  go("/book/me");
                 }}
                 sx={{ borderTop: `1px solid ${BORDER}` }}
               >
@@ -357,13 +356,13 @@ const PageHeading: React.FC<{ heading: React.ReactNode; backTo?: string }> = ({
   heading,
   backTo,
 }) => {
-  const navigate = useNavigate();
+  const { go } = useBookingNav();
   return (
     <Stack direction="row" alignItems="center" spacing={0.5} sx={{ py: 1.5 }}>
       {backTo && (
         <IconButton
           size="small"
-          onClick={() => navigate(backTo)}
+          onClick={() => go(backTo)}
           sx={{ ml: -1, color: MUTED }}
           aria-label="Назад"
         >

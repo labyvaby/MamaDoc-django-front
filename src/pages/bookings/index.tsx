@@ -51,7 +51,7 @@ import {
 } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
-import { BOOKING_SHOWCASE_URL } from "../public-booking/format";
+import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
 import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
@@ -173,13 +173,18 @@ const StatTile: React.FC<{
 /**
  * Ссылка на публичную витрину онлайн-записи: регистратуре её диктуют пациентам
  * и вставляют в соцсети, поэтому рядом с открытием — копирование адреса.
+ *
+ * Адрес строится по активной организации: витрина одна на весь CRM, и без слага
+ * клиники «Клиника 21» открывала витрину организации по умолчанию — с чужими
+ * врачами и филиалами.
  */
-const ShowcaseLink: React.FC = () => {
+const ShowcaseLink: React.FC<{ orgSlug: string | null }> = ({ orgSlug }) => {
   const [copied, setCopied] = React.useState(false);
+  const url = bookingShowcaseUrl(orgSlug);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(BOOKING_SHOWCASE_URL);
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -200,10 +205,10 @@ const ShowcaseLink: React.FC = () => {
         flexShrink: 0,
       })}
     >
-      <Tooltip title={BOOKING_SHOWCASE_URL}>
+      <Tooltip title={url}>
         <Button
           component="a"
-          href={BOOKING_SHOWCASE_URL}
+          href={url}
           target="_blank"
           rel="noopener noreferrer"
           size="small"
@@ -609,7 +614,7 @@ const BookingsPage: React.FC = () => {
         onSearchChange={setSearchInput}
         searchPlaceholder="Имя, телефон или код"
         loading={query.isFetching}
-        actions={<ShowcaseLink />}
+        actions={<ShowcaseLink orgSlug={activeOrganization?.slug ?? null} />}
       />
 
       {needsOrg ? (

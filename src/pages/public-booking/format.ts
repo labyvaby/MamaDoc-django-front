@@ -7,6 +7,8 @@
  * Менять его во всём продукте (283 использования) — отдельная задача.
  */
 
+import { bookPath } from "./orgSlug";
+
 /**
  * Публичный адрес витрины для ссылок, которые уходят наружу (QR в подтверждении,
  * «Поделиться»). По умолчанию — текущий origin, но его мало: с локальной машины
@@ -18,12 +20,21 @@ export const BOOKING_PUBLIC_ORIGIN: string =
   import.meta.env.VITE_BOOKING_PUBLIC_ORIGIN ||
   (typeof window !== "undefined" ? window.location.origin : "");
 
-/** Главная витрины онлайн-записи — этот адрес дают пациентам. */
-export const BOOKING_SHOWCASE_URL = `${BOOKING_PUBLIC_ORIGIN}/book`;
+/**
+ * Главная витрины онлайн-записи — этот адрес дают пациентам.
+ *
+ * `orgSlug` — клиника, чью витрину открываем: домен один на все организации CRM,
+ * и без него любая клиника получала бы витрину организации по умолчанию
+ * (см. `./orgSlug.ts`).
+ */
+export function bookingShowcaseUrl(orgSlug?: string | null): string {
+  return `${BOOKING_PUBLIC_ORIGIN}${bookPath("/book", orgSlug ?? "")}`;
+}
 
 /** Ссылка на карточку записи по коду подтверждения. */
-export function bookingCodeUrl(code: string): string {
-  return `${BOOKING_PUBLIC_ORIGIN}/book/b/${encodeURIComponent(code)}`;
+export function bookingCodeUrl(code: string, orgSlug?: string | null): string {
+  const path = `/book/b/${encodeURIComponent(code)}`;
+  return `${BOOKING_PUBLIC_ORIGIN}${bookPath(path, orgSlug ?? "")}`;
 }
 
 /**

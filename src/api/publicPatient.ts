@@ -62,7 +62,9 @@ export interface OtpRequestResult {
 
 /**
  * `POST /auth/otp/request/` — SMS с кодом. Организация обязательна: пул
- * пациентов у каждой клиники свой.
+ * пациентов у каждой клиники свой, поэтому её slug приходит от витрины
+ * (`useBookingOrgSlug`), а не берётся из сборки — иначе пациент «Клиники 21»
+ * искался бы среди пациентов организации по умолчанию.
  *
  * Организация передаётся как `organization_slug`. Неизвестный slug теперь даёт
  * `404 organization_not_found` (проверено на тесте 06.08.2026; до контракта от
@@ -71,11 +73,12 @@ export interface OtpRequestResult {
  */
 export function requestPatientOtp(
   phone: string,
+  organizationSlug: string = BOOKING_ORG_SLUG,
   signal?: AbortSignal,
 ): Promise<OtpRequestResult> {
   return publicRawRequest<{ data: { ok: boolean; retry_after: number } }>(
     `/auth/otp/request/`,
-    { method: "POST", signal, body: { phone, organization_slug: BOOKING_ORG_SLUG } },
+    { method: "POST", signal, body: { phone, organization_slug: organizationSlug } },
   ).then((raw) => ({ ok: raw.data.ok, retryAfter: raw.data.retry_after }));
 }
 
@@ -105,6 +108,7 @@ export interface PatientSessionResult {
 export function verifyPatientOtp(
   phone: string,
   code: string,
+  organizationSlug: string = BOOKING_ORG_SLUG,
   signal?: AbortSignal,
 ): Promise<PatientSessionResult> {
   return publicRawRequest<{
@@ -112,7 +116,7 @@ export function verifyPatientOtp(
   }>(`/auth/otp/verify/`, {
     method: "POST",
     signal,
-    body: { phone, code, organization_slug: BOOKING_ORG_SLUG },
+    body: { phone, code, organization_slug: organizationSlug },
   }).then((raw) => ({
     token: raw.data.token,
     expiresAt: raw.data.expires_at,

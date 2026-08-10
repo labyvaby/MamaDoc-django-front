@@ -17,6 +17,7 @@ import { useT } from "../../../i18n/VerticalProvider";
 import { capitalizeFullName } from "../../../utility/name";
 import type { PhoneCountryInfo } from "../../../utility/phone";
 import { usePatientSession } from "../PatientSession";
+import { useBookingOrgSlug } from "../orgSlug";
 import {
   BOOKING_PRIMARY,
   BOOKING_PRIMARY_HOVER,
@@ -72,6 +73,8 @@ export const PatientAuthDialog: React.FC<{
 }> = ({ open, onClose, onSignedIn }) => {
   const { t } = useT("publicBooking");
   const { signIn, selectPatient, addPatient, session, selectedPatient } = usePatientSession();
+  // Пул пациентов у каждой клиники свой — вход всегда в клинику из адреса.
+  const orgSlug = useBookingOrgSlug();
 
   const [step, setStep] = React.useState<Step>("phone");
   const [country, setCountry] = React.useState<PhoneCountryInfo>(defaultPhoneCountry);
@@ -137,7 +140,7 @@ export const PatientAuthDialog: React.FC<{
     setBusy(true);
     setError(null);
     try {
-      const res = await requestPatientOtp(fullPhone);
+      const res = await requestPatientOtp(fullPhone, orgSlug);
       setRetryAfter(res.retryAfter || 60);
       setStep("code");
       setCode("");
@@ -153,7 +156,7 @@ export const PatientAuthDialog: React.FC<{
     setBusy(true);
     setError(null);
     try {
-      const result = await verifyPatientOtp(fullPhone, code.trim());
+      const result = await verifyPatientOtp(fullPhone, code.trim(), orgSlug);
       signIn(fullPhone, result);
       if (result.patients.length === 0) {
         setStep("register");
