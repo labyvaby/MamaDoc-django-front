@@ -99,11 +99,11 @@ export const DjangoAddWarehouseDrawer: React.FC<DjangoAddWarehouseDrawerProps> =
     // Список филиалов нужен только в org-wide режиме для создания.
     useEffect(() => {
         if (open && isOrgWide && !editItem) {
-            getBranches()
+            getBranches(orgId)
                 .then((rows) => setBranches(rows.filter((b) => b.isActive)))
                 .catch((e) => console.error("Failed to load branches", e));
         }
-    }, [open, isOrgWide, editItem]);
+    }, [open, isOrgWide, editItem, orgId]);
 
     // Доступные для подключения склады (только в контексте филиала).
     useEffect(() => {

@@ -77,25 +77,20 @@ const BranchesSettingsPage: React.FC = () => {
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [snack, setSnack] = React.useState<string | null>(null);
 
-  const queryKey = ["django", "organization", "branches"] as const;
+  const queryKey = ["django", "organization", "branches", activeOrganization?.id] as const;
   const query = useQuery({
     queryKey,
-    queryFn: () => getBranches(),
+    // Фильтрация по активной организации — внутри getBranches: бэкенд отдаёт
+    // суперюзеру филиалы всех его организаций.
+    queryFn: () => getBranches(activeOrganization?.id),
     // Свежесть важнее экономии: справочник филиалов меняется редко, но после
     // правок таблица не должна держать устаревшие строки.
     staleTime: 0,
     refetchOnMount: "always",
   });
-  const allFromApi = query.data ?? [];
-
-  // Суперюзеру/мультиорг-пользователю backend отдаёт филиалы ВСЕХ организаций.
-  // Показываем только филиалы активной организации, иначе они двоятся и можно
-  // отредактировать чужую клинику. Пока активная орг не определена — показываем
-  // всё (обычным юзерам backend и так отдаёт только их организацию).
-  const all = React.useMemo(() => {
-    if (activeOrganization?.id == null) return allFromApi;
-    return allFromApi.filter((b) => b.organizationId === activeOrganization.id);
-  }, [allFromApi, activeOrganization?.id]);
+  // Пока активная орг не определена, getBranches отдаёт всё как есть (обычным
+  // юзерам backend и так возвращает только их организацию).
+  const all = query.data ?? [];
 
   const activeCount = all.filter((b) => b.isActive).length;
 

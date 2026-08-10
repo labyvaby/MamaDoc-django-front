@@ -186,10 +186,22 @@ export function deleteBranchLogo(id: number): Promise<void> {
   });
 }
 
-export function getBranches(): Promise<DjangoBranch[]> {
-  return apiRequest<DjangoBranchWire[]>("/organization/branches/").then(
-    (branches) => branches.map(normalizeBranch),
-  );
+/**
+ * GET /organization/branches/ — справочник филиалов.
+ *
+ * Суперюзеру и мультиорг-пользователю бэкенд отдаёт филиалы ВСЕХ его
+ * организаций, а параметра фильтрации у эндпоинта нет (проверено 10.08.2026:
+ * при активной организации 1 в ответе приходит филиал организации 4,
+ * `?organizationId=`/`?organization_id=` игнорируются). Поэтому режем список
+ * на клиенте — иначе в выборе филиалов видны чужие клиники.
+ */
+export function getBranches(organizationId?: number | null): Promise<DjangoBranch[]> {
+  return apiRequest<DjangoBranchWire[]>("/organization/branches/").then((branches) => {
+    const list = branches.map(normalizeBranch);
+    return organizationId == null
+      ? list
+      : list.filter((b) => b.organizationId === organizationId);
+  });
 }
 
 /** Fields accepted when creating a branch. */
