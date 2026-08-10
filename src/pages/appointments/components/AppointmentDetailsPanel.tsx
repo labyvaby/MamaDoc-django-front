@@ -410,6 +410,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
+          !isPaymentAccepted &&
           !isCancelled &&
           activeEmployeeId != null &&
           sl.employee?.id === activeEmployeeId ? (
@@ -438,6 +439,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     appt.priceOverrideLocked,
     appt.services,
     canOverridePrice,
+    isPaymentAccepted,
     isCancelled,
     t,
   ]);
