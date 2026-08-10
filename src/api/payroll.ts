@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { PayrollMonthSettings } from "../features/payroll/types";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ export interface PayrollReport {
   lockedAt: string | null;
   totalNet: string;
   rows: PayrollRow[];
-  settings: any;
+  settings: PayrollMonthSettings;
 }
 
 export interface PayrollActiveMonths {
@@ -213,7 +214,7 @@ export function unlockPeriod(year: number, month: number): Promise<PayrollReport
 export function updatePeriodSettings(
   year: number,
   month: number,
-  settings: any,
+  settings: PayrollMonthSettings,
   organizationId?: number,
 ): Promise<PayrollReport> {
   const q = new URLSearchParams();

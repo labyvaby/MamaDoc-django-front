@@ -1,9 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SummaryCards, type SummaryCard } from './SummaryCards';
-import { supabase } from '../../../utility/supabaseClient';
 import { formatKGS } from '../../../utility/format';
-import { IS_DJANGO_BACKEND } from '../../../config/backend';
 import { getMonthlyReport } from '../../../api/reports';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { useT } from '../../../i18n/VerticalProvider';
@@ -38,22 +36,13 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
         queryKey: ['appointments-summary', dateFrom, dateTo, employeeId, activeOrganization?.id, branchId ?? null],
         queryFn: async () => {
             if (providedAppointments) return null;
-            if (IS_DJANGO_BACKEND) {
-                const monthStr = dateFrom.substring(0, 7); // e.g. "2026-07"
-                return getMonthlyReport({
-                    month: monthStr,
-                    employeeId: employeeId ? parseInt(employeeId, 10) : undefined,
-                    organizationId: activeOrganization?.id ?? undefined,
-                    branchId,
-                });
-            }
-            const { data, error } = await supabase.rpc('get_appointments_summary', {
-                p_date_from:   dateFrom,
-                p_date_to:     dateTo,
-                p_employee_id: employeeId ?? null,
+            const monthStr = dateFrom.substring(0, 7);
+            return getMonthlyReport({
+                month: monthStr,
+                employeeId: employeeId ? parseInt(employeeId, 10) : undefined,
+                organizationId: activeOrganization?.id ?? undefined,
+                branchId,
             });
-            if (error) throw error;
-            return (data as any[])?.[0] ?? null;
         },
         enabled: !providedAppointments && showBaseCards,
         staleTime: Infinity,
@@ -86,8 +75,7 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
 
     const metrics = providedAppointments
         ? legacyMetrics!
-        : IS_DJANGO_BACKEND
-        ? {
+        : {
             total:           Number((rpcData as any)?.summary?.apptTotalCount ?? 0) + Number((rpcData as any)?.summary?.procTotalCount ?? 0),
             paidCount:       Number((rpcData as any)?.summary?.paidCount ?? 0),
             paidSum:         0,
@@ -101,25 +89,10 @@ export const AppointmentsSummaryCards: React.FC<AppointmentsSummaryCardsProps> =
             apptCancelled:   Number((rpcData as any)?.summary?.apptCancelledCount ?? 0),
             procTotal:       Number((rpcData as any)?.summary?.procTotalCount ?? 0),
             procPaid:        Number((rpcData as any)?.summary?.procPaidCount ?? 0),
-          }
-        : {
-            total:           Number(rpcData?.total_count   ?? 0),
-            paidCount:       Number(rpcData?.paid_count    ?? 0),
-            paidSum:         Number(rpcData?.paid_sum      ?? 0),
-            waiting:         Number(rpcData?.waiting_count ?? 0),
-            cancelled:       Number(rpcData?.cancelled_count ?? 0),
-            discountedCount: Number(rpcData?.discounted_count ?? 0),
-            discountSum:     Number(rpcData?.discount_sum  ?? 0),
-            apptTotal:       Number(rpcData?.appt_total_count   ?? 0),
-            apptPaid:        Number(rpcData?.appt_paid_count    ?? 0),
-            apptWaiting:     Number(rpcData?.appt_waiting_count ?? 0),
-            apptCancelled:   Number(rpcData?.appt_cancelled_count ?? 0),
-            procTotal:       Number(rpcData?.proc_total_count ?? 0),
-            procPaid:        Number(rpcData?.proc_paid_count  ?? 0),
           };
 
     // If RPC returned split data — show two separate cards instead of one combined
-    const hasSplit = !providedAppointments && (IS_DJANGO_BACKEND ? ((rpcData as any)?.summary != null) : rpcData?.appt_total_count != null);
+    const hasSplit = !providedAppointments && (rpcData as any)?.summary != null;
 
     const baseCards = !showBaseCards ? extraCards : hasSplit ? [
         {

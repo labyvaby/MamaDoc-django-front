@@ -8,10 +8,8 @@ import TuneIcon from '@mui/icons-material/TuneOutlined';
 import NightsStayIcon from '@mui/icons-material/NightsStayOutlined';
 import PercentIcon from '@mui/icons-material/PercentOutlined';
 import PeopleAltIcon from '@mui/icons-material/PeopleAltOutlined';
-import { supabase } from '../../../utility/supabaseClient';
 import { subtleBg } from '../../../theme';
 import type { PayrollMonthSettings } from '../types';
-import { IS_DJANGO_BACKEND } from '../../../config/backend';
 import { updatePeriodSettings } from '../../../api/payroll';
 import { useT } from '../../../i18n/VerticalProvider';
 
@@ -154,34 +152,18 @@ export const PeriodSettingsDialog: React.FC<Props> = ({
     setError(null);
     const settings = settingsFromForm(mergeNight, disableDynamic, monthlyDistribution);
  
-    if (IS_DJANGO_BACKEND) {
-      try {
-        const parts = month.split('-');
-        const yr = parseInt(parts[0], 10);
-        const m = parseInt(parts[1], 10);
-        await updatePeriodSettings(yr, m, settings, organizationId);
-        onSaved(settings);
-        setSaving(false);
-        onClose();
-      } catch (err: any) {
-        setError(err.message || t('periodSettings.saveError'));
-        setSaving(false);
-      }
-      return;
-    }
- 
-    const { error: rpcError } = await supabase.rpc('update_period_settings', {
-      p_month:    month,
-      p_settings: settings,
-    });
-    if (rpcError) {
-      setError(rpcError.message);
+    try {
+      const parts = month.split('-');
+      const yr = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      await updatePeriodSettings(yr, m, settings, organizationId);
+      onSaved(settings);
       setSaving(false);
-      return;
+      onClose();
+    } catch (err: any) {
+      setError(err.message || t('periodSettings.saveError'));
+      setSaving(false);
     }
-    onSaved(settings);
-    setSaving(false);
-    onClose();
   };
  
   const activeCount = [mergeNight, disableDynamic, monthlyDistribution].filter(Boolean).length;

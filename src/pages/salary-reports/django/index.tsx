@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Paper,
   Stack,
   Table,
   TableBody,
@@ -21,7 +20,6 @@ import {
   Typography,
   useMediaQuery,
   alpha,
-  IconButton,
   Tooltip,
 } from "@mui/material";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
@@ -37,6 +35,7 @@ import SalaryReportRow, {
   COLUMNS_NURSE,
   COLUMNS_REGISTRATOR,
   COLUMNS_ADMIN,
+  getVisibleSalaryColumns,
   type ColumnConfig,
 } from "./components/SalaryReportRow";
 
@@ -66,160 +65,6 @@ import {
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
 import { formatKGS } from "../../../utility/format";
-
-// Clinical roles (staff.ClinicalRole): doctor / nurse / other.
-const ROLE_ORDER = ["doctor", "nurse", "other"] as const;
-const ROLE_LABELS: Record<string, string> = {
-  doctor: "Врачи",
-  nurse: "Медсёстры",
-  other: "Прочие",
-};
-
-function groupByRole(rows: PayrollRow[]): Record<string, PayrollRow[]> {
-  const groups: Record<string, PayrollRow[]> = {};
-  for (const row of rows) {
-    const key = ROLE_LABELS[row.clinicalRole] ? row.clinicalRole : "other";
-    (groups[key] ??= []).push(row);
-  }
-  return groups;
-}
-
-const COLUMNS: {
-  key: keyof PayrollRow;
-  label: string;
-  money?: boolean;
-  render?: (row: PayrollRow) => React.ReactNode;
-}[] = [
-  { key: "fullName", label: "Сотрудник" },
-  { key: "appointmentsCount", label: "Приёмы" },
-  { key: "servicePercentPay", label: "Услуги %", money: true },
-  { key: "serviceFixedPay", label: "Фикс", money: true },
-  { key: "appointmentPay", label: "За приёмы", money: true },
-  {
-    key: "dayHours",
-    label: "Часы (д/н)",
-    render: (r) => `${r.dayHours} / ${r.nightHours}`,
-  },
-  { key: "hourlyPay", label: "Почасовая", money: true },
-  {
-    key: "bonus",
-    label: "Надбавка",
-    render: (r) => {
-      const v = Number(r.bonus ?? 0);
-      return v > 0 ? formatKGS(r.bonus as string) : "—";
-    },
-  },
-  { key: "earnings", label: "Начислено", money: true },
-  { key: "advances", label: "Авансы", money: true },
-  { key: "netSalary", label: "К выплате", money: true },
-];
-
-/**
- * Payout state of a salary row:
- *  - "payable": there is a positive remainder to pay out (net > 0)
- *  - "paid":    something was earned and advances already cover it (net ≤ 0)
- *  - "none":    nothing earned this month — no action, no badge
- */
-function payoutState(row: PayrollRow): "payable" | "paid" | "none" {
-  const net = Math.round(Number(row.netSalary || 0));
-  if (net > 0) return "payable";
-  return Number(row.earnings || 0) > 0 ? "paid" : "none";
-}
-
-const RoleTable: React.FC<{
-  title: string;
-  rows: PayrollRow[];
-  onManageBonus: (row: PayrollRow) => void;
-  /** Show the "Выплатить" action / "Выплачено" badge (nurses & non-doctors). */
-  canPayout: boolean;
-  onPayout: (row: PayrollRow) => void;
-}> = ({ title, rows, onManageBonus, canPayout, onPayout }) => {
-  const groupNet = rows.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
-  return (
-    <Paper variant="outlined" sx={{ mb: 2, overflow: "hidden" }}>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ px: 2, py: 1, bgcolor: "action.hover" }}
-      >
-        <Typography variant="subtitle2" fontWeight={700}>
-          {title}
-        </Typography>
-        <Chip label={`${rows.length} · ${formatKGS(groupNet)}`} size="small" />
-      </Stack>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            {COLUMNS.map((c) => (
-              <TableCell key={c.key} align={c.key === "fullName" ? "left" : "right"}>
-                {c.label}
-              </TableCell>
-            ))}
-            <TableCell align="right" padding="checkbox" />
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.employeeId} hover>
-              {COLUMNS.map((c) => (
-                <TableCell
-                  key={c.key}
-                  align={c.key === "fullName" ? "left" : "right"}
-                  sx={c.key === "netSalary" ? { fontWeight: 700 } : undefined}
-                >
-                  {c.render
-                    ? c.render(row)
-                    : c.money
-                      ? formatKGS(row[c.key] as string)
-                      : String(row[c.key])}
-                </TableCell>
-              ))}
-              <TableCell align="right" padding="checkbox">
-                <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
-                  {canPayout &&
-                    (() => {
-                      const state = payoutState(row);
-                      if (state === "payable") {
-                        return (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="success"
-                            onClick={() => onPayout(row)}
-                            sx={{ whiteSpace: "nowrap" }}
-                          >
-                            Выплатить
-                          </Button>
-                        );
-                      }
-                      if (state === "paid") {
-                        return (
-                          <Chip
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                            label="✓ Выплачено"
-                            sx={{ fontWeight: 700 }}
-                          />
-                        );
-                      }
-                      return null;
-                    })()}
-                  <Tooltip title="Надбавки">
-                    <IconButton size="small" onClick={() => onManageBonus(row)}>
-                      <PaidOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Paper>
-  );
-};
 
 const DjangoSalaryReportsPage: React.FC = () => {
   const { t } = useT("salaryReports");
@@ -672,7 +517,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                     rows.forEach((r) => seen.add(r.employeeId));
                     if (rows.length === 0) return;
 
-                    const cols = group.cols;
+                    const cols = getVisibleSalaryColumns(rows, group.cols);
                     const groupNet = rows.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
                     rendered.push(
                       <ReportTableCard
@@ -736,6 +581,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   // Rest
                   const rest = (report?.rows ?? []).filter((r) => !seen.has(r.employeeId));
                   if (rest.length > 0) {
+                    const restCols = getVisibleSalaryColumns(rest, COLUMNS_ADMIN);
                     const restNet = rest.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
                     rendered.push(
                       <ReportTableCard
@@ -754,13 +600,13 @@ const DjangoSalaryReportsPage: React.FC = () => {
                           <TableHead>
                             <TableRow>
                               <TableCell>{t("columns.employee")}</TableCell>
-                              {!report?.settings?.merge_night_into_day && (
+                              {restCols.hours && !report?.settings?.merge_night_into_day && (
                                 <>
                                   <TableCell align="center">{t("columns.dayHours")}</TableCell>
                                   <TableCell align="center">{t("columns.nightHours")}</TableCell>
                                 </>
                               )}
-                              <TableCell align="right">{t("columns.hours")}</TableCell>
+                              {restCols.hours && <TableCell align="right">{t("columns.hours")}</TableCell>}
                               <TableCell align="right">{t("columns.salary")}</TableCell>
                               <TableCell align="right" sx={{ color: "error.onSurface" }}>{t("columns.advance")}</TableCell>
                               <TableCell align="right" sx={{ color: "primary.onSurface" }}>{t("columns.netSalary")}</TableCell>
@@ -776,7 +622,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                                 month={month}
                                 organizationId={isSuper ? activeOrganization?.id ?? undefined : undefined}
                               branchId={branchFilterId}
-                                columns={COLUMNS_ADMIN}
+                                columns={restCols}
                                 periodSettings={report?.settings}
                                 onPayout={canCreateExpense ? setPayoutRow : undefined}
                               />

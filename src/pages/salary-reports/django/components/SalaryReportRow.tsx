@@ -37,6 +37,7 @@ import {
   type EmployeeDailyDetailRow,
 } from "../../../../api/payroll";
 import { useT } from "../../../../i18n/VerticalProvider";
+import type { PayrollMonthSettings } from "../../../../features/payroll/types";
 
 dayjs.locale("ru");
 
@@ -108,6 +109,42 @@ export const COLUMNS_ADMIN: ColumnConfig = {
   percent: true,
 };
 
+const toNumber = (value: string | number | null | undefined): number => {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number : 0;
+};
+
+const hasValue = (value: number): boolean => Math.abs(value) > Number.EPSILON;
+
+/**
+ * Hides configured columns that contain only zeroes for the current report.
+ * Desktop tables calculate this for the whole role group so every row keeps
+ * the same number of cells; mobile cards pass one row and hide metrics alone.
+ */
+export function getVisibleSalaryColumns(
+  rows: readonly PayrollRow[],
+  baseColumns: ColumnConfig,
+): ColumnConfig {
+  if (rows.length === 0) return baseColumns;
+
+  const hasAny = (getValue: (row: PayrollRow) => number): boolean =>
+    rows.some((row) => hasValue(getValue(row)));
+
+  return {
+    ...baseColumns,
+    hours: baseColumns.hours && hasAny((row) => toNumber(row.dayHours) + toNumber(row.nightHours)),
+    appointments: baseColumns.appointments && hasAny((row) => row.appointmentsCount),
+    distributed: baseColumns.distributed && hasAny((row) => toNumber(row.distributedAppointments)),
+    createdBy: baseColumns.createdBy && hasAny((row) => row.createdByCount),
+    statusWaiting: baseColumns.statusWaiting && hasAny((row) => row.waitingCount),
+    statusCancelled: baseColumns.statusCancelled && hasAny((row) => row.cancelledCount),
+    statusDiscount: baseColumns.statusDiscount && hasAny((row) => row.discountedCount),
+    appointmentPay: baseColumns.appointmentPay && hasAny((row) => toNumber(row.appointmentPay)),
+    bonuses: baseColumns.bonuses && hasAny((row) => toNumber(row.bonus)),
+    percent: baseColumns.percent && hasAny((row) => toNumber(row.earnings)),
+  };
+}
+
 /**
  * Из чего сложилось «Начислено» за месяц. Показываем только ненулевые части:
  * состав зависит от роли (у врача — процент/фикс по услугам, у регистратора —
@@ -175,7 +212,7 @@ interface SalaryReportRowProps {
   branchId?: number;
   isMobile?: boolean;
   columns?: ColumnConfig;
-  periodSettings?: any;
+  periodSettings?: PayrollMonthSettings;
   /** Открыть дравер создания расхода с префиллом (сотрудник + остаток к выплате). */
   onPayout?: (row: PayrollRow) => void;
 }
@@ -198,8 +235,7 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const [detailLoading, setDetailLoading] = useState(false);
 
   const isRegistrator = row.roleName === "registrator" || row.roleName === "receptionist";
-  const isNurse = row.roleName === "nurse" || row.roleName === "procedure";
-  const cols = columns ?? (isRegistrator ? COLUMNS_REGISTRATOR : COLUMNS_DOCTOR);
+  const cols = columns ?? getVisibleSalaryColumns([row], isRegistrator ? COLUMNS_REGISTRATOR : COLUMNS_DOCTOR);
 
   const totalHours = parseFloat(row.dayHours || "0") + parseFloat(row.nightHours || "0");
   const hasHours = parseFloat(row.dayHours || "0") > 0 || parseFloat(row.nightHours || "0") > 0;
@@ -303,6 +339,29 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const unexplained =
     parseFloat(row.earnings || "0") - accruedByDays - monthlyOnlySum;
   const hasUnexplained = Math.abs(unexplained) >= 1;
+
+  // Детальная таблица должна использовать ту же логику, что и сводная:
+  // нулевые метрики конкретного сотрудника не занимают место. При этом
+  // столбец возвращается автоматически, как только в дневных данных появится
+  // ненулевое значение.
+  const hasDailyValue = (getValue: (day: EmployeeDailyDetailRow) => number): boolean =>
+    dailyData.some((day) => hasValue(getValue(day)));
+  const detailHoursVisible =
+    cols.hours &&
+    (hasHours || hasDailyValue((day) => toNumber(day.dayHours) + toNumber(day.nightHours)));
+  const detailHourlyPayVisible =
+    detailHoursVisible &&
+    (toNumber(row.hourlyPay) !== 0 || hasDailyValue((day) => toNumber(day.hoursSum)));
+  const detailAppointmentsVisible =
+    cols.appointments && hasDailyValue((day) => day.appointmentsCount);
+  const detailDistributedVisible =
+    cols.distributed && hasDailyValue((day) => toNumber(day.distributedAppointments));
+  const detailCreatedByVisible =
+    cols.createdBy && hasDailyValue((day) => day.createdByCount);
+  const detailServicesVisible =
+    cols.percent && hasDailyValue((day) => toNumber(day.percentSum));
+  const detailAdvancesVisible =
+    hasValue(toNumber(row.advances)) || hasDailyValue((day) => toNumber(day.expensesSum));
 
   const collapseRef = useRef<HTMLDivElement>(null);
 
@@ -840,26 +899,36 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                     <TableHead>
                       <TableRow>
                         <TableCell sx={{ fontWeight: 800 }}>{t("row.date")}</TableCell>
-                        {!periodSettings?.merge_night_into_day && (
+                        {detailHoursVisible && !periodSettings?.merge_night_into_day && (
                           <>
                             <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.dayHoursFull")}</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.nightHoursFull")}</TableCell>
                           </>
                         )}
-                        {periodSettings?.merge_night_into_day && (
+                        {detailHoursVisible && periodSettings?.merge_night_into_day && (
                           <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.hoursShort")}</TableCell>
                         )}
-                        <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.hourlyPay")}</TableCell>
+                        {detailHourlyPayVisible && (
+                          <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.hourlyPay")}</TableCell>
+                        )}
                         {isRegistrator ? (
                           <>
+                            {detailCreatedByVisible && (
                             <TableCell align="center" sx={{ fontWeight: 800, color: "success.main" }}>{t("row.createdAppointments")}</TableCell>
+                            )}
+                            {detailDistributedVisible && (
                             <TableCell align="center" sx={{ fontWeight: 800, color: "info.main" }}>{t("row.distributedShort")}</TableCell>
+                            )}
                           </>
-                        ) : (
+                        ) : detailAppointmentsVisible ? (
                           <TableCell align="center" sx={{ fontWeight: 800 }}>{t("row.allAppointmentsFull")}</TableCell>
+                        ) : null}
+                        {detailServicesVisible && (
+                          <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.servicesSum")}</TableCell>
                         )}
-                        <TableCell align="right" sx={{ fontWeight: 800 }}>{t("row.servicesSum")}</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800, color: "error.main" }}>{t("row.advancesPaid")}</TableCell>
+                        {detailAdvancesVisible && (
+                          <TableCell align="right" sx={{ fontWeight: 800, color: "error.main" }}>{t("row.advancesPaid")}</TableCell>
+                        )}
                         <TableCell align="right" sx={{ fontWeight: 800, color: "primary.main" }}>{t("row.totalPerDay")}</TableCell>
                       </TableRow>
                     </TableHead>
@@ -874,32 +943,42 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                           <TableCell sx={{ fontWeight: day.isWeekend ? 700 : "inherit" }}>
                             {dayjs(day.workDate).format("DD.MM (dd)")}
                           </TableCell>
-                          {!periodSettings?.merge_night_into_day && (
+                          {detailHoursVisible && !periodSettings?.merge_night_into_day && (
                             <>
                               <TableCell align="center">{parseFloat(day.dayHours).toFixed(1)}</TableCell>
                               <TableCell align="center">{parseFloat(day.nightHours).toFixed(1)}</TableCell>
                             </>
                           )}
-                          {periodSettings?.merge_night_into_day && (
+                          {detailHoursVisible && periodSettings?.merge_night_into_day && (
                             <TableCell align="center">{(parseFloat(day.dayHours) + parseFloat(day.nightHours)).toFixed(1)}</TableCell>
                           )}
-                          <TableCell align="right">{formatKGS(day.hoursSum)}</TableCell>
+                          {detailHourlyPayVisible && (
+                            <TableCell align="right">{formatKGS(day.hoursSum)}</TableCell>
+                          )}
                           {isRegistrator ? (
                             <>
-                              <TableCell align="center" sx={{ color: "success.main", fontWeight: 700 }}>
-                                {day.createdByCount}
-                              </TableCell>
-                              <TableCell align="center" sx={{ color: "info.main", fontWeight: 700 }}>
-                                {formatShare(day.distributedAppointments)}
-                              </TableCell>
+                              {detailCreatedByVisible && (
+                                <TableCell align="center" sx={{ color: "success.main", fontWeight: 700 }}>
+                                  {day.createdByCount}
+                                </TableCell>
+                              )}
+                              {detailDistributedVisible && (
+                                <TableCell align="center" sx={{ color: "info.main", fontWeight: 700 }}>
+                                  {formatShare(day.distributedAppointments)}
+                                </TableCell>
+                              )}
                             </>
-                          ) : (
+                          ) : detailAppointmentsVisible ? (
                             <TableCell align="center">{day.appointmentsCount}</TableCell>
+                          ) : null}
+                          {detailServicesVisible && (
+                            <TableCell align="right">{formatKGS(day.percentSum)}</TableCell>
                           )}
-                          <TableCell align="right">{formatKGS(day.percentSum)}</TableCell>
-                          <TableCell align="right" sx={{ color: parseFloat(day.expensesSum) > 0 ? "error.main" : "inherit" }}>
-                            {parseFloat(day.expensesSum) > 0 ? formatKGS(day.expensesSum) : "—"}
-                          </TableCell>
+                          {detailAdvancesVisible && (
+                            <TableCell align="right" sx={{ color: parseFloat(day.expensesSum) > 0 ? "error.main" : "inherit" }}>
+                              {parseFloat(day.expensesSum) > 0 ? formatKGS(day.expensesSum) : "—"}
+                            </TableCell>
+                          )}
                           <TableCell align="right" sx={{ fontWeight: 700 }}>
                             {formatKGS(day.totalSalary)}
                           </TableCell>
@@ -919,30 +998,48 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         }}
                       >
                         <TableCell>{t("row.totalByDays")}</TableCell>
-                        {!periodSettings?.merge_night_into_day ? (
+                        {detailHoursVisible && !periodSettings?.merge_night_into_day ? (
                           <>
                             <TableCell align="center">{dayTotals.dayHours.toFixed(1)}</TableCell>
                             <TableCell align="center">{dayTotals.nightHours.toFixed(1)}</TableCell>
                           </>
-                        ) : (
+                        ) : detailHoursVisible ? (
                           <TableCell align="center">
                             {(dayTotals.dayHours + dayTotals.nightHours).toFixed(1)}
                           </TableCell>
+                        ) : null}
+                        {detailHourlyPayVisible && (
+                          <TableCell align="right">{formatKGS(String(dayTotals.hoursSum))}</TableCell>
                         )}
-                        <TableCell align="right">{formatKGS(String(dayTotals.hoursSum))}</TableCell>
-                        <TableCell align="center" sx={{ color: isRegistrator ? "success.main" : undefined }}>
-                          <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5}>
-                            <span>{countsByDays}</span>
-                            {countsMismatch && (
-                              <Tooltip
-                                title={t("row.countsMismatch", { days: countsByDays, month: countsInMonth })}
-                              >
-                                <ReportProblemIcon sx={{ color: "warning.main", fontSize: "0.85rem" }} />
-                              </Tooltip>
-                            )}
-                          </Stack>
-                        </TableCell>
-                        {isRegistrator && (
+                        {detailAppointmentsVisible && !isRegistrator && (
+                          <TableCell align="center" sx={{ color: isRegistrator ? "success.main" : undefined }}>
+                            <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5}>
+                              <span>{countsByDays}</span>
+                              {countsMismatch && (
+                                <Tooltip
+                                  title={t("row.countsMismatch", { days: countsByDays, month: countsInMonth })}
+                                >
+                                  <ReportProblemIcon sx={{ color: "warning.main", fontSize: "0.85rem" }} />
+                                </Tooltip>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        )}
+                        {detailCreatedByVisible && isRegistrator && (
+                          <TableCell align="center" sx={{ color: "success.main" }}>
+                            <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5}>
+                              <span>{countsByDays}</span>
+                              {countsMismatch && (
+                                <Tooltip
+                                  title={t("row.countsMismatch", { days: countsByDays, month: countsInMonth })}
+                                >
+                                  <ReportProblemIcon sx={{ color: "warning.main", fontSize: "0.85rem" }} />
+                                </Tooltip>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        )}
+                        {detailDistributedVisible && isRegistrator && (
                           <TableCell align="center" sx={{ color: "info.main" }}>
                             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5}>
                               <span>{formatShare(dayTotals.distributed)}</span>
@@ -959,10 +1056,14 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                             </Stack>
                           </TableCell>
                         )}
-                        <TableCell align="right">{formatKGS(String(dayTotals.percentSum))}</TableCell>
-                        <TableCell align="right" sx={{ color: dayTotals.expensesSum > 0 ? "error.main" : undefined }}>
-                          {dayTotals.expensesSum > 0 ? formatKGS(String(dayTotals.expensesSum)) : "—"}
-                        </TableCell>
+                        {detailServicesVisible && (
+                          <TableCell align="right">{formatKGS(String(dayTotals.percentSum))}</TableCell>
+                        )}
+                        {detailAdvancesVisible && (
+                          <TableCell align="right" sx={{ color: dayTotals.expensesSum > 0 ? "error.main" : undefined }}>
+                            {dayTotals.expensesSum > 0 ? formatKGS(String(dayTotals.expensesSum)) : "—"}
+                          </TableCell>
+                        )}
                         <TableCell align="right">{formatKGS(String(dayTotals.totalSalary))}</TableCell>
                       </TableRow>
                     </TableFooter>
