@@ -637,6 +637,15 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setPaymentTarget(appt);
   }, []);
 
+  const handlePriceOverrideSaved = React.useCallback(
+    (updated: DjangoAppointment) => {
+      setItems((prev) => prev.map((appt) => (appt.id === updated.id ? updated : appt)));
+      notify?.({ type: "success", message: t("priceOverride.success") });
+      refreshAfterMutation();
+    },
+    [notify, refreshAfterMutation, setItems, t],
+  );
+
   // Списание/возврат расходников склада: бэк складывает результат операции в
   // consumptionWarnings любого ответа по приёму. Показываем тостом — нехватка
   // не отменяет ни сохранение, ни смену статуса.
@@ -769,6 +778,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       }}
       onCancelAppt={(a) => setConfirm({ mode: "cancel", appt: a })}
       onDelete={(a) => setConfirm({ mode: "delete", appt: a })}
+      onPriceOverrideSaved={handlePriceOverrideSaved}
       onClose={onClose}
     />
   );

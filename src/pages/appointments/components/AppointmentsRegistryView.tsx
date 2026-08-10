@@ -334,6 +334,14 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
     [fetchData, notify, notifyConsumptionWarnings],
   );
 
+  const handlePriceOverrideSaved = React.useCallback(
+    () => {
+      notify?.({ type: "success", message: t("priceOverride.success") });
+      void fetchData();
+    },
+    [fetchData, notify, t],
+  );
+
   const isLoading = loading || extraLoading;
   const isFiltered = doctorFilteredCount !== baseHistory.length;
 
@@ -349,6 +357,7 @@ export const AppointmentsRegistryView: React.FC<Props> = ({
       onToggleConclusion={() => setConclusionOpen((v) => !v)}
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
+      onPriceOverrideSaved={handlePriceOverrideSaved}
       onClose={closeDetails}
     />
   ) : (

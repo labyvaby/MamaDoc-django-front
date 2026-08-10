@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
@@ -42,7 +43,7 @@ import "dayjs/locale/ru";
 
 dayjs.locale("ru");
 
-import type { DjangoAppointment } from "../../../api/appointments";
+import type { AppointmentServiceLine, DjangoAppointment } from "../../../api/appointments";
 import { getAppointmentPayments } from "../../../api/payments";
 import { getPatient } from "../../../api/patients";
 import { formatPatientAge } from "../../../utility/age";
@@ -86,6 +87,7 @@ interface HeaderAction {
   disabled?: boolean;
 }
 import DoctorQuickViewDrawer from "../../../components/employees/DjangoDoctorQuickViewDrawer";
+import AppointmentPriceOverrideDialog from "./AppointmentPriceOverrideDialog";
 
 interface AppointmentDetailsPanelProps {
   appointment: DjangoAppointment;
@@ -121,6 +123,8 @@ interface AppointmentDetailsPanelProps {
   ) => void;
   onCancelAppt?: (a: DjangoAppointment) => void;
   onDelete?: (a: DjangoAppointment) => void;
+  /** Сохранена однократная правка цены услуги врачом. */
+  onPriceOverrideSaved?: (a: DjangoAppointment) => void;
   onClose?: () => void;
 }
 
@@ -149,6 +153,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onRecordVaccinationMulti,
   onCancelAppt,
   onDelete,
+  onPriceOverrideSaved,
   onClose,
 }) => {
   const { t } = useT("appointments");
@@ -161,6 +166,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const canViewConclusions = useCan("medical.conclusions.view");
   const canCreateConclusions = useCan("medical.conclusions.create");
   const canUpdateConclusions = useCan("medical.conclusions.update");
+  const canOverridePrice = useCan("appointments.price_override");
   // Клик по товару открывает карточку из справочника — только при праве на него.
   const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
 
@@ -191,6 +197,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const [productDrawerOpen, setProductDrawerOpen] = React.useState(false);
   const [selectedProductId, setSelectedProductId] = React.useState<number | null>(null);
   const [selectedProductName, setSelectedProductName] = React.useState<string | null>(null);
+  const [priceOverrideLine, setPriceOverrideLine] = React.useState<AppointmentServiceLine | null>(null);
 
   const payQuery = useQuery({
     queryKey: djangoQueryKeys.appointments.payments(appt.id),
@@ -400,6 +407,23 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         quantity: sl.quantity,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
+        action:
+          canOverridePrice &&
+          !appt.priceOverrideLocked &&
+          !isCancelled &&
+          activeEmployeeId != null &&
+          sl.employee?.id === activeEmployeeId ? (
+            <Tooltip title={t("priceOverride.action")}>
+              <IconButton
+                size="small"
+                aria-label={t("priceOverride.action")}
+                onClick={() => setPriceOverrideLine(sl)}
+                sx={{ color: "primary.main" }}
+              >
+                <PriceChangeOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : undefined,
       });
       group.rawTotal += Number(lineAmount) || 0;
     }
@@ -409,7 +433,22 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       ...group,
       total: group.lines.length > 1 ? som(rawTotal) : null,
     }));
-  }, [appt.services]);
+  }, [
+    activeEmployeeId,
+    appt.priceOverrideLocked,
+    appt.services,
+    canOverridePrice,
+    isCancelled,
+    t,
+  ]);
+
+  const handlePriceOverrideSaved = React.useCallback(
+    (updated: DjangoAppointment) => {
+      setPriceOverrideLine(null);
+      onPriceOverrideSaved?.(updated);
+    },
+    [onPriceOverrideSaved],
+  );
 
   const paymentBlock = (withBalanceBonuses: boolean) => {
     const payment = {
@@ -1093,6 +1132,14 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         doctorId={selectedDoctorId}
         fallbackName={selectedDoctorName}
         fallbackPhotoUrl={selectedDoctorPhotoUrl}
+      />
+
+      <AppointmentPriceOverrideDialog
+        open={priceOverrideLine != null}
+        appointment={appt}
+        serviceLine={priceOverrideLine}
+        onClose={() => setPriceOverrideLine(null)}
+        onSaved={handlePriceOverrideSaved}
       />
 
       {/* ── Полная форма заключения по «Начать приём» (поток как в оригинале) ── */}

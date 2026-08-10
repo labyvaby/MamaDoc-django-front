@@ -25,6 +25,8 @@ export interface ServiceGroupLine {
    * какой ещё нет — раньше это было только в логике кнопок шапки.
    */
   conclusionState?: "not_required" | "not_created" | "draft" | "completed";
+  /** Дополнительное действие строки, например однократная правка цены. */
+  action?: React.ReactNode;
 }
 
 /** Исполнитель и его услуги в рамках одного приёма. */
@@ -252,6 +254,15 @@ const ServiceEmployeeGroups: React.FC<ServiceEmployeeGroupsProps> = ({
                       <Typography variant="body2" fontWeight={700} sx={{ flexShrink: 0 }}>
                         {line.amount}
                       </Typography>
+                    )}
+
+                    {line.action && (
+                      <Box
+                        onClick={(event) => event.stopPropagation()}
+                        sx={{ display: "flex", flexShrink: 0 }}
+                      >
+                        {line.action}
+                      </Box>
                     )}
                   </Stack>
                 );

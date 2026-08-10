@@ -462,8 +462,8 @@ export interface DjangoAppointment {
   services: AppointmentServiceLine[];
   /** Goods sold within this visit (deducted from the warehouse). */
   productLines: AppointmentProductLine[];
-  /** True after the one-time performer price override was consumed. */
-  priceOverrideUsed?: boolean;
+  /** True after payment is accepted and performer price changes are locked. */
+  priceOverrideLocked?: boolean;
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
@@ -1045,9 +1045,9 @@ export function updateAppointment(
 }
 
 /**
- * Change the price of the current doctor's service line once within an
- * appointment. The backend enforces permission, performer ownership and the
- * one-time limit transactionally.
+ * Change the price of the current doctor's service line before payment. The
+ * backend enforces permission, performer ownership and the payment lock
+ * transactionally.
  */
 export function overrideAppointmentServicePrice(
   appointmentId: number,

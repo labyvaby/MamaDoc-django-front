@@ -103,6 +103,7 @@
   },
   "details": {
     "amountWithCurrency": "{{amount}} сом",
+    "service": "Услуга",
     "paidCashless": "Оплачено безналом",
     "noSpecialist": "Без {{specialist.gen}}",
     "editPayment": "Изменить оплату",
@@ -160,6 +161,18 @@
     "cancelTitle": "Отменить {{record.acc}}?",
     "cancelText": "{{record.nom, capitalize}} будет переведена в статус «Отменено». Она не удалится из истории.",
     "cancelSubmit": "Подтвердить отмену"
+  },
+  "priceOverride": {
+    "action": "Изменить цену",
+    "title": "Изменение цены услуги",
+    "service": "Услуга: {{service}}",
+    "current": "Текущая цена: {{price}} сом",
+    "hint": "Цену можно менять сколько угодно раз до принятия оплаты. После оплаты изменение станет недоступно.",
+    "newPrice": "Новая цена, сом",
+    "invalid": "Введите корректную неотрицательную цену.",
+    "save": "Сохранить цену",
+    "saving": "Сохранение…",
+    "success": "Цена услуги изменена"
   },
   "productQuickView": {
     "title": "Товар",
