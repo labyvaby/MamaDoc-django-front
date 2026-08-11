@@ -148,6 +148,18 @@ function clearConclusionDraft(serviceLineId: number) {
 
 // ── vitals validation helpers ──────────────────────────────────────────────────
 
+// Контракт точности — как у бэка: вес numeric(6,3), рост numeric(5,2),
+// температура numeric(4,1). Лишние знаки ловим на клиенте, чтобы врач получил
+// понятную ошибку на родном языке, а не HTTP 400 от Django.
+const WEIGHT_DECIMALS = 3;
+const HEIGHT_DECIMALS = 2;
+const TEMPERATURE_DECIMALS = 1;
+
+function decimalPlacesOf(raw: string): number {
+  // Поле type="number" отдаёт value с точкой независимо от локали.
+  return raw.trim().split(".")[1]?.length ?? 0;
+}
+
 function validateVitals(
   weight: string,
   height: string,
@@ -157,16 +169,22 @@ function validateVitals(
     const w = Number(weight);
     if (isNaN(w) || w < 1 || w > 999)
       return tt("appointments:conclusion.errors.weightRange");
+    if (decimalPlacesOf(weight) > WEIGHT_DECIMALS)
+      return tt("appointments:conclusion.errors.weightPrecision");
   }
   if (height.trim()) {
     const h = Number(height);
     if (isNaN(h) || h < 1 || h > 999)
       return tt("appointments:conclusion.errors.heightRange");
+    if (decimalPlacesOf(height) > HEIGHT_DECIMALS)
+      return tt("appointments:conclusion.errors.heightPrecision");
   }
   if (temp.trim()) {
     const t = Number(temp);
     if (isNaN(t) || t < 34 || t > 42)
       return tt("appointments:conclusion.errors.temperatureRange");
+    if (decimalPlacesOf(temp) > TEMPERATURE_DECIMALS)
+      return tt("appointments:conclusion.errors.temperaturePrecision");
   }
   return null;
 }
@@ -193,6 +211,8 @@ type VitalStepperProps = {
   step?: number;
   min?: number;
   max?: number;
+  // Сколько знаков после запятой хранит бэк для этого показателя.
+  decimalPlaces?: number;
   disabled?: boolean;
 };
 
@@ -204,10 +224,13 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
   step = 1,
   min = 0,
   max,
+  decimalPlaces = WEIGHT_DECIMALS,
   disabled,
 }) => {
-  // Шаг дробный (вес, температура) — сложение даёт хвост вида 5.6000000000000005.
-  const fmt = (n: number) => String(Math.round(n * 100) / 100);
+  // Кнопки ± не должны ни плодить хвост вида 5.6000000000000005, ни выходить
+  // за точность бэка — округляем до неё же.
+  const k = 10 ** decimalPlaces;
+  const fmt = (n: number) => String(Math.round(n * k) / k);
   const dec = () => {
     // Пустое поле — «не измеряли»: минус не должен подставлять туда минимум.
     if (value === "") return;
@@ -261,9 +284,11 @@ const VitalStepper: React.FC<VitalStepperProps> = ({
           inputProps={{
             style: { textAlign: "center", padding: "8px 4px" },
             min,
-            // step="any": шаг кнопок ±1 не должен делать введённые вручную
-            // 5,5 кг и 57,5 см невалидными для браузера (stepMismatch).
-            step: "any",
+            // HTML-step = минимальная единица хранения бэка (0.001 кг и т.п.):
+            // любое допустимое для бэка значение — её кратное, поэтому ручной
+            // ввод 5,5 кг / 57,5 см не даёт stepMismatch, как давал бы шаг
+            // кнопок ±1; а 4-й знак после запятой браузер уже подсветит.
+            step: String(10 ** -decimalPlaces),
             max,
           }}
           sx={{
@@ -1090,6 +1115,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 // доводил поле до 0 и сохранение падало на «от 1 до 999».
                 min={1}
                 max={999}
+                decimalPlaces={HEIGHT_DECIMALS}
                 disabled={readOnly}
               />
               <VitalStepper
@@ -1097,10 +1123,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 suffix={t("conclusion.weightUnit")}
                 value={weightKg}
                 onChange={setWeightKg}
-                // Педиатрия: вес младенца меняется десятыми долями килограмма.
+                // Педиатрия: вес младенца меняется десятыми долями килограмма,
+                // а хранится с точностью до грамма (3.456 кг).
                 step={0.1}
                 min={1}
                 max={999}
+                decimalPlaces={WEIGHT_DECIMALS}
                 disabled={readOnly}
               />
               <VitalStepper
@@ -1111,6 +1139,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 step={0.1}
                 min={34}
                 max={42}
+                decimalPlaces={TEMPERATURE_DECIMALS}
                 disabled={readOnly}
               />
             </Stack>
