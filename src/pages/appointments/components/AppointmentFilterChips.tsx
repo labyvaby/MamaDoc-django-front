@@ -201,7 +201,9 @@ const AppointmentFilterChips: React.FC<Props> = ({
           постоянным элементом ряда без функции. Отдельной строки применённых
           фильтров нет: при мультивыборе активность видна по самим чипам. */}
       {hasActive && (
-        <Box sx={{ flexShrink: 0, ...(wrap && { width: "100%", mt: 0.5 }) }}>
+        // display: flex — иначе чип внутри блочного Box выравнивается по
+        // базовой линии текста и стоит на пару пикселей выше остальных чипов.
+        <Box sx={{ flexShrink: 0, display: "flex", ...(wrap && { width: "100%", mt: 0.5 }) }}>
           <Chip
             size="small"
             clickable
