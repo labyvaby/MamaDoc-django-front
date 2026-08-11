@@ -104,6 +104,21 @@ export interface MembershipUpdatePayload {
   branchIds?: number[] | null;
 }
 
+/** Mirrors MembershipPermissionsPayload (rename='camel'). */
+export interface RbacMembershipPermissions {
+  membershipId: number;
+  rolePermissionCodes: string[];
+  grantCodes: string[];
+  denyCodes: string[];
+  effectivePermissionCodes: string[];
+}
+
+/** Replaces all personal grant/deny overrides for one membership. */
+export interface MembershipPermissionsUpdatePayload {
+  grantCodes: string[];
+  denyCodes: string[];
+}
+
 // ── API functions ───────────────────────────────────────────────────────────
 
 export function getPermissions(): Promise<RbacPermission[]> {
@@ -164,4 +179,25 @@ export function updateMembership(
     method: "PATCH",
     body: payload,
   });
+}
+
+export function getMembershipPermissions(
+  id: number,
+): Promise<RbacMembershipPermissions> {
+  return apiRequest<RbacMembershipPermissions>(
+    `/rbac/memberships/${id}/permissions/`,
+  );
+}
+
+export function updateMembershipPermissions(
+  id: number,
+  payload: MembershipPermissionsUpdatePayload,
+): Promise<RbacMembershipPermissions> {
+  return apiRequest<RbacMembershipPermissions>(
+    `/rbac/memberships/${id}/permissions/`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
 }

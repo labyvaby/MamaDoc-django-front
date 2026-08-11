@@ -4,9 +4,11 @@ import {
   Autocomplete,
   Box,
   Chip,
+  CircularProgress,
   Divider,
   Drawer,
   FormControlLabel,
+  FormGroup,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -30,10 +32,15 @@ import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
 import {
   getRoles,
+  getPermissions,
   getMemberships,
+  getMembershipPermissions,
   updateMembership,
+  updateMembershipPermissions,
+  type RbacPermission,
   type RbacRole,
   type RbacMembership,
+  type RbacMembershipPermissions,
   type MembershipUpdatePayload,
 } from "../../api/rbac";
 import { ApiError } from "../../api/client";
@@ -55,6 +62,7 @@ interface MembershipFormDrawerProps {
   open: boolean;
   membership: RbacMembership | null;
   roles: RbacRole[];
+  permissions: RbacPermission[];
   branches: RbacBranch[];
   onClose: () => void;
   onSaved: (m: RbacMembership) => void;
@@ -64,6 +72,7 @@ function MembershipFormDrawer({
   open,
   membership,
   roles,
+  permissions,
   branches,
   onClose,
   onSaved,
@@ -90,6 +99,11 @@ function MembershipFormDrawer({
   const [isActive, setIsActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [permissionData, setPermissionData] =
+    React.useState<RbacMembershipPermissions | null>(null);
+  const [permissionsLoading, setPermissionsLoading] = React.useState(false);
+  const [permissionsBusy, setPermissionsBusy] = React.useState(false);
+  const [permissionSearch, setPermissionSearch] = React.useState("");
 
   // Populate from the membership when opening.
   React.useEffect(() => {
@@ -98,6 +112,13 @@ function MembershipFormDrawer({
     setBusy(false);
     setRoleId(membership.role?.id ?? "");
     setIsActive(membership.isActive);
+    setPermissionData(null);
+    setPermissionSearch("");
+    setPermissionsLoading(true);
+    getMembershipPermissions(membership.id)
+      .then(setPermissionData)
+      .catch((err) => setError(extractErrorMessage(err)))
+      .finally(() => setPermissionsLoading(false));
     // Map embedded BranchShort[] to the full branch options by id.
     const byId = new Map(branches.map((b) => [b.id, b]));
     setCrmBranches(
@@ -106,6 +127,46 @@ function MembershipFormDrawer({
         .filter((b): b is RbacBranch => Boolean(b)),
     );
   }, [open, membership, branches]);
+
+  const groupedPermissions = React.useMemo(() => {
+    const query = permissionSearch.trim().toLowerCase();
+    const groups = new Map<string, RbacPermission[]>();
+    for (const permission of permissions) {
+      if (
+        query &&
+        !permission.code.toLowerCase().includes(query) &&
+        !permission.name.toLowerCase().includes(query)
+      ) {
+        continue;
+      }
+      const category = permission.category || permission.code.split(".")[0];
+      const items = groups.get(category) ?? [];
+      items.push(permission);
+      groups.set(category, items);
+    }
+    return [...groups.entries()];
+  }, [permissions, permissionSearch]);
+
+  const setOverride = (code: string, effect: "grant" | "deny", enabled: boolean) => {
+    setPermissionData((current) => {
+      if (!current) return current;
+      const grants = new Set(current.grantCodes);
+      const denials = new Set(current.denyCodes);
+      const target = effect === "grant" ? grants : denials;
+      const opposite = effect === "grant" ? denials : grants;
+      if (enabled) {
+        target.add(code);
+        opposite.delete(code);
+      } else {
+        target.delete(code);
+      }
+      return {
+        ...current,
+        grantCodes: [...grants].sort(),
+        denyCodes: [...denials].sort(),
+      };
+    });
+  };
 
   const handleSubmit = async () => {
     if (!membership) return;
@@ -118,11 +179,19 @@ function MembershipFormDrawer({
         branchIds: crmBranches.map((b) => b.id),
       };
       const saved = await updateMembership(membership.id, payload);
+      if (permissionData) {
+        setPermissionsBusy(true);
+        await updateMembershipPermissions(membership.id, {
+          grantCodes: permissionData.grantCodes,
+          denyCodes: permissionData.denyCodes,
+        });
+      }
       onSaved(saved);
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
+      setPermissionsBusy(false);
       setBusy(false);
     }
   };
@@ -259,6 +328,115 @@ function MembershipFormDrawer({
             }
             label={t("memberships.form.activeLabel")}
           />
+
+          {/* ── Персональные права ── */}
+          <Stack spacing={1}>
+            <Box>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                {t("memberships.form.personalPermissionsLabel")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t("memberships.form.personalPermissionsHint")}
+              </Typography>
+            </Box>
+            {permissionsLoading ? (
+              <Box display="flex" justifyContent="center" py={2}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : permissionData ? (
+              <>
+                <TextField
+                  size="small"
+                  placeholder={t("memberships.form.permissionSearchPlaceholder")}
+                  value={permissionSearch}
+                  onChange={(e) => setPermissionSearch(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchOutlined fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                  disabled={busy || permissionsBusy}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {t("memberships.form.effectivePermissions", {
+                    count: permissionData.effectivePermissionCodes.length,
+                  })}
+                </Typography>
+                <Box
+                  sx={{
+                    maxHeight: 360,
+                    overflowY: "auto",
+                    border: (theme) => `1px solid ${theme.palette.divider}`,
+                    borderRadius: 1,
+                    px: 1,
+                  }}
+                >
+                  {groupedPermissions.map(([category, items]) => (
+                    <Box key={category} sx={{ py: 1 }}>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary">
+                        {category}
+                      </Typography>
+                      <FormGroup>
+                        {items.map((permission) => {
+                          const inherited = permissionData.rolePermissionCodes.includes(permission.code);
+                          const granted = permissionData.grantCodes.includes(permission.code);
+                          const denied = permissionData.denyCodes.includes(permission.code);
+                          return (
+                            <Box
+                              key={permission.code}
+                              sx={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr auto auto",
+                                alignItems: "center",
+                                gap: 0.5,
+                                py: 0.35,
+                              }}
+                            >
+                              <Box minWidth={0}>
+                                <Typography variant="body2" noWrap title={permission.name}>
+                                  {permission.name || permission.code}
+                                </Typography>
+                                <Typography variant="caption" color="text.disabled" noWrap>
+                                  {permission.code}{inherited ? ` · ${t("memberships.form.fromRole")}` : ""}
+                                </Typography>
+                              </Box>
+                              <FormControlLabel
+                                sx={{ m: 0, "& .MuiFormControlLabel-label": { fontSize: 11 } }}
+                                control={
+                                  <Switch
+                                    size="small"
+                                    checked={granted}
+                                    onChange={(e) => setOverride(permission.code, "grant", e.target.checked)}
+                                    disabled={busy || permissionsBusy}
+                                  />
+                                }
+                                label={t("memberships.form.grantShort")}
+                              />
+                              <FormControlLabel
+                                sx={{ m: 0, "& .MuiFormControlLabel-label": { fontSize: 11 } }}
+                                control={
+                                  <Switch
+                                    size="small"
+                                    color="error"
+                                    checked={denied}
+                                    onChange={(e) => setOverride(permission.code, "deny", e.target.checked)}
+                                    disabled={busy || permissionsBusy}
+                                  />
+                                }
+                                label={t("memberships.form.denyShort")}
+                              />
+                            </Box>
+                          );
+                        })}
+                      </FormGroup>
+                    </Box>
+                  ))}
+                </Box>
+              </>
+            ) : null}
+          </Stack>
         </Stack>
       </Box>
 
@@ -271,10 +449,10 @@ function MembershipFormDrawer({
         <AppButton
           variant="contained"
           onClick={handleSubmit}
-          disabled={busy}
-          loading={busy}
+          disabled={busy || permissionsLoading || permissionsBusy}
+          loading={busy || permissionsBusy}
         >
-          {busy ? t("common:state.saving") : t("common:actions.save")}
+          {busy || permissionsBusy ? t("common:state.saving") : t("common:actions.save")}
         </AppButton>
       </Box>
     </Drawer>
@@ -399,6 +577,7 @@ const MembershipsSettingsPage: React.FC = () => {
   const { activeOrganization, activeMembership } = usePermissions();
   const [memberships, setMemberships] = React.useState<RbacMembership[]>([]);
   const [roles, setRoles] = React.useState<RbacRole[]>([]);
+  const [permissions, setPermissions] = React.useState<RbacPermission[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
@@ -426,6 +605,13 @@ const MembershipsSettingsPage: React.FC = () => {
       ]);
       setMemberships(memData);
       setRoles(rolesData);
+      // The member list must remain usable even for an administrator who can
+      // edit memberships but does not have the permission-registry read right.
+      try {
+        setPermissions(await getPermissions());
+      } catch {
+        setPermissions([]);
+      }
     } catch (err) {
       setLoadError(extractErrorMessage(err));
     } finally {
@@ -582,6 +768,7 @@ const MembershipsSettingsPage: React.FC = () => {
         open={Boolean(editing)}
         membership={editing}
         roles={orgRoles}
+        permissions={permissions}
         branches={branches}
         onClose={() => setEditing(null)}
         onSaved={handleSaved}

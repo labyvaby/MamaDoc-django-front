@@ -344,7 +344,14 @@
       "branchesLabel": "Доступ в CRM ({{branch.nomPl}})",
       "branchesHint": "Какие {{branch.nomPl}} участник видит в системе",
       "branchesPlaceholder": "Выберите {{branch.nomPl}}",
-      "activeLabel": "Активен"
+      "activeLabel": "Активен",
+      "personalPermissionsLabel": "Персональные права",
+      "personalPermissionsHint": "Добавляются только этому участнику и не меняют его роль. Запрет перекрывает право роли.",
+      "permissionSearchPlaceholder": "Поиск права…",
+      "effectivePermissions": "Итоговых прав: {{count}}",
+      "fromRole": "от роли",
+      "grantShort": "дать",
+      "denyShort": "запретить"
     }
   },
   "branches": {
