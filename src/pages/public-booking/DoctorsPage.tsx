@@ -25,8 +25,16 @@ import { PublicBookingShell } from "./shell";
 import { SpecialtyTile } from "./SpecialtiesPage";
 import { useSpecialties, type SpecialtyGroup } from "./useSpecialties";
 import { useBookingNav } from "./orgSlug";
-import { formatDayMonth, isoInDays, todayIso } from "./format";
-import { BORDER, TILE_RADIUS, nearestTone } from "./theme";
+import { primaryPhone, useBookingOrg } from "./useBookingOrg";
+import { formatDayMonth, isoInDays, telHref, todayIso } from "./format";
+import {
+  BOOKING_PRIMARY,
+  BOOKING_PRIMARY_HOVER,
+  BOOKING_RADIUS,
+  BORDER,
+  TILE_RADIUS,
+  nearestTone,
+} from "./theme";
 import { useT } from "../../i18n/VerticalProvider";
 
 /** Сколько окон помещается в карточку до счётчика «+N». */
@@ -46,6 +54,12 @@ const NAME_MIN_H = "2.7em";
 const SPECIALTY_MIN_H = 18;
 /** Строка окон: на узком экране метка над чипами, на широком — в один ряд. */
 const SLOTS_MIN_H = { xs: 44, lg: 24 };
+/**
+ * Весь низ карточки: строка окон с отступами (10 + SLOTS_MIN_H + 8) и кнопка
+ * (~31). Врач без окон показывает вместо этого обведённый блок со звонком —
+ * резерв держит обе карточки в сетке одной высоты.
+ */
+const ACTION_AREA_MIN_H = { xs: 93, lg: 73 };
 
 // ── Ближайшие свободные окна ─────────────────────────────────────────────────
 
@@ -142,9 +156,10 @@ const AvailabilityRow: React.FC<{ day: CalendarDay | null | undefined; onMore: (
   if (!day) {
     return (
       <Box sx={boxSx}>
-        <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary" }}>
-          {t("freeSlotsNone")}
-        </Typography>
+        {/* Единственная строка карточки без окон — по центру над кнопкой, как в
+            макете. Сюда попадают врачи без окон у клиники без телефона: со
+            звонком строка и кнопка собираются отдельным блоком ниже. */}
+        <Typography sx={{ fontSize: 12, textAlign: "center" }}>{t("freeSlotsNone")}</Typography>
       </Box>
     );
   }
@@ -255,14 +270,38 @@ const AvailabilityRow: React.FC<{ day: CalendarDay | null | undefined; onMore: (
 
 // ── Карточка врача ───────────────────────────────────────────────────────────
 
-const DoctorCardItem: React.FC<{ doctor: ProfessionalPreview; onOpen: () => void }> = ({
-  doctor,
-  onOpen,
-}) => {
+/** Кнопка «Записаться» внизу карточки. */
+const cardActionSx = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "100%",
+  boxSizing: "border-box",
+  py: 0.75,
+  px: 1,
+  border: "1px solid",
+  borderRadius: 999,
+  fontFamily: "inherit",
+  fontSize: 12,
+  lineHeight: 1.43,
+  textAlign: "center",
+} as const;
+
+const DoctorCardItem: React.FC<{
+  doctor: ProfessionalPreview;
+  clinicPhone: string | null;
+  onOpen: () => void;
+}> = ({ doctor, clinicPhone, onOpen }) => {
   const { t } = useT("publicBooking");
   const { ref, day } = useNearestDay(idOrSlugRef(doctor));
   const [photoBroken, setPhotoBroken] = React.useState(false);
   const showPhoto = Boolean(doctor.photoUrl) && !photoBroken;
+  /**
+   * Окон на две недели вперёд нет: онлайн-запись предлагать нечего, поэтому
+   * вместо «Записаться» уводим на телефон клиники. Без телефона уводить некуда —
+   * остаётся обычная кнопка, карточка врача покажет расписание целиком.
+   */
+  const callHref = day === null && clinicPhone ? telHref(clinicPhone) : null;
 
   return (
     <Box
@@ -367,23 +406,74 @@ const DoctorCardItem: React.FC<{ doctor: ProfessionalPreview; onOpen: () => void
           </Typography>
         </Box>
 
-        <Box sx={{ mt: "auto", overflow: "hidden" }}>
-          <AvailabilityRow day={day} onMore={onOpen} />
-          <Box
-            component="span"
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "100%",
-              py: 0.75,
-              border: "1px solid #C7C7C7",
-              borderRadius: 999,
-              fontSize: 12,
-            }}
-          >
-            {t("bookAction")}
-          </Box>
+        {/* Низ карточки: строка окон и кнопка. Высота зарезервирована целиком —
+            состояния «есть окна» и «нет окон» верстаются по-разному, а карточки
+            в сетке должны остаться одной высоты. Без `overflow: hidden`: рамка
+            блока «нет окон» вынесена на отрицательные поля и обрезалась бы по
+            бокам; лишние чипы прячет сама строка окон. */}
+        <Box
+          sx={{
+            mt: "auto",
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: ACTION_AREA_MIN_H,
+          }}
+        >
+          {callHref ? (
+            // Макет «нет окон»: подпись и кнопка звонка — один обведённый блок.
+            // Рамка обнимает кнопку вплотную и вынесена наружу отрицательными
+            // полями, чтобы её толщина не съедала ширину кнопки: «Связаться с
+            // клиникой» должна совпадать с «Записаться» в соседних карточках.
+            <Box
+              sx={{
+                mt: "auto",
+                mx: "-1px",
+                display: "flex",
+                flexDirection: "column",
+                border: "1px solid #C7C7C7",
+                borderRadius: BOOKING_RADIUS,
+              }}
+            >
+              <Typography
+                sx={{
+                  py: 0.75,
+                  px: 1,
+                  fontSize: 12,
+                  lineHeight: "18px",
+                  textAlign: "center",
+                }}
+              >
+                {t("freeSlotsNone")}
+              </Typography>
+              <Box
+                component="a"
+                href={callHref}
+                // Клик по кнопке не должен заодно открывать карточку врача.
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                sx={{
+                  // Та же геометрия, что у «Записаться»: обе кнопки в ленте
+                  // карточек должны читаться как одна и та же кнопка.
+                  ...cardActionSx,
+                  borderColor: "transparent",
+                  bgcolor: BOOKING_PRIMARY,
+                  color: "#FFFFFF",
+                  fontWeight: 500,
+                  textDecoration: "none",
+                  "&:hover": { bgcolor: BOOKING_PRIMARY_HOVER },
+                }}
+              >
+                {t("contactClinic")}
+              </Box>
+            </Box>
+          ) : (
+            <>
+              <AvailabilityRow day={day} onMore={onOpen} />
+              <Box component="span" sx={{ ...cardActionSx, borderColor: "#C7C7C7" }}>
+                {t("bookAction")}
+              </Box>
+            </>
+          )}
         </Box>
       </Stack>
     </Box>
@@ -426,6 +516,9 @@ const DoctorsPage: React.FC = () => {
   const { orgSlug, go } = useBookingNav();
   const [searchParams, setSearchParams] = useSearchParams();
   const { specialties } = useSpecialties();
+  /** Телефон клиники — на него уводим врачей без свободных окон. */
+  const { branches } = useBookingOrg();
+  const clinicPhone = primaryPhone(branches);
 
   // Специализация живёт в адресе: экран выбора специализации переходит сюда
   // ссылкой, и та же ссылка должна открываться из мессенджера с тем же фильтром.
@@ -574,6 +667,7 @@ const DoctorsPage: React.FC = () => {
                 <DoctorCardItem
                   key={d.id}
                   doctor={d}
+                  clinicPhone={clinicPhone}
                   onOpen={() => go(`/book/doctor/${idOrSlugRef(d)}`)}
                 />
               ))}

@@ -29,6 +29,7 @@
   "brandSubtitle": "Онлайн-запись на {{visit.acc}}",
   "metaDescription": "Запишитесь к {{specialist.dat}} онлайн: выберите удобное время и оставьте контакты — {{org.nom}} подтвердит {{record.acc}} по телефону.",
   "callClinic": "Позвонить",
+  "contactClinic": "Связаться с {{org.ins}}",
   "signIn": "Войти",
   "signUp": "Регистрация",
   "bookingHistory": "История {{record.genPl}}",
