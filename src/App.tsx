@@ -96,6 +96,7 @@ const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingBy
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
+const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/ConclusionFormsSettingsPage"));
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
@@ -907,6 +908,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.diagnoses}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <DiagnosesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/conclusion-forms"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.conclusionForms}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ConclusionFormsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

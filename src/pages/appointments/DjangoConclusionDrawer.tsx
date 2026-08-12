@@ -42,6 +42,7 @@ import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
@@ -55,6 +56,8 @@ import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
 import { tt } from "../../i18n/t";
 import { agree } from "../../i18n/formatters";
+import { FillFormDialog } from "../../components/conclusion-forms/FillFormDialog";
+import type { FormTarget } from "../../api/conclusionForms";
 
 import {
   upsertConclusion,
@@ -82,6 +85,10 @@ export type DjangoConclusionDrawerProps = {
   serviceLineId: number;
   serviceName: string;
   doctorName: string;
+  /** Приём, к которому относится строка услуги — нужен бланкам (шапка листа). */
+  appointmentId?: number;
+  /** Врач строки услуги: по его специализациям подбираются бланки. */
+  doctorId?: number | null;
   canEdit: boolean;
   canPrint: boolean;
   /** Patient's complaints from the appointment (read-only context block). */
@@ -319,6 +326,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   serviceLineId,
   serviceName,
   doctorName,
+  appointmentId,
+  doctorId,
   canEdit,
   canPrint,
   patientComplaints,
@@ -351,6 +360,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [saveTplOpen, setSaveTplOpen] = React.useState(false);
   const [tplName, setTplName] = React.useState("");
   const [tplBusy, setTplBusy] = React.useState(false);
+  // Бланки: конструктор печатных форм (Настройки → Бланки заключений).
+  const [fillFormOpen, setFillFormOpen] = React.useState(false);
   const [weightKg, setWeightKg] = React.useState("");
   const [heightCm, setHeightCm] = React.useState("");
   const [temperature, setTemperature] = React.useState("");
@@ -667,6 +678,20 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     }
   };
 
+  /**
+   * Вставка заполненного бланка. Дописываем к тому, что уже в поле, а не
+   * заменяем: у приёма может быть несколько бланков (осмотр + протокол УЗИ),
+   * и второй не должен затирать первый.
+   */
+  const applyFilledForm = (target: FormTarget, text: string) => {
+    if (!text.trim()) return;
+    const append = (prev: string) => (prev.trim() ? `${prev.trim()}\n\n${text}` : text);
+    if (target === "anamnesis") setAnamnesis(append);
+    else if (target === "objective") setObjective(append);
+    else setConclusionText(append);
+    notify?.({ type: "success", message: "Бланк добавлен в заключение" });
+  };
+
   const handleDeleteTemplate = async (id: number) => {
     try {
       await deleteConclusionTemplate(id);
@@ -812,6 +837,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         <Stack direction="row" spacing={0.5} alignItems="center">
           {!readOnly && (
             <>
+              {appointmentId != null && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<DescriptionOutlined />}
+                  onClick={() => setFillFormOpen(true)}
+                >
+                  Бланк
+                </Button>
+              )}
               <Button
                 size="small"
                 variant="outlined"
@@ -1508,6 +1543,19 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         </Stack>
       </Box>
       </>
+      )}
+
+      {/* ── заполнение по бланку ── */}
+      {appointmentId != null && (
+        <FillFormDialog
+          open={fillFormOpen}
+          onClose={() => setFillFormOpen(false)}
+          appointmentId={appointmentId}
+          serviceLineId={serviceLineId}
+          doctorId={doctorId}
+          doctorName={doctorName}
+          onApply={applyFilledForm}
+        />
       )}
 
       {/* ── save-as-template dialog ── */}

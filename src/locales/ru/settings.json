@@ -20,6 +20,7 @@
       "cashlessMethods": "Способы безнала",
       "expenseCategories": "Категории расходов",
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
+      "conclusionForms": "Бланки заключений",
       "tasks": "Задачи",
       "cleaning": "Уборка",
       "skud": "СКУД",

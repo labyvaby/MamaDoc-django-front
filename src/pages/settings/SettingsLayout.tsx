@@ -28,6 +28,7 @@ import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutl
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
@@ -132,6 +133,12 @@ const TAB_DEFS: TabDef[] = [
     key: "diagnoses",
     to: "/settings/diagnoses",
     icon: <LocalHospitalOutlined fontSize="small" />,
+    group: "catalogs",
+  },
+  {
+    key: "conclusionForms",
+    to: "/settings/conclusion-forms",
+    icon: <DescriptionOutlined fontSize="small" />,
     group: "catalogs",
   },
   {

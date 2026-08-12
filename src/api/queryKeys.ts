@@ -273,6 +273,11 @@ export const djangoQueryKeys = {
       ] as const,
   },
 
+  conclusionForms: {
+    list: (organizationId: number | null | undefined) =>
+      ["django", "conclusion-forms", organizationId ?? null] as const,
+  },
+
   scheduling: {
     rules: (params: Record<string, unknown>) =>
       ["django", "scheduling", "rules", params] as const,

@@ -141,6 +141,8 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         serviceLineId={onlySlot.serviceLineId}
         serviceName={onlySlot.service.name}
         doctorName={onlySlot.doctor?.fullName ?? "—"}
+        appointmentId={appointmentId}
+        doctorId={onlySlot.doctor?.id ?? null}
         // По умолчанию просмотр; «Изменить заключение» включает редактирование.
         canEdit={onlySlot.canEdit && editingInline}
         canPrint={onlySlot.canPrint}
@@ -220,6 +222,8 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           serviceLineId={drawerSlot.serviceLineId}
           serviceName={drawerSlot.service.name}
           doctorName={drawerSlot.doctor?.fullName ?? "—"}
+          appointmentId={appointmentId}
+          doctorId={drawerSlot.doctor?.id ?? null}
           canEdit={drawerSlot.canEdit}
           canPrint={drawerSlot.canPrint}
           onSaved={handleSaved}
