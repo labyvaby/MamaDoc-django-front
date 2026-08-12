@@ -245,6 +245,28 @@ export interface BranchDetail extends BranchPreview {
 
 // ── Специалисты (§3) ────────────────────────────────────────────────────────
 
+/**
+ * Доступность врача прямо в списке — чтобы не добирать календарь по каждой
+ * карточке отдельно и чтобы список можно было упорядочить по загруженности.
+ *
+ * ⚠ Контракт предложен фронтом, бэк поля пока не отдаёт — тикет
+ * `MamaDoc/backend_ticket_public_booking_availability_order.md`. Поэтому блок
+ * опциональный: без него витрина работает по-старому.
+ */
+export interface ProfessionalAvailability {
+  /** Свободных окон на сегодня (0 — на сегодня уже нет). Ключ сортировки. */
+  todayFreeSlots: number;
+  /** Ближайший день со свободными окнами; null — окон нет в горизонте 14 дней. */
+  nearestDay: {
+    /** YYYY-MM-DD */
+    date: string;
+    /** Всего окон в этот день (не длина times). */
+    slotsCount: number;
+    /** Первые окна дня "HH:MM" — их показывает карточка. */
+    times: string[];
+  } | null;
+}
+
 /** Врач — превью (§3, professional preview). specialty — одна строка. */
 export interface ProfessionalPreview {
   id: number;
@@ -254,6 +276,8 @@ export interface ProfessionalPreview {
   specialty: string;
   experienceYears: number;
   isAcceptingNew: boolean;
+  /** См. ProfessionalAvailability: появится, когда бэк закроет тикет. */
+  availability?: ProfessionalAvailability;
 }
 
 /** Услуга в карточке врача (усечённая форма, §3). */
