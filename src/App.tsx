@@ -745,7 +745,7 @@ function App() {
                               }
                             />
                             {/* Справочник способов безнала — вместе с флагом
-                                CASHLESS_METHODS_ENABLED (эндпоинта ещё нет). */}
+                                CASHLESS_METHODS_ENABLED. */}
                             {CASHLESS_METHODS_ENABLED && (
                               <Route
                                 path="settings/cashless-methods"
