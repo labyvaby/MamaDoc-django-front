@@ -41,6 +41,7 @@ import AppointmentDetailsPanel from "../appointments/components/AppointmentDetai
 import DjangoConclusionSlotsPanel from "../appointments/DjangoConclusionSlotsPanel";
 import DjangoAddPatientDrawer from "../../components/patients/DjangoAddPatientDrawer";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
+import MergePatientDrawer from "../../components/patients/MergePatientDrawer";
 import FaceCaptureDrawer from "./components/FaceCaptureDrawer";
 
 // ── Main page ────────────────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ const DjangoPatientsPage: React.FC = () => {
   const [addOpen, setAddOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [topUpOpen, setTopUpOpen] = React.useState(false);
+  const [mergeOpen, setMergeOpen] = React.useState(false);
   const [historyDetail, setHistoryDetail] = React.useState<DjangoAppointment | null>(null);
   // Колонка заключения внутри дровера деталей приёма (как третья колонка на «Записях»).
   const [conclusionOpen, setConclusionOpen] = React.useState(false);
@@ -247,7 +249,18 @@ const DjangoPatientsPage: React.FC = () => {
   const handleAdd = () => setAddOpen(true);
   const handleEdit = () => { if (selected) setEditOpen(true); };
 
+  const handleMerge = () => { if (selected) setMergeOpen(true); };
   const handleFace = () => { if (selected) setFaceOpen(true); };
+
+  // После объединения дубль удалён, а основной изменился — список перечитываем
+  // с нуля, выбор сбрасываем (выбранной карточки могло не стать).
+  const handleMerged = () => {
+    setMergeOpen(false);
+    setSelected(null);
+    setPatients([]);
+    setHasMore(true);
+    void fetchChunk(0, debouncedSearch);
+  };
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
@@ -279,6 +292,7 @@ const DjangoPatientsPage: React.FC = () => {
       lastComplaints={lastComplaints}
       onEdit={canUpdate ? handleEdit : undefined}
       onTopUp={canManageFinance ? () => setTopUpOpen(true) : undefined}
+      onMerge={canUpdate ? handleMerge : undefined}
       onFace={canUpdate ? handleFace : undefined}
     />
   );
@@ -533,6 +547,13 @@ const DjangoPatientsPage: React.FC = () => {
         )}
       </Drawer>
 
+      {/* Объединение дублей пациентов */}
+      <MergePatientDrawer
+        open={mergeOpen}
+        onClose={() => setMergeOpen(false)}
+        initialPatient={selected}
+        onMerged={handleMerged}
+      />
     </Box>
   );
 };
