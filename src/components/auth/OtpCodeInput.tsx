@@ -5,9 +5,17 @@
  * Возможности:
  * - авто-переход к следующей ячейке при вводе цифры, назад по Backspace;
  * - вставка (paste) всего кода — раскладывается по ячейкам;
- * - SMS-autofill (autoComplete="one-time-code" на первой ячейке): если браузер
- *   вставит весь код в первую ячейку, он распределится по остальным;
+ * - SMS-autofill (autoComplete="one-time-code"): браузер вставляет весь код в
+ *   ячейку, он распределяется по остальным;
  * - авто-сабмит: когда заполнены все ячейки, вызывается onComplete(value).
+ *
+ * ⚠ Два условия автоподстановки на iOS Safari, которые легко сломать:
+ * 1) autoComplete="one-time-code" стоит на КАЖДОЙ ячейке — при "off" на
+ *    остальных Safari либо не предлагает код вовсе, либо вставляет одну цифру;
+ * 2) у ячеек НЕТ maxLength — автозаполнение вставляет весь код в одну ячейку,
+ *    а maxLength={1} обрезал бы его до первой цифры ещё до onChange (та же
+ *    ловушка, что и при вставке телефона с кодом страны). Ограничение в одну
+ *    цифру держится логикой handleChange, а не атрибутом.
  *
  * Только цифры. Значение контролируемое (value/onChange) — строка из цифр.
  *
@@ -58,7 +66,13 @@ const OtpCodeInput: React.FC<Props> = ({
   };
 
   const handleChange = (index: number, raw: string) => {
-    const only = raw.replace(/\D/g, "");
+    let only = raw.replace(/\D/g, "");
+
+    // Ячейка без maxLength — при обычном наборе поверх занятой ячейки браузер
+    // может отдать "старая+новая" цифру (курсор в конце, выделения нет).
+    // Отбрасываем старую: иначе она уехала бы в соседнюю ячейку.
+    const prev = digits[index];
+    if (prev && only.length === 2 && only.startsWith(prev)) only = only.slice(1);
 
     // Пустой ввод — очистка текущей ячейки (без авто-сабмита).
     if (!only) {
@@ -125,8 +139,8 @@ const OtpCodeInput: React.FC<Props> = ({
           autoFocus={autoFocus && i === 0}
           inputProps={{
             inputMode: "numeric",
-            autoComplete: i === 0 ? "one-time-code" : "off",
-            maxLength: 1,
+            autoComplete: "one-time-code",
+            name: `otp-${i + 1}`,
             "aria-label": `Цифра ${i + 1}`,
             style: {
               textAlign: "center",

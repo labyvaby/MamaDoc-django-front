@@ -13,6 +13,7 @@ import {
   type PatientGenderInput,
 } from "../../../api/publicPatient";
 import { ApiError } from "../../../api/client";
+import { useWebOtpAutofill } from "../../../components/auth/useWebOtpAutofill";
 import { useT } from "../../../i18n/VerticalProvider";
 import { capitalizeFullName } from "../../../utility/name";
 import type { PhoneCountryInfo } from "../../../utility/phone";
@@ -85,6 +86,9 @@ export const PatientAuthDialog: React.FC<{
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [retryAfter, setRetryAfter] = React.useState(0);
+  // Защита от двойной проверки: код может прийти из SMS ровно в тот момент,
+  // когда пациент дожал последнюю цифру руками.
+  const verifyingRef = React.useRef(false);
 
   // Поля регистрации (A3): бэк требует все четыре.
   const [firstName, setFirstName] = React.useState("");
@@ -151,12 +155,16 @@ export const PatientAuthDialog: React.FC<{
     }
   };
 
-  const handleVerify = async () => {
-    if (code.trim().length < CODE_LENGTH) return;
+  // codeOverride — для авто-входа сразу после подстановки кода из SMS: на этот
+  // момент state ещё без кода (setCode асинхронный).
+  const handleVerify = async (codeOverride?: string) => {
+    const value = (codeOverride ?? code).trim();
+    if (value.length < CODE_LENGTH || verifyingRef.current) return;
+    verifyingRef.current = true;
     setBusy(true);
     setError(null);
     try {
-      const result = await verifyPatientOtp(fullPhone, code.trim(), orgSlug);
+      const result = await verifyPatientOtp(fullPhone, value, orgSlug);
       signIn(fullPhone, result);
       if (result.patients.length === 0) {
         setStep("register");
@@ -170,9 +178,20 @@ export const PatientAuthDialog: React.FC<{
     } catch (e) {
       setError(describeError(e));
     } finally {
+      verifyingRef.current = false;
       setBusy(false);
     }
   };
+
+  // Код из входящей SMS (Android Chrome) — подставляем и входим сразу.
+  useWebOtpAutofill({
+    enabled: open && step === "code",
+    onCode: (smsCode) => {
+      const value = smsCode.slice(0, CODE_LENGTH);
+      setCode(value);
+      if (value.length === CODE_LENGTH) void handleVerify(value);
+    },
+  });
 
   const handleRegister = async () => {
     if (!session?.token) return;
@@ -241,10 +260,15 @@ export const PatientAuthDialog: React.FC<{
               autoFocus
               inputMode="numeric"
               autoComplete="one-time-code"
+              name="one-time-code"
               value={code}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH))
-              }
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const next = e.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH);
+                setCode(next);
+                // Код набран (или подставлен из SMS в iOS Safari) — входим сами,
+                // жать «Войти» после автоподстановки пациенту незачем.
+                if (next.length === CODE_LENGTH) void handleVerify(next);
+              }}
               onKeyDown={(e: React.KeyboardEvent) => {
                 if (e.key === "Enter") void handleVerify();
               }}

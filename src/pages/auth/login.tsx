@@ -31,6 +31,7 @@ import AuthLayout from "../../components/auth/AuthLayout";
 import AuthCard from "../../components/auth/AuthCard";
 import AximoLogo from "../../components/auth/AximoLogo";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
+import { useWebOtpAutofill } from "../../components/auth/useWebOtpAutofill";
 import { PhoneCountryCodeSelect } from "../../components/ui";
 import {
   composePhone,
@@ -245,51 +246,15 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // Ref на последнюю verifyOtp — эффект WebOTP ниже не должен пере-подписываться
-  // на каждый ре-рендер (иначе он будет отменять и заново открывать запрос
-  // navigator.credentials.get при каждом изменении otpCode).
-  const verifyOtpRef = React.useRef(verifyOtp);
-  verifyOtpRef.current = verifyOtp;
-
-  // WebOTP API: активно слушает входящую SMS с этого устройства и подставляет
-  // код без участия пользователя — на Android Chrome надёжнее, чем пассивный
-  // autocomplete="one-time-code" в OtpCodeInput (тот зависит от недокументиро-
-  // ванной OS-эвристики и на части устройств не показывает подсказку вовсе).
-  // iOS Safari WebOTP не поддерживает — там основной механизм — тот самый
-  // autocomplete, оставляем его как есть.
-  //
-  // ⚠ Требует от бэка строку "@<домен> #<код>" последней строкой в тексте SMS
-  // с кодом (сама привязка к origin — стандарт WebOTP, без нее браузер даже не
-  // покажет разрешение) — тикет MamaDoc/backend_ticket_otp_sms_webotp.md.
-  // Без этой строки в SMS вызов просто никогда не резолвится (не ловит SMS) —
-  // безвредно, ручной ввод кода продолжает работать.
-  React.useEffect(() => {
-    if (!isOtpSent) return;
-    if (!("OTPCredential" in window)) return;
-    const controller = new AbortController();
-    (async () => {
-      try {
-        const otp = (await (navigator.credentials as CredentialsContainer & {
-          get(options: {
-            otp: { transport: string[] };
-            signal: AbortSignal;
-          }): Promise<{ code?: string } | null>;
-        }).get({
-          otp: { transport: ["sms"] },
-          signal: controller.signal,
-        })) as { code?: string } | null;
-        const code = otp?.code?.replace(/\D/g, "").trim();
-        if (code) {
-          setOtpCode(code);
-          void verifyOtpRef.current(undefined, code);
-        }
-      } catch {
-        // Отмена (unmount/resend), таймаут, нет разрешения — обычный ручной
-        // ввод остаётся доступен, дополнительной обработки не требуется.
-      }
-    })();
-    return () => controller.abort();
-  }, [isOtpSent]);
+  // Автоподстановка кода из SMS на Android Chrome (условия и ограничения —
+  // в самом хуке). На iOS работает пассивный autocomplete в OtpCodeInput.
+  useWebOtpAutofill({
+    enabled: isOtpSent,
+    onCode: (code) => {
+      setOtpCode(code);
+      void verifyOtp(undefined, code);
+    },
+  });
 
   // --- ЛОГИКА EMAIL ---
   const handleEmailSubmit = async (e: React.FormEvent) => {
