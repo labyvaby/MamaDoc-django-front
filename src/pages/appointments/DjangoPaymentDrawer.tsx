@@ -26,6 +26,7 @@ import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import ConfirmationNumberOutlined from "@mui/icons-material/ConfirmationNumberOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
@@ -40,6 +41,7 @@ import {
   type PaymentLineInput,
 } from "../../api/payments";
 import { getInsurers } from "../../api/insurers";
+import { getPatient } from "../../api/patients";
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import type { DjangoAppointment } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
@@ -50,6 +52,9 @@ import {
   cascadeItem,
 } from "../../components/ui";
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
+import { useAuthUserNames } from "../../hooks/useAuthUserNames";
+import { usePermissions } from "../../hooks/usePermissions";
+import { printAppointmentInvoice } from "../../components/appointments/appointmentInvoice";
 import { paymentMethodLabel } from "../../utility/paymentMethodLabel";
 import {
   djangoQueryKeys,
@@ -700,6 +705,36 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     setCashDateConfirmed(true);
     setShowCashDateDialog(false);
     if (wasPendingSave) submitPayment(choice);
+  };
+
+  // ── Печать счёта к оплате ───────────────────────────────────────────────────
+  // Печатаем сохранённое состояние (summary с бэка), а не то, что набрано в
+  // форме: счёт — документ о фактических начислениях и оплатах.
+  const { activeOrganization, activeBranch, employee } = usePermissions();
+  // Карточка пациента нужна ради адреса и даты рождения: в приёме приходит
+  // только короткая форма (ФИО + телефон).
+  const patientQuery = useQuery({
+    queryKey: patientId ? djangoQueryKeys.patients.detail(patientId) : ["django", "patients", "closed"],
+    queryFn: () => getPatient(patientId!),
+    enabled: open && patientId !== null,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+  const userNames = useAuthUserNames(open && appointment?.createdById != null);
+  const registrarName =
+    appointment?.createdById != null ? userNames[appointment.createdById] : undefined;
+
+  const handlePrintInvoice = () => {
+    if (!appointment) return;
+    const ok = printAppointmentInvoice({
+      appointment,
+      summary,
+      patient: patientQuery.data ?? null,
+      organizationName: activeOrganization?.name ?? "",
+      branchName: activeBranch?.name ?? null,
+      registrarName,
+      createdByName: employee?.fullName ?? null,
+    });
+    if (!ok) notify?.({ type: "error", message: t("invoice.popupBlocked") });
   };
 
   const handleSummaryUpdated = React.useCallback(
@@ -1381,20 +1416,36 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
       {/* Footer */}
       <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider", flexShrink: 0 }}>
-        <Button
-          fullWidth
-          variant="contained"
-          size="large"
-          disabled={submitDisabled || applyMutation.isPending || isCancelled}
-          onClick={handleSave}
-          startIcon={applyMutation.isPending ? <CircularProgress size={20} color="inherit" /> : undefined}
-        >
-          {applyMutation.isPending
-            ? t("payment.saving")
-            : summary?.payments && summary.payments.length > 0
-            ? t("payment.updatePayment")
-            : t("payment.confirmPayment")}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            sx={{ flex: 1 }}
+            variant="contained"
+            size="large"
+            disabled={submitDisabled || applyMutation.isPending || isCancelled}
+            onClick={handleSave}
+            startIcon={applyMutation.isPending ? <CircularProgress size={20} color="inherit" /> : undefined}
+          >
+            {applyMutation.isPending
+              ? t("payment.saving")
+              : summary?.payments && summary.payments.length > 0
+              ? t("payment.updatePayment")
+              : t("payment.confirmPayment")}
+          </Button>
+          <Tooltip title={t("invoice.print")}>
+            <span>
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={handlePrintInvoice}
+                disabled={!appointment || paymentQuery.isLoading}
+                aria-label={t("invoice.print")}
+                sx={{ minWidth: 0, px: 2 }}
+              >
+                <PrintOutlined />
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
       </Box>
 
       <CashDateConfirmDialog
