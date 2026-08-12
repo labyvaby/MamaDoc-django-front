@@ -1,6 +1,8 @@
 import React, { useRef, useEffect } from "react";
 import { Box, Stack, Typography, IconButton, useTheme, alpha } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 
 export type DateNavigationProps = {
@@ -17,6 +19,12 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
     const theme = useTheme();
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const dateRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+    // Лента показывает лишь ±7 дней вокруг выбранной даты, поэтому запись,
+    // созданную на месяц вперёд, скроллом не достать — прыжок на произвольную
+    // дату даёт календарь (иконка справа от ленты).
+    const [pickerOpen, setPickerOpen] = React.useState(false);
+    const calendarButtonRef = useRef<HTMLButtonElement>(null);
 
     // Автоцентрирование выбранной даты
     useEffect(() => {
@@ -185,6 +193,38 @@ export const DateNavigation: React.FC<DateNavigationProps> = ({
                     })}
                 </Stack>
             </Box>
+
+            {/* Календарь: переход на любую дату (в т.ч. на месяц вперёд) */}
+            <IconButton
+                ref={calendarButtonRef}
+                onClick={() => setPickerOpen(true)}
+                size="small"
+                sx={{
+                    flexShrink: 0,
+                    bgcolor: 'action.hover',
+                    borderRadius: 1,
+                    '&:hover': { bgcolor: 'action.selected' },
+                    width: 32,
+                    height: 32,
+                }}
+                title="Выбрать дату"
+            >
+                <CalendarMonthOutlined fontSize="small" sx={{ color: 'text.secondary' }} />
+            </IconButton>
+            <DatePicker
+                open={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                value={dayjs(date)}
+                onChange={(value) => {
+                    if (value && value.isValid()) setDate(value.format('YYYY-MM-DD'));
+                    setPickerOpen(false);
+                }}
+                slotProps={{
+                    // Поле не нужно — календарь открывается кнопкой и якорится на неё.
+                    textField: { sx: { display: 'none' } },
+                    popper: { anchorEl: () => calendarButtonRef.current as HTMLElement, placement: 'bottom-end' },
+                }}
+            />
 
             {/* Кнопка сброса к сегодняшнему дню */}
             {(() => {
