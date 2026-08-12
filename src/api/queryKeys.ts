@@ -259,8 +259,18 @@ export const djangoQueryKeys = {
   },
 
   cashlessMethods: {
-    list: (organizationId: number | null | undefined) =>
-      ["django", "cashless-methods", organizationId ?? null] as const,
+    // Филиал в ключе: список зависит от него (общие способы + способы филиала),
+    // иначе кеш одного филиала подставился бы другому.
+    list: (
+      organizationId: number | null | undefined,
+      branchId?: number | null,
+    ) =>
+      [
+        "django",
+        "cashless-methods",
+        organizationId ?? null,
+        branchId ?? null,
+      ] as const,
   },
 
   scheduling: {

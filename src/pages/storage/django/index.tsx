@@ -327,6 +327,10 @@ const DjangoStoragePage: React.FC = () => {
         () => warehouses.map((w) => ({
             id: w.id,
             label: w.isLinked ? `${w.name} — филиал: ${w.branchName}` : w.name,
+            // Скоуп склада для справочника способов безнала: у подключённого
+            // склада филиал свой, не текущий.
+            organizationId: w.organizationId,
+            branchId: w.branchId,
         })),
         [warehouses],
     );

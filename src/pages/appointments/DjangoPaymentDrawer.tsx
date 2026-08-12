@@ -260,11 +260,18 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
 
   // Справочник способов безнала (карта / Бакай / пост-терминал…). Пока флаг
   // выключен — список пуст, поле не показывается и оплата ведёт себя как раньше.
+  // Скоуп — сам приём, а не активная сессия: суперпользователь может открыть
+  // приём чужой организации, и активный скоуп дал бы чужой список способов.
   const {
     methods: cashlessMethods,
     isLoading: cashlessMethodsLoading,
+    isError: cashlessMethodsFailed,
     isRequired: cashlessMethodRequired,
-  } = useCashlessMethods(open, appointment?.organizationId ?? null);
+    blocksSubmit: cashlessMethodsBlockSubmit,
+  } = useCashlessMethods(open && appointment?.organizationId != null, {
+    organizationId: appointment?.organizationId ?? null,
+    branchId: appointment?.branchId ?? null,
+  });
 
   // Reset
   const prevAppointmentIdRef = React.useRef<number | null>(null);
@@ -523,6 +530,10 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // справочник вообще непустой (иначе выбирать нечего и требовать нечего).
   const cashlessMethodMissing =
     cardNum > 0 && cashlessMethodRequired && !cashlessMethodId;
+  // Справочник ещё не загружен (грузится, упал или ждёт орг-контекст) — безнал
+  // сохранять нельзя. Иначе ошибка бэка превращается в разрешение записать
+  // оплату без способа: список пуст, требовать «нечего».
+  const cashlessMethodPending = cardNum > 0 && cashlessMethodsBlockSubmit;
 
   // Дата кассы: спрашиваем только если дата приёма не сегодня и есть card/insurance.
   const todayIso = dayjs().format("YYYY-MM-DD");
@@ -555,7 +566,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const submitDisabled =
     discountInvalid || overpaid || balanceExceeded || bonusExceeded ||
-    insurerMissing || cashlessMethodMissing || applyBlockedByRefund || applyBlockedByBonus;
+    insurerMissing || cashlessMethodMissing || cashlessMethodPending ||
+    applyBlockedByRefund || applyBlockedByBonus;
 
   // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
   React.useEffect(() => {
@@ -1043,6 +1055,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     onChange={setCashlessMethodId}
                     error={cashlessMethodMissing}
                     loading={cashlessMethodsLoading}
+                    loadFailed={cashlessMethodsFailed}
                     disabled={isCancelled}
                   />
                 )}

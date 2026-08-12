@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -37,6 +38,7 @@ import {
   updateCashlessMethod,
   type DjangoCashlessMethod,
 } from "../../api/cashlessMethods";
+import { getBranches, type DjangoBranch } from "../../api/organization";
 import { parseBackendError } from "../../api/expenses";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
@@ -50,6 +52,8 @@ type EditDialogProps = {
   /** Редактируемый способ; null → режим создания. */
   method: DjangoCashlessMethod | null;
   organizationId?: number;
+  /** Филиалы организации для выбора скоупа при создании. */
+  branches: DjangoBranch[];
   onSaved: () => void;
 };
 
@@ -58,17 +62,20 @@ const CashlessMethodDialog: React.FC<EditDialogProps> = ({
   onClose,
   method,
   organizationId,
+  branches,
   onSaved,
 }) => {
   const { t } = useT("settings");
   const isEdit = method !== null;
   const [name, setName] = React.useState("");
+  const [branchId, setBranchId] = React.useState<number | "">("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
       setName(method?.name ?? "");
+      setBranchId(method?.branchId ?? "");
       setError(null);
       setBusy(false);
     }
@@ -85,9 +92,15 @@ const CashlessMethodDialog: React.FC<EditDialogProps> = ({
     setError(null);
     try {
       if (isEdit) {
+        // branchId не отправляем: бэк отвечает 400 на перенос способа между
+        // филиалами — прошлые операции остались бы с недоступным способом.
         await updateCashlessMethod(method.id, { name: name.trim() });
       } else {
-        await createCashlessMethod({ name: name.trim(), organizationId });
+        await createCashlessMethod({
+          name: name.trim(),
+          branchId: branchId === "" ? null : Number(branchId),
+          organizationId,
+        });
       }
       onSaved();
       onClose();
@@ -127,6 +140,39 @@ const CashlessMethodDialog: React.FC<EditDialogProps> = ({
             inputProps={{ maxLength: 128 }}
             helperText={t("cashlessMethods.dialog.nameHelper")}
           />
+          {/* Скоуп задаётся только при создании: перенос между филиалами
+              не поддерживается (см. handleSubmit). */}
+          {isEdit ? (
+            <TextField
+              label={t("cashlessMethods.dialog.branchLabel")}
+              size="small"
+              fullWidth
+              value={method.branchName ?? t("cashlessMethods.allBranches")}
+              disabled
+              helperText={t("cashlessMethods.dialog.branchLocked")}
+            />
+          ) : (
+            <TextField
+              select
+              label={t("cashlessMethods.dialog.branchLabel")}
+              size="small"
+              fullWidth
+              value={branchId}
+              onChange={(e) => {
+                setError(null);
+                setBranchId(e.target.value === "" ? "" : Number(e.target.value));
+              }}
+              disabled={busy}
+              helperText={t("cashlessMethods.dialog.branchHelper")}
+            >
+              <MenuItem value="">{t("cashlessMethods.allBranches")}</MenuItem>
+              {branches.map((b) => (
+                <MenuItem key={b.id} value={b.id}>
+                  {b.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>
@@ -184,6 +230,15 @@ const CashlessMethodsSettingsPage: React.FC = () => {
       if ([403, 404, 429].includes((err as ApiError)?.status)) return false;
       return count < 1;
     },
+  });
+
+  // Филиалы нужны только для выбора скоупа при создании; сам список способов
+  // приходит с branchName джойном, так что таблица от этого запроса не зависит.
+  const branchesQuery = useQuery({
+    queryKey: [...djangoQueryKeys.organization.branches, orgId ?? null],
+    queryFn: () => getBranches(orgId),
+    enabled: !permLoading && !needsOrg && canManage,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
   const methods = methodsQuery.data ?? [];
@@ -281,6 +336,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>{t("cashlessMethods.columns.name")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{t("cashlessMethods.columns.branch")}</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{t("cashlessMethods.columns.status")}</TableCell>
                   {canManage && (
                     <TableCell sx={{ fontWeight: 600 }} align="right">
@@ -293,6 +349,13 @@ const CashlessMethodsSettingsPage: React.FC = () => {
                 {methods.map((method) => (
                   <TableRow key={method.id} hover>
                     <TableCell>{method.name}</TableCell>
+                    <TableCell>
+                      {method.branchName ?? (
+                        <Typography component="span" variant="body2" color="text.secondary">
+                          {t("cashlessMethods.allBranches")}
+                        </Typography>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Chip
                         label={
@@ -356,6 +419,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
         onClose={() => setDialogOpen(false)}
         method={editing}
         organizationId={orgId}
+        branches={branchesQuery.data ?? []}
         onSaved={invalidate}
       />
     </SettingsLayout>

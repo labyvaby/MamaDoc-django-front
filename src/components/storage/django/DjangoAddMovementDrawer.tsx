@@ -50,6 +50,14 @@ const productFilter = createFilterOptions<MovementProductOption>();
 export type MovementWarehouseOption = {
     id: number;
     label: string;
+    /**
+     * Организация и филиал склада — скоуп для справочника способов безнала.
+     * Берём у самого склада, а не у активной сессии: подключённый склад
+     * (`isLinked`) живёт в другом филиале, и его закупку нельзя оплатить
+     * терминалом текущей кассы.
+     */
+    organizationId?: number | null;
+    branchId?: number | null;
 };
 
 interface DjangoAddMovementDrawerProps {
@@ -272,8 +280,20 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     const {
         methods: cashlessMethods,
         isLoading: cashlessMethodsLoading,
+        isError: cashlessMethodsFailed,
         isRequired: cashlessMethodRequired,
-    } = useCashlessMethods(open && isReceipt);
+        blocksSubmit: cashlessMethodsBlockSubmit,
+    } = useCashlessMethods(open && isReceipt, {
+        organizationId: selectedWarehouse?.organizationId ?? null,
+        branchId: selectedWarehouse?.branchId ?? null,
+    });
+
+    // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
+    useEffect(() => {
+        if (!isReceipt || paymentMethod !== "cashless") return;
+        if (cashlessMethodId !== "" || cashlessMethods.length !== 1) return;
+        setCashlessMethodId(cashlessMethods[0].id);
+    }, [isReceipt, paymentMethod, cashlessMethodId, cashlessMethods]);
 
     // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
     const amountRaw = isReceipt && amount.trim() === "" ? 0 : parseFloat(amount);
@@ -288,10 +308,14 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
             : isReceipt
               ? "Сумма не может быть отрицательной"
               : "Укажите сумму списания",
+        // Непрогруженный справочник тоже блокирует: пустой список из-за ошибки
+        // нельзя трактовать как «способ не нужен».
         cashlessMethodId:
-            isReceipt && paymentMethod === "cashless" && cashlessMethodRequired && !cashlessMethodId
-                ? "Выберите способ безналичной оплаты"
-                : null,
+            isReceipt && paymentMethod === "cashless" && cashlessMethodsBlockSubmit
+                ? "Справочник способов не загружен — обновите страницу"
+                : isReceipt && paymentMethod === "cashless" && cashlessMethodRequired && !cashlessMethodId
+                    ? "Выберите способ безналичной оплаты"
+                    : null,
     });
 
     const handleSubmit = async () => {
@@ -631,6 +655,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                                 onChange={setCashlessMethodId}
                                                 error={Boolean(form.errorOf("cashlessMethodId"))}
                                                 loading={cashlessMethodsLoading}
+                                                loadFailed={cashlessMethodsFailed}
                                                 disabled={loading}
                                             />
                                         </Box>

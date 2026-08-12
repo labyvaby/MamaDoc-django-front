@@ -170,11 +170,18 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
 
   // ── Способы безнала ───────────────────────────────────────────────────────────
   // Пока флаг выключен (справочника нет на бэке) список пуст и поле не видно.
+  // Скоуп — сам расход (его организация и филиал), не активная сессия: иначе
+  // в чужом филиале предложился бы терминал соседней кассы.
   const {
     methods: cashlessMethods,
     isLoading: cashlessMethodsLoading,
+    isError: cashlessMethodsFailed,
     isRequired: cashlessMethodRequired,
-  } = useCashlessMethods(open, organizationId ?? null);
+    blocksSubmit: cashlessMethodsBlockSubmit,
+  } = useCashlessMethods(open, {
+    organizationId: organizationId ?? null,
+    branchId: branchId ?? null,
+  });
 
   const selectedCategory = activeCategories.find((c) => c.id === categoryId) ?? null;
   const needsEmployee =
@@ -443,6 +450,13 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   const cashVal = parseFloat(cashAmount.replace(",", ".")) || 0;
   const cardVal = parseFloat(cardAmount.replace(",", ".")) || 0;
   const total = cashVal + cardVal;
+
+  // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
+  React.useEffect(() => {
+    if (cardVal <= 0 || cashlessMethodId !== "") return;
+    if (cashlessMethods.length !== 1) return;
+    setCashlessMethodId(cashlessMethods[0].id);
+  }, [cardVal, cashlessMethodId, cashlessMethods]);
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
     expenseDate:
@@ -454,10 +468,14 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       cashVal > 0 || cardVal > 0
         ? null
         : "Укажите сумму — наличными или картой",
+    // Пустой список из-за ошибки загрузки — не повод сохранить безнал без
+    // способа, поэтому непрогруженный справочник тоже блокирует сохранение.
     cashlessMethodId:
-      cardVal > 0 && cashlessMethodRequired && !cashlessMethodId
-        ? "Выберите способ безналичной оплаты"
-        : null,
+      cardVal > 0 && cashlessMethodsBlockSubmit
+        ? "Справочник способов не загружен — обновите страницу"
+        : cardVal > 0 && cashlessMethodRequired && !cashlessMethodId
+          ? "Выберите способ безналичной оплаты"
+          : null,
   });
 
   const drawerContent = (
@@ -712,6 +730,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                       onChange={(v) => { setError(null); setCashlessMethodId(v); }}
                       error={Boolean(form.errorOf("cashlessMethodId"))}
                       loading={cashlessMethodsLoading}
+                      loadFailed={cashlessMethodsFailed}
                       disabled={busy}
                     />
                   </Box>

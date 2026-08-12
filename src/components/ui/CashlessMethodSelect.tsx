@@ -13,6 +13,12 @@ export type CashlessMethodSelectProps = {
   error?: boolean;
   disabled?: boolean;
   loading?: boolean;
+  /**
+   * Справочник не загрузился. Пустой список из-за ошибки нельзя показывать как
+   * «справочник пуст»: пользователь решит, что выбирать нечего, а сохранение
+   * при этом заблокировано.
+   */
+  loadFailed?: boolean;
   /** Подпись над полем; по умолчанию — «Способ безналичной оплаты» */
   label?: string;
 };
@@ -31,9 +37,24 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
   error = false,
   disabled = false,
   loading = false,
+  loadFailed = false,
   label,
 }) => {
   const { t } = useT("common");
+
+  const placeholderText = loading
+    ? t("cashlessMethod.loading")
+    : loadFailed
+      ? t("cashlessMethod.loadFailed")
+      : methods.length === 0
+        ? t("cashlessMethod.empty")
+        : t("cashlessMethod.placeholder");
+
+  const helperText = loadFailed
+    ? t("cashlessMethod.loadFailedHint")
+    : error
+      ? t("cashlessMethod.required")
+      : "";
 
   return (
     <Stack spacing={0.5}>
@@ -46,8 +67,8 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
         fullWidth
         value={value}
         onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
-        error={error}
-        helperText={error ? t("cashlessMethod.required") : ""}
+        error={error || loadFailed}
+        helperText={helperText}
         disabled={disabled}
         SelectProps={{
           // Пустое значение — не пустое поле: показываем подсказку, иначе
@@ -58,11 +79,7 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
             if (id === "") {
               return (
                 <Typography component="span" variant="body2" color="text.disabled">
-                  {loading
-                    ? t("cashlessMethod.loading")
-                    : methods.length === 0
-                      ? t("cashlessMethod.empty")
-                      : t("cashlessMethod.placeholder")}
+                  {placeholderText}
                 </Typography>
               );
             }
@@ -72,7 +89,7 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
       >
         {methods.length === 0 && (
           <MenuItem value="" disabled>
-            {loading ? t("cashlessMethod.loading") : t("cashlessMethod.empty")}
+            {placeholderText}
           </MenuItem>
         )}
         {methods.map((m) => (
