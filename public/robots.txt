@@ -4,10 +4,16 @@
 # Ассеты открыты намеренно: без JS и CSS краулер не отрендерит витрину, а без
 # доступа к картинке не соберётся превью ссылки в WhatsApp/Facebook — их
 # краулер (facebookexternalhit) уважает robots.txt.
+#
+# /media/organizations/ — логотипы клиник: бэкенд отдаёт краулерам собственные
+# og-теги и ставит в og:image ссылку на logo_url оттуда. Без этого правила
+# картинка запрещена и карточка ссылки приходит без логотипа. Открыт ровно
+# этот подкаталог: в остальном /media/ лежат документы и фото пациентов.
 User-agent: *
 Disallow: /
 Allow: /book
 Allow: /assets/
+Allow: /media/organizations/
 Allow: /og-image.png
 Allow: /booking-icon.png
 Allow: /favicon.ico
