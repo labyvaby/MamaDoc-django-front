@@ -34,3 +34,5 @@ export { InfoTile } from "./InfoTile";
 export type { InfoTileProps } from "./InfoTile";
 export { DiscountInput } from "./DiscountInput";
 export type { DiscountInputProps, DiscountType } from "./DiscountInput";
+export { CashlessMethodSelect } from "./CashlessMethodSelect";
+export type { CashlessMethodSelectProps } from "./CashlessMethodSelect";

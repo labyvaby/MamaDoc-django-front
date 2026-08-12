@@ -49,6 +49,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // route/API.  There is no staff.banks.view permission in the registry.
   banks: "staff.private.view",
   insurers: "finance.view",
+  cashlessMethods: "finance.view",
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
   tasks: "tasks.manage",

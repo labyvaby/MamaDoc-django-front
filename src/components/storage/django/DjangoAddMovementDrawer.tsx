@@ -25,10 +25,12 @@ import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { motion } from "framer-motion";
-import { cascadeContainer, cascadeItem } from "../../ui";
+import { cascadeContainer, cascadeItem, CashlessMethodSelect } from "../../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import { DjangoStockItem, DjangoStockMovement } from "../../../api/warehouse";
 import { useFormValidation } from "../../../hooks/useFormValidation";
+import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
+import { CASHLESS_METHODS_ENABLED } from "../../../api/cashlessMethods";
 
 const noSpinnersSx = {
     "& input[type=number]": { MozAppearance: "textfield" },
@@ -62,6 +64,7 @@ interface DjangoAddMovementDrawerProps {
         amount?: number,
         paymentMethod?: "cash" | "cashless",
         warehouseId?: number,
+        cashlessMethodId?: number,
     ) => Promise<void>;
     availableProducts?: MovementProductOption[];
     editingMovement?: DjangoStockMovement | null;
@@ -96,6 +99,7 @@ type MovementDraft = {
     amount: string;
     comment: string;
     paymentMethod: "cash" | "cashless";
+    cashlessMethodId: number | "";
     selectedProduct: MovementProductOption | null;
     selectedWarehouse: MovementWarehouseOption | null;
 };
@@ -115,6 +119,7 @@ function isDraftEmpty(d: Omit<MovementDraft, "savedAt">): boolean {
         !d.amount.trim() &&
         !d.comment.trim() &&
         d.paymentMethod === "cash" &&
+        d.cashlessMethodId === "" &&
         !d.selectedProduct &&
         !d.selectedWarehouse
     );
@@ -128,7 +133,8 @@ function sameAsMovementBaseline(
         a.quantity === b.quantity &&
         a.amount === b.amount &&
         a.comment === b.comment &&
-        a.paymentMethod === b.paymentMethod
+        a.paymentMethod === b.paymentMethod &&
+        a.cashlessMethodId === b.cashlessMethodId
     );
 }
 
@@ -149,6 +155,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     const [loading, setLoading] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<MovementProductOption | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<"cash" | "cashless">("cash");
+    const [cashlessMethodId, setCashlessMethodId] = useState<number | "">("");
     const [selectedWarehouse, setSelectedWarehouse] = useState<MovementWarehouseOption | null>(null);
     const [draftRestored, setDraftRestored] = useState(false);
 
@@ -171,6 +178,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                         : "",
                 comment: editingMovement?.comment ?? "",
                 paymentMethod: editingMovement?.paymentMethod ?? "cash",
+                cashlessMethodId: editingMovement?.cashlessMethodId ?? "",
                 selectedProduct: null,
                 selectedWarehouse: warehouses?.find((w) => w.id === defaultWarehouseId) ?? null,
             };
@@ -182,6 +190,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
             setLoading(false);
             setSelectedProduct(null);
             setPaymentMethod(baseline.paymentMethod);
+            setCashlessMethodId(baseline.cashlessMethodId);
             setSelectedWarehouse(baseline.selectedWarehouse);
             setDraftRestored(false);
 
@@ -194,6 +203,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                 setAmount(draft.amount);
                 setComment(draft.comment);
                 setPaymentMethod(draft.paymentMethod);
+                setCashlessMethodId(draft.cashlessMethodId ?? "");
                 setSelectedProduct(draft.selectedProduct);
                 if (draft.selectedWarehouse) setSelectedWarehouse(draft.selectedWarehouse);
                 setDraftRestored(true);
@@ -209,7 +219,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     const flushDraftRef = React.useRef<() => void>(() => {});
     flushDraftRef.current = () => {
         const current: Omit<MovementDraft, "savedAt"> = {
-            quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse,
+            quantity, amount, comment, paymentMethod, cashlessMethodId, selectedProduct, selectedWarehouse,
         };
         const key = movementDraftKeyFor(product, editingMovement);
         const isUnchanged = editingMovement
@@ -226,7 +236,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
         if (!open) return;
         const id = setTimeout(() => flushDraftRef.current(), 400);
         return () => clearTimeout(id);
-    }, [open, product, editingMovement, quantity, amount, comment, paymentMethod, selectedProduct, selectedWarehouse]);
+    }, [open, product, editingMovement, quantity, amount, comment, paymentMethod, cashlessMethodId, selectedProduct, selectedWarehouse]);
 
     const handleClose = () => {
         flushDraftRef.current();
@@ -241,11 +251,13 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
             setAmount(b.amount);
             setComment(b.comment);
             setPaymentMethod(b.paymentMethod);
+            setCashlessMethodId(b.cashlessMethodId);
         } else {
             setQuantity("");
             setAmount("");
             setComment("");
             setPaymentMethod("cash");
+            setCashlessMethodId("");
             setSelectedProduct(null);
             setSelectedWarehouse(warehouses?.find((w) => w.id === defaultWarehouseId) ?? null);
         }
@@ -255,6 +267,13 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     // Приход (закуп) можно проводить по 0 сом — бесплатные/бонусные поставки;
     // пустое поле суммы трактуем как 0. Для списания сумма обязательна.
     const isReceipt = mode === "in" || !!editingMovement;
+
+    // Способы безнала: нужны только приходу, оплаченному безналично.
+    const {
+        methods: cashlessMethods,
+        isLoading: cashlessMethodsLoading,
+        isRequired: cashlessMethodRequired,
+    } = useCashlessMethods(open && isReceipt);
 
     // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
     const amountRaw = isReceipt && amount.trim() === "" ? 0 : parseFloat(amount);
@@ -269,6 +288,10 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
             : isReceipt
               ? "Сумма не может быть отрицательной"
               : "Укажите сумму списания",
+        cashlessMethodId:
+            isReceipt && paymentMethod === "cashless" && cashlessMethodRequired && !cashlessMethodId
+                ? "Выберите способ безналичной оплаты"
+                : null,
     });
 
     const handleSubmit = async () => {
@@ -285,6 +308,9 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                 amt,
                 mode === "in" ? paymentMethod : undefined,
                 selectedWarehouse?.id,
+                CASHLESS_METHODS_ENABLED && mode === "in" && paymentMethod === "cashless" && cashlessMethodId
+                    ? Number(cashlessMethodId)
+                    : undefined,
             );
             clearFormDraft(movementDraftKeyFor(product, editingMovement));
             onClose();
@@ -595,6 +621,20 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                             );
                                         })}
                                     </Stack>
+
+                                    {/* Конкретный способ безнала (карта / Бакай / терминал…) */}
+                                    {CASHLESS_METHODS_ENABLED && paymentMethod === "cashless" && (
+                                        <Box ref={form.anchor("cashlessMethodId")} sx={{ mt: 1.5 }}>
+                                            <CashlessMethodSelect
+                                                methods={cashlessMethods}
+                                                value={cashlessMethodId}
+                                                onChange={setCashlessMethodId}
+                                                error={Boolean(form.errorOf("cashlessMethodId"))}
+                                                loading={cashlessMethodsLoading}
+                                                disabled={loading}
+                                            />
+                                        </Box>
+                                    )}
                                 </Box>
                             )}
 

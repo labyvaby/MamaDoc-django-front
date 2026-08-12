@@ -26,6 +26,9 @@ export interface Expense {
   method: ExpenseMethod;
   cashAmount: string;
   cardAmount: string;
+  /** Способ безнала из справочника — относится к безналичной части расхода */
+  cashlessMethodId?: number | null;
+  cashlessMethodName?: string | null;
   amount: string;
   expenseDate: string;
   description: string;
@@ -70,6 +73,8 @@ export interface CreateExpensePayload {
   name: string;
   cashAmount?: number | string;
   cardAmount?: number | string;
+  /** Способ безнала — шлём только при cardAmount > 0 (см. api/cashlessMethods.ts) */
+  cashlessMethodId?: number;
   expenseDate: string;
   description?: string;
   employeeId?: number | null;

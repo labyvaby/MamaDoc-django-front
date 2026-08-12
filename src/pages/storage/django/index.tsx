@@ -197,6 +197,7 @@ const DjangoStoragePage: React.FC = () => {
         amount?: number,
         paymentMethod?: "cash" | "cashless",
         warehouseIdFromDrawer?: number,
+        cashlessMethodId?: number,
     ) => {
         const targetProductId = editingMovement?.productId ?? selectedItem?.productId ?? selectedProd?.id ?? undefined;
         const newProductName = !targetProductId && selectedProd?.id === null ? selectedProd.label : undefined;
@@ -225,6 +226,7 @@ const DjangoStoragePage: React.FC = () => {
                     totalCost: amount,
                     comment,
                     paymentMethod: paymentMethod ?? "cash",
+                    ...(cashlessMethodId ? { cashlessMethodId } : {}),
                 });
             } else {
                 await createStockMovement({
@@ -236,6 +238,7 @@ const DjangoStoragePage: React.FC = () => {
                     totalCost: amount,
                     comment,
                     paymentMethod,
+                    ...(cashlessMethodId ? { cashlessMethodId } : {}),
                 });
             }
 

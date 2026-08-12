@@ -23,6 +23,7 @@ import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 
@@ -32,6 +33,7 @@ import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 
+import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { useCanChecker } from "../../hooks/useCan";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -115,6 +117,12 @@ const TAB_DEFS: TabDef[] = [
     group: "catalogs",
   },
   {
+    key: "cashlessMethods",
+    to: "/settings/cashless-methods",
+    icon: <CreditCardOutlined fontSize="small" />,
+    group: "catalogs",
+  },
+  {
     key: "expenseCategories",
     to: "/settings/expense-categories",
     icon: <ReceiptLongOutlined fontSize="small" />,
@@ -167,12 +175,15 @@ const TAB_DEFS: TabDef[] = [
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
-  return TAB_DEFS.filter((tab) =>
+  return TAB_DEFS.filter((tab) => {
+    // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
+    // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
+    if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;
     // Уборка на моках: гейт единый с роутом и сайдбаром (см. useModuleGate).
-    tab.key === "cleaning"
+    return tab.key === "cleaning"
       ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])
-      : can(SETTINGS_TAB_PERMISSIONS[tab.key]),
-  );
+      : can(SETTINGS_TAB_PERMISSIONS[tab.key]);
+  });
 }
 
 /**

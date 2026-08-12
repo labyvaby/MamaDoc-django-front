@@ -28,6 +28,10 @@ export interface AppointmentPayment {
   insurerName?: string | null;
   /** Patient policy number (only for method === "insurance") */
   policyNumber?: string;
+  /** Способ безнала из справочника (только для method === "card") */
+  cashlessMethodId?: number | null;
+  /** Название способа безнала — джойном, как insurerName */
+  cashlessMethodName?: string | null;
 }
 
 export interface AppointmentRefund {
@@ -38,6 +42,9 @@ export interface AppointmentRefund {
   reason: string;
   createdById: number;
   createdAt: string;
+  /** Способ безнала наследуется от платежа, по которому идёт возврат */
+  cashlessMethodId?: number | null;
+  cashlessMethodName?: string | null;
 }
 
 export interface PaymentSummary {
@@ -80,6 +87,12 @@ export interface PaymentLineInput {
   insurerId?: number;
   /** Optional patient policy number (insurance only) */
   policyNumber?: string;
+  /**
+   * Способ безналичной оплаты из справочника — только для method === "card".
+   * Шлём, только когда справочник непустой и флаг CASHLESS_METHODS_ENABLED
+   * включён (см. api/cashlessMethods.ts).
+   */
+  cashlessMethodId?: number;
   /**
    * Cash register date — only for method === "card" | "insurance", and only
    * one of two presets: today or the appointment's own date. Omit to default

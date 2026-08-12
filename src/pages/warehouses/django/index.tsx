@@ -282,6 +282,7 @@ const DjangoWarehousesPage: React.FC = () => {
         amount?: number,
         paymentMethod?: "cash" | "cashless",
         warehouseIdFromDrawer?: number,
+        cashlessMethodId?: number,
     ) => {
         const wId = editingMovement?.warehouseId
             || selectedItem?.warehouseId
@@ -307,6 +308,7 @@ const DjangoWarehousesPage: React.FC = () => {
                     totalCost: amount,
                     comment,
                     paymentMethod: paymentMethod ?? "cash",
+                    ...(cashlessMethodId ? { cashlessMethodId } : {}),
                 });
             } else {
                 await createStockMovement({
@@ -318,6 +320,7 @@ const DjangoWarehousesPage: React.FC = () => {
                     totalCost: amount,
                     comment,
                     paymentMethod,
+                    ...(cashlessMethodId ? { cashlessMethodId } : {}),
                 });
             }
             notify?.({ type: "success", message: editingMovement ? "Приход обновлен" : "Успешно" });

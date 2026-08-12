@@ -29,7 +29,7 @@ import "dayjs/locale/ru";
 import { useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { CustomDatePicker, AppBottomSheet } from "../ui";
+import { CustomDatePicker, AppBottomSheet, CashlessMethodSelect } from "../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import {
   prepareImageForUpload,
@@ -48,6 +48,8 @@ import {
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../api/staff";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useCashlessMethods } from "../../hooks/useCashlessMethods";
+import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -80,6 +82,7 @@ type ExpenseDraftValues = {
   name: string;
   cashAmount: string;
   cardAmount: string;
+  cashlessMethodId: number | "";
   description: string;
   employeeId: number | null;
   employeeFullName: string | null;
@@ -139,6 +142,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   const [name, setName] = React.useState("");
   const [cashAmount, setCashAmount] = React.useState("");
   const [cardAmount, setCardAmount] = React.useState("");
+  const [cashlessMethodId, setCashlessMethodId] = React.useState<number | "">("");
   const [description, setDescription] = React.useState("");
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
@@ -163,6 +167,14 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
   const activeCategories = (categoriesQuery.data ?? []).filter((c) => c.isActive);
+
+  // ── Способы безнала ───────────────────────────────────────────────────────────
+  // Пока флаг выключен (справочника нет на бэке) список пуст и поле не видно.
+  const {
+    methods: cashlessMethods,
+    isLoading: cashlessMethodsLoading,
+    isRequired: cashlessMethodRequired,
+  } = useCashlessMethods(open, organizationId ?? null);
 
   const selectedCategory = activeCategories.find((c) => c.id === categoryId) ?? null;
   const needsEmployee =
@@ -208,6 +220,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       setName(draft.name);
       setCashAmount(draft.cashAmount);
       setCardAmount(draft.cardAmount);
+      setCashlessMethodId(draft.cashlessMethodId ?? "");
       setDescription(draft.description);
       setEmployeeInput(draft.employeeFullName ?? "");
       const emp =
@@ -226,6 +239,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       setName(prefill?.name ?? "");
       setCashAmount(prefill?.cashAmount ?? "");
       setCardAmount(prefill?.cardAmount ?? "");
+      setCashlessMethodId("");
       setDescription("");
       setEmployeeInput("");
       const emp = prefill?.employee
@@ -254,6 +268,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       name,
       cashAmount,
       cardAmount,
+      cashlessMethodId,
       description,
       employeeId: employeeValue?.id ?? null,
       employeeFullName: employeeValue?.fullName ?? null,
@@ -269,7 +284,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     if (!open || prefillKey) return;
     const id = setTimeout(() => flushDraftRef.current(), 400);
     return () => clearTimeout(id);
-  }, [open, prefillKey, expenseDate, categoryId, name, cashAmount, cardAmount, description, employeeValue]);
+  }, [open, prefillKey, expenseDate, categoryId, name, cashAmount, cardAmount, cashlessMethodId, description, employeeValue]);
 
   const handleClose = () => {
     if (!prefillKey) flushDraftRef.current();
@@ -283,6 +298,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     setName(prefill?.name ?? "");
     setCashAmount(prefill?.cashAmount ?? "");
     setCardAmount(prefill?.cardAmount ?? "");
+    setCashlessMethodId("");
     setDescription("");
     setEmployeeInput("");
     const emp = prefill?.employee
@@ -389,6 +405,9 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
         name: trimmedName,
         cashAmount: cash > 0 ? cash.toFixed(2) : undefined,
         cardAmount: card > 0 ? card.toFixed(2) : undefined,
+        ...(CASHLESS_METHODS_ENABLED && card > 0 && cashlessMethodId
+          ? { cashlessMethodId: Number(cashlessMethodId) }
+          : {}),
         // Непустая корректная дата гарантирована form.validate() выше.
         expenseDate: expenseDate!.format("YYYY-MM-DD"),
         description: description.trim() || undefined,
@@ -435,6 +454,10 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       cashVal > 0 || cardVal > 0
         ? null
         : "Укажите сумму — наличными или картой",
+    cashlessMethodId:
+      cardVal > 0 && cashlessMethodRequired && !cashlessMethodId
+        ? "Выберите способ безналичной оплаты"
+        : null,
   });
 
   const drawerContent = (
@@ -679,6 +702,20 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                     placeholder="0.00"
                   />
                 </Stack>
+
+                {/* Способ безнала — только когда указана сумма картой. */}
+                {CASHLESS_METHODS_ENABLED && cardVal > 0 && (
+                  <Box ref={form.anchor("cashlessMethodId")}>
+                    <CashlessMethodSelect
+                      methods={cashlessMethods}
+                      value={cashlessMethodId}
+                      onChange={(v) => { setError(null); setCashlessMethodId(v); }}
+                      error={Boolean(form.errorOf("cashlessMethodId"))}
+                      loading={cashlessMethodsLoading}
+                      disabled={busy}
+                    />
+                  </Box>
+                )}
 
                 {total > 0 && (
                   <Stack direction="row" justifyContent="space-between" alignItems="center">

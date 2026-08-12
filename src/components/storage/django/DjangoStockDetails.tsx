@@ -413,6 +413,10 @@ const MovementRow: React.FC<{
                     {move.totalCost !== null && (
                         <Typography variant="caption" fontWeight={600} color="text.primary" sx={{ flexShrink: 0, ml: 1 }}>
                             {new Intl.NumberFormat("ru-RU").format(move.totalCost)} сом
+                            {/* Способ безнала — только когда бэк его отдал (см. api/cashlessMethods.ts). */}
+                            {move.paymentMethod === "cashless" && move.cashlessMethodName
+                                ? ` · ${move.cashlessMethodName}`
+                                : ""}
                         </Typography>
                     )}
                 </Stack>

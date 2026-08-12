@@ -258,6 +258,11 @@ export const djangoQueryKeys = {
       ["django", "insurers", organizationId ?? null] as const,
   },
 
+  cashlessMethods: {
+    list: (organizationId: number | null | undefined) =>
+      ["django", "cashless-methods", organizationId ?? null] as const,
+  },
+
   scheduling: {
     rules: (params: Record<string, unknown>) =>
       ["django", "scheduling", "rules", params] as const,

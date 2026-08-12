@@ -34,13 +34,9 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useT } from "../../i18n/VerticalProvider";
-import { tt } from "../../i18n/t";
+import { paymentMethodLabel } from "../../utility/paymentMethodLabel";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Подпись метода оплаты — из общего словаря (common:paymentMethods). */
-const methodLabel = (method: string): string =>
-  tt(`common:paymentMethods.${method}`, { defaultValue: method });
 
 function parseDecimal(s: string | undefined): number {
   if (!s) return 0;
@@ -193,7 +189,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
               <Stack direction="row" justifyContent="space-between">
                 <Typography variant="caption" color="text.secondary">{t("refunds.method")}</Typography>
                 <Typography variant="caption" fontWeight={600}>
-                  {methodLabel(state.payment.method)}
+                  {paymentMethodLabel(state.payment.method, state.payment.cashlessMethodName)}
                 </Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
@@ -284,7 +280,7 @@ const RefundDialog: React.FC<RefundDialogProps> = ({
         <DialogContent>
           <Typography variant="body2">
             {t("refunds.refundVerb")} <strong>{fmt(amount)} {t("refunds.currency")}</strong> {t("refunds.byPayment")}{" "}
-            <strong>{methodLabel(state.payment.method)}</strong>?
+            <strong>{paymentMethodLabel(state.payment.method, state.payment.cashlessMethodName)}</strong>?
           </Typography>
           <Typography variant="body2" color="text.secondary" mt={0.75}>
             {t("refunds.reasonInline", { reason })}
@@ -394,7 +390,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
               >
                 <Stack spacing={0}>
                   <Typography variant="caption" fontWeight={600}>
-                    {methodLabel(p.method)}
+                    {paymentMethodLabel(p.method, p.cashlessMethodName)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {t("common:currency.amountShort", { amount: p.amount })}
@@ -457,7 +453,7 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
                 >
                   <Stack spacing={0}>
                     <Typography variant="caption" fontWeight={500}>
-                      {methodLabel(r.method)}
+                      {paymentMethodLabel(r.method, r.cashlessMethodName)}
                     </Typography>
                     <Typography variant="caption" color="text.disabled" sx={{ maxWidth: 180 }}>
                       {r.reason}

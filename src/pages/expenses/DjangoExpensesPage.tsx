@@ -349,6 +349,9 @@ const ExpenseDetailCard: React.FC<{
           <Stack spacing={1.5}>
             <DetailRow label="Дата" value={formatDateRu(expense.expenseDate)} />
             <DetailRow label="Категория" value={expense.categoryName ?? "—"} />
+            {cardAmt > 0 && expense.cashlessMethodName && (
+              <DetailRow label="Способ безнала" value={expense.cashlessMethodName} />
+            )}
             {expense.employeeName && (
               <DetailRow label="Получатель" value={expense.employeeName} />
             )}

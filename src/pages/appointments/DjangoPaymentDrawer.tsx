@@ -40,9 +40,17 @@ import {
   type PaymentLineInput,
 } from "../../api/payments";
 import { getInsurers } from "../../api/insurers";
+import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import type { DjangoAppointment } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
-import { DiscountInput, cascadeContainer, cascadeItem } from "../../components/ui";
+import {
+  CashlessMethodSelect,
+  DiscountInput,
+  cascadeContainer,
+  cascadeItem,
+} from "../../components/ui";
+import { useCashlessMethods } from "../../hooks/useCashlessMethods";
+import { paymentMethodLabel } from "../../utility/paymentMethodLabel";
 import {
   djangoQueryKeys,
   DJANGO_DETAIL_STALE_TIME_MS,
@@ -127,10 +135,6 @@ function mapSaveError(raw: string): string {
 
 const CANCELLED_STATUSES = new Set(["canceled", "cancelled", "no_show"]);
 
-/** Подпись метода оплаты — из общего словаря (common:paymentMethods). */
-const methodLabel = (method: string): string =>
-  tt(`common:paymentMethods.${method}`, { defaultValue: method });
-
 // ── черновик формы (localStorage) ────────────────────────────────────────────
 // Защита от случайной потери введённых сумм/полиса/комментария при закрытии
 // дровера. Ключ включает appointmentId, чтобы черновик одной оплаты не
@@ -153,6 +157,7 @@ type PaymentDraft = {
   card: number | "";
   insurance: number | "";
   insurerId: number | "";
+  cashlessMethodId: number | "";
   policyNumber: string;
   balanceStr: string;
   bonusStr: string;
@@ -229,6 +234,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const [card, setCard] = React.useState<number | "">("");
   const [insurance, setInsurance] = React.useState<number | "">("");
   const [insurerId, setInsurerId] = React.useState<number | "">("");
+  const [cashlessMethodId, setCashlessMethodId] = React.useState<number | "">("");
   const [policyNumber, setPolicyNumber] = React.useState("");
   const [balanceStr, setBalanceStr] = React.useState("0");
   const [bonusStr, setBonusStr] = React.useState("0");
@@ -252,6 +258,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   });
   const insurers = insurersQuery.data ?? [];
 
+  // Справочник способов безнала (карта / Бакай / пост-терминал…). Пока флаг
+  // выключен — список пуст, поле не показывается и оплата ведёт себя как раньше.
+  const {
+    methods: cashlessMethods,
+    isLoading: cashlessMethodsLoading,
+    isRequired: cashlessMethodRequired,
+  } = useCashlessMethods(open, appointment?.organizationId ?? null);
+
   // Reset
   const prevAppointmentIdRef = React.useRef<number | null>(null);
   React.useEffect(() => {
@@ -262,6 +276,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCard("");
       setInsurance("");
       setInsurerId("");
+      setCashlessMethodId("");
       setPolicyNumber("");
       setBalanceStr("0");
       setBonusStr("0");
@@ -283,6 +298,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCard("");
       setInsurance("");
       setInsurerId("");
+      setCashlessMethodId("");
       setPolicyNumber("");
       setBalanceStr("0");
       setBonusStr("0");
@@ -305,6 +321,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         setCard(draft.card);
         setInsurance(draft.insurance);
         setInsurerId(draft.insurerId);
+        setCashlessMethodId(draft.cashlessMethodId ?? "");
         setPolicyNumber(draft.policyNumber);
         setBalanceStr(draft.balanceStr);
         setBonusStr(draft.bonusStr);
@@ -354,6 +371,11 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setInsurerId(insurancePayment.insurerId ?? "");
       setPolicyNumber(insurancePayment.policyNumber ?? "");
     }
+    // Способ безнала — из первой card-строки: apply работает по replace-all,
+    // и при повторном сохранении (правка скидки) выбранный способ иначе
+    // молча слетел бы в пустой.
+    const cardPayment = (summary.payments ?? []).find((p) => p.method === "card");
+    setCashlessMethodId(cardPayment?.cashlessMethodId ?? "");
     // Seed the cash-date choice from an existing card/insurance payment, so
     // re-saving (e.g. editing the discount) doesn't silently reset a
     // previously chosen "дата приёма" back to "сегодня" (replace-all semantics
@@ -401,6 +423,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       card,
       insurance,
       insurerId,
+      cashlessMethodId,
       policyNumber,
       balanceStr,
       bonusStr,
@@ -415,7 +438,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     return () => clearTimeout(id);
   }, [
     open, appointmentId, discountStr, cash, card, insurance,
-    insurerId, policyNumber, balanceStr, bonusStr, note,
+    insurerId, cashlessMethodId, policyNumber, balanceStr, bonusStr, note,
   ]);
 
   const handleClose = () => {
@@ -450,6 +473,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       const insurancePayment = (summary.payments ?? []).find((p) => p.method === "insurance");
       setInsurerId(insurancePayment?.insurerId ?? "");
       setPolicyNumber(insurancePayment?.policyNumber ?? "");
+      const cardPayment = (summary.payments ?? []).find((p) => p.method === "card");
+      setCashlessMethodId(cardPayment?.cashlessMethodId ?? "");
       const dateSourcePayment = (summary.payments ?? []).find(
         (p) => (p.method === "card" || p.method === "insurance") && p.cashDate,
       );
@@ -468,6 +493,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCard("");
       setInsurance("");
       setInsurerId("");
+      setCashlessMethodId("");
       setPolicyNumber("");
       setCashDateChoice("today");
       setCashDateConfirmed(false);
@@ -493,6 +519,10 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const bonusExceeded = bonusUsed > availableBonuses + 0.001;
   // Страховка: сумма без выбранной компании не проходит.
   const insurerMissing = insuranceNum > 0 && !insurerId;
+  // Безнал: сумма без выбранного способа не проходит — но только если
+  // справочник вообще непустой (иначе выбирать нечего и требовать нечего).
+  const cashlessMethodMissing =
+    cardNum > 0 && cashlessMethodRequired && !cashlessMethodId;
 
   // Дата кассы: спрашиваем только если дата приёма не сегодня и есть card/insurance.
   const todayIso = dayjs().format("YYYY-MM-DD");
@@ -525,7 +555,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
   const submitDisabled =
     discountInvalid || overpaid || balanceExceeded || bonusExceeded ||
-    insurerMissing || applyBlockedByRefund || applyBlockedByBonus;
+    insurerMissing || cashlessMethodMissing || applyBlockedByRefund || applyBlockedByBonus;
+
+  // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
+  React.useEffect(() => {
+    if (cardNum <= 0 || cashlessMethodId !== "") return;
+    if (cashlessMethods.length !== 1) return;
+    setCashlessMethodId(cashlessMethods[0].id);
+  }, [cardNum, cashlessMethodId, cashlessMethods]);
 
   const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
   const patientName = appointment?.patient?.fullName ?? t("payment.booking");
@@ -608,6 +645,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       payments.push({
         method: "card",
         amount: fmt(cardNum),
+        ...(CASHLESS_METHODS_ENABLED && cashlessMethodId
+          ? { cashlessMethodId: Number(cashlessMethodId) }
+          : {}),
         ...(cashDate ? { cashDate } : {}),
       });
     }
@@ -995,6 +1035,18 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   </Stack>
                 </Stack>
 
+                {/* Способ безнала — только когда безналичная сумма введена. */}
+                {CASHLESS_METHODS_ENABLED && cardNum > 0 && (
+                  <CashlessMethodSelect
+                    methods={cashlessMethods}
+                    value={cashlessMethodId}
+                    onChange={setCashlessMethodId}
+                    error={cashlessMethodMissing}
+                    loading={cashlessMethodsLoading}
+                    disabled={isCancelled}
+                  />
+                )}
+
                 {/* Insurance (страховка): сумма + компания + полис */}
                 <Stack spacing={0.5}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -1264,7 +1316,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               {summary.payments.map((p) => (
                 <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
                   <Typography variant="caption" color="text.secondary">
-                    {methodLabel(p.method)}
+                    {paymentMethodLabel(p.method, p.cashlessMethodName)}
                     {p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""}
                     {p.method === "insurance" && p.policyNumber ? ` (${p.policyNumber})` : ""}
                     {(p.method === "card" || p.method === "insurance") && p.cashDate

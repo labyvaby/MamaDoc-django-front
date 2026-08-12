@@ -52,6 +52,13 @@
     "bonus": "Бонусы",
     "insurance": "Страховка"
   },
+  "cashlessMethod": {
+    "label": "Способ безналичной оплаты",
+    "placeholder": "Выберите способ",
+    "required": "Выберите способ",
+    "loading": "Загрузка…",
+    "empty": "Справочник пуст"
+  },
   "balanceTx": {
     "top_up": "Пополнение",
     "deduct": "Списание",

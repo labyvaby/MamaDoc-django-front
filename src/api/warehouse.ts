@@ -49,6 +49,9 @@ export type DjangoStockMovement = {
     quantity: number;
     moveType: MoveType;
     paymentMethod: "cash" | "cashless" | null;
+    /** Способ безнала из справочника — только при paymentMethod === "cashless" */
+    cashlessMethodId?: number | null;
+    cashlessMethodName?: string | null;
     /** Сумма операции (закупки/списания), сом. */
     totalCost: number | null;
     referenceType: string;
@@ -490,6 +493,8 @@ export async function createStockMovement(data: {
     newProductName?: string;
     totalCost?: number;
     paymentMethod?: "cash" | "cashless";
+    /** Способ безнала — шлём только при paymentMethod === "cashless" */
+    cashlessMethodId?: number;
     comment?: string;
 }): Promise<DjangoStockMovement> {
     const raw = await apiRequest<RawMovement>("/warehouse/movements/", {
@@ -505,6 +510,7 @@ export async function updateStockMovement(
         quantity?: number;
         totalCost?: number;
         paymentMethod?: "cash" | "cashless";
+        cashlessMethodId?: number;
         comment?: string;
     },
 ): Promise<DjangoStockMovement> {

@@ -53,6 +53,7 @@ import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { djangoQueryKeys } from "./api/queryKeys";
 import { ApiError } from "./api/client";
+import { CASHLESS_METHODS_ENABLED } from "./api/cashlessMethods";
 import { djangoDataProvider } from "./config/djangoDataProvider";
 
 // ОПТИМИЗАЦИЯ: Все страницы загружаются через lazy() для code splitting
@@ -106,6 +107,7 @@ const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsS
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
+const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
@@ -741,6 +743,20 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Справочник способов безнала — вместе с флагом
+                                CASHLESS_METHODS_ENABLED (эндпоинта ещё нет). */}
+                            {CASHLESS_METHODS_ENABLED && (
+                              <Route
+                                path="settings/cashless-methods"
+                                element={
+                                  <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.cashlessMethods}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <CashlessMethodsSettingsPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
                             <Route
                               path="settings/expense-categories"
                               element={
