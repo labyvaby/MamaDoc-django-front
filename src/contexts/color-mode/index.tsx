@@ -16,8 +16,10 @@ import {
 import React, {
   PropsWithChildren,
   createContext,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -81,6 +83,36 @@ export const ColorModeContext = createContext<ColorModeContextType>(
 const getSystemMode = (): "light" | "dark" =>
   window?.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
+/** Настройки темы, которые пользователь может переопределить лично. */
+type ThemeField =
+  | "colorScheme"
+  | "primaryColor"
+  | "lightSurface"
+  | "darkSurface"
+  | "cardSkin"
+  | "uiScale"
+  | "sidebarDensity";
+
+/**
+ * Ключ localStorage со списком настроек, которые пользователь менял вручную.
+ *
+ * Палитра организации (`themeConfig`) — это значения по умолчанию для тех, кто
+ * ничего не выбирал сам. Как только сотрудник трогает переключатель, его выбор
+ * становится приоритетнее и больше не перетирается ответом `/auth/me/` (а он
+ * приходит заново при каждом возврате на вкладку).
+ */
+const THEME_OVERRIDES_KEY = "themeOverrides";
+
+const readThemeOverrides = (): Set<ThemeField> => {
+  try {
+    const raw = window.localStorage.getItem(THEME_OVERRIDES_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return new Set(Array.isArray(parsed) ? (parsed as ThemeField[]) : []);
+  } catch {
+    return new Set();
+  }
+};
+
 export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   children,
 }) => {
@@ -118,13 +150,45 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   );
   const [systemMode, setSystemMode] = useState<"light" | "dark">(getSystemMode());
 
-  // При получении или смене палитры организации от бэкенда применяем её.
+  /** Настройки, выбранные пользователем вручную — их палитра организации не трогает. */
+  const overridesRef = useRef<Set<ThemeField>>(readThemeOverrides());
+  /** Последняя применённая палитра организации (по значению, не по ссылке). */
+  const appliedConfigRef = useRef<string | null>(null);
+
+  const markOverride = useCallback((field: ThemeField) => {
+    if (overridesRef.current.has(field)) return;
+    overridesRef.current.add(field);
+    try {
+      window.localStorage.setItem(
+        THEME_OVERRIDES_KEY,
+        JSON.stringify([...overridesRef.current]),
+      );
+    } catch {
+      /* приватный режим/переполнение — переопределение живёт до перезагрузки */
+    }
+  }, []);
+
+  // При получении или смене палитры организации от бэкенда применяем её —
+  // но только к тем настройкам, которые пользователь не менял сам.
   useEffect(() => {
     if (!themeConfig || typeof themeConfig !== "object") return;
-    if (themeConfig.primaryColor && typeof themeConfig.primaryColor === "string") {
+    // `/auth/me/` перезапрашивается при каждом фокусе вкладки и отдаёт новый
+    // объект, поэтому сравниваем по значению: иначе эффект срабатывал бы
+    // вхолостую и сбрасывал состояние на каждом возврате в приложение.
+    const serialized = JSON.stringify(themeConfig);
+    if (appliedConfigRef.current === serialized) return;
+    appliedConfigRef.current = serialized;
+
+    const overrides = overridesRef.current;
+    if (
+      !overrides.has("primaryColor") &&
+      themeConfig.primaryColor &&
+      typeof themeConfig.primaryColor === "string"
+    ) {
       setPrimaryColorState(themeConfig.primaryColor);
     }
     if (
+      !overrides.has("colorScheme") &&
       themeConfig.colorScheme &&
       (themeConfig.colorScheme === "light" ||
         themeConfig.colorScheme === "dark" ||
@@ -132,19 +196,29 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     ) {
       setSchemeState(themeConfig.colorScheme as ColorScheme);
     }
-    if (themeConfig.lightSurface && typeof themeConfig.lightSurface === "string") {
+    if (
+      !overrides.has("lightSurface") &&
+      themeConfig.lightSurface &&
+      typeof themeConfig.lightSurface === "string"
+    ) {
       setLightSurfaceState(themeConfig.lightSurface);
     }
-    if (themeConfig.darkSurface && typeof themeConfig.darkSurface === "string") {
+    if (
+      !overrides.has("darkSurface") &&
+      themeConfig.darkSurface &&
+      typeof themeConfig.darkSurface === "string"
+    ) {
       setDarkSurfaceState(themeConfig.darkSurface);
     }
     if (
+      !overrides.has("cardSkin") &&
       themeConfig.cardSkin &&
       (themeConfig.cardSkin === "bordered" || themeConfig.cardSkin === "shadow")
     ) {
       setCardSkinState(themeConfig.cardSkin as CardSkin);
     }
     if (
+      !overrides.has("uiScale") &&
       themeConfig.uiScale &&
       (themeConfig.uiScale === "compact" ||
         themeConfig.uiScale === "normal" ||
@@ -153,6 +227,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setUiScaleState(themeConfig.uiScale as UiScale);
     }
     if (
+      !overrides.has("sidebarDensity") &&
       themeConfig.sidebarDensity &&
       SIDEBAR_DENSITIES.includes(themeConfig.sidebarDensity as SidebarDensity)
     ) {
@@ -178,34 +253,94 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
 
   const mode: "light" | "dark" = scheme === "system" ? systemMode : scheme;
 
+  // Каждый сеттер помечает свою настройку как выбранную пользователем.
+  const setScheme = useCallback((next: ColorScheme) => {
+    markOverride("colorScheme");
+    setSchemeState(next);
+  }, [markOverride]);
+  const setPrimaryColor = useCallback((next: string) => {
+    markOverride("primaryColor");
+    setPrimaryColorState(next);
+  }, [markOverride]);
+  const setLightSurface = useCallback((next: string) => {
+    markOverride("lightSurface");
+    setLightSurfaceState(next);
+  }, [markOverride]);
+  const setDarkSurface = useCallback((next: string) => {
+    markOverride("darkSurface");
+    setDarkSurfaceState(next);
+  }, [markOverride]);
+  const setCardSkin = useCallback((next: CardSkin) => {
+    markOverride("cardSkin");
+    setCardSkinState(next);
+  }, [markOverride]);
+  const setUiScale = useCallback((next: UiScale) => {
+    markOverride("uiScale");
+    setUiScaleState(next);
+  }, [markOverride]);
+  const setSidebarDensity = useCallback((next: SidebarDensity) => {
+    markOverride("sidebarDensity");
+    setSidebarDensityState(next);
+  }, [markOverride]);
+
+  // Сброс убирает личные переопределения: тема возвращается к значениям по
+  // умолчанию, а палитра организации применится снова при следующем ответе
+  // `/auth/me/` (для админа к этому моменту там уже лежат дефолты, которые
+  // сохранил ThemeCustomizer).
+  const reset = useCallback(() => {
+    overridesRef.current = new Set();
+    appliedConfigRef.current = null;
+    try {
+      window.localStorage.removeItem(THEME_OVERRIDES_KEY);
+    } catch {
+      /* ignore */
+    }
+    setSchemeState("system");
+    setPrimaryColorState(DEFAULT_PRIMARY);
+    setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
+    setDarkSurfaceState(DEFAULT_DARK_SURFACE);
+    setCardSkinState(DEFAULT_CARD_SKIN);
+    setUiScaleState(DEFAULT_UI_SCALE);
+    setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
+  }, []);
+
   const value = useMemo<ColorModeContextType>(
     () => ({
       scheme,
       mode,
-      setScheme: setSchemeState,
+      setScheme,
       primaryColor,
-      setPrimaryColor: setPrimaryColorState,
+      setPrimaryColor,
       lightSurface,
-      setLightSurface: setLightSurfaceState,
+      setLightSurface,
       darkSurface,
-      setDarkSurface: setDarkSurfaceState,
+      setDarkSurface,
       cardSkin,
-      setCardSkin: setCardSkinState,
+      setCardSkin,
       uiScale,
-      setUiScale: setUiScaleState,
+      setUiScale,
       sidebarDensity,
-      setSidebarDensity: setSidebarDensityState,
-      reset: () => {
-        setSchemeState("system");
-        setPrimaryColorState(DEFAULT_PRIMARY);
-        setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
-        setDarkSurfaceState(DEFAULT_DARK_SURFACE);
-        setCardSkinState(DEFAULT_CARD_SKIN);
-        setUiScaleState(DEFAULT_UI_SCALE);
-        setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
-      },
+      setSidebarDensity,
+      reset,
     }),
-    [scheme, mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale, sidebarDensity],
+    [
+      scheme,
+      mode,
+      primaryColor,
+      lightSurface,
+      darkSurface,
+      cardSkin,
+      uiScale,
+      sidebarDensity,
+      setScheme,
+      setPrimaryColor,
+      setLightSurface,
+      setDarkSurface,
+      setCardSkin,
+      setUiScale,
+      setSidebarDensity,
+      reset,
+    ],
   );
 
   const theme = useMemo(() => {
