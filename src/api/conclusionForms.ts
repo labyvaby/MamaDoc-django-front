@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 /**
  * Конструктор бланков заключения.
@@ -340,6 +341,28 @@ export async function deleteConclusionForm(
   await apiRequest<void>(withOrg(`/medical/conclusion-forms/${id}/`, organizationId), {
     method: "DELETE",
   });
+}
+
+/**
+ * POST `/api/medical/conclusion-form-backgrounds/` — загрузка подложки
+ * (multipart, поле `image`), в ответе публичный URL картинки.
+ *
+ * Контракт и обвязка те же, что у `uploadConclusionPhoto`. Пока флаг выключен,
+ * подложка лежит data-URL'ом внутри шаблона в localStorage — отсюда
+ * агрессивное сжатие в конструкторе. С бэкендом картинка уезжает в хранилище,
+ * а в шаблоне остаётся только ссылка, и жать так сильно уже не нужно.
+ */
+export async function uploadConclusionFormBackground(
+  file: File,
+): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append("image", await preparePhotoOrThrow(file));
+  return withUploadErrors(() =>
+    apiRequest<{ url: string }>("/medical/conclusion-form-backgrounds/", {
+      method: "POST",
+      formData: form,
+    }),
+  );
 }
 
 // ── Сборка текста из заполненного бланка ───────────────────────────────────────

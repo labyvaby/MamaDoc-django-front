@@ -52,11 +52,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   cashlessMethods: "finance.view",
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
-  // Собственного кода под бланки на бэке нет — гейтим тем же правом, что и
-  // остальные медицинские справочники, иначе вкладку не увидит никто, кроме
-  // суперпользователя. Отдельный код запрошен тикетом
-  // MamaDoc/backend_ticket_conclusion_form_templates.md.
-  conclusionForms: "medical.diagnoses.manage",
+  // Своё право: бланки настраивает администратор, а читают их врачи по праву
+  // на заключения (medical.conclusions.view) — отдельного права на чтение нет.
+  // Шаблоны ролей выдают этот код там же, где medical.diagnoses.manage, так
+  // что доступ у существующих ролей не меняется.
+  conclusionForms: "medical.conclusion_forms.manage",
   tasks: "tasks.manage",
   cleaning: "cleaning.manage",
   skud: PAGE_PERMISSIONS.attendanceSettings,

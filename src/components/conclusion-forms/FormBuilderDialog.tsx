@@ -37,10 +37,12 @@ import LockOutlined from "@mui/icons-material/LockOutlined";
 
 import { compressImage } from "../../utility/imageCompression";
 import {
+  CONCLUSION_FORMS_BACKEND,
   REQUIRED_BLOCK_KEYS,
   REQUIRED_BLOCK_LABELS,
   emptyFormPayload,
   newFieldId,
+  uploadConclusionFormBackground,
   type ConclusionFormPayload,
   type ConclusionFormTemplate,
   type FormField,
@@ -172,8 +174,18 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
     setBgBusy(true);
     setLocalError(null);
     try {
-      // Пока бэка нет, подложка хранится как data-URL в localStorage, поэтому
-      // жмём заметно сильнее обычной загрузки: у хранилища квота ~5 МБ.
+      // С бэкендом картинка уезжает в хранилище, в шаблоне остаётся ссылка —
+      // ни квоты, ни агрессивного сжатия.
+      if (CONCLUSION_FORMS_BACKEND) {
+        const { url } = await uploadConclusionFormBackground(file);
+        setDraft((prev) => ({
+          ...prev,
+          background: { ...prev.background, imageUrl: url },
+        }));
+        return;
+      }
+      // Без бэка подложка хранится как data-URL в localStorage, поэтому жмём
+      // заметно сильнее обычной загрузки: у хранилища квота ~5 МБ.
       const compressed = await compressImage(file, 1240, 0.62);
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -191,8 +203,12 @@ export const FormBuilderDialog: React.FC<FormBuilderDialogProps> = ({
         ...prev,
         background: { ...prev.background, imageUrl: dataUrl },
       }));
-    } catch {
-      setLocalError("Не удалось обработать изображение — попробуйте другой файл.");
+    } catch (e) {
+      setLocalError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Не удалось обработать изображение — попробуйте другой файл.",
+      );
     } finally {
       setBgBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
