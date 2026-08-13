@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createProgramEnrollment, getPrograms } from "./programs";
+import {
+  createProgramEnrollment,
+  createProgramModuleRecord,
+  getProgramModuleRecords,
+  getPrograms,
+} from "./programs";
 
 function mockJsonFetch(payload: unknown) {
   const fetchMock = vi.fn().mockResolvedValue(
@@ -59,6 +64,36 @@ describe("program API scope", () => {
           startsAt: "2026-08-13T00:00:00.000Z",
           expiresAt: "2027-08-13T23:59:59.999Z",
           source: "manual-ui",
+        }),
+      }),
+    );
+  });
+
+  it("loads and creates module records in the enrollment scope", async () => {
+    const fetchMock = mockJsonFetch({ results: [], count: 0 });
+    const scope = { organizationId: 4, branchId: 14 };
+
+    await getProgramModuleRecords(scope, 21, 7);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/records\/\?organizationId=4&branchId=14&programModuleId=7&limit=200$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+
+    await createProgramModuleRecord(scope, 21, {
+      programModuleId: 7,
+      occurredAt: "2026-08-13T08:00:00.000Z",
+      title: "Контроль роста",
+      data: { heightCm: 71, weightKg: 8.4 },
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/records\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          programModuleId: 7,
+          occurredAt: "2026-08-13T08:00:00.000Z",
+          title: "Контроль роста",
+          data: { heightCm: 71, weightKg: 8.4 },
         }),
       }),
     );
