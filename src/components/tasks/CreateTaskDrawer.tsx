@@ -26,6 +26,7 @@ import {
   getTaskCategories,
   getTaskTemplates,
   uploadTaskAttachment,
+  type Task,
   type TaskPriority,
   type TaskTemplate,
 } from "../../api/tasks";
@@ -62,6 +63,8 @@ type CreateTaskDrawerProps = {
    * существует), поэтому контекст уходит текстом в описание.
    */
   prefill?: { title?: string; description?: string };
+  initialValues?: Partial<FormValues>;
+  onCreated?: (task: Task) => void;
 };
 
 const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
@@ -70,6 +73,8 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   canManage,
   initialFile = null,
   prefill,
+  initialValues,
+  onCreated,
 }) => {
   const invalidateTasks = useInvalidateTasks();
   const orgId = useApiOrgId();
@@ -80,10 +85,6 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   const [autoCategory, setAutoCategory] = React.useState(false);
   /** Пользователь трогал категорию руками — не перезаписывать. */
   const touchedCategory = React.useRef(false);
-
-  React.useEffect(() => {
-    if (open) setFile(initialFile);
-  }, [open, initialFile]);
 
   const {
     control,
@@ -103,15 +104,18 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
     },
   });
 
-  /* Заготовка из другого модуля подставляется один раз на открытие: дальше
-     поля принадлежат пользователю, и перезапись стёрла бы его правки.
-     Категорию не трогаем — её всё равно угадает автокатегория по названию. */
   React.useEffect(() => {
-    if (!open || !prefill) return;
-    if (prefill.title != null) setValue("title", prefill.title);
-    if (prefill.description != null) setValue("description", prefill.description);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    if (!open) return;
+    setFile(initialFile);
+    reset({
+      title: prefill?.title ?? initialValues?.title ?? "",
+      description: prefill?.description ?? initialValues?.description ?? "",
+      categoryId: initialValues?.categoryId ?? "",
+      assigneeId: initialValues?.assigneeId ?? "",
+      due: initialValues?.due ?? { date: null, time: null },
+      priority: initialValues?.priority ?? "",
+    });
+  }, [initialFile, initialValues, open, prefill, reset]);
 
   // Валидацию ведёт react-hook-form; хук нужен только чтобы увести фокус
   // в первое незаполненное поле — у Controller ref не доходит до инпута.
@@ -188,8 +192,9 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       if (file) await uploadTaskAttachment(task.id, file, undefined, orgId);
       return task;
     },
-    onSuccess: () => {
+    onSuccess: (task) => {
       invalidateTasks();
+      onCreated?.(task);
       handleClose();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось создать заявку"),
@@ -211,7 +216,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       onClose={handleClose}
       PaperProps={{
         sx: {
-          width: { xs: 320, sm: 480, md: 520 },
+          width: { xs: "100vw", sm: 480, md: 520 },
           maxWidth: "100vw",
           display: "flex",
           flexDirection: "column",

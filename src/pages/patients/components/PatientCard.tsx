@@ -162,6 +162,7 @@ type Props = {
   onMerge?: () => void;
   onFace?: () => void;
   onOpenProgram?: () => void;
+  showProgramStatus?: boolean;
   lastDateTime?: string;
   lastService?: string;
   lastComplaints?: string;
@@ -175,6 +176,7 @@ const PatientCard: React.FC<Props> = ({
   onMerge,
   onFace,
   onOpenProgram,
+  showProgramStatus = true,
   lastDateTime,
   lastService,
   lastComplaints,
@@ -318,7 +320,7 @@ const PatientCard: React.FC<Props> = ({
                     <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
                       {patient.fullName}
                     </Typography>
-                    {patient.programStatus?.isVip && (
+                    {showProgramStatus && patient.programStatus?.isVip && (
                       <Chip
                         size="small"
                         color="warning"

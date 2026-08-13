@@ -70,6 +70,7 @@ const DjangoPatientsPage: React.FC = () => {
 
   const {
     hasPermission,
+    canAccess,
     isSuperAdmin,
     loading: permLoading,
     activeBranch,
@@ -83,7 +84,7 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
-  const canViewPrograms = isSuperAdmin() || hasPermission("enrollments.view");
+  const canViewPrograms = canAccess("enrollments.view");
   const defaultBranchId = activeBranch?.id ?? null;
 
   // ── List data ──────────────────────────────────────────────────────────────
@@ -361,6 +362,7 @@ const DjangoPatientsPage: React.FC = () => {
       onTopUp={canManageFinance ? () => setTopUpOpen(true) : undefined}
       onMerge={canUpdate ? handleMerge : undefined}
       onFace={canUpdate ? handleFace : undefined}
+      showProgramStatus={canViewPrograms}
       onOpenProgram={
         canViewPrograms && (selected?.programStatus?.activeCount ?? 0) > 0
           ? () => navigate(`/patients/${selected!.id}/program`)

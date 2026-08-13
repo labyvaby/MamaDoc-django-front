@@ -47,6 +47,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
 import { ConnectProgramDialog } from "./ConnectProgramDialog";
+import { InteractionHistory } from "./InteractionHistory";
 import { ModuleRecords } from "./ModuleRecords";
 
 type ViewKey = "overview" | `module:${number}`;
@@ -166,13 +167,15 @@ const PatientProgramPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const scope = useActiveScope();
-  const { hasPermission, isSuperAdmin } = usePermissions();
+  const { canAccess } = usePermissions();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [selectedEnrollmentId, setSelectedEnrollmentId] = React.useState<number | null>(null);
   const [view, setView] = React.useState<ViewKey>("overview");
   const [connectOpen, setConnectOpen] = React.useState(false);
-  const canManageEnrollments = isSuperAdmin() || hasPermission("enrollments.manage");
+  const canManageEnrollments = canAccess("enrollments.manage");
+  const canCreateTask = canAccess("tasks.create");
+  const canManageTasks = canAccess("tasks.manage");
 
   usePageTitle("Книжка клиента");
 
@@ -370,11 +373,12 @@ const PatientProgramPage: React.FC = () => {
 
             <Box sx={{ minWidth: 0 }}>
               {view === "overview" && (
-                <AppCard
-                  variant="outlined"
-                  title="Разделы программы"
-                  subheader="Состав определяется настройками организации, филиала и подключения клиента"
-                >
+                <Stack gap={1.75}>
+                  <AppCard
+                    variant="outlined"
+                    title="Разделы программы"
+                    subheader="Состав определяется настройками организации, филиала и подключения клиента"
+                  >
                   {modules.length === 0 ? (
                     <ListEmptyState
                       icon={<HealthAndSafetyOutlined />}
@@ -436,7 +440,17 @@ const PatientProgramPage: React.FC = () => {
                       </Typography>
                     </Box>
                   </Stack>
-                </AppCard>
+                  </AppCard>
+                  <InteractionHistory
+                    enrollmentId={selectedEnrollment.id}
+                    patientName={patient.fullName}
+                    patientPhone={patient.phone}
+                    scope={scope}
+                    canManage={canManageEnrollments}
+                    canCreateTask={canCreateTask}
+                    canManageTasks={canManageTasks}
+                  />
+                </Stack>
               )}
 
               {selectedModule && (

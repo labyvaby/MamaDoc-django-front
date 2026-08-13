@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProgramEnrollment,
   createProgramModuleRecord,
+  createPatientInteraction,
+  getPatientInteractions,
   getProgramModuleRecords,
   getPrograms,
 } from "./programs";
@@ -94,6 +96,38 @@ describe("program API scope", () => {
           occurredAt: "2026-08-13T08:00:00.000Z",
           title: "Контроль роста",
           data: { heightCm: 71, weightKg: 8.4 },
+        }),
+      }),
+    );
+  });
+
+  it("loads and creates patient interactions in the enrollment scope", async () => {
+    const fetchMock = mockJsonFetch({ results: [], count: 0 });
+    const scope = { organizationId: 4, branchId: 14 };
+
+    await getPatientInteractions(scope, 21);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/interactions\/\?organizationId=4&branchId=14&limit=200$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+
+    await createPatientInteraction(scope, 21, {
+      occurredAt: "2026-08-13T10:00:00.000Z",
+      channel: "call",
+      outcome: "no_answer",
+      subject: "Напоминание о вакцинации",
+      notes: "Не взял трубку",
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/interactions\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          occurredAt: "2026-08-13T10:00:00.000Z",
+          channel: "call",
+          outcome: "no_answer",
+          subject: "Напоминание о вакцинации",
+          notes: "Не взял трубку",
         }),
       }),
     );
