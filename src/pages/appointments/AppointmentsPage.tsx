@@ -307,7 +307,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
 
   // DateNavigation (shared with the original Регистратура) works in string dates
   const dateStr = date.format("YYYY-MM-DD");
-  const handleSetDate = React.useCallback((s: string) => setDate(dayjs(s)), []);
+  const handleSetDate = React.useCallback(
+    (s: string) => {
+      if (s !== dateStr) setDoctorFilter(null);
+      setDate(dayjs(s));
+    },
+    [dateStr, setDoctorFilter],
+  );
 
   const [createOpen, setCreateOpen] = React.useState(false);
   // Вид регистратуры: список приёмов или свободные окна врачей (сохраняется в localStorage).
