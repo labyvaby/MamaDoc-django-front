@@ -323,7 +323,12 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
         module={module}
         scope={scope}
         onClose={() => setDrawerOpen(false)}
-        onCreated={() => void queryClient.invalidateQueries({ queryKey })}
+        onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey });
+          void queryClient.invalidateQueries({
+            queryKey: djangoQueryKeys.programs.upcoming(enrollmentId, scope),
+          });
+        }}
       />
     </>
   );
