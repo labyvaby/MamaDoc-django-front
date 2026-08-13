@@ -3,17 +3,15 @@ import {
   Alert,
   Box,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
+  Divider,
+  Drawer,
+  IconButton,
   MenuItem,
   Stack,
   TextField,
   Typography,
-  useMediaQuery,
-  useTheme,
 } from "@mui/material";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
@@ -49,8 +47,6 @@ export const ConnectProgramDialog: React.FC<ConnectProgramDialogProps> = ({
   onClose,
   onConnected,
 }) => {
-  const theme = useTheme();
-  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
   const { enqueueSnackbar } = useSnackbar();
   const { activeOrganization, activeBranch } = usePermissions();
   const [programId, setProgramId] = React.useState<number | "">("");
@@ -121,10 +117,34 @@ export const ConnectProgramDialog: React.FC<ConnectProgramDialogProps> = ({
   const error = programsQuery.error || branchesQuery.error || connectMutation.error;
 
   return (
-    <Dialog open={open} onClose={connectMutation.isPending ? undefined : onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
-      <DialogTitle sx={{ fontWeight: 700 }}>Подключить программу</DialogTitle>
-      <DialogContent>
-        <Stack gap={2} sx={{ pt: 0.75 }}>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={connectMutation.isPending ? undefined : onClose}
+      PaperProps={{
+        sx: {
+          width: { xs: "100vw", sm: 460 },
+          maxWidth: "100vw",
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
+        <Box>
+          <Typography variant="h6" fontWeight={700}>Подключить программу</Typography>
+          <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ maxWidth: 330 }}>
+            {patientName}
+          </Typography>
+        </Box>
+        <IconButton onClick={connectMutation.isPending ? undefined : onClose} aria-label="Закрыть" edge="end">
+          <CloseOutlined />
+        </IconButton>
+      </Stack>
+      <Divider />
+
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 2.5, py: 2 }}>
+        <Stack gap={2}>
           <Box>
             <Typography variant="caption" color="text.secondary">Клиент</Typography>
             <Typography variant="body1" fontWeight={600}>{patientName}</Typography>
@@ -190,8 +210,10 @@ export const ConnectProgramDialog: React.FC<ConnectProgramDialogProps> = ({
             />
           </Stack>
         </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+      </Box>
+
+      <Divider />
+      <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ px: 2.5, py: 1.5 }}>
         <AppButton onClick={onClose} disabled={connectMutation.isPending}>Отмена</AppButton>
         <AppButton
           variant="contained"
@@ -201,8 +223,8 @@ export const ConnectProgramDialog: React.FC<ConnectProgramDialogProps> = ({
         >
           Подключить
         </AppButton>
-      </DialogActions>
-    </Dialog>
+      </Stack>
+    </Drawer>
   );
 };
 
