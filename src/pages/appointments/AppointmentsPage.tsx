@@ -467,8 +467,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // поведению (окна без ограничения по графику), retry не нужен.
   const schedOrgId = isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined;
   const scheduleRulesQuery = useQuery({
-    queryKey: djangoQueryKeys.scheduling.rules({ employeeId: null, orgId: schedOrgId ?? null }),
-    queryFn: ({ signal }) => getScheduleRules({ organizationId: schedOrgId }, signal),
+    queryKey: djangoQueryKeys.scheduling.rules({
+      employeeId: null,
+      orgId: schedOrgId ?? null,
+      branchId: branchId ?? null,
+    }),
+    queryFn: ({ signal }) => getScheduleRules({ organizationId: schedOrgId, branchId }, signal),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     retry: false,
   });
@@ -477,10 +481,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       dateFrom: dateStr,
       dateTo: dateStr,
       orgId: schedOrgId ?? null,
+      branchId: branchId ?? null,
     }),
     queryFn: ({ signal }) =>
       getScheduleExceptions(
-        { dateFrom: dateStr, dateTo: dateStr, organizationId: schedOrgId },
+        { dateFrom: dateStr, dateTo: dateStr, organizationId: schedOrgId, branchId },
         signal,
       ),
     staleTime: DJANGO_LIST_STALE_TIME_MS,
@@ -488,15 +493,22 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   });
   const dayShifts = React.useMemo(() => {
     const allRules = scheduleRulesQuery.data;
-    if (!allRules || allRules.length === 0) return null;
+    // Разовая смена (`extra`) может быть единственным расписанием сотрудника:
+    // в этом случае правил нет, но исключения всё равно должны ограничивать окна.
+    if (!allRules) return null;
     // Правило другого филиала не даёт окон в текущем (branchId=null — общие).
     const rules = branchId
       ? allRules.filter((r) => r.branchId == null || r.branchId === branchId)
       : allRules;
+    // Защитный фильтр: разовая смена из другого филиала не должна попадать
+    // в список даже при старом/закэшированном ответе API.
+    const exceptions = (scheduleExceptionsQuery.data ?? []).filter(
+      (e) => branchId == null || e.branchId == null || e.branchId === branchId,
+    );
     const occurrences = computeDayOccurrences(
       date,
       rules,
-      scheduleExceptionsQuery.data ?? [],
+      exceptions,
     );
     const segments = new Map<number, { start: string; end: string }[]>();
     const employeeNames = new Map<number, string>();
@@ -514,6 +526,11 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       if (r.isActive && !date.isBefore(r.dateFrom, "day") && !date.isAfter(r.dateTo, "day")) {
         scheduledIds.add(r.employeeId);
       }
+    }
+    // Рабочие исключения (`extra`/`override`) также означают, что расписание
+    // сотрудника ведётся в этот день. Это важно для extra без базового правила.
+    for (const o of occurrences) {
+      scheduledIds.add(o.employeeId);
     }
     return { scheduledIds, segments, employeeNames };
   }, [scheduleRulesQuery.data, scheduleExceptionsQuery.data, date, branchId]);

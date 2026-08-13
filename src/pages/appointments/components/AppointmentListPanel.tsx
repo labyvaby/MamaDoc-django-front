@@ -621,6 +621,29 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         return shiftSegments.some((s) => hm >= s.start && hm < s.end);
       };
 
+      // Если первый приём начинается позже смены, показать первое доступное
+      // окно перед ним. Раньше свободные окна строились только после приёма,
+      // поэтому при смене 18:00–23:55 и приёме в 19:00 терялось окно 18:00.
+      if (sorted.length > 0) {
+        const first = sorted[0];
+        const firstStart = dayjs(first.scheduledAt);
+        if (firstStart.isAfter(dayjs())) {
+          for (const seg of shiftSegments ?? []) {
+            if (seg.start >= firstStart.format("HH:mm")) continue;
+            const clippedEnd = seg.end < firstStart.format("HH:mm") ? seg.end : firstStart.format("HH:mm");
+            const slot = firstFreeSlotInSegment(date ?? firstStart, { start: seg.start, end: clippedEnd });
+            if (!slot || !slot.isBefore(firstStart) || isCoveredByActive(slot.valueOf())) continue;
+            renderItems.push({
+              isGap: true,
+              id: `gap-before-${first.id}-${slot.format("HH:mm")}`,
+              timeStr: slot.format("HH:mm"),
+              dateIso: slot.format("YYYY-MM-DDTHH:mm"),
+              employeeId: groupEmployeeId,
+            });
+          }
+        }
+      }
+
       for (let i = 0; i < sorted.length; i++) {
         const current = sorted[i];
         const start = dayjs(current.scheduledAt);
