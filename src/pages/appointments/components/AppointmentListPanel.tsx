@@ -631,15 +631,20 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           for (const seg of shiftSegments ?? []) {
             if (seg.start >= firstStart.format("HH:mm")) continue;
             const clippedEnd = seg.end < firstStart.format("HH:mm") ? seg.end : firstStart.format("HH:mm");
-            const slot = firstFreeSlotInSegment(date ?? firstStart, { start: seg.start, end: clippedEnd });
-            if (!slot || !slot.isBefore(firstStart) || isCoveredByActive(slot.valueOf())) continue;
-            renderItems.push({
-              isGap: true,
-              id: `gap-before-${first.id}-${slot.format("HH:mm")}`,
-              timeStr: slot.format("HH:mm"),
-              dateIso: slot.format("YYYY-MM-DDTHH:mm"),
-              employeeId: groupEmployeeId,
-            });
+            let slot = firstFreeSlotInSegment(date ?? firstStart, { start: seg.start, end: clippedEnd });
+            while (slot && slot.isBefore(firstStart)) {
+              if (!isCoveredByActive(slot.valueOf())) {
+                renderItems.push({
+                  isGap: true,
+                  id: `gap-before-${first.id}-${slot.format("HH:mm")}`,
+                  timeStr: slot.format("HH:mm"),
+                  dateIso: slot.format("YYYY-MM-DDTHH:mm"),
+                  employeeId: groupEmployeeId,
+                });
+              }
+              const nextSlot = slot.add(30, "minute");
+              slot = nextSlot.isBefore(firstStart) ? nextSlot : null;
+            }
           }
         }
       }
