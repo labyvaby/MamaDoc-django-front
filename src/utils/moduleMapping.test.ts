@@ -7,5 +7,6 @@ describe("permission module mapping", () => {
     expect(getModuleCodeForPermission("programs.view")).toBe("programs");
     expect(getModuleCodeForPermission("enrollments.view")).toBe("programs");
     expect(getModuleCodeForPermission("enrollments.manage")).toBe("programs");
+    expect(getModuleCodeForPermission("notifications.manage")).toBe("notifications");
   });
 });
