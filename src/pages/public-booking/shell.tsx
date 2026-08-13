@@ -21,7 +21,8 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import { useBookingTheme, BOOKING_PRIMARY, BORDER, MUTED } from "./theme";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
-import { useBookingNav, useBookingOrgSlug } from "./orgSlug";
+import { bookPath, useBookingNav, useBookingOrgSlug } from "./orgSlug";
+import { InstallAppButton, useAppManifest } from "../../pwa";
 import { BOOKING_ORG_SLUG, type OrganizationDetail } from "../../api/publicBooking";
 import { formatPhone, monogram, telHref } from "./format";
 import { usePatientSession } from "./PatientSession";
@@ -295,9 +296,27 @@ const HeaderActions: React.FC = () => {
   const [authOpen, setAuthOpen] = React.useState(false);
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
 
+  // Иконка витрины на главный экран телефона: пациент возвращается к записи
+  // одним касанием, не разыскивая ссылку в переписке. На телефоне подпись
+  // прячем — в шапке уже логотип клиники и вход.
+  const installButton = (
+    <InstallAppButton
+      compact
+      responsiveLabel
+      sx={{
+        borderRadius: 99,
+        fontWeight: 600,
+        borderColor: "divider",
+        color: "text.primary",
+        "&:hover": { borderColor: BOOKING_PRIMARY, bgcolor: "transparent" },
+      }}
+    />
+  );
+
   if (BOOKING_AUTH_ENABLED) {
     return (
       <Stack direction="row" alignItems="center" spacing={1.5} sx={{ flexShrink: 0 }}>
+        {installButton}
         {session ? (
           <>
             <Stack
@@ -403,32 +422,35 @@ const HeaderActions: React.FC = () => {
     );
   }
 
-  if (!phone) return null;
+  if (!phone) return installButton;
   return (
-    <Button
-      href={telHref(phone)}
-      variant="outlined"
-      size="small"
-      startIcon={<PhoneOutlined />}
-      sx={{
-        flexShrink: 0,
-        borderRadius: 99,
-        px: { xs: 1.5, sm: 2 },
-        fontWeight: 600,
-        whiteSpace: "nowrap",
-        borderColor: "divider",
-        color: "text.primary",
-        "&:hover": { borderColor: "primary.main", bgcolor: "transparent" },
-      }}
-    >
-      {/* Номер целиком — только там, где он не поджимает название. */}
-      <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
-        {formatPhone(phone)}
-      </Box>
-      <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>
-        {t("callClinic")}
-      </Box>
-    </Button>
+    <Stack direction="row" alignItems="center" spacing={1.5} sx={{ flexShrink: 0 }}>
+      {installButton}
+      <Button
+        href={telHref(phone)}
+        variant="outlined"
+        size="small"
+        startIcon={<PhoneOutlined />}
+        sx={{
+          flexShrink: 0,
+          borderRadius: 99,
+          px: { xs: 1.5, sm: 2 },
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          borderColor: "divider",
+          color: "text.primary",
+          "&:hover": { borderColor: "primary.main", bgcolor: "transparent" },
+        }}
+      >
+        {/* Номер целиком — только там, где он не поджимает название. */}
+        <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
+          {formatPhone(phone)}
+        </Box>
+        <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>
+          {t("callClinic")}
+        </Box>
+      </Button>
+    </Stack>
   );
 };
 
@@ -505,6 +527,7 @@ export const PublicBookingShell: React.FC<
   const theme = useBookingTheme();
   const { organization } = useBookingOrg();
   const brand = useBookingBrand(organization);
+  const orgSlug = useBookingOrgSlug();
 
   // «Иванов Иван — Онлайн-запись — Мама Доктор»: на странице врача без слова
   // «запись» вкладка не объясняет, куда попал гость.
@@ -513,6 +536,19 @@ export const PublicBookingShell: React.FC<
     .join(" — ");
   usePageMeta(title, t("metaDescription"), brand.logoUrl);
   useFavicon(brand.iconUrl);
+
+  // Иконка витрины на главном экране телефона: имя и логотип — клиники из
+  // адреса, запуск — сразу на её страницу записи (`?org=` внутри `bookPath`).
+  // Пока организация грузится, обходимся нейтральным «Онлайн-запись»: браузер
+  // проверяет установку почти сразу после загрузки страницы.
+  useAppManifest({
+    name: organization ? `${t("brandTitle")} — ${organization.name}` : t("brandTitle"),
+    shortName: organization?.name || t("brandTitle"),
+    startUrl: bookPath("/book", orgSlug),
+    iconUrl: brand.iconUrl,
+    themeColor: BOOKING_PRIMARY,
+    backgroundColor: theme.palette.background.default,
+  });
 
   return (
     <ThemeProvider theme={theme}>

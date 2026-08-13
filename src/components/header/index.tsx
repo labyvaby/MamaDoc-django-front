@@ -31,6 +31,7 @@ import type { ActiveEmployee } from "../../api/auth";
 import { Employee } from "../../features/employees/types";
 import { UserAvatar } from "../ui";
 import { subtleBg } from "../../theme";
+import { InstallAppButton } from "../../pwa";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -405,6 +406,15 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
                 >
                   Открыть профиль
                 </Button>
+                {/* Иконка CRM на главный экран — тут её ищут чаще, чем в
+                    профиле: модалка открывается одним касанием аватара. */}
+                <InstallAppButton
+                  variant="outlined"
+                  size="medium"
+                  fullWidth
+                  showWithoutPromptOnDesktop
+                  sx={{ mt: 1 }}
+                />
                 <Button
                   variant="text"
                   fullWidth

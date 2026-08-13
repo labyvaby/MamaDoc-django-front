@@ -10,8 +10,14 @@ dayjs.tz.setDefault("Asia/Bishkek");
 
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { initInstallPrompt, registerServiceWorker } from "./pwa";
 
 import { BrowserRouter } from "react-router";
+
+// Установка приложения на телефон. Приглашение браузера приходит раньше, чем
+// отрисуется React, поэтому перехватываем его до рендера (см. src/pwa).
+initInstallPrompt();
+registerServiceWorker();
 
 const container = document.getElementById("root") as HTMLElement;
 const root = createRoot(container);
