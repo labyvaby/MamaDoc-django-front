@@ -14,6 +14,7 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Chip,
   Stack,
   Tooltip,
   Typography,
@@ -33,6 +34,8 @@ import MoreVertIcon from "@mui/icons-material/MoreVertOutlined";
 import CameraAltOutlined from "@mui/icons-material/CameraAltOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
+import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 
 import { AppCard, InfoTile, UserAvatar, ListEmptyState } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
@@ -158,6 +161,7 @@ type Props = {
   onTopUp?: () => void;
   onMerge?: () => void;
   onFace?: () => void;
+  onOpenProgram?: () => void;
   lastDateTime?: string;
   lastService?: string;
   lastComplaints?: string;
@@ -170,6 +174,7 @@ const PatientCard: React.FC<Props> = ({
   onTopUp,
   onMerge,
   onFace,
+  onOpenProgram,
   lastDateTime,
   lastService,
   lastComplaints,
@@ -187,7 +192,7 @@ const PatientCard: React.FC<Props> = ({
               <PersonOutlineOutlined color="primary" />
               <Typography variant="h6">{t("card.title")}</Typography>
             </Stack>
-            {patient && (onTopUp || onEdit || onMerge || onFace) && (
+            {patient && (onTopUp || onEdit || onMerge || onFace || onOpenProgram) && (
               <>
                 {/* Колонка карточки узкая (≈260–460px) — текстовые кнопки в неё не влезали
                     и рвали шапку на две строки. Действия — компактными иконками с подсказками. */}
@@ -196,6 +201,13 @@ const PatientCard: React.FC<Props> = ({
                   spacing={0.25}
                   sx={{ display: { xs: "none", md: "flex" }, flexShrink: 0 }}
                 >
+                  {onOpenProgram && (
+                    <Tooltip title={t("card.actions.openProgram")}>
+                      <IconButton size="small" color="primary" onClick={onOpenProgram}>
+                        <MenuBookOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                   {onTopUp && (
                     <Tooltip title={t("card.actions.topUpAccount")}>
                       <IconButton size="small" color="success" onClick={onTopUp}>
@@ -244,6 +256,12 @@ const PatientCard: React.FC<Props> = ({
                     anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                     transformOrigin={{ vertical: "top", horizontal: "right" }}
                   >
+                    {onOpenProgram && (
+                      <MenuItem onClick={() => { setMenuAnchor(null); onOpenProgram(); }}>
+                        <ListItemIcon><MenuBookOutlined fontSize="small" color="primary" /></ListItemIcon>
+                        <ListItemText>{t("card.actions.openProgram")}</ListItemText>
+                      </MenuItem>
+                    )}
                     {onEdit && (
                       <MenuItem onClick={() => { setMenuAnchor(null); onEdit(); }}>
                         <ListItemIcon><EditOutlined fontSize="small" /></ListItemIcon>
@@ -296,9 +314,20 @@ const PatientCard: React.FC<Props> = ({
               <Stack direction="row" alignItems="center" spacing={2}>
                 <UserAvatar src={patient.photoUrl} name={patient.fullName} size={64} sx={{ borderRadius: "18px", flexShrink: 0 }} />
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
-                    {patient.fullName}
-                  </Typography>
+                  <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap">
+                    <Typography variant="h6" fontWeight={700} noWrap sx={{ letterSpacing: -0.2, lineHeight: 1.25 }}>
+                      {patient.fullName}
+                    </Typography>
+                    {patient.programStatus?.isVip && (
+                      <Chip
+                        size="small"
+                        color="warning"
+                        icon={<WorkspacePremiumOutlined />}
+                        label={t("card.vip")}
+                        sx={{ height: 24, fontWeight: 700 }}
+                      />
+                    )}
+                  </Stack>
 
                   {patient.phone ? (
                     <Link

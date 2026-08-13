@@ -56,8 +56,10 @@
       "merge": "Объединить",
       "mergeWithDuplicate": "Объединить с дублем",
       "camera": "Камера",
-      "edit": "Редактировать"
+      "edit": "Редактировать",
+      "openProgram": "Открыть книжку"
     },
+    "vip": "VIP",
     "blacklistTitle": "В чёрном списке",
     "blacklistNoReason": "Причина не указана",
     "inactive": "{{patient.nom, capitalize}} помечен как неактивный",
