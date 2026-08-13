@@ -10,6 +10,8 @@ import {
   getProgramModuleRecords,
   getPrograms,
   getUpcomingProgramRecords,
+  transitionProgramEnrollment,
+  updateProgramModuleRecord,
 } from "./programs";
 
 function mockJsonFetch(payload: unknown) {
@@ -169,6 +171,26 @@ describe("program API scope", () => {
           scheduledFor: "2026-08-19T04:00:00.000Z",
         }),
       }),
+    );
+  });
+
+  it("updates a record and transitions an enrollment", async () => {
+    const fetchMock = mockJsonFetch({ id: 8 });
+    const scope = { organizationId: 4, branchId: 14 };
+
+    await updateProgramModuleRecord(scope, 21, 8, {
+      title: "Обновлённая запись",
+      status: "completed",
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/records\/8\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ method: "PATCH" }),
+    );
+
+    await transitionProgramEnrollment(scope, 21, "pause");
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/pause\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ method: "POST" }),
     );
   });
 });
