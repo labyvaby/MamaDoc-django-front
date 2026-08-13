@@ -484,7 +484,10 @@ function App() {
                         <Route
                           path="patients/:patientId/program"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.patientPrograms}>
+                            <RequirePermission
+                              permission={PAGE_PERMISSIONS.patientPrograms}
+                              fallback={<Navigate to="/patients" replace />}
+                            >
                               <Suspense fallback={<LinearProgress />}>
                                 <PatientProgramPage />
                               </Suspense>

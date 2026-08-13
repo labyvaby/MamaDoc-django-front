@@ -26,6 +26,7 @@ import {
   getTaskCategories,
   getTaskTemplates,
   uploadTaskAttachment,
+  type Task,
   type TaskPriority,
   type TaskTemplate,
 } from "../../api/tasks";
@@ -56,6 +57,8 @@ type CreateTaskDrawerProps = {
   canManage: boolean;
   /** Фото-первый флоу: файл, снятый до открытия формы (FAB-камера). */
   initialFile?: File | null;
+  initialValues?: Partial<FormValues>;
+  onCreated?: (task: Task) => void;
 };
 
 const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
@@ -63,6 +66,8 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   onClose,
   canManage,
   initialFile = null,
+  initialValues,
+  onCreated,
 }) => {
   const invalidateTasks = useInvalidateTasks();
   const orgId = useApiOrgId();
@@ -73,10 +78,6 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   const [autoCategory, setAutoCategory] = React.useState(false);
   /** Пользователь трогал категорию руками — не перезаписывать. */
   const touchedCategory = React.useRef(false);
-
-  React.useEffect(() => {
-    if (open) setFile(initialFile);
-  }, [open, initialFile]);
 
   const {
     control,
@@ -95,6 +96,19 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       priority: "",
     },
   });
+
+  React.useEffect(() => {
+    if (!open) return;
+    setFile(initialFile);
+    reset({
+      title: initialValues?.title ?? "",
+      description: initialValues?.description ?? "",
+      categoryId: initialValues?.categoryId ?? "",
+      assigneeId: initialValues?.assigneeId ?? "",
+      due: initialValues?.due ?? { date: null, time: null },
+      priority: initialValues?.priority ?? "",
+    });
+  }, [initialFile, initialValues, open, reset]);
 
   // Валидацию ведёт react-hook-form; хук нужен только чтобы увести фокус
   // в первое незаполненное поле — у Controller ref не доходит до инпута.
@@ -171,8 +185,9 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       if (file) await uploadTaskAttachment(task.id, file, undefined, orgId);
       return task;
     },
-    onSuccess: () => {
+    onSuccess: (task) => {
       invalidateTasks();
+      onCreated?.(task);
       handleClose();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось создать заявку"),
@@ -194,7 +209,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       onClose={handleClose}
       PaperProps={{
         sx: {
-          width: { xs: 320, sm: 480, md: 520 },
+          width: { xs: "100vw", sm: 480, md: 520 },
           maxWidth: "100vw",
           display: "flex",
           flexDirection: "column",

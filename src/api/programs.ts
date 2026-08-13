@@ -140,6 +140,40 @@ export interface CreateProgramModuleRecordPayload {
   data?: Record<string, unknown>;
 }
 
+export type InteractionChannel = "call" | "sms" | "whatsapp" | "in_person" | "note";
+export type InteractionOutcome = "answered" | "no_answer" | "callback" | "scheduled" | "informed";
+
+export interface PatientInteraction {
+  id: number;
+  patientId: number;
+  enrollmentId: number | null;
+  branchId: number;
+  occurredAt: string;
+  channel: InteractionChannel;
+  outcome: InteractionOutcome;
+  subject: string;
+  notes: string;
+  followUpTaskId: number | null;
+  createdById: number | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PatientInteractionList {
+  results: PatientInteraction[];
+  count: number;
+}
+
+export interface CreatePatientInteractionPayload {
+  occurredAt: string;
+  channel: InteractionChannel;
+  outcome: InteractionOutcome;
+  subject: string;
+  notes?: string;
+  followUpTaskId?: number | null;
+}
+
 export function createProgramEnrollment(
   scope: Scope,
   payload: CreateProgramEnrollmentPayload,
@@ -176,5 +210,43 @@ export function createProgramModuleRecord(
   return apiRequest<ProgramModuleRecord>(
     `/program-enrollments/${enrollmentId}/records/?${query.toString()}`,
     { method: "POST", body: payload },
+  );
+}
+
+export function getPatientInteractions(
+  scope: Scope,
+  enrollmentId: number,
+  signal?: AbortSignal,
+): Promise<PatientInteractionList> {
+  const query = scopeParams(scope);
+  query.set("limit", "200");
+  return apiRequest<PatientInteractionList>(
+    `/program-enrollments/${enrollmentId}/interactions/?${query.toString()}`,
+    { signal },
+  );
+}
+
+export function createPatientInteraction(
+  scope: Scope,
+  enrollmentId: number,
+  payload: CreatePatientInteractionPayload,
+): Promise<PatientInteraction> {
+  const query = scopeParams(scope);
+  return apiRequest<PatientInteraction>(
+    `/program-enrollments/${enrollmentId}/interactions/?${query.toString()}`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function updatePatientInteraction(
+  scope: Scope,
+  enrollmentId: number,
+  interactionId: number,
+  payload: Partial<CreatePatientInteractionPayload>,
+): Promise<PatientInteraction> {
+  const query = scopeParams(scope);
+  return apiRequest<PatientInteraction>(
+    `/program-enrollments/${enrollmentId}/interactions/${interactionId}/?${query.toString()}`,
+    { method: "PATCH", body: payload },
   );
 }
