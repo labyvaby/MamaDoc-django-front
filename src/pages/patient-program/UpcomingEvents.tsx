@@ -25,6 +25,7 @@ import {
   getUpcomingProgramRecords,
   type ProgramModuleRecord,
   type ProgramNotificationChannel,
+  type ProgramNotificationList,
   type ProgramNotificationStatus,
 } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -209,7 +210,17 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
       enrollmentId,
       notificationId,
     ),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ProgramNotificationList>(notificationsKey, (current) => (
+        current
+          ? {
+              ...current,
+              results: current.results.map((item) => (
+                item.id === updated.id ? updated : item
+              )),
+            }
+          : current
+      ));
       void queryClient.invalidateQueries({ queryKey: notificationsKey });
       enqueueSnackbar("Уведомление отменено", { variant: "success" });
     },
