@@ -38,6 +38,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   knowledge: 'knowledge',
   vaccinations: 'vaccinations',
   announcements: 'announcements',
+  notifications: 'notifications',
   profigram: 'profigram',
   pos: 'pos',
   promotions: 'promotions',
