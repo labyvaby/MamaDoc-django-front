@@ -354,9 +354,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const dateStr = date.format("YYYY-MM-DD");
   const handleSetDate = React.useCallback(
     (s: string) => {
+      if (s !== dateStr) setDoctorFilter(null);
       setDate(dayjs(s));
     },
-    [],
+    [dateStr, setDoctorFilter],
   );
 
   const [createOpen, setCreateOpen] = React.useState(false);
