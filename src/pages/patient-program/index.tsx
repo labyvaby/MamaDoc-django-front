@@ -47,6 +47,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
 import { ConnectProgramDialog } from "./ConnectProgramDialog";
+import { ModuleRecords } from "./ModuleRecords";
 
 type ViewKey = "overview" | `module:${number}`;
 
@@ -277,7 +278,7 @@ const PatientProgramPage: React.FC = () => {
         )}
         {canManageEnrollments && (
           <AppButton
-            variant="contained"
+            variant={selectedEnrollment ? "outlined" : "contained"}
             startIcon={<AddOutlined />}
             onClick={() => setConnectOpen(true)}
             sx={{ width: { xs: "100%", sm: "auto" } }}
@@ -439,41 +440,13 @@ const PatientProgramPage: React.FC = () => {
               )}
 
               {selectedModule && (
-                <AppCard
-                  variant="outlined"
-                  header={
-                    <Stack direction="row" alignItems="center" gap={1.25} sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}>
-                      <Box sx={{ color: "primary.main", display: "flex" }}>{moduleIcon(selectedModule)}</Box>
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="h6" fontWeight={700}>{selectedModule.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">{selectedModule.moduleType}</Typography>
-                      </Box>
-                      <Chip size="small" color="success" label="Подключён" />
-                    </Stack>
-                  }
-                >
-                  <Box
-                    sx={(theme) => ({
-                      minHeight: 240,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      textAlign: "center",
-                      p: 3,
-                      borderRadius: 1.5,
-                      bgcolor: subtleBg(theme),
-                    })}
-                  >
-                    <Box sx={{ color: "primary.main", mb: 1.5, "& .MuiSvgIcon-root": { fontSize: 38 } }}>
-                      {moduleIcon(selectedModule)}
-                    </Box>
-                    <Typography variant="subtitle1" fontWeight={700}>{moduleDescription(selectedModule)}</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 520 }}>
-                      Раздел уже управляется конструктором программы. Формы записей и профильные медицинские данные будут подключаться отдельными этапами без изменения этой страницы.
-                    </Typography>
-                  </Box>
-                </AppCard>
+                <ModuleRecords
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                />
               )}
             </Box>
           </Box>

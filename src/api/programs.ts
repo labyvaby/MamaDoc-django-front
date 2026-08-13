@@ -109,6 +109,37 @@ export interface CreateProgramEnrollmentPayload {
   source?: string;
 }
 
+export interface ProgramModuleRecord {
+  id: number;
+  enrollmentId: number;
+  programModuleId: number;
+  moduleCode: string;
+  branchId: number;
+  occurredAt: string;
+  title: string;
+  status: string;
+  notes: string;
+  data: Record<string, unknown>;
+  createdById: number | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgramModuleRecordList {
+  results: ProgramModuleRecord[];
+  count: number;
+}
+
+export interface CreateProgramModuleRecordPayload {
+  programModuleId: number;
+  occurredAt: string;
+  title: string;
+  status?: string;
+  notes?: string;
+  data?: Record<string, unknown>;
+}
+
 export function createProgramEnrollment(
   scope: Scope,
   payload: CreateProgramEnrollmentPayload,
@@ -117,6 +148,33 @@ export function createProgramEnrollment(
   const suffix = query.toString();
   return apiRequest<ProgramEnrollment>(
     `/program-enrollments/${suffix ? `?${suffix}` : ""}`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function getProgramModuleRecords(
+  scope: Scope,
+  enrollmentId: number,
+  programModuleId: number,
+  signal?: AbortSignal,
+): Promise<ProgramModuleRecordList> {
+  const query = scopeParams(scope);
+  query.set("programModuleId", String(programModuleId));
+  query.set("limit", "200");
+  return apiRequest<ProgramModuleRecordList>(
+    `/program-enrollments/${enrollmentId}/records/?${query.toString()}`,
+    { signal },
+  );
+}
+
+export function createProgramModuleRecord(
+  scope: Scope,
+  enrollmentId: number,
+  payload: CreateProgramModuleRecordPayload,
+): Promise<ProgramModuleRecord> {
+  const query = scopeParams(scope);
+  return apiRequest<ProgramModuleRecord>(
+    `/program-enrollments/${enrollmentId}/records/?${query.toString()}`,
     { method: "POST", body: payload },
   );
 }
