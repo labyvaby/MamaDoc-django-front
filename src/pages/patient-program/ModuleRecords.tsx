@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
@@ -23,7 +24,9 @@ import { useSnackbar } from "notistack";
 import {
   createProgramModuleRecord,
   getProgramModuleRecords,
+  updateProgramModuleRecord,
   type EffectiveProgramModule,
+  type ProgramModuleRecord,
 } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { AppButton, AppCard, CustomDateTimePicker, ListEmptyState } from "../../components/ui";
@@ -106,11 +109,12 @@ interface RecordDrawerProps {
   enrollmentId: number;
   module: EffectiveProgramModule;
   scope: ActiveScope;
+  record: ProgramModuleRecord | null;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }
 
-const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module, scope, onClose, onCreated }) => {
+const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module, scope, record, onClose, onSaved }) => {
   const { enqueueSnackbar } = useSnackbar();
   const fields = React.useMemo(() => fieldsFor(module), [module]);
   const [occurredAt, setOccurredAt] = React.useState<Dayjs | null>(dayjs());
@@ -121,16 +125,18 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
 
   React.useEffect(() => {
     if (!open) return;
-    setOccurredAt(dayjs());
-    setTitle("");
-    setStatus("completed");
-    setNotes("");
-    setData({});
-  }, [open, module.id]);
+    setOccurredAt(record ? dayjs(record.occurredAt) : dayjs());
+    setTitle(record?.title ?? "");
+    setStatus(record?.status ?? "completed");
+    setNotes(record?.notes ?? "");
+    setData(Object.fromEntries(
+      fields.map((field) => [field.key, String(record?.data[field.key] ?? "")]),
+    ));
+  }, [fields, open, record]);
 
   const mutation = useMutation({
-    mutationFn: () => createProgramModuleRecord(scope, enrollmentId, {
-      programModuleId: module.id,
+    mutationFn: () => {
+      const payload = {
       occurredAt: occurredAt!.toISOString(),
       title: title.trim(),
       status,
@@ -143,10 +149,17 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
             field.type === "number" ? Number(data[field.key]) : data[field.key].trim(),
           ]),
       ),
-    }),
+      };
+      return record
+        ? updateProgramModuleRecord(scope, enrollmentId, record.id, payload)
+        : createProgramModuleRecord(scope, enrollmentId, {
+            ...payload,
+            programModuleId: module.id,
+          });
+    },
     onSuccess: () => {
-      enqueueSnackbar("Запись добавлена", { variant: "success" });
-      onCreated();
+      enqueueSnackbar(record ? "Запись обновлена" : "Запись сохранена", { variant: "success" });
+      onSaved();
       onClose();
     },
   });
@@ -160,7 +173,7 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
     >
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={600}>Новая запись</Typography>
+          <Typography variant="h6" fontWeight={600}>{record ? "Редактирование записи" : "Новая запись"}</Typography>
           <Typography variant="caption" color="text.secondary" noWrap display="block">{module.name}</Typography>
         </Box>
         <IconButton onClick={mutation.isPending ? undefined : onClose} aria-label="Закрыть" edge="end"><CloseOutlined /></IconButton>
@@ -200,12 +213,12 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
         <AppButton onClick={onClose} disabled={mutation.isPending}>Отмена</AppButton>
         <AppButton
           variant="contained"
-          startIcon={<AddOutlined />}
+          startIcon={record ? <EditOutlined /> : <AddOutlined />}
           loading={mutation.isPending}
           disabled={!occurredAt?.isValid() || !title.trim()}
           onClick={() => mutation.mutate()}
         >
-          Добавить
+          {record ? "Сохранить" : "Добавить"}
         </AppButton>
       </Stack>
     </Drawer>
@@ -223,6 +236,7 @@ interface ModuleRecordsProps {
 export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, module, scope, canManage, icon }) => {
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [editingRecord, setEditingRecord] = React.useState<ProgramModuleRecord | null>(null);
   const queryKey = djangoQueryKeys.programs.records(enrollmentId, module.id, scope);
   const query = useQuery({
     queryKey,
@@ -287,12 +301,23 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
                         )}
                       </Stack>
                     </Box>
-                    <Chip
-                      size="small"
-                      color={record.status === "completed" ? "success" : "default"}
-                      label={record.status === "completed" ? "Выполнено" : record.status === "planned" ? "Запланировано" : "Пропущено"}
-                      sx={{ borderRadius: "7px", alignSelf: { xs: "flex-start", sm: "center" } }}
-                    />
+                    <Stack direction="row" alignItems="center" gap={0.5}>
+                      <Chip
+                        size="small"
+                        color={record.status === "completed" ? "success" : "default"}
+                        label={record.status === "completed" ? "Выполнено" : record.status === "planned" ? "Запланировано" : "Пропущено"}
+                        sx={{ borderRadius: "7px" }}
+                      />
+                      {canManage && (
+                        <IconButton
+                          size="small"
+                          aria-label={`Редактировать ${record.title}`}
+                          onClick={() => { setEditingRecord(record); setDrawerOpen(true); }}
+                        >
+                          <EditOutlined fontSize="small" />
+                        </IconButton>
+                      )}
+                    </Stack>
                   </Stack>
                   {details.length > 0 && (
                     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 1, mt: 1.25 }}>
@@ -322,8 +347,9 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
         enrollmentId={enrollmentId}
         module={module}
         scope={scope}
-        onClose={() => setDrawerOpen(false)}
-        onCreated={() => {
+        record={editingRecord}
+        onClose={() => { setDrawerOpen(false); setEditingRecord(null); }}
+        onSaved={() => {
           void queryClient.invalidateQueries({ queryKey });
           void queryClient.invalidateQueries({
             queryKey: djangoQueryKeys.programs.upcoming(enrollmentId, scope),

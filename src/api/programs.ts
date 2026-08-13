@@ -251,6 +251,31 @@ export function createProgramModuleRecord(
   );
 }
 
+export function updateProgramModuleRecord(
+  scope: Scope,
+  enrollmentId: number,
+  recordId: number,
+  payload: Partial<CreateProgramModuleRecordPayload>,
+): Promise<ProgramModuleRecord> {
+  const query = scopeParams(scope);
+  return apiRequest<ProgramModuleRecord>(
+    `/program-enrollments/${enrollmentId}/records/${recordId}/?${query.toString()}`,
+    { method: "PATCH", body: payload },
+  );
+}
+
+export function transitionProgramEnrollment(
+  scope: Scope,
+  enrollmentId: number,
+  action: "activate" | "pause" | "resume" | "cancel",
+): Promise<ProgramEnrollment> {
+  const query = scopeParams(scope);
+  return apiRequest<ProgramEnrollment>(
+    `/program-enrollments/${enrollmentId}/${action}/?${query.toString()}`,
+    { method: "POST" },
+  );
+}
+
 export function getPatientInteractions(
   scope: Scope,
   enrollmentId: number,
