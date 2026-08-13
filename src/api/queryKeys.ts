@@ -68,6 +68,10 @@ export const djangoQueryKeys = {
       ["django", "programs", "records", enrollmentId, moduleId, scope] as const,
     interactions: (enrollmentId: number, scope: unknown) =>
       ["django", "programs", "interactions", enrollmentId, scope] as const,
+    upcoming: (enrollmentId: number, scope: unknown) =>
+      ["django", "programs", "upcoming", enrollmentId, scope] as const,
+    notifications: (enrollmentId: number, scope: unknown) =>
+      ["django", "programs", "notifications", enrollmentId, scope] as const,
   },
 
   cashbox: {

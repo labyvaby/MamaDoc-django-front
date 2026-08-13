@@ -174,6 +174,44 @@ export interface CreatePatientInteractionPayload {
   followUpTaskId?: number | null;
 }
 
+export type ProgramNotificationChannel = "sms" | "whatsapp";
+export type ProgramNotificationStatus =
+  | "draft"
+  | "pending"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "failed"
+  | "cancelled";
+
+export interface ProgramNotification {
+  id: number;
+  enrollmentId: number;
+  moduleRecordId: number | null;
+  channel: ProgramNotificationChannel;
+  recipient: string;
+  body: string;
+  scheduledFor: string;
+  status: ProgramNotificationStatus;
+  error: string;
+  sentAt: string | null;
+  createdById: number | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface ProgramNotificationList {
+  results: ProgramNotification[];
+  count: number;
+}
+
+export interface CreateProgramNotificationPayload {
+  moduleRecordId?: number | null;
+  channel: ProgramNotificationChannel;
+  body: string;
+  scheduledFor?: string | null;
+}
+
 export function createProgramEnrollment(
   scope: Scope,
   payload: CreateProgramEnrollmentPayload,
@@ -248,5 +286,55 @@ export function updatePatientInteraction(
   return apiRequest<PatientInteraction>(
     `/program-enrollments/${enrollmentId}/interactions/${interactionId}/?${query.toString()}`,
     { method: "PATCH", body: payload },
+  );
+}
+
+export function getUpcomingProgramRecords(
+  scope: Scope,
+  enrollmentId: number,
+  signal?: AbortSignal,
+): Promise<ProgramModuleRecordList> {
+  const query = scopeParams(scope);
+  query.set("limit", "200");
+  return apiRequest<ProgramModuleRecordList>(
+    `/program-enrollments/${enrollmentId}/upcoming/?${query.toString()}`,
+    { signal },
+  );
+}
+
+export function getProgramNotifications(
+  scope: Scope,
+  enrollmentId: number,
+  signal?: AbortSignal,
+): Promise<ProgramNotificationList> {
+  const query = scopeParams(scope);
+  query.set("limit", "200");
+  return apiRequest<ProgramNotificationList>(
+    `/program-enrollments/${enrollmentId}/notifications/?${query.toString()}`,
+    { signal },
+  );
+}
+
+export function createProgramNotification(
+  scope: Scope,
+  enrollmentId: number,
+  payload: CreateProgramNotificationPayload,
+): Promise<ProgramNotification> {
+  const query = scopeParams(scope);
+  return apiRequest<ProgramNotification>(
+    `/program-enrollments/${enrollmentId}/notifications/?${query.toString()}`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function cancelProgramNotification(
+  scope: Scope,
+  enrollmentId: number,
+  notificationId: number,
+): Promise<ProgramNotification> {
+  const query = scopeParams(scope);
+  return apiRequest<ProgramNotification>(
+    `/program-enrollments/${enrollmentId}/notifications/${notificationId}/cancel/?${query.toString()}`,
+    { method: "POST" },
   );
 }
