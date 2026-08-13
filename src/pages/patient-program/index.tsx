@@ -49,6 +49,7 @@ import { subtleBg } from "../../theme/uiHelpers";
 import { ConnectProgramDialog } from "./ConnectProgramDialog";
 import { InteractionHistory } from "./InteractionHistory";
 import { ModuleRecords } from "./ModuleRecords";
+import { UpcomingEvents } from "./UpcomingEvents";
 
 type ViewKey = "overview" | `module:${number}`;
 
@@ -176,6 +177,7 @@ const PatientProgramPage: React.FC = () => {
   const canManageEnrollments = canAccess("enrollments.manage");
   const canCreateTask = canAccess("tasks.create");
   const canManageTasks = canAccess("tasks.manage");
+  const canNotifyClients = canAccess("notifications.manage");
 
   usePageTitle("Книжка клиента");
 
@@ -441,6 +443,12 @@ const PatientProgramPage: React.FC = () => {
                     </Box>
                   </Stack>
                   </AppCard>
+                  <UpcomingEvents
+                    enrollmentId={selectedEnrollment.id}
+                    patientName={patient.fullName}
+                    scope={scope}
+                    canNotify={canNotifyClients}
+                  />
                   <InteractionHistory
                     enrollmentId={selectedEnrollment.id}
                     patientName={patient.fullName}

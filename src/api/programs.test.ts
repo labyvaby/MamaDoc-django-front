@@ -4,9 +4,12 @@ import {
   createProgramEnrollment,
   createProgramModuleRecord,
   createPatientInteraction,
+  createProgramNotification,
   getPatientInteractions,
+  getProgramNotifications,
   getProgramModuleRecords,
   getPrograms,
+  getUpcomingProgramRecords,
 } from "./programs";
 
 function mockJsonFetch(payload: unknown) {
@@ -128,6 +131,42 @@ describe("program API scope", () => {
           outcome: "no_answer",
           subject: "Напоминание о вакцинации",
           notes: "Не взял трубку",
+        }),
+      }),
+    );
+  });
+
+  it("loads upcoming events and schedules a client notification", async () => {
+    const fetchMock = mockJsonFetch({ results: [], count: 0 });
+    const scope = { organizationId: 4, branchId: 14 };
+
+    await getUpcomingProgramRecords(scope, 21);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/upcoming\/\?organizationId=4&branchId=14&limit=200$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+
+    await getProgramNotifications(scope, 21);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/notifications\/\?organizationId=4&branchId=14&limit=200$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+
+    await createProgramNotification(scope, 21, {
+      moduleRecordId: 8,
+      channel: "sms",
+      body: "Напоминание о визите",
+      scheduledFor: "2026-08-19T04:00:00.000Z",
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/notifications\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          moduleRecordId: 8,
+          channel: "sms",
+          body: "Напоминание о визите",
+          scheduledFor: "2026-08-19T04:00:00.000Z",
         }),
       }),
     );
