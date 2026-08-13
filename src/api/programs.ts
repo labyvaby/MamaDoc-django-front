@@ -13,6 +13,27 @@ export interface EffectiveProgramModule {
   settings: Record<string, unknown>;
 }
 
+export interface Program {
+  id: number;
+  organizationId: number;
+  code: string;
+  name: string;
+  description: string;
+  businessDomain: string;
+  status: ProgramState;
+  isEnabled: boolean;
+  grantsVip: boolean;
+  settings: Record<string, unknown>;
+  modules: Array<EffectiveProgramModule & { isEnabled: boolean }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgramList {
+  results: Program[];
+  count: number;
+}
+
 export interface ProgramEnrollment {
   id: number;
   organizationId: number;
@@ -68,5 +89,34 @@ export function getProgramEnrollments(
   return apiRequest<ProgramEnrollmentList>(
     `/program-enrollments/${suffix ? `?${suffix}` : ""}`,
     { signal },
+  );
+}
+
+export function getPrograms(scope: Scope, signal?: AbortSignal): Promise<ProgramList> {
+  const query = scopeParams(scope);
+  query.set("limit", "200");
+  return apiRequest<ProgramList>(`/programs/?${query.toString()}`, { signal });
+}
+
+export interface CreateProgramEnrollmentPayload {
+  patientId: number;
+  programId: number;
+  branchId: number;
+  organizationId?: number;
+  status: "active" | "draft";
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  source?: string;
+}
+
+export function createProgramEnrollment(
+  scope: Scope,
+  payload: CreateProgramEnrollmentPayload,
+): Promise<ProgramEnrollment> {
+  const query = scopeParams(scope);
+  const suffix = query.toString();
+  return apiRequest<ProgramEnrollment>(
+    `/program-enrollments/${suffix ? `?${suffix}` : ""}`,
+    { method: "POST", body: payload },
   );
 }

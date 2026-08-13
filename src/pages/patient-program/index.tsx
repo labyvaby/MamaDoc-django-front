@@ -29,7 +29,8 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
-import { useQuery } from "@tanstack/react-query";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -43,7 +44,9 @@ import {
 import { AppButton, AppCard, ListEmptyState, UserAvatar } from "../../components/ui";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
+import { ConnectProgramDialog } from "./ConnectProgramDialog";
 
 type ViewKey = "overview" | `module:${number}`;
 
@@ -160,11 +163,15 @@ const PatientProgramPage: React.FC = () => {
   const { patientId: rawPatientId } = useParams();
   const patientId = Number(rawPatientId);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const scope = useActiveScope();
+  const { hasPermission, isSuperAdmin } = usePermissions();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [selectedEnrollmentId, setSelectedEnrollmentId] = React.useState<number | null>(null);
   const [view, setView] = React.useState<ViewKey>("overview");
+  const [connectOpen, setConnectOpen] = React.useState(false);
+  const canManageEnrollments = isSuperAdmin() || hasPermission("enrollments.manage");
 
   usePageTitle("Книжка клиента");
 
@@ -268,6 +275,16 @@ const PatientProgramPage: React.FC = () => {
             </Select>
           </FormControl>
         )}
+        {canManageEnrollments && (
+          <AppButton
+            variant="contained"
+            startIcon={<AddOutlined />}
+            onClick={() => setConnectOpen(true)}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
+            Подключить программу
+          </AppButton>
+        )}
       </Stack>
 
       {!selectedEnrollment ? (
@@ -276,6 +293,11 @@ const PatientProgramPage: React.FC = () => {
             icon={<MenuBookOutlined />}
             title="Программа не подключена"
             description="У клиента пока нет доступных программ обслуживания."
+            action={canManageEnrollments ? (
+              <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => setConnectOpen(true)}>
+                Подключить программу
+              </AppButton>
+            ) : undefined}
           />
         </AppCard>
       ) : (
@@ -461,6 +483,23 @@ const PatientProgramPage: React.FC = () => {
       {enrollmentQuery.isFetching && !enrollmentQuery.isLoading && (
         <CircularProgress size={20} sx={{ position: "fixed", right: 24, bottom: 24 }} />
       )}
+
+      <ConnectProgramDialog
+        open={connectOpen}
+        patientId={patient.id}
+        patientName={patient.fullName}
+        scope={scope}
+        connectedProgramIds={enrollments
+          .filter((item) => item.status !== "cancelled" && item.status !== "expired")
+          .map((item) => item.program.id)}
+        onClose={() => setConnectOpen(false)}
+        onConnected={(enrollment) => {
+          setSelectedEnrollmentId(enrollment.id);
+          setView("overview");
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.programs.enrollments(patientId, scope) });
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.detail(patientId) });
+        }}
+      />
     </Box>
   );
 };
