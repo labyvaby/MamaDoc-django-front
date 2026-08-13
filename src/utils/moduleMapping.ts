@@ -31,6 +31,8 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   // Брони не имеют отдельной записи PlatformModule: это клинический
   // рабочий процесс и он доступен только вместе с модулем приёмов.
   bookings: 'appointments',
+  programs: 'programs',
+  enrollments: 'programs',
   documents: 'documents',
   cleaning: 'cleaning',
   knowledge: 'knowledge',
