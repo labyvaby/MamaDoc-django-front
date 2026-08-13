@@ -56,6 +56,30 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
       ? t("cashlessMethod.required")
       : "";
 
+  /**
+   * Единственный способ формы подставляют автоматически — выпадающий список из
+   * одного пункта только добавляет клик. Показываем его строкой, чтобы кассир
+   * всё равно видел, чем проводится оплата.
+   *
+   * Исключение — `error`: если подстановка почему-то не сработала и форма
+   * требует выбор, без селекта сохранение оказалось бы в тупике.
+   */
+  const singleMethod =
+    !loading && !loadFailed && !error && methods.length === 1 ? methods[0] : null;
+
+  if (singleMethod) {
+    return (
+      <Stack spacing={0.5}>
+        <Typography variant="caption" color="text.secondary" display="block">
+          {label ?? t("cashlessMethod.label")}
+        </Typography>
+        <Typography variant="body2" color={disabled ? "text.disabled" : "text.primary"}>
+          {singleMethod.name}
+        </Typography>
+      </Stack>
+    );
+  }
+
   return (
     <Stack spacing={0.5}>
       <Typography variant="caption" color="text.secondary" display="block">

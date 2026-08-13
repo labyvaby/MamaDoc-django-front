@@ -369,7 +369,7 @@ interface RawAppointment {
  *   startsAt      → scheduledAt
  *   serviceLines  → services
  */
-function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
+export function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
   // field renames
   const scheduledAt: string = raw.scheduledAt ?? raw.startsAt ?? "";
   const rawServices: RawAppointment[] = Array.isArray(raw.services)
@@ -391,6 +391,13 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
   const paymentMethods: string[] = Array.isArray(raw.paymentMethods)
     ? raw.paymentMethods
     : [];
+  // Филиал бэк отдаёт объектом `branch: {id, name}` и поля `branchId` в ответе
+  // НЕТ (проверено на проде 14.08.2026). Без этой раскладки `appointment.branchId`
+  // всегда undefined, и запросы со скоупом филиала уходили без него: справочник
+  // способов безнала возвращал способы всех филиалов организации.
+  const branch = raw.branch as { id?: number; name?: string } | null | undefined;
+  const branchId: number | null = raw.branchId ?? branch?.id ?? null;
+  const branchName: string | null = raw.branchName ?? branch?.name ?? null;
 
   return {
     ...raw,
@@ -399,6 +406,8 @@ function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     productLines,
     status,
     paymentMethods,
+    branchId,
+    branchName,
     consumptionWarnings: Array.isArray(raw.consumptionWarnings)
       ? raw.consumptionWarnings
       : [],
@@ -447,7 +456,10 @@ export interface AppointmentConsumptionWarning {
 export interface DjangoAppointment {
   id: number;
   organizationId: number;
+  /** Разложен из `branch.id` в normalizeAppointment — бэк `branchId` не шлёт. */
   branchId: number | null;
+  /** Разложен из `branch.name`; null, если филиал не задан. */
+  branchName: string | null;
   patient: AppointmentPatientShort | null;
   scheduledAt: string;
   /** Конец приёма, посчитанный бэком как начало + сумма длительностей строк
