@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { alpha, useTheme, type Theme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -52,7 +52,7 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
-import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
+import { BOOKING_STATUS_OPTIONS, StatusChip, statusTone } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
 
 const PAGE_SIZE = 20;
@@ -61,66 +61,6 @@ const STATS_PAGE_SIZE = 100;
 const STATS_MAX_PAGES = 5;
 
 // ── Помощники стилей ──────────────────────────────────────────────────────────
-
-/** Палитра-тон для статуса брони (null — нейтральный). */
-function statusTone(t: Theme, status: BookingStatus) {
-  switch (BOOKING_STATUS_META[status]?.color) {
-    case "warning":
-      return t.palette.warning;
-    case "info":
-      return t.palette.info;
-    case "success":
-      return t.palette.success;
-    case "error":
-      return t.palette.error;
-    default:
-      return null;
-  }
-}
-
-/** Тонированный статус-чип в стиле карточек проекта. */
-const StatusChip: React.FC<{ status: BookingStatus }> = ({ status }) => {
-  const m = BOOKING_STATUS_META[status];
-  if (!m) return <>{status}</>;
-  return (
-    <Chip
-      size="small"
-      label={m.label}
-      icon={
-        <Box
-          component="span"
-          sx={(t) => {
-            const tone = statusTone(t, status);
-            return {
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              bgcolor: tone ? tone.main : t.palette.grey[500],
-              ml: 0.75,
-            };
-          }}
-        />
-      }
-      sx={(t) => {
-        const tone = statusTone(t, status);
-        return {
-          fontWeight: 500,
-          height: 24,
-          borderRadius: "7px",
-          "& .MuiChip-icon": { ml: 0.75, mr: -0.25 },
-          color: tone
-            ? t.palette.mode === "dark"
-              ? tone.light
-              : tone.dark
-            : "text.secondary",
-          bgcolor: tone
-            ? alpha(tone.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-            : subtleBg(t, true),
-        };
-      }}
-    />
-  );
-};
 
 /** Компактная плитка сводки: иконка + подпись + значение. */
 const StatTile: React.FC<{
@@ -994,6 +934,8 @@ const BookingsPage: React.FC = () => {
         bookingId={selectedId}
         canManage={canManage}
         onClose={() => setSelectedId(null)}
+        siblingIds={rows.map((r) => r.id)}
+        onNavigate={setSelectedId}
       />
     </Box>
   );

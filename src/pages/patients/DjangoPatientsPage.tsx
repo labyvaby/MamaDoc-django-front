@@ -9,6 +9,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { motion } from "framer-motion";
+import { useSearchParams } from "react-router";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -21,6 +22,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
 import {
+  getPatient,
   searchPatients,
 } from "../../api/patients";
 import type {
@@ -177,6 +179,48 @@ const DjangoPatientsPage: React.FC = () => {
     if (fresh && fresh !== selected) setSelected(fresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patients]);
+
+  /**
+   * Вход из других модулей: `/patients?patient=<id>` сразу открывает нужную
+   * карту (карточка брони ведёт сюда по найденному совпадению). Пациента
+   * грузим по id — в списке его может не быть, он подгружается страницами.
+   * Параметр одноразовый: иначе перезагрузка возвращала бы старую карту.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  React.useEffect(() => {
+    const raw = searchParams.get("patient");
+    const id = Number(raw);
+    if (!raw || !Number.isFinite(id) || id <= 0) return;
+    // Права ещё грузятся — параметр не трогаем, отработаем следующим проходом.
+    if (permLoading) return;
+
+    setSearchParams(
+      (prev: URLSearchParams) => {
+        const next = new URLSearchParams(prev);
+        next.delete("patient");
+        return next;
+      },
+      { replace: true },
+    );
+    if (!canView) return;
+
+    // Без отмены по cleanup: удаление параметра выше само перезапускает этот
+    // эффект, и cleanup гасил бы ещё летящий запрос — карта не открывалась.
+    // Повторного запуска не будет: параметра в адресе уже нет.
+    getPatient(id)
+      .then((p) => {
+        setSelected(p);
+        setDesktopRightTab("history");
+        setTabletTab("card");
+        if (isMobile) {
+          setMobileTab("card");
+          setMobileOpen(true);
+        }
+      })
+      .catch(() => {
+        /* карта удалена или чужой организации — остаёмся на списке */
+      });
+  }, [searchParams, setSearchParams, permLoading, canView, isMobile]);
 
   // Load balance + history for the selected patient; cancel on switch (no stale data)
   React.useEffect(() => {

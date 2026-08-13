@@ -76,7 +76,7 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
 } from "../../api/queryKeys";
 import type { DjangoPatient } from "../../api/patients";
-import { searchPatients } from "../../api/patients";
+import { getPatient, searchPatients } from "../../api/patients";
 import type {
   DjangoEmployeeWithServices,
   DjangoCatalogServiceWithEmployees,
@@ -209,6 +209,11 @@ export type DjangoAddAppointmentDrawerProps = {
   initialEmployeeId?: number | null;
   initialServiceId?: number | null;
   /**
+   * Карта пациента, на которую открыли форму (повторная запись из карточки
+   * брони). Пациента подгружаем по id: у вызывающей стороны есть только он.
+   */
+  initialPatientId?: number | null;
+  /**
    * Включать режим «Бронирование (без пациента)» при предзаполнении из окна.
    * Используется только при явном запросе вызывающей стороны.
    */
@@ -230,6 +235,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   initialDateExact = false,
   initialEmployeeId,
   initialServiceId,
+  initialPatientId = null,
   initialBooking = false,
   showAllFieldsInitially = false,
 }) => {
@@ -363,6 +369,26 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     // уходил на другое время, чем показывало поле).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Предзаполнение пациента по id (повторная запись из карточки брони).
+  // Грузим отдельным запросом: автокомплит ищет по строке, а у вызывающей
+  // стороны есть только id карты. Уже выбранного пациента не перетираем —
+  // иначе запрос, вернувшийся после ручного выбора, отменил бы его.
+  React.useEffect(() => {
+    if (!open || initialPatientId == null) return;
+    let cancelled = false;
+    getPatient(initialPatientId)
+      .then((p) => {
+        if (cancelled) return;
+        setSelectedPatient((prev) => prev ?? p);
+      })
+      .catch(() => {
+        /* карта могла быть удалена — форма останется с пустым пациентом */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, initialPatientId]);
 
   // Если зашла медсестра — фиксируем её как исполнителя в пустых строках.
   React.useEffect(() => {
