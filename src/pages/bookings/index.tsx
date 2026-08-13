@@ -23,8 +23,6 @@ import "dayjs/locale/ru";
 
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
-import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
-import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
@@ -458,15 +456,24 @@ const BookingsPage: React.FC = () => {
     return counts;
   }, [statsQuery.data]);
 
-  // Итоги для текущего выбора статуса.
+  /**
+   * Итоги для текущего выбора статуса. Денег здесь нет намеренно: `totalPrice`
+   * брони — прайс намерения, а не выручка (её считает касса по оплаченным
+   * приёмам), поэтому сумма по броням не сошлась бы с финансовыми отчётами.
+   * Броня — верх воронки, и метрика тут воронковая: доля потерянных записей.
+   */
   const summary = React.useMemo(() => {
     const data = statsQuery.data;
     if (!data) return null;
-    const subset = status === "" ? data.all : data.all.filter((b) => b.status === status);
-    const sum = subset.reduce((acc, b) => acc + Number(b.totalPrice || 0), 0);
-    const count = status === "" ? data.count : subset.length;
-    const avg = subset.length > 0 ? sum / subset.length : 0;
-    return { count, sum, avg, truncated: data.truncated };
+    const count =
+      status === "" ? data.count : data.all.filter((b) => b.status === status).length;
+    // Доля отмен считается по всей выборке периода, а не по выбранной вкладке:
+    // иначе на вкладке «Отменена» она была бы всегда 100%.
+    const lost = data.all.filter(
+      (b) => b.status === "cancelled" || b.status === "no_show",
+    ).length;
+    const lostRate = data.all.length > 0 ? (lost / data.all.length) * 100 : 0;
+    return { count, lost, lostRate, truncated: data.truncated };
   }, [statsQuery.data, status]);
 
   const doctorsQuery = useQuery({
@@ -786,14 +793,9 @@ const BookingsPage: React.FC = () => {
                   value={summary.count}
                 />
                 <StatTile
-                  icon={<PaymentsOutlinedIcon />}
-                  label="Сумма"
-                  value={`${summary.truncated ? "≈ " : ""}${formatKGS(summary.sum)}`}
-                />
-                <StatTile
-                  icon={<ReceiptLongOutlinedIcon />}
-                  label="Средний чек"
-                  value={`${summary.truncated ? "≈ " : ""}${formatKGS(Math.round(summary.avg))}`}
+                  icon={<EventBusyOutlinedIcon />}
+                  label="Отмены и неявки"
+                  value={`${summary.truncated ? "≈ " : ""}${Math.round(summary.lostRate)}% · ${summary.lost}`}
                 />
               </Stack>
             )}
