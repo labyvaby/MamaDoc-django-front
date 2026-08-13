@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { alpha, useTheme, type Theme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -23,8 +23,6 @@ import "dayjs/locale/ru";
 
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
-import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
-import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
@@ -54,7 +52,7 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
-import { BOOKING_STATUS_META, BOOKING_STATUS_OPTIONS } from "./meta";
+import { BOOKING_STATUS_OPTIONS, StatusChip, statusTone } from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
 
 const PAGE_SIZE = 20;
@@ -63,66 +61,6 @@ const STATS_PAGE_SIZE = 100;
 const STATS_MAX_PAGES = 5;
 
 // ── Помощники стилей ──────────────────────────────────────────────────────────
-
-/** Палитра-тон для статуса брони (null — нейтральный). */
-function statusTone(t: Theme, status: BookingStatus) {
-  switch (BOOKING_STATUS_META[status]?.color) {
-    case "warning":
-      return t.palette.warning;
-    case "info":
-      return t.palette.info;
-    case "success":
-      return t.palette.success;
-    case "error":
-      return t.palette.error;
-    default:
-      return null;
-  }
-}
-
-/** Тонированный статус-чип в стиле карточек проекта. */
-const StatusChip: React.FC<{ status: BookingStatus }> = ({ status }) => {
-  const m = BOOKING_STATUS_META[status];
-  if (!m) return <>{status}</>;
-  return (
-    <Chip
-      size="small"
-      label={m.label}
-      icon={
-        <Box
-          component="span"
-          sx={(t) => {
-            const tone = statusTone(t, status);
-            return {
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              bgcolor: tone ? tone.main : t.palette.grey[500],
-              ml: 0.75,
-            };
-          }}
-        />
-      }
-      sx={(t) => {
-        const tone = statusTone(t, status);
-        return {
-          fontWeight: 500,
-          height: 24,
-          borderRadius: "7px",
-          "& .MuiChip-icon": { ml: 0.75, mr: -0.25 },
-          color: tone
-            ? t.palette.mode === "dark"
-              ? tone.light
-              : tone.dark
-            : "text.secondary",
-          bgcolor: tone
-            ? alpha(tone.main, t.palette.mode === "dark" ? 0.2 : 0.14)
-            : subtleBg(t, true),
-        };
-      }}
-    />
-  );
-};
 
 /** Компактная плитка сводки: иконка + подпись + значение. */
 const StatTile: React.FC<{
@@ -458,15 +396,24 @@ const BookingsPage: React.FC = () => {
     return counts;
   }, [statsQuery.data]);
 
-  // Итоги для текущего выбора статуса.
+  /**
+   * Итоги для текущего выбора статуса. Денег здесь нет намеренно: `totalPrice`
+   * брони — прайс намерения, а не выручка (её считает касса по оплаченным
+   * приёмам), поэтому сумма по броням не сошлась бы с финансовыми отчётами.
+   * Броня — верх воронки, и метрика тут воронковая: доля потерянных записей.
+   */
   const summary = React.useMemo(() => {
     const data = statsQuery.data;
     if (!data) return null;
-    const subset = status === "" ? data.all : data.all.filter((b) => b.status === status);
-    const sum = subset.reduce((acc, b) => acc + Number(b.totalPrice || 0), 0);
-    const count = status === "" ? data.count : subset.length;
-    const avg = subset.length > 0 ? sum / subset.length : 0;
-    return { count, sum, avg, truncated: data.truncated };
+    const count =
+      status === "" ? data.count : data.all.filter((b) => b.status === status).length;
+    // Доля отмен считается по всей выборке периода, а не по выбранной вкладке:
+    // иначе на вкладке «Отменена» она была бы всегда 100%.
+    const lost = data.all.filter(
+      (b) => b.status === "cancelled" || b.status === "no_show",
+    ).length;
+    const lostRate = data.all.length > 0 ? (lost / data.all.length) * 100 : 0;
+    return { count, lost, lostRate, truncated: data.truncated };
   }, [statsQuery.data, status]);
 
   const doctorsQuery = useQuery({
@@ -786,14 +733,9 @@ const BookingsPage: React.FC = () => {
                   value={summary.count}
                 />
                 <StatTile
-                  icon={<PaymentsOutlinedIcon />}
-                  label="Сумма"
-                  value={`${summary.truncated ? "≈ " : ""}${formatKGS(summary.sum)}`}
-                />
-                <StatTile
-                  icon={<ReceiptLongOutlinedIcon />}
-                  label="Средний чек"
-                  value={`${summary.truncated ? "≈ " : ""}${formatKGS(Math.round(summary.avg))}`}
+                  icon={<EventBusyOutlinedIcon />}
+                  label="Отмены и неявки"
+                  value={`${summary.truncated ? "≈ " : ""}${Math.round(summary.lostRate)}% · ${summary.lost}`}
                 />
               </Stack>
             )}
@@ -992,6 +934,8 @@ const BookingsPage: React.FC = () => {
         bookingId={selectedId}
         canManage={canManage}
         onClose={() => setSelectedId(null)}
+        siblingIds={rows.map((r) => r.id)}
+        onNavigate={setSelectedId}
       />
     </Box>
   );

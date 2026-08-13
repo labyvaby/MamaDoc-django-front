@@ -14,7 +14,6 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import { useSearchParams } from "react-router";
 
 import {
-  getProfessionalCalendar,
   getProfessionals,
   idOrSlugRef,
   type CalendarDay,
@@ -64,7 +63,14 @@ const ACTION_AREA_MIN_H = { xs: 93, lg: 73 };
 
 // ── Ближайшие свободные окна ─────────────────────────────────────────────────
 
-/** Ближайший день из `availability` списка — в ту же форму, что даёт календарь. */
+/**
+ * Ближайший день из `availability` списка — в ту же форму, что даёт календарь.
+ *
+ * Окна приходят вместе со списком врачей (бэк в проде с 12.08.2026), поэтому
+ * календарь по каждой карточке больше не запрашивается: у клиники со ста
+ * врачами это была сотня запросов на каждое открытие списка. `undefined` —
+ * сервер поле не прислал (старый бэк): тогда строка окон просто не рисуется.
+ */
 function nearestDayOf(availability?: ProfessionalAvailability): CalendarDay | null | undefined {
   if (!availability) return undefined;
   const nearest = availability.nearestDay;
@@ -77,104 +83,6 @@ function nearestDayOf(availability?: ProfessionalAvailability): CalendarDay | nu
     slotsCount: nearest.slotsCount,
     times: nearest.times,
   };
-}
-
-/**
- * Порядок карточек: выше тот, у кого больше свободных окон сегодня — чтобы
- * запись расходилась на менее занятых врачей. При равенстве раньше идёт врач с
- * более ранним ближайшим окном, а совсем без окон — в конец.
- *
- * Сортировать должен бэк (`MamaDoc/backend_ticket_public_booking_availability_order.md`):
- * порядок обязан быть сквозным по всей выборке, а страница — только её часть.
- * Здесь тот же порядок применяется к уже полученной странице, чтобы список не
- * ждал, пока сортировку доведут на сервере. Пока `availability` не приходит,
- * порядок бэка сохраняется как есть.
- */
-function orderByAvailability(list: ProfessionalPreview[]): ProfessionalPreview[] {
-  if (!list.some((d) => d.availability)) return list;
-  return list
-    .map((doctor, index) => ({ doctor, index }))
-    .sort((a, b) => {
-      const todayA = a.doctor.availability?.todayFreeSlots ?? 0;
-      const todayB = b.doctor.availability?.todayFreeSlots ?? 0;
-      if (todayA !== todayB) return todayB - todayA;
-
-      const dateA = a.doctor.availability?.nearestDay?.date;
-      const dateB = b.doctor.availability?.nearestDay?.date;
-      if (dateA !== dateB) {
-        if (!dateA) return 1;
-        if (!dateB) return -1;
-        return dateA < dateB ? -1 : 1; // YYYY-MM-DD сравнимы как строки
-      }
-      // Одинаково свободные врачи остаются в порядке бэка — иначе список
-      // перетасовывался бы между запросами.
-      return a.index - b.index;
-    })
-    .map((x) => x.doctor);
-}
-
-/**
- * Ближайшие окна врача для карточки списка.
- *
- * Если бэк прислал `availability` в списке — берём окна оттуда и не ходим в
- * календарь вовсе. Пока поля нет, окна приходится добирать календарём по
- * каждому врачу отдельно; чтобы не пускать сотню запросов на клинику со ста
- * врачами, грузим только когда карточка появилась в зоне видимости, и один раз
- * на карточку.
- */
-function useNearestDay(doctor: ProfessionalPreview) {
-  const ref = React.useRef<HTMLDivElement | null>(null);
-  // Ссылочно стабильно: иначе новый объект на каждый рендер перезапускал бы эффект.
-  const preloaded = React.useMemo(() => nearestDayOf(doctor.availability), [doctor.availability]);
-  const idOrSlug = idOrSlugRef(doctor);
-  const [day, setDay] = React.useState<CalendarDay | null | undefined>(preloaded);
-
-  React.useEffect(() => {
-    if (preloaded !== undefined) return;
-    const node = ref.current;
-    if (!node) return;
-    const controller = new AbortController();
-    let started = false;
-
-    const load = () => {
-      if (started) return;
-      started = true;
-      getProfessionalCalendar(
-        idOrSlug,
-        { dateFrom: todayIso(), dateTo: isoInDays(13) },
-        controller.signal,
-      )
-        .then((days) => setDay(days.find((d) => d.isAvailable && d.times.length > 0) ?? null))
-        .catch((e) => {
-          // Календарь — дополнение к карточке: молча прячем строку окон, чтобы
-          // ошибка одного врача не ломала весь список.
-          if (!isAbortError(e)) setDay(null);
-        });
-    };
-
-    // IntersectionObserver может быть недоступен (старые вебвью) — тогда просто
-    // грузим сразу: хуже по трафику, но карточка не останется пустой.
-    if (typeof IntersectionObserver === "undefined") {
-      load();
-      return () => controller.abort();
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          load();
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-      controller.abort();
-    };
-  }, [idOrSlug, preloaded]);
-
-  return { ref, day: preloaded !== undefined ? preloaded : day };
 }
 
 /**
@@ -199,12 +107,9 @@ const AvailabilityRow: React.FC<{ day: CalendarDay | null | undefined; onMore: (
     mb: 1,
   } as const;
 
-  if (day === undefined)
-    return (
-      <Box sx={boxSx}>
-        <Skeleton width="85%" height={18} />
-      </Box>
-    );
+  // Сервер не прислал доступность (старый бэк): показывать нечего и грузить
+  // нечего — оставляем пустой резерв, чтобы карточка не стала ниже соседних.
+  if (day === undefined) return <Box sx={boxSx} />;
   if (!day) {
     return (
       <Box sx={boxSx}>
@@ -222,7 +127,9 @@ const AvailabilityRow: React.FC<{ day: CalendarDay | null | undefined; onMore: (
   const tone = isToday ? nearestTone.today : isTomorrow ? nearestTone.tomorrow : nearestTone.later;
 
   const shown = day.times.slice(0, SLOTS_PREVIEW);
-  const rest = day.times.length - shown.length;
+  // Счётчик «+N» — от общего числа окон дня: в списке `times` приходят только
+  // первые три, и по их длине счётчик всегда выходил бы нулём.
+  const rest = Math.max(day.slotsCount, day.times.length) - shown.length;
 
   return (
     <Stack
@@ -345,7 +252,7 @@ const DoctorCardItem: React.FC<{
   onOpen: () => void;
 }> = ({ doctor, clinicPhone, onOpen }) => {
   const { t } = useT("publicBooking");
-  const { ref, day } = useNearestDay(doctor);
+  const day = nearestDayOf(doctor.availability);
   const [photoBroken, setPhotoBroken] = React.useState(false);
   const showPhoto = Boolean(doctor.photoUrl) && !photoBroken;
   /**
@@ -357,7 +264,6 @@ const DoctorCardItem: React.FC<{
 
   return (
     <Box
-      ref={ref}
       onClick={onOpen}
       sx={{
         display: "flex",
@@ -615,7 +521,10 @@ const DoctorsPage: React.FC = () => {
       },
       controller.signal,
     )
-      .then((res) => setDoctors(orderByAvailability(res.items)))
+      // Порядок задаёт бэк: сквозной по всей выборке — по числу свободных окон
+      // сегодня, затем по дате ближайшего окна. Пересортировывать страницу на
+      // клиенте нельзя: она только часть выборки.
+      .then((res) => setDoctors(res.items))
       .catch((e) => {
         if (isAbortError(e)) return;
         setError(e instanceof Error ? e.message : "Ошибка загрузки");

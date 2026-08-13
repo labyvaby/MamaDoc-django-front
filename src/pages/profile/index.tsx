@@ -38,6 +38,7 @@ import ChangePasswordCard from "./ChangePasswordCard";
 import EditProfileDrawer, { type ProfileFormValues } from "./EditProfileDrawer";
 import ProfileDocumentsBlock from "./ProfileDocumentsBlock";
 import AchievementsGrid from "../../components/achievements/AchievementsGrid";
+import { InstallAppButton, useInstallPrompt } from "../../pwa";
 
 const MotionBox = motion(Box);
 
@@ -222,27 +223,30 @@ const ProfilePage: React.FC = () => {
       label: "Основное",
       icon: <PersonOutlined fontSize="small" />,
       content: (
-        <AppCard variant="outlined" title="Контактные данные">
-          <Box
-            sx={{
-              display: "grid",
-              gap: 1.25,
-              gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-            }}
-          >
-            <InfoTile icon={<LocalPhoneOutlined />} label="Телефон" value={view.phone} active={Boolean(view.phone)} />
-            <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={view.telegramId} active={Boolean(view.telegramId)} />
-            <InfoTile icon={<EmailOutlined />} label="Email" value={view.email} active={Boolean(view.email)} />
-            {view.nickname && (
-              <InfoTile icon={<AlternateEmailOutlined />} label="Псевдоним" value={view.nickname} />
-            )}
-            {view.birthDate && (
-              <InfoTile icon={<CakeOutlined />} label="Дата рождения" value={dayjs(view.birthDate).format("DD.MM.YYYY")} />
-            )}
-            <InfoTile icon={<CreditCardOutlined />} label="Банковский счёт" value={formatBank(view.bank)} active={Boolean(view.bank)} monospace />
-            <InfoTile icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
-          </Box>
-        </AppCard>
+        <Stack spacing={2}>
+          <AppCard variant="outlined" title="Контактные данные">
+            <Box
+              sx={{
+                display: "grid",
+                gap: 1.25,
+                gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+              }}
+            >
+              <InfoTile icon={<LocalPhoneOutlined />} label="Телефон" value={view.phone} active={Boolean(view.phone)} />
+              <InfoTile icon={<TelegramIcon />} label="Telegram ID" value={view.telegramId} active={Boolean(view.telegramId)} />
+              <InfoTile icon={<EmailOutlined />} label="Email" value={view.email} active={Boolean(view.email)} />
+              {view.nickname && (
+                <InfoTile icon={<AlternateEmailOutlined />} label="Псевдоним" value={view.nickname} />
+              )}
+              {view.birthDate && (
+                <InfoTile icon={<CakeOutlined />} label="Дата рождения" value={dayjs(view.birthDate).format("DD.MM.YYYY")} />
+              )}
+              <InfoTile icon={<CreditCardOutlined />} label="Банковский счёт" value={formatBank(view.bank)} active={Boolean(view.bank)} monospace />
+              <InfoTile icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
+            </Box>
+          </AppCard>
+          <InstallAppCard />
+        </Stack>
       ),
     },
   ];
@@ -390,6 +394,38 @@ const ProfilePage: React.FC = () => {
         />
       )}
     </Box>
+  );
+};
+
+/**
+ * Установка CRM как приложения: иконка на главном экране телефона, запуск в
+ * отдельном окне без адресной строки. Карточку прячем, если приложение уже
+ * стоит или страница открыта с домашнего экрана.
+ */
+const InstallAppCard: React.FC = () => {
+  const { mode } = useInstallPrompt();
+  if (mode === "hidden") return null;
+
+  return (
+    <AppCard variant="outlined" title="Приложение на телефоне">
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
+        alignItems={{ xs: "stretch", md: "center" }}
+        justifyContent="space-between"
+      >
+        <Typography variant="body2" color="text.secondary">
+          Добавьте иконку CRM на главный экран — вход одним касанием, без браузера
+          и ввода адреса.
+        </Typography>
+        <InstallAppButton
+          variant="contained"
+          size="medium"
+          showWithoutPromptOnDesktop
+          sx={{ flexShrink: 0 }}
+        />
+      </Stack>
+    </AppCard>
   );
 };
 

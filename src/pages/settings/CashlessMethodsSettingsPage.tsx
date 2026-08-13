@@ -210,6 +210,8 @@ const CashlessMethodsSettingsPage: React.FC = () => {
   const [editing, setEditing] = React.useState<DjangoCashlessMethod | null>(null);
   const [togglingId, setTogglingId] = React.useState<number | null>(null);
   const [toggleError, setToggleError] = React.useState<string | null>(null);
+  /** Способ, для которого показываем подтверждение скрытия. */
+  const [hiding, setHiding] = React.useState<DjangoCashlessMethod | null>(null);
 
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
@@ -241,7 +243,16 @@ const CashlessMethodsSettingsPage: React.FC = () => {
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
-  const methods = methodsQuery.data ?? [];
+  // Активные сверху, скрытые — в конце: скрытый способ выпал из работы, и
+  // держать его вперемешку с рабочими значит каждый раз перечитывать статусы.
+  const methods = React.useMemo(() => {
+    const list = methodsQuery.data ?? [];
+    return [...list].sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      return a.name.localeCompare(b.name, "ru");
+    });
+  }, [methodsQuery.data]);
+  const hiddenCount = methods.filter((m) => !m.isActive).length;
   // 404 = эндпоинта ещё нет на бэке (тикет backend_ticket_cashless_methods.md).
   // Сырое «Page not found» ничего не объясняет — показываем причину словами.
   const notImplemented = (methodsQuery.error as ApiError)?.status === 404;
@@ -262,17 +273,25 @@ const CashlessMethodsSettingsPage: React.FC = () => {
     setDialogOpen(true);
   };
 
-  const handleToggleActive = async (method: DjangoCashlessMethod) => {
+  const setActive = async (method: DjangoCashlessMethod, isActive: boolean) => {
     setTogglingId(method.id);
     setToggleError(null);
     try {
-      await updateCashlessMethod(method.id, { isActive: !method.isActive });
+      await updateCashlessMethod(method.id, { isActive });
       invalidate();
+      setHiding(null);
     } catch (e) {
       setToggleError(parseBackendError(e));
     } finally {
       setTogglingId(null);
     }
+  };
+
+  // Скрытие спрашиваем: способ пропадёт из кассы у всех сотрудников сразу.
+  // Возврат безобиден — делаем без диалога.
+  const handleActiveClick = (method: DjangoCashlessMethod) => {
+    if (method.isActive) setHiding(method);
+    else void setActive(method, true);
   };
 
   return (
@@ -286,6 +305,11 @@ const CashlessMethodsSettingsPage: React.FC = () => {
             <Typography variant="body2" color="text.secondary">
               {t("cashlessMethods.description")}
             </Typography>
+            {canManage && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {t("cashlessMethods.noDeleteHint")}
+              </Typography>
+            )}
           </Box>
           {canManage && (
             <Button
@@ -347,7 +371,11 @@ const CashlessMethodsSettingsPage: React.FC = () => {
               </TableHead>
               <TableBody>
                 {methods.map((method) => (
-                  <TableRow key={method.id} hover>
+                  <TableRow
+                    key={method.id}
+                    hover
+                    sx={method.isActive ? undefined : { opacity: 0.6 }}
+                  >
                     <TableCell>{method.name}</TableCell>
                     <TableCell>
                       {method.branchName ?? (
@@ -370,40 +398,40 @@ const CashlessMethodsSettingsPage: React.FC = () => {
                     </TableCell>
                     {canManage && (
                       <TableCell align="right">
-                        <Tooltip title={t("cashlessMethods.tooltips.edit")}>
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={() => openEdit(method)}
-                              disabled={togglingId === method.id}
-                            >
-                              <EditOutlined fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip
-                          title={
-                            method.isActive
-                              ? t("cashlessMethods.tooltips.hide")
-                              : t("cashlessMethods.tooltips.activate")
-                          }
-                        >
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleToggleActive(method)}
-                              disabled={togglingId === method.id}
-                            >
-                              {togglingId === method.id ? (
-                                <CircularProgress size={16} />
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+                          <Tooltip title={t("cashlessMethods.tooltips.edit")}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => openEdit(method)}
+                                disabled={togglingId === method.id}
+                              >
+                                <EditOutlined fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          {/* Текстом, а не иконкой: «глаз» читается как что угодно,
+                              а действие тут единственное вместо удаления. */}
+                          <Button
+                            size="small"
+                            color={method.isActive ? "inherit" : "primary"}
+                            onClick={() => handleActiveClick(method)}
+                            disabled={togglingId === method.id}
+                            startIcon={
+                              togglingId === method.id ? (
+                                <CircularProgress size={14} color="inherit" />
                               ) : method.isActive ? (
                                 <VisibilityOffOutlined fontSize="small" />
                               ) : (
                                 <VisibilityOutlined fontSize="small" />
-                              )}
-                            </IconButton>
-                          </span>
-                        </Tooltip>
+                              )
+                            }
+                          >
+                            {method.isActive
+                              ? t("cashlessMethods.actions.hide")
+                              : t("cashlessMethods.actions.restore")}
+                          </Button>
+                        </Stack>
                       </TableCell>
                     )}
                   </TableRow>
@@ -412,7 +440,43 @@ const CashlessMethodsSettingsPage: React.FC = () => {
             </Table>
           </TableContainer>
         )}
+
+        {hiddenCount > 0 && (
+          <Typography variant="caption" color="text.secondary">
+            {t("cashlessMethods.hiddenFootnote", { count: hiddenCount })}
+          </Typography>
+        )}
       </Stack>
+
+      {/* Подтверждение скрытия: способ разом исчезает из кассы у всех. */}
+      <Dialog
+        open={hiding !== null}
+        onClose={togglingId !== null ? undefined : () => setHiding(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t("cashlessMethods.hideDialog.title")}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {t("cashlessMethods.hideDialog.text", { name: hiding?.name ?? "" })}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHiding(null)} disabled={togglingId !== null}>
+            {t("common:actions.cancel")}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => hiding && void setActive(hiding, false)}
+            disabled={togglingId !== null}
+            startIcon={
+              togglingId !== null ? <CircularProgress size={16} color="inherit" /> : undefined
+            }
+          >
+            {t("cashlessMethods.actions.hide")}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <CashlessMethodDialog
         open={dialogOpen}

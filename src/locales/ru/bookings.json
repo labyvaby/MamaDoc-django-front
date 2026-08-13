@@ -4,6 +4,41 @@
   "allSpecialists": "Все {{specialist.nomPl}}",
   "visitInCrm": "{{visit.nom, capitalize}} в CRM",
 
+  "detail": {
+    "title": "Бронь",
+    "recordSection": "Запись",
+    "patientSection": "{{patient.nom, capitalize}}",
+    "servicesSection": "Услуги",
+    "crmSection": "Связь с CRM",
+    "noServices": "Услуга не выбрана",
+    "duration": "Длительность",
+    "branch": "Филиал",
+    "matchOne": "Карта найдена по номеру телефона",
+    "matchMany_one": "По номеру найдена {{count}} карта — нужную выберут при подтверждении",
+    "matchMany_few": "По номеру найдено {{count}} карты — нужную выберут при подтверждении",
+    "matchMany_many": "По номеру найдено {{count}} карт — нужную выберут при подтверждении",
+    "matchNone": "Карты с таким номером нет — {{patient.acc}} найдут вручную при подтверждении",
+    "openPatient": "Открыть карту",
+    "openVisit": "Открыть {{visit.acc}}",
+    "visitNotCreated": "{{visit.nom, capitalize}} появится после подтверждения",
+    "syncedAt": "Синхронизирована",
+    "rebook": "Записать повторно",
+    "call": "Позвонить",
+    "whatsapp": "Написать в WhatsApp",
+    "copyPhone": "Скопировать номер",
+    "copied": "Скопировано",
+    "prev": "Предыдущая бронь",
+    "next": "Следующая бронь",
+    "openOnSite": "Открыть карточку записи на сайте"
+  },
+
+  "cancelConfirm": {
+    "title": "Отменить бронь?",
+    "message": "Пациент получит отмену онлайн-записи. Уже созданный {{visit.nom}} в CRM при этом не отменяется — если он есть, отмените его отдельно.",
+    "confirm": "Отменить бронь",
+    "cancel": "Не отменять"
+  },
+
   "confirm": {
     "title": "Подтверждение брони",
     "subtitle": "Выберите карту {{patient.gen}} и услуги — из них соберётся {{visit.nom}}.",

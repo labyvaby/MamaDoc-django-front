@@ -27,6 +27,8 @@ import "dayjs/locale/ru";
 
 dayjs.locale("ru");
 
+import { useSearchParams } from "react-router";
+
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useActiveScope } from "../../hooks/useActiveScope";
@@ -348,6 +350,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // поверх сетки. Сетка знает только id приёма (и он может быть на другой дате,
   // чем список дня), поэтому карточка грузится отдельным запросом по id.
   const [slotApptId, setSlotApptId] = React.useState<number | null>(null);
+  // Повторная запись из карточки брони: карта пациента и врач приходят в адресе.
+  const [rebookPatientId, setRebookPatientId] = React.useState<number | null>(null);
+  const [rebookEmployeeId, setRebookEmployeeId] = React.useState<number | null>(null);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
@@ -444,6 +449,45 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     setSlotApptId(null);
     setConclusionOpen(false);
   }, []);
+
+  /**
+   * Вход из других модулей. Карточка брони ведёт сюда двумя адресами:
+   * `?appointment=<id>` — открыть карточку приёма, созданного из брони;
+   * `?new=1&patient=<id>&employee=<id>` — записать пациента повторно.
+   *
+   * Приём открываем тем же дровером, что и клик по занятому окну: он грузится
+   * по id и не зависит от выбранной в регистратуре даты (приём может быть на
+   * другой день). Параметры одноразовые — сразу вычищаем из адреса, иначе
+   * перезагрузка страницы снова открывала бы дровер.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  React.useEffect(() => {
+    const apptRaw = searchParams.get("appointment");
+    const isNew = searchParams.get("new") === "1";
+    if (!apptRaw && !isNew) return;
+
+    const asId = (raw: string | null): number | null => {
+      const n = Number(raw);
+      return raw && Number.isFinite(n) && n > 0 ? n : null;
+    };
+
+    const apptId = asId(apptRaw);
+    if (apptId != null) setSlotApptId(apptId);
+    if (isNew) {
+      setRebookPatientId(asId(searchParams.get("patient")));
+      setRebookEmployeeId(asId(searchParams.get("employee")));
+      setCreateOpen(true);
+    }
+
+    setSearchParams(
+      (prev: URLSearchParams) => {
+        const next = new URLSearchParams(prev);
+        for (const key of ["appointment", "new", "patient", "employee"]) next.delete(key);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
 
   // Синхронизация с изменениями коллег: WebSocket /ws/changes/ как мгновенный
   // триггер + лёгкий timestamp-polling как страховка (частый, когда сокет
@@ -1174,9 +1218,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         onClose={() => {
           setCreateOpen(false);
           setSlotPrefill(null);
+          setRebookPatientId(null);
+          setRebookEmployeeId(null);
         }}
         onCreated={() => {
           setSlotPrefill(null);
+          setRebookPatientId(null);
+          setRebookEmployeeId(null);
           handleCreated();
         }}
         initialDate={
@@ -1188,8 +1236,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         }
         initialDateExact={!!slotPrefill}
         // Без предзаполнения из окна — исполнитель, отобранный в ленте аватарок.
-        initialEmployeeId={slotPrefill ? slotPrefill.employeeId : filterEmployeeId}
+        // Повторная запись из брони приходит со «своим» врачом — он важнее
+        // выбранного в ленте аватарок фильтра.
+        initialEmployeeId={
+          slotPrefill ? slotPrefill.employeeId : rebookEmployeeId ?? filterEmployeeId
+        }
         initialServiceId={slotPrefill?.serviceId ?? null}
+        initialPatientId={rebookPatientId}
         initialBooking={slotPrefill?.booking ?? false}
         showAllFieldsInitially={slotPrefill?.employeeId != null}
       />
