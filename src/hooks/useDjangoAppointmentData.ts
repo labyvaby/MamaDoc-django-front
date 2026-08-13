@@ -70,7 +70,14 @@ export function useDjangoAppointmentData(
       // staff.view and were getting 403 on opening the form.
       const [rawProviders, rawServices, rawAssignments] = await Promise.all([
         getServiceProviders({ branchId: branchId ?? undefined }, signal),
-        getServices(branchId ?? null, undefined, signal),
+        // ⚠ /catalog/services/ отвечает 404 «branchId не совпадает с активным
+        // филиалом», если филиал запроса не равен филиалу сессии (проверено на
+        // проде 14.08.2026). Форму приёма чужого филиала (режим «Все филиалы»,
+        // суперпользователь) это оставило бы вообще без услуг, поэтому при
+        // отказе повторяем без филиала — список шире, но форма работает.
+        getServices(branchId ?? null, undefined, signal).catch(() =>
+          branchId == null ? [] : getServices(null, undefined, signal),
+        ),
         getServiceAssignments(branchId ?? undefined, signal),
       ]);
       return { rawProviders, rawServices, rawAssignments };
