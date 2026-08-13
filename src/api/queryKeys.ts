@@ -59,6 +59,12 @@ export const djangoQueryKeys = {
       ["django", "patients", patientId, "balance-transactions", params] as const,
   },
 
+  programs: {
+    all: ["django", "programs"] as const,
+    enrollments: (patientId: number, scope: unknown) =>
+      ["django", "programs", "enrollments", patientId, scope] as const,
+  },
+
   cashbox: {
     summary: (filters: Record<string, unknown>) =>
       ["django", "cashbox", "summary", filters] as const,

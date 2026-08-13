@@ -17,6 +17,7 @@ export const PAGE_PERMISSIONS = {
   allAppointments: "appointments.doctor_room.view",
   allProcedures: "appointments.nurse_room.view",
   patients: "patients.view",
+  patientPrograms: "enrollments.view",
   employees: "staff.view",
   services: "catalog.view",
   expenses: ["finance.view", "finance.expense.view"],

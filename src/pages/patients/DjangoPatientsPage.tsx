@@ -11,6 +11,7 @@ import {
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
+import { useNavigate } from "react-router";
 
 dayjs.locale("ru");
 
@@ -58,6 +59,7 @@ const DjangoPatientsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
   const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
+  const navigate = useNavigate();
 
   const {
     hasPermission,
@@ -74,6 +76,7 @@ const DjangoPatientsPage: React.FC = () => {
   const canViewFinance = isSuperAdmin() || hasPermission("finance.view");
   const canManageFinance = isSuperAdmin() || hasPermission("finance.manage");
   const canViewVaccinations = isSuperAdmin() || hasPermission("vaccinations.view");
+  const canViewPrograms = isSuperAdmin() || hasPermission("enrollments.view");
   const defaultBranchId = activeBranch?.id ?? null;
 
   // ── List data ──────────────────────────────────────────────────────────────
@@ -294,6 +297,11 @@ const DjangoPatientsPage: React.FC = () => {
       onTopUp={canManageFinance ? () => setTopUpOpen(true) : undefined}
       onMerge={canUpdate ? handleMerge : undefined}
       onFace={canUpdate ? handleFace : undefined}
+      onOpenProgram={
+        canViewPrograms && (selected?.programStatus?.activeCount ?? 0) > 0
+          ? () => navigate(`/patients/${selected!.id}/program`)
+          : undefined
+      }
     />
   );
 

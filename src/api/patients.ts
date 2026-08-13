@@ -6,6 +6,18 @@ import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 export type PatientGender = "male" | "female" | "unknown";
 
+export interface PatientProgramStatus {
+  isVip: boolean;
+  activeCount: number;
+  primaryProgram: {
+    id: number;
+    code: string;
+    name: string;
+    expiresAt: string | null;
+    enabledModuleCodes: string[];
+  } | null;
+}
+
 export interface DjangoFamily {
   id: number;
   organizationId: number;
@@ -48,6 +60,7 @@ export interface DjangoPatient {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  programStatus?: PatientProgramStatus;
 }
 
 // ── Payloads ───────────────────────────────────────────────────────────────
