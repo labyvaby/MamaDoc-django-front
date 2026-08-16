@@ -272,6 +272,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     isLoading: cashlessMethodsLoading,
     isError: cashlessMethodsFailed,
     isRequired: cashlessMethodRequired,
+    defaultMethodId: cashlessDefaultMethodId,
     blocksSubmit: cashlessMethodsBlockSubmit,
   } = useCashlessMethods(open && appointment?.organizationId != null, {
     organizationId: appointment?.organizationId ?? null,
@@ -574,12 +575,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     insurerMissing || cashlessMethodMissing || cashlessMethodPending ||
     applyBlockedByRefund || applyBlockedByBonus;
 
-  // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
+  // Способ по умолчанию (или единственный) подставляем сами: 95 % оплат идут
+  // одним терминалом, выбирать его каждый раз вручную — лишний клик кассиру.
   React.useEffect(() => {
     if (cardNum <= 0 || cashlessMethodId !== "") return;
-    if (cashlessMethods.length !== 1) return;
-    setCashlessMethodId(cashlessMethods[0].id);
-  }, [cardNum, cashlessMethodId, cashlessMethods]);
+    if (cashlessDefaultMethodId === "") return;
+    setCashlessMethodId(cashlessDefaultMethodId);
+  }, [cardNum, cashlessMethodId, cashlessDefaultMethodId]);
 
   const isCancelled = CANCELLED_STATUSES.has(appointment?.status ?? "");
   const patientName = appointment?.patient?.fullName ?? t("payment.booking");

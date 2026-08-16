@@ -119,6 +119,13 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
         {methods.map((m) => (
           <MenuItem key={m.id} value={m.id}>
             {m.name}
+            {/* Дефолт подставлен автоматически — подписываем, чтобы кассир
+                видел, почему выбран именно этот способ. */}
+            {m.isDefault && (
+              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                {t("cashlessMethod.defaultSuffix")}
+              </Typography>
+            )}
           </MenuItem>
         ))}
       </TextField>

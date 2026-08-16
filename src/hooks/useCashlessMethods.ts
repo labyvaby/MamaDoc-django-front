@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   CASHLESS_METHODS_ENABLED,
   getCashlessMethods,
+  pickDefaultCashlessMethodId,
   type DjangoCashlessMethod,
 } from "../api/cashlessMethods";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../api/queryKeys";
@@ -30,6 +31,12 @@ export interface CashlessMethodsState {
   isError: boolean;
   /** Справочник загружен и непуст — только тогда форма требует выбор. */
   isRequired: boolean;
+  /**
+   * Способ, который форма подставляет сама: дефолт филиала операции, иначе
+   * общий дефолт организации, иначе единственный способ. Пусто — кассир
+   * выбирает вручную.
+   */
+  defaultMethodId: number | "";
   /**
    * Сохранение блокируется: справочник ещё не загружен (грузится, упал или
    * ждёт орг-контекст). Пустой список из-за ошибки нельзя трактовать как
@@ -85,6 +92,7 @@ export function useCashlessMethods(
     isLoading: active && !loaded && !query.isError,
     isError: active && query.isError,
     isRequired: loaded && methods.length > 0,
+    defaultMethodId: pickDefaultCashlessMethodId(methods, branchId),
     blocksSubmit: active && !loaded,
   };
 }
