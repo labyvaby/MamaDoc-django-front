@@ -1152,6 +1152,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           conclusion={startedSlot.conclusion}
           serviceLineId={startedSlot.serviceLineId}
           serviceName={startedSlot.service.name}
+          serviceId={startedSlot.service.id}
           doctorName={startedSlot.doctor?.fullName ?? "—"}
           appointmentId={appt.id}
           doctorId={startedSlot.doctor?.id ?? null}

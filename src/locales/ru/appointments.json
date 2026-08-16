@@ -550,7 +550,8 @@
       "weightPrecision": "Вес — не больше 3 знаков после запятой, например 3,456 кг",
       "heightPrecision": "Рост — не больше 2 знаков после запятой, например 57,5 см",
       "temperaturePrecision": "Температура — не больше 1 знака после запятой, например 36,6 °C",
-      "fillBeforeComplete": "Заполните {{conclusion.acc}} перед завершением"
+      "fillBeforeComplete": "Заполните {{conclusion.acc}} перед завершением",
+      "serviceLineGone": "Состав услуг {{visit.gen}} изменился, пока форма была открыта: услуги «{{service}}» в нём больше нет. Скопируйте текст, обновите карточку {{visit.gen}} и создайте {{conclusion.acc}} заново."
     },
     "draftRestored": "Восстановлен несохранённый черновик {{conclusion.gen}}",
     "templateApplied": "Шаблон применён",

@@ -115,6 +115,10 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
             : slot,
         ),
       );
+      // Список слотов мог устареть целиком: правка приёма пересоздаёт строки
+      // услуг с новыми id, и заключение тогда сохраняется в строку, которой в
+      // кэше нет (перепривязка в DjangoConclusionDrawer). Догоняем сервером.
+      void queryClient.invalidateQueries({ queryKey });
     },
     [queryClient, queryKey],
   );
@@ -140,6 +144,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         conclusion={onlySlot.conclusion}
         serviceLineId={onlySlot.serviceLineId}
         serviceName={onlySlot.service.name}
+        serviceId={onlySlot.service.id}
         doctorName={onlySlot.doctor?.fullName ?? "—"}
         appointmentId={appointmentId}
         doctorId={onlySlot.doctor?.id ?? null}
@@ -221,6 +226,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
           conclusion={drawerSlot.conclusion}
           serviceLineId={drawerSlot.serviceLineId}
           serviceName={drawerSlot.service.name}
+          serviceId={drawerSlot.service.id}
           doctorName={drawerSlot.doctor?.fullName ?? "—"}
           appointmentId={appointmentId}
           doctorId={drawerSlot.doctor?.id ?? null}
