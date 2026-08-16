@@ -171,6 +171,65 @@ export function cashlessMethodInUseMessage(err: unknown): string | null {
   return detailMessages(err).find((msg) => /[а-яё]/i.test(msg)) ?? null;
 }
 
+/** Разбивка «где используется способ» из сообщения 409. */
+export interface CashlessMethodUsage {
+  /** Оплаты приёмов */
+  payments: number;
+  /** Расходы; сторнированные (void) бэк тоже считает использованием */
+  expenses: number;
+  /** Движения склада */
+  movements: number;
+  /** Всего операций: число из сообщения, иначе сумма категорий */
+  total: number;
+}
+
+/**
+ * Категории считаем по ключевому слову, а не по позиции в строке: порядок и
+ * обёртка фразы у бэка не зафиксированы контрактом, а слова — единственное, за
+ * что можно держаться. Русские формы ловим по корню («1 платёж», «2 платежа»,
+ * «0 платежей»).
+ */
+const USAGE_PATTERNS: ReadonlyArray<readonly [keyof CashlessMethodUsage, RegExp]> = [
+  ["payments", /(\d+)\s*(?:payments?|плат[её]ж\w*)/i],
+  ["expenses", /(\d+)\s*(?:expenses?|расход\w*)/i],
+  ["movements", /(\d+)\s*(?:(?:stock\s+)?movements?|движени\w*)/i],
+];
+
+/**
+ * Счётчики операций из 409. Бэк отдаёт их **только внутри текста** сообщения
+ * («…used in 1 operations (0 payments, 1 expenses, 0 stock movements)…»):
+ * отдельных полей и `usageCount` в списке не будет — договорённость от
+ * 16.08.2026. Числа при этом языконезависимы, поэтому разбираем и английскую
+ * строку, которую `cashlessMethodInUseMessage` показывать отказывается: без них
+ * пользователю остаётся «указан где-то в трёх разделах», и он не знает, где
+ * искать. Отфильтровать операции по способу нечем — списки расходов и движений
+ * параметр `cashlessMethodId` игнорируют, глобального списка оплат нет вовсе
+ * (проверено на проде 16.08.2026), так что разбивка — единственная подсказка.
+ *
+ * `null`, если ни одной категории не нашлось: показывать «0/0/0» вместо
+ * непонятой строки хуже, чем общий текст без чисел.
+ */
+export function parseCashlessMethodUsage(err: unknown): CashlessMethodUsage | null {
+  if (!(err instanceof ApiError)) return null;
+  const text = detailMessages(err).join(" ");
+  if (!text) return null;
+  const usage: CashlessMethodUsage = { payments: 0, expenses: 0, movements: 0, total: 0 };
+  let matched = false;
+  for (const [key, pattern] of USAGE_PATTERNS) {
+    const found = pattern.exec(text);
+    if (found) {
+      usage[key] = Number(found[1]);
+      matched = true;
+    }
+  }
+  if (!matched) return null;
+  const total = /(\d+)\s*(?:operations?|операц\w*)/i.exec(text);
+  usage.total = total
+    ? Number(total[1])
+    : usage.payments + usage.expenses + usage.movements;
+  return usage;
+}
+
 /**
  * Способ, который форма подставляет сама: дефолт филиала операции → общий
  * дефолт организации → единственный доступный способ → ничего. Список приходит

@@ -4,6 +4,7 @@ import { ApiError } from "./client";
 import {
   cashlessMethodInUseMessage,
   isCashlessMethodInUseError,
+  parseCashlessMethodUsage,
   pickDefaultCashlessMethodId,
   type DjangoCashlessMethod,
 } from "./cashlessMethods";
@@ -127,5 +128,51 @@ describe("cashlessMethodInUseMessage", () => {
   it("понимает и строковый detail", () => {
     const err = new ApiError("conflict", 409, { detail: "Способ использован в 1 операции." });
     expect(cashlessMethodInUseMessage(err)).toBe("Способ использован в 1 операции.");
+  });
+});
+
+describe("parseCashlessMethodUsage", () => {
+  it("достаёт счётчики из английской строки — числа от языка не зависят", () => {
+    // Ровно та строка, что приходит с прода 16.08.2026.
+    const err = new ApiError("conflict", 409, {
+      detail: [
+        {
+          msg: "Cashless method is used in 1 operations (0 payments, 1 expenses, 0 stock movements). It can only be deactivated.",
+          type: "in_use",
+        },
+      ],
+    });
+    expect(parseCashlessMethodUsage(err)).toEqual({
+      payments: 0,
+      expenses: 1,
+      movements: 0,
+      total: 1,
+    });
+  });
+
+  it("разбирает и русскую строку, когда локализация доедет", () => {
+    const err = new ApiError("conflict", 409, {
+      detail: "Способ использован в 3 операциях (1 платёж, 2 расхода, 0 движений склада).",
+    });
+    expect(parseCashlessMethodUsage(err)).toEqual({
+      payments: 1,
+      expenses: 2,
+      movements: 0,
+      total: 3,
+    });
+  });
+
+  it("считает всего сам, если общего числа в тексте нет", () => {
+    const err = new ApiError("conflict", 409, {
+      detail: [{ msg: "2 payments, 1 expenses, 3 stock movements", type: "in_use" }],
+    });
+    expect(parseCashlessMethodUsage(err)?.total).toBe(6);
+  });
+
+  it("молчит, когда ни одной категории не распознал", () => {
+    // Иначе диалог показал бы уверенные «0 / 0 / 0» по непонятому тексту.
+    const err = new ApiError("conflict", 409, { detail: "Cashless method is in use." });
+    expect(parseCashlessMethodUsage(err)).toBeNull();
+    expect(parseCashlessMethodUsage(new Error("offline"))).toBeNull();
   });
 });

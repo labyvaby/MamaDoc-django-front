@@ -32,6 +32,7 @@ import { useFormValidation } from "../../../hooks/useFormValidation";
 import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
 import { useInvoicePhotos } from "../../../hooks/useInvoicePhotos";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { usePermissions } from "../../../hooks/usePermissions";
 import { CASHLESS_METHODS_ENABLED } from "../../../api/cashlessMethods";
 
 const noSpinnersSx = {
@@ -293,6 +294,15 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     // пустое поле суммы трактуем как 0. Для списания сумма обязательна.
     const isReceipt = mode === "in" || !!editingMovement;
 
+    // Филиал операции: обычно он у склада. У общего склада организации
+    // (`branchId: null`) берём филиал сессии — закуп всё равно проводит касса
+    // конкретного филиала. Если филиала нет и там (режим «Все филиалы»),
+    // справочник не запрашиваем вовсе: ответ по всей организации — это
+    // терминалы чужих касс (та же дыра, что была в расходе, 16.08.2026).
+    const { activeBranch } = usePermissions();
+    const movementBranchId = selectedWarehouse?.branchId ?? activeBranch?.id ?? null;
+    const branchScopeReady = selectedWarehouse != null && movementBranchId != null;
+
     // Способы безнала: нужны только приходу, оплаченному безналично.
     const {
         methods: cashlessMethods,
@@ -301,9 +311,9 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
         isRequired: cashlessMethodRequired,
         defaultMethodId: cashlessDefaultMethodId,
         blocksSubmit: cashlessMethodsBlockSubmit,
-    } = useCashlessMethods(open && isReceipt, {
+    } = useCashlessMethods(open && isReceipt && branchScopeReady, {
         organizationId: selectedWarehouse?.organizationId ?? null,
-        branchId: selectedWarehouse?.branchId ?? null,
+        branchId: movementBranchId,
     });
 
     // Способ по умолчанию (или единственный) подставляем сами — см. хук.
@@ -327,13 +337,21 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
               ? "Сумма не может быть отрицательной"
               : "Укажите сумму списания",
         // Непрогруженный справочник тоже блокирует: пустой список из-за ошибки
-        // нельзя трактовать как «способ не нужен».
+        // нельзя трактовать как «способ не нужен». А пока неизвестен филиал,
+        // справочник не запрошен намеренно — тогда виновата не загрузка, и
+        // просим выбрать филиал, а не обновить страницу.
         cashlessMethodId:
-            isReceipt && paymentMethod === "cashless" && cashlessMethodsBlockSubmit
-                ? "Справочник способов не загружен — обновите страницу"
-                : isReceipt && paymentMethod === "cashless" && cashlessMethodRequired && !cashlessMethodId
-                    ? "Выберите способ безналичной оплаты"
-                    : null,
+            !isReceipt || paymentMethod !== "cashless"
+                ? null
+                : selectedWarehouse != null && !branchScopeReady
+                    ? "Выберите филиал в шапке — способы безнала привязаны к филиалу"
+                    : !branchScopeReady
+                        ? null
+                        : cashlessMethodsBlockSubmit
+                            ? "Справочник способов не загружен — обновите страницу"
+                            : cashlessMethodRequired && !cashlessMethodId
+                                ? "Выберите способ безналичной оплаты"
+                                : null,
     });
 
     const handleSubmit = async () => {
@@ -516,7 +534,14 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                     options={warehouses ?? []}
                                     getOptionLabel={(o) => o.label || ""}
                                     value={selectedWarehouse}
-                                    onChange={(_, v) => setSelectedWarehouse(v)}
+                                    onChange={(_, v) => {
+                                        // Способ привязан к филиалу склада — при смене склада
+                                        // прежний выбор мог остаться терминалом чужой кассы.
+                                        if (v?.branchId !== selectedWarehouse?.branchId) {
+                                            setCashlessMethodId("");
+                                        }
+                                        setSelectedWarehouse(v);
+                                    }}
                                     isOptionEqualToValue={(o, v) => o.id === v.id}
                                     renderInput={(params) => (
                                         <TextField
@@ -669,15 +694,31 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                                     {/* Конкретный способ безнала (карта / Бакай / терминал…) */}
                                     {CASHLESS_METHODS_ENABLED && paymentMethod === "cashless" && (
                                         <Box ref={form.anchor("cashlessMethodId")} sx={{ mt: 1.5 }}>
-                                            <CashlessMethodSelect
-                                                methods={cashlessMethods}
-                                                value={cashlessMethodId}
-                                                onChange={setCashlessMethodId}
-                                                error={Boolean(form.errorOf("cashlessMethodId"))}
-                                                loading={cashlessMethodsLoading}
-                                                loadFailed={cashlessMethodsFailed}
-                                                disabled={loading}
-                                            />
+                                            {selectedWarehouse != null && !branchScopeReady ? (
+                                                // Общий склад + сессия без филиала: справочник по всей
+                                                // организации показал бы терминалы чужих касс.
+                                                <Typography
+                                                    variant="body2"
+                                                    color={
+                                                        form.errorOf("cashlessMethodId")
+                                                            ? "error.main"
+                                                            : "text.secondary"
+                                                    }
+                                                >
+                                                    Склад не привязан к филиалу — выберите филиал в шапке,
+                                                    способы безнала у каждой кассы свои.
+                                                </Typography>
+                                            ) : (
+                                                <CashlessMethodSelect
+                                                    methods={cashlessMethods}
+                                                    value={cashlessMethodId}
+                                                    onChange={setCashlessMethodId}
+                                                    error={Boolean(form.errorOf("cashlessMethodId"))}
+                                                    loading={cashlessMethodsLoading || !branchScopeReady}
+                                                    loadFailed={cashlessMethodsFailed}
+                                                    disabled={loading}
+                                                />
+                                            )}
                                         </Box>
                                     )}
                                 </Box>

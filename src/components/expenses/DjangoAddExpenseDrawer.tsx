@@ -46,6 +46,7 @@ import {
   type ExpenseCategoryKind,
 } from "../../api/expenses";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../api/staff";
+import { getBranches } from "../../api/organization";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
@@ -178,6 +179,36 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   });
   const activeCategories = (categoriesQuery.data ?? []).filter((c) => c.isActive);
 
+  // ── Филиал расхода ────────────────────────────────────────────────────────────
+  // Обычно филиал приходит из шапки. В режиме «Все филиалы» его нет, и раньше
+  // справочник способов запрашивался без филиала — в выбор попадали терминалы
+  // всех касс организации (жалоба 16.08.2026). Теперь филиал выбирается прямо в
+  // форме и уходит в расход: терминал филиальный, значит и расход тоже.
+  const [branchChoice, setBranchChoice] = React.useState<number | "">("");
+  const branchesQuery = useQuery({
+    queryKey: [...djangoQueryKeys.organization.branches, organizationId ?? null],
+    queryFn: () => getBranches(organizationId),
+    enabled: open && CASHLESS_METHODS_ENABLED && branchId == null,
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+  const orgBranches = branchesQuery.data ?? [];
+  /** Единственный филиал выбирать не за что — подставляем его молча. */
+  const needsBranchChoice = branchId == null && orgBranches.length > 1;
+  const expenseBranchId: number | null =
+    branchId ??
+    (needsBranchChoice
+      ? branchChoice === ""
+        ? null
+        : Number(branchChoice)
+      : orgBranches[0]?.id ?? null);
+  /**
+   * Филиал известен (или у организации его вовсе нет) — можно спрашивать
+   * справочник. Пока не известен, запрос не уходит: ответ по всей организации
+   * и есть тот самый список с терминалами чужих касс.
+   */
+  const branchScopeReady =
+    expenseBranchId != null || (branchesQuery.isSuccess && orgBranches.length === 0);
+
   // ── Способы безнала ───────────────────────────────────────────────────────────
   // Пока флаг выключен (справочника нет на бэке) список пуст и поле не видно.
   // Скоуп — сам расход (его организация и филиал), не активная сессия: иначе
@@ -189,9 +220,9 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     isRequired: cashlessMethodRequired,
     defaultMethodId: cashlessDefaultMethodId,
     blocksSubmit: cashlessMethodsBlockSubmit,
-  } = useCashlessMethods(open, {
+  } = useCashlessMethods(open && branchScopeReady, {
     organizationId: organizationId ?? null,
-    branchId: branchId ?? null,
+    branchId: expenseBranchId,
   });
 
   const selectedCategory = activeCategories.find((c) => c.id === categoryId) ?? null;
@@ -268,6 +299,9 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       setDraftRestored(false);
       prefillCategoryAppliedRef.current = false;
     }
+    // Филиал не храним в черновике: он зависит от того, в каком филиале сидит
+    // сессия сейчас, а не от того, что набирали вчера.
+    setBranchChoice("");
     setPhotoFile(null);
     setPhotoPreview(null);
     setError(null);
@@ -324,6 +358,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       : null;
     setEmployeeValue(emp);
     setEmployeeOptions(emp ? [emp] : []);
+    setBranchChoice("");
     setDraftRestored(false);
     autoNameRef.current = null;
   };
@@ -418,7 +453,9 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     try {
       const created = await createExpense({
         organizationId,
-        branchId,
+        // Филиал из шапки, а в режиме «Все филиалы» — выбранный в форме
+        // (пусто остаётся, только пока филиал безразличен: расход наличными).
+        branchId: expenseBranchId ?? undefined,
         categoryId: categoryId as number,
         name: trimmedName,
         cashAmount: cash > 0 ? cash.toFixed(2) : undefined,
@@ -496,14 +533,23 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       cashVal > 0 || cardVal > 0
         ? null
         : "Укажите сумму — наличными или картой",
+    // Безнал привязан к терминалу филиала, поэтому филиал нужен раньше способа.
+    expenseBranchId:
+      cardVal > 0 && needsBranchChoice && expenseBranchId == null
+        ? "Выберите филиал — от него зависят доступные способы"
+        : null,
     // Пустой список из-за ошибки загрузки — не повод сохранить безнал без
     // способа, поэтому непрогруженный справочник тоже блокирует сохранение.
+    // Пока филиал не выбран, за форму отвечает ошибка выше: справочник не
+    // запрошен намеренно, и «не загружен — обновите страницу» соврало бы.
     cashlessMethodId:
-      cardVal > 0 && cashlessMethodsBlockSubmit
-        ? "Справочник способов не загружен — обновите страницу"
-        : cardVal > 0 && cashlessMethodRequired && !cashlessMethodId
-          ? "Выберите способ безналичной оплаты"
-          : null,
+      cardVal <= 0 || !branchScopeReady
+        ? null
+        : cashlessMethodsBlockSubmit
+          ? "Справочник способов не загружен — обновите страницу"
+          : cashlessMethodRequired && !cashlessMethodId
+            ? "Выберите способ безналичной оплаты"
+            : null,
   });
 
   const drawerContent = (
@@ -749,20 +795,68 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                   />
                 </Stack>
 
-                {/* Способ безнала — только когда указана сумма картой. */}
-                {CASHLESS_METHODS_ENABLED && cardVal > 0 && (
-                  <Box ref={form.anchor("cashlessMethodId")}>
-                    <CashlessMethodSelect
-                      methods={cashlessMethods}
-                      value={cashlessMethodId}
-                      onChange={(v) => { setError(null); setCashlessMethodId(v); }}
-                      error={Boolean(form.errorOf("cashlessMethodId"))}
-                      loading={cashlessMethodsLoading}
-                      loadFailed={cashlessMethodsFailed}
+                {/* Филиал расхода — только в режиме «Все филиалы» и только
+                    когда есть безнал: терминалы у каждой кассы свои. */}
+                {CASHLESS_METHODS_ENABLED && cardVal > 0 && needsBranchChoice && (
+                  <Stack spacing={0.5}>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Филиал расхода
+                    </Typography>
+                    <TextField
+                      select
+                      size="small"
+                      fullWidth
+                      value={branchChoice}
+                      onChange={(e) => {
+                        setError(null);
+                        // Способ принадлежит филиалу — при смене филиала выбор
+                        // сбрасываем, иначе в расход уйдёт чужой терминал.
+                        setCashlessMethodId("");
+                        setBranchChoice(e.target.value === "" ? "" : Number(e.target.value));
+                      }}
                       disabled={busy}
-                    />
-                  </Box>
+                      SelectProps={{
+                        displayEmpty: true,
+                        renderValue: (selected) =>
+                          selected === "" ? (
+                            <Typography component="span" variant="body2" color="text.disabled">
+                              Выберите филиал
+                            </Typography>
+                          ) : (
+                            orgBranches.find((b) => b.id === Number(selected))?.name ?? ""
+                          ),
+                      }}
+                      {...form.field(
+                        "expenseBranchId",
+                        "В шапке выбраны все филиалы — укажите, чей терминал",
+                      )}
+                    >
+                      {orgBranches.map((b) => (
+                        <MenuItem key={b.id} value={b.id}>
+                          {b.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
                 )}
+
+                {/* Способ безнала — когда указана сумма картой и известен
+                    филиал: без филиала список — терминалы всех касс сразу. */}
+                {CASHLESS_METHODS_ENABLED &&
+                  cardVal > 0 &&
+                  (!needsBranchChoice || expenseBranchId != null) && (
+                    <Box ref={form.anchor("cashlessMethodId")}>
+                      <CashlessMethodSelect
+                        methods={cashlessMethods}
+                        value={cashlessMethodId}
+                        onChange={(v) => { setError(null); setCashlessMethodId(v); }}
+                        error={Boolean(form.errorOf("cashlessMethodId"))}
+                        loading={cashlessMethodsLoading || !branchScopeReady}
+                        loadFailed={cashlessMethodsFailed}
+                        disabled={busy}
+                      />
+                    </Box>
+                  )}
 
                 {total > 0 && (
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
