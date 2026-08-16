@@ -302,16 +302,17 @@ const DjangoWarehousesPage: React.FC = () => {
         if (!targetProductId && !newProductName) return;
 
         try {
-            if (editingMovement) {
-                await updateStockMovement(editingMovement.id, {
+            // Сохранённое движение возвращаем дроверу — по его id уходят фото
+            // накладной (см. DjangoAddMovementDrawer).
+            const saved = editingMovement
+                ? await updateStockMovement(editingMovement.id, {
                     quantity: qty,
                     totalCost: amount,
                     comment,
                     paymentMethod: paymentMethod ?? "cash",
                     ...(cashlessMethodId ? { cashlessMethodId } : {}),
-                });
-            } else {
-                await createStockMovement({
+                })
+                : await createStockMovement({
                     warehouseId: wId,
                     productId: targetProductId ?? undefined,
                     newProductName,
@@ -322,7 +323,6 @@ const DjangoWarehousesPage: React.FC = () => {
                     paymentMethod,
                     ...(cashlessMethodId ? { cashlessMethodId } : {}),
                 });
-            }
             notify?.({ type: "success", message: editingMovement ? "Приход обновлен" : "Успешно" });
 
             // Новый товар создан на лету — обновляем справочник для пикера.
@@ -341,7 +341,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 setSelectedItem(null);
                 setSelectedWarehouseId(wId);
                 setEditingMovement(null);
-                return;
+                return saved;
             }
 
             const data = await fetchStock();
@@ -358,6 +358,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 setMovements(moves);
             }
             setEditingMovement(null);
+            return saved;
         } catch (e) {
             console.error(e);
             const message = e instanceof ApiError ? e.message : "Ошибка сохранения";

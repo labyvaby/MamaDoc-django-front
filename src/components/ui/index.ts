@@ -36,3 +36,5 @@ export { DiscountInput } from "./DiscountInput";
 export type { DiscountInputProps, DiscountType } from "./DiscountInput";
 export { CashlessMethodSelect } from "./CashlessMethodSelect";
 export type { CashlessMethodSelectProps } from "./CashlessMethodSelect";
+export { InvoicePhotosField } from "./InvoicePhotosField";
+export type { InvoicePhotosFieldProps } from "./InvoicePhotosField";

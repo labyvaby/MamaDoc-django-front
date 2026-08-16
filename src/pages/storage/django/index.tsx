@@ -220,16 +220,17 @@ const DjangoStoragePage: React.FC = () => {
         }
 
         try {
-            if (editingMovement) {
-                await updateStockMovement(editingMovement.id, {
+            // Сохранённое движение возвращаем дроверу — по его id уходят фото
+            // накладной (см. DjangoAddMovementDrawer).
+            const saved = editingMovement
+                ? await updateStockMovement(editingMovement.id, {
                     quantity: qty,
                     totalCost: amount,
                     comment,
                     paymentMethod: paymentMethod ?? "cash",
                     ...(cashlessMethodId ? { cashlessMethodId } : {}),
-                });
-            } else {
-                await createStockMovement({
+                })
+                : await createStockMovement({
                     warehouseId,
                     productId: targetProductId ?? undefined,
                     newProductName,
@@ -240,7 +241,6 @@ const DjangoStoragePage: React.FC = () => {
                     paymentMethod,
                     ...(cashlessMethodId ? { cashlessMethodId } : {}),
                 });
-            }
 
             notify?.({ type: "success", message: editingMovement ? "Приход обновлен" : "Успешно" });
 
@@ -266,6 +266,7 @@ const DjangoStoragePage: React.FC = () => {
                 fetchProductsForSelector();
             }
             setEditingMovement(null);
+            return saved;
         } catch (e) {
             console.error(e);
             const message = e instanceof ApiError ? e.message : "Ошибка сохранения";

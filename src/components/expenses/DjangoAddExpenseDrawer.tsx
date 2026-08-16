@@ -29,7 +29,7 @@ import "dayjs/locale/ru";
 import { useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
-import { CustomDatePicker, AppBottomSheet, CashlessMethodSelect } from "../ui";
+import { CustomDatePicker, AppBottomSheet, CashlessMethodSelect, InvoicePhotosField } from "../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 import {
   prepareImageForUpload,
@@ -49,6 +49,7 @@ import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../api/staff
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
+import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,6 +147,15 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   const [description, setDescription] = React.useState("");
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
+
+  // Фото накладной (до 2 шт). Расход ещё не создан — файлы копятся и уходят
+  // после createExpense (см. handleSubmit).
+  const invoices = useInvoicePhotos({
+    target: "expense",
+    entityId: null,
+    organizationId: organizationId ?? null,
+    open,
+  });
 
   // Employee autocomplete
   const [employeeInput, setEmployeeInput] = React.useState("");
@@ -423,6 +433,23 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
       });
 
       if (!prefillKey) clearFormDraft(ADD_DRAFT_KEY);
+
+      // Накладные (до 2 шт) — новая ветка; старое одиночное фото остаётся,
+      // пока INVOICE_PHOTOS_ENABLED выключен.
+      if (invoices.enabled) {
+        const { failed } = await invoices.flush(created.id);
+        onCreated(created);
+        onClose();
+        if (failed > 0) {
+          enqueueSnackbar(
+            failed === 1
+              ? "Расход создан, но фото накладной не загрузилось. Его можно прикрепить из карточки расхода"
+              : `Расход создан, но ${failed} фото накладной не загрузились. Их можно прикрепить из карточки расхода`,
+            { variant: "warning", persist: true },
+          );
+        }
+        return;
+      }
 
       if (photoFile) {
         try {
@@ -768,7 +795,15 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
               />
             </Stack>
 
-            {/* Фото — последним: чек прикладывают в конце */}
+            {/* Фото — последним: чек прикладывают в конце. С включёнными
+                накладными вместо одиночного фото — поле на 2 снимка. */}
+            {invoices.enabled ? (
+              <InvoicePhotosField
+                state={invoices}
+                label="Фото накладной / чека"
+                disabled={busy}
+              />
+            ) : (
             <Stack spacing={0.5}>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
                 Фото
@@ -809,6 +844,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
                 </Button>
               )}
             </Stack>
+            )}
           </Stack>
         </Collapse>
 

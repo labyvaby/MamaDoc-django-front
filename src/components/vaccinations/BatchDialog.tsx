@@ -12,10 +12,12 @@ import {
 } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
+import { useSnackbar } from "notistack";
 
-import { AppButton, CustomDatePicker } from "../ui";
+import { AppButton, CustomDatePicker, InvoicePhotosField } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
@@ -40,6 +42,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
   const { activeBranch } = usePermissions();
   const branchId = activeBranch?.id ?? null;
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const [error, setError] = React.useState<string | null>(null);
 
   const isEdit = batch != null;
@@ -53,6 +56,15 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
   const [costPrice, setCostPrice] = React.useState("");
   const [supplier, setSupplier] = React.useState("");
   const [notes, setNotes] = React.useState("");
+
+  // Фото накладной: при редактировании уходят сразу, при приходе копятся до
+  // создания партии и отправляются в onSuccess (id появляется только там).
+  const invoices = useInvoicePhotos({
+    target: "vaccinationBatch",
+    entityId: batch?.id ?? null,
+    organizationId: orgId,
+    open,
+  });
 
   const vaccinesQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.vaccines({ orgId, picker: "batch" }),
@@ -121,8 +133,18 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
       };
       return createBatch(payload, orgId);
     },
-    onSuccess: () => {
+    onSuccess: async (saved) => {
+      // Партия уже сохранена: неудачная загрузка фото её не откатывает —
+      // предупреждаем тостом, приложить заново можно из «Изменить партию»
+      // (там фото уходят сразу, без повторного сохранения).
+      const { failed } = await invoices.flush(saved.id);
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
+      if (failed > 0) {
+        enqueueSnackbar(
+          `Партия сохранена, но ${failed === 1 ? "фото накладной не загрузилось" : `${failed} фото накладной не загрузились`} — приложите заново через «Изменить партию».`,
+          { variant: "warning" },
+        );
+      }
       onClose();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить партию"),
@@ -262,6 +284,8 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
+
+          <InvoicePhotosField state={invoices} disabled={mutation.isPending} />
         </Stack>
       </DialogContent>
       <Stack direction="row" spacing={1.5} sx={{ px: 3, pb: 2, pt: 1, justifyContent: "flex-end" }}>

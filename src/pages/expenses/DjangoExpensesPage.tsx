@@ -37,10 +37,13 @@ import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { PageHeader, AppBottomSheet, PaymentInfoBlock } from "../../components/ui";
+import { PageHeader, AppBottomSheet, PaymentInfoBlock, InvoicePhotosField } from "../../components/ui";
 import { DjangoAddExpenseDrawer } from "../../components/expenses/DjangoAddExpenseDrawer";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useInvoicePhotos } from "../../hooks/useInvoicePhotos";
+import { INVOICE_PHOTOS_ENABLED } from "../../api/invoicePhotos";
 import { useCan } from "../../hooks/useCan";
 import { useRealtimeRefetch } from "../../hooks/useRealtimeRefetch";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -112,6 +115,17 @@ const ExpenseDetailCard: React.FC<{
   const [photoDeleting, setPhotoDeleting] = React.useState(false);
   const [photoError, setPhotoError] = React.useState<string | null>(null);
   const photoInputRef = React.useRef<HTMLInputElement>(null);
+  const orgId = useApiOrgId();
+
+  // Накладные (до 2 шт). Пока флаг выключен — остаётся одиночное фото чека
+  // (photoUrl + PUT/DELETE .../photo/), поэтому старые кнопки не удалены.
+  const invoices = useInvoicePhotos({
+    target: "expense",
+    entityId: expense?.id ?? null,
+    organizationId: orgId,
+    open: true,
+    canManage: canManage && !expense?.isVoided,
+  });
 
   React.useEffect(() => {
     setPhotoError(null);
@@ -189,8 +203,9 @@ const ExpenseDetailCard: React.FC<{
       variant="outlined"
       sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: "14px" }}
     >
-      {/* Фото */}
-      {expense.photoUrl && (
+      {/* Фото. При включённых накладных шапку не рисуем — фото показывает
+          InvoicePhotosField ниже (photoUrl там же, первым элементом). */}
+      {!INVOICE_PHOTOS_ENABLED && expense.photoUrl && (
         <Box
           sx={{
             width: "100%",
@@ -270,6 +285,7 @@ const ExpenseDetailCard: React.FC<{
             }}
           />
           <Stack direction="row" spacing={1} sx={{ flex: 1, flexWrap: "wrap", gap: 1 }}>
+            {!INVOICE_PHOTOS_ENABLED && (
             <Button
               size="small"
               variant="outlined"
@@ -284,7 +300,8 @@ const ExpenseDetailCard: React.FC<{
                   ? "Заменить фото"
                   : "Прикрепить фото"}
             </Button>
-            {expense.photoUrl && (
+            )}
+            {!INVOICE_PHOTOS_ENABLED && expense.photoUrl && (
               <Button
                 size="small"
                 variant="outlined"
@@ -343,6 +360,17 @@ const ExpenseDetailCard: React.FC<{
             variant="detailed"
             showIcons
           />
+
+          {INVOICE_PHOTOS_ENABLED && (
+            <>
+              <Divider />
+              <InvoicePhotosField
+                state={invoices}
+                label="Фото накладной / чека"
+                readOnly={!canManage || expense.isVoided}
+              />
+            </>
+          )}
 
           <Divider />
 

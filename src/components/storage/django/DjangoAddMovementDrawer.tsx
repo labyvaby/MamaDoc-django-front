@@ -25,11 +25,13 @@ import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { motion } from "framer-motion";
-import { cascadeContainer, cascadeItem, CashlessMethodSelect } from "../../ui";
+import { cascadeContainer, cascadeItem, CashlessMethodSelect, InvoicePhotosField } from "../../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import { DjangoStockItem, DjangoStockMovement } from "../../../api/warehouse";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
+import { useInvoicePhotos } from "../../../hooks/useInvoicePhotos";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { CASHLESS_METHODS_ENABLED } from "../../../api/cashlessMethods";
 
 const noSpinnersSx = {
@@ -65,6 +67,11 @@ interface DjangoAddMovementDrawerProps {
     onClose: () => void;
     product: DjangoStockItem | null;
     mode: "in" | "out";
+    /**
+     * Возврат созданного/обновлённого движения нужен для фото накладной: id
+     * появляется только после сохранения, а фото уходят отдельным запросом.
+     * Страница может вернуть void — тогда фото просто не отправятся.
+     */
     onConfirm: (
         quantity: number,
         comment?: string,
@@ -73,7 +80,7 @@ interface DjangoAddMovementDrawerProps {
         paymentMethod?: "cash" | "cashless",
         warehouseId?: number,
         cashlessMethodId?: number,
-    ) => Promise<void>;
+    ) => Promise<void | DjangoStockMovement | null>;
     availableProducts?: MovementProductOption[];
     editingMovement?: DjangoStockMovement | null;
     /**
@@ -166,6 +173,16 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
     const [cashlessMethodId, setCashlessMethodId] = useState<number | "">("");
     const [selectedWarehouse, setSelectedWarehouse] = useState<MovementWarehouseOption | null>(null);
     const [draftRestored, setDraftRestored] = useState(false);
+
+    // Фото накладной: у редактируемого прихода уходят сразу, у нового копятся
+    // до сохранения (id движения появляется только в ответе onConfirm).
+    const orgId = useApiOrgId();
+    const invoices = useInvoicePhotos({
+        target: "stockMovement",
+        entityId: editingMovement?.id ?? null,
+        organizationId: orgId,
+        open,
+    });
 
     // Селект склада показываем только в режиме нового товара и только если
     // страница передала список (на странице «Склад» склад задан колонкой).
@@ -326,7 +343,7 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
 
         try {
             setLoading(true);
-            await onConfirm(
+            const saved = await onConfirm(
                 qty,
                 comment,
                 selectedProduct,
@@ -337,6 +354,8 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                     ? Number(cashlessMethodId)
                     : undefined,
             );
+            // Движение уже проведено: упавшая загрузка фото его не откатывает.
+            if (saved) await invoices.flush(saved.id);
             clearFormDraft(movementDraftKeyFor(product, editingMovement));
             onClose();
         } catch (e) {
@@ -710,6 +729,16 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
                     />
                 </Stack>
                 </MotionBox>
+
+                {/* Накладная — только у прихода: списание подтверждают актом, а не ей. */}
+                {isReceipt && (
+                    <MotionBox variants={cascadeItem}>
+                        <Stack spacing={1.5}>
+                            <Divider />
+                            <InvoicePhotosField state={invoices} disabled={loading} />
+                        </Stack>
+                    </MotionBox>
+                )}
             </MotionStack>
 
             {/* Footer */}
