@@ -221,11 +221,14 @@ const CashlessMethodsSettingsPage: React.FC = () => {
   /** Способ, для которого показываем подтверждение удаления. */
   const [deleting, setDeleting] = React.useState<DjangoCashlessMethod | null>(null);
   /**
-   * Удаление упёрлось в 409: способ уже стоит в платежах, расходах или
-   * движениях склада. Диалог перестраивается в предложение скрыть — уводить
-   * пользователя обратно в таблицу за другой кнопкой незачем.
+   * Почему удаление не прошло. `inUse` — способ уже стоит в платежах, расходах
+   * или движениях склада (409). `unsupported` — на сервере ещё старая версия
+   * справочника, где detail-роут разрешает только PATCH (405): фронт может
+   * оказаться на проде раньше бэкенда, и сырое «Метод 'DELETE' не разрешён»
+   * пользователю ничего не объясняет. В обоих случаях диалог перестраивается в
+   * предложение скрыть — уводить обратно в таблицу за другой кнопкой незачем.
    */
-  const [deleteBlocked, setDeleteBlocked] = React.useState(false);
+  const [deleteBlocked, setDeleteBlocked] = React.useState<"inUse" | "unsupported" | null>(null);
   /**
    * Сообщение бэка из 409 — единственное место, где есть количества операций.
    * Пусто, пока сообщение приходит на английском (см. cashlessMethodInUseMessage):
@@ -337,7 +340,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
   };
 
   const openDelete = (method: DjangoCashlessMethod) => {
-    setDeleteBlocked(false);
+    setDeleteBlocked(null);
     setDeleteBlockedDetail(null);
     setDeleting(method);
   };
@@ -350,10 +353,14 @@ const CashlessMethodsSettingsPage: React.FC = () => {
       invalidate();
       setDeleting(null);
     } catch (e) {
-      // Способ уже в операциях — предлагаем скрытие прямо в этом же диалоге.
+      // Способ уже в операциях (или бэк ещё без удаления) — предлагаем скрытие
+      // прямо в этом же диалоге.
       if (isCashlessMethodInUseError(e)) {
-        setDeleteBlocked(true);
+        setDeleteBlocked("inUse");
         setDeleteBlockedDetail(cashlessMethodInUseMessage(e));
+      } else if ((e as ApiError)?.status === 405) {
+        setDeleteBlocked("unsupported");
+        setDeleteBlockedDetail(null);
       } else {
         setToggleError(parseBackendError(e));
         setDeleting(null);
@@ -367,8 +374,32 @@ const CashlessMethodsSettingsPage: React.FC = () => {
   const handleHideFromDelete = async (method: DjangoCashlessMethod) => {
     await setActive(method, false);
     setDeleting(null);
-    setDeleteBlocked(false);
+    setDeleteBlocked(null);
   };
+
+  // Текст диалога удаления: подтверждение, «уже использован» (со счётчиком от
+  // бэка отдельной строкой или без него) и «сервер ещё не умеет удалять».
+  const deleteDialogText = (() => {
+    const name = deleting?.name ?? "";
+    const active = deleting?.isActive ?? false;
+    if (deleteBlocked === "unsupported") {
+      return active
+        ? t("cashlessMethods.deleteDialog.unsupportedText")
+        : t("cashlessMethods.deleteDialog.unsupportedHiddenText");
+    }
+    if (deleteBlocked === "inUse") {
+      // Со счётчиком имя способа уже названо строкой выше — не повторяем.
+      if (deleteBlockedDetail) {
+        return active
+          ? t("cashlessMethods.deleteDialog.blockedHint")
+          : t("cashlessMethods.deleteDialog.blockedHintHidden");
+      }
+      return active
+        ? t("cashlessMethods.deleteDialog.blockedText", { name })
+        : t("cashlessMethods.deleteDialog.blockedHiddenText", { name });
+    }
+    return t("cashlessMethods.deleteDialog.text", { name });
+  })();
 
   return (
     <SettingsLayout>
@@ -612,9 +643,11 @@ const CashlessMethodsSettingsPage: React.FC = () => {
         fullWidth
       >
         <DialogTitle>
-          {deleteBlocked
+          {deleteBlocked === "inUse"
             ? t("cashlessMethods.deleteDialog.blockedTitle")
-            : t("cashlessMethods.deleteDialog.title")}
+            : deleteBlocked === "unsupported"
+              ? t("cashlessMethods.deleteDialog.unsupportedTitle")
+              : t("cashlessMethods.deleteDialog.title")}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={1}>
@@ -626,17 +659,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
               </Typography>
             )}
             <Typography variant="body2" color="text.secondary">
-              {!deleteBlocked
-                ? t("cashlessMethods.deleteDialog.text", { name: deleting?.name ?? "" })
-                : deleteBlockedDetail
-                  ? deleting?.isActive
-                    ? t("cashlessMethods.deleteDialog.blockedHint")
-                    : t("cashlessMethods.deleteDialog.blockedHintHidden")
-                  : deleting?.isActive
-                    ? t("cashlessMethods.deleteDialog.blockedText", { name: deleting?.name ?? "" })
-                    : t("cashlessMethods.deleteDialog.blockedHiddenText", {
-                        name: deleting?.name ?? "",
-                      })}
+              {deleteDialogText}
             </Typography>
           </Stack>
         </DialogContent>
