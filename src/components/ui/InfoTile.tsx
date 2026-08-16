@@ -11,6 +11,8 @@ export type InfoTileProps = {
   active?: boolean;
   /** Моноширинное значение (счёт, ИНН и т.п.). */
   monospace?: boolean;
+  /** Allow long values to wrap inside narrow containers. */
+  wrapValue?: boolean;
 };
 
 /**
@@ -25,6 +27,7 @@ export const InfoTile: React.FC<InfoTileProps> = ({
   value,
   active = true,
   monospace = false,
+  wrapValue = false,
 }) => (
   <Box
     sx={(t) => ({
@@ -36,6 +39,7 @@ export const InfoTile: React.FC<InfoTileProps> = ({
       border: 1,
       borderColor: "divider",
       bgcolor: subtleBg(t),
+      minWidth: 0,
       transition: "background-color .15s ease, border-color .15s ease",
       "&:hover": {
         bgcolor: subtleBg(t, true),
@@ -68,8 +72,11 @@ export const InfoTile: React.FC<InfoTileProps> = ({
       <Typography
         variant="body2"
         fontWeight={600}
-        noWrap
-        sx={monospace ? { fontFamily: "monospace", letterSpacing: 0.5 } : undefined}
+        noWrap={!wrapValue}
+        sx={{
+          ...(monospace ? { fontFamily: "monospace", letterSpacing: 0.5 } : {}),
+          ...(wrapValue ? { overflowWrap: "anywhere", wordBreak: "break-word" } : {}),
+        }}
       >
         {value || "—"}
       </Typography>
