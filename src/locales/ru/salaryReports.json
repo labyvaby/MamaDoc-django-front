@@ -41,7 +41,32 @@
     "recalculate": "Пересчитать",
     "unfreeze": "Разморозить",
     "payout": "Выплатить",
-    "paidBadge": "✓ Выплачено"
+    "paidBadge": "✓ Выплачено",
+    "statement": "Ведомость"
+  },
+  "statement": {
+    "title": "Ведомость на выплату",
+    "subtitle": "{{month}} · выгрузка в Excel",
+    "executorLabel": "Исполнитель",
+    "executorHelper": "ФИО попадёт в подпись внизу файла",
+    "loading": "Загружаем реквизиты: {{loaded}} из {{total}}",
+    "loadError": "Не удалось загрузить реквизиты",
+    "buildError": "Не удалось сформировать файл",
+    "emptyMonth": "За выбранный месяц нет сумм к выплате.",
+    "missingAccounts": "Без номера счёта: {{count}} — в файле эти ячейки останутся пустыми",
+    "partialLoad": "Часть данных не загрузилась: {{count}}. Проверьте такие строки перед отправкой в банк.",
+    "noAccount": "не заполнен",
+    "accountHidden": "нет доступа",
+    "noPrivateAccess": "Номера счетов скрыты: нет права на реквизиты сотрудников (staff.private.view). Файл сформируется с пустым столбцом — попросите администратора выдать право.",
+    "columnAccount": "Номер карты/счёта",
+    "columnAmount": "Сумма",
+    "columnWorkDays": "Рабочих дней",
+    "columnEmployment": "Статус операции",
+    "employmentFull": "Полный",
+    "employmentPartTime": "По совместительству",
+    "selectedSummary": "Выбрано {{count}} · {{sum}}",
+    "download": "Скачать .xlsx",
+    "fileName": "Список сотрудников {{month}}.xlsx"
   },
   "status": {
     "locked": "Заморожен",

@@ -50,7 +50,9 @@ import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
+import DescriptionIcon from "@mui/icons-material/DescriptionOutlined";
 import { PeriodSettingsDialog } from "../../../features/payroll/components/PeriodSettingsDialog";
+import { PayrollStatementDrawer } from "../../../features/payroll/components/PayrollStatementDrawer";
 import {
   getPayrollActiveMonths,
   getPayrollReport,
@@ -174,6 +176,8 @@ const DjangoSalaryReportsPage: React.FC = () => {
   const [payoutRow, setPayoutRow] = React.useState<PayrollRow | null>(null);
   // Страничный дравер «Единоразовая надбавка».
   const [bonusDrawerOpen, setBonusDrawerOpen] = React.useState(false);
+  // Платёжная ведомость (.xlsx) по строкам месяца.
+  const [statementOpen, setStatementOpen] = React.useState(false);
 
   const handleLock = async () => {
     setBusy(true);
@@ -254,6 +258,19 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 color={report.status === "locked" ? "success" : "default"}
                 variant={report.status === "locked" ? "filled" : "outlined"}
               />
+            )}
+            {canManage && hasRows && (
+              <Tooltip title={t("statement.title")}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setStatementOpen(true)}
+                  startIcon={compactHeader ? undefined : <DescriptionIcon />}
+                  sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
+                >
+                  {compactHeader ? <DescriptionIcon fontSize="small" /> : t("actions.statement")}
+                </Button>
+              </Tooltip>
             )}
             {canManage && report?.status === "draft" && (
               <Tooltip title={t("tooltips.bonusPerEmployee")}>
@@ -732,6 +749,20 @@ const DjangoSalaryReportsPage: React.FC = () => {
         organizationId={report?.organizationId}
       />
 
+
+      {/* Платёжная ведомость: ФИО, счёт, сумма, рабочие дни — в .xlsx */}
+      <PayrollStatementDrawer
+        open={statementOpen}
+        onClose={() => setStatementOpen(false)}
+        rows={report?.rows ?? []}
+        year={year}
+        month={month}
+        monthLabel={dayjs(date).format("MMMM YYYY")}
+        fileName={t("statement.fileName", { month: dayjs(date).format("MM.YYYY") })}
+        defaultExecutorName={activeEmployee?.fullName ?? ""}
+        organizationId={report?.organizationId}
+        branchId={branchFilterId}
+      />
 
       <PeriodSettingsDialog
         open={settingsDialogOpen}
