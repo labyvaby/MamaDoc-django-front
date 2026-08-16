@@ -36,6 +36,7 @@ import SalaryReportRow, {
   COLUMNS_REGISTRATOR,
   COLUMNS_ADMIN,
   getVisibleSalaryColumns,
+  isEmptyPayrollRow,
   type ColumnConfig,
 } from "./components/SalaryReportRow";
 
@@ -167,6 +168,16 @@ const DjangoSalaryReportsPage: React.FC = () => {
     }
   }, [activeMonthKeys, date]);
 
+  // Сотрудники без единой цифры за месяц (нули во всех колонках) в таблицах не
+  // показываются — они только удлиняют отчёт. На итоги это не влияет: нулевая
+  // строка ничего не добавляет ни в авансы, ни в «К выплате».
+  const reportRows = query.data?.rows;
+  const rowsWithData = useMemo(
+    () => (reportRows ?? []).filter((r) => !isEmptyPayrollRow(r)),
+    [reportRows],
+  );
+  const hiddenEmptyCount = (reportRows?.length ?? 0) - rowsWithData.length;
+
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
   const [unlockOpen, setUnlockOpen] = React.useState(false);
@@ -228,7 +239,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
   }
 
   const report = query.data;
-  const hasRows = (report?.rows.length ?? 0) > 0;
+  const hasRows = rowsWithData.length > 0;
 
   // Totals calculations
   const totalAdvances = report?.rows.reduce((sum, r) => sum + parseFloat(r.advances || "0"), 0) ?? 0;
@@ -422,7 +433,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   const seen = new Set<number>();
 
                   roleGroups.forEach((group) => {
-                    const rows = (report?.rows ?? []).filter((r) =>
+                    const rows = rowsWithData.filter((r) =>
                       group.roleNames.includes(r.roleName)
                     );
                     rows.forEach((r) => seen.add(r.employeeId));
@@ -468,7 +479,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   });
 
                   // Rest
-                  const rest = (report?.rows ?? []).filter((r) => !seen.has(r.employeeId));
+                  const rest = rowsWithData.filter((r) => !seen.has(r.employeeId));
                   if (rest.length > 0) {
                     rendered.push(
                       <Box key="other">
@@ -528,7 +539,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   const seen = new Set<number>();
 
                   roleGroups.forEach((group) => {
-                    const rows = (report?.rows ?? []).filter((r) =>
+                    const rows = rowsWithData.filter((r) =>
                       group.roleNames.includes(r.roleName)
                     );
                     rows.forEach((r) => seen.add(r.employeeId));
@@ -596,7 +607,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   });
 
                   // Rest
-                  const rest = (report?.rows ?? []).filter((r) => !seen.has(r.employeeId));
+                  const rest = rowsWithData.filter((r) => !seen.has(r.employeeId));
                   if (rest.length > 0) {
                     const restCols = getVisibleSalaryColumns(rest, COLUMNS_ADMIN);
                     const restNet = rest.reduce((sum, r) => sum + parseFloat(r.netSalary || "0"), 0);
@@ -654,6 +665,18 @@ const DjangoSalaryReportsPage: React.FC = () => {
                 })()}
               </Box>
             )
+          )}
+
+          {/* Сотрудник без цифр не исчезает молча: сноской видно, сколько строк
+              скрыто, иначе «где мой сотрудник?» — первый вопрос к отчёту. */}
+          {!query.isLoading && hasRows && hiddenEmptyCount > 0 && (
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ display: "block", mt: 1.5, textAlign: "right" }}
+            >
+              {t("emptyStates.hiddenEmptyRows", { count: hiddenEmptyCount })}
+            </Typography>
           )}
         </Box>
       )}
@@ -754,7 +777,7 @@ const DjangoSalaryReportsPage: React.FC = () => {
       <PayrollStatementDrawer
         open={statementOpen}
         onClose={() => setStatementOpen(false)}
-        rows={report?.rows ?? []}
+        rows={rowsWithData}
         year={year}
         month={month}
         monthLabel={dayjs(date).format("MMMM YYYY")}

@@ -146,6 +146,43 @@ export function getVisibleSalaryColumns(
 }
 
 /**
+ * Сотрудник без единой цифры за месяц: ни часов, ни приёмов, ни начислений,
+ * ни авансов. Такие строки — сплошные нули во всех колонках, читать в них
+ * нечего, поэтому в отчёте они не показываются (решение заказчика 17.08.2026).
+ * Достаточно одного ненулевого значения, чтобы строка вернулась в таблицу.
+ */
+export function isEmptyPayrollRow(row: PayrollRow): boolean {
+  const counters = [
+    row.appointmentsCount,
+    row.createdByCount,
+    row.totalCount,
+    row.waitingCount,
+    row.cancelledCount,
+    row.discountedCount,
+    row.paidCount,
+  ];
+  const amounts = [
+    row.distributedAppointments,
+    row.servicePercentPay,
+    row.serviceFixedPay,
+    row.appointmentPay,
+    row.dayHours,
+    row.nightHours,
+    row.hourlyPay,
+    row.bonus,
+    row.productPay,
+    row.cleaningEarnings,
+    row.earnings,
+    row.advances,
+    row.netSalary,
+  ];
+  return (
+    !counters.some((value) => hasValue(toNumber(value))) &&
+    !amounts.some((value) => hasValue(toNumber(value)))
+  );
+}
+
+/**
  * Из чего сложилось «Начислено» за месяц. Показываем только ненулевые части:
  * состав зависит от роли (у врача — процент/фикс по услугам, у регистратора —
  * почасовая и заработок за распределённые приёмы, у санитарки — уборки).
