@@ -985,8 +985,11 @@ export interface AppointmentNotificationItem {
   appointmentId: number;
   notificationType: AppointmentNotificationType | string;
   /** Время приёма шлюзом (ISO) или null, пока не отправлено. */
-  sentAt: string | null;
-  status: string;
+    sentAt: string | null;
+    status: string;
+    channel: string;
+    scheduledFor: string;
+    error: string;
 }
 
 /**
