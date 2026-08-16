@@ -31,6 +31,7 @@ import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 
@@ -52,6 +53,7 @@ import { EnrollmentActionsDrawer } from "./EnrollmentActionsDrawer";
 import { InteractionHistory } from "./InteractionHistory";
 import { ModuleRecords } from "./ModuleRecords";
 import { UpcomingEvents } from "./UpcomingEvents";
+import { ProgramConstructorDrawer } from "./ProgramConstructorDrawer";
 
 type ViewKey = "overview" | `module:${number}`;
 
@@ -177,7 +179,9 @@ const PatientProgramPage: React.FC = () => {
   const [view, setView] = React.useState<ViewKey>("overview");
   const [connectOpen, setConnectOpen] = React.useState(false);
   const [actionsOpen, setActionsOpen] = React.useState(false);
+  const [constructorOpen, setConstructorOpen] = React.useState(false);
   const canManageEnrollments = canAccess("enrollments.manage");
+  const canManagePrograms = canAccess("programs.manage");
   const canCreateTask = canAccess("tasks.create");
   const canManageTasks = canAccess("tasks.manage");
   const canNotifyClients = canAccess("notifications.manage");
@@ -284,8 +288,19 @@ const PatientProgramPage: React.FC = () => {
             </Select>
           </FormControl>
         )}
-        {canManageEnrollments && (
+        {(canManageEnrollments || canManagePrograms) && (
           <Stack direction={{ xs: "column", sm: "row" }} gap={1} sx={{ width: { xs: "100%", sm: "auto" } }}>
+            {canManagePrograms && (
+              <AppButton
+                variant="outlined"
+                startIcon={<TuneOutlined />}
+                onClick={() => setConstructorOpen(true)}
+              >
+                Конструктор
+              </AppButton>
+            )}
+            {canManageEnrollments && (
+              <>
             {selectedEnrollment && !["cancelled", "expired"].includes(selectedEnrollment.status) && (
               <AppButton
                 variant="outlined"
@@ -302,6 +317,8 @@ const PatientProgramPage: React.FC = () => {
             >
               Подключить программу
             </AppButton>
+              </>
+            )}
           </Stack>
         )}
       </Stack>
@@ -519,6 +536,18 @@ const PatientProgramPage: React.FC = () => {
             setView("overview");
             void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.programs.enrollments(patientId, scope) });
             void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.detail(patientId) });
+          }}
+        />
+      )}
+      {canManagePrograms && (
+        <ProgramConstructorDrawer
+          open={constructorOpen}
+          programId={selectedEnrollment?.program.id ?? null}
+          scope={scope}
+          onClose={() => setConstructorOpen(false)}
+          onChanged={() => {
+            void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.programs.all });
+            void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.programs.enrollments(patientId, scope) });
           }}
         />
       )}

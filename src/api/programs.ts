@@ -98,6 +98,25 @@ export function getPrograms(scope: Scope, signal?: AbortSignal): Promise<Program
   return apiRequest<ProgramList>(`/programs/?${query.toString()}`, { signal });
 }
 
+export function getProgramTemplates(
+  scope: Scope,
+  signal?: AbortSignal,
+): Promise<{ results: ProgramTemplate[]; count: number }> {
+  const query = scopeParams(scope);
+  return apiRequest(`/programs/templates/?${query.toString()}`, { signal });
+}
+
+export function createProgramFromTemplate(
+  scope: Scope,
+  payload: { templateCode: string; code: string; name: string },
+): Promise<Program> {
+  const query = scopeParams(scope);
+  return apiRequest(`/programs/from-template/?${query.toString()}`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export interface CreateProgramEnrollmentPayload {
   patientId: number;
   programId: number;
@@ -120,6 +139,8 @@ export interface ProgramModuleRecord {
   status: string;
   notes: string;
   data: Record<string, unknown>;
+  configurationVersion: number;
+  schemaSnapshot: Record<string, unknown>;
   createdById: number | null;
   createdByName: string | null;
   createdAt: string;
@@ -198,6 +219,64 @@ export interface ProgramNotification {
   createdById: number | null;
   createdByName: string | null;
   createdAt: string;
+  attemptsCount: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  providerMessageId: string;
+  failureCode: string;
+  failureMessage: string;
+  cancelledReason: string;
+}
+
+export interface ProgramFieldDefinition {
+  key: string;
+  label: string;
+  type?: "text" | "textarea" | "number" | "date" | "datetime" | "boolean" | "select";
+  required?: boolean;
+  suffix?: string;
+  options?: Array<string | number>;
+}
+
+export interface ProgramConfigurationSchema {
+  program: {
+    name?: string;
+    description?: string;
+    businessDomain?: string;
+    grantsVip?: boolean;
+    settings?: Record<string, unknown>;
+  };
+  modules: Array<{
+    code: string;
+    name: string;
+    moduleType: string;
+    isEnabled?: boolean;
+    sortOrder?: number;
+    settings: Record<string, unknown> & { fields?: ProgramFieldDefinition[] };
+  }>;
+}
+
+export interface ProgramConfigurationVersion {
+  id: number;
+  programId: number;
+  version: number;
+  status: "draft" | "published" | "archived";
+  isCurrent: boolean;
+  schema: ProgramConfigurationSchema;
+  createdById: number | null;
+  createdByName: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgramTemplate {
+  code: string;
+  name: string;
+  description: string;
+  businessDomain: string;
+  grantsVip: boolean;
+  schema: ProgramConfigurationSchema;
 }
 
 export interface ProgramNotificationList {
@@ -210,6 +289,52 @@ export interface CreateProgramNotificationPayload {
   channel: ProgramNotificationChannel;
   body: string;
   scheduledFor?: string | null;
+}
+
+export function getProgramConfigurationVersions(
+  scope: Scope,
+  programId: number,
+  signal?: AbortSignal,
+): Promise<{ results: ProgramConfigurationVersion[]; count: number }> {
+  const query = scopeParams(scope);
+  return apiRequest(`/programs/${programId}/versions/?${query.toString()}`, { signal });
+}
+
+export function createProgramConfigurationVersion(
+  scope: Scope,
+  programId: number,
+  schema: ProgramConfigurationSchema,
+): Promise<ProgramConfigurationVersion> {
+  const query = scopeParams(scope);
+  return apiRequest(`/programs/${programId}/versions/?${query.toString()}`, {
+    method: "POST",
+    body: { schema },
+  });
+}
+
+export function updateProgramConfigurationVersion(
+  scope: Scope,
+  programId: number,
+  versionId: number,
+  schema: ProgramConfigurationSchema,
+): Promise<ProgramConfigurationVersion> {
+  const query = scopeParams(scope);
+  return apiRequest(`/programs/${programId}/versions/${versionId}/?${query.toString()}`, {
+    method: "PATCH",
+    body: { schema },
+  });
+}
+
+export function publishProgramConfigurationVersion(
+  scope: Scope,
+  programId: number,
+  versionId: number,
+): Promise<ProgramConfigurationVersion> {
+  const query = scopeParams(scope);
+  return apiRequest(
+    `/programs/${programId}/versions/${versionId}/publish/?${query.toString()}`,
+    { method: "POST" },
+  );
 }
 
 export function createProgramEnrollment(
@@ -331,12 +456,36 @@ export function getProgramNotifications(
   scope: Scope,
   enrollmentId: number,
   signal?: AbortSignal,
+  filters: {
+    status?: ProgramNotificationStatus;
+    channel?: ProgramNotificationChannel;
+    moduleRecordId?: number;
+    dateFrom?: string;
+    dateTo?: string;
+  } = {},
 ): Promise<ProgramNotificationList> {
   const query = scopeParams(scope);
   query.set("limit", "200");
+  if (filters.status) query.set("status", filters.status);
+  if (filters.channel) query.set("channel", filters.channel);
+  if (filters.moduleRecordId != null) query.set("moduleRecordId", String(filters.moduleRecordId));
+  if (filters.dateFrom) query.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) query.set("dateTo", filters.dateTo);
   return apiRequest<ProgramNotificationList>(
     `/program-enrollments/${enrollmentId}/notifications/?${query.toString()}`,
     { signal },
+  );
+}
+
+export function retryProgramNotification(
+  scope: Scope,
+  enrollmentId: number,
+  notificationId: number,
+): Promise<ProgramNotification> {
+  const query = scopeParams(scope);
+  return apiRequest<ProgramNotification>(
+    `/program-enrollments/${enrollmentId}/notifications/${notificationId}/retry/?${query.toString()}`,
+    { method: "POST" },
   );
 }
 

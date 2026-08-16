@@ -5,9 +5,11 @@ import {
   Chip,
   Divider,
   Drawer,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -27,18 +29,14 @@ import {
   updateProgramModuleRecord,
   type EffectiveProgramModule,
   type ProgramModuleRecord,
+  type ProgramFieldDefinition,
 } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { AppButton, AppCard, CustomDateTimePicker, ListEmptyState } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
 
-type FieldDefinition = {
-  key: string;
-  label: string;
-  type?: "text" | "number";
-  suffix?: string;
-};
+type FieldDefinition = ProgramFieldDefinition;
 
 const MODULE_FIELDS: Array<{ match: string[]; fields: FieldDefinition[] }> = [
   {
@@ -93,10 +91,23 @@ const MODULE_FIELDS: Array<{ match: string[]; fields: FieldDefinition[] }> = [
 ];
 
 function fieldsFor(module: EffectiveProgramModule): FieldDefinition[] {
+  const configured = fieldsFromSettings(module.settings);
+  if (configured.length > 0) return configured;
   const key = `${module.code} ${module.moduleType}`.toLowerCase();
   return MODULE_FIELDS.find((item) => item.match.some((part) => key.includes(part)))?.fields ?? [
     { key: "result", label: "Результат" },
   ];
+}
+
+function fieldsFromSettings(settings: Record<string, unknown>): FieldDefinition[] {
+  const fields = settings.fields;
+  if (!Array.isArray(fields)) return [];
+  return fields.filter((field): field is FieldDefinition => (
+    typeof field === "object"
+    && field !== null
+    && typeof (field as FieldDefinition).key === "string"
+    && typeof (field as FieldDefinition).label === "string"
+  ));
 }
 
 function displayValue(value: unknown, field: FieldDefinition): string | null {
@@ -116,12 +127,15 @@ interface RecordDrawerProps {
 
 const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module, scope, record, onClose, onSaved }) => {
   const { enqueueSnackbar } = useSnackbar();
-  const fields = React.useMemo(() => fieldsFor(module), [module]);
+  const fields = React.useMemo(
+    () => record ? fieldsFromSettings(record.schemaSnapshot) : fieldsFor(module),
+    [module, record],
+  );
   const [occurredAt, setOccurredAt] = React.useState<Dayjs | null>(dayjs());
   const [title, setTitle] = React.useState("");
   const [status, setStatus] = React.useState("completed");
   const [notes, setNotes] = React.useState("");
-  const [data, setData] = React.useState<Record<string, string>>({});
+  const [data, setData] = React.useState<Record<string, string | boolean>>({});
 
   React.useEffect(() => {
     if (!open) return;
@@ -130,7 +144,12 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
     setStatus(record?.status ?? "completed");
     setNotes(record?.notes ?? "");
     setData(Object.fromEntries(
-      fields.map((field) => [field.key, String(record?.data[field.key] ?? "")]),
+      fields.map((field) => [
+        field.key,
+        field.type === "boolean"
+          ? Boolean(record?.data[field.key])
+          : String(record?.data[field.key] ?? ""),
+      ]),
     ));
   }, [fields, open, record]);
 
@@ -143,10 +162,17 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
       notes: notes.trim(),
       data: Object.fromEntries(
         fields
-          .filter((field) => data[field.key]?.trim())
+          .filter((field) => (
+            field.type === "boolean"
+            || String(data[field.key] ?? "").trim()
+          ))
           .map((field) => [
             field.key,
-            field.type === "number" ? Number(data[field.key]) : data[field.key].trim(),
+            field.type === "boolean"
+              ? Boolean(data[field.key])
+              : field.type === "number"
+                ? Number(data[field.key])
+                : String(data[field.key] ?? "").trim(),
           ]),
       ),
       };
@@ -194,16 +220,35 @@ const RecordDrawer: React.FC<RecordDrawerProps> = ({ open, enrollmentId, module,
           <MenuItem value="planned">Запланировано</MenuItem>
           <MenuItem value="missed">Пропущено</MenuItem>
         </TextField>
-        {fields.map((field) => (
+        {fields.map((field) => field.type === "boolean" ? (
+          <FormControlLabel
+            key={field.key}
+            control={(
+              <Switch
+                checked={Boolean(data[field.key])}
+                onChange={(event) => setData((current) => ({ ...current, [field.key]: event.target.checked }))}
+              />
+            )}
+            label={field.label}
+          />
+        ) : (
           <TextField
             key={field.key}
             label={field.label}
-            type={field.type ?? "text"}
+            type={field.type === "date" ? "date" : field.type === "datetime" ? "datetime-local" : field.type === "number" ? "number" : "text"}
             value={data[field.key] ?? ""}
             onChange={(event) => setData((current) => ({ ...current, [field.key]: event.target.value }))}
+            select={field.type === "select"}
+            multiline={field.type === "textarea"}
+            minRows={field.type === "textarea" ? 3 : undefined}
+            required={field.required}
             slotProps={field.type === "number" ? { htmlInput: { min: 0, step: "any" } } : undefined}
             fullWidth
-          />
+          >
+            {field.type === "select" && field.options?.map((option) => (
+              <MenuItem key={String(option)} value={option}>{String(option)}</MenuItem>
+            ))}
+          </TextField>
         ))}
         <TextField label="Заметка" value={notes} onChange={(event) => setNotes(event.target.value)} multiline minRows={3} fullWidth />
       </Stack>
@@ -271,7 +316,8 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
         ) : (
           <Stack gap={1.25}>
             {query.data.results.map((record) => {
-              const details = fields
+              const recordFields = fieldsFromSettings(record.schemaSnapshot);
+              const details = (recordFields.length > 0 ? recordFields : fields)
                 .map((field) => ({ label: field.label, value: displayValue(record.data[field.key], field) }))
                 .filter((item) => item.value);
               return (

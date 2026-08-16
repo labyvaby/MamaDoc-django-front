@@ -4,13 +4,20 @@ import {
   createProgramEnrollment,
   createProgramModuleRecord,
   createPatientInteraction,
+  createProgramConfigurationVersion,
+  createProgramFromTemplate,
   createProgramNotification,
   getPatientInteractions,
   getProgramNotifications,
   getProgramModuleRecords,
+  getProgramConfigurationVersions,
+  getProgramTemplates,
   getPrograms,
   getUpcomingProgramRecords,
+  publishProgramConfigurationVersion,
+  retryProgramNotification,
   transitionProgramEnrollment,
+  updateProgramConfigurationVersion,
   updateProgramModuleRecord,
 } from "./programs";
 
@@ -38,6 +45,72 @@ describe("program API scope", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/programs\/\?organizationId=4&branchId=14&limit=200$/),
       expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("loads templates and creates a program from a starter template", async () => {
+    const fetchMock = mockJsonFetch({ results: [], count: 0 });
+    const scope = { organizationId: 4, branchId: 14 };
+
+    await getProgramTemplates(scope);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/programs\/templates\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+
+    await createProgramFromTemplate(scope, {
+      templateCode: "newborn-medical-book",
+      code: "newborn-2026",
+      name: "Медицинская книжка новорождённого",
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/programs\/from-template\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          templateCode: "newborn-medical-book",
+          code: "newborn-2026",
+          name: "Медицинская книжка новорождённого",
+        }),
+      }),
+    );
+  });
+
+  it("creates and publishes an immutable configuration version", async () => {
+    const fetchMock = mockJsonFetch({ results: [], count: 0 });
+    const scope = { organizationId: 4, branchId: 14 };
+    const schema = {
+      program: { name: "Абонемент", businessDomain: "fitness" },
+      modules: [{
+        code: "measurements",
+        name: "Замеры",
+        moduleType: "measurements",
+        settings: { fields: [{ key: "weight", label: "Вес", type: "number" as const }] },
+      }],
+    };
+
+    await getProgramConfigurationVersions(scope, 7);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/programs\/7\/versions\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+
+    await createProgramConfigurationVersion(scope, 7, schema);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/programs\/7\/versions\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ schema }) }),
+    );
+
+    await updateProgramConfigurationVersion(scope, 7, 12, schema);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/programs\/7\/versions\/12\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ schema }) }),
+    );
+
+    await publishProgramConfigurationVersion(scope, 7, 12);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/programs\/7\/versions\/12\/publish\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
@@ -190,6 +263,17 @@ describe("program API scope", () => {
     await transitionProgramEnrollment(scope, 21, "pause");
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringMatching(/\/program-enrollments\/21\/pause\/\?organizationId=4&branchId=14$/),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("retries a failed notification in the enrollment scope", async () => {
+    const fetchMock = mockJsonFetch({ id: 15, status: "pending" });
+
+    await retryProgramNotification({ organizationId: 4, branchId: 14 }, 21, 15);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/program-enrollments\/21\/notifications\/15\/retry\/\?organizationId=4&branchId=14$/),
       expect.objectContaining({ method: "POST" }),
     );
   });
