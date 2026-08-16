@@ -28,7 +28,7 @@ import EditCalendarOutlined from "@mui/icons-material/EditCalendar";
 import EventBusyOutlined from "@mui/icons-material/EventBusy";
 import dayjs from "dayjs";
 
-import type { DjangoAppointment } from "../../../api/appointments";
+import type { AppointmentNotificationItem, DjangoAppointment } from "../../../api/appointments";
 import {
   appointmentEnd,
   busyIntervals,
@@ -63,10 +63,10 @@ interface AppointmentListPanelProps {
   canManageFinance: boolean;
   canViewFinance: boolean;
   /**
-   * Иконки SMS-уведомлений по приёмам: Map<appointmentId, Map<type, sentAt>>.
+   * Иконки уведомлений по приёмам с каналом и фактическим статусом.
    * Источник — лёгкий батч-эндпоинт /api/appointments/notifications/.
    */
-  notificationsMap?: Map<number, Map<string, string | null>>;
+  notificationsMap?: Map<number, Map<string, AppointmentNotificationItem>>;
   onSelect: (a: DjangoAppointment) => void;
   onEdit: (a: DjangoAppointment) => void;
   onPay: (a: DjangoAppointment) => void;
@@ -1100,11 +1100,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   </Tooltip>
                                 )}
 
-                                {/* Иконки отправленных SMS-уведомлений — 1-в-1 со
-                                    старым фронтом (home/AppointmentsList): по одной
-                                    на тип, с типом и временем в tooltip. */}
+                                {/* По одной иконке на тип: канал, статус и время
+                                    берём из фактического лога отправки. */}
                                 {notificationsMap?.has(a.id) &&
-                                  [...notificationsMap.get(a.id)!.entries()].map(([notifType, sentAt]) => {
+                                  [...notificationsMap.get(a.id)!.entries()].map(([notifType, notification]) => {
                                     const cfg = NOTIF_CONFIG[notifType] ?? {
                                       Icon: SmsOutlined,
                                       color: "success.main",
@@ -1112,10 +1111,22 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                     const label = t(`notifications.${notifType}`, {
                                       defaultValue: notifType,
                                     });
-                                    const time = sentAt ? dayjs(sentAt).format("DD.MM HH:mm") : "";
+                                    const time = notification.sentAt
+                                      ? dayjs(notification.sentAt).format("DD.MM HH:mm")
+                                      : "";
+                                    const channel = notification.channel === "whatsapp" ? "WhatsApp" : "SMS";
+                                    const successful = ["queued", "sent", "delivered"].includes(notification.status);
+                                    const color = notification.status === "failed"
+                                      ? "error.main"
+                                      : notification.status === "cancelled"
+                                        ? "text.disabled"
+                                        : cfg.color;
                                     return (
-                                      <Tooltip key={notifType} title={`SMS: ${label}${time ? ` · ${time}` : ""}`}>
-                                        <cfg.Icon sx={{ fontSize: 16, color: cfg.color, opacity: 0.9 }} />
+                                      <Tooltip
+                                        key={notifType}
+                                        title={`${channel}: ${label} · ${notification.status}${time ? ` · ${time}` : ""}`}
+                                      >
+                                        <cfg.Icon sx={{ fontSize: 16, color, opacity: successful ? 0.9 : 0.55 }} />
                                       </Tooltip>
                                     );
                                   })}

@@ -11,7 +11,9 @@ export interface NotificationRule {
 
 export interface NotificationSettings {
   organizationId: number;
+  branchId: number | null;
   enabled: boolean;
+  branchEnabled: boolean;
   variables: string[];
   rules: NotificationRule[];
 }
@@ -26,8 +28,10 @@ export interface NotificationRuleInput {
 
 export interface NotificationSettingsInput {
   enabled: boolean;
+  branchEnabled: boolean;
   rules: NotificationRuleInput[];
   organizationId?: number;
+  branchId: number;
 }
 
 export interface NotificationHistoryItem {
@@ -52,13 +56,14 @@ export interface NotificationHistory {
 }
 
 export function getNotificationSettings(
-  params: { organizationId?: number } = {},
+  params: { organizationId?: number; branchId?: number } = {},
   signal?: AbortSignal,
 ): Promise<NotificationSettings> {
   const q = new URLSearchParams();
   if (params.organizationId != null) {
     q.set("organizationId", String(params.organizationId));
   }
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   const qs = q.toString();
   return apiRequest<NotificationSettings>(
     `/notifications/settings/${qs ? `?${qs}` : ""}`,
@@ -78,7 +83,7 @@ export function saveNotificationSettings(
 }
 
 export function getNotificationHistory(
-  params: { page?: number; pageSize?: number; organizationId?: number } = {},
+  params: { page?: number; pageSize?: number; organizationId?: number; branchId?: number } = {},
   signal?: AbortSignal,
 ): Promise<NotificationHistory> {
   const q = new URLSearchParams();
@@ -87,6 +92,7 @@ export function getNotificationHistory(
   if (params.organizationId != null) {
     q.set("organizationId", String(params.organizationId));
   }
+  if (params.branchId != null) q.set("branchId", String(params.branchId));
   const qs = q.toString();
   return apiRequest<NotificationHistory>(
     `/notifications/history/${qs ? `?${qs}` : ""}`,

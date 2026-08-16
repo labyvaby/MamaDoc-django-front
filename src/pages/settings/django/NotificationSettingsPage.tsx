@@ -79,6 +79,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
   const TIMING_LABEL: Record<string, string> = {
     created_10m: t("notifications.timing.created_10m"),
     reminder_2h: t("notifications.timing.reminder_2h"),
+    rescheduled_10m: t("notifications.timing.rescheduled_10m"),
     appointment_change: t("notifications.timing.appointment_change"),
     appointment_cancel: t("notifications.timing.appointment_cancel"),
     booking_created: t("notifications.timing.booking_created"),
@@ -91,22 +92,25 @@ const DjangoNotificationSettingsPage: React.FC = () => {
   const {
     isSuperAdmin,
     activeOrganization,
+    activeBranch,
     memberships,
     loading: permLoading,
   } = usePermissions();
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
+  const needsBranch = !activeBranch;
   const orgId = isSuper ? activeOrganization?.id ?? undefined : undefined;
-  const enabledFetch = !permLoading && canView && !needsOrg;
+  const branchId = activeBranch?.id;
+  const enabledFetch = !permLoading && canView && !needsOrg && !needsBranch;
 
   const [activeTab, setActiveTab] = useState(0);
   const [draft, setDraft] = useState<NotificationSettings | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const settingsQuery = useQuery({
-    queryKey: djangoQueryKeys.notifications.settings(orgId ?? null),
-    queryFn: ({ signal }) => getNotificationSettings({ organizationId: orgId }, signal),
+    queryKey: djangoQueryKeys.notifications.settings(orgId ?? null, branchId),
+    queryFn: ({ signal }) => getNotificationSettings({ organizationId: orgId, branchId }, signal),
     enabled: enabledFetch,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
   });
@@ -121,7 +125,9 @@ const DjangoNotificationSettingsPage: React.FC = () => {
     mutationFn: () =>
       saveNotificationSettings({
         enabled: draft!.enabled,
+        branchEnabled: draft!.branchEnabled,
         organizationId: orgId,
+        branchId: branchId!,
         rules: draft!.rules.map((r) => ({
           notificationType: r.notificationType,
           enabled: r.enabled,
@@ -132,7 +138,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
       }),
     onSuccess: (data) => {
       setDraft(structuredClone(data));
-      queryClient.setQueryData(djangoQueryKeys.notifications.settings(orgId ?? null), data);
+      queryClient.setQueryData(djangoQueryKeys.notifications.settings(orgId ?? null, branchId), data);
       setMessage({ type: "success", text: t("notifications.saveSuccess") });
     },
     onError: (err) => {
@@ -178,6 +184,8 @@ const DjangoNotificationSettingsPage: React.FC = () => {
 
       {needsOrg ? (
         <Alert severity="info">{t("notifications.needsOrg")}</Alert>
+      ) : needsBranch ? (
+        <Alert severity="info">{t("notifications.needsBranch")}</Alert>
       ) : (
         <Box sx={{ flex: 1, overflowY: "auto", pb: 6 }}>
           {activeTab === 0 && (
@@ -217,6 +225,26 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           </Typography>
                         </Box>
                       }
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card variant="outlined">
+                  <CardHeader
+                    title={t("notifications.branchCard.title", { branch: activeBranch?.name ?? "" })}
+                    subheader={t("notifications.branchCard.subheader")}
+                  />
+                  <Divider />
+                  <CardContent>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={draft.branchEnabled}
+                          onChange={(e) => setDraft({ ...draft, branchEnabled: e.target.checked })}
+                          color="primary"
+                        />
+                      }
+                      label={t("notifications.branchCard.switchLabel")}
                     />
                   </CardContent>
                 </Card>
@@ -273,7 +301,10 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           placeholder="Здравствуйте, {{patient_name}}! Вы записаны на {{appointment_date}}."
                           value={rule.body}
                           onChange={(e) => updateRule(index, { body: e.target.value })}
-                          helperText={t("notifications.messageTextHelper")}
+                          disabled={rule.channel === "whatsapp"}
+                          helperText={rule.channel === "whatsapp"
+                            ? t("notifications.whatsappTemplateHelper")
+                            : t("notifications.messageTextHelper")}
                         />
 
                         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}>
@@ -309,7 +340,9 @@ const DjangoNotificationSettingsPage: React.FC = () => {
             )
           )}
 
-          {activeTab === 1 && <NotificationHistoryTab orgId={orgId} enabled={enabledFetch} />}
+          {activeTab === 1 && (
+            <NotificationHistoryTab orgId={orgId} branchId={branchId} enabled={enabledFetch} />
+          )}
         </Box>
       )}
 
@@ -327,7 +360,11 @@ const DjangoNotificationSettingsPage: React.FC = () => {
   );
 };
 
-const NotificationHistoryTab: React.FC<{ orgId?: number; enabled: boolean }> = ({ orgId, enabled }) => {
+const NotificationHistoryTab: React.FC<{
+  orgId?: number;
+  branchId?: number;
+  enabled: boolean;
+}> = ({ orgId, branchId, enabled }) => {
   const { t } = useT("settings");
   const STATUS_LABEL: Record<string, string> = {
     pending: t("notifications.status.pending"),
@@ -335,11 +372,12 @@ const NotificationHistoryTab: React.FC<{ orgId?: number; enabled: boolean }> = (
     sent: t("notifications.status.sent"),
     delivered: t("notifications.status.delivered"),
     failed: t("notifications.status.failed"),
+    cancelled: t("notifications.status.cancelled"),
   };
   const [page, setPage] = useState(1);
   const historyQuery = useQuery({
-    queryKey: djangoQueryKeys.notifications.history({ page, orgId: orgId ?? null }),
-    queryFn: ({ signal }) => getNotificationHistory({ page, organizationId: orgId }, signal),
+    queryKey: djangoQueryKeys.notifications.history({ page, orgId: orgId ?? null, branchId: branchId ?? null }),
+    queryFn: ({ signal }) => getNotificationHistory({ page, organizationId: orgId, branchId }, signal),
     enabled,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,

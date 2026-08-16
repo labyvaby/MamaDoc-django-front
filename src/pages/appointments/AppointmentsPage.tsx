@@ -193,17 +193,17 @@ function useClinicalIds(role: "doctor" | "nurse", enabled: boolean): Set<number>
 }
 
 /**
- * SMS-уведомления для иконок статусов рядом с приёмом.
+ * Уведомления для иконок статусов рядом с приёмом.
  *
  * Лёгкий батч-запрос по видимым id приёмов (отдельно от тяжёлого home-аггрегата,
- * как day-counts). Сворачиваем в Map<appointmentId, Map<type, sentAt>>: бэкенд
+ * как day-counts). Сворачиваем в Map<appointmentId, Map<type, item>>: бэкенд
  * отдаёт строки по возрастанию sent_at, поэтому в Map по каждому типу остаётся
  * самое позднее уведомление (1-в-1 со старым фронтом). Ключ запроса зависит от
  * набора id, поэтому при смене даты/фильтра карта пересобирается.
  */
 function useNotificationsMap(
   appointmentIds: number[],
-): Map<number, Map<string, string | null>> {
+): Map<number, Map<string, import("../../api/appointments").AppointmentNotificationItem>> {
   // Стабилизируем ключ: сортируем id, чтобы порядок в списке не плодил рефетчи.
   const sortedIds = React.useMemo(
     () => [...appointmentIds].sort((a, b) => a - b),
@@ -219,14 +219,15 @@ function useNotificationsMap(
   });
 
   return React.useMemo(() => {
-    const map = new Map<number, Map<string, string | null>>();
+    const map = new Map<number, Map<string, import("../../api/appointments").AppointmentNotificationItem>>();
     for (const n of query.data ?? []) {
+      if (!["queued", "sent", "delivered", "failed"].includes(n.status)) continue;
       let byType = map.get(n.appointmentId);
       if (!byType) {
-        byType = new Map<string, string | null>();
+        byType = new Map<string, import("../../api/appointments").AppointmentNotificationItem>();
         map.set(n.appointmentId, byType);
       }
-      byType.set(n.notificationType, n.sentAt);
+      byType.set(n.notificationType, n);
     }
     return map;
   }, [query.data]);
