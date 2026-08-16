@@ -15,7 +15,7 @@ import { apiRequest } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 /** Включить после релиза бэка (см. тикет). */
-export const INVOICE_PHOTOS_ENABLED = false;
+export const INVOICE_PHOTOS_ENABLED = true;
 
 /** Заказчик просил «1–2 шт» — больше двух не даём приложить. */
 export const INVOICE_PHOTOS_MAX = 2;
