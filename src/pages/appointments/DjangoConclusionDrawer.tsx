@@ -62,6 +62,9 @@ import type { FormTarget } from "../../api/conclusionForms";
 import {
   upsertConclusion,
   updateConclusion,
+  getConclusionSlots,
+  findReplacementSlot,
+  isServiceLineGoneError,
   getDiagnoses,
   uploadConclusionPhoto,
   getConclusionTemplates,
@@ -84,6 +87,11 @@ export type DjangoConclusionDrawerProps = {
   conclusion: MedicalConclusion | null;
   serviceLineId: number;
   serviceName: string;
+  /**
+   * Услуга строки. Нужна, чтобы найти строку заново, если её пересоздали
+   * правкой приёма, пока форма была открыта (см. handleSave).
+   */
+  serviceId?: number | null;
   doctorName: string;
   /** Приём, к которому относится строка услуги — нужен бланкам (шапка листа). */
   appointmentId?: number;
@@ -325,6 +333,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   conclusion,
   serviceLineId,
   serviceName,
+  serviceId,
   doctorName,
   appointmentId,
   doctorId,
@@ -714,6 +723,35 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   });
 
   // ── submit ────────────────────────────────────────────────────────────────
+
+  /**
+   * Создание заключения с перепривязкой к пересозданной строке услуги.
+   *
+   * Пока форма открыта (а её держат открытой весь приём), приём могли
+   * отредактировать: смена услуги или исполнителя пересоздаёт строку с новым
+   * id, и POST по старому отвечает 404 «Service line not found». Врач к этому
+   * моменту уже написал текст, поэтому вместо ошибки ищем в свежих слотах
+   * строку той же услуги и сохраняем в неё.
+   */
+  const createConclusionForLine = async (
+    payload: MedicalConclusionPayload,
+  ): Promise<MedicalConclusion> => {
+    try {
+      return await upsertConclusion(serviceLineId, payload);
+    } catch (err: unknown) {
+      if (!isServiceLineGoneError(err) || appointmentId == null) throw err;
+      const slots = await getConclusionSlots(appointmentId);
+      const fresh = findReplacementSlot(slots, { serviceLineId, serviceId, doctorId });
+      // Услуги в приёме больше нет — сохранять некуда, дальше ветка ошибки.
+      if (!fresh) throw err;
+      const saved = fresh.conclusion?.id
+        ? await updateConclusion(fresh.conclusion.id, payload)
+        : await upsertConclusion(fresh.serviceLineId, payload);
+      clearConclusionDraft(fresh.serviceLineId);
+      return saved;
+    }
+  };
+
   const handleSave = async (targetStatus: ConclusionStatus) => {
     if (!vitals.validate()) return;
     if (targetStatus === "completed" && !completion.validate()) return;
@@ -745,7 +783,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       if (conclusion?.id) {
         saved = await updateConclusion(conclusion.id, payload);
       } else {
-        saved = await upsertConclusion(serviceLineId, payload);
+        saved = await createConclusionForLine(payload);
       }
       // Заключение на сервере — локальный черновик больше не нужен.
       clearConclusionDraft(serviceLineId);
@@ -763,7 +801,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       onSaved?.(saved);
       onClose();
     } catch (err: unknown) {
-      setSaveError(parseBackendError(err));
+      // Сырое «Service line not found» ничего не объясняет врачу: строку
+      // услуги удалили правкой приёма, а перепривязать заключение не к чему.
+      setSaveError(
+        isServiceLineGoneError(err)
+          ? t("conclusion.errors.serviceLineGone", { service: serviceName })
+          : parseBackendError(err),
+      );
     } finally {
       setSaving(false);
     }

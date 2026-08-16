@@ -825,6 +825,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
       void queryClient.invalidateQueries({
         queryKey: djangoQueryKeys.appointments.payments(appointment.id),
       });
+      // Слоты заключений держат serviceLineId, а смена услуги или исполнителя
+      // пересоздаёт строку с новым id (строка уходит в PATCH без id). Без
+      // сброса кэша колонка заключения продолжила бы работать со старым id и
+      // получила бы 404 «Service line not found» на первом же сохранении.
+      void queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.appointments.conclusionSlots(appointment.id),
+      });
       clearFormDraft(appointmentEditDraftKey(appointment.id));
       onSaved?.(updated);
       onClose();

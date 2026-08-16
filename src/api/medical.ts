@@ -1,4 +1,4 @@
-import { apiRequest, apiRequestWithHeaders } from "./client";
+import { ApiError, apiRequest, apiRequestWithHeaders } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { parseBackendError } from "./appointments";
 
@@ -305,6 +305,46 @@ export function upsertConclusion(
   return apiRequest<MedicalConclusion>(
     `/appointments/service-lines/${lineId}/conclusion/`,
     { method: "POST", body: payload },
+  );
+}
+
+/**
+ * true, когда бэк ответил «строки услуги нет» (404 «Service line not found»).
+ *
+ * Строку услуги приёма пересоздают, а не правят: смена услуги или исполнителя
+ * в дровере приёма шлёт строку без `id`, бэк удаляет старую и создаёт новую с
+ * другим `serviceLineId` (проверено на живом API 16.08.2026: 14551 → 14552).
+ * Любой экран, который держал прежний id (открытая форма заключения, кэш
+ * conclusion-slots), после этого получает 404 — его нужно не показывать сырым,
+ * а перепривязаться к новой строке.
+ */
+export function isServiceLineGoneError(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 404 &&
+    /service line/i.test(err.message)
+  );
+}
+
+/**
+ * Строка-замена для формы заключения, открытой на исчезнувшей строке услуги.
+ *
+ * Ищем ту же услугу того же исполнителя: приём мог содержать несколько строк,
+ * и записать текст врача в чужую было бы хуже ошибки. Исполнителя учитываем
+ * только когда он известен (в слоте без сотрудника `doctor` = null).
+ */
+export function findReplacementSlot(
+  slots: ConclusionSlot[],
+  params: { serviceLineId: number; serviceId?: number | null; doctorId?: number | null },
+): ConclusionSlot | null {
+  return (
+    slots.find(
+      (slot) =>
+        slot.serviceLineId !== params.serviceLineId &&
+        slot.canEdit &&
+        (params.serviceId == null || slot.service.id === params.serviceId) &&
+        (params.doctorId == null || slot.doctor?.id === params.doctorId),
+    ) ?? null
   );
 }
 
