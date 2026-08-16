@@ -23,7 +23,10 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import StarOutlined from "@mui/icons-material/StarOutlined";
+import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,6 +39,9 @@ import {
   getCashlessMethods,
   createCashlessMethod,
   updateCashlessMethod,
+  deleteCashlessMethod,
+  isCashlessMethodInUseError,
+  cashlessMethodInUseMessage,
   type DjangoCashlessMethod,
 } from "../../api/cashlessMethods";
 import { getBranches, type DjangoBranch } from "../../api/organization";
@@ -212,6 +218,20 @@ const CashlessMethodsSettingsPage: React.FC = () => {
   const [toggleError, setToggleError] = React.useState<string | null>(null);
   /** Способ, для которого показываем подтверждение скрытия. */
   const [hiding, setHiding] = React.useState<DjangoCashlessMethod | null>(null);
+  /** Способ, для которого показываем подтверждение удаления. */
+  const [deleting, setDeleting] = React.useState<DjangoCashlessMethod | null>(null);
+  /**
+   * Удаление упёрлось в 409: способ уже стоит в платежах, расходах или
+   * движениях склада. Диалог перестраивается в предложение скрыть — уводить
+   * пользователя обратно в таблицу за другой кнопкой незачем.
+   */
+  const [deleteBlocked, setDeleteBlocked] = React.useState(false);
+  /**
+   * Сообщение бэка из 409 — единственное место, где есть количества операций.
+   * Пусто, пока сообщение приходит на английском (см. cashlessMethodInUseMessage):
+   * тогда в диалоге остаётся только наш текст, без числа.
+   */
+  const [deleteBlockedDetail, setDeleteBlockedDetail] = React.useState<string | null>(null);
 
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
@@ -245,10 +265,13 @@ const CashlessMethodsSettingsPage: React.FC = () => {
 
   // Активные сверху, скрытые — в конце: скрытый способ выпал из работы, и
   // держать его вперемешку с рабочими значит каждый раз перечитывать статусы.
+  // Способ по умолчанию — первым среди активных: он в кассе подставляется сам,
+  // и искать его глазами в алфавитном списке неудобно.
   const methods = React.useMemo(() => {
     const list = methodsQuery.data ?? [];
     return [...list].sort((a, b) => {
       if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
       return a.name.localeCompare(b.name, "ru");
     });
   }, [methodsQuery.data]);
@@ -294,6 +317,59 @@ const CashlessMethodsSettingsPage: React.FC = () => {
     else void setActive(method, true);
   };
 
+  /**
+   * Дефолт снимает предыдущий сам на бэке, поэтому шлём один PATCH и
+   * перечитываем список — иначе прежний дефолт остался бы отмеченным в таблице.
+   * Повторный клик по отмеченному способу снимает дефолт: филиал возвращается
+   * к ручному выбору.
+   */
+  const setDefault = async (method: DjangoCashlessMethod, isDefault: boolean) => {
+    setTogglingId(method.id);
+    setToggleError(null);
+    try {
+      await updateCashlessMethod(method.id, { isDefault });
+      invalidate();
+    } catch (e) {
+      setToggleError(parseBackendError(e));
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const openDelete = (method: DjangoCashlessMethod) => {
+    setDeleteBlocked(false);
+    setDeleteBlockedDetail(null);
+    setDeleting(method);
+  };
+
+  const handleDelete = async (method: DjangoCashlessMethod) => {
+    setTogglingId(method.id);
+    setToggleError(null);
+    try {
+      await deleteCashlessMethod(method.id);
+      invalidate();
+      setDeleting(null);
+    } catch (e) {
+      // Способ уже в операциях — предлагаем скрытие прямо в этом же диалоге.
+      if (isCashlessMethodInUseError(e)) {
+        setDeleteBlocked(true);
+        setDeleteBlockedDetail(cashlessMethodInUseMessage(e));
+      } else {
+        setToggleError(parseBackendError(e));
+        setDeleting(null);
+      }
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  /** Скрытие из диалога удаления: тот же PATCH, но закрываем этот диалог. */
+  const handleHideFromDelete = async (method: DjangoCashlessMethod) => {
+    await setActive(method, false);
+    setDeleting(null);
+    setDeleteBlocked(false);
+  };
+
   return (
     <SettingsLayout>
       <Stack spacing={3}>
@@ -307,7 +383,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
             </Typography>
             {canManage && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {t("cashlessMethods.noDeleteHint")}
+                {t("cashlessMethods.deleteHint")}
               </Typography>
             )}
           </Box>
@@ -376,7 +452,19 @@ const CashlessMethodsSettingsPage: React.FC = () => {
                     hover
                     sx={method.isActive ? undefined : { opacity: 0.6 }}
                   >
-                    <TableCell>{method.name}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <span>{method.name}</span>
+                        {method.isDefault && (
+                          <Chip
+                            label={t("cashlessMethods.status.default")}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                          />
+                        )}
+                      </Stack>
+                    </TableCell>
                     <TableCell>
                       {method.branchName ?? (
                         <Typography component="span" variant="body2" color="text.secondary">
@@ -399,6 +487,32 @@ const CashlessMethodsSettingsPage: React.FC = () => {
                     {canManage && (
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+                          {/* Скрытый способ дефолтом быть не может — бэк такую
+                              установку игнорирует, поэтому кнопки у него нет. */}
+                          {method.isActive && (
+                            <Tooltip
+                              title={
+                                method.isDefault
+                                  ? t("cashlessMethods.tooltips.unsetDefault")
+                                  : t("cashlessMethods.tooltips.setDefault")
+                              }
+                            >
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  color={method.isDefault ? "primary" : "default"}
+                                  onClick={() => void setDefault(method, !method.isDefault)}
+                                  disabled={togglingId === method.id}
+                                >
+                                  {method.isDefault ? (
+                                    <StarOutlined fontSize="small" />
+                                  ) : (
+                                    <StarBorderOutlined fontSize="small" />
+                                  )}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )}
                           <Tooltip title={t("cashlessMethods.tooltips.edit")}>
                             <span>
                               <IconButton
@@ -407,6 +521,17 @@ const CashlessMethodsSettingsPage: React.FC = () => {
                                 disabled={togglingId === method.id}
                               >
                                 <EditOutlined fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={t("cashlessMethods.tooltips.delete")}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => openDelete(method)}
+                                disabled={togglingId === method.id}
+                              >
+                                <DeleteOutlineOutlined fontSize="small" />
                               </IconButton>
                             </span>
                           </Tooltip>
@@ -475,6 +600,77 @@ const CashlessMethodsSettingsPage: React.FC = () => {
           >
             {t("cashlessMethods.actions.hide")}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Удаление: способ без операций уходит совсем, использованный бэк не
+          отдаёт — тогда диалог превращается в предложение скрыть. */}
+      <Dialog
+        open={deleting !== null}
+        onClose={togglingId !== null ? undefined : () => setDeleting(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          {deleteBlocked
+            ? t("cashlessMethods.deleteDialog.blockedTitle")
+            : t("cashlessMethods.deleteDialog.title")}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={1}>
+            {/* Счётчик операций приходит только текстом ошибки — показываем его
+                первым, а своей строкой объясняем, что с этим делать. */}
+            {deleteBlocked && deleteBlockedDetail && (
+              <Typography variant="body2" color="text.primary">
+                {deleteBlockedDetail}
+              </Typography>
+            )}
+            <Typography variant="body2" color="text.secondary">
+              {!deleteBlocked
+                ? t("cashlessMethods.deleteDialog.text", { name: deleting?.name ?? "" })
+                : deleteBlockedDetail
+                  ? deleting?.isActive
+                    ? t("cashlessMethods.deleteDialog.blockedHint")
+                    : t("cashlessMethods.deleteDialog.blockedHintHidden")
+                  : deleting?.isActive
+                    ? t("cashlessMethods.deleteDialog.blockedText", { name: deleting?.name ?? "" })
+                    : t("cashlessMethods.deleteDialog.blockedHiddenText", {
+                        name: deleting?.name ?? "",
+                      })}
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleting(null)} disabled={togglingId !== null}>
+            {deleteBlocked ? t("common:actions.close") : t("common:actions.cancel")}
+          </Button>
+          {deleteBlocked ? (
+            // Скрывать уже скрытый способ нечего — остаётся только закрыть.
+            deleting?.isActive && (
+              <Button
+                variant="contained"
+                onClick={() => deleting && void handleHideFromDelete(deleting)}
+                disabled={togglingId !== null}
+                startIcon={
+                  togglingId !== null ? <CircularProgress size={16} color="inherit" /> : undefined
+                }
+              >
+                {t("cashlessMethods.actions.hide")}
+              </Button>
+            )
+          ) : (
+            <Button
+              variant="contained"
+              color="error"
+              onClick={() => deleting && void handleDelete(deleting)}
+              disabled={togglingId !== null}
+              startIcon={
+                togglingId !== null ? <CircularProgress size={16} color="inherit" /> : undefined
+              }
+            >
+              {t("common:actions.delete")}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 

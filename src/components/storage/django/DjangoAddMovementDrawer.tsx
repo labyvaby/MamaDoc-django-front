@@ -282,18 +282,19 @@ export const DjangoAddMovementDrawer: React.FC<DjangoAddMovementDrawerProps> = (
         isLoading: cashlessMethodsLoading,
         isError: cashlessMethodsFailed,
         isRequired: cashlessMethodRequired,
+        defaultMethodId: cashlessDefaultMethodId,
         blocksSubmit: cashlessMethodsBlockSubmit,
     } = useCashlessMethods(open && isReceipt, {
         organizationId: selectedWarehouse?.organizationId ?? null,
         branchId: selectedWarehouse?.branchId ?? null,
     });
 
-    // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
+    // Способ по умолчанию (или единственный) подставляем сами — см. хук.
     useEffect(() => {
         if (!isReceipt || paymentMethod !== "cashless") return;
-        if (cashlessMethodId !== "" || cashlessMethods.length !== 1) return;
-        setCashlessMethodId(cashlessMethods[0].id);
-    }, [isReceipt, paymentMethod, cashlessMethodId, cashlessMethods]);
+        if (cashlessMethodId !== "" || cashlessDefaultMethodId === "") return;
+        setCashlessMethodId(cashlessDefaultMethodId);
+    }, [isReceipt, paymentMethod, cashlessMethodId, cashlessDefaultMethodId]);
 
     // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
     const amountRaw = isReceipt && amount.trim() === "" ? 0 : parseFloat(amount);

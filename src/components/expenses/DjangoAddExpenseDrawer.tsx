@@ -177,6 +177,7 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
     isLoading: cashlessMethodsLoading,
     isError: cashlessMethodsFailed,
     isRequired: cashlessMethodRequired,
+    defaultMethodId: cashlessDefaultMethodId,
     blocksSubmit: cashlessMethodsBlockSubmit,
   } = useCashlessMethods(open, {
     organizationId: organizationId ?? null,
@@ -451,12 +452,12 @@ export const DjangoAddExpenseDrawer: React.FC<DjangoAddExpenseDrawerProps> = ({
   const cardVal = parseFloat(cardAmount.replace(",", ".")) || 0;
   const total = cashVal + cardVal;
 
-  // Единственный способ безнала выбирать вручную бессмысленно — подставляем.
+  // Способ по умолчанию (или единственный) подставляем сами — см. хук.
   React.useEffect(() => {
     if (cardVal <= 0 || cashlessMethodId !== "") return;
-    if (cashlessMethods.length !== 1) return;
-    setCashlessMethodId(cashlessMethods[0].id);
-  }, [cardVal, cashlessMethodId, cashlessMethods]);
+    if (cashlessDefaultMethodId === "") return;
+    setCashlessMethodId(cashlessDefaultMethodId);
+  }, [cardVal, cashlessMethodId, cashlessDefaultMethodId]);
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
   const form = useFormValidation({
     expenseDate:
