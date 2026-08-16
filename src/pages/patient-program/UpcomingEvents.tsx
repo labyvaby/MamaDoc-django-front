@@ -23,6 +23,7 @@ import {
   createProgramNotification,
   getProgramNotifications,
   getUpcomingProgramRecords,
+  retryProgramNotification,
   type ProgramModuleRecord,
   type ProgramNotificationChannel,
   type ProgramNotificationList,
@@ -225,6 +226,17 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
       enqueueSnackbar("Уведомление отменено", { variant: "success" });
     },
   });
+  const retryMutation = useMutation({
+    mutationFn: (notificationId: number) => retryProgramNotification(
+      scope,
+      enrollmentId,
+      notificationId,
+    ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: notificationsKey });
+      enqueueSnackbar("Уведомление возвращено в очередь", { variant: "success" });
+    },
+  });
 
   const notificationsByRecord = React.useMemo(() => {
     const result = new Map<number, NonNullable<typeof notificationsQuery.data>["results"][number]>();
@@ -261,6 +273,7 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
             {events.map((event) => {
               const notification = notificationsByRecord.get(event.id);
               const canCancel = notification?.status === "pending";
+              const canRetry = notification?.status === "failed";
               return (
                 <Box
                   key={event.id}
@@ -283,6 +296,12 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
                         {formatDateTime(event.occurredAt)}
                       </Typography>
                       {event.notes && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{event.notes}</Typography>}
+                      {notification && notification.attemptsCount > 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                          Попыток: {notification.attemptsCount} из {notification.maxAttempts}
+                          {notification.failureMessage ? ` · ${notification.failureMessage}` : ""}
+                        </Typography>
+                      )}
                     </Box>
                     {canNotify && (
                       <Stack direction="row" gap={0.75} flexShrink={0}>
@@ -291,7 +310,16 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
                             Отменить
                           </AppButton>
                         )}
-                        {(!notification || notification.status === "cancelled" || notification.status === "failed") && (
+                        {canRetry && (
+                          <AppButton
+                            size="small"
+                            loading={retryMutation.isPending}
+                            onClick={() => retryMutation.mutate(notification.id)}
+                          >
+                            Повторить
+                          </AppButton>
+                        )}
+                        {(!notification || notification.status === "cancelled") && (
                           <AppButton
                             size="small"
                             variant="contained"
