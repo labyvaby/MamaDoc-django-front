@@ -369,7 +369,12 @@ const PatientCard: React.FC<Props> = ({
                   sx={{
                     display: "grid",
                     gap: 1,
-                    gridTemplateColumns: patient.birthDate && patient.address ? "1fr 1fr" : "1fr",
+                    // The card column can be narrow on desktop too, so respond
+                    // to its actual width instead of the viewport breakpoint.
+                    gridTemplateColumns:
+                      patient.birthDate && patient.address
+                        ? "repeat(auto-fit, minmax(min(240px, 100%), 1fr))"
+                        : "minmax(0, 1fr)",
                   }}
                 >
                   {patient.birthDate && (
@@ -377,10 +382,11 @@ const PatientCard: React.FC<Props> = ({
                       icon={<CalendarMonthOutlined />}
                       label={t("card.birthDate")}
                       value={`${formatDateRu(patient.birthDate)} ${calculateAge(patient.birthDate, t)}`}
+                      wrapValue
                     />
                   )}
                   {patient.address && (
-                    <InfoTile icon={<PlaceOutlined />} label={t("card.address")} value={patient.address} />
+                    <InfoTile icon={<PlaceOutlined />} label={t("card.address")} value={patient.address} wrapValue />
                   )}
                 </Box>
               )}
