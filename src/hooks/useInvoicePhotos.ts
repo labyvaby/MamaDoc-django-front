@@ -42,6 +42,13 @@ export interface UseInvoicePhotosOptions {
   open: boolean;
   /** Право на изменение (загрузка/удаление). Просмотр остаётся доступным. */
   canManage?: boolean;
+  /**
+   * Прежнее одиночное фото (`photoUrl` у расхода). Обычно бэк отдаёт его первым
+   * элементом списка, и здесь оно не нужно; показываем только когда список не
+   * загрузился — иначе чек, который пользователь видел вчера, просто исчезает
+   * (на проде 17.08.2026 GET у расхода со старым фото отвечает 500).
+   */
+  legacyPhotoUrl?: string | null;
 }
 
 export interface UseInvoicePhotosResult {
@@ -53,6 +60,10 @@ export interface UseInvoicePhotosResult {
   total: number;
   canAddMore: boolean;
   loading: boolean;
+  /** Список фото не загрузился: показываем прежний снимок и говорим об этом. */
+  loadFailed: boolean;
+  /** Прежнее фото, которое поле рисует вместо неподгрузившегося списка. */
+  fallbackUrl: string | null;
   busy: boolean;
   error: string | null;
   clearError: () => void;
@@ -77,6 +88,7 @@ export function useInvoicePhotos({
   organizationId = null,
   open,
   canManage = true,
+  legacyPhotoUrl = null,
 }: UseInvoicePhotosOptions): UseInvoicePhotosResult {
   const queryClient = useQueryClient();
   const [pending, setPending] = React.useState<PendingInvoicePhoto[]>([]);
@@ -95,6 +107,7 @@ export function useInvoicePhotos({
   });
 
   const photos = photosQuery.data ?? [];
+  const loadFailed = photosQuery.isError;
 
   // Превью — object-URL: без revoke они живут до перезагрузки вкладки.
   const releasePending = React.useCallback((items: PendingInvoicePhoto[]) => {
@@ -239,6 +252,8 @@ export function useInvoicePhotos({
     total,
     canAddMore,
     loading: photosQuery.isLoading,
+    loadFailed,
+    fallbackUrl: loadFailed ? legacyPhotoUrl : null,
     busy,
     error,
     clearError: () => setError(null),

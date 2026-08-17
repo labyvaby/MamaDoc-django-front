@@ -119,12 +119,16 @@ const ExpenseDetailCard: React.FC<{
 
   // Накладные (до 2 шт). Пока флаг выключен — остаётся одиночное фото чека
   // (photoUrl + PUT/DELETE .../photo/), поэтому старые кнопки не удалены.
+  // photoUrl передаём и при включённом флаге: бэк обещает отдавать старый чек
+  // первым элементом списка, но у расходов с ним GET сейчас падает (500,
+  // проверено на проде 17.08.2026) — тогда поле покажет хотя бы прежний снимок.
   const invoices = useInvoicePhotos({
     target: "expense",
     entityId: expense?.id ?? null,
     organizationId: orgId,
     open: true,
     canManage: canManage && !expense?.isVoided,
+    legacyPhotoUrl: expense?.photoUrl ?? null,
   });
 
   React.useEffect(() => {
