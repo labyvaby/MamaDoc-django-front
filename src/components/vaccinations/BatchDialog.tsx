@@ -126,7 +126,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
         batchNumber: batchNumber.trim(),
         expiresAt: expiresAt!.format("YYYY-MM-DD"),
         quantityInitial: Number(quantityInitial) || 0,
-        receivedAt: receivedAt ? receivedAt.format("YYYY-MM-DD") : undefined,
+        receivedAt: receivedAt!.format("YYYY-MM-DD"),
         costPrice: costStr,
         supplier: supplier.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -157,6 +157,10 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
     expiresAt: expiresAt ? null : "Укажите срок годности",
     quantityInitial:
       Number(quantityInitial) > 0 ? null : "Укажите количество доз больше нуля",
+    // Бэк требует receivedAt обязательно (400 «Object missing required field
+    // receivedAt»), хотя в типе поле опционально — без своей проверки очищенная
+    // дата уходит на сервер и возвращается непереводимой ошибкой.
+    receivedAt: receivedAt ? null : "Укажите дату прихода",
   });
 
   const handleSubmit = () => {
@@ -251,12 +255,20 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
           </Stack>
           <Stack direction="row" spacing={2}>
             <CustomDatePicker
-              label="Поступила"
+              label="Поступила *"
               value={receivedAt}
               onChange={(v) => setReceivedAt(v as Dayjs | null)}
               format="DD.MM.YYYY"
               maxDate={dayjs()}
-              slotProps={{ textField: { size: "small", fullWidth: true } }}
+              slotProps={{
+                textField: {
+                  size: "small",
+                  fullWidth: true,
+                  error: Boolean(form.errorOf("receivedAt")),
+                  helperText: form.errorOf("receivedAt") ?? undefined,
+                  ref: form.anchor("receivedAt"),
+                },
+              }}
             />
             <TextField
               label="Закуп. цена"
