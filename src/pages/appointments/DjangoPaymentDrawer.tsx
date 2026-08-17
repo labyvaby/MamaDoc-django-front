@@ -725,6 +725,17 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const registrarName =
     appointment?.createdById != null ? userNames[appointment.createdById] : undefined;
 
+  /**
+   * Способы приходят по филиалу приёма, а не сессии: оплата принадлежит тому
+   * филиалу, где приём заведён. В режиме «Все филиалы» (и когда открыт приём
+   * соседнего филиала) это выглядит как чужой терминал в списке — подписываем
+   * филиал, чтобы кассир видел, откуда способ.
+   */
+  const cashlessBranchNote =
+    appointment?.branchName && appointment.branchId !== (activeBranch?.id ?? null)
+      ? t("payment.cashlessBranchNote", { branch: appointment.branchName })
+      : null;
+
   const handlePrintInvoice = () => {
     if (!appointment) return;
     const ok = printAppointmentInvoice({
@@ -1093,6 +1104,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     error={cashlessMethodMissing}
                     loading={cashlessMethodsLoading}
                     loadFailed={cashlessMethodsFailed}
+                    branchNote={cashlessBranchNote}
                     disabled={isCancelled}
                   />
                 )}

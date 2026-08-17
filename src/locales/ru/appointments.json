@@ -396,6 +396,7 @@
     "discount": "Скидка",
     "cash": "Наличные",
     "cashless": "Безналичные",
+    "cashlessBranchNote": "Способы филиала «{{branch}}» — {{visit.nom}} заведён там",
     "insurance": "Страховка",
     "coverRemainder": "Покрыть остаток",
     "insuranceCompany": "Страховая компания",

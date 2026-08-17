@@ -51,6 +51,9 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
   const locked = disabled || state.busy;
 
   const tiles: { key: string; url: string; onRemove?: () => void }[] = [
+    // Прежний снимок вместо неподгрузившегося списка: удалить его этим API
+    // нельзя, поэтому плитка без крестика (см. useInvoicePhotos.fallbackUrl).
+    ...(state.fallbackUrl ? [{ key: "legacy", url: state.fallbackUrl }] : []),
     ...state.photos.map((p) => ({
       key: `remote-${p.id}`,
       url: p.url,
@@ -78,6 +81,16 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
       {state.error && (
         <Alert severity="warning" onClose={state.clearError} sx={{ py: 0.25 }}>
           {state.error}
+        </Alert>
+      )}
+
+      {/* Список не пришёл: молча показать пустое поле нельзя — уже приложенная
+          накладная выглядела бы удалённой. */}
+      {state.loadFailed && (
+        <Alert severity="warning" sx={{ py: 0.25 }}>
+          {state.fallbackUrl
+            ? "Список фото не загрузился — показан прежний снимок"
+            : "Не удалось загрузить фото накладной"}
         </Alert>
       )}
 

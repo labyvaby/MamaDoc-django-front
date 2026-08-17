@@ -21,6 +21,13 @@ export type CashlessMethodSelectProps = {
   loadFailed?: boolean;
   /** Подпись над полем; по умолчанию — «Способ безналичной оплаты» */
   label?: string;
+  /**
+   * Пояснение, к какому филиалу относится список. Заполняется, когда филиал
+   * операции не совпадает с филиалом сессии (режим «Все филиалы» в шапке): без
+   * него терминал соседней кассы выглядит как чужой способ, попавший в список
+   * по ошибке.
+   */
+  branchNote?: string | null;
 };
 
 /**
@@ -39,6 +46,7 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
   loading = false,
   loadFailed = false,
   label,
+  branchNote,
 }) => {
   const { t } = useT("common");
 
@@ -76,6 +84,11 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
         <Typography variant="body2" color={disabled ? "text.disabled" : "text.primary"}>
           {singleMethod.name}
         </Typography>
+        {branchNote && (
+          <Typography variant="caption" color="text.secondary">
+            {branchNote}
+          </Typography>
+        )}
       </Stack>
     );
   }
@@ -129,6 +142,11 @@ export const CashlessMethodSelect: React.FC<CashlessMethodSelectProps> = ({
           </MenuItem>
         ))}
       </TextField>
+      {branchNote && (
+        <Typography variant="caption" color="text.secondary">
+          {branchNote}
+        </Typography>
+      )}
     </Stack>
   );
 };

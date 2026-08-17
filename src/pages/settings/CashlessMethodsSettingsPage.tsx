@@ -42,10 +42,14 @@ import {
   deleteCashlessMethod,
   isCashlessMethodInUseError,
   cashlessMethodInUseMessage,
+  parseCashlessMethodUsage,
+  type CashlessMethodUsage,
   type DjangoCashlessMethod,
 } from "../../api/cashlessMethods";
 import { getBranches, type DjangoBranch } from "../../api/organization";
-import { parseBackendError } from "../../api/expenses";
+import { getExpenses, parseBackendError } from "../../api/expenses";
+import { getStockMovements } from "../../api/warehouse";
+import { formatDateRu, formatKGS } from "../../utility/format";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
@@ -60,6 +64,14 @@ type EditDialogProps = {
   organizationId?: number;
   /** Филиалы организации для выбора скоупа при создании. */
   branches: DjangoBranch[];
+  /**
+   * Филиал активной сессии — подставляется при создании. Способ без филиала
+   * («Все филиалы») виден в кассе каждого филиала, и раньше именно это значение
+   * стояло по умолчанию: терминал одной кассы молча попадал в выбор соседней
+   * (жалоба 16.08.2026). Общий способ остаётся, но теперь это осознанный выбор.
+   * `null` — сессия в режиме «Все филиалы», подставлять нечего.
+   */
+  defaultBranchId?: number | null;
   onSaved: () => void;
 };
 
@@ -69,6 +81,7 @@ const CashlessMethodDialog: React.FC<EditDialogProps> = ({
   method,
   organizationId,
   branches,
+  defaultBranchId,
   onSaved,
 }) => {
   const { t } = useT("settings");
@@ -78,13 +91,26 @@ const CashlessMethodDialog: React.FC<EditDialogProps> = ({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  /**
+   * Подставляем филиал сессии, только если он есть в списке филиалов этой
+   * организации: суперадмин мог смотреть чужую организацию, и чужой id ушёл бы
+   * в POST как несуществующий скоуп.
+   */
+  const suggestedBranchId =
+    defaultBranchId != null && branches.some((b) => b.id === defaultBranchId)
+      ? defaultBranchId
+      : "";
+
   React.useEffect(() => {
     if (open) {
       setName(method?.name ?? "");
-      setBranchId(method?.branchId ?? "");
+      setBranchId(method ? method.branchId ?? "" : suggestedBranchId);
       setError(null);
       setBusy(false);
     }
+    // suggestedBranchId намеренно вне зависимостей: филиалы догружаются после
+    // открытия диалога, и пересчёт затирал бы выбор пользователя.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, method]);
 
   const nameValid = name.trim().length >= 2;
@@ -203,12 +229,141 @@ const CashlessMethodDialog: React.FC<EditDialogProps> = ({
   );
 };
 
+// ── Где используется способ (после 409) ──────────────────────────────────────
+
+/** Сколько операций каждого вида показываем списком, остальные — счётчиком. */
+const USAGE_PREVIEW = 3;
+/** Номеров приёмов в строку: бэк отдаёт до 100, все они в диалог не влезут. */
+const USAGE_APPOINTMENTS_PREVIEW = 8;
+
+/**
+ * Конкретные операции способа — то, ради чего бэк 17.08.2026 добавил фильтры
+ * `?cashlessMethodId=` в расходы и движения склада. Счётчики выше отвечают
+ * «сколько», этот блок — «какие именно»: без него кассир идёт искать один расход
+ * среди сотни. Аннулированные расходы бэк считает использованием, поэтому
+ * `isVoided` здесь не задаём — иначе счётчик показывал бы операцию, а список был
+ * бы пуст.
+ *
+ * Ошибку запроса не выносим красной плашкой: 409 уже показан, и главная мысль
+ * диалога — «удалить нельзя, можно скрыть»; подсказка «откройте разделы вручную»
+ * достаточна.
+ */
+const CashlessMethodUsageDetails: React.FC<{
+  methodId: number;
+  organizationId?: number;
+  usage: CashlessMethodUsage;
+}> = ({ methodId, organizationId, usage }) => {
+  const { t } = useT("settings");
+
+  const expensesQuery = useQuery({
+    queryKey: ["django", "cashless-methods", "usage", "expenses", methodId, organizationId ?? null],
+    queryFn: ({ signal }) =>
+      getExpenses({ organizationId, cashlessMethodId: methodId, pageSize: USAGE_PREVIEW }, signal),
+    enabled: usage.expenses > 0,
+    retry: false,
+  });
+
+  const movementsQuery = useQuery({
+    queryKey: ["django", "cashless-methods", "usage", "movements", methodId, organizationId ?? null],
+    queryFn: ({ signal }) =>
+      getStockMovements({ organizationId, cashlessMethodId: methodId, limit: USAGE_PREVIEW }, signal),
+    enabled: usage.movements > 0,
+    retry: false,
+  });
+
+  const expenses = expensesQuery.data?.results ?? [];
+  const movements = movementsQuery.data ?? [];
+  const failed = expensesQuery.isError || movementsQuery.isError;
+
+  const appointmentIds = usage.appointmentIds.slice(0, USAGE_APPOINTMENTS_PREVIEW);
+  const appointmentsRest = usage.appointmentIds.length - appointmentIds.length;
+
+  const hasSomething =
+    appointmentIds.length > 0 || expenses.length > 0 || movements.length > 0;
+  if (!hasSomething && !failed) return null;
+
+  const more = (rest: number) => (rest > 0 ? ` ${t("cashlessMethods.deleteDialog.usageMore", { count: rest })}` : "");
+
+  return (
+    <Box>
+      <Typography variant="body2" color="text.primary">
+        {t("cashlessMethods.deleteDialog.usageWhere")}
+      </Typography>
+
+      {appointmentIds.length > 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          {t("cashlessMethods.deleteDialog.usageAppointments", {
+            ids: appointmentIds.map((id) => `№${id}`).join(", "),
+          })}
+          {more(appointmentsRest)}
+        </Typography>
+      )}
+
+      {expenses.length > 0 && (
+        <Box sx={{ mt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("cashlessMethods.deleteDialog.usageExpensesGroup")}
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+            {expenses.map((e) => (
+              <Typography key={e.id} component="li" variant="body2" color="text.secondary">
+                {formatDateRu(e.expenseDate)} · {e.name || e.categoryName || "—"} ·{" "}
+                {/* Способ относится к безналичной части, но у смешанного расхода
+                    полезнее видеть всю сумму, а «0 KGS» не опознаётся вовсе. */}
+                {formatKGS(Number(e.cardAmount) > 0 ? e.cardAmount : e.amount)}
+              </Typography>
+            ))}
+          </Box>
+          {usage.expenses > expenses.length && (
+            <Typography variant="caption" color="text.disabled" sx={{ pl: 2.5 }}>
+              {t("cashlessMethods.deleteDialog.usageMore", { count: usage.expenses - expenses.length })}
+            </Typography>
+          )}
+        </Box>
+      )}
+
+      {movements.length > 0 && (
+        <Box sx={{ mt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t("cashlessMethods.deleteDialog.usageMovementsGroup")}
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+            {movements.map((m) => (
+              <Typography key={m.id} component="li" variant="body2" color="text.secondary">
+                {formatDateRu(m.createdAt)} · {m.productName}
+                {m.totalCost != null ? ` · ${formatKGS(m.totalCost)}` : ""}
+              </Typography>
+            ))}
+          </Box>
+          {usage.movements > movements.length && (
+            <Typography variant="caption" color="text.disabled" sx={{ pl: 2.5 }}>
+              {t("cashlessMethods.deleteDialog.usageMore", { count: usage.movements - movements.length })}
+            </Typography>
+          )}
+        </Box>
+      )}
+
+      {failed && (
+        <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.5 }}>
+          {t("cashlessMethods.deleteDialog.usageLoadFailed")}
+        </Typography>
+      )}
+    </Box>
+  );
+};
+
 // ── Главный компонент ────────────────────────────────────────────────────────
 
 const CashlessMethodsSettingsPage: React.FC = () => {
   const { t } = useT("settings");
   usePageTitle(t("cashlessMethods.title"));
-  const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
+  const {
+    isSuperAdmin,
+    activeOrganization,
+    activeBranch,
+    memberships,
+    loading: permLoading,
+  } = usePermissions();
   const canManage = useCan("finance.manage");
   const queryClient = useQueryClient();
 
@@ -230,11 +385,18 @@ const CashlessMethodsSettingsPage: React.FC = () => {
    */
   const [deleteBlocked, setDeleteBlocked] = React.useState<"inUse" | "unsupported" | null>(null);
   /**
-   * Сообщение бэка из 409 — единственное место, где есть количества операций.
+   * Сообщение бэка из 409 — запасной вариант, когда счётчиков в ответе нет.
    * Пусто, пока сообщение приходит на английском (см. cashlessMethodInUseMessage):
    * тогда в диалоге остаётся только наш текст, без числа.
    */
   const [deleteBlockedDetail, setDeleteBlockedDetail] = React.useState<string | null>(null);
+  /**
+   * Разбивка по разделам из полей ответа (`usage`, `appointmentIds`). Она важнее
+   * самого текста: «расходы — 1» и номера приёмов говорят, где искать операцию, а
+   * по ней же догружаются сами операции (CashlessMethodUsageDetails). Если
+   * разбора не вышло, остаётся сообщение бэка (когда оно русское) или общий текст.
+   */
+  const [deleteUsage, setDeleteUsage] = React.useState<CashlessMethodUsage | null>(null);
 
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
@@ -342,6 +504,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
   const openDelete = (method: DjangoCashlessMethod) => {
     setDeleteBlocked(null);
     setDeleteBlockedDetail(null);
+    setDeleteUsage(null);
     setDeleting(method);
   };
 
@@ -356,11 +519,15 @@ const CashlessMethodsSettingsPage: React.FC = () => {
       // Способ уже в операциях (или бэк ещё без удаления) — предлагаем скрытие
       // прямо в этом же диалоге.
       if (isCashlessMethodInUseError(e)) {
+        const usage = parseCashlessMethodUsage(e);
         setDeleteBlocked("inUse");
-        setDeleteBlockedDetail(cashlessMethodInUseMessage(e));
+        setDeleteUsage(usage);
+        // Со счётчиками текст бэка уже ничего не добавляет — не дублируем.
+        setDeleteBlockedDetail(usage ? null : cashlessMethodInUseMessage(e));
       } else if ((e as ApiError)?.status === 405) {
         setDeleteBlocked("unsupported");
         setDeleteBlockedDetail(null);
+        setDeleteUsage(null);
       } else {
         setToggleError(parseBackendError(e));
         setDeleting(null);
@@ -375,7 +542,26 @@ const CashlessMethodsSettingsPage: React.FC = () => {
     await setActive(method, false);
     setDeleting(null);
     setDeleteBlocked(null);
+    setDeleteUsage(null);
   };
+
+  /**
+   * Строки разбивки — только ненулевые: «оплаты приёмов — 0» не подсказывают
+   * ничего, а список из трёх строк ради одной значимой читается дольше. Пустой
+   * список (все нули) равносилен неразобранному ответу — диалог тогда остаётся
+   * с общим текстом.
+   */
+  const usageLines = deleteUsage
+    ? (
+        [
+          ["usagePayments", deleteUsage.payments],
+          ["usageExpenses", deleteUsage.expenses],
+          ["usageMovements", deleteUsage.movements],
+        ] as const
+      )
+        .filter(([, count]) => count > 0)
+        .map(([key, count]) => t(`cashlessMethods.deleteDialog.${key}`, { count }))
+    : [];
 
   // Текст диалога удаления: подтверждение, «уже использован» (со счётчиком от
   // бэка отдельной строкой или без него) и «сервер ещё не умеет удалять».
@@ -389,7 +575,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
     }
     if (deleteBlocked === "inUse") {
       // Со счётчиком имя способа уже названо строкой выше — не повторяем.
-      if (deleteBlockedDetail) {
+      if (deleteBlockedDetail || usageLines.length > 0) {
         return active
           ? t("cashlessMethods.deleteDialog.blockedHint")
           : t("cashlessMethods.deleteDialog.blockedHintHidden");
@@ -651,8 +837,30 @@ const CashlessMethodsSettingsPage: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={1}>
-            {/* Счётчик операций приходит только текстом ошибки — показываем его
-                первым, а своей строкой объясняем, что с этим делать. */}
+            {/* Счётчики операций из 409 — первыми, а своей строкой объясняем,
+                что с этим делать. Ниже — сами операции: по счётчику «расходы —
+                1» непонятно, какой именно расход искать. */}
+            {deleteBlocked === "inUse" && usageLines.length > 0 && (
+              <Box>
+                <Typography variant="body2" color="text.primary">
+                  {t("cashlessMethods.deleteDialog.usageTitle", { name: deleting?.name ?? "" })}
+                </Typography>
+                <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+                  {usageLines.map((line) => (
+                    <Typography key={line} component="li" variant="body2" color="text.primary">
+                      {line}
+                    </Typography>
+                  ))}
+                </Box>
+              </Box>
+            )}
+            {deleteBlocked === "inUse" && deleting && deleteUsage && (
+              <CashlessMethodUsageDetails
+                methodId={deleting.id}
+                organizationId={orgId}
+                usage={deleteUsage}
+              />
+            )}
             {deleteBlocked && deleteBlockedDetail && (
               <Typography variant="body2" color="text.primary">
                 {deleteBlockedDetail}
@@ -703,6 +911,7 @@ const CashlessMethodsSettingsPage: React.FC = () => {
         method={editing}
         organizationId={orgId}
         branches={branchesQuery.data ?? []}
+        defaultBranchId={activeBranch?.id ?? null}
         onSaved={invalidate}
       />
     </SettingsLayout>

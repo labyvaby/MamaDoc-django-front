@@ -86,7 +86,10 @@
   "emptyStates": {
     "selectOrg": "Выберите организацию, чтобы увидеть отчёт.",
     "noAccrualsMonth": "За выбранный месяц начислений нет.",
-    "loadError": "Ошибка загрузки"
+    "loadError": "Ошибка загрузки",
+    "hiddenEmptyRows_one": "Скрыт {{count}} сотрудник без начислений за месяц",
+    "hiddenEmptyRows_few": "Скрыто {{count}} сотрудника без начислений за месяц",
+    "hiddenEmptyRows_many": "Скрыто {{count}} сотрудников без начислений за месяц"
   },
   "summaryCards": {
     "advanceTitle": "Аванс",
