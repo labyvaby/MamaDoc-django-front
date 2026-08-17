@@ -61,7 +61,9 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
+  SCHEDULE_DASHBOARD_HARD_LIMIT,
   VACCINATION_BATCH_WRITEOFF_ENABLED,
+  VACCINATION_SCHEDULE_BRANCH_SCOPING,
   getCalendarTemplate,
   getMonthlyReport,
   getRecords,
@@ -243,10 +245,15 @@ const VaccinationsPage: React.FC = () => {
 
   const enabled = !permLoading && canView;
 
+  // Плановые дозы приходят без филиала (branchId: null), а фильтр на бэке строгий —
+  // с филиалом список пустой. До исправления смотрим по всей организации, см.
+  // VACCINATION_SCHEDULE_BRANCH_SCOPING.
+  const dueBranchId = VACCINATION_SCHEDULE_BRANCH_SCOPING ? branchId : null;
+
   const dueQuery = useQuery({
-    queryKey: djangoQueryKeys.vaccinations.schedule({ branchId, orgId }),
+    queryKey: djangoQueryKeys.vaccinations.schedule({ branchId: dueBranchId, orgId }),
     queryFn: ({ signal }) =>
-      getScheduleDashboard({ branchId: branchId ?? undefined, organizationId: orgId }, signal),
+      getScheduleDashboard({ branchId: dueBranchId ?? undefined, organizationId: orgId }, signal),
     enabled: enabled && tab === "due",
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
@@ -1044,9 +1051,21 @@ const VaccinationsPage: React.FC = () => {
           )}
         </Stack>
 
-        {branchId == null && tab !== "calendar" && tab !== "report" && (
+        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "due" && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Выберите активный филиал, чтобы увидеть прививки по нему.
+          </Alert>
+        )}
+        {tab === "due" && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
+          <Alert severity="info" sx={{ mb: 1.5 }}>
+            Плановые дозы показаны по всей организации: филиал у них пока не проставляется.
+          </Alert>
+        )}
+        {tab === "due" && dueRows.length >= SCHEDULE_DASHBOARD_HARD_LIMIT && (
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            Список неполный: сервер отдаёт только первые {SCHEDULE_DASHBOARD_HARD_LIMIT} доз,
+            начиная с самых давних. Свежие сроки сюда пока не попадают — ищите пациента через
+            его карту, вкладку «Прививки».
           </Alert>
         )}
         {tab === "report" && reportBranchId == null && (

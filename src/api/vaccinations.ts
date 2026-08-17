@@ -29,6 +29,32 @@ export const VACCINATIONS_USE_MOCKS = false;
  */
 export const VACCINATION_BATCH_WRITEOFF_ENABLED = true;
 
+/**
+ * Резать ли дашборд «Кому пора» по активному филиалу.
+ *
+ * Пока false: бэк создаёт плановые слоты с `branchId: null` (498 из 500 на тесте),
+ * а фильтр по филиалу строгий — `?branchId=12` отдаёт 0 записей. С включённым
+ * скоупом вкладка показывала «Нет запланированных прививок» при сотнях
+ * просроченных доз в базе (проверено 17.08.2026 на тесте и на проде).
+ *
+ * Вернуть в true, когда бэк начнёт проставлять филиал слоту либо отдавать
+ * `branchId: null` как общий для всех филиалов — тикет
+ * `MamaDoc/backend_ticket_vaccinations_product_line_link.md`, п. 5.4.
+ */
+export const VACCINATION_SCHEDULE_BRANCH_SCOPING = false;
+
+/**
+ * Сколько плановых доз бэк отдаёт в дашборд «Кому пора» максимум.
+ *
+ * Жёсткий предел на стороне сервера: `page_size` и `limit` игнорируются, список
+ * идёт по возрастанию даты — то есть приезжают САМЫЕ СТАРЫЕ дозы, а актуальные
+ * в выдачу не попадают вовсе. Из фильтров работает только `dueBefore` (верхняя
+ * граница); `dueAfter`/`dueFrom`/`ordering`/`status` бэк игнорирует, поэтому
+ * отфильтровать «свежие» ни на сервере, ни на клиенте нельзя (проверено
+ * 17.08.2026). Используем, чтобы честно предупредить: список неполон.
+ */
+export const SCHEDULE_DASHBOARD_HARD_LIMIT = 500;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /**
@@ -115,7 +141,8 @@ export interface CreateBatchPayload {
   batchNumber: string;
   expiresAt: string;
   quantityInitial: number;
-  receivedAt?: string;
+  /** Обязательное: без него бэк отвечает 400 (проверено на тесте 17.08.2026). */
+  receivedAt: string;
   costPrice?: string;
   supplier?: string;
   notes?: string;
