@@ -47,7 +47,7 @@ import type { AppointmentServiceLine, DjangoAppointment } from "../../../api/app
 import { getAppointmentPayments } from "../../../api/payments";
 import { getPatient } from "../../../api/patients";
 import { formatPatientAge } from "../../../utility/age";
-import { getPatientSchedule } from "../../../api/vaccinations";
+import { getPatientSchedule, getRecords, getVaccines } from "../../../api/vaccinations";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import {
   djangoQueryKeys,
@@ -70,7 +70,9 @@ import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQu
 import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
 import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
-import AppointmentProductLines from "./details/AppointmentProductLines";
+import AppointmentProductLines, {
+  type ProductVaccineRef,
+} from "./details/AppointmentProductLines";
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
@@ -238,6 +240,54 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate)),
     [scheduleQuery.data],
   );
+
+  /**
+   * Вакцина в счёте ≠ прививка в карте: товар с меткой «вакцина» продаётся
+   * строкой счёта, а запись в карту прививок бэк сам не создаёт (обратной связи
+   * строка → запись в контракте нет, serviceLineId приходит пустым). Поэтому
+   * сверяем сами: справочник вакцин даёт productId, записи пациента — что уже
+   * оформлено по этому приёму.
+   */
+  const productLines = React.useMemo(() => appt.productLines ?? [], [appt.productLines]);
+  const hasProductLines = productLines.length > 0;
+
+  const vaccinesQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.vaccines({ orgId, includeInactive: true }),
+    queryFn: ({ signal }) =>
+      getVaccines({ organizationId: orgId, includeInactive: true }, signal),
+    enabled: canRecordVaccination && hasProductLines,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+
+  const patientRecordsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.records({ patientId, orgId }),
+    queryFn: ({ signal }) =>
+      getRecords({ patientId: patientId!, organizationId: orgId }, signal),
+    enabled: canRecordVaccination && hasProductLines && patientId != null,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+
+  const vaccineByProductId = React.useMemo(() => {
+    const map = new Map<number, ProductVaccineRef>();
+    for (const v of vaccinesQuery.data ?? []) {
+      if (v.productId != null) map.set(v.productId, { vaccineId: v.id, vaccineName: v.name });
+    }
+    return map;
+  }, [vaccinesQuery.data]);
+
+  const patientRecords = React.useMemo(
+    () => (patientRecordsQuery.data ?? []).filter((r) => r.status !== "canceled"),
+    [patientRecordsQuery.data],
+  );
+
+  const recordedByVaccineId = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const r of patientRecords) {
+      if (r.appointmentId !== appt.id) continue;
+      map.set(r.vaccineId, (map.get(r.vaccineId) ?? 0) + 1);
+    }
+    return map;
+  }, [patientRecords, appt.id]);
 
 
   // Запрос отзыва — статус виден в AppointmentWhenBlock, кнопка живёт в
@@ -972,7 +1022,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
             {/* Товары, проданные в рамках визита. */}
             <AppointmentProductLines
-              lines={appt.productLines ?? []}
+              lines={productLines}
               formatAmount={som}
               clickable={canViewProducts}
               onProductClick={(id, name) => {
@@ -980,6 +1030,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 setSelectedProductName(name);
                 setProductDrawerOpen(true);
               }}
+              vaccineByProductId={canRecordVaccination ? vaccineByProductId : undefined}
+              recordedByVaccineId={recordedByVaccineId}
             />
 
             {/* Положенные дозы — ПОСЛЕ услуг и товаров: это подсказка «заодно
