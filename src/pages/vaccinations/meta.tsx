@@ -35,17 +35,20 @@ export function recordStatusMeta(status: VaccinationRecordStatus) {
 }
 
 /**
- * Место укола — набор для формы. Гайд подтверждает только "left_arm"; остальные
- * значения предположение фронта (открытый вопрос бэку). Если бэк использует
- * другие slug'и — правится только этот список.
+ * Место укола — набор для формы. Значения выверены по живому API 17.08.2026:
+ * бэк принимает ровно `left_arm`, `right_arm`, `thigh`, `oral`, всё остальное
+ * отбивает 400 «Invalid enum value». Прежний список фронта был угадан и
+ * наполовину неверен: `left_thigh`/`right_thigh`/`other` роняли сохранение —
+ * а бедро у младенцев основное место укола.
+ *
+ * Бэк не различает левое и правое бедро — просим добавить, тикет
+ * `MamaDoc/backend_ticket_vaccinations_product_line_link.md`, п. 4.
  */
 export const INJECTION_SITE_OPTIONS: { value: string; label: string }[] = [
   { value: "left_arm", label: "Левое плечо" },
   { value: "right_arm", label: "Правое плечо" },
-  { value: "left_thigh", label: "Левое бедро" },
-  { value: "right_thigh", label: "Правое бедро" },
+  { value: "thigh", label: "Бедро" },
   { value: "oral", label: "Перорально" },
-  { value: "other", label: "Другое" },
 ];
 
 const INJECTION_SITE_LABELS = new Map(INJECTION_SITE_OPTIONS.map((o) => [o.value, o.label]));
