@@ -90,6 +90,13 @@ export interface ExpensesFilters {
   categoryId?: number;
   employeeId?: number;
   method?: ExpenseMethod;
+  /**
+   * Расходы одного способа безналичной оплаты. Нужен после 409 при удалении
+   * способа: показать те самые операции, а не весь список (см.
+   * api/cashlessMethods.ts). Аннулированные расходы бэк тоже считает
+   * использованием — при этом фильтре `isVoided` лучше не задавать.
+   */
+  cashlessMethodId?: number;
   dateFrom?: string;
   dateTo?: string;
   isVoided?: boolean;
@@ -110,6 +117,7 @@ function buildExpenseParams(filters: ExpensesFilters): URLSearchParams {
   if (filters.categoryId != null) q.set("categoryId", String(filters.categoryId));
   if (filters.employeeId != null) q.set("employeeId", String(filters.employeeId));
   if (filters.method) q.set("method", filters.method);  // still supported for cashbox filter
+  if (filters.cashlessMethodId != null) q.set("cashlessMethodId", String(filters.cashlessMethodId));
   if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) q.set("dateTo", filters.dateTo);
   if (filters.isVoided != null) q.set("isVoided", String(filters.isVoided));

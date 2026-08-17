@@ -171,16 +171,18 @@ export function cashlessMethodInUseMessage(err: unknown): string | null {
   return detailMessages(err).find((msg) => /[а-яё]/i.test(msg)) ?? null;
 }
 
-/** Разбивка «где используется способ» из сообщения 409. */
+/** Разбивка «где используется способ» из ответа 409. */
 export interface CashlessMethodUsage {
-  /** Оплаты приёмов */
+  /** Оплаты приёмов; возвраты бэк относит к исходному платежу и отдельно не считает */
   payments: number;
-  /** Расходы; сторнированные (void) бэк тоже считает использованием */
+  /** Расходы; аннулированные (void) бэк тоже считает использованием */
   expenses: number;
   /** Движения склада */
   movements: number;
-  /** Всего операций: число из сообщения, иначе сумма категорий */
+  /** Всего операций: число из ответа, иначе сумма категорий */
   total: number;
+  /** Номера приёмов с этим способом; бэк отдаёт не более первых 100 */
+  appointmentIds: number[];
 }
 
 /**
@@ -189,31 +191,64 @@ export interface CashlessMethodUsage {
  * что можно держаться. Русские формы ловим по корню («1 платёж», «2 платежа»,
  * «0 платежей»).
  */
-const USAGE_PATTERNS: ReadonlyArray<readonly [keyof CashlessMethodUsage, RegExp]> = [
+type UsageCounter = "payments" | "expenses" | "movements";
+
+const USAGE_PATTERNS: ReadonlyArray<readonly [UsageCounter, RegExp]> = [
   ["payments", /(\d+)\s*(?:payments?|плат[её]ж\w*)/i],
   ["expenses", /(\d+)\s*(?:expenses?|расход\w*)/i],
   ["movements", /(\d+)\s*(?:(?:stock\s+)?movements?|движени\w*)/i],
 ];
 
+const num = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+
 /**
- * Счётчики операций из 409. Бэк отдаёт их **только внутри текста** сообщения
- * («…used in 1 operations (0 payments, 1 expenses, 0 stock movements)…»):
- * отдельных полей и `usageCount` в списке не будет — договорённость от
- * 16.08.2026. Числа при этом языконезависимы, поэтому разбираем и английскую
- * строку, которую `cashlessMethodInUseMessage` показывать отказывается: без них
- * пользователю остаётся «указан где-то в трёх разделах», и он не знает, где
- * искать. Отфильтровать операции по способу нечем — списки расходов и движений
- * параметр `cashlessMethodId` игнорируют, глобального списка оплат нет вовсе
- * (проверено на проде 16.08.2026), так что разбивка — единственная подсказка.
+ * Счётчики из полей ответа: с 17.08.2026 бэк кладёт в 409 объект `usage`
+ * (`payments`/`expenses`/`stockMovements`/`total`) и список `appointmentIds`
+ * (первые 100 приёмов). Это основной путь; текстовый разбор ниже остался
+ * страховкой на время, пока фронт может оказаться на проде раньше бэка.
+ */
+function structuredUsage(err: ApiError): CashlessMethodUsage | null {
+  const payload = err.payload as Record<string, unknown> | null;
+  const raw = payload?.usage;
+  if (raw == null || typeof raw !== "object") return null;
+  const u = raw as Record<string, unknown>;
+  const payments = num(u.payments);
+  const expenses = num(u.expenses);
+  const movements = num(u.stockMovements ?? u.movements);
+  const ids = payload?.appointmentIds;
+  return {
+    payments,
+    expenses,
+    movements,
+    total: num(u.total) || payments + expenses + movements,
+    appointmentIds: Array.isArray(ids) ? ids.filter((id): id is number => typeof id === "number") : [],
+  };
+}
+
+/**
+ * Счётчики операций из 409. Сначала — поля `usage`/`appointmentIds`, и только
+ * если их нет (старый бэк) — числа из текста сообщения
+ * («…used in 1 operations (0 payments, 1 expenses, 0 stock movements)…»). Числа
+ * в тексте языконезависимы, поэтому разбираем и английскую строку, которую
+ * `cashlessMethodInUseMessage` показывать отказывается: без них пользователю
+ * остаётся «указан где-то в трёх разделах», и он не знает, где искать.
  *
- * `null`, если ни одной категории не нашлось: показывать «0/0/0» вместо
- * непонятой строки хуже, чем общий текст без чисел.
+ * `null`, если не нашлось ни полей, ни ни одной категории в тексте: показывать
+ * «0/0/0» вместо непонятого ответа хуже, чем общий текст без чисел.
  */
 export function parseCashlessMethodUsage(err: unknown): CashlessMethodUsage | null {
   if (!(err instanceof ApiError)) return null;
+  const structured = structuredUsage(err);
+  if (structured) return structured;
   const text = detailMessages(err).join(" ");
   if (!text) return null;
-  const usage: CashlessMethodUsage = { payments: 0, expenses: 0, movements: 0, total: 0 };
+  const usage: CashlessMethodUsage = {
+    payments: 0,
+    expenses: 0,
+    movements: 0,
+    total: 0,
+    appointmentIds: [],
+  };
   let matched = false;
   for (const [key, pattern] of USAGE_PATTERNS) {
     const found = pattern.exec(text);

@@ -132,6 +132,31 @@ describe("cashlessMethodInUseMessage", () => {
 });
 
 describe("parseCashlessMethodUsage", () => {
+  it("берёт счётчики и приёмы из полей ответа (бэк с 17.08.2026)", () => {
+    const err = new ApiError("conflict", 409, {
+      detail: [{ msg: "Cashless method is used in 2 operations", type: "in_use" }],
+      usage: { payments: 1, expenses: 1, stockMovements: 0, total: 2 },
+      appointmentIds: [123],
+    });
+    expect(parseCashlessMethodUsage(err)).toEqual({
+      payments: 1,
+      expenses: 1,
+      movements: 0,
+      total: 2,
+      appointmentIds: [123],
+    });
+  });
+
+  it("считает всего сам, если поле total бэк не прислал", () => {
+    const err = new ApiError("conflict", 409, {
+      detail: [{ msg: "in use", type: "in_use" }],
+      usage: { payments: 2, expenses: 0, stockMovements: 3 },
+    });
+    const usage = parseCashlessMethodUsage(err);
+    expect(usage?.total).toBe(5);
+    expect(usage?.appointmentIds).toEqual([]);
+  });
+
   it("достаёт счётчики из английской строки — числа от языка не зависят", () => {
     // Ровно та строка, что приходит с прода 16.08.2026.
     const err = new ApiError("conflict", 409, {
@@ -147,6 +172,7 @@ describe("parseCashlessMethodUsage", () => {
       expenses: 1,
       movements: 0,
       total: 1,
+      appointmentIds: [],
     });
   });
 
@@ -159,6 +185,7 @@ describe("parseCashlessMethodUsage", () => {
       expenses: 2,
       movements: 0,
       total: 3,
+      appointmentIds: [],
     });
   });
 

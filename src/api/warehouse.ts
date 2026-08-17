@@ -467,12 +467,19 @@ export async function getStockMovements(
         warehouseId?: number;
         limit?: number;
         organizationId?: number;
+        /**
+         * Движения одного способа безналичной оплаты — нужен после 409 при
+         * удалении способа, чтобы показать сами операции (см.
+         * api/cashlessMethods.ts).
+         */
+        cashlessMethodId?: number;
     } = {},
     signal?: AbortSignal,
 ): Promise<DjangoStockMovement[]> {
     const q = new URLSearchParams();
     if (filters.productId !== undefined) q.set("productId", String(filters.productId));
     if (filters.warehouseId !== undefined) q.set("warehouseId", String(filters.warehouseId));
+    if (filters.cashlessMethodId !== undefined) q.set("cashlessMethodId", String(filters.cashlessMethodId));
     if (filters.limit !== undefined) q.set("limit", String(filters.limit));
     if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
     const qs = q.toString();
