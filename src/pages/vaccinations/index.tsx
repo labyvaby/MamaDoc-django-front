@@ -61,6 +61,7 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
+  SCHEDULE_DASHBOARD_HARD_LIMIT,
   VACCINATION_BATCH_WRITEOFF_ENABLED,
   VACCINATION_SCHEDULE_BRANCH_SCOPING,
   getCalendarTemplate,
@@ -1058,6 +1059,13 @@ const VaccinationsPage: React.FC = () => {
         {tab === "due" && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Плановые дозы показаны по всей организации: филиал у них пока не проставляется.
+          </Alert>
+        )}
+        {tab === "due" && dueRows.length >= SCHEDULE_DASHBOARD_HARD_LIMIT && (
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            Список неполный: сервер отдаёт только первые {SCHEDULE_DASHBOARD_HARD_LIMIT} доз,
+            начиная с самых давних. Свежие сроки сюда пока не попадают — ищите пациента через
+            его карту, вкладку «Прививки».
           </Alert>
         )}
         {tab === "report" && reportBranchId == null && (
