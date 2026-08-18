@@ -175,3 +175,21 @@ export function registerServiceWorker(): void {
     });
   });
 }
+
+/**
+ * Адрес текущей страницы, открывающий её в Safari поверх встроенного браузера
+ * (`x-safari-https://…`) — или `null`, если это бессмысленно.
+ *
+ * Схема системная, но недокументированная: её понимает сам iOS, а приложение,
+ * внутри которого открыта страница, может ссылку и проглотить. Поэтому она —
+ * ускоритель, а не замена инструкции: рядом остаются шаги «… → Открыть в Safari»
+ * и кнопка «Скопировать ссылку».
+ */
+export function getOpenInSafariUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  if (detectPlatform() !== "ios") return null;
+  const { href, protocol } = window.location;
+  // Схема работает только для http(s); локальный http тоже открывается.
+  if (protocol !== "https:" && protocol !== "http:") return null;
+  return `x-safari-${href}`;
+}
