@@ -41,6 +41,7 @@ import {
   parsePhone,
   type PhoneCountryCode,
 } from "../../utility/phone";
+import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { subtleBg } from "../../theme";
 
 // Формат таймера кулдауна: секунды → "M:SS".
@@ -97,6 +98,18 @@ const LoginPage: React.FC = () => {
     () => readSavedPhone().countryCode,
   );
   const [phoneLocal, setPhoneLocal] = React.useState(() => readSavedPhone().local);
+  // Правка в середине номера не должна выбрасывать курсор в конец. Обработчика
+  // вставки здесь нет, поэтому код страны из буфера по-прежнему режет
+  // normalizePhoneLocal — теперь внутри хука.
+  const phoneInput = usePhoneLocalInput(
+    phoneCountryCode,
+    phoneLocal,
+    (digits) => {
+      setPhoneLocal(digits);
+      clearError();
+    },
+    normalizePhoneLocal,
+  );
   const [lastSentPhone, setLastSentPhone] = React.useState<string | null>(null);
   const [otpCode, setOtpCode] = React.useState("");
   const [isOtpSent, setIsOtpSent] = React.useState(false);
@@ -364,10 +377,9 @@ const LoginPage: React.FC = () => {
                   </Typography>
                   <TextField
                     value={formatPhoneLocalDisplay(phoneCountryCode, phoneLocal)}
-                    onChange={(e) => {
-                      setPhoneLocal(normalizePhoneLocal(phoneCountryCode, e.target.value));
-                      clearError();
-                    }}
+                    inputRef={phoneInput.inputRef}
+                    onChange={phoneInput.onChange}
+                    onKeyDown={phoneInput.onKeyDown}
                     fullWidth
                     autoFocus
                     type="tel"

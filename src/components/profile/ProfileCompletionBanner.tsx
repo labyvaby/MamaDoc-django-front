@@ -20,7 +20,7 @@ const MotionBox = motion(Box);
 
 export const ProfileCompletionBanner: React.FC = () => {
   const navigate = useNavigate();
-  const { shouldShowBanner, criticalLabelsFormatted, dismissForToday } =
+  const { shouldShowBanner, criticalLabelsFormatted, dismissReminder } =
     useProfileCompleteness();
 
   if (!shouldShowBanner) {
@@ -117,7 +117,7 @@ export const ProfileCompletionBanner: React.FC = () => {
             <Tooltip title="Закрыть напоминание" placement="bottom">
               <IconButton
                 aria-label="Закрыть напоминание"
-                onClick={dismissForToday}
+                onClick={dismissReminder}
                 sx={(t) => ({
                   width: 40,
                   height: 40,
@@ -153,7 +153,7 @@ export const ProfileCompletionBanner: React.FC = () => {
         <Tooltip title="Закрыть напоминание" placement="bottom">
           <IconButton
             aria-label="Закрыть напоминание"
-            onClick={dismissForToday}
+            onClick={dismissReminder}
             sx={(t) => ({
               display: { xs: "inline-flex", md: "none" },
               position: "absolute",
