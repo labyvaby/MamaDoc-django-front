@@ -10,7 +10,11 @@ import dayjs, { type Dayjs } from "dayjs";
 import type { AppointmentServiceLine, DjangoAppointment } from "../../../api/appointments";
 import type { PaymentStatus } from "../../../api/payments";
 import type { StatusCode } from "../../../config/appointmentStatuses";
-import { isCancelledStatus } from "./slotAvailability";
+import {
+  isCancelledStatus,
+  isSlotCovered,
+  type BusyInterval,
+} from "./slotAvailability";
 
 /**
  * Статусы визита, по которым можно отобрать день. Порядок — ход визита, а не
@@ -91,6 +95,32 @@ export function firstFreeSlotInSegment(
 
   const candidate = roundedNow.isAfter(segStart) ? roundedNow : segStart;
   return candidate.isBefore(segEnd) ? candidate : null;
+}
+
+/**
+ * Первое СВОБОДНОЕ окно внутри смены: шагаем по сетке слотов, пока не найдём
+ * время, не занятое приёмом этого сотрудника.
+ *
+ * `firstFreeSlotInSegment` про приёмы ничего не знает и всегда отдаёт начало
+ * смены — из-за этого врачу с графиком с 09:00 и записью на 09:00
+ * предлагалось окно на 09:00.
+ */
+export function firstFreeSlotInSegmentFor(
+  day: Dayjs,
+  segment: { start: string; end: string },
+  intervals: BusyInterval[],
+  now: Dayjs = dayjs(),
+): Dayjs | null {
+  const [endH, endM] = segment.end.split(":").map(Number);
+  if (![endH, endM].every((n) => Number.isFinite(n))) return null;
+  const segEnd = day.hour(endH).minute(endM).second(0).millisecond(0);
+
+  let candidate = firstFreeSlotInSegment(day, segment, now);
+  while (candidate && isSlotCovered(intervals, candidate.valueOf())) {
+    candidate = candidate.add(SLOT_STEP_MINUTES, "minute");
+    if (!candidate.isBefore(segEnd)) return null;
+  }
+  return candidate;
 }
 
 /** Только цифры — номера в базе лежат в разном формате (+996, 0555, пробелы). */
