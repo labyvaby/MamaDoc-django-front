@@ -377,6 +377,28 @@ export function getDjangoEmployees(
   );
 }
 
+/**
+ * Весь справочник сотрудников — все страницы подряд, а не первая.
+ *
+ * `/staff/employees/` режет выдачу по `pageSize` (потолок бэка — 200), поэтому
+ * пикеры, которым нужен полный список, обязаны идти по `nextPage`: иначе список
+ * молча обрывается и сотрудник просто «отсутствует». Филиальный скоуп при этом
+ * остаётся за бэком — при выбранном активном филиале он сам вырезает чужих.
+ */
+export async function getAllDjangoEmployees(
+  params?: Omit<GetEmployeesParams, "page" | "pageSize">,
+  signal?: AbortSignal,
+): Promise<DjangoEmployeeListItem[]> {
+  const all: DjangoEmployeeListItem[] = [];
+  let page: number | null = 1;
+  while (page != null) {
+    const res = await getDjangoEmployees({ ...params, page, pageSize: 200 }, signal);
+    all.push(...res.results);
+    page = res.nextPage;
+  }
+  return all;
+}
+
 export function getDjangoEmployee(
   employeeId: number,
   signal?: AbortSignal,

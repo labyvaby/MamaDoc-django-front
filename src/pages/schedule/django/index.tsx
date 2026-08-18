@@ -7,6 +7,7 @@ import {
   ButtonBase,
   Chip,
   CircularProgress,
+  createFilterOptions,
   Divider,
   Drawer,
   IconButton,
@@ -40,7 +41,7 @@ import { useCan } from "../../../hooks/useCan";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { CustomDatePicker } from "../../../components/ui";
 import { getDjangoEmployees, type DjangoEmployeeListItem } from "../../../api/staff";
-import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useAllActiveEmployees } from "../../../hooks/useAllActiveEmployees";
 import {
   getScheduleRules,
   createScheduleRule,
@@ -172,37 +173,67 @@ const SegmentToggle = <T extends string>({
 
 // ── Employee autocomplete (общий для форм) ────────────────────────────────────
 
+/**
+ * Фильтр опций пикера — локальный, по всему справочнику. Стрингифай включает
+ * специализацию: серверный поиск знал только ФИО/телефон/почту, поэтому набрать
+ * «офтальмолог» и найти врача было нельзя ни при каком вводе. matchFrom по
+ * умолчанию (`any`) — иначе подстрока в середине строки не совпадёт.
+ */
+const employeeFilter = createFilterOptions<DjangoEmployeeListItem>({
+  stringify: (o) =>
+    [o.fullName, o.nickname, o.phone, (o.specializations ?? []).map((s) => s.name).join(" ")]
+      .filter(Boolean)
+      .join(" "),
+});
+
 const EmployeePicker: React.FC<{
   value: DjangoEmployeeListItem | null;
   onChange: (v: DjangoEmployeeListItem | null) => void;
   disabled?: boolean;
 }> = ({ value, onChange, disabled }) => {
-  const [input, setInput] = React.useState("");
-  const orgId = useApiOrgId();
-  const query = useQuery({
-    queryKey: ["django", "schedule", "employees", input, orgId ?? null],
-    queryFn: ({ signal }) =>
-      getDjangoEmployees(
-        { search: input || undefined, status: "active", pageSize: 20, organizationId: orgId },
-        signal,
-      ),
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
-  });
-  const options = query.data?.results ?? [];
+  // Весь справочник активных сотрудников разом (см. useAllActiveEmployees):
+  // список больше не обрезается на 20 первых по алфавиту и не перезапрашивается
+  // на каждую набранную букву.
+  const { employees, isLoading } = useAllActiveEmployees();
+  // При редактировании известны только id+ФИО сотрудника, а сам он может быть
+  // уже не активен (или из другого филиала) и в справочник не попасть — держим
+  // его в опциях, иначе Autocomplete сбросит value.
+  const options = React.useMemo(
+    () =>
+      value && !employees.some((o) => o.id === value.id) ? [value, ...employees] : employees,
+    [employees, value],
+  );
   return (
     <Autocomplete
-      options={value && !options.some((o) => o.id === value.id) ? [value, ...options] : options}
-      loading={query.isLoading}
+      options={options}
+      loading={isLoading}
       value={value}
-      inputValue={input}
       getOptionLabel={(o) => o.fullName}
       isOptionEqualToValue={(a, b) => a.id === b.id}
       onChange={(_, v) => onChange(v)}
-      onInputChange={(_, v) => setInput(v)}
+      filterOptions={employeeFilter}
       disabled={disabled}
+      renderOption={(props, o) => {
+        const specs = (o.specializations ?? []).map((s) => s.name).join(", ");
+        return (
+          <li {...props} key={o.id}>
+            <Stack sx={{ minWidth: 0 }}>
+              <Typography variant="body2" noWrap>
+                {o.fullName}
+              </Typography>
+              {specs && (
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {specs}
+                </Typography>
+              )}
+            </Stack>
+          </li>
+        );
+      }}
       renderInput={(params) => (
-        <TextField {...params} size="small" placeholder="Введите имя сотрудника..." />
+        <TextField {...params} size="small" placeholder="Имя или специализация..." />
       )}
+      loadingText="Загрузка сотрудников…"
       noOptionsText="Сотрудники не найдены"
     />
   );
