@@ -247,6 +247,12 @@ export const djangoQueryKeys = {
   staff: {
     /** Справочник «auth-user id → ФИО сотрудника» (подписи Создан/Изм). */
     userNames: ["django", "staff", "userNames"] as const,
+    /**
+     * Полный справочник активных сотрудников орг. (все страницы) — под пикеры,
+     * которые фильтруют ввод локально. См. useAllActiveEmployees.
+     */
+    activeEmployees: (organizationId: number | null | undefined) =>
+      ["django", "staff", "activeEmployees", organizationId ?? null] as const,
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,
     banks: (organizationId: number | null | undefined) =>
