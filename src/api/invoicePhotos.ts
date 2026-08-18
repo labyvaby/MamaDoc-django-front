@@ -12,13 +12,12 @@
  * до 25 МБ, jpg/jpeg/png/webp/heic/heif (мы всё равно жмём и переводим в jpg —
  * см. api/uploads.ts).
  *
- * ⚠ Известный баг бэка: у расхода с прежним одиночным чеком (`photoUrl`) GET
- * `/finance/expenses/{id}/invoices/` отвечает 500 — тот самый случай
- * «совместимости», где старое фото должно приходить первым элементом.
- * Обходим в useInvoicePhotos (`legacyPhotoUrl`), тикет бэку отправлен.
+ * Прежний одиночный чек расхода (`photoUrl`) приходит первым элементом списка с
+ * отрицательным `id` (`-expense.pk`) — по нему же работает и DELETE. 500 на
+ * таких расходах бэк починил 18.08.2026 (`bb15e58`), обход на фронте снят.
  *
- * ⚠ Имена полей элемента (`url`, `fileName`, …) на живых данных ещё не видели —
- * все проверенные операции без фото. Первую загрузку сверить с ответом.
+ * Форма элемента подтверждена бэком на живых данных (18.08.2026): ссылка
+ * называется `url`, синонимов (`fileUrl`/`photoUrl`/`image`) нет.
  */
 import { apiRequest } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
@@ -60,22 +59,6 @@ function withOrg(path: string, organizationId?: number | null): string {
   return `${path}${sep}organizationId=${organizationId}`;
 }
 
-/**
- * Ссылку на файл разные ручки бэка называют по-разному (`photoUrl` у расхода,
- * `fileUrl`/`image` у загрузок знаний), а на живых данных элемент списка мы ещё
- * не видели — все проверенные операции без фото. Плитка без `url` не
- * отрисовалась бы вовсе, поэтому принимаем любое из привычных имён.
- */
-function normalizePhoto(photo: InvoicePhoto): InvoicePhoto {
-  const raw = photo as InvoicePhoto & Record<string, unknown>;
-  const str = (value: unknown) => (typeof value === "string" && value ? value : undefined);
-  return {
-    ...photo,
-    url: str(raw.url) ?? str(raw.fileUrl) ?? str(raw.photoUrl) ?? str(raw.image) ?? "",
-    fileName: raw.fileName ?? str(raw.name),
-  };
-}
-
 export function getInvoicePhotos(
   target: InvoicePhotoTarget,
   entityId: number,
@@ -85,7 +68,7 @@ export function getInvoicePhotos(
   return apiRequest<{ results: InvoicePhoto[] } | InvoicePhoto[]>(
     withOrg(basePath(target, entityId), organizationId),
     { signal },
-  ).then((data) => (Array.isArray(data) ? data : data.results).map(normalizePhoto));
+  ).then((data) => (Array.isArray(data) ? data : data.results));
 }
 
 /**
@@ -104,7 +87,7 @@ export async function uploadInvoicePhoto(
     apiRequest<InvoicePhoto>(withOrg(basePath(target, entityId), organizationId), {
       method: "POST",
       formData,
-    }).then(normalizePhoto),
+    }),
   );
 }
 
