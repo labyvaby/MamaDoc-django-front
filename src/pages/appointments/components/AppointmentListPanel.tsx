@@ -32,6 +32,7 @@ import type { AppointmentNotificationItem, DjangoAppointment } from "../../../ap
 import {
   appointmentEnd,
   busyIntervals,
+  busyIntervalsByEmployee,
   isCancelledStatus,
   isSlotCovered,
 } from "./slotAvailability";
@@ -47,6 +48,7 @@ import AppointmentFilterChips from "./AppointmentFilterChips";
 import {
   employeeMoneyTotals,
   firstFreeSlotInSegment,
+  firstFreeSlotInSegmentFor,
   matchesAppointmentSearch,
 } from "./listFilters";
 import { AppBottomSheet } from "../../../components/ui";
@@ -579,6 +581,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return Array.from(groups.values());
   }, [filteredItems, groupEmployeeIds, t]);
 
+  // Занятость по сотрудникам считаем от ПОЛНОГО списка дня, а не от группы и не
+  // от отфильтрованного среза: фильтр меняет то, что показываем, а не то, что
+  // занято. Иначе приём, не попавший в группу или скрытый фильтром, не закрывал
+  // слот и над ним появлялась плашка «Есть окно на HH:mm».
+  const occupancyByEmployee = React.useMemo(() => busyIntervalsByEmployee(items), [items]);
+
   // ── Build render list per group: sort by time + insert gap slots ──────────
   const groupedItemsWithGaps = React.useMemo(() => {
     const result: {
@@ -601,9 +609,13 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       const renderItems: RenderItem[] = [];
       const addedGapKeys = new Set<string>();
 
-      // Занятые интервалы активных (неотменённых) приёмов группы — см.
-      // slotAvailability.ts: модель занятости должна совпадать с серверной.
-      const activeIntervals = busyIntervals(sorted);
+      // Занятые интервалы: приёмы группы ПЛЮС все приёмы этого исполнителя за
+      // день (см. slotAvailability.ts) — модель занятости должна совпадать с
+      // серверной, а сервер проверяет пересечение по сотруднику, не по группе.
+      const activeIntervals = [
+        ...busyIntervals(sorted),
+        ...(groupEmployeeId != null ? occupancyByEmployee.get(groupEmployeeId) ?? [] : []),
+      ];
       const isCoveredByActive = (t: number) => isSlotCovered(activeIntervals, t);
 
       // Рабочие часы исполнителя группы: окно нельзя предлагать вне смены
@@ -718,10 +730,22 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         if (groupEmployeeIds && !groupEmployeeIds.has(employeeId)) continue;
         if (selectedDoctorId != null && selectedDoctorId !== employeeId) continue;
         if (result.some((g) => g.employeeId === employeeId)) continue;
+        // Сотрудник с приёмами в этом дне — не «свободная смена», даже если его
+        // приёмы не собрались в группу (исполнитель только в другой строке
+        // услуги, приём другого филиала в выдаче). Раньше такой врач приезжал
+        // второй группой с окном на начало смены поверх занятого времени.
+        if (occupancyByEmployee.has(employeeId)) continue;
 
         const slots: RenderItem[] = [];
+        // Правило и разовая смена на те же часы дают два одинаковых сегмента —
+        // без дедупа это две одинаковые плашки.
+        const seenSegments = new Set<string>();
+        const employeeIntervals = occupancyByEmployee.get(employeeId) ?? [];
         for (const seg of dayShifts.segments.get(employeeId) ?? []) {
-          const slot = firstFreeSlotInSegment(date, seg);
+          const segKey = `${seg.start}-${seg.end}`;
+          if (seenSegments.has(segKey)) continue;
+          seenSegments.add(segKey);
+          const slot = firstFreeSlotInSegmentFor(date, seg, employeeIntervals);
           if (!slot) continue;
           slots.push({
             isGap: true,
@@ -746,6 +770,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     hasNarrowingFilters,
     groupEmployeeIds,
     selectedDoctorId,
+    occupancyByEmployee,
   ]);
 
   // ── Drag-scroll for doctor strip ──────────────────────────────────────────

@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import {
   employeeMoneyTotals,
   firstFreeSlotInSegment,
+  firstFreeSlotInSegmentFor,
   matchesAppointmentSearch,
 } from "./listFilters";
 import type { DjangoAppointment } from "../../../api/appointments";
@@ -201,5 +202,47 @@ describe("employeeMoneyTotals", () => {
     const list = [appt({ services: [line({ employee: null, lineTotal: "300.00" })] })];
     expect(employeeMoneyTotals(list, null).accrued).toBe(300);
     expect(employeeMoneyTotals(list, 20).accrued).toBe(0);
+  });
+});
+
+describe("firstFreeSlotInSegmentFor", () => {
+  // Будущий день, чтобы «сейчас» не сдвигало кандидата.
+  const day = dayjs("2099-08-19T00:00:00");
+  const shift = { start: "09:00", end: "17:00" };
+  const ms = (hhmm: string) => dayjs(`2099-08-19T${hhmm}:00`).valueOf();
+
+  it("сдвигает окно за занятое начало смены", () => {
+    // Случай с прода: график с 09:00, приём 09:00–09:30 → окно должно быть 09:30.
+    const slot = firstFreeSlotInSegmentFor(day, shift, [
+      { start: ms("09:00"), end: ms("09:30") },
+    ]);
+
+    expect(slot?.format("HH:mm")).toBe("09:30");
+  });
+
+  it("перешагивает подряд занятые слоты", () => {
+    const slot = firstFreeSlotInSegmentFor(day, shift, [
+      { start: ms("09:00"), end: ms("09:30") },
+      { start: ms("09:30"), end: ms("10:00") },
+      { start: ms("10:00"), end: ms("10:30") },
+    ]);
+
+    expect(slot?.format("HH:mm")).toBe("10:30");
+  });
+
+  it("возвращает null, когда смена занята целиком", () => {
+    const slot = firstFreeSlotInSegmentFor(
+      day,
+      { start: "09:00", end: "10:00" },
+      [{ start: ms("09:00"), end: ms("10:00") }],
+    );
+
+    expect(slot).toBeNull();
+  });
+
+  it("без занятости ведёт себя как обычный поиск окна", () => {
+    expect(firstFreeSlotInSegmentFor(day, shift, [])?.format("HH:mm")).toBe(
+      firstFreeSlotInSegment(day, shift)?.format("HH:mm"),
+    );
   });
 });

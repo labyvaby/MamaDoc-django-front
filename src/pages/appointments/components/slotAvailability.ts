@@ -46,6 +46,40 @@ export function busyIntervals(appts: DjangoAppointment[]): BusyInterval[] {
 }
 
 /**
+ * Занятость по СОТРУДНИКУ, а не по группе списка.
+ *
+ * Окна раньше считались от приёмов одной группы и уже ПОСЛЕ фильтров. Приём,
+ * который в группу не попал (исполнитель указан только в другой строке услуги,
+ * приём скрыт фильтром или поиском), слот не закрывал — регистратура рисовала
+ * «Есть окно на 09:00» поверх занятого времени. Ключ — id исполнителя строки
+ * услуги: именно по нему список группируется и по нему же сервер проверяет
+ * пересечение при сохранении.
+ *
+ * На вход нужен ПОЛНЫЙ список приёмов дня, до фильтров: фильтр меняет то, что
+ * показываем, а не то, что занято.
+ */
+export function busyIntervalsByEmployee(
+  appts: DjangoAppointment[],
+): Map<number, BusyInterval[]> {
+  const byEmployee = new Map<number, BusyInterval[]>();
+  for (const appt of appts) {
+    if (isCancelledStatus(appt.status)) continue;
+    const interval: BusyInterval = {
+      start: dayjs(appt.scheduledAt).startOf("minute").valueOf(),
+      end: appointmentEnd(appt).valueOf(),
+    };
+    for (const line of appt.services ?? []) {
+      const id = line.employee?.id;
+      if (id == null) continue;
+      const list = byEmployee.get(id) ?? [];
+      list.push(interval);
+      byEmployee.set(id, list);
+    }
+  }
+  return byEmployee;
+}
+
+/**
  * Слот занят, если попадает внутрь активного приёма. Конец полуоткрыт: приём
  * 14:00–15:00 не блокирует слот на 15:00 — там уже можно записывать.
  */

@@ -4,6 +4,7 @@ import type { DjangoAppointment } from "../../../api/appointments";
 import {
   appointmentEnd,
   busyIntervals,
+  busyIntervalsByEmployee,
   isSlotCovered,
 } from "./slotAvailability";
 
@@ -64,5 +65,53 @@ describe("isSlotCovered", () => {
     ]);
     expect(isSlotCovered(intervals, ms("14:00"))).toBe(true);
     expect(isSlotCovered(intervals, ms("11:00"))).toBe(false);
+  });
+});
+
+/** Приём со строками услуг: занятость считается по исполнителям строк. */
+function apptWithLines(
+  scheduledAt: string,
+  endsAt: string,
+  employeeIds: (number | null)[],
+  status: string = "confirmed",
+): DjangoAppointment {
+  return {
+    scheduledAt: at(scheduledAt),
+    endsAt: at(endsAt),
+    status,
+    services: employeeIds.map((id, i) => ({
+      id: i + 1,
+      employee: id == null ? null : { id, fullName: `Сотрудник ${id}` },
+    })),
+  } as unknown as DjangoAppointment;
+}
+
+describe("busyIntervalsByEmployee", () => {
+  it("закрывает слот сотруднику, даже если приём пришёл в списке один раз", () => {
+    // Случай с прода: график врача с 09:00 и подтверждённый приём 09:00–09:30,
+    // а регистратура предлагала «Есть окно на 09:00».
+    const map = busyIntervalsByEmployee([apptWithLines("09:00", "09:30", [12])]);
+
+    expect(isSlotCovered(map.get(12) ?? [], ms("09:00"))).toBe(true);
+    // Конец полуоткрыт: на 09:30 записывать уже можно.
+    expect(isSlotCovered(map.get(12) ?? [], ms("09:30"))).toBe(false);
+  });
+
+  it("занимает время каждому исполнителю совместного приёма", () => {
+    const map = busyIntervalsByEmployee([apptWithLines("10:00", "11:00", [12, 21])]);
+
+    expect(isSlotCovered(map.get(12) ?? [], ms("10:30"))).toBe(true);
+    expect(isSlotCovered(map.get(21) ?? [], ms("10:30"))).toBe(true);
+    // Чужая занятость не должна прятать окна у третьего сотрудника.
+    expect(map.has(33)).toBe(false);
+  });
+
+  it("не считает занятыми отменённые приёмы и строки без исполнителя", () => {
+    const map = busyIntervalsByEmployee([
+      apptWithLines("09:00", "09:30", [12], "canceled"),
+      apptWithLines("10:00", "10:30", [null]),
+    ]);
+
+    expect(map.size).toBe(0);
   });
 });
