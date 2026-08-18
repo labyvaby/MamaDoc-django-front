@@ -53,6 +53,7 @@ import {
   handlePhonePaste,
   type PhoneCountryCode,
 } from "../../../utility/phone";
+import { usePhoneLocalInput } from "../../../hooks/usePhoneLocalInput";
 import { capitalizeFullName } from "../../../utility/name";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
@@ -203,6 +204,8 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [nickname, setNickname] = React.useState("");
   const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryCode>("+996");
   const [phoneLocal, setPhoneLocal] = React.useState("");
+  // Правка в середине номера не должна выбрасывать курсор в конец.
+  const phoneInput = usePhoneLocalInput(phoneCountry, phoneLocal, setPhoneLocal);
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");
@@ -855,17 +858,18 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                 />
                 <TextField
                   value={formatPhoneLocalDisplay(phoneCountry, phoneLocal)}
-                  onChange={(e) => {
-                    const maxLen = getPhoneLocalMaxLength(phoneCountry);
-                    setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, maxLen));
-                  }}
+                  inputRef={phoneInput.inputRef}
+                  onChange={phoneInput.onChange}
                   onPaste={(e) =>
                     handlePhonePaste(e, phoneCountry, (code, local) => {
                       setPhoneCountry(code);
                       setPhoneLocal(local);
                     })
                   }
-                  onKeyDown={submitOnEnter}
+                  onKeyDown={(e) => {
+                    phoneInput.onKeyDown(e);
+                    submitOnEnter(e);
+                  }}
                   fullWidth
                   size="small"
                   placeholder={getPhoneLocalMaxLength(phoneCountry) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"}

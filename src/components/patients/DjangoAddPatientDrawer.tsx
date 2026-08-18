@@ -50,6 +50,7 @@ import {
   handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
+import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -150,6 +151,8 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
   const [phone, setPhone] = React.useState("");
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
+  // Правка в середине номера не должна выбрасывать курсор в конец.
+  const phoneInput = usePhoneLocalInput(phoneCountryCode, phone, setPhone);
   const [birth, setBirth] = React.useState("");
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
@@ -496,17 +499,18 @@ const DjangoAddPatientDrawer: React.FC<Props> = ({
                 </Typography>
                 <TextField
                   value={formatPhoneLocalDisplay(phoneCountryCode, phone)}
-                  onChange={(e) => {
-                    const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
-                    setPhone(e.target.value.replace(/[^\d]/g, "").slice(0, maxLen));
-                  }}
+                  inputRef={phoneInput.inputRef}
+                  onChange={phoneInput.onChange}
                   onPaste={(e) =>
                     handlePhonePaste(e, phoneCountryCode, (code, local) => {
                       setPhoneCountryCode(code);
                       setPhone(local);
                     })
                   }
-                  onKeyDown={submitOnEnter}
+                  onKeyDown={(e) => {
+                    phoneInput.onKeyDown(e);
+                    submitOnEnter(e);
+                  }}
                   fullWidth
                   size="small"
                   disabled={busy}
