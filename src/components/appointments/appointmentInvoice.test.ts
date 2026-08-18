@@ -144,3 +144,11 @@ describe("счёт к оплате", () => {
     expect(out).toContain("Одна тысяча пятьсот пятьдесят сомов 00 тыйынов");
   });
 });
+
+describe("чек (лист A5)", () => {
+  it("печатается на A5 и называется чеком", () => {
+    const out = html();
+    expect(out).toContain("size: A5 portrait");
+    expect(out).toContain("<h1>Чек</h1>");
+  });
+});

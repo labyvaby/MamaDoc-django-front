@@ -125,7 +125,7 @@ function buildRows(appointment: DjangoAppointment): InvoiceRow[] {
   return rows;
 }
 
-/** Самодостаточный HTML счёта — используется и печатью, и тестами. */
+/** Самодостаточный HTML чека (A5) — используется и печатью, и тестами. */
 export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): string {
   const { appointment, summary, patient, organizationName, branchName } = data;
 
@@ -137,7 +137,8 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
   const due = summary ? num(summary.debt) : Math.max(0, payable - paid);
 
   const invoiceNumber = String(appointment.id);
-  const barcode = barcode128Svg(invoiceNumber, { moduleWidth: 1.5, height: 40 });
+  const barcode = barcode128Svg(invoiceNumber, { moduleWidth: 1, height: 28 });
+  const docTitle = tt("appointments:invoice.receiptTitle");
 
   const dob = patient?.birthDate ? dayjs(patient.birthDate).format("DD.MM.YYYY") : "—";
   const patientName = patient?.fullName ?? appointment.patient?.fullName ?? "—";
@@ -175,43 +176,46 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
     : organizationName;
 
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-    <title>${esc(tt("appointments:invoice.title"))} № ${esc(invoiceNumber)}</title>
+    <title>${esc(docTitle)} № ${esc(invoiceNumber)}</title>
     <style>
       * { box-sizing: border-box; }
-      /* Ширина листа A4 за вычетом полей — чтобы предпросмотр в окне печати
+      /* Формат листа задаём явно: иначе браузер печатает на A4 и документ
+         уезжает в верхнюю четверть страницы. */
+      @page { size: A5 portrait; margin: 8mm; }
+      /* Ширина A5 за вычетом полей — чтобы предпросмотр в окне печати
          выглядел так же, как выйдет на бумаге, а не растягивался по экрану. */
-      body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:#111; margin:24px auto; max-width:190mm; font-size:12px; }
+      body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:#111; margin:24px auto; max-width:132mm; font-size:9.5px; }
       .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
-      .org { font-size:13px; font-weight:600; }
-      h1 { font-size:18px; text-align:center; margin:12px 0 16px; }
-      .meta { display:flex; justify-content:space-between; gap:24px; margin-bottom:14px; }
+      .org { font-size:14px; font-weight:600; }
+      h1 { font-size:13px; text-align:center; margin:8px 0 10px; }
+      .meta { display:flex; justify-content:space-between; gap:12px; margin-bottom:10px; }
       .meta-col { flex:1; }
       .meta-row { display:flex; gap:8px; margin-bottom:3px; }
-      .meta-row b { min-width:132px; color:#444; font-weight:600; }
+      .meta-row b { min-width:110px; color:#444; font-weight:600; }
       table { width:100%; border-collapse:collapse; margin-top:6px; }
-      th, td { border:1px solid #999; padding:5px 6px; text-align:left; vertical-align:top; }
-      th { background:#f2f2f2; font-weight:600; font-size:11px; }
+      th, td { border:1px solid #999; padding:3px 4px; text-align:left; vertical-align:top; }
+      th { background:#f2f2f2; font-weight:600; font-size:9px; }
       td.num, th.num { text-align:right; white-space:nowrap; }
       .nowrap { white-space:nowrap; }
       .empty { text-align:center; color:#777; }
-      .totals { margin-top:14px; display:flex; justify-content:space-between; gap:24px; }
+      .totals { margin-top:10px; display:flex; justify-content:space-between; gap:12px; }
       .words { flex:1; font-style:italic; }
-      .sums { min-width:260px; }
+      .sums { min-width:200px; }
       .sum-row { display:flex; justify-content:space-between; gap:16px; padding:2px 0; }
-      .sum-row.due { border-top:1px solid #999; margin-top:4px; padding-top:5px; font-weight:700; font-size:13px; }
+      .sum-row.due { border-top:1px solid #999; margin-top:4px; padding-top:5px; font-weight:700; font-size:14px; }
       .pays { margin-top:10px; }
-      .pays h2 { font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:#555; margin:0 0 4px; }
-      .pay-row { display:flex; justify-content:space-between; gap:16px; max-width:260px; padding:1px 0; }
-      .foot { margin-top:28px; display:flex; justify-content:space-between; gap:24px; font-size:11px; color:#333; }
-      .sign { min-width:220px; }
-      .sign .line { margin-top:18px; border-top:1px solid #999; padding-top:3px; color:#777; }
-      @media print { body { margin:10mm; } }
+      .pays h2 { font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:#555; margin:0 0 4px; }
+      .pay-row { display:flex; justify-content:space-between; gap:16px; max-width:200px; padding:1px 0; }
+      .foot { margin-top:16px; display:flex; justify-content:space-between; gap:12px; font-size:9px; color:#333; }
+      .sign { min-width:160px; }
+      .sign .line { margin-top:14px; border-top:1px solid #999; padding-top:3px; color:#777; }
+      @media print { body { margin:0; } }
     </style></head><body>
     <div class="top">
       <div class="org">${esc(orgLine)}</div>
       <div>${barcode}</div>
     </div>
-    <h1>${esc(tt("appointments:invoice.title"))}</h1>
+    <h1>${esc(docTitle)}</h1>
     <div class="meta">
       <div class="meta-col">
         <div class="meta-row"><b>${esc(tt("appointments:invoice.number"))}</b><span>${esc(invoiceNumber)}</span></div>
@@ -270,12 +274,12 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
 }
 
 /**
- * Печать счёта к оплате: отдельное окно с самодостаточным HTML.
+ * Печать чека: отдельное окно с самодостаточным HTML, лист A5.
  * Возвращает `false`, если окно заблокировал браузер — вызывающий код
  * показывает подсказку про всплывающие окна.
  */
 export function printAppointmentInvoice(data: AppointmentInvoiceData): boolean {
-  const win = window.open("", "_blank", "width=900,height=760");
+  const win = window.open("", "_blank", "width=680,height=760");
   if (!win) return false;
   win.document.write(buildAppointmentInvoiceHtml(data));
   win.document.close();
