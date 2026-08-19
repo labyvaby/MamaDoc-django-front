@@ -84,6 +84,7 @@ import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
+import { shortYearInputBlur } from "../../utility/shortYear";
 import { injectionSiteLabel, scheduleDateInfo } from "./meta";
 
 type VaccTab = "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
@@ -1044,6 +1045,7 @@ const VaccinationsPage: React.FC = () => {
                 label="Месяц"
                 value={reportMonth}
                 onChange={(e) => setReportMonth(e.target.value)}
+                onBlur={shortYearInputBlur("nearest", setReportMonth)}
                 InputLabelProps={{ shrink: true }}
                 sx={{ minWidth: 170 }}
               />

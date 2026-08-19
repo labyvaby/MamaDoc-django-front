@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { expandShortYear, expandShortYearInText } from "./shortYear";
+import { buildIsoWithYear, expandShortYear, expandShortYearInIso, expandShortYearInText } from "./shortYear";
 
 /**
  * Инварианты дописывания века у короткого года.
@@ -76,5 +76,60 @@ describe("expandShortYearInText", () => {
     expect(expandShortYearInText("0095-07-27", "YYYY-MM-DD", "past", NOW)).toBe("1995-07-27");
     expect(expandShortYearInText("07/27/0095", "MM/DD/YYYY", "past", NOW)).toBe("1995-07-27");
     expect(expandShortYearInText("27.07.95", "DD.MM.YY", "past", NOW)).toBeNull();
+  });
+});
+
+/**
+ * Формат со временем: поле «дата и время» (приём) и нативный datetime-local.
+ */
+describe("expandShortYearInText со временем", () => {
+  const NOW = 2026;
+  const FMT = "DD.MM.YYYY HH:mm";
+
+  it("разворачивает год, сохраняя набранное время", () => {
+    expect(expandShortYearInText("27.07.0027 14:30", FMT, "nearest", NOW)).toBe("2027-07-27T14:30:00");
+    expect(expandShortYearInText("27.07.0095 09:05", FMT, "past", NOW)).toBe("1995-07-27T09:05:00");
+  });
+
+  it("не разбирает несуществующее время", () => {
+    expect(expandShortYearInText("27.07.0027 25:30", FMT, "nearest", NOW)).toBeNull();
+  });
+});
+
+/**
+ * Нативные поля браузера: значение приходит в ISO, короткий год дополнен нулями.
+ */
+describe("expandShortYearInIso", () => {
+  const NOW = 2026;
+
+  it("чинит дату, дату со временем и месяц", () => {
+    expect(expandShortYearInIso("0095-07-27", "past", NOW)).toBe("1995-07-27");
+    expect(expandShortYearInIso("0027-07-27T14:30", "future", NOW)).toBe("2027-07-27T14:30");
+    expect(expandShortYearInIso("0027-07", "nearest", NOW)).toBe("2027-07");
+  });
+
+  it("не трогает полный год и пустое значение", () => {
+    expect(expandShortYearInIso("1995-07-27", "past", NOW)).toBeNull();
+    expect(expandShortYearInIso("", "past", NOW)).toBeNull();
+  });
+});
+
+/**
+ * Год фиксируется в момент второй цифры — поле в этот миг показывает ещё первую,
+ * поэтому дату собираем с уже посчитанным годом.
+ */
+describe("buildIsoWithYear", () => {
+  it("подставляет год вместо набранного", () => {
+    expect(buildIsoWithYear("27.07.0009", "DD.MM.YYYY", 1995)).toBe("1995-07-27");
+    expect(buildIsoWithYear("27.07.0002 14:30", "DD.MM.YYYY HH:mm", 2027)).toBe("2027-07-27T14:30:00");
+  });
+
+  it("отдаёт одну дату, пока время не набрано", () => {
+    expect(buildIsoWithYear("27.07.0002 ЧЧ:мм", "DD.MM.YYYY HH:mm", 2027)).toBe("2027-07-27");
+  });
+
+  it("не собирает дату из незаполненного поля", () => {
+    expect(buildIsoWithYear("ДД.ММ.0009", "DD.MM.YYYY", 1995)).toBeNull();
+    expect(buildIsoWithYear("31.02.0009", "DD.MM.YYYY", 1995)).toBeNull();
   });
 });

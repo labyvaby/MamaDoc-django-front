@@ -16,6 +16,7 @@ import { ApiError } from "../../../api/client";
 import { useWebOtpAutofill } from "../../../components/auth/useWebOtpAutofill";
 import { useT } from "../../../i18n/VerticalProvider";
 import { capitalizeFullName } from "../../../utility/name";
+import { shortYearInputBlur } from "../../../utility/shortYear";
 import type { PhoneCountryInfo } from "../../../utility/phone";
 import { usePatientSession } from "../PatientSession";
 import { useBookingOrgSlug } from "../orgSlug";
@@ -368,6 +369,7 @@ export const PatientAuthDialog: React.FC<{
             type="date"
             value={birthDate}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBirthDate(e.target.value)}
+            onBlur={shortYearInputBlur("past", setBirthDate)}
             sx={INPUT_SX}
           />
         </Box>

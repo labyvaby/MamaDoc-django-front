@@ -1,8 +1,8 @@
 import * as React from "react";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import dayjs, { type Dayjs } from "dayjs";
 
-import { expandShortYearInText, type ShortYearMode } from "../../utility/shortYear";
+import { resolveShortYearMode, useShortYearHandlers } from "./shortYearField";
+import type { ShortYearMode } from "../../utility/shortYear";
 
 export type { ShortYearMode };
 
@@ -29,39 +29,6 @@ export type CustomDatePickerProps = React.ComponentProps<typeof DatePicker> & {
   shortYearMode?: ShortYearMode;
 };
 
-function isDayjsValue(value: unknown): value is Dayjs {
-  return !!value && typeof (value as Dayjs).year === "function" && typeof (value as Dayjs).isValid === "function";
-}
-
-/** Достать набранный текст поля даты из цели события (секция → группа → скрытый input). */
-function readFieldText(target: EventTarget | null): string | null {
-  if (target instanceof HTMLInputElement) return target.value;
-  if (!(target instanceof HTMLElement)) return null;
-
-  const group = target.closest('[role="group"]') ?? target.closest(".MuiPickersInputBase-root");
-  const input = group?.querySelector("input");
-  if (input instanceof HTMLInputElement) return input.value;
-
-  // Фолбэк: собрать из видимых секций (zero-width пробелы MUI выкидываем)
-  return group?.textContent?.replace(/\u200B/g, "") ?? null;
-}
-
-function resolveShortYearMode(props: CustomDatePickerProps): ShortYearMode {
-  if (props.shortYearMode) return props.shortYearMode;
-
-  const today = dayjs();
-  if (props.disableFuture) return "past";
-  if (props.disablePast) return "future";
-
-  const maxDate = props.maxDate;
-  if (isDayjsValue(maxDate) && maxDate.isValid() && !maxDate.isAfter(today, "day")) return "past";
-
-  const minDate = props.minDate;
-  if (isDayjsValue(minDate) && minDate.isValid() && !minDate.isBefore(today, "day")) return "future";
-
-  return "past";
-}
-
 export function CustomDatePicker(props: CustomDatePickerProps) {
   const { slotProps, shortYearMode: _shortYearMode, ...rest } = props;
   const [open, setOpen] = React.useState(false);
@@ -70,39 +37,19 @@ export function CustomDatePicker(props: CustomDatePickerProps) {
     setOpen(true);
   };
 
-  const mode = resolveShortYearMode(props);
-  const { value, onChange } = props;
-
-  /**
-   * Дописать век по тому, что набрано в поле.
-   *
-   * Читаем именно текст: пока в секции года меньше четырёх цифр, MUI X считает ввод
-   * невалидным и отдаёт наружу Invalid Date — из него год уже не восстановить.
-   */
-  const normalizeShortYear = (target: EventTarget | null): boolean => {
-    if (mode === "off" || !onChange) return false;
-
-    // MUI X v8 рисует поле секциями-span внутри role="group", а полный текст держит
-    // в скрытом input — событие приходит от секции, поэтому поднимаемся к группе.
-    const text = readFieldText(target);
-    if (!text) return false;
-
-    const format = typeof rest.format === "string" ? rest.format : DEFAULT_DATE_FORMAT;
-    const iso = expandShortYearInText(text, format, mode, dayjs().year());
-    if (!iso) return false;
-
-    const next = dayjs(iso);
-    if (!next.isValid()) return false;
-    if (isDayjsValue(value) && value.isValid() && value.isSame(next, "day")) return false;
-
-    // Второй аргумент — контекст валидации MUI X; наши обработчики его не используют.
-    onChange(next as never, { validationError: null } as never);
-    return true;
-  };
-
   const textFieldProps = (typeof slotProps?.textField === "function" ? undefined : slotProps?.textField) as
     | Record<string, unknown>
     | undefined;
+
+  const shortYear = useShortYearHandlers({
+    value: props.value,
+    onChange: props.onChange as ((value: never, context: never) => void) | undefined,
+    format: rest.format,
+    defaultFormat: DEFAULT_DATE_FORMAT,
+    mode: resolveShortYearMode(props, "past"),
+    granularity: "day",
+    textFieldProps,
+  });
 
   return (
     <DatePicker
@@ -114,20 +61,8 @@ export function CustomDatePicker(props: CustomDatePickerProps) {
         textField: {
           ...textFieldProps,
           onDoubleClick: handleDoubleClick,
-          onBlur: (event: React.FocusEvent<HTMLDivElement>) => {
-            normalizeShortYear(event.target);
-            (textFieldProps?.onBlur as ((e: React.FocusEvent<HTMLDivElement>) => void) | undefined)?.(event);
-          },
-          onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
-            // Enter «продвигает вперёд»: сначала дописывает век, и только когда дописывать
-            // нечего — уходит форме (её onKeyDown обычно сохраняет). Совмещать нельзя:
-            // обработчик сохранения на том же событии прочитал бы ещё старую дату.
-            if (event.key === "Enter" && normalizeShortYear(event.target)) {
-              event.preventDefault();
-              return;
-            }
-            (textFieldProps?.onKeyDown as ((e: React.KeyboardEvent<HTMLDivElement>) => void) | undefined)?.(event);
-          },
+          onBlur: shortYear.onBlur,
+          onKeyDown: shortYear.onKeyDown,
         },
       }}
       {...rest}

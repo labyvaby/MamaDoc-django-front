@@ -53,7 +53,7 @@ import {
   type WorkShiftRow,
 } from "../../../api/attendance";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
-import { PageHeader, ListLoadingSkeleton, ListEmptyState } from "../../../components/ui";
+import { PageHeader, ListLoadingSkeleton, ListEmptyState, CustomDatePicker } from "../../../components/ui";
 import ShiftFormDrawer, { type EmployeeOption } from "./ShiftFormDrawer";
 
 dayjs.extend(duration);
@@ -236,23 +236,23 @@ const DjangoWorkShiftsPage: React.FC = () => {
           ))}
         </TextField>
       )}
-      <TextField
-        type="date"
-        size="small"
+      <CustomDatePicker
         label="От"
-        value={startDate}
-        onChange={(e) => setStartDate(e.target.value)}
-        InputLabelProps={{ shrink: true }}
-        sx={{ flex: "1 1 170px", minWidth: 165 }}
+        value={dayjs(startDate)}
+        onChange={(next) => {
+          if (next && next.isValid()) setStartDate(next.format("YYYY-MM-DD"));
+        }}
+        shortYearMode="nearest"
+        slotProps={{ textField: { size: "small", sx: { flex: "1 1 170px", minWidth: 165 } } }}
       />
-      <TextField
-        type="date"
-        size="small"
+      <CustomDatePicker
         label="До"
-        value={endDate}
-        onChange={(e) => setEndDate(e.target.value)}
-        InputLabelProps={{ shrink: true }}
-        sx={{ flex: "1 1 170px", minWidth: 165 }}
+        value={dayjs(endDate)}
+        onChange={(next) => {
+          if (next && next.isValid()) setEndDate(next.format("YYYY-MM-DD"));
+        }}
+        shortYearMode="nearest"
+        slotProps={{ textField: { size: "small", sx: { flex: "1 1 170px", minWidth: 165 } } }}
       />
     </Stack>
   );
