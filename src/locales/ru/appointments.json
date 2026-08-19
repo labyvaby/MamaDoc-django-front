@@ -390,6 +390,13 @@
     "signature": "Подпись",
     "print": "Распечатать чек",
     "receiptTitle": "Чек",
+    "formatTitle": "Формат печати",
+    "formatA5": "A5 — чек",
+    "formatA5Hint": "Компактный бланк, половина листа",
+    "formatA4": "A4 — счёт",
+    "formatA4Hint": "Обычный лист, крупный шрифт",
+    "formatConfirm": "Печать",
+    "formatCancel": "Отмена",
     "popupBlocked": "Не удалось открыть окно печати — разрешите всплывающие окна для этого сайта"
   },
   "payment": {

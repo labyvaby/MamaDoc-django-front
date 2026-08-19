@@ -54,7 +54,11 @@ import {
 import { useCashlessMethods } from "../../hooks/useCashlessMethods";
 import { useAuthUserNames } from "../../hooks/useAuthUserNames";
 import { usePermissions } from "../../hooks/usePermissions";
-import { printAppointmentInvoice } from "../../components/appointments/appointmentInvoice";
+import {
+  printAppointmentInvoice,
+  type InvoicePageSize,
+} from "../../components/appointments/appointmentInvoice";
+import InvoiceFormatDialog from "../../components/appointments/InvoiceFormatDialog";
 import { paymentMethodLabel } from "../../utility/paymentMethodLabel";
 import {
   djangoQueryKeys,
@@ -736,7 +740,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       ? t("payment.cashlessBranchNote", { branch: appointment.branchName })
       : null;
 
-  const handlePrintInvoice = () => {
+  // Формат листа спрашиваем перед печатью: чеки печатают на A5, счёт на руки —
+  // на обычном A4.
+  const [formatDialogOpen, setFormatDialogOpen] = React.useState(false);
+
+  const handlePrintInvoice = (pageSize: InvoicePageSize) => {
+    setFormatDialogOpen(false);
     if (!appointment) return;
     const ok = printAppointmentInvoice({
       appointment,
@@ -746,6 +755,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       branchName: activeBranch?.name ?? null,
       registrarName,
       createdByName: employee?.fullName ?? null,
+      pageSize,
     });
     if (!ok) notify?.({ type: "error", message: t("invoice.popupBlocked") });
   };
@@ -1450,7 +1460,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               <Button
                 variant="outlined"
                 size="large"
-                onClick={handlePrintInvoice}
+                onClick={() => setFormatDialogOpen(true)}
                 disabled={!appointment || paymentQuery.isLoading}
                 aria-label={t("invoice.print")}
                 sx={{ minWidth: 0, px: 2 }}
@@ -1461,6 +1471,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           </Tooltip>
         </Stack>
       </Box>
+
+      <InvoiceFormatDialog
+        open={formatDialogOpen}
+        onCancel={() => setFormatDialogOpen(false)}
+        onConfirm={handlePrintInvoice}
+      />
 
       <CashDateConfirmDialog
         open={showCashDateDialog}

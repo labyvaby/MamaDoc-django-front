@@ -10,7 +10,11 @@ import {
 } from "../../api/queryKeys";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useAuthUserNames } from "../../hooks/useAuthUserNames";
-import { printAppointmentInvoice } from "./appointmentInvoice";
+import {
+  printAppointmentInvoice,
+  DEFAULT_INVOICE_PAGE_SIZE,
+  type InvoicePageSize,
+} from "./appointmentInvoice";
 
 /**
  * Печать чека по id приёма — для экранов, где под рукой нет ни приёма, ни
@@ -33,7 +37,10 @@ export function useAppointmentReceipt() {
   const [pending, setPending] = React.useState(false);
 
   const printReceipt = React.useCallback(
-    async (appointmentId: number): Promise<ReceiptPrintResult> => {
+    async (
+      appointmentId: number,
+      pageSize: InvoicePageSize = DEFAULT_INVOICE_PAGE_SIZE,
+    ): Promise<ReceiptPrintResult> => {
       setPending(true);
       try {
         const [appointment, summary] = await Promise.all([
@@ -71,6 +78,7 @@ export function useAppointmentReceipt() {
           registrarName:
             appointment.createdById != null ? userNames[appointment.createdById] : undefined,
           createdByName: employee?.fullName ?? null,
+          pageSize,
         });
         return opened ? "printed" : "blocked";
       } finally {

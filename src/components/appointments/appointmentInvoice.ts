@@ -59,6 +59,30 @@ type InvoiceRow = {
   date: string;
 };
 
+/** Формат листа: A5 — чек кассы, A4 — счёт на обычной бумаге. */
+export type InvoicePageSize = "A5" | "A4";
+
+const PAGE_SIZE_STORAGE_KEY = "mamadoc:invoicePageSize";
+export const DEFAULT_INVOICE_PAGE_SIZE: InvoicePageSize = "A5";
+
+/** Последний выбранный формат — им открывается диалог печати в следующий раз. */
+export function readInvoicePageSize(): InvoicePageSize {
+  try {
+    const saved = window.localStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+    return saved === "A4" || saved === "A5" ? saved : DEFAULT_INVOICE_PAGE_SIZE;
+  } catch {
+    return DEFAULT_INVOICE_PAGE_SIZE;
+  }
+}
+
+export function saveInvoicePageSize(size: InvoicePageSize): void {
+  try {
+    window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, size);
+  } catch {
+    /* приватный режим — формат просто не запомнится */
+  }
+}
+
 export type AppointmentInvoiceData = {
   appointment: DjangoAppointment;
   /** Сохранённая сводка оплат — источник итогов счёта (не форма на экране). */
@@ -71,6 +95,8 @@ export type AppointmentInvoiceData = {
   registrarName?: string | null;
   /** Кто печатает счёт — текущий пользователь. */
   createdByName?: string | null;
+  /** Формат листа; по умолчанию A5 — так печатали до появления выбора. */
+  pageSize?: InvoicePageSize;
 };
 
 /** Строки счёта: услуги, их платные расходники и товары визита. */
@@ -125,9 +151,29 @@ function buildRows(appointment: DjangoAppointment): InvoiceRow[] {
   return rows;
 }
 
-/** Самодостаточный HTML чека (A5) — используется и печатью, и тестами. */
+/**
+ * Параметры листа. Размеры шрифтов задаются одним множителем от бланка A5:
+ * на A4 та же вёрстка иначе осталась бы мелкой строчкой вверху листа.
+ */
+function sheetMetrics(pageSize: InvoicePageSize) {
+  const isA4 = pageSize === "A4";
+  return {
+    css: isA4 ? "A4 portrait" : "A5 portrait",
+    /** Поля листа — их задаёт padding у body, см. комментарий к @page. */
+    padMm: isA4 ? 12 : 8,
+    /** Ширина бланка на экране: ширина листа минус поля. */
+    widthMm: isA4 ? 186 : 132,
+    scale: isA4 ? 1.35 : 1,
+    barcode: isA4 ? { moduleWidth: 1.4, height: 40 } : { moduleWidth: 1, height: 28 },
+  };
+}
+
+/** Самодостаточный HTML чека (A5 или A4) — используется и печатью, и тестами. */
 export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): string {
   const { appointment, summary, patient, organizationName, branchName } = data;
+  const sheet = sheetMetrics(data.pageSize ?? DEFAULT_INVOICE_PAGE_SIZE);
+  /** Размер в пикселях бланка A5, пересчитанный под выбранный лист. */
+  const px = (value: number) => `${Number((value * sheet.scale).toFixed(2))}px`;
 
   const rows = buildRows(appointment);
   const total = num(summary?.totalAmount ?? appointment.totalAmount);
@@ -137,7 +183,7 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
   const due = summary ? num(summary.debt) : Math.max(0, payable - paid);
 
   const invoiceNumber = String(appointment.id);
-  const barcode = barcode128Svg(invoiceNumber, { moduleWidth: 1, height: 28 });
+  const barcode = barcode128Svg(invoiceNumber, sheet.barcode);
   const docTitle = tt("appointments:invoice.receiptTitle");
 
   const dob = patient?.birthDate ? dayjs(patient.birthDate).format("DD.MM.YYYY") : "—";
@@ -184,37 +230,37 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
          Поля страницы нулевые, отступ даёт padding у body: именно в поля
          @page браузер печатает свои колонтитулы (адрес «about:blank» и
          номер страницы), при margin:0 им негде разместиться. */
-      @page { size: A5 portrait; margin: 0; }
-      /* Ширина A5 за вычетом полей — чтобы предпросмотр в окне печати
+      @page { size: ${sheet.css}; margin: 0; }
+      /* Ширина листа за вычетом полей — чтобы предпросмотр в окне печати
          выглядел так же, как выйдет на бумаге, а не растягивался по экрану. */
-      body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:#111; margin:24px auto; max-width:132mm; font-size:9.5px; }
-      .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
-      .org { font-size:14px; font-weight:600; }
-      h1 { font-size:13px; text-align:center; margin:8px 0 10px; }
-      .meta { display:flex; justify-content:space-between; gap:12px; margin-bottom:10px; }
+      body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:#111; margin:24px auto; max-width:${sheet.widthMm}mm; font-size:${px(9.5)}; }
+      .top { display:flex; justify-content:space-between; align-items:flex-start; gap:${px(16)}; }
+      .org { font-size:${px(14)}; font-weight:600; }
+      h1 { font-size:${px(13)}; text-align:center; margin:${px(8)} 0 ${px(10)}; }
+      .meta { display:flex; justify-content:space-between; gap:${px(12)}; margin-bottom:${px(10)}; }
       .meta-col { flex:1; }
-      .meta-row { display:flex; gap:8px; margin-bottom:3px; }
-      .meta-row b { min-width:110px; color:#444; font-weight:600; }
-      table { width:100%; border-collapse:collapse; margin-top:6px; }
-      th, td { border:1px solid #999; padding:3px 4px; text-align:left; vertical-align:top; }
-      th { background:#f2f2f2; font-weight:600; font-size:9px; }
+      .meta-row { display:flex; gap:${px(8)}; margin-bottom:${px(3)}; }
+      .meta-row b { min-width:${px(110)}; color:#444; font-weight:600; }
+      table { width:100%; border-collapse:collapse; margin-top:${px(6)}; }
+      th, td { border:1px solid #999; padding:${px(3)} ${px(4)}; text-align:left; vertical-align:top; }
+      th { background:#f2f2f2; font-weight:600; font-size:${px(9)}; }
       td.num, th.num { text-align:right; white-space:nowrap; }
       .nowrap { white-space:nowrap; }
       .empty { text-align:center; color:#777; }
-      .totals { margin-top:10px; display:flex; justify-content:space-between; gap:12px; }
+      .totals { margin-top:${px(10)}; display:flex; justify-content:space-between; gap:${px(12)}; }
       .words { flex:1; font-style:italic; }
-      .sums { min-width:200px; }
-      .sum-row { display:flex; justify-content:space-between; gap:16px; padding:2px 0; }
-      .sum-row.due { border-top:1px solid #999; margin-top:4px; padding-top:5px; font-weight:700; font-size:14px; }
-      .pays { margin-top:10px; }
-      .pays h2 { font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:#555; margin:0 0 4px; }
-      .pay-row { display:flex; justify-content:space-between; gap:16px; max-width:200px; padding:1px 0; }
-      .foot { margin-top:16px; display:flex; justify-content:space-between; gap:12px; font-size:9px; color:#333; }
-      .sign { min-width:160px; }
-      .sign .line { margin-top:14px; border-top:1px solid #999; padding-top:3px; color:#777; }
+      .sums { min-width:${px(200)}; }
+      .sum-row { display:flex; justify-content:space-between; gap:${px(16)}; padding:${px(2)} 0; }
+      .sum-row.due { border-top:1px solid #999; margin-top:${px(4)}; padding-top:${px(5)}; font-weight:700; font-size:${px(14)}; }
+      .pays { margin-top:${px(10)}; }
+      .pays h2 { font-size:${px(9)}; text-transform:uppercase; letter-spacing:.4px; color:#555; margin:0 0 ${px(4)}; }
+      .pay-row { display:flex; justify-content:space-between; gap:${px(16)}; max-width:${px(200)}; padding:${px(1)} 0; }
+      .foot { margin-top:${px(16)}; display:flex; justify-content:space-between; gap:${px(12)}; font-size:${px(9)}; color:#333; }
+      .sign { min-width:${px(160)}; }
+      .sign .line { margin-top:${px(14)}; border-top:1px solid #999; padding-top:${px(3)}; color:#777; }
       /* На бумаге ширину ограничивает сам лист, поэтому max-width снимаем:
-         иначе к 8mm полей добавился бы ещё и отступ от auto-центрирования. */
-      @media print { body { margin:0; max-width:none; padding:8mm; } }
+         иначе к полям добавился бы ещё и отступ от auto-центрирования. */
+      @media print { body { margin:0; max-width:none; padding:${sheet.padMm}mm; } }
     </style></head><body>
     <div class="top">
       <div class="org">${esc(orgLine)}</div>
@@ -284,7 +330,8 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
  * показывает подсказку про всплывающие окна.
  */
 export function printAppointmentInvoice(data: AppointmentInvoiceData): boolean {
-  const win = window.open("", "_blank", "width=680,height=760");
+  const width = (data.pageSize ?? DEFAULT_INVOICE_PAGE_SIZE) === "A4" ? 900 : 680;
+  const win = window.open("", "_blank", `width=${width},height=760`);
   if (!win) return false;
   win.document.write(buildAppointmentInvoiceHtml(data));
   win.document.close();

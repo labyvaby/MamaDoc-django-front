@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { buildAppointmentInvoiceHtml } from "./appointmentInvoice";
+import { buildAppointmentInvoiceHtml, type InvoicePageSize } from "./appointmentInvoice";
 import type { DjangoAppointment } from "../../api/appointments";
 import type { PaymentSummary } from "../../api/payments";
 
@@ -81,8 +81,9 @@ const summary: PaymentSummary = {
   ],
 };
 
-function html() {
+function html(pageSize?: InvoicePageSize) {
   return buildAppointmentInvoiceHtml({
+    pageSize,
     appointment,
     summary,
     patient: {
@@ -150,5 +151,22 @@ describe("чек (лист A5)", () => {
     const out = html();
     expect(out).toContain("size: A5 portrait");
     expect(out).toContain("<h1>Чек</h1>");
+  });
+
+  it("не оставляет полей листа под колонтитулы браузера", () => {
+    // Поля @page — то место, куда браузер печатает «about:blank» и номер
+    // страницы; отступ бланка задаётся padding-ом при печати.
+    const out = html();
+    expect(out).toContain("@page { size: A5 portrait; margin: 0; }");
+    expect(out).toContain("padding:8mm");
+  });
+
+  it("на A4 меняет лист, поля и масштаб шрифта", () => {
+    const out = html("A4");
+    expect(out).toContain("@page { size: A4 portrait; margin: 0; }");
+    expect(out).toContain("padding:12mm");
+    // Базовый кегль бланка A5 — 9.5px, на A4 он умножается на 1.35.
+    expect(out).toContain("font-size:12.83px");
+    expect(out).not.toContain("font-size:9.5px");
   });
 });
