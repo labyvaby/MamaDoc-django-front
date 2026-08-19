@@ -45,6 +45,7 @@ import {
 } from "../../../api/queryKeys";
 import { getActiveMonths, getMonthlyReport } from "../../../api/reports";
 import { SummaryCards, type SummaryCardGroup } from "../components/SummaryCards";
+import CashlessMethodBreakdown from "../../../components/finance/CashlessMethodBreakdown";
 import { ReportTableCard } from "../components/ReportTableCard";
 import { compactTableSx } from "../components/reportTableStyles";
 
@@ -216,6 +217,20 @@ const DjangoReportsPage: React.FC = () => {
     ];
   }, [summary, totals, t]);
 
+  /**
+   * Безнал за месяц в разрезе способов. В отчёте нет колонок расходов и
+   * закупок, поэтому бэк отдаёт только сумму карты и число операций — и за
+   * период целиком, не по дням. Продаж товаров в разрезе нет: терминал у них
+   * не сохраняется.
+   */
+  const cashlessRows = (report?.byCashlessMethod ?? []).map((r) => ({
+    key: String(r.cashlessMethodId ?? "none"),
+    name: r.cashlessMethodName ?? "Без способа",
+    amount: num(r.cardSum),
+    count: r.count,
+    muted: r.cashlessMethodId == null,
+  }));
+
   if (!permLoading && !canView) return <AccessDenied />;
 
   const loading = reportQuery.isLoading || (reportQuery.isFetching && !report);
@@ -252,6 +267,19 @@ const DjangoReportsPage: React.FC = () => {
             })}
           >
             <SummaryCards groups={groups} loading={loading && groups.length === 0} />
+
+            {!loading && cashlessRows.length > 0 && (
+              <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                  <CashlessMethodBreakdown
+                    items={cashlessRows}
+                    title="Безнал по способам"
+                    divider={false}
+                    formatAmount={formatKGS}
+                  />
+                </CardContent>
+              </Card>
+            )}
 
             {reportQuery.isError ? (
               <Alert severity="error">

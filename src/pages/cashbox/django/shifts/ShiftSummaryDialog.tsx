@@ -16,6 +16,9 @@ import dayjs from "dayjs";
 import { getCashboxShiftSummary } from "../../../../api/cashboxShifts";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../../api/queryKeys";
 import type { CashboxShift } from "../../../../api/cashboxShifts";
+import CashlessMethodBreakdown, {
+  cashboxBreakdownItems,
+} from "../../../../components/finance/CashlessMethodBreakdown";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +26,11 @@ function fmt(s: string | null | undefined): string {
   if (!s) return "0.00";
   const n = parseFloat(s);
   return isNaN(n) ? (s ?? "0.00") : n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Нетто способа со знаком — так же, как в карточке «Безнал». */
+function netSom(value: number): string {
+  return `${value < 0 ? "− " : ""}${fmt(String(Math.abs(value)))} с`;
 }
 
 const Row: React.FC<{ label: string; value: string; color?: string; bold?: boolean }> = ({
@@ -130,6 +138,12 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Row label="Карта приход" value={`${fmt(s.cardIncome)} с`} color="primary.main" />
             <Row label="Карта возвраты" value={`− ${fmt(s.cardRefunds)} с`} color="primary.main" />
             <Row label="Карта расходы" value={`− ${fmt(s.cardExpenses)} с`} color="primary.main" />
+
+            {/* Продажи товаров сюда не попадают: способа у них нет. */}
+            <CashlessMethodBreakdown
+              items={cashboxBreakdownItems(s.byCashlessMethod)}
+              formatAmount={netSom}
+            />
 
             {(parseFloat(s.balancePayments) > 0 || parseFloat(s.balanceRefunds) > 0) && (
               <>

@@ -21,6 +21,11 @@ import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import FlowCard, { formatSom, type FlowBreakdownRow } from "./FlowCard";
+import {
+  cashboxBreakdownItems,
+  unattributedSalesItem,
+  type CashlessBreakdownItem,
+} from "../../../components/finance/CashlessMethodBreakdown";
 import CashBalanceCard from "./CashBalanceCard";
 import CashFlowFeed from "./CashFlowFeed";
 import { useT } from "../../../i18n/VerticalProvider";
@@ -88,6 +93,17 @@ function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
       { key: "supply", label: "Закупки товара", amount: supplies, direction: -1 },
     ],
   };
+}
+
+/**
+ * Разрез безнала по способам. Продажи товаров бэк в него не включает (склад не
+ * хранит терминал), поэтому дописываем их строкой сами: без неё список не
+ * сходился бы с итогом карточки «Безнал».
+ */
+function cardMethodItems(s: CashboxSummary | undefined): CashlessBreakdownItem[] {
+  const rows = cashboxBreakdownItems(s?.byCashlessMethod);
+  if (rows.length === 0) return [];
+  return [...rows, ...unattributedSalesItem(num(s?.salesCardIncome))];
 }
 
 function periodLabel(range: DateRange): string {
@@ -164,6 +180,7 @@ const DjangoCashboxPage: React.FC = () => {
   const loading = periodQuery.isLoading;
 
   const cardFlow = cardFlowNumbers(period);
+  const cardMethods = cardMethodItems(period);
   const windowLabel = periodLabel(range);
 
   const insuranceIncome = num(period?.insuranceIncome);
@@ -236,6 +253,7 @@ const DjangoCashboxPage: React.FC = () => {
                 inflow={cardFlow.inflow}
                 outflow={cardFlow.outflow}
                 breakdown={cardFlow.breakdown}
+                byMethod={cardMethods}
                 loading={loading}
               />
             </Box>
@@ -266,7 +284,11 @@ const DjangoCashboxPage: React.FC = () => {
             )}
 
             {/* Лента движения средств — то же окно, что и безнал */}
-            <CashFlowFeed baseFilters={baseFeedFilters} enabled={queriesEnabled} />
+            <CashFlowFeed
+              baseFilters={baseFeedFilters}
+              enabled={queriesEnabled}
+              splitReady={cardMethods.length > 0}
+            />
           </Box>
         </Box>
       )}

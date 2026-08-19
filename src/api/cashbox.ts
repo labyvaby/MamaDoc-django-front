@@ -15,8 +15,39 @@ export interface CashboxFilters {
   patientId?: number;
   appointmentId?: number;
   createdById?: number;
+  /**
+   * Способ безнала (справочник `api/cashlessMethods.ts`). ⚠ Продажи товаров
+   * способа не хранят вовсе, поэтому под этим фильтром бэк их не отдаёт —
+   * не «как без способа», а вообще (ответ бэка 19.08.2026).
+   */
+  cashlessMethodId?: number;
   /** Required for superuser; regular users omit or pass null for "all orgs" */
   organizationId?: number | null;
+}
+
+/**
+ * Строка разреза безнала по способам оплаты. Считается бэком из тех же
+ * запросов, что и итоги, поэтому суммы сходятся: `income` → `cardIncome`,
+ * `refunds` → `cardRefunds`, `expenses` → `cardExpenses`,
+ * `supplyExpenses` → `supplyCardExpenses`.
+ *
+ * `cashlessMethodId: null` — операции без способа: платежи до появления
+ * справочника и безнал, проведённый мимо него. Такие деньги не теряются, а
+ * собираются в эту строку.
+ *
+ * Строки собираются из операций, а не из справочника: скрытый способ с
+ * движениями за период остаётся, способ без движений не приходит вовсе.
+ * Продаж товаров в разрезе нет — склад не хранит, каким терминалом принято.
+ */
+export interface CashlessMethodBreakdownRow {
+  cashlessMethodId: number | null;
+  cashlessMethodName: string | null;
+  income: string;
+  refunds: string;
+  expenses: string;
+  supplyExpenses: string;
+  /** Операции всех видов: оплаты + возвраты + расходы + закупки. */
+  count: number;
 }
 
 export interface CashboxSummary {
@@ -55,6 +86,11 @@ export interface CashboxSummary {
   supplyCardExpenses: string;
   supplyTotal: string;
   supplyCount: number;
+  /**
+   * Разрез безнала по способам. Не приходит от бэка без этой доработки и
+   * пуст за период без безналичных движений — в обоих случаях блок скрыт.
+   */
+  byCashlessMethod?: CashlessMethodBreakdownRow[];
 }
 
 export interface CashboxEntry {
@@ -83,6 +119,13 @@ export interface CashboxEntry {
   // Insurance-payment fields (present when method === "insurance")
   insurerName?: string | null;
   policyNumber?: string | null;
+  /**
+   * Способ безнала операции. `null` у наличных, баланса, бонусов, страховых —
+   * и у продаж товаров, которые способ не хранят. У возврата — способ его
+   * платежа: своего поля у возвратов нет.
+   */
+  cashlessMethodId?: number | null;
+  cashlessMethodName?: string | null;
 }
 
 export interface CashboxEntriesResponse {
@@ -111,6 +154,9 @@ function buildParams(filters: CashboxFilters): URLSearchParams {
   if (filters.patientId != null) q.set("patientId", String(filters.patientId));
   if (filters.appointmentId != null) q.set("appointmentId", String(filters.appointmentId));
   if (filters.createdById != null) q.set("createdById", String(filters.createdById));
+  if (filters.cashlessMethodId != null) {
+    q.set("cashlessMethodId", String(filters.cashlessMethodId));
+  }
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   return q;
 }

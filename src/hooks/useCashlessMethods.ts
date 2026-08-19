@@ -23,6 +23,11 @@ export interface CashlessMethodsScope {
    * филиала, поэтому терминал соседней кассы в выбор не попадёт.
    */
   branchId?: number | null;
+  /**
+   * Скрытые способы тоже нужны там, где смотрят прошлые операции: способ могли
+   * скрыть после того, как по нему провели деньги. Формам ввода — не нужны.
+   */
+  includeInactive?: boolean;
 }
 
 export interface CashlessMethodsState {
@@ -72,10 +77,12 @@ export function useCashlessMethods(
   const scopeReady = scope?.organizationId != null || (isReady && orgReady);
   const active = CASHLESS_METHODS_ENABLED && enabled;
 
+  const includeInactive = scope?.includeInactive === true;
+
   const query = useQuery({
-    queryKey: djangoQueryKeys.cashlessMethods.list(orgId, branchId),
+    queryKey: djangoQueryKeys.cashlessMethods.list(orgId, branchId, includeInactive),
     queryFn: ({ signal }) =>
-      getCashlessMethods(signal, { organizationId: orgId, branchId }),
+      getCashlessMethods(signal, { organizationId: orgId, branchId, includeInactive }),
     enabled: active && scopeReady,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     retry: (count, err) => {
