@@ -267,21 +267,22 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     isSuperAdmin,
   } = usePermissions();
 
-  // Доступ к общему рабочему списку определяется правом управления приёмами,
-  // а не названием роли. Поэтому пользовательская роль с appointments.update
-  // работает так же, как стандартные управляющий/регистратор.
-  const canManageAppointments =
-    can("appointments.update") || can("appointments.manage");
+  // Область ЧТЕНИЯ определяется отдельным правом appointments.view_all, а не
+  // правом редактирования: appointments.update разрешает править доступный
+  // тебе приём и НИКОГДА не должен открывать чужие (из-за этой связки врачи
+  // «Клиники 21» видели приёмы коллег). Сужение теперь и на бэке —
+  // get_scoped_appointments_for_user; здесь оно только про то, что рисовать.
+  const canSeeOthersAppointments = can("appointments.view_all");
 
   // Кабинет врача: непривилегированный сотрудник видит только свои приёмы ("me");
   // привилегированная роль — приёмы всех врачей (фильтр clinicalRole=doctor на бэке).
-  const doctorSeesOwnOnly = isDoctorCabinet && !canManageAppointments;
-  const doctorSeesAll = isDoctorCabinet && canManageAppointments;
+  const doctorSeesOwnOnly = isDoctorCabinet && !canSeeOthersAppointments;
+  const doctorSeesAll = isDoctorCabinet && canSeeOthersAppointments;
 
   // Процедурный кабинет: непривилегированный сотрудник видит только свои процедуры;
   // привилегированная роль — приёмы всех медсестёр (фильтр clinicalRole=nurse).
-  const nurseSeesOwnOnly = isNurseCabinet && !canManageAppointments;
-  const nurseSeesAll = isNurseCabinet && canManageAppointments;
+  const nurseSeesOwnOnly = isNurseCabinet && !canSeeOthersAppointments;
+  const nurseSeesAll = isNurseCabinet && canSeeOthersAppointments;
   const { open: notify } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
