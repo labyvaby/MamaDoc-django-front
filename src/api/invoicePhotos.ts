@@ -91,12 +91,27 @@ export async function uploadInvoicePhoto(
   );
 }
 
+/** Старый одиночный чек расхода — тот самый элемент с отрицательным id. */
+export const isLegacyExpensePhoto = (target: InvoicePhotoTarget, photoId: number): boolean =>
+  target === "expense" && photoId < 0;
+
 export function deleteInvoicePhoto(
   target: InvoicePhotoTarget,
   entityId: number,
   photoId: number,
   organizationId?: number | null,
 ): Promise<void> {
+  // Бэк обещал удаление старого чека по его отрицательному id, но роут такой
+  // адрес не матчит: DELETE .../invoices/-1121/ отвечает «Page not found», а
+  // .../invoices/999999/ — «Invoice photo not found» (проверено на проде
+  // 19.08.2026). Значит минус до обработчика не доходит — для старого чека
+  // зовём прежнюю ручку одиночного фото, она работает (204).
+  if (isLegacyExpensePhoto(target, photoId)) {
+    return apiRequest<void>(
+      withOrg(`/finance/expenses/${entityId}/photo/`, organizationId),
+      { method: "DELETE" },
+    );
+  }
   return apiRequest<void>(
     withOrg(`${basePath(target, entityId)}${photoId}/`, organizationId),
     { method: "DELETE" },

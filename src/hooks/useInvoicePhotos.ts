@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   deleteInvoicePhoto,
   getInvoicePhotos,
+  isLegacyExpensePhoto,
   uploadInvoicePhoto,
   INVOICE_PHOTOS_ENABLED,
   INVOICE_PHOTOS_MAX,
@@ -42,6 +43,12 @@ export interface UseInvoicePhotosOptions {
   open: boolean;
   /** Право на изменение (загрузка/удаление). Просмотр остаётся доступным. */
   canManage?: boolean;
+  /**
+   * Удалён старый одиночный чек расхода (`photoUrl`). Форма живёт со своей
+   * копией расхода, и без этого сигнала миниатюра в списке осталась бы висеть
+   * до перезагрузки — выглядело бы как «удаление не сработало».
+   */
+  onLegacyPhotoRemoved?: () => void;
 }
 
 export interface UseInvoicePhotosResult {
@@ -79,6 +86,7 @@ export function useInvoicePhotos({
   organizationId = null,
   open,
   canManage = true,
+  onLegacyPhotoRemoved,
 }: UseInvoicePhotosOptions): UseInvoicePhotosResult {
   const queryClient = useQueryClient();
   const [pending, setPending] = React.useState<PendingInvoicePhoto[]>([]);
@@ -200,17 +208,19 @@ export function useInvoicePhotos({
       setBusy(true);
       setError(null);
       try {
+        const wasLegacy = isLegacyExpensePhoto(target, photoId);
         await deleteInvoicePhoto(target, entityId, photoId, organizationId);
         queryClient.setQueryData<InvoicePhoto[]>(queryKey, (prev) =>
           (prev ?? []).filter((p) => p.id !== photoId),
         );
+        if (wasLegacy) onLegacyPhotoRemoved?.();
       } catch (e) {
         setError(errText(e, "Не удалось удалить фото"));
       } finally {
         setBusy(false);
       }
     },
-    [entityId, organizationId, queryClient, queryKey, target],
+    [entityId, onLegacyPhotoRemoved, organizationId, queryClient, queryKey, target],
   );
 
   const flush = React.useCallback(
