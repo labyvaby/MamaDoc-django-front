@@ -127,6 +127,11 @@ const ExpenseDetailCard: React.FC<{
     organizationId: orgId,
     open: true,
     canManage: canManage && !expense?.isVoided,
+    // Удалили старый чек — обновляем карточку расхода, иначе миниатюра в списке
+    // остаётся висеть и кажется, что удаление не сработало.
+    onLegacyPhotoRemoved: React.useCallback(() => {
+      if (expense) onPhotoDeleted({ ...expense, photoUrl: null });
+    }, [expense, onPhotoDeleted]),
   });
 
   React.useEffect(() => {
