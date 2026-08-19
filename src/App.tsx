@@ -111,6 +111,10 @@ const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
+// Реестры «Все приёмы» / «Все процедуры» — исторический список за период
+// (AppointmentsRegistryView), а не рабочий кабинет с навигацией по дням.
+const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
+const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
 
@@ -355,12 +359,12 @@ function App() {
                       },
                       {
                         name: "all-appointments",
-                        list: "/appointments",
+                        list: "/all-appointments",
                         meta: { label: tt("sidebar:allAppointments") }
                       },
                       {
                         name: "all-procedures",
-                        list: "/nurse",
+                        list: "/all-procedures",
                         meta: { label: "Все процедуры" }
                       },
                       {
@@ -460,7 +464,7 @@ function App() {
                           element={
                             <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
-                                <AppointmentsPage />
+                                <AllAppointmentsPage />
                               </Suspense>
                             </RequireSuperAdmin>
                           }
@@ -470,7 +474,7 @@ function App() {
                           element={
                             <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
-                                <AppointmentsPage scope="nurse" />
+                                <AllProceduresPage />
                               </Suspense>
                             </RequireSuperAdmin>
                           }

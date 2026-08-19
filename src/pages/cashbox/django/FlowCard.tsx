@@ -5,6 +5,9 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 
 import { AppCard } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
+import CashlessMethodBreakdown, {
+  type CashlessBreakdownItem,
+} from "../../../components/finance/CashlessMethodBreakdown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +27,11 @@ type Props = {
   /** Расход за окно (сумма отрицательных потоков, положительное число) */
   outflow: number;
   breakdown: FlowBreakdownRow[];
+  /**
+   * Разрез по способам безнала. Сумма строк сходится с итогом карточки:
+   * нетто способов плюс продажи товаров, у которых терминала нет.
+   */
+  byMethod?: CashlessBreakdownItem[];
   loading: boolean;
 };
 
@@ -37,6 +45,11 @@ export function formatSom(value: number): string {
 
 function signedSom(value: number, direction: 1 | -1): string {
   return (direction > 0 ? "+ " : "− ") + formatSom(value);
+}
+
+/** Нетто способа: минус ставим сами, чтобы знак читался так же, как в разбивке. */
+function netSom(value: number): string {
+  return (value < 0 ? "− " : "") + formatSom(Math.abs(value));
 }
 
 // ── Shared breakdown block ────────────────────────────────────────────────────
@@ -168,7 +181,14 @@ export const FlowBreakdownBlock: React.FC<BreakdownBlockProps> = ({
  * (день или период). Накопительного остатка у безнала нет намеренно:
  * деньги уходят в банк, «остаток на терминале» не существует физически.
  */
-const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, loading }) => {
+const FlowCard: React.FC<Props> = ({
+  periodLabel,
+  inflow,
+  outflow,
+  breakdown,
+  byMethod,
+  loading,
+}) => {
   const net = inflow - outflow;
 
   return (
@@ -230,6 +250,10 @@ const FlowCard: React.FC<Props> = ({ periodLabel, inflow, outflow, breakdown, lo
           breakdown={breakdown}
           loading={loading}
         />
+
+        {/* Скелет не рисуем: разреза может не быть вовсе (старый бэк, период
+            без безнала), и мигающий заголовок выглядел бы как потеря данных. */}
+        <CashlessMethodBreakdown items={loading ? [] : (byMethod ?? [])} formatAmount={netSom} />
       </Box>
     </AppCard>
   );

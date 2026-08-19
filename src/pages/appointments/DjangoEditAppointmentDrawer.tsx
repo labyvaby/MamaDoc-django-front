@@ -52,6 +52,7 @@ import {
   type DjangoAppointment,
 } from "../../api/appointments";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
+import ServicePriceField from "../../components/appointments/ServicePriceField";
 import ServiceConsumptionsPreview, {
   previewBillableTotal,
 } from "./components/ServiceConsumptionsPreview";
@@ -1490,18 +1491,35 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                     }
                                   >
                                     {selectedService && (
-                                      <Typography variant="caption" color="text.secondary">
-                                        {t("addDrawer.priceLabel")}{" "}
-                                        <strong>{formatKGS(rowAmount(row, data.services))}</strong>
-                                        {discount > 0
-                                          ? t("addDrawer.discountSuffix", {
-                                              amount: formatKGS(discount),
-                                            })
-                                          : ""}
-                                        {selectedService.durationMinutes
-                                          ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
-                                          : ""}
-                                      </Typography>
+                                      <ServicePriceField
+                                        basePrice={selectedService.basePrice}
+                                        value={row.unitPrice}
+                                        // Строку с медзаключением без права
+                                        // редактировать нельзя целиком — цена
+                                        // не исключение.
+                                        disabled={saving || (row.hasConclusion && !canEditLocked)}
+                                        onChange={(next) => updateRow(index, { unitPrice: next })}
+                                        suffix={
+                                          <>
+                                            {rowAmount(row, data.services) !==
+                                            rowUnitPrice(row, data.services)
+                                              ? t("editDrawer.lineTotalSuffix", {
+                                                  amount: formatKGS(rowAmount(row, data.services)),
+                                                })
+                                              : ""}
+                                            {discount > 0
+                                              ? t("addDrawer.discountSuffix", {
+                                                  amount: formatKGS(discount),
+                                                })
+                                              : ""}
+                                            {selectedService.durationMinutes
+                                              ? t("addDrawer.durationSuffix", {
+                                                  minutes: selectedService.durationMinutes,
+                                                })
+                                              : ""}
+                                          </>
+                                        }
+                                      />
                                     )}
                                     {duplicate && (
                                       <Typography variant="caption" color="warning.main">

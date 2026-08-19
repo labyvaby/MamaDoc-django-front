@@ -1,4 +1,5 @@
 import { apiRequest, ApiError } from "./client";
+import type { CashlessMethodBreakdownRow } from "./cashbox";
 export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -47,6 +48,12 @@ export interface CashboxShiftSummary {
   supplyCash: string;
   supplyCard: string;
   supplyCount: number;
+  /**
+   * Разрез безнала по способам за окно смены — та же структура, что у сводки
+   * кассы (см. `CashlessMethodBreakdownRow`). Продажи товаров в него не
+   * входят: способа у них нет.
+   */
+  byCashlessMethod?: CashlessMethodBreakdownRow[];
 }
 
 export interface CashboxShiftListResponse {

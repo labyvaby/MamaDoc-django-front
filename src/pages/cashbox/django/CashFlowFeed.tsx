@@ -34,6 +34,8 @@ import {
 import { djangoQueryKeys } from "../../../api/queryKeys";
 import { formatSom } from "./FlowCard";
 import { tt } from "../../../i18n/t";
+import { CASHLESS_METHODS_ENABLED } from "../../../api/cashlessMethods";
+import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
 
 const MotionBox = motion(Box);
 
@@ -199,6 +201,7 @@ const DirTabs: React.FC<{ value: Direction; onChange: (v: Direction) => void }> 
 );
 
 const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
+  const cashlessName = entry.cashlessMethodName ?? null;
   const inflow = isInflow(entry);
   // Чип метода кодирует способ оплаты: наличные — зелёный, безнал — синий.
   const methodPaletteKey =
@@ -275,6 +278,25 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
         </Typography>
       )}
 
+      {/* Способ безнала — отдельным чипом: у наличных, баланса, страховых и
+          продаж товаров его нет, и подменять им метод было бы неверно. */}
+      {cashlessName && (
+        <Chip
+          label={cashlessName}
+          size="small"
+          variant="outlined"
+          sx={{
+            display: { xs: "none", lg: "inline-flex" },
+            maxWidth: 160,
+            height: 24,
+            borderRadius: "7px",
+            fontWeight: 500,
+            fontSize: "0.72rem",
+            color: "text.secondary",
+          }}
+        />
+      )}
+
       <Chip
         label={METHOD_LABELS[entry.method] ?? entry.method}
         size="small"
@@ -330,6 +352,14 @@ type Props = {
   /** Период / филиал / организация — задаются страницей */
   baseFilters: Omit<CashboxFilters, "method">;
   enabled: boolean;
+  /**
+   * Умеет ли бэк резать по способам. Признак — разрез в сводке периода: на
+   * невыложенном бэке фильтр `cashlessMethodId` проглатывается без ошибки
+   * (несуществующий id отдаёт ту же выборку, проверено на тесте 19.08.2026),
+   * то есть селект выглядел бы рабочим, а показывал бы всё подряд. Одного
+   * непустого справочника для показа мало.
+   */
+  splitReady: boolean;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -339,11 +369,24 @@ type Props = {
  * направления (все / приход / расход), типа и метода оплаты, с группировкой
  * по дням и пагинацией.
  */
-const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled }) => {
+const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled, splitReady }) => {
   const [dir, setDir] = React.useState<Direction>("all");
   const [type, setType] = React.useState<CashboxEntryType | "">("");
   const [method, setMethod] = React.useState<CashboxMethod | "">("");
+  const [cashlessMethodId, setCashlessMethodId] = React.useState<number | "">("");
   const [page, setPage] = React.useState(1);
+
+  /**
+   * Справочник способов для фильтра — со скрытыми: способ могли скрыть уже
+   * после того, как по нему провели деньги, а операции в ленте остались.
+   */
+  const cashless = useCashlessMethods(enabled && CASHLESS_METHODS_ENABLED && splitReady, {
+    organizationId: baseFilters.organizationId,
+    branchId: baseFilters.branchId,
+    includeInactive: true,
+  });
+  const showCashlessFilter =
+    CASHLESS_METHODS_ENABLED && splitReady && cashless.methods.length > 0;
 
   // Смена периода/филиала сверху — возвращаемся на первую страницу.
   const baseKey = JSON.stringify(baseFilters);
@@ -351,9 +394,12 @@ const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled }) => {
     setPage(1);
   }, [baseKey]);
 
-  // Чипы типов подстраиваются под выбранное направление.
-  const chipTypes: CashboxEntryType[] =
-    dir === "in" ? IN_TYPES : dir === "out" ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES];
+  // Чипы типов подстраиваются под выбранное направление. Продажи товаров
+  // способа не хранят вовсе, поэтому под фильтром по способу бэк их не отдаёт —
+  // убираем и чип, чтобы он не вёл в заведомо пустую выборку.
+  const chipTypes: CashboxEntryType[] = (
+    dir === "in" ? IN_TYPES : dir === "out" ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES]
+  ).filter((k) => !(cashlessMethodId !== "" && k === "sale"));
 
   const entryType: CashboxEntryType[] | "all" = type
     ? [type]
@@ -367,18 +413,19 @@ const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled }) => {
     () => ({
       ...baseFilters,
       method: method || undefined,
+      cashlessMethodId: cashlessMethodId === "" ? undefined : cashlessMethodId,
       entryType,
       page,
       pageSize: PAGE_SIZE,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseFilters, method, JSON.stringify(entryType), page],
+    [baseFilters, method, cashlessMethodId, JSON.stringify(entryType), page],
   );
 
   const entriesQuery = useQuery({
     queryKey: djangoQueryKeys.cashbox.entries(
       Array.isArray(entryType) ? entryType.join(",") : entryType,
-      { ...baseFilters, method, page },
+      { ...baseFilters, method, cashlessMethodId, page },
     ),
     queryFn: ({ signal }) => getCashboxEntries(filters, signal),
     enabled,
@@ -386,6 +433,13 @@ const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled }) => {
   });
 
   const resetPage = () => setPage(1);
+
+  const handleCashlessMethod = (next: number | "") => {
+    setCashlessMethodId(next);
+    // Выбранный тип «Продажи товаров» несовместим с фильтром по способу.
+    if (next !== "" && type === "sale") setType("");
+    resetPage();
+  };
 
   const handleDir = (next: Direction) => {
     setDir(next);
@@ -445,7 +499,36 @@ const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled }) => {
             <MenuItem value="insurance">Страховка</MenuItem>
           </Select>
         </FormControl>
+        {showCashlessFilter && (
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel>Способ</InputLabel>
+            <Select
+              value={cashlessMethodId}
+              label="Способ"
+              onChange={(e) =>
+                handleCashlessMethod(e.target.value === "" ? "" : Number(e.target.value))
+              }
+            >
+              <MenuItem value="">Все способы</MenuItem>
+              {cashless.methods.map((m) => (
+                <MenuItem key={m.id} value={m.id}>
+                  {m.name}
+                  {!m.isActive && " (скрыт)"}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
       </Stack>
+
+      {/* Продажи товаров терминал не сохраняют, поэтому под фильтром по способу
+          не приходят вовсе — без этой подписи это выглядело бы как пропажа. */}
+      {cashlessMethodId !== "" && (
+        <Typography variant="caption" color="text.secondary" sx={{ px: 2.5, display: "block" }}>
+          Продажи товаров в разрезе по способам не участвуют: терминал в продаже
+          не сохраняется.
+        </Typography>
+      )}
 
       {/* Чипы типов операций */}
       <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ px: 2.5, pb: 1.5 }}>

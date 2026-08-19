@@ -270,12 +270,15 @@ export const djangoQueryKeys = {
     list: (
       organizationId: number | null | undefined,
       branchId?: number | null,
+      /** Списки со скрытыми способами кешируем отдельно: набор другой. */
+      includeInactive?: boolean,
     ) =>
       [
         "django",
         "cashless-methods",
         organizationId ?? null,
         branchId ?? null,
+        includeInactive === true,
       ] as const,
   },
 

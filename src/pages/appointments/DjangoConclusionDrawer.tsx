@@ -53,6 +53,8 @@ import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useAppointmentReceipt } from "../../components/appointments/useAppointmentReceipt";
+import InvoiceFormatDialog from "../../components/appointments/InvoiceFormatDialog";
+import type { InvoicePageSize } from "../../components/appointments/appointmentInvoice";
 import { formatQuantity, trimDecimalInput } from "../../utility/format";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
@@ -354,10 +356,13 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // за визит целиком.
   const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
   const receiptAppointmentId = appointmentId ?? conclusion?.appointmentId ?? null;
-  const handlePrintReceipt = async () => {
+  // Лист выбираем перед печатью: A5 — кассовый чек, A4 — счёт на руки.
+  const [receiptFormatOpen, setReceiptFormatOpen] = React.useState(false);
+  const handlePrintReceipt = async (pageSize: InvoicePageSize) => {
+    setReceiptFormatOpen(false);
     if (receiptAppointmentId == null) return;
     try {
-      const result = await printReceipt(receiptAppointmentId);
+      const result = await printReceipt(receiptAppointmentId, pageSize);
       if (result === "blocked") {
         notify?.({ type: "error", message: t("invoice.popupBlocked") });
       }
@@ -995,7 +1000,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                     size="small"
                     variant="outlined"
                     startIcon={<ReceiptLongOutlined />}
-                    onClick={handlePrintReceipt}
+                    onClick={() => setReceiptFormatOpen(true)}
                     disabled={receiptPending}
                     sx={{ whiteSpace: "nowrap" }}
                   >
@@ -1575,7 +1580,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                   size="small"
                   variant="outlined"
                   startIcon={<ReceiptLongOutlined />}
-                  onClick={handlePrintReceipt}
+                  onClick={() => setReceiptFormatOpen(true)}
                   disabled={receiptPending}
                 >
                   {t("conclusion.receipt")}
@@ -1724,6 +1729,12 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           )}
         </Box>
       </Modal>
+
+      <InvoiceFormatDialog
+        open={receiptFormatOpen}
+        onCancel={() => setReceiptFormatOpen(false)}
+        onConfirm={handlePrintReceipt}
+      />
     </>
   );
 

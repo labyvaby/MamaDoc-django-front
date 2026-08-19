@@ -330,7 +330,8 @@
     "adminComment": "Комментарий администратора",
     "updated": "{{visit.nom, capitalize}} обновлён",
     "draftRestored": "Восстановлены несохранённые данные",
-    "draftDiscard": "Очистить"
+    "draftDiscard": "Очистить",
+    "lineTotalSuffix": " · итого {{amount}}"
   },
   "servicePicker": {
     "title": "Выберите {{service.acc}} и специалиста",
@@ -390,6 +391,13 @@
     "signature": "Подпись",
     "print": "Распечатать чек",
     "receiptTitle": "Чек",
+    "formatTitle": "Формат печати",
+    "formatA5": "A5 — чек",
+    "formatA5Hint": "Компактный бланк, половина листа",
+    "formatA4": "A4 — счёт",
+    "formatA4Hint": "Обычный лист, крупный шрифт",
+    "formatConfirm": "Печать",
+    "formatCancel": "Отмена",
     "popupBlocked": "Не удалось открыть окно печати — разрешите всплывающие окна для этого сайта"
   },
   "payment": {
@@ -671,5 +679,18 @@
     "select": "Выбрать",
     "timeDiff": "±{{minutes}} мин",
     "amount": "{{amount}} сом"
+  },
+  "priceField": {
+    "action": "Изменить цену",
+    "label": "Цена, сом",
+    "invalid": "Цена не может быть отрицательной.",
+    "catalog": "По прайсу {{price}}",
+    "reset": "Вернуть цену по прайсу"
+  },
+  "priceHistory": {
+    "title": "Правки цены",
+    "entry": "{{old}} → {{new}}",
+    "by": "{{name}}",
+    "deletedLine": "Строка удалена"
   }
 }
