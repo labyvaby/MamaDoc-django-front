@@ -274,14 +274,9 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // get_scoped_appointments_for_user; здесь оно только про то, что рисовать.
   const canSeeOthersAppointments = can("appointments.view_all");
 
-  // Кабинет врача: непривилегированный сотрудник видит только свои приёмы ("me");
-  // привилегированная роль — приёмы всех врачей (фильтр clinicalRole=doctor на бэке).
-  const doctorSeesOwnOnly = isDoctorCabinet && !canSeeOthersAppointments;
+  // Привилегированные кабинеты: роль с view_all смотрит кабинет целиком —
+  // все врачи / все медсёстры (фильтр clinicalRole на бэке).
   const doctorSeesAll = isDoctorCabinet && canSeeOthersAppointments;
-
-  // Процедурный кабинет: непривилегированный сотрудник видит только свои процедуры;
-  // привилегированная роль — приёмы всех медсестёр (фильтр clinicalRole=nurse).
-  const nurseSeesOwnOnly = isNurseCabinet && !canSeeOthersAppointments;
   const nurseSeesAll = isNurseCabinet && canSeeOthersAppointments;
   const { open: notify } = useNotification();
   const theme = useTheme();
@@ -403,10 +398,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const activeScope = useActiveScope();
   const branchId = activeBranch?.id ?? undefined;
 
-  // Клиницист в своём кабинете (врач в кабинете врача / медсестра в процедурном)
-  // грузит серверно только свои приёмы ("me"). Привилегированная роль грузит по
-  // клинической роли (clinicalRole ниже), а в Регистратуре — весь список.
-  const seesOwnOnly = doctorSeesOwnOnly || nurseSeesOwnOnly;
+  // Сужение до своих приёмов зависит от ПРАВА, а не от страницы: клиницист без
+  // appointments.view_all видит только свои приёмы и в кабинете, И В
+  // РЕГИСТРАТУРЕ. Раньше флаг был завязан на scope кабинета, поэтому на
+  // Регистратуре врачу показывалась полоска фильтра со всем штатом (список при
+  // этом уже приходил сужённым с бэка — утекали имена сотрудников).
+  //
+  // Условие зеркалит бэкенд (get_scoped_appointments_for_user + user_is_clinician):
+  // сужаем только тех, у кого есть карточка сотрудника. У управляющих ролей и
+  // ops-суперадминов её нет, и "me" вернул бы им пустой список.
+  const seesOwnOnly = !canSeeOthersAppointments && activeEmployee != null;
   const scopedEmployeeId: number | "me" | undefined = seesOwnOnly ? "me" : undefined;
 
   // Навбар-счётчики: клиницист в своём кабинете считает только свои; привилегированная
@@ -609,9 +610,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Исполнитель, выбранный в ленте, — сразу employee id: он же идёт в
   // предзаполнение формы записи.
   const filterEmployeeId = doctorFilter;
-
   // Группировка: привилегированный кабинет — строго по клиницистам своего типа;
-  // клиницист в своём кабинете — по себе. Иначе (Регистратура) — по всем участникам.
+  // клиницист без view_all — по себе, и в кабинете, И В РЕГИСТРАТУРЕ. Второе
+  // важно: лента аватарок и группы «свободные смены» берут сотрудников ещё и из
+  // расписания (dayShifts), а не только из выданных приёмов, — без сужения они
+  // раскрывали врачу весь штат смены даже при пустом списке приёмов.
+  // Иначе (роль с view_all) — по всем участникам.
   // ВАЖНО: для группировки «по себе» нужен ID СОТРУДНИКА (Employee.id из
   // appointment.employee), а не ID auth-пользователя. usePermissions().employeeId —
   // это user.id и с appointment.services[].employee.id не совпадает.
