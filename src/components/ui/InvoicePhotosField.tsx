@@ -98,7 +98,10 @@ export const InvoicePhotosField: React.FC<InvoicePhotosFieldProps> = ({
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
-          const files = e.target.files;
+          // Копируем файлы ДО сброса value. input.value = "" очищает тот самый
+          // FileList, ссылку на который мы держим, — pick получал пустой список
+          // и молча выходил, поэтому фото накладной не добавлялось вовсе.
+          const files = Array.from(e.target.files ?? []);
           // Сбрасываем value, иначе повторный выбор того же файла не даст onChange.
           e.target.value = "";
           void state.pick(files);
