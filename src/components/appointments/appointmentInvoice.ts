@@ -180,8 +180,11 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
     <style>
       * { box-sizing: border-box; }
       /* Формат листа задаём явно: иначе браузер печатает на A4 и документ
-         уезжает в верхнюю четверть страницы. */
-      @page { size: A5 portrait; margin: 8mm; }
+         уезжает в верхнюю четверть страницы.
+         Поля страницы нулевые, отступ даёт padding у body: именно в поля
+         @page браузер печатает свои колонтитулы (адрес «about:blank» и
+         номер страницы), при margin:0 им негде разместиться. */
+      @page { size: A5 portrait; margin: 0; }
       /* Ширина A5 за вычетом полей — чтобы предпросмотр в окне печати
          выглядел так же, как выйдет на бумаге, а не растягивался по экрану. */
       body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:#111; margin:24px auto; max-width:132mm; font-size:9.5px; }
@@ -209,7 +212,9 @@ export function buildAppointmentInvoiceHtml(data: AppointmentInvoiceData): strin
       .foot { margin-top:16px; display:flex; justify-content:space-between; gap:12px; font-size:9px; color:#333; }
       .sign { min-width:160px; }
       .sign .line { margin-top:14px; border-top:1px solid #999; padding-top:3px; color:#777; }
-      @media print { body { margin:0; } }
+      /* На бумаге ширину ограничивает сам лист, поэтому max-width снимаем:
+         иначе к 8mm полей добавился бы ещё и отступ от auto-центрирования. */
+      @media print { body { margin:0; max-width:none; padding:8mm; } }
     </style></head><body>
     <div class="top">
       <div class="org">${esc(orgLine)}</div>
