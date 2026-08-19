@@ -41,6 +41,7 @@ import { VerticalProvider } from "./i18n/VerticalProvider";
 import { tt } from "./i18n/t";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { RequirePermission } from "./components/rbac/RequirePermission";
+import { RequireSuperAdmin } from "./components/rbac/RequireSuperAdmin";
 import { RequireModule } from "./components/rbac/RequireModule";
 import {
   PAGE_PERMISSIONS,
@@ -450,24 +451,28 @@ function App() {
                         <Route index element={<RootRedirect />} />
                         <Route path="home" element={<RootRedirect />} />
                         <Route path="patient-search" element={<Navigate to="/patients" replace />} />
+                        {/* Исторические реестры «Все приёмы» / «Все процедуры» —
+                            только суперадминистратор (пожелание заказчика
+                            19.08.2026). Гейт ролевой, а не по праву: организация
+                            не должна открыть их себе через редактор ролей. */}
                         <Route
                           path="all-appointments"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
+                            <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage />
                               </Suspense>
-                            </RequirePermission>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route
                           path="all-procedures"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
+                            <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="nurse" />
                               </Suspense>
-                            </RequirePermission>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route

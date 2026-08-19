@@ -395,8 +395,9 @@ const SidebarSecondary: React.FC = () => {
     employees: isSuper || can(PAGE_PERMISSIONS.employees),
     patients: isSuper || can(PAGE_PERMISSIONS.patients),
     vaccinations: isSuper || can(PAGE_PERMISSIONS.vaccinations),
-    allAppointments: isSuper || can(PAGE_PERMISSIONS.allAppointments),
-    allProcedures: isSuper || can(PAGE_PERMISSIONS.allProcedures),
+    // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
+    allAppointments: isSuper,
+    allProcedures: isSuper,
     services: isSuper || can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
