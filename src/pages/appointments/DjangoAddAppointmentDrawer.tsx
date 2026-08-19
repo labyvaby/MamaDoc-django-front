@@ -298,6 +298,16 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     [activeMembership],
   );
   const effectiveBranch = appointmentBranch ?? activeBranch;
+  /**
+   * Сессия в режиме «Все филиалы», а филиал у пользователя ровно один —
+   * выбирать нечего, подставляем его сами. Иначе форма встречала оранжевым
+   * предупреждением на пол-экрана с единственной кнопкой (жалоба заказчика
+   * 19.08.2026: «панель занимает рабочее пространство»).
+   */
+  React.useEffect(() => {
+    if (!open || appointmentBranch || activeBranch) return;
+    if (availableBranches.length === 1) setAppointmentBranch(availableBranches[0]);
+  }, [open, appointmentBranch, activeBranch, availableBranches]);
   const data = useDjangoAppointmentData(
     open,
     effectiveBranch?.id ?? null,
