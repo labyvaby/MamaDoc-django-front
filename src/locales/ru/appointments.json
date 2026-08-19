@@ -108,6 +108,8 @@
     "noSpecialist": "Без {{specialist.gen}}",
     "editPayment": "Изменить оплату",
     "acceptPayment": "Принять оплату",
+    "receipt": "Чек",
+    "receiptError": "Не удалось загрузить данные для чека",
     "hideConclusion": "Скрыть {{conclusion.acc}}",
     "conclusion": "{{conclusion.nom, capitalize}}",
     "editConclusion": "Изменить {{conclusion.acc}}",

@@ -37,6 +37,8 @@ import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -57,6 +59,9 @@ import {
 import ServiceEmployeeGroups, {
   type ServiceEmployeeGroup,
 } from "../../../components/appointments/ServiceEmployeeGroups";
+import InvoiceFormatDialog from "../../../components/appointments/InvoiceFormatDialog";
+import type { InvoicePageSize } from "../../../components/appointments/appointmentInvoice";
+import { useAppointmentReceipt } from "../../../components/appointments/useAppointmentReceipt";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
@@ -323,6 +328,24 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
 
+  // ── чек по оплаченному приёму ─────────────────────────────────────────────
+  // Раньше чек печатали только из дровера оплаты и из заключения; кассе он
+  // нужен сразу из карточки, без повторного открытия оплаты.
+  const { open: notify } = useNotification();
+  const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
+  const [receiptFormatOpen, setReceiptFormatOpen] = React.useState(false);
+  const handlePrintReceipt = async (pageSize: InvoicePageSize) => {
+    setReceiptFormatOpen(false);
+    try {
+      const result = await printReceipt(appt.id, pageSize);
+      if (result === "blocked") {
+        notify?.({ type: "error", message: t("invoice.popupBlocked") });
+      }
+    } catch {
+      notify?.({ type: "error", message: t("details.receiptError") });
+    }
+  };
+
   const cashPaid = pay?.payments?.reduce((s, p) => p.method === "cash" ? s + Number(p.amount) : s, 0) ?? 0;
   const cardPaid = pay?.payments?.reduce((s, p) => p.method === "card" ? s + Number(p.amount) : s, 0) ?? 0;
   const balancePaid = pay?.payments?.reduce((s, p) => p.method === "balance" ? s + Number(p.amount) : s, 0) ?? 0;
@@ -535,6 +558,18 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           >
             {hasPaid ? t("details.editPayment") : t("details.acceptPayment")}
           </Button>
+          {isPaymentAccepted && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ReceiptLongOutlined />}
+              onClick={() => setReceiptFormatOpen(true)}
+              disabled={receiptPending}
+              sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
+            >
+              {t("details.receipt")}
+            </Button>
+          )}
         </Stack>
       ) : undefined;
 
@@ -1200,6 +1235,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         doctorId={selectedDoctorId}
         fallbackName={selectedDoctorName}
         fallbackPhotoUrl={selectedDoctorPhotoUrl}
+      />
+
+      <InvoiceFormatDialog
+        open={receiptFormatOpen}
+        onCancel={() => setReceiptFormatOpen(false)}
+        onConfirm={handlePrintReceipt}
       />
 
       <AppointmentPriceOverrideDialog
