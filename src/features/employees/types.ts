@@ -45,7 +45,7 @@ export type Employee = {
   nickname?: string | null;
   notes?: string | null;
   salary_rules?: any | null;
-  passport_photos?: string[] | null;
+
   /** Professional type — NOT RBAC role */
   clinicalRole?: "doctor" | "nurse" | "other" | null;
   /** Виден ли сотрудник на публичной витрине онлайн-записи (`/book`). */

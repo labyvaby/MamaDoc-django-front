@@ -37,7 +37,6 @@ export function mapDjangoListItemToRow(d: DjangoEmployeeListItem): EmployesRow {
     employee_type_id: null,
     auth_user_id: d.authUserId != null ? String(d.authUserId) : null,
     salary_rules: null,
-    passport_photos: null,
     clinicalRole: d.clinicalRole ?? null,
     onlineBookingEnabled: d.onlineBookingEnabled ?? null,
     // Explicit fields (non-prefixed)
@@ -76,7 +75,6 @@ export function mapDjangoFullToRow(
     employee_type_id: null,
     auth_user_id: d.authUserId != null ? String(d.authUserId) : null,
     salary_rules: null,
-    passport_photos: null,
     clinicalRole: d.clinicalRole ?? null,
     onlineBookingEnabled: d.onlineBookingEnabled ?? null,
     _djangoRole: d.role ?? null,
