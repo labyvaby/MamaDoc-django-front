@@ -19,7 +19,7 @@
  * Форма элемента подтверждена бэком на живых данных (18.08.2026): ссылка
  * называется `url`, синонимов (`fileUrl`/`photoUrl`/`image`) нет.
  */
-import { apiRequest } from "./client";
+import { apiRequest, ApiError } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 
 /** Раскатка: обратно в false — штатный откат, данные бэка не трогаются. */
@@ -95,25 +95,39 @@ export async function uploadInvoicePhoto(
 export const isLegacyExpensePhoto = (target: InvoicePhotoTarget, photoId: number): boolean =>
   target === "expense" && photoId < 0;
 
+/**
+ * Удаление накладной. Старый одиночный чек расхода приходит с отрицательным id
+ * (`-expense.pk`) и удаляется той же ручкой: бэк зарегистрировал конвертер
+ * маршрута под `-?\d+` (ответ бэка 19.08.2026) — до этого минус отсекался
+ * маршрутизацией, и рабочий обработчик оставался недостижимым.
+ *
+ * Фолбэк на прежнюю ручку одиночного фото оставлен ровно на случай, когда бэк
+ * ещё не выложен: тогда маршрут снова не матчит адрес и отвечает 404 «Page not
+ * found». Снять его можно после подтверждённой выкладки — отличить нечиненый
+ * роутер от честного «фото не найдено» по коду нельзя, оба 404, поэтому вторая
+ * попытка идёт только для старого чека.
+ */
 export function deleteInvoicePhoto(
   target: InvoicePhotoTarget,
   entityId: number,
   photoId: number,
   organizationId?: number | null,
 ): Promise<void> {
-  // Бэк обещал удаление старого чека по его отрицательному id, но роут такой
-  // адрес не матчит: DELETE .../invoices/-1121/ отвечает «Page not found», а
-  // .../invoices/999999/ — «Invoice photo not found» (проверено на проде
-  // 19.08.2026). Значит минус до обработчика не доходит — для старого чека
-  // зовём прежнюю ручку одиночного фото, она работает (204).
-  if (isLegacyExpensePhoto(target, photoId)) {
-    return apiRequest<void>(
-      withOrg(`/finance/expenses/${entityId}/photo/`, organizationId),
+  const request = () =>
+    apiRequest<void>(
+      withOrg(`${basePath(target, entityId)}${photoId}/`, organizationId),
       { method: "DELETE" },
     );
-  }
-  return apiRequest<void>(
-    withOrg(`${basePath(target, entityId)}${photoId}/`, organizationId),
-    { method: "DELETE" },
-  );
+
+  if (!isLegacyExpensePhoto(target, photoId)) return request();
+
+  return request().catch((err) => {
+    if (err instanceof ApiError && err.status === 404) {
+      return apiRequest<void>(
+        withOrg(`/finance/expenses/${entityId}/photo/`, organizationId),
+        { method: "DELETE" },
+      );
+    }
+    throw err;
+  });
 }
