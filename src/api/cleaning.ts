@@ -21,6 +21,17 @@ import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 export const CLEANING_USE_MOCKS = false;
 
+/**
+ * Дата уборки задним числом (поле «Дата уборки» в форме, только cleaning.manage:
+ * админ отмечает уборку за вчера, если забыли отметить вовремя).
+ * Бэк пока НЕ принимает дату: проверено на test.crm.operator.kg 20.08.2026 —
+ * POST /cleaning/records/ с полями `date` / `created_at` / `performed_at` /
+ * `createdAt` отвечает 201, но `createdAt` в ответе = момент запроса, поле молча
+ * игнорируется. Тикет: MamaDoc/backend_ticket_cleaning_backdate.md.
+ * Включить после выкладки бэка (поле `date`, YYYY-MM-DD, право cleaning.manage).
+ */
+export const CLEANING_BACKDATE_ENABLED = false;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Тип уборки — справочник организации; ставка за одну подтверждённую уборку. */
@@ -309,6 +320,11 @@ export interface CreateCleaningRecordPayload {
    * ставит текущего пользователя из сессии (обычный сценарий уборщицы).
    */
   employeeId?: number;
+  /**
+   * Дата уборки (YYYY-MM-DD) — только cleaning.manage и только при включённом
+   * CLEANING_BACKDATE_ENABLED. Без неё бэк ставит текущий момент.
+   */
+  date?: string;
   organizationId?: number;
 }
 
@@ -335,7 +351,10 @@ export async function createCleaningRecord(
       rejectReason: "",
       reviewedByName: null,
       reviewedAt: null,
-      createdAt: new Date().toISOString(),
+      // Дата задним числом: берём выбранный день, время — текущее.
+      createdAt: payload.date
+        ? `${payload.date}T${new Date().toISOString().slice(11)}`
+        : new Date().toISOString(),
     };
     mockRecords.unshift(record);
     return mockDelay(record);
@@ -345,6 +364,8 @@ export async function createCleaningRecord(
   // Явное назначение исполнителя — только cleaning.manage; бэк должен принять
   // поле employee и разрешить создание записи менеджеру (см. тикет).
   if (payload.employeeId != null) formData.append("employee", String(payload.employeeId));
+  // Дата уборки задним числом — отправляем, только когда бэк её принимает.
+  if (CLEANING_BACKDATE_ENABLED && payload.date) formData.append("date", payload.date);
   // Ужимаем плотнее обычного: 15 снимков должны уместиться в 25 МБ на запрос.
   for (const photo of payload.photos) {
     formData.append(

@@ -15,7 +15,11 @@ import {
 import { InventoryOutlined as Inventory, EditOutlined, DeleteOutline } from "@mui/icons-material";
 import MedicalServicesOutlinedIcon from "@mui/icons-material/MedicalServicesOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import { useNotification } from "@refinedev/core";
 import { DjangoSale } from "../../../api/sales";
+import { getPatient, type DjangoPatient } from "../../../api/patients";
+import { useCan } from "../../../hooks/useCan";
+import DjangoEditPatientDrawer from "../../patients/DjangoEditPatientDrawer";
 import { formatKGS, formatDateRu } from "../../../utility/format";
 
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
@@ -29,6 +33,8 @@ interface DjangoSaleDetailsProps {
     onDelete?: (sale: DjangoSale) => void;
     canEdit?: boolean;
     canDelete?: boolean;
+    /** Карту покупателя поправили — обновить список продаж (ФИО и телефон в нём). */
+    onPatientUpdated?: () => void;
 }
 
 export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
@@ -37,9 +43,34 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
     onDelete,
     canEdit = true,
     canDelete = true,
+    onPatientUpdated,
 }) => {
     const { t } = useT("sales");
+    const { open: notify } = useNotification();
     const [confirmOpen, setConfirmOpen] = React.useState(false);
+    const canUpdatePatient = useCan("patients.update");
+
+    // Продажа отдаёт только id/ФИО/телефон покупателя, а форма правки шлёт
+    // дату рождения, пол и адрес явно — карту догружаем целиком, иначе PATCH
+    // обнулил бы недостающие поля.
+    const [editPatient, setEditPatient] = React.useState<DjangoPatient | null>(null);
+    const [editOpen, setEditOpen] = React.useState(false);
+    const [editLoading, setEditLoading] = React.useState(false);
+    const openEditPatient = React.useCallback(
+        async (patientId: number) => {
+            setEditLoading(true);
+            try {
+                const fresh = await getPatient(patientId);
+                setEditPatient(fresh);
+                setEditOpen(true);
+            } catch {
+                notify?.({ type: "error", message: t("details.editPatientFailed") });
+            } finally {
+                setEditLoading(false);
+            }
+        },
+        [notify, t],
+    );
 
     if (!sale) {
         return (
@@ -220,6 +251,17 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                         </Typography>
                                     )}
                                 </Box>
+                                {sale.patientId && canUpdatePatient && (
+                                    <Tooltip title={t("details.editPatient")}>
+                                        <IconButton
+                                            size="small"
+                                            disabled={editLoading}
+                                            onClick={() => void openEditPatient(sale.patientId!)}
+                                        >
+                                            <EditOutlined sx={{ fontSize: 18 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
                             </Paper>
                         </Box>
 
@@ -349,6 +391,17 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                 message={t("details.deleteDialogMessage")}
                 confirmText={t("details.deleteConfirm")}
                 variant="error"
+            />
+
+            <DjangoEditPatientDrawer
+                open={editOpen}
+                patient={editPatient}
+                onClose={() => setEditOpen(false)}
+                onUpdated={(p) => {
+                    setEditOpen(false);
+                    setEditPatient(p);
+                    onPatientUpdated?.();
+                }}
             />
         </>
     );

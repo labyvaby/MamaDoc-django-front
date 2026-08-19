@@ -2,6 +2,7 @@
   "page": {
     "title": "{{employee.nomPl, capitalize}}",
     "addButton": "Добавить {{employee.acc}}",
+    "searchPlaceholder": "Поиск по имени, телефону, специальности",
     "noAccess": "У вас нет прав на просмотр {{employee.genPl}}",
     "selectPrompt": "Выберите {{employee.acc}} для просмотра"
   },

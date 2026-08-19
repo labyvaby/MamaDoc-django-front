@@ -487,6 +487,7 @@ const DjangoSalesPage: React.FC = () => {
                                             onEdit={handleEditSale}
                                             canEdit={canManageSales}
                                             canDelete={canManageSales}
+                                            onPatientUpdated={refetchCurrent}
                                         />
                                     </Box>
                                 </Grid2>
@@ -525,6 +526,7 @@ const DjangoSalesPage: React.FC = () => {
                             }}
                             canEdit={canManageSales}
                             canDelete={canManageSales}
+                            onPatientUpdated={refetchCurrent}
                         />
                     </Box>
                 </AppBottomSheet>

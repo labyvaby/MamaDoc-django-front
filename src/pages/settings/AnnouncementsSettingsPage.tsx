@@ -54,6 +54,7 @@ import { getBranches, DjangoBranch } from "../../api/organization";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
+import { CustomDateTimePicker } from "../../components/ui";
 import dayjs from "dayjs";
 
 export const AnnouncementsSettingsPage: React.FC = () => {
@@ -552,14 +553,17 @@ export const AnnouncementsSettingsPage: React.FC = () => {
                 </FormControl>
               )}
 
-              <TextField
+              <CustomDateTimePicker
                 label="Дата и время окончания"
-                type="datetime-local"
-                value={expiresAt}
-                onChange={(e) => setExpiresAt(e.target.value)}
-                fullWidth
-                InputLabelProps={{ shrink: true }}
-                helperText="Оставьте пустым для бессрочного объявления"
+                value={expiresAt ? dayjs(expiresAt) : null}
+                onChange={(next) => setExpiresAt(next && next.isValid() ? next.format("YYYY-MM-DDTHH:mm") : "")}
+                shortYearMode="future"
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    helperText: "Оставьте пустым для бессрочного объявления",
+                  },
+                }}
               />
 
               <FormControlLabel

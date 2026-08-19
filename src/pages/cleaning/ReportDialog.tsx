@@ -19,13 +19,16 @@ import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
+import dayjs, { type Dayjs } from "dayjs";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { prepareImageForUpload, PHOTO_ACCEPT } from "../../utility/imageCompression";
+import { CustomDatePicker } from "../../components/ui";
 import {
+  CLEANING_BACKDATE_ENABLED,
   CLEANING_MAX_PHOTOS,
   CLEANING_PHOTO_MAX_SIZE_MB,
   CLEANING_PHOTO_TARGET_BYTES,
@@ -43,6 +46,11 @@ interface ReportDialogProps {
    * Только для cleaning.manage; без него запись создаётся на текущего юзера.
    */
   canAssign?: boolean;
+  /**
+   * Разрешить выбрать дату уборки (в т.ч. прошедшую — «забыли отметить вчера»).
+   * Только для cleaning.manage; уборщица всегда отмечает текущим днём.
+   */
+  canBackdate?: boolean;
   onClose: () => void;
   /** Успешная отправка — родитель инвалидирует списки. */
   onSuccess: () => void;
@@ -57,6 +65,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   open,
   activeTypes,
   canAssign = false,
+  canBackdate = false,
   onClose,
   onSuccess,
 }) => {
@@ -67,6 +76,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [typeId, setTypeId] = React.useState<number | "">("");
   const [employeeId, setEmployeeId] = React.useState<number | "">("");
+  const [date, setDate] = React.useState<Dayjs | null>(dayjs());
   const [photos, setPhotos] = React.useState<{ file: File; url: string }[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -78,6 +88,10 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
     enabled: open && canAssign,
   });
   const employees = employeesQuery.data ?? [];
+
+  // Дату уборки выбирает только админ (cleaning.manage) — уборщица отмечает
+  // уборку текущим днём. Поле скрыто, пока бэк не принимает дату (см. флаг).
+  const showDate = canBackdate && CLEANING_BACKDATE_ENABLED;
 
   // Единая точка освобождения blob-URL превью.
   const clearPhotos = React.useCallback(() => {
@@ -101,6 +115,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
     if (!open) return;
     setTypeId(activeTypes.length === 1 ? activeTypes[0].id : "");
     setEmployeeId("");
+    setDate(dayjs());
     clearPhotos();
     v.reset();
     setError(null);
@@ -196,6 +211,13 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   const v = useFormValidation({
     employeeId:
       !canAssign || employeeId !== "" ? null : "Выберите сотрудника",
+    date: !showDate
+      ? null
+      : !date?.isValid()
+        ? "Укажите дату уборки"
+        : date.isAfter(dayjs(), "day")
+          ? "Дата не может быть в будущем"
+          : null,
     typeId: typeId !== "" ? null : "Выберите тип уборки",
     photos: photos.length > 0 ? null : "Приложите хотя бы одно фото",
   });
@@ -210,6 +232,8 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
         typeId: typeId as number,
         photos: photos.map((p) => p.file),
         employeeId: canAssign && employeeId !== "" ? employeeId : undefined,
+        // Дату шлём только когда её реально выбирали (иначе бэк ставит «сейчас»).
+        date: showDate && date?.isValid() ? date.format("YYYY-MM-DD") : undefined,
         organizationId: orgId,
       });
       notify?.({
@@ -257,6 +281,25 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
                 </MenuItem>
               ))}
             </TextField>
+          )}
+          {showDate && (
+            <CustomDatePicker
+              label="Дата уборки"
+              value={date}
+              onChange={(v) => setDate(v as Dayjs | null)}
+              disabled={busy}
+              disableFuture
+              slotProps={{
+                textField: {
+                  size: "small",
+                  fullWidth: true,
+                  error: Boolean(v.errorOf("date")),
+                  helperText:
+                    v.errorOf("date") ?? "Можно отметить уборку задним числом",
+                  ref: v.anchor("date"),
+                },
+              }}
+            />
           )}
           <TextField
             select

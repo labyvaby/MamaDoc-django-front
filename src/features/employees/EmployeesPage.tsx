@@ -86,6 +86,7 @@ const EmployeesPage: React.FC = () => {
         addButtonText={t("page.addButton")}
         onAdd={handleAddClick}
         showSearch
+        searchPlaceholder={t("page.searchPlaceholder")}
         searchVal={state.q}
         onSearchChange={(v) => state.setQ(v)}
       />

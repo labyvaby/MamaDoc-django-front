@@ -1,15 +1,35 @@
 import React from "react";
-import { Alert, Box, Chip, CircularProgress, Collapse, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Chip,
+  CircularProgress,
+  Collapse,
+  Divider,
+  IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import KeyboardArrowLeftOutlined from "@mui/icons-material/KeyboardArrowLeftOutlined";
 import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOutlined";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { getSpecializations, type DjangoSpecialization } from "../../api/staff";
+import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import {
   getAvailability,
   getAvailabilitySummary,
@@ -65,6 +85,18 @@ function initials(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
   if (!p.length) return "?";
   return (p.length === 1 ? p[0].slice(0, 2) : p[0][0] + p[1][0]).toUpperCase();
+}
+
+/**
+ * «Аббасова Айгерим Аббасовна» → «Аббасова А. А.»: в мобильном пейджере полное
+ * ФИО не влезает между стрелками и обрывается многоточием, а фамилия с
+ * инициалами узнаётся с одного взгляда.
+ */
+function shortName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return name;
+  const initialsTail = parts.slice(1).map((w) => `${w[0].toUpperCase()}.`).join(" ");
+  return `${parts[0]} ${initialsTail}`;
 }
 
 /** Стабильный цвет аватара по имени (аналог stringToColor из оригинала). */
@@ -185,8 +217,10 @@ const DocRailList: React.FC<DocRailListProps> = ({ docs, selectedId, loading, on
                 bgcolor: isDocActive ? "primary.main" : "transparent",
                 color: isDocActive ? "primary.contrastText" : "text.primary",
                 transition: "all .13s ease",
-                "&:hover": {
-                  bgcolor: isDocActive ? "primary.main" : alpha(tokens.palette.primary.main, 0.08),
+                "@media (hover: hover)": {
+                  "&:hover": {
+                    bgcolor: isDocActive ? "primary.main" : alpha(tokens.palette.primary.main, 0.08),
+                  },
                 },
               })}
             >
@@ -295,9 +329,14 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
                   bgcolor: subtleBg(theme),
                   cursor: onOpenAppointment ? "pointer" : "default",
                   transition: "background-color .13s ease",
-                  "&:hover": onOpenAppointment
-                    ? { bgcolor: alpha(accent.main, theme.palette.mode === "dark" ? 0.16 : 0.09) }
-                    : undefined,
+                  "@media (hover: hover)": {
+                    "&:hover": onOpenAppointment
+                      ? { bgcolor: alpha(accent.main, theme.palette.mode === "dark" ? 0.16 : 0.09) }
+                      : {},
+                  },
+                  "&:active": onOpenAppointment
+                    ? { bgcolor: alpha(accent.main, theme.palette.mode === "dark" ? 0.22 : 0.13) }
+                    : {},
                 }}
               >
                 <Typography
@@ -380,7 +419,10 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
                   : "transparent",
               cursor: slot.free || busy ? "pointer" : "default",
               transition: "filter .13s ease",
-              "&:hover": slot.free ? { filter: "brightness(1.04)" } : undefined,
+              "@media (hover: hover)": {
+                "&:hover": slot.free ? { filter: "brightness(1.04)" } : {},
+              },
+              "&:active": slot.free || busy ? { filter: "brightness(1.09)" } : {},
             }}
           >
             <Typography
@@ -470,6 +512,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
   const [specId, setSpecId] = React.useState<number | null>(null);
   const [search, setSearch] = React.useState("");
+  // На телефоне поиск врача не висит в шапке постоянно (это 45px из ~380px,
+  // которые съедала обвязка), а разворачивается по тапу на лупу.
+  const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
+  // Drag-to-scroll мышью нужен только там, где есть мышь: на тач-экране он
+  // конкурирует с нативным свайпом и даёт «залипания».
+  const isFinePointer = useMediaQuery("(pointer: fine)");
   const [selDocId, setSelDocId] = React.useState<number | null>(null);
   const [selDay, setSelDay] = React.useState<string | null>(null);
   // Позволяет свернуть раскрытый список врачей под активной специальностью.
@@ -480,13 +528,40 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const stripDragStartXRef = React.useRef(0);
   const stripScrollStartRef = React.useRef(0);
   const stripDragMovedRef = React.useRef(false);
+  /** Пользователь сам ткнул в дату — автовыбор больше не вмешивается. */
+  const userPickedDayRef = React.useRef(false);
 
   // Перетаскивание мышкой для горизонтального скролла сетки врачей (drag-to-scroll)
   const matrixScrollRef = React.useRef<HTMLDivElement>(null);
+  // Какая колонка врача сейчас перед глазами: на телефоне колонка занимает всю
+  // ширину, поэтому индекс = позиция скролла / ширина контейнера. Нужен для
+  // подсветки активного аватара в мобильной полосе врачей.
+  const [activeDocIdx, setActiveDocIdx] = React.useState(0);
+  const [docMenuAnchor, setDocMenuAnchor] = React.useState<HTMLElement | null>(null);
+
+  const handleMatrixScroll = React.useCallback(() => {
+    const el = matrixScrollRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setActiveDocIdx(Math.round(el.scrollLeft / el.clientWidth));
+  }, []);
+
+  const scrollToDoc = React.useCallback((idx: number) => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: idx * el.clientWidth, behavior: "smooth" });
+    setActiveDocIdx(idx);
+  }, []);
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStartX, setDragStartX] = React.useState(0);
   const [dragScrollLeft, setDragScrollLeft] = React.useState(0);
   const isDragMovedRef = React.useRef(false);
+
+  // Смена дня, специальности или запроса пересобирает набор колонок —
+  // возвращаемся к первому врачу, иначе подсветка указывает не на того.
+  React.useEffect(() => {
+    setActiveDocIdx(0);
+    matrixScrollRef.current?.scrollTo({ left: 0 });
+  }, [selDay, specId, search]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
@@ -532,6 +607,19 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const handleStripMouseUpOrLeave = () => {
     setIsStripDragging(false);
   };
+
+  // Специализация врача для подписи в мобильном пейджере. Прав на справочник
+  // сотрудников может не быть (403) — тогда карта пустая и подпись деградирует
+  // до общего «Специалист», как было раньше.
+  const { employees: allEmployees } = useAllActiveEmployees();
+  const specLabelByEmployee = React.useMemo(() => {
+    const map = new Map<number, string>();
+    allEmployees.forEach((emp) => {
+      const names = emp.specializations.map((s) => s.name).filter(Boolean);
+      if (names.length) map.set(emp.id, names.join(", "));
+    });
+    return map;
+  }, [allEmployees]);
 
   // Справочник специализаций — левый рельс.
   const specsQuery = useQuery({
@@ -731,7 +819,18 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // тоже в ленте (для просмотра), но стартовать с них нельзя.
   React.useEffect(() => {
     if (!selectableDays.length) return;
-    if (selDay && selectableDays.some((day) => day.date === selDay)) return;
+    const known = selDay != null && selectableDays.some((day) => day.date === selDay);
+    // Чанки дат приходят вразнобой: если первым ответил прошлый чанк, автовыбор
+    // приземлялся на прошедший день и больше не пересматривался — вкладка
+    // открывалась на дне без окон, хотя сегодня их полсотни. Поэтому свой
+    // же прошлый выбор пересматриваем, когда подъехали будущие дни. Выбор
+    // пользователя (клик по плитке) при этом неприкосновенен.
+    const staleAutoPick =
+      !userPickedDayRef.current &&
+      selDay != null &&
+      selDay < todayIso &&
+      selectableDays.some((day) => day.date >= todayIso);
+    if (known && !staleAutoPick) return;
     const upcoming = selectableDays.filter((day) => day.date >= todayIso);
     const firstFree = upcoming.find((day) => day.freeCount > 0);
     setSelDay(
@@ -743,6 +842,21 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   }, [selectableDays, selDay, todayIso]);
 
   const selectedDay = selectableDays.find((day) => day.date === selDay) ?? null;
+
+  // Колонку врача показываем, если у него в этот день была смена ИЛИ есть
+  // приёмы: прошлые дни попадают в ленту по приёмам, и приём мог быть создан
+  // вне планового расписания.
+  const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
+  const activeDocsOnDay = React.useMemo(
+    () =>
+      gridDocs.filter(({ emp }) => {
+        const d = emp.days.find((x) => x.date === activeDayDate);
+        if (!d) return false;
+        if ((d.appointments?.length ?? 0) > 0) return true;
+        return d.scheduled && !d.dayOff;
+      }),
+    [gridDocs, activeDayDate],
+  );
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
   const selectedMonthLabel = `${MONTHS_NOMINATIVE[selectedMonth.month()]} ${selectedMonth.year()}`;
 
@@ -769,16 +883,38 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // только при смене выбранного дня, а не при каждой догрузке чанков —
   // иначе лента «прыгала» бы обратно к выбранному дню при подгрузке краёв.
   const centeredDayRef = React.useRef<string | null>(null);
+  // Смена фильтра пересобирает ленту (у другого специалиста другие смены),
+  // поэтому разрешаем центрировать активный день заново. Догрузка чанков ref
+  // не трогает — иначе лента прыгала бы обратно при подгрузке краёв.
+  React.useEffect(() => {
+    centeredDayRef.current = null;
+  }, [search, specId]);
+
   React.useEffect(() => {
     const strip = stripRef.current;
-    if (!strip || !selDay) return;
-    if (centeredDayRef.current === selDay) return;
-    const dayButton = strip.querySelector<HTMLElement>(`[data-slot-date="${selDay}"]`);
+    // Пока день не выбран вручную, активен сегодняшний — центрируем и его,
+    // иначе после фильтра лента показывала произвольный кусок расписания,
+    // а подсвеченного дня в видимой части не было (на телефоне туда влезает
+    // всего пять плиток, поэтому промах особенно заметен).
+    const targetDay = selDay ?? todayIso;
+    if (!strip) return;
+    if (centeredDayRef.current === targetDay) return;
+    const dayButton = strip.querySelector<HTMLElement>(`[data-slot-date="${targetDay}"]`);
     if (!dayButton) return;
-    centeredDayRef.current = selDay;
     const left = dayButton.offsetLeft - (strip.clientWidth - dayButton.clientWidth) / 2;
-    strip.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
-  }, [selDay, selectableDays]);
+    // Прокрутка мгновенная, а не smooth: пока шла анимация, догрузка соседнего
+    // чанка успевала компенсировать scrollLeft, анимация доезжала до старой
+    // цели, и лента вставала на произвольную дату вместо активной.
+    strip.scrollTo({ left: Math.max(0, left) });
+    // Метку ставим только когда день действительно оказался на экране: на
+    // первых рендерах лента ещё пуста, и одна неудачная попытка не должна
+    // отменять центрирование навсегда.
+    const stripBox = strip.getBoundingClientRect();
+    const dayBox = dayButton.getBoundingClientRect();
+    if (dayBox.left >= stripBox.left - 1 && dayBox.right <= stripBox.right + 1) {
+      centeredDayRef.current = targetDay;
+    }
+  }, [selDay, todayIso, selectableDays]);
 
   // ── Бесконечная лента: догрузка чанков при прокрутке к краям ──
   // При догрузке прошлого контент добавляется СЛЕВА — компенсируем scrollLeft,
@@ -826,194 +962,187 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   return (
     <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
       {/* ── Верхний навбар дат и кнопка переключения режимов ── */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        spacing={2}
-        sx={{ mb: 1, flexShrink: 0 }}
+      {/* На узких экранах (до md) шапка переносится в две строки: месяц и
+          переключатель режимов сверху, лента дат во всю ширину под ними —
+          иначе ленте оставалось несколько пикселей и она схлопывалась в
+          нечитаемый столбик. Порядок задаётся order + переносом по wrap. */}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          rowGap: 0.75,
+          columnGap: 1,
+          mb: 1,
+          flexShrink: 0,
+        }}
       >
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
-          <Typography variant="subtitle2" fontWeight={600} sx={{ flexShrink: 0, mr: 1, whiteSpace: "nowrap" }}>
-            {selectedMonthLabel}
+        <Typography
+          variant="subtitle2"
+          fontWeight={600}
+          sx={{ order: 0, flexShrink: 0, mr: { xs: 0, md: 1 }, whiteSpace: "nowrap" }}
+        >
+          {selectedMonthLabel}
+        </Typography>
+        {selectableDays.length === 0 ? (
+          <Typography variant="caption" color="text.secondary" sx={{ order: { xs: 3, md: 1 }, fontWeight: 500 }}>
+            {t("slots.noShifts")}
           </Typography>
-          {selectableDays.length === 0 ? (
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-              {t("slots.noShifts")}
-            </Typography>
-          ) : (
-            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
-              <Box
-                onClick={() => scrollStrip(-1)}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "8px",
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  color: "text.secondary",
+        ) : (
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.5}
+            sx={{
+              order: { xs: 3, md: 1 },
+              minWidth: 0,
+              flex: { xs: "1 0 100%", md: 1 },
+              width: { xs: "100%", md: "auto" },
+            }}
+          >
+            <Box
+              onClick={() => scrollStrip(-1)}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "8px",
+                flexShrink: 0,
+                display: { xs: "none", md: "flex" },
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                color: "text.secondary",
+                "@media (hover: hover)": {
                   "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
-                }}
-              >
-                <KeyboardArrowLeftOutlined sx={{ fontSize: 18 }} />
-              </Box>
-              <Stack
-                ref={stripRef}
-                direction="row"
-                spacing={0.75}
-                onMouseDown={handleStripMouseDown}
-                onMouseMove={handleStripMouseMove}
-                onMouseUp={handleStripMouseUpOrLeave}
-                onMouseLeave={handleStripMouseUpOrLeave}
-                onScroll={maybeExtendStrip}
-                sx={{
-                  overflowX: "auto",
-                  py: 0.25,
-                  px: 0.5,
-                  flex: 1,
-                  cursor: isStripDragging ? "grabbing" : "grab",
-                  userSelect: isStripDragging ? "none" : "auto",
-                  "&::-webkit-scrollbar": { height: 4 },
-                }}
-              >
-                {pastEdgeLoading && (
-                  <Stack alignItems="center" justifyContent="center" sx={{ flex: "0 0 auto", px: 1 }}>
-                    <CircularProgress size={14} />
-                  </Stack>
-                )}
-                {selectableDays.map((d) => {
-                  const dj = dayjs(d.date);
-                  const active = d.date === selDay;
-                  const isToday = d.date === todayIso;
-                  return (
-                    <Box
-                      key={d.date}
-                      data-slot-date={d.date}
-                      onClick={() => {
-                        if (stripDragMovedRef.current) return;
-                        setSelDay(d.date);
-                      }}
-                      sx={{
-                        flex: "0 0 auto",
-                        minWidth: 60,
-                        textAlign: "center",
-                        borderRadius: "9px",
-                        border: "1px solid",
-                        borderColor: active ? "primary.main" : "divider",
-                        bgcolor: active
-                          ? alpha(theme.palette.primary.main, 0.1)
-                          : "background.paper",
-                        px: 0.75,
-                        py: 0.5,
-                        cursor: "pointer",
-                        transition: "border-color .13s ease, background-color .13s ease",
+                },
+              }}
+            >
+              <KeyboardArrowLeftOutlined sx={{ fontSize: 18 }} />
+            </Box>
+            <Stack
+              ref={stripRef}
+              direction="row"
+              spacing={0.75}
+              onMouseDown={isFinePointer ? handleStripMouseDown : undefined}
+              onMouseMove={isFinePointer ? handleStripMouseMove : undefined}
+              onMouseUp={isFinePointer ? handleStripMouseUpOrLeave : undefined}
+              onMouseLeave={isFinePointer ? handleStripMouseUpOrLeave : undefined}
+              onScroll={maybeExtendStrip}
+              sx={{
+                overflowX: "auto",
+                touchAction: "pan-x",
+                py: 0.25,
+                px: 0.5,
+                flex: 1,
+                cursor: isFinePointer ? (isStripDragging ? "grabbing" : "grab") : "default",
+                userSelect: isStripDragging ? "none" : "auto",
+                "&::-webkit-scrollbar": { height: 4 },
+              }}
+            >
+              {pastEdgeLoading && (
+                <Stack alignItems="center" justifyContent="center" sx={{ flex: "0 0 auto", px: 1 }}>
+                  <CircularProgress size={14} />
+                </Stack>
+              )}
+              {selectableDays.map((d) => {
+                const dj = dayjs(d.date);
+                const active = d.date === selDay;
+                const isToday = d.date === todayIso;
+                return (
+                  <Box
+                    key={d.date}
+                    data-slot-date={d.date}
+                    onClick={() => {
+                      if (stripDragMovedRef.current) return;
+                      userPickedDayRef.current = true;
+                      setSelDay(d.date);
+                    }}
+                    sx={{
+                      flex: "0 0 auto",
+                      minWidth: 60,
+                      textAlign: "center",
+                      borderRadius: "9px",
+                      border: "1px solid",
+                      borderColor: active ? "primary.main" : "divider",
+                      bgcolor: active
+                        ? alpha(theme.palette.primary.main, 0.1)
+                        : "background.paper",
+                      px: 0.75,
+                      py: 0.5,
+                      cursor: "pointer",
+                      transition: "border-color .13s ease, background-color .13s ease",
+                      "@media (hover: hover)": {
                         "&:hover": { borderColor: active ? "primary.main" : alpha(theme.palette.primary.main, 0.28) },
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.625rem" }}>
-                        {WEEKDAY_SHORT[mondayIndex(dj)]}
-                      </Typography>
-                      <Typography
-                        variant="subtitle2"
-                        fontWeight={600}
-                        sx={{ fontSize: "0.775rem", color: isToday ? "primary.onSurface" : "text.primary", whiteSpace: "nowrap" }}
-                      >
-                        {dj.date()} {MONTHS_SHORT[dj.month()]}
-                      </Typography>
-                      <Typography
-                        variant="caption"
+                      },
+                      "&:active": {
+                        borderColor: "primary.main",
+                        bgcolor: alpha(theme.palette.primary.main, 0.16),
+                      },
+                    }}
+                  >
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.625rem" }}>
+                      {WEEKDAY_SHORT[mondayIndex(dj)]}
+                      <Box
+                        component="span"
                         sx={{
-                          display: "block",
-                          fontSize: "0.625rem",
+                          display: { xs: "inline", md: "none" },
                           color: d.freeCount > 0 ? "success.main" : "text.disabled",
                           fontWeight: d.freeCount > 0 ? 600 : 400,
                         }}
                       >
+                        {" · "}
                         {d.freeCount > 0 ? String(d.freeCount) : t("slots.none")}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-                {futureEdgeLoading && (
-                  <Stack alignItems="center" justifyContent="center" sx={{ flex: "0 0 auto", px: 1 }}>
-                    <CircularProgress size={14} />
-                  </Stack>
-                )}
-              </Stack>
-              <Box
-                onClick={() => scrollStrip(1)}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "8px",
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  color: "text.secondary",
-                  "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
-                }}
-              >
-                <KeyboardArrowRightOutlined sx={{ fontSize: 18 }} />
-              </Box>
+                      </Box>
+                    </Typography>
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight={600}
+                      sx={{ fontSize: "0.775rem", color: isToday ? "primary.onSurface" : "text.primary", whiteSpace: "nowrap" }}
+                    >
+                      {dj.date()} {MONTHS_SHORT[dj.month()]}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        display: { xs: "none", md: "block" },
+                        fontSize: "0.625rem",
+                        color: d.freeCount > 0 ? "success.main" : "text.disabled",
+                        fontWeight: d.freeCount > 0 ? 600 : 400,
+                      }}
+                    >
+                      {d.freeCount > 0 ? String(d.freeCount) : t("slots.none")}
+                    </Typography>
+                  </Box>
+                );
+              })}
+              {futureEdgeLoading && (
+                <Stack alignItems="center" justifyContent="center" sx={{ flex: "0 0 auto", px: 1 }}>
+                  <CircularProgress size={14} />
+                </Stack>
+              )}
             </Stack>
-          )}
-        </Stack>
-        {headerActions}
-      </Stack>
-
-      {/* ── Мобильный селектор специальностей: на узких экранах вертикальный
-          рельс съедал весь экран, поэтому там он заменён горизонтальной
-          лентой чипов (врачи и так есть в сетке ниже). ── */}
-      <Box
-        sx={{
-          display: { xs: "flex", md: "none" },
-          gap: 0.75,
-          overflowX: "auto",
-          flexShrink: 0,
-          pb: 0.75,
-          "&::-webkit-scrollbar": { display: "none" },
-        }}
-      >
-        <Chip
-          size="small"
-          label={
-            summaryQuery.data
-              ? `${t("slots.allSpecialists")} · ${summaryQuery.data.overallFreeEmployeeCount}/${summaryQuery.data.overallEmployeeCount}`
-              : t("slots.allSpecialists")
-          }
-          color={specId === null ? "primary" : "default"}
-          variant={specId === null ? "filled" : "outlined"}
-          onClick={() => {
-            setSpecId(null);
-            setSelDocId(null);
-            setSelDay(null);
-          }}
-          sx={{ flexShrink: 0 }}
-        />
-        {specs.map((s) => {
-          const badge = badgeBySpec.get(s.id);
-          const active = specId === s.id;
-          return (
-            <Chip
-              key={s.id}
-              size="small"
-              label={badge ? `${s.name} · ${badge.free}/${badge.total}` : s.name}
-              color={active ? "primary" : "default"}
-              variant={active ? "filled" : "outlined"}
-              onClick={() => {
-                setSpecId(active ? null : s.id);
-                setSelDocId(null);
-                setSelDay(null);
+            <Box
+              onClick={() => scrollStrip(1)}
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "8px",
+                flexShrink: 0,
+                display: { xs: "none", md: "flex" },
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                color: "text.secondary",
+                "@media (hover: hover)": {
+                  "&:hover": { bgcolor: subtleBg(theme, true), color: "text.primary" },
+                },
               }}
-              sx={{ flexShrink: 0 }}
-            />
-          );
-        })}
+            >
+              <KeyboardArrowRightOutlined sx={{ fontSize: 18 }} />
+            </Box>
+          </Stack>
+        )}
+        <Box sx={{ order: 2, ml: "auto", flexShrink: 0 }}>{headerActions}</Box>
       </Box>
 
       <Box
@@ -1026,7 +1155,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
           gridAutoRows: { xs: "minmax(0, 1fr)", md: "100%" },
         }}
       >
-        {/* ── Рельс специальностей (на xs заменён чипами выше) ── */}
+        {/* ── Рельс специальностей: только десктоп. На телефоне фильтра по
+            специальностям нет вовсе — он занимал целый ряд ради того, что и так
+            подписано у врача в пейджере ниже. ── */}
         <Box
           sx={{
             border: "1px solid",
@@ -1084,7 +1215,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         borderColor: active ? "primary.main" : "transparent",
                         bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
                         transition: "background-color .13s ease",
-                        "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                        "@media (hover: hover)": {
+                          "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                        },
                       }}
                     >
                       <Typography
@@ -1180,7 +1313,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           borderColor: active ? "primary.main" : "transparent",
                           bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
                           transition: "background-color .13s ease",
-                          "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                          "@media (hover: hover)": {
+                            "&:hover": { bgcolor: active ? undefined : subtleBg(theme) },
+                          },
                         }}
                       >
                         <Typography
@@ -1260,11 +1395,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
           }}
         >
           <Stack
-            direction={{ xs: "column", sm: "row" }}
-            alignItems={{ xs: "stretch", sm: "center" }}
-            spacing={{ xs: 1, sm: 2 }}
+            direction="row"
+            alignItems="center"
+            spacing={2}
             sx={{
-              px: { xs: 1.25, sm: 2 },
+              display: { xs: "none", md: "flex" },
+              px: 2,
               py: 1.25,
               borderBottom: "1px solid",
               borderColor: "divider",
@@ -1277,14 +1413,14 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("slots.searchSpecialist")}
-              sx={{ width: { xs: "100%", sm: 260 } }}
+              sx={{ width: 260 }}
               InputProps={{
                 startAdornment: (
                   <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
                 ),
               }}
             />
-            <Box sx={{ display: { xs: "none", sm: "block" } }}>
+            <Box>
               <Typography variant="subtitle1" fontWeight={600}>
                 {t("slots.grid")}{" "}
                 {specId
@@ -1296,6 +1432,256 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               </Typography>
             </Box>
           </Stack>
+
+          {/* ── Мобильная шапка панели: поиск врача и пейджер по врачам дня.
+              Заменяет собой и ряд чипов специальностей, и десктопную шапку. ── */}
+          <Box
+            sx={{
+              display: { xs: "flex", md: "none" },
+              alignItems: "center",
+              gap: 0.5,
+              px: 0.5,
+              py: 0.75,
+              flexShrink: 0,
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
+            {mobileSearchOpen ? (
+              <TextField
+                size="small"
+                autoFocus
+                fullWidth
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("slots.searchSpecialist")}
+                InputProps={{
+                  startAdornment: (
+                    <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
+                  ),
+                  endAdornment: (
+                    <IconButton
+                      size="small"
+                      aria-label={t("slots.searchClose")}
+                      onClick={() => {
+                        setSearch("");
+                        setMobileSearchOpen(false);
+                      }}
+                    >
+                      <CloseOutlined sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  ),
+                }}
+              />
+            ) : (
+              <>
+                {activeDocsOnDay.length === 0 ? (
+                  <>
+                    <IconButton
+                      size="small"
+                      aria-label={t("slots.searchSpecialist")}
+                      onClick={() => setMobileSearchOpen(true)}
+                      sx={{
+                        flexShrink: 0,
+                        border: "1px solid",
+                        borderColor: search ? "primary.main" : "divider",
+                        borderRadius: "8px",
+                        color: search ? "primary.main" : "text.secondary",
+                      }}
+                    >
+                      <SearchOutlined sx={{ fontSize: 18 }} />
+                    </IconButton>
+                    <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
+                      {t("slots.foundSpecialists", { count: gridDocs.length })}
+                    </Typography>
+                  </>
+                ) : (() => {
+                  // Пейджер врача: кто сейчас перед глазами, его специализация,
+                  // сколько у него свободных окон и позиция в списке дня.
+                  // Тап по имени открывает выбор из всех врачей дня.
+                  const current = activeDocsOnDay[Math.min(activeDocIdx, activeDocsOnDay.length - 1)];
+                  const currentDay = current.emp.days.find((x) => x.date === activeDayDate);
+                  const currentFree = currentDay?.freeCount ?? 0;
+                  const many = activeDocsOnDay.length > 1;
+                  const specLabel =
+                    specLabelByEmployee.get(current.emp.employeeId) ?? t("slots.specialist");
+                  return (
+                    <>
+                      {many && (
+                        <IconButton
+                          size="small"
+                          aria-label={t("slots.pagerPrev")}
+                          disabled={activeDocIdx <= 0}
+                          onClick={() => scrollToDoc(activeDocIdx - 1)}
+                        >
+                          <KeyboardArrowLeftOutlined sx={{ fontSize: 20 }} />
+                        </IconButton>
+                      )}
+
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        spacing={1}
+                        onClick={(e) => setDocMenuAnchor(e.currentTarget)}
+                        aria-label={t("slots.chooseSpecialist")}
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          px: 0.75,
+                          py: 0.5,
+                          borderRadius: "10px",
+                          cursor: "pointer",
+                          "&:active": { bgcolor: subtleBg(theme) },
+                          "@media (hover: hover)": {
+                            "&:hover": { bgcolor: subtleBg(theme) },
+                          },
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: "9px",
+                            flexShrink: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#fff",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            bgcolor: avatarColor(current.emp.fullName),
+                          }}
+                        >
+                          {initials(current.emp.fullName)}
+                        </Box>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap sx={{ lineHeight: 1.25 }}>
+                            {shortName(current.emp.fullName)}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            sx={{ display: "block", fontSize: "0.6875rem", color: "text.secondary" }}
+                          >
+                            {specLabel}
+                            {" · "}
+                            <Box
+                              component="span"
+                              sx={{
+                                color: currentFree > 0 ? "success.main" : "text.disabled",
+                                fontWeight: currentFree > 0 ? 600 : 400,
+                              }}
+                            >
+                              {currentFree > 0
+                                ? t("slots.freeSlotsCountShort", { count: currentFree })
+                                : t("slots.noSlotsShort")}
+                            </Box>
+                          </Typography>
+                        </Box>
+                        {many ? (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
+                          >
+                            {activeDocIdx + 1}/{activeDocsOnDay.length}
+                          </Typography>
+                        ) : (
+                          <ExpandMoreOutlined sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
+                        )}
+                      </Stack>
+
+                      {many && (
+                        <IconButton
+                          size="small"
+                          aria-label={t("slots.pagerNext")}
+                          disabled={activeDocIdx >= activeDocsOnDay.length - 1}
+                          onClick={() => scrollToDoc(activeDocIdx + 1)}
+                        >
+                          <KeyboardArrowRightOutlined sx={{ fontSize: 20 }} />
+                        </IconButton>
+                      )}
+
+                      <Menu
+                        anchorEl={docMenuAnchor}
+                        open={Boolean(docMenuAnchor)}
+                        onClose={() => setDocMenuAnchor(null)}
+                        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                        transformOrigin={{ vertical: "top", horizontal: "center" }}
+                        slotProps={{ paper: { sx: { maxHeight: 360, minWidth: 268, borderRadius: "12px" } } }}
+                      >
+                        <MenuItem
+                          onClick={() => {
+                            setDocMenuAnchor(null);
+                            setMobileSearchOpen(true);
+                          }}
+                          sx={{ gap: 1.25, py: 1 }}
+                        >
+                          <SearchOutlined sx={{ fontSize: 20, color: "text.secondary" }} />
+                          <ListItemText
+                            primary={t("slots.searchSpecialist")}
+                            primaryTypographyProps={{ variant: "body2" }}
+                          />
+                        </MenuItem>
+                        <Divider sx={{ my: 0.5 }} />
+                        {activeDocsOnDay.map(({ emp }, idx) => {
+                          const day = emp.days.find((x) => x.date === activeDayDate);
+                          const free = day?.freeCount ?? 0;
+                          const selected = idx === activeDocIdx;
+                          const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
+                          return (
+                            <MenuItem
+                              key={emp.employeeId}
+                              selected={selected}
+                              onClick={() => {
+                                scrollToDoc(idx);
+                                setDocMenuAnchor(null);
+                              }}
+                              sx={{ gap: 1.25, py: 1 }}
+                            >
+                              <Box
+                                sx={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: "8px",
+                                  flexShrink: 0,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "#fff",
+                                  fontSize: "0.6875rem",
+                                  fontWeight: 600,
+                                  bgcolor: avatarColor(emp.fullName),
+                                }}
+                              >
+                                {initials(emp.fullName)}
+                              </Box>
+                              <ListItemText
+                                primary={emp.fullName}
+                                secondary={
+                                  free > 0
+                                    ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
+                                    : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
+                                }
+                                primaryTypographyProps={{ variant: "body2", fontWeight: 600, noWrap: true }}
+                                secondaryTypographyProps={{
+                                  variant: "caption",
+                                  sx: { color: free > 0 ? "success.main" : "text.disabled" },
+                                }}
+                              />
+                              {selected && (
+                                <CheckOutlined sx={{ fontSize: 16, color: "primary.main", flexShrink: 0 }} />
+                              )}
+                            </MenuItem>
+                          );
+                        })}
+                      </Menu>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </Box>
 
           {(() => {
             const isMatrixLoading = (isAvailLoading || summaryQuery.isLoading) && !hasAnyData;
@@ -1310,17 +1696,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 </Stack>
               );
             }
-
-            const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
-            // Колонку врача показываем, если у него в этот день была смена
-            // ИЛИ есть приёмы: прошлые дни попадают в ленту по приёмам, и
-            // приём мог быть создан вне планового расписания.
-            const activeDocsOnDay = gridDocs.filter(({ emp }) => {
-              const d = emp.days.find((x) => x.date === activeDayDate);
-              if (!d) return false;
-              if ((d.appointments?.length ?? 0) > 0) return true;
-              return d.scheduled && !d.dayOff;
-            });
 
             if (docs.length === 0) {
               return (
@@ -1349,17 +1724,20 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
             return (
               <Box
                 ref={matrixScrollRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUpOrLeave}
-                onMouseLeave={handleMouseUpOrLeave}
+                onScroll={handleMatrixScroll}
+                onMouseDown={isFinePointer ? handleMouseDown : undefined}
+                onMouseMove={isFinePointer ? handleMouseMove : undefined}
+                onMouseUp={isFinePointer ? handleMouseUpOrLeave : undefined}
+                onMouseLeave={isFinePointer ? handleMouseUpOrLeave : undefined}
                 sx={{
                   flex: 1,
                   minHeight: 0,
                   display: "flex",
                   flexDirection: "row",
                   overflowX: "auto",
-                  cursor: isDragging ? "grabbing" : "grab",
+                  scrollSnapType: { xs: "x proximity", md: "none" },
+                  WebkitOverflowScrolling: "touch",
+                  cursor: isFinePointer ? (isDragging ? "grabbing" : "grab") : "default",
                   userSelect: isDragging ? "none" : "auto",
                   "&::-webkit-scrollbar": { height: 6 },
                 }}
@@ -1374,9 +1752,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       sx={{
                         // Сетка не растягивает карточки по числу врачей:
                         // на десктопе — по трети панели; на телефоне колонка
-                        // почти во всю ширину и листается свайпом.
-                        flex: { xs: "0 0 78%", sm: "0 0 48%", md: "0 0 33.3333%" },
+                        // занимает экран целиком и листается свайпом (ориентир —
+                        // полоса аватаров над сеткой).
+                        flex: { xs: "0 0 100%", md: "0 0 33.3333%" },
                         minWidth: 175,
+                        scrollSnapAlign: { xs: "start", md: "none" },
                         height: "100%",
                         display: "flex",
                         flexDirection: "column",
@@ -1395,6 +1775,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         justifyContent="space-between"
                         spacing={1}
                         sx={(tokens) => ({
+                          display: {
+                            xs: activeDocsOnDay.length > 1 ? "none" : "flex",
+                            md: "flex",
+                          },
                           px: 1.25,
                           py: 1,
                           borderBottom: "1px solid",

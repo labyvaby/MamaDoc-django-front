@@ -605,6 +605,7 @@ const CleaningPage: React.FC = () => {
         open={reportOpen}
         activeTypes={activeTypes}
         canAssign={canManage}
+        canBackdate={canManage}
         onClose={() => setReportOpen(false)}
         onSuccess={invalidate}
       />

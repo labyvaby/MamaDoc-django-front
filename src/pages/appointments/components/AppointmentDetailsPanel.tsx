@@ -37,7 +37,9 @@ import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
-import { useQuery } from "@tanstack/react-query";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import { useNotification } from "@refinedev/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -57,6 +59,9 @@ import {
 import ServiceEmployeeGroups, {
   type ServiceEmployeeGroup,
 } from "../../../components/appointments/ServiceEmployeeGroups";
+import InvoiceFormatDialog from "../../../components/appointments/InvoiceFormatDialog";
+import type { InvoicePageSize } from "../../../components/appointments/appointmentInvoice";
+import { useAppointmentReceipt } from "../../../components/appointments/useAppointmentReceipt";
 import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
@@ -66,6 +71,7 @@ import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
+import DjangoEditPatientDrawer from "../../../components/patients/DjangoEditPatientDrawer";
 import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
 import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
@@ -172,6 +178,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const canOverridePrice = useCan("appointments.price_override");
   // Клик по товару открывает карточку из справочника — только при праве на него.
   const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
+  // Правка карты пациента из приёма требует того же права, что и список пациентов.
+  const canUpdatePatient = useCan("patients.update");
 
   // Кто создал/изменил приём: бэк отдаёт только auth-user id, имя — из
   // справочника сотрудников (authUserId → ФИО).
@@ -191,6 +199,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   // Quick-view drawers (краткая информация по клику: пациент / врач / услуга / товар)
   const [patientDrawerOpen, setPatientDrawerOpen] = React.useState(false);
+  const [editPatientOpen, setEditPatientOpen] = React.useState(false);
   const [doctorDrawerOpen, setDoctorDrawerOpen] = React.useState(false);
   const [selectedDoctorId, setSelectedDoctorId] = React.useState<number | null>(null);
   const [selectedDoctorName, setSelectedDoctorName] = React.useState<string | null>(null);
@@ -224,6 +233,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   });
   const patientCard = patientCardQuery.data;
   const patientAge = formatPatientAge(patientCard?.birthDate);
+
+  /**
+   * После правки карты обновляем и её кэш, и приёмы: ФИО с телефоном приходят
+   * внутри объекта приёма, иначе в карточке останутся старые значения.
+   */
+  const queryClient = useQueryClient();
+  const handlePatientUpdated = React.useCallback(() => {
+    setEditPatientOpen(false);
+    if (appt.patient?.id != null) {
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.patients.detail(appt.patient.id),
+      });
+    }
+    queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+  }, [appt.patient?.id, queryClient]);
 
   // Прогноз календаря пациента: положенные (planned/overdue) дозы — чтобы ввести
   // прививку в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
@@ -322,6 +346,24 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // а не на статус приёма: бэк оставляет его scheduled/confirmed и после оплаты.
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
+
+  // ── чек по оплаченному приёму ─────────────────────────────────────────────
+  // Раньше чек печатали только из дровера оплаты и из заключения; кассе он
+  // нужен сразу из карточки, без повторного открытия оплаты.
+  const { open: notify } = useNotification();
+  const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
+  const [receiptFormatOpen, setReceiptFormatOpen] = React.useState(false);
+  const handlePrintReceipt = async (pageSize: InvoicePageSize) => {
+    setReceiptFormatOpen(false);
+    try {
+      const result = await printReceipt(appt.id, pageSize);
+      if (result === "blocked") {
+        notify?.({ type: "error", message: t("invoice.popupBlocked") });
+      }
+    } catch {
+      notify?.({ type: "error", message: t("details.receiptError") });
+    }
+  };
 
   const cashPaid = pay?.payments?.reduce((s, p) => p.method === "cash" ? s + Number(p.amount) : s, 0) ?? 0;
   const cardPaid = pay?.payments?.reduce((s, p) => p.method === "card" ? s + Number(p.amount) : s, 0) ?? 0;
@@ -535,6 +577,18 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           >
             {hasPaid ? t("details.editPayment") : t("details.acceptPayment")}
           </Button>
+          {isPaymentAccepted && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ReceiptLongOutlined />}
+              onClick={() => setReceiptFormatOpen(true)}
+              disabled={receiptPending}
+              sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
+            >
+              {t("details.receipt")}
+            </Button>
+          )}
         </Stack>
       ) : undefined;
 
@@ -923,6 +977,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               blacklistReason={patientCard?.blacklistReason}
               adminComment={appt.adminComment}
               onOpenPatient={appt.patient ? () => setPatientDrawerOpen(true) : undefined}
+              onEditPatient={
+                appt.patient && canUpdatePatient ? () => setEditPatientOpen(true) : undefined
+              }
+              editPatientDisabled={!patientCard}
             />
 
             {/* Когда приём, относительный день, статусы и отзыв. */}
@@ -1174,6 +1232,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         onClose={() => setPatientDrawerOpen(false)}
         patientId={appt.patient?.id ?? null}
       />
+      <DjangoEditPatientDrawer
+        open={editPatientOpen}
+        patient={patientCard ?? null}
+        onClose={() => setEditPatientOpen(false)}
+        onUpdated={handlePatientUpdated}
+      />
       <ServiceQuickViewDrawer
         open={serviceDrawerOpen}
         onClose={() => {
@@ -1200,6 +1264,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         doctorId={selectedDoctorId}
         fallbackName={selectedDoctorName}
         fallbackPhotoUrl={selectedDoctorPhotoUrl}
+      />
+
+      <InvoiceFormatDialog
+        open={receiptFormatOpen}
+        onCancel={() => setReceiptFormatOpen(false)}
+        onConfirm={handlePrintReceipt}
       />
 
       <AppointmentPriceOverrideDialog

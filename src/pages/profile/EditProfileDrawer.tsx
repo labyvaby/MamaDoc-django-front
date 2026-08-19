@@ -18,6 +18,8 @@ import {
 } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import { capitalizeFullName } from "../../utility/name";
+import { CustomDatePicker } from "../../components/ui";
+import dayjs from "dayjs";
 
 function extractErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
@@ -215,15 +217,18 @@ const EditProfileDrawer: React.FC<Props> = ({
               disabled={busy}
               placeholder="username"
             />
-            <TextField
+            <CustomDatePicker
               label="Дата рождения"
-              type="date"
-              value={values.birthDate}
-              onChange={set("birthDate")}
-              fullWidth
-              size="small"
+              value={values.birthDate ? dayjs(values.birthDate) : null}
+              onChange={(next) =>
+                setValues((v) => ({
+                  ...v,
+                  birthDate: next && next.isValid() ? next.format("YYYY-MM-DD") : "",
+                }))
+              }
               disabled={busy}
-              InputLabelProps={{ shrink: true }}
+              disableFuture
+              slotProps={{ textField: { fullWidth: true, size: "small" } }}
             />
 
             <TextField

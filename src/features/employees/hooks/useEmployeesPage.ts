@@ -1,8 +1,13 @@
 import React from "react";
 import type { EmployesRow } from "../types";
-import { getDjangoEmployees, getDjangoEmployee } from "../../../api/staff";
+import {
+  getDjangoEmployees,
+  getDjangoEmployee,
+  getAllDjangoEmployees,
+} from "../../../api/staff";
 import { mapDjangoListItemToRow, mapDjangoFullToRow } from "../viewModel";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { matchesEmployeeQuery } from "../search";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -60,9 +65,18 @@ export function useEmployeesPageState() {
   const [loading, setLoading] = React.useState(true);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  // Search state (debounced for server-side search in Django mode)
+  // Поиск: ввод дебаунсится, но фильтрация локальная — бэк ищет только по
+  // ФИО/телефону и не видит специализации (см. ../search.ts).
   const [q, setQ] = React.useState("");
-  const qDebounced = useDebounced(q, 400);
+  const qDebounced = useDebounced(q, 300);
+  const query = qDebounced.trim();
+  const searching = query.length > 0;
+
+  // Полный справочник сотрудников — источник для поиска. Грузится один раз на
+  // контекст (орг/филиал), при первом же непустом запросе.
+  const [directory, setDirectory] = React.useState<EmployesRow[] | null>(null);
+  const [directoryLoading, setDirectoryLoading] = React.useState(false);
+  const directoryKeyRef = React.useRef<string | null>(null);
 
   const [addOpen, setAddOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState<null | EmployesRow>(null);
@@ -101,7 +115,6 @@ export function useEmployeesPageState() {
       {
         const result = await getDjangoEmployees(
           {
-            search: qDebounced.trim() || undefined,
             branchId: branchId ?? undefined,
             page,
             pageSize: 50,
@@ -137,7 +150,7 @@ export function useEmployeesPageState() {
         setLoadingMore(false);
       }
     }
-  }, [contextKey, qDebounced, branchId, orgId]);
+  }, [contextKey, branchId, orgId]);
 
   // Re-fetch when context (org/branch) changes — clear stale data first
   React.useEffect(() => {
@@ -149,6 +162,9 @@ export function useEmployeesPageState() {
       setDeleteOpen(null);
       setQ("");
       setCurrentPage(1);
+      setDirectory(null);
+      setDirectoryLoading(false);
+      directoryKeyRef.current = null;
     }
   }, [contextKey]);
 
@@ -167,9 +183,10 @@ export function useEmployeesPageState() {
       .then((fullEmp) => {
         if (!active) return;
         const fullRow = mapDjangoFullToRow(fullEmp, detailsOpen);
-        setAllItems((prev) =>
-          prev.map((item) => (item.id === fullRow.id ? fullRow : item))
-        );
+        const replaceRow = (rows: EmployesRow[]) =>
+          rows.map((item) => (item.id === fullRow.id ? fullRow : item));
+        setAllItems(replaceRow);
+        setDirectory((prev) => (prev === null ? prev : replaceRow(prev)));
         setDetailsOpen(fullRow);
       })
       .catch((err) => {
@@ -195,7 +212,42 @@ export function useEmployeesPageState() {
     return () => {
       abortCtrlRef.current?.abort();
     };
-  }, [contextKey, qDebounced, fetchEmployees, membershipId]);
+  }, [contextKey, fetchEmployees, membershipId]);
+
+  // Догрузка полного справочника при первом поиске. Постранично внутри
+  // getAllDjangoEmployees (потолок бэка — 200 на страницу), иначе поиск молча
+  // видел бы только первую страницу списка.
+  React.useEffect(() => {
+    if (!searching || !membershipId) return;
+    if (directoryKeyRef.current === contextKey) return;
+
+    let active = true;
+    const ctrl = new AbortController();
+    setDirectoryLoading(true);
+    getAllDjangoEmployees(
+      { branchId: branchId ?? undefined, organizationId: orgId ?? undefined },
+      ctrl.signal,
+    )
+      .then((rows) => {
+        if (!active || ctrl.signal.aborted) return;
+        if (contextKey !== currentContextKeyRef.current) return;
+        directoryKeyRef.current = contextKey;
+        setDirectory(rows.map(mapDjangoListItemToRow));
+      })
+      .catch((e: unknown) => {
+        if (!active || (e as Error)?.name === "AbortError" || ctrl.signal.aborted) return;
+        console.error("Fetch employees directory error:", getErrorMessage(e));
+        setErrorMsg("Не удалось загрузить сотрудников");
+      })
+      .finally(() => {
+        if (active) setDirectoryLoading(false);
+      });
+
+    return () => {
+      active = false;
+      ctrl.abort();
+    };
+  }, [searching, contextKey, membershipId, branchId, orgId]);
 
   const loadMore = React.useCallback(() => {
     if (hasMore && !loadingMore && !loading) {
@@ -203,16 +255,22 @@ export function useEmployeesPageState() {
     }
   }, [hasMore, loadingMore, loading, currentPage, fetchEmployees]);
 
-  // Search is applied by the API.
+  // Пока полный справочник не пришёл — фильтруем уже загруженную страницу,
+  // чтобы поиск отвечал сразу, а не после полной догрузки.
   const filtered = React.useMemo(() => {
-    return allItems;
-  }, [allItems]);
+    if (!searching) return allItems;
+    const source = directory ?? allItems;
+    return source.filter((emp) => matchesEmployeeQuery(emp, query));
+  }, [searching, query, directory, allItems]);
 
   const publicSetItems = React.useCallback(
     (updater: EmployesRow[] | ((prev: EmployesRow[]) => EmployesRow[])) => {
-      setAllItems((prev) => {
-        return typeof updater === "function" ? updater(prev) : updater;
-      });
+      setAllItems((prev) => (typeof updater === "function" ? updater(prev) : updater));
+      // Справочник поиска живёт отдельно от страницы списка: без этого
+      // изменённый (или уволенный) сотрудник в результатах поиска остаётся старым.
+      setDirectory((prev) =>
+        prev === null ? prev : typeof updater === "function" ? updater(prev) : updater,
+      );
     },
     []
   );
@@ -221,7 +279,7 @@ export function useEmployeesPageState() {
     items: allItems,
     setItems: publicSetItems,
     filtered,
-    loading,
+    loading: loading || (searching && directoryLoading && directory === null),
     errorMsg,
     addOpen,
     setAddOpen,
@@ -233,10 +291,15 @@ export function useEmployeesPageState() {
     setDeleteOpen,
     q,
     setQ,
-    hasMore,
-    loadingMore,
+    // В режиме поиска подгружать серверные страницы нечего: справочник загружен целиком.
+    hasMore: searching ? false : hasMore,
+    loadingMore: searching ? directoryLoading : loadingMore,
     loadMore,
-    refetch: () => void fetchEmployees(1, false),
+    refetch: () => {
+      directoryKeyRef.current = null;
+      setDirectory(null);
+      void fetchEmployees(1, false);
+    },
     totalCount,
   } as const;
 }

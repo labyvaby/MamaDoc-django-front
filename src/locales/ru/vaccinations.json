@@ -22,6 +22,8 @@
   "page": {
     "patientColumn": "{{patient.nom, capitalize}}",
     "patientFallback": "{{patient.nom, capitalize}} #{{id}}",
+    "editPatient": "Изменить данные {{patient.gen}}",
+    "editPatientFailed": "Не удалось загрузить карту {{patient.gen}}",
     "deleteRowMessage": "{{details}}. Связанные плановые слоты {{patient.genPl}}, достроенные из этой строки, перестанут обновляться."
   }
 }
