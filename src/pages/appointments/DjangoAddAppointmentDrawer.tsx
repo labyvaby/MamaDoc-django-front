@@ -40,6 +40,7 @@ import { CustomDateTimePicker } from "../../components/ui";
 import { useT } from "../../i18n/VerticalProvider";
 import { roundDateTimeLocalToStep } from "../../utility/time";
 import { formatKGS } from "../../utility/format";
+import ServicePriceField from "../../components/appointments/ServicePriceField";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
@@ -135,6 +136,12 @@ type ServiceRow = {
   employeeId: number | null;
   quantity: number;
   /**
+   * Цена строки, если её правили руками. Пустая строка — «как в прайсе»: тогда
+   * `unitPrice` в запрос не уходит и цену снапшотит бэк. Правка закрыта правом
+   * `appointments.price_override` (см. ServicePriceField).
+   */
+  unitPrice: string;
+  /**
    * Расходники строки, когда их правили руками. Пока `null` — состав берётся из
    * справочника услуги (и следует количеству услуги), а `consumptions` в запрос
    * не уходит вовсе: бэк развернёт состав сам.
@@ -153,6 +160,7 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     serviceId: null,
     employeeId: null,
     quantity: 1,
+    unitPrice: "",
     consumptions: null,
     ...patch,
   };
@@ -592,7 +600,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     () =>
       validRows.reduce((sum, r) => {
         const svc = data.services.find((s) => s.id === r.serviceId);
-        return sum + (svc ? Number(svc.basePrice) * r.quantity : 0);
+        if (!svc) return sum;
+        // Правленая цена — та, что уйдёт в запрос; иначе регистратор назовёт
+        // пациенту сумму по прайсу, а в чек попадёт другая.
+        const unit = r.unitPrice.trim() ? Number(r.unitPrice) || 0 : Number(svc.basePrice);
+        return sum + unit * r.quantity;
       }, 0),
     [validRows, data.services],
   );
@@ -662,6 +674,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           serviceId: r.serviceId!,
           employeeId: r.employeeId,
           quantity: r.quantity > 0 ? r.quantity : 1,
+          // Пустое поле не отправляем вовсе: бэк снапшотит цену из прайса сам,
+          // а присланная каталожная цена — лишний повод для проверки права.
+          ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
           // Ключ уходит только когда расходники правили: его отсутствие значит
           // «развернуть состав услуги как есть», а `[]` — «без расходников»
           // (именно так убирается лишний товар из состава при записи).
@@ -1367,9 +1382,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                                 : null
                                               : row.employeeId,
                                           // Другая услуга — другой состав: правки
-                                          // относились к прежним расходникам.
+                                          // относились к прежним расходникам. Цену
+                                          // тоже сбрасываем: пересчёт на прайс новой
+                                          // услуги бэк пропускает без права.
                                           ...((v?.id ?? null) !== row.serviceId
-                                            ? { consumptions: null }
+                                            ? { consumptions: null, unitPrice: "" }
                                             : {}),
                                         });
                                       }}
@@ -1414,13 +1431,19 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                   }
                                 >
                                   {selectedService && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      {t("addDrawer.priceLabel")}{" "}
-                                      <strong>{formatKGS(selectedService.basePrice)}</strong>
-                                      {selectedService.durationMinutes
-                                        ? t("addDrawer.durationSuffix", { minutes: selectedService.durationMinutes })
-                                        : ""}
-                                    </Typography>
+                                    <ServicePriceField
+                                      basePrice={selectedService.basePrice}
+                                      value={row.unitPrice}
+                                      disabled={saving}
+                                      onChange={(next) => updateRow(index, { unitPrice: next })}
+                                      suffix={
+                                        selectedService.durationMinutes
+                                          ? t("addDrawer.durationSuffix", {
+                                              minutes: selectedService.durationMinutes,
+                                            })
+                                          : ""
+                                      }
+                                    />
                                   )}
 
                                   {/* Расходники: до сохранения строк расхода нет,

@@ -75,6 +75,7 @@ import AppointmentProductLines, {
 } from "./details/AppointmentProductLines";
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
+import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
@@ -1042,6 +1043,19 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 onRecord={(prefill) => onRecordVaccination?.(appt, prefill)}
                 onRecordMulti={(doses) => onRecordVaccinationMulti?.(appt, doses)}
               />
+            )}
+
+            {/* Правки цены — после состава визита и до жалоб: это про деньги
+                приёма, а не про его медицинскую часть. Блок сам скрывается,
+                пока цены не трогали. */}
+            {appt.priceOverrides.length > 0 && (
+              <>
+                <Divider />
+                <AppointmentPriceHistory
+                  overrides={appt.priceOverrides}
+                  services={appt.services}
+                />
+              </>
             )}
 
             {/* ── Text blocks ── */}

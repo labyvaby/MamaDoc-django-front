@@ -411,6 +411,7 @@ export function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     consumptionWarnings: Array.isArray(raw.consumptionWarnings)
       ? raw.consumptionWarnings
       : [],
+    priceOverrides: Array.isArray(raw.priceOverrides) ? raw.priceOverrides : [],
   } as DjangoAppointment;
 }
 
@@ -453,6 +454,26 @@ export interface AppointmentConsumptionWarning {
   resultingStock?: string | null;
 }
 
+/**
+ * Запись аудита правки цены строки услуги. Бэк пишет её на обоих путях —
+ * и на `/price-override/`, и на create/PATCH с `services[].unitPrice`
+ * (ответ бэка 19.08.2026): до этого правка через форму меняла цену молча,
+ * и на вопрос «кто поставил 500 вместо 1200» ответа не было именно там, где
+ * он возникает первым.
+ *
+ * Свежие записи сверху. `serviceLineId` — `null`, если строку услуги потом
+ * удалили: история переживает строку, к которой относилась.
+ */
+export interface AppointmentPriceOverride {
+  id: number;
+  serviceLineId: number | null;
+  oldUnitPrice: string;
+  newUnitPrice: string;
+  changedById?: number | null;
+  changedByName?: string | null;
+  changedAt: string;
+}
+
 export interface DjangoAppointment {
   id: number;
   organizationId: number;
@@ -476,6 +497,12 @@ export interface DjangoAppointment {
   productLines: AppointmentProductLine[];
   /** True after payment is accepted and performer price changes are locked. */
   priceOverrideLocked?: boolean;
+  /**
+   * История правок цены. Приходит и в списке, и в детальной карточке; пустой
+   * массив, если цену не трогали. Нормализуем в массив — на окружении без
+   * выкладки поля нет вовсе.
+   */
+  priceOverrides: AppointmentPriceOverride[];
   totalAmount: string;
   createdAt: string;
   updatedAt: string;

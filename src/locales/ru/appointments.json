@@ -330,7 +330,8 @@
     "adminComment": "Комментарий администратора",
     "updated": "{{visit.nom, capitalize}} обновлён",
     "draftRestored": "Восстановлены несохранённые данные",
-    "draftDiscard": "Очистить"
+    "draftDiscard": "Очистить",
+    "lineTotalSuffix": " · итого {{amount}}"
   },
   "servicePicker": {
     "title": "Выберите {{service.acc}} и специалиста",
@@ -678,5 +679,18 @@
     "select": "Выбрать",
     "timeDiff": "±{{minutes}} мин",
     "amount": "{{amount}} сом"
+  },
+  "priceField": {
+    "action": "Изменить цену",
+    "label": "Цена, сом",
+    "invalid": "Цена не может быть отрицательной.",
+    "catalog": "По прайсу {{price}}",
+    "reset": "Вернуть цену по прайсу"
+  },
+  "priceHistory": {
+    "title": "Правки цены",
+    "entry": "{{old}} → {{new}}",
+    "by": "{{name}}",
+    "deletedLine": "Строка удалена"
   }
 }
