@@ -41,6 +41,7 @@ import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 
 import {
   AppButton,
+  CustomDatePicker,
   DateRangeField,
   PageHeader,
   UserAvatar,
@@ -84,7 +85,6 @@ import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
-import { shortYearInputBlur } from "../../utility/shortYear";
 import { injectionSiteLabel, scheduleDateInfo } from "./meta";
 
 type VaccTab = "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
@@ -1039,15 +1039,17 @@ const VaccinationsPage: React.FC = () => {
                   </ToggleButton>
                 </ToggleButtonGroup>
               )}
-              <TextField
-                type="month"
-                size="small"
+              <CustomDatePicker
                 label="Месяц"
-                value={reportMonth}
-                onChange={(e) => setReportMonth(e.target.value)}
-                onBlur={shortYearInputBlur("nearest", setReportMonth)}
-                InputLabelProps={{ shrink: true }}
-                sx={{ minWidth: 170 }}
+                value={reportMonth ? dayjs(`${reportMonth}-01`) : null}
+                onChange={(next) => {
+                  if (next && next.isValid()) setReportMonth(next.format("YYYY-MM"));
+                }}
+                views={["year", "month"]}
+                openTo="month"
+                format="MM.YYYY"
+                shortYearMode="nearest"
+                slotProps={{ textField: { size: "small", sx: { minWidth: 170 } } }}
               />
             </Stack>
           )}
