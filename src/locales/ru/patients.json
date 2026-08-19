@@ -208,6 +208,7 @@
     "noVisits": "Нет записей о {{visit.datPl}}",
     "notFound": "{{patient.nom, capitalize}} не найден",
     "doctorLabel": "{{specialist.nom, capitalize}}: {{name}}",
-    "servicesLabel": "{{service.nomPl, capitalize}}: {{name}}"
+    "servicesLabel": "{{service.nomPl, capitalize}}: {{name}}",
+    "edit": "Изменить данные {{patient.gen}}"
   }
 }

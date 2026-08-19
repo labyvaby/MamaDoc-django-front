@@ -39,7 +39,7 @@ import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -71,6 +71,7 @@ import { useAuthUserNames } from "../../../hooks/useAuthUserNames";
 import DjangoConclusionDrawer from "../DjangoConclusionDrawer";
 import { getConclusionSlots, type ConclusionSlot } from "../../../api/medical";
 import PatientQuickViewDrawer from "../../../components/patients/DjangoPatientQuickViewDrawer";
+import DjangoEditPatientDrawer from "../../../components/patients/DjangoEditPatientDrawer";
 import ServiceQuickViewDrawer from "../../../components/services/DjangoServiceQuickViewDrawer";
 import ProductQuickViewDrawer from "../../../components/products/DjangoProductQuickViewDrawer";
 import AppointmentPatientCard from "./details/AppointmentPatientCard";
@@ -177,6 +178,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const canOverridePrice = useCan("appointments.price_override");
   // Клик по товару открывает карточку из справочника — только при праве на него.
   const canViewProducts = useCan(["warehouse.view", "warehouse.sales.view"]);
+  // Правка карты пациента из приёма требует того же права, что и список пациентов.
+  const canUpdatePatient = useCan("patients.update");
 
   // Кто создал/изменил приём: бэк отдаёт только auth-user id, имя — из
   // справочника сотрудников (authUserId → ФИО).
@@ -196,6 +199,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   // Quick-view drawers (краткая информация по клику: пациент / врач / услуга / товар)
   const [patientDrawerOpen, setPatientDrawerOpen] = React.useState(false);
+  const [editPatientOpen, setEditPatientOpen] = React.useState(false);
   const [doctorDrawerOpen, setDoctorDrawerOpen] = React.useState(false);
   const [selectedDoctorId, setSelectedDoctorId] = React.useState<number | null>(null);
   const [selectedDoctorName, setSelectedDoctorName] = React.useState<string | null>(null);
@@ -229,6 +233,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   });
   const patientCard = patientCardQuery.data;
   const patientAge = formatPatientAge(patientCard?.birthDate);
+
+  /**
+   * После правки карты обновляем и её кэш, и приёмы: ФИО с телефоном приходят
+   * внутри объекта приёма, иначе в карточке останутся старые значения.
+   */
+  const queryClient = useQueryClient();
+  const handlePatientUpdated = React.useCallback(() => {
+    setEditPatientOpen(false);
+    if (appt.patient?.id != null) {
+      queryClient.invalidateQueries({
+        queryKey: djangoQueryKeys.patients.detail(appt.patient.id),
+      });
+    }
+    queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+  }, [appt.patient?.id, queryClient]);
 
   // Прогноз календаря пациента: положенные (planned/overdue) дозы — чтобы ввести
   // прививку в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
@@ -958,6 +977,10 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               blacklistReason={patientCard?.blacklistReason}
               adminComment={appt.adminComment}
               onOpenPatient={appt.patient ? () => setPatientDrawerOpen(true) : undefined}
+              onEditPatient={
+                appt.patient && canUpdatePatient ? () => setEditPatientOpen(true) : undefined
+              }
+              editPatientDisabled={!patientCard}
             />
 
             {/* Когда приём, относительный день, статусы и отзыв. */}
@@ -1208,6 +1231,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         open={patientDrawerOpen}
         onClose={() => setPatientDrawerOpen(false)}
         patientId={appt.patient?.id ?? null}
+      />
+      <DjangoEditPatientDrawer
+        open={editPatientOpen}
+        patient={patientCard ?? null}
+        onClose={() => setEditPatientOpen(false)}
+        onUpdated={handlePatientUpdated}
       />
       <ServiceQuickViewDrawer
         open={serviceDrawerOpen}

@@ -5,6 +5,7 @@ import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import StickyNote2Outlined from "@mui/icons-material/StickyNote2Outlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 
 import type { AppointmentPatientShort } from "../../../../api/appointments";
 import { formatPhoneDisplay } from "../../../../utility/phone";
@@ -21,6 +22,10 @@ export interface AppointmentPatientCardProps {
   /** Комментарий администратора к приёму. */
   adminComment?: string | null;
   onOpenPatient?: () => void;
+  /** Открыть форму правки карты пациента; не задан — кнопка не рисуется. */
+  onEditPatient?: () => void;
+  /** Карта пациента ещё не загружена — кнопка есть, но неактивна. */
+  editPatientDisabled?: boolean;
 }
 
 function initials(name?: string | null): string {
@@ -47,6 +52,8 @@ const AppointmentPatientCard: React.FC<AppointmentPatientCardProps> = ({
   blacklistReason,
   adminComment,
   onOpenPatient,
+  onEditPatient,
+  editPatientDisabled,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -152,6 +159,26 @@ const AppointmentPatientCard: React.FC<AppointmentPatientCardProps> = ({
               </Stack>
             )}
           </Box>
+
+          {/* Правка карты прямо из приёма: телефон и дату рождения чаще всего
+              уточняют именно в момент визита. */}
+          {onEditPatient && (
+            <Tooltip title={t("details.editPatient")}>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={editPatientDisabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditPatient();
+                  }}
+                  sx={{ flexShrink: 0 }}
+                >
+                  <EditOutlined sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
         </Paper>
       ) : (
         <Paper

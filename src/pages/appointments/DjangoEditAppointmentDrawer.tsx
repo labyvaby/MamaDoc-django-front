@@ -25,6 +25,7 @@ import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import dayjs from "dayjs";
 import { useNotification } from "@refinedev/core";
 import { useQueryClient } from "@tanstack/react-query";
@@ -65,7 +66,8 @@ import {
   type DjangoProduct,
 } from "../../api/warehouse";
 import type { DjangoPatient } from "../../api/patients";
-import { searchPatients } from "../../api/patients";
+import { getPatient, searchPatients } from "../../api/patients";
+import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 import type {
   DjangoEmployeeWithServices,
   DjangoCatalogServiceWithEmployees,
@@ -316,6 +318,32 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   // смену услуги/исполнителя у строки с заключением (правка in-place, заключение
   // сохраняется). Удаление и отмена такой строки остаются недоступны для всех.
   const canEditLocked = useCan("appointments.edit_with_conclusion");
+  const canUpdatePatient = useCan("patients.update");
+
+  /**
+   * Правка карты из формы приёма. Здесь пациент в форме — заглушка из самого
+   * приёма (id/ФИО/телефон), поэтому перед открытием формы карту ОБЯЗАТЕЛЬНО
+   * догружаем: PATCH пациента отправляет дату рождения, пол и адрес явно, и
+   * заглушка молча обнулила бы их.
+   */
+  const [editPatient, setEditPatient] = React.useState<DjangoPatient | null>(null);
+  const [editPatientOpen, setEditPatientOpen] = React.useState(false);
+  const [editPatientLoading, setEditPatientLoading] = React.useState(false);
+  const openEditPatient = React.useCallback(
+    async (id: number) => {
+      setEditPatientLoading(true);
+      try {
+        const fresh = await getPatient(id);
+        setEditPatient(fresh);
+        setEditPatientOpen(true);
+      } catch {
+        notify?.({ type: "error", message: t("addDrawer.editPatientFailed") });
+      } finally {
+        setEditPatientLoading(false);
+      }
+    },
+    [notify, t],
+  );
   const {
     activeOrganization,
     activeMembership,
@@ -1140,6 +1168,18 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                     />
                   )}
                 />
+                {!isBooking && selectedPatient && canUpdatePatient && (
+                  <Button
+                    size="small"
+                    startIcon={<EditOutlined sx={{ fontSize: 16 }} />}
+                    disabled={editPatientLoading}
+                    onClick={() => void openEditPatient(selectedPatient.id)}
+                    sx={{ mt: 0.5, textTransform: "none" }}
+                  >
+                    {t("addDrawer.editPatient")}
+                  </Button>
+                )}
+
                 {!isBooking && selectedPatient?.isBlacklisted && (
                   <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -1944,6 +1984,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
         onCreated={(p: DjangoPatient) => {
           setSelectedPatient(p);
           setAddPatientOpen(false);
+        }}
+      />
+
+      <DjangoEditPatientDrawer
+        open={editPatientOpen}
+        patient={editPatient}
+        onClose={() => setEditPatientOpen(false)}
+        onUpdated={(p) => {
+          setEditPatientOpen(false);
+          setEditPatient(p);
+          setSelectedPatient(p);
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.detail(p.id) });
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
         }}
       />
 

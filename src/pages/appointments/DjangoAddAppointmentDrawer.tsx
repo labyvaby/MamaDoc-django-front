@@ -30,11 +30,12 @@ import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 import { useNotification } from "@refinedev/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { CustomDateTimePicker } from "../../components/ui";
 import { useT } from "../../i18n/VerticalProvider";
@@ -42,6 +43,7 @@ import { roundDateTimeLocalToStep } from "../../utility/time";
 import { formatKGS } from "../../utility/format";
 import ServicePriceField from "../../components/appointments/ServicePriceField";
 import { useCan } from "../../hooks/useCan";
+import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoAppointmentData } from "../../hooks/useDjangoAppointmentData";
 import { useFormValidation } from "../../hooks/useFormValidation";
@@ -252,6 +254,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
   const canManageAppointments = useCan("appointments.update");
+  // Опечатку в телефоне видно уже при записи — правим карту, не теряя форму.
+  const canUpdatePatient = useCan("patients.update");
+  const [editPatientOpen, setEditPatientOpen] = React.useState(false);
+  const queryClient = useQueryClient();
   const {
     activeBranch,
     activeOrganization,
@@ -1101,6 +1107,17 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 />
               )}
 
+              {!isBooking && selectedPatient && canUpdatePatient && (
+                <Button
+                  size="small"
+                  startIcon={<EditOutlined sx={{ fontSize: 16 }} />}
+                  onClick={() => setEditPatientOpen(true)}
+                  sx={{ alignSelf: "flex-start", textTransform: "none" }}
+                >
+                  {t("addDrawer.editPatient")}
+                </Button>
+              )}
+
               {!isBooking && selectedPatient?.isBlacklisted && (
                 <Alert severity="error" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -1881,6 +1898,20 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <DjangoEditPatientDrawer
+        open={editPatientOpen}
+        patient={selectedPatient}
+        onClose={() => setEditPatientOpen(false)}
+        onUpdated={(p) => {
+          setEditPatientOpen(false);
+          // Форма продолжает работу с обновлённой картой: телефон и чёрный
+          // список читаются из этого же объекта.
+          setSelectedPatient(p);
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.detail(p.id) });
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+        }}
+      />
 
       {/* Пересечение с приёмом сотрудника (режим организации "warn") */}
       <OverlapConfirmDialog

@@ -78,7 +78,8 @@ import {
   type VaccinationRecord,
   type VaccinationScheduleSlot,
 } from "../../api/vaccinations";
-import type { DjangoPatient } from "../../api/patients";
+import { getPatient, type DjangoPatient } from "../../api/patients";
+import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
 import { RecordStatusChip, ScheduleStatusChip } from "../../components/vaccinations/VaccinationChips";
 import RecordVaccinationDrawer from "../../components/vaccinations/RecordVaccinationDrawer";
 import VaccineDialog from "../../components/vaccinations/VaccineDialog";
@@ -192,6 +193,8 @@ const VaccinationsPage: React.FC = () => {
   const branchId = activeBranch?.id ?? null;
   const canView = can("vaccinations.view");
   const canRecord = can("vaccinations.record");
+  // Дата рождения задаёт схему и дозу, а правят её чаще всего именно здесь.
+  const canUpdatePatient = can("patients.update");
   const canManage = can("vaccinations.manage");
 
   const tabs = React.useMemo(
@@ -339,6 +342,27 @@ const VaccinationsPage: React.FC = () => {
     setDrawerOpen(true);
   };
 
+  // Правка карты из списка «Кому пора»: слот отдаёт только id/ФИО/телефон,
+  // форме нужна полная карта — догружаем её по клику.
+  const [editPatient, setEditPatient] = React.useState<DjangoPatient | null>(null);
+  const [editPatientOpen, setEditPatientOpen] = React.useState(false);
+  const [editPatientLoadingId, setEditPatientLoadingId] = React.useState<number | null>(null);
+  const openEditPatient = React.useCallback(
+    async (patientId: number) => {
+      setEditPatientLoadingId(patientId);
+      try {
+        const p = await getPatient(patientId);
+        setEditPatient(p);
+        setEditPatientOpen(true);
+      } catch {
+        setActionError(t("page.editPatientFailed"));
+      } finally {
+        setEditPatientLoadingId(null);
+      }
+    },
+    [t],
+  );
+
   const dueRows = dueQuery.data ?? [];
   const overdueCount = dueRows.filter((s) => s.status === "overdue").length;
   const weekCount = dueRows.filter((s) => {
@@ -422,13 +446,27 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: 140,
+        width: 180,
         sortable: false,
         // Ввод «со склада» отсюда убран: администрирование прививки — из
         // регистратуры (по приёму). Здесь оставляем только «Пропустить»
         // (управление календарём). Внешние прививки — кнопкой в шапке.
         renderCell: ({ row }) => (
-          <Stack direction="row" gap={0.75}>
+          <Stack direction="row" gap={0.75} alignItems="center">
+            {canUpdatePatient && (
+              <Tooltip title={t("page.editPatient")}>
+                <IconButton
+                  size="small"
+                  disabled={editPatientLoadingId === row.patientId}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void openEditPatient(row.patientId);
+                  }}
+                >
+                  <EditOutlined sx={{ fontSize: 17 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {canRecord && (
               <Button
                 size="small"
@@ -449,7 +487,7 @@ const VaccinationsPage: React.FC = () => {
         ),
       },
     ],
-    [canRecord, scheduleMutation.isPending, t],
+    [canRecord, canUpdatePatient, editPatientLoadingId, openEditPatient, scheduleMutation.isPending, t],
   );
 
   const recordsColumns = React.useMemo<GridColDef<VaccinationRecord>[]>(
@@ -1251,6 +1289,19 @@ const VaccinationsPage: React.FC = () => {
         onClose={() => setDrawerOpen(false)}
         initialPatient={drawerPatient}
         lockedScenario="external"
+      />
+
+      <DjangoEditPatientDrawer
+        open={editPatientOpen}
+        patient={editPatient}
+        onClose={() => setEditPatientOpen(false)}
+        onUpdated={(p) => {
+          setEditPatientOpen(false);
+          setEditPatient(p);
+          // ФИО и телефон приходят внутри слотов календаря — обновляем список.
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
+          void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.detail(p.id) });
+        }}
       />
 
       <VaccineDialog

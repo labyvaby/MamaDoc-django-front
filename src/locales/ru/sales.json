@@ -55,6 +55,8 @@
     "dateTime": "Дата и время",
     "buyer": "Покупатель",
     "anonymousBuyer": "Анонимный покупатель",
+    "editPatient": "Изменить данные {{patient.gen}}",
+    "editPatientFailed": "Не удалось загрузить карту {{patient.gen}}",
     "products": "Товары",
     "productDeleted": "Товар удален",
     "qtyByPrice": "{{quantity}} шт × {{price}}",

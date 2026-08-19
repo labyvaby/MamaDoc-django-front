@@ -11,9 +11,11 @@ import {
   ListItemText,
   Skeleton,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import LocalPhoneOutlinedIcon from "@mui/icons-material/LocalPhoneOutlined";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import WcOutlinedIcon from "@mui/icons-material/WcOutlined";
@@ -24,7 +26,11 @@ import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
 import "dayjs/locale/ru";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { getPatient, type DjangoPatient } from "../../api/patients";
+import { djangoQueryKeys } from "../../api/queryKeys";
+import { useCan } from "../../hooks/useCan";
+import DjangoEditPatientDrawer from "./DjangoEditPatientDrawer";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
@@ -73,6 +79,24 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
   const [recent, setRecent] = React.useState<DjangoAppointment[]>([]);
   const [recentLoading, setRecentLoading] = React.useState(false);
   const orgId = useApiOrgId();
+  const canUpdate = useCan("patients.update");
+  const queryClient = useQueryClient();
+  const [editOpen, setEditOpen] = React.useState(false);
+
+  /**
+   * Карта правится прямо из краткого просмотра, поэтому обновлённого пациента
+   * кладём и в локальный state (дровер перерисуется сразу), и в кэш react-query:
+   * ФИО с телефоном приходят внутри объекта приёма, а его держит уже react-query.
+   */
+  const handleUpdated = React.useCallback(
+    (p: DjangoPatient) => {
+      setPatient(p);
+      setEditOpen(false);
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.detail(p.id) });
+      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.all });
+    },
+    [queryClient],
+  );
 
   React.useEffect(() => {
     if (!patientId || !open) {
@@ -141,9 +165,18 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
         <Typography variant="h6" fontWeight={600}>
           {t("quickView.title")}
         </Typography>
-        <IconButton onClick={onClose} size="small">
-          <CloseIcon />
-        </IconButton>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          {canUpdate && patient && (
+            <Tooltip title={t("quickView.edit")}>
+              <IconButton onClick={() => setEditOpen(true)} size="small">
+                <EditOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <IconButton onClick={onClose} size="small">
+            <CloseIcon />
+          </IconButton>
+        </Stack>
       </Box>
 
       <Box
@@ -329,6 +362,13 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({ open, onClose, patientI
           </Typography>
         )}
       </Box>
+
+      <DjangoEditPatientDrawer
+        open={editOpen}
+        patient={patient}
+        onClose={() => setEditOpen(false)}
+        onUpdated={handleUpdated}
+      />
     </Drawer>
   );
 };
