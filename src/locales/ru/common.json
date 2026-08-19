@@ -83,7 +83,9 @@
     "desktopStep2": "Или откройте меню браузера и выберите «Установить»",
     "desktopStep3": "Приложение откроется в отдельном окне",
     "iosSafariOnly": "В Chrome на iPhone установка недоступна — откройте сайт в Safari.",
-    "done": "Понятно"
+    "done": "Понятно",
+    "openInSafari": "Открыть в Safari",
+    "openInSafariHint": "Если Safari не открылся — скопируйте ссылку и вставьте её в адресную строку Safari."
   },
   "balanceTx": {
     "top_up": "Пополнение",

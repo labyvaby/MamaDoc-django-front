@@ -47,10 +47,12 @@ import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
+import { useAppointmentReceipt } from "../../components/appointments/useAppointmentReceipt";
 import { formatQuantity, trimDecimalInput } from "../../utility/format";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
@@ -346,6 +348,23 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
 }) => {
   const { t, term } = useT("appointments");
   const { open: notify } = useNotification();
+
+  // ── чек (лист A5) ─────────────────────────────────────────────────────────
+  // Печатается по всему приёму, а не по строке услуги: касса принимает оплату
+  // за визит целиком.
+  const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
+  const receiptAppointmentId = appointmentId ?? conclusion?.appointmentId ?? null;
+  const handlePrintReceipt = async () => {
+    if (receiptAppointmentId == null) return;
+    try {
+      const result = await printReceipt(receiptAppointmentId);
+      if (result === "blocked") {
+        notify?.({ type: "error", message: t("invoice.popupBlocked") });
+      }
+    } catch {
+      notify?.({ type: "error", message: t("conclusion.receiptError") });
+    }
+  };
 
   // ── form state ────────────────────────────────────────────────────────────
   const [complaints, setComplaints] = React.useState("");
@@ -971,6 +990,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 >
                   {t("conclusion.certificate")}
                 </Button>
+                {receiptAppointmentId != null && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ReceiptLongOutlined />}
+                    onClick={handlePrintReceipt}
+                    disabled={receiptPending}
+                    sx={{ whiteSpace: "nowrap" }}
+                  >
+                    {t("conclusion.receipt")}
+                  </Button>
+                )}
               </>
             )}
           </Stack>
@@ -1539,6 +1570,17 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               >
                 {t("conclusion.certificate")}
               </Button>
+              {receiptAppointmentId != null && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ReceiptLongOutlined />}
+                  onClick={handlePrintReceipt}
+                  disabled={receiptPending}
+                >
+                  {t("conclusion.receipt")}
+                </Button>
+              )}
             </Stack>
           )}
         </Stack>

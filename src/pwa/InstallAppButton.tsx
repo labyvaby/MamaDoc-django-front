@@ -14,10 +14,12 @@ import {
 import { alpha, type SxProps, type Theme } from "@mui/material/styles";
 import InstallMobileOutlined from "@mui/icons-material/InstallMobileOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
 import { useT } from "../i18n/VerticalProvider";
 import { useInstallPrompt } from "./useInstallPrompt";
-import { detectInAppBrowser } from "./installPrompt";
+import { detectInAppBrowser, getOpenInSafariUrl } from "./installPrompt";
+import { InstallStepArt, type InstallStepArtKind } from "./installStepArt";
 
 /**
  * Кнопка «Установить приложение» — добавляет иконку сайта на главный экран
@@ -134,14 +136,25 @@ const InstallGuideDialog: React.FC<{
   const [copied, setCopied] = React.useState(false);
   const inApp = React.useMemo(detectInAppBrowser, []);
 
-  const steps = [
-    t(`install.${platform}Step1`),
-    t(`install.${platform}Step2`),
-    t(`install.${platform}Step3`),
-  ];
+  // Картинка к каждому шагу: словами «значок „Поделиться“» и «три точки» на
+  // незнакомом экране ищутся долго, схема экрана с подсветкой — сразу.
+  const stepArt: Record<"ios" | "android" | "desktop", InstallStepArtKind[]> = {
+    ios: ["iosShare", "iosAddToHome", "homeScreen"],
+    android: ["androidMenu", "androidInstall", "homeScreen"],
+    desktop: ["desktopAddressBar", "desktopMenu", "desktopWindow"],
+  };
+
+  const steps: Array<{ text: string; art: InstallStepArtKind }> = [1, 2, 3].map((n, index) => ({
+    text: t(`install.${platform}Step${n}`),
+    art: stepArt[platform][index],
+  }));
   // Из встроенного браузера соцсети установка невозможна в принципе — первым
   // шагом отправляем в настоящий браузер, иначе остальные шаги бессмысленны.
-  if (inApp) steps.unshift(t("install.inAppBrowserStep"));
+  if (inApp) steps.unshift({ text: t("install.inAppBrowserStep"), art: "openInSafari" });
+
+  // Прямой переход в Safari (только iOS) — сокращает ручные шаги, но срабатывает
+  // не в каждом встроенном браузере, поэтому инструкцию не заменяет.
+  const safariUrl = React.useMemo(getOpenInSafariUrl, []);
 
   // На iPhone установка есть только в Safari: Chrome и Firefox там работают на
   // движке WebKit, но пункта «На экран „Домой“» в их меню нет.
@@ -190,30 +203,73 @@ const InstallGuideDialog: React.FC<{
           {t("install.manualHint")}
         </Typography>
 
-        <Stack spacing={1.25}>
+        <Stack spacing={1}>
           {steps.map((step, index) => (
-            <Stack key={step} direction="row" spacing={1.25} alignItems="flex-start">
+            <Stack
+              key={step.text}
+              direction="row"
+              spacing={1.25}
+              alignItems="center"
+              sx={(theme) => ({
+                p: 1,
+                borderRadius: 2,
+                border: `1px solid ${theme.palette.divider}`,
+              })}
+            >
               <Box
-                sx={(theme) => ({
-                  width: 22,
-                  height: 22,
+                sx={{
+                  position: "relative",
                   flexShrink: 0,
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "primary.main",
-                  bgcolor: alpha(theme.palette.primary.main, 0.12),
-                })}
+                  lineHeight: 0,
+                }}
               >
-                {index + 1}
+                <InstallStepArt kind={step.art} />
+                <Box
+                  sx={(theme) => ({
+                    position: "absolute",
+                    top: -4,
+                    left: -4,
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    color: "primary.main",
+                    // Непрозрачный фон: иначе цифра сливается с картинкой шага.
+                    bgcolor: "background.paper",
+                    border: `1px solid ${alpha(theme.palette.primary.main, 0.4)}`,
+                  })}
+                >
+                  {index + 1}
+                </Box>
               </Box>
-              <Typography variant="body2">{step}</Typography>
+              <Typography variant="body2">{step.text}</Typography>
             </Stack>
           ))}
         </Stack>
+
+        {safariUrl && (
+          <Button
+            component="a"
+            href={safariUrl}
+            fullWidth
+            variant="outlined"
+            startIcon={<OpenInNewOutlined />}
+            sx={{ mt: 2 }}
+          >
+            {t("install.openInSafari")}
+          </Button>
+        )}
+
+        {safariUrl && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: "block" }}>
+            {t("install.openInSafariHint")}
+          </Typography>
+        )}
 
         {copied && (
           <Alert severity="success" variant="outlined" sx={{ mt: 2 }}>
@@ -222,7 +278,7 @@ const InstallGuideDialog: React.FC<{
         )}
       </DialogContent>
       <DialogActions>
-        {inApp && (
+        {(inApp || safariUrl) && (
           <Button onClick={copyLink} startIcon={<ContentCopyOutlined />}>
             {t("install.copyLink")}
           </Button>

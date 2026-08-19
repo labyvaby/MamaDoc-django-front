@@ -9,12 +9,13 @@ export type MissingFieldItem = {
   isCritical: boolean;
 };
 
-function getTodayString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+/**
+ * Ключ отказа от напоминания. Раньше в него входила дата — баннер возвращался
+ * каждый день, и закрыть его насовсем было нельзя (жалоба 19.08.2026).
+ * Теперь закрытие постоянное: профиль остаётся доступен со страницы /profile.
+ */
+function dismissKey(userId: string): string {
+  return `profile_reminder_dismissed_${userId}`;
 }
 
 export function useProfileCompleteness() {
@@ -22,20 +23,19 @@ export function useProfileCompleteness() {
   const location = useLocation();
 
   const [djangoUser, setDjangoUser] = useState<DjangoUser | null>(null);
-  const [dismissedToday, setDismissedToday] = useState<boolean>(false);
+  const [dismissed, setDismissed] = useState<boolean>(false);
 
   const emp = activeEmployee || permEmp;
   const userId = employeeId || (emp?.id ? String(emp.id) : "user");
-  const todayStr = getTodayString();
-  const storageKey = `profile_reminder_dismissed_${userId}_${todayStr}`;
+  const storageKey = dismissKey(userId);
 
   // Check dismissal state in localStorage
   useEffect(() => {
     try {
       const val = localStorage.getItem(storageKey);
-      setDismissedToday(val === "true");
+      setDismissed(val === "true");
     } catch {
-      setDismissedToday(false);
+      setDismissed(false);
     }
   }, [storageKey]);
 
@@ -55,13 +55,13 @@ export function useProfileCompleteness() {
     };
   }, []);
 
-  const dismissForToday = useCallback(() => {
+  const dismissReminder = useCallback(() => {
     try {
       localStorage.setItem(storageKey, "true");
-      setDismissedToday(true);
+      setDismissed(true);
     } catch {
       // Safe fallback
-      setDismissedToday(true);
+      setDismissed(true);
     }
   }, [storageKey]);
 
@@ -87,10 +87,13 @@ export function useProfileCompleteness() {
       critical.push({ key: "phone", label: "Телефон", isCritical: true });
     }
 
-    // 4. Bank Account / INN (Critical)
+    // 4. Банковский счёт — НЕ критичный.
+    // Заказчик 19.08.2026: врача пугает, что программа «просит данные банковской
+    // карты». Счёт нужен бухгалтерии для выплат, а не для работы в системе,
+    // поэтому он остаётся подсказкой в профиле и не поднимает баннер.
     const bank = emp?.bankAccountNumber;
     if (!bank || !bank.trim()) {
-      critical.push({ key: "bank", label: "Банковский счёт", isCritical: true });
+      decor.push({ key: "bank", label: "Банковский счёт", isCritical: false });
     }
 
     // 5. Photo (Decorative / Optional)
@@ -113,7 +116,7 @@ export function useProfileCompleteness() {
 
   const shouldShowBanner =
     hasCriticalMissing &&
-    !dismissedToday &&
+    !dismissed &&
     !isProfilePage;
 
   const criticalLabelsFormatted = criticalMissing.map((item) => item.label).join(", ");
@@ -124,7 +127,7 @@ export function useProfileCompleteness() {
     hasCriticalMissing,
     shouldShowBanner,
     criticalLabelsFormatted,
-    dismissedToday,
-    dismissForToday,
+    dismissed,
+    dismissReminder,
   };
 }

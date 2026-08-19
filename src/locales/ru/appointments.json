@@ -362,7 +362,6 @@
     "cancel": "Отмена"
   },
   "invoice": {
-    "title": "Счёт к оплате",
     "number": "Номер счёта:",
     "date": "Дата счёта:",
     "patient": "{{patient.nom, capitalize}}:",
@@ -389,7 +388,8 @@
     "payments": "Оплаты",
     "createdBy": "Пользователь, создавший счёт",
     "signature": "Подпись",
-    "print": "Распечатать счёт",
+    "print": "Распечатать чек",
+    "receiptTitle": "Чек",
     "popupBlocked": "Не удалось открыть окно печати — разрешите всплывающие окна для этого сайта"
   },
   "payment": {
@@ -546,6 +546,8 @@
     "statusCompleted": "Завершено",
     "printConclusion": "Печать {{conclusion.gen}}",
     "certificate": "Справка",
+    "receipt": "Чек",
+    "receiptError": "Не удалось загрузить данные для чека",
     "saveDraft": "Сохранить черновик",
     "weightWithUnit": "{{value}} кг",
     "heightWithUnit": "{{value}} см",
