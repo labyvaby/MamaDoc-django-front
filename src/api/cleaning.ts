@@ -24,13 +24,18 @@ export const CLEANING_USE_MOCKS = false;
 /**
  * Дата уборки задним числом (поле «Дата уборки» в форме, только cleaning.manage:
  * админ отмечает уборку за вчера, если забыли отметить вовремя).
- * Бэк пока НЕ принимает дату: проверено на test.crm.operator.kg 20.08.2026 —
- * POST /cleaning/records/ с полями `date` / `created_at` / `performed_at` /
- * `createdAt` отвечает 201, но `createdAt` в ответе = момент запроса, поле молча
- * игнорируется. Тикет: MamaDoc/backend_ticket_cleaning_backdate.md.
- * Включить после выкладки бэка (поле `date`, YYYY-MM-DD, право cleaning.manage).
+ * Контракт (ответ CLEANING_BACKDATE_2026-08-20.md): вход — поле `date`
+ * (YYYY-MM-DD, multipart, только cleaning.manage, иначе 403), дата уборки
+ * приезжает новым полем `performedAt`, `createdAt` остаётся моментом создания
+ * записи. Замороженный месяц ЗП — 409 (проверяется по `performedAt`). Правка
+ * даты у существующей записи (PATCH) не поддерживается.
+ * Включено 20.08.2026 после выкладки на newcrm.pediatr.kg: GET
+ * /cleaning/records/ отдаёт `performedAt` (старым записям миграция проставила
+ * = `createdAt`), POST с `date` доходит до валидации формата. ⚠ На
+ * test.crm.operator.kg выкладки в тот момент ещё не было — там поле молча
+ * игнорируется, дата уборки = момент создания (фолбэк cleaningRecordDate).
  */
-export const CLEANING_BACKDATE_ENABLED = false;
+export const CLEANING_BACKDATE_ENABLED = true;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,7 +70,32 @@ export interface CleaningRecord {
   rejectReason: string;
   reviewedByName: string | null;
   reviewedAt: string | null;
+  /**
+   * Дата, ЗА КОТОРУЮ отмечена уборка (время внутри дня — полдень, чтобы при
+   * переводе в UTC день не уезжал назад). Источник правды для списка, фильтров
+   * date_from/date_to, active-months, сводки и ЗП. У старых записей бэк
+   * проставил `performedAt = createdAt` миграцией; поле опционально, потому что
+   * на средах без выкладки (тест на 20.08.2026) его в ответе нет — читать через
+   * cleaningRecordDate().
+   */
+  performedAt?: string;
+  /** Момент создания записи (аудит), не дата уборки. */
   createdAt: string;
+}
+
+/**
+ * Дата уборки для показа и группировки: `performedAt`, а на средах без
+ * выкладки — `createdAt` (на старых записях они совпадают по построению).
+ */
+export function cleaningRecordDate(record: CleaningRecord): string {
+  return record.performedAt || record.createdAt;
+}
+
+/** Запись отмечена задним числом — дата уборки и день создания разошлись. */
+export function isCleaningBackdated(record: CleaningRecord): boolean {
+  return Boolean(
+    record.performedAt && record.performedAt.slice(0, 10) !== record.createdAt.slice(0, 10),
+  );
 }
 
 export interface CleaningRecordsResponse {
@@ -164,6 +194,7 @@ const mockRecords: CleaningRecord[] = [
     rejectReason: "",
     reviewedByName: "Шаршебаев Автандил",
     reviewedAt: `${todayIso()}T10:20:00Z`,
+    performedAt: `${todayIso()}T12:00:00Z`,
     createdAt: `${todayIso()}T08:05:00Z`,
   },
   {
@@ -179,6 +210,7 @@ const mockRecords: CleaningRecord[] = [
     rejectReason: "",
     reviewedByName: null,
     reviewedAt: null,
+    performedAt: `${todayIso()}T12:00:00Z`,
     createdAt: `${todayIso()}T09:40:00Z`,
   },
   {
@@ -194,6 +226,7 @@ const mockRecords: CleaningRecord[] = [
     rejectReason: "На фото не видно пол, переснимите",
     reviewedByName: "Шаршебаев Автандил",
     reviewedAt: `${todayIso()}T11:00:00Z`,
+    performedAt: `${todayIso()}T12:00:00Z`,
     createdAt: `${todayIso()}T07:30:00Z`,
   },
 ];
@@ -291,12 +324,15 @@ export function getCleaningRecords(
 ): Promise<CleaningRecordsResponse> {
   if (CLEANING_USE_MOCKS) {
     let list = [...mockRecords];
-    if (filters.dateFrom) list = list.filter((r) => r.createdAt.slice(0, 10) >= filters.dateFrom!);
-    if (filters.dateTo) list = list.filter((r) => r.createdAt.slice(0, 10) <= filters.dateTo!);
+    // Как на бэке: фильтры и сортировка — по дате уборки, не по созданию записи.
+    if (filters.dateFrom)
+      list = list.filter((r) => cleaningRecordDate(r).slice(0, 10) >= filters.dateFrom!);
+    if (filters.dateTo)
+      list = list.filter((r) => cleaningRecordDate(r).slice(0, 10) <= filters.dateTo!);
     if (filters.branch != null) list = list.filter((r) => r.branchId === filters.branch);
     if (filters.type != null) list = list.filter((r) => r.typeId === filters.type);
     if (filters.status) list = list.filter((r) => r.status === filters.status);
-    list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    list.sort((a, b) => cleaningRecordDate(b).localeCompare(cleaningRecordDate(a)));
     return mockDelay(paginate(list, filters.page, filters.pageSize));
   }
   const q = new URLSearchParams();
@@ -351,10 +387,12 @@ export async function createCleaningRecord(
       rejectReason: "",
       reviewedByName: null,
       reviewedAt: null,
-      // Дата задним числом: берём выбранный день, время — текущее.
-      createdAt: payload.date
-        ? `${payload.date}T${new Date().toISOString().slice(11)}`
+      // Дата задним числом: как бэк — полдень выбранного дня; createdAt всегда
+      // момент создания записи.
+      performedAt: payload.date
+        ? `${payload.date}T12:00:00Z`
         : new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
     mockRecords.unshift(record);
     return mockDelay(record);
@@ -458,7 +496,7 @@ export function getCleaningActiveMonths(
   signal?: AbortSignal,
 ): Promise<string[]> {
   if (CLEANING_USE_MOCKS) {
-    const months = new Set(mockRecords.map((r) => r.createdAt.slice(0, 7)));
+    const months = new Set(mockRecords.map((r) => cleaningRecordDate(r).slice(0, 7)));
     return mockDelay([...months]);
   }
   return apiRequest<{ months: string[] }>(
@@ -479,7 +517,7 @@ export function getCleaningSummary(
     // amount копим числом, на выходе приводим к decimal-строке (как отдаёт бэк).
     const byEmployee = new Map<number, CleaningSummaryRow & { amountNum: number }>();
     for (const r of mockRecords) {
-      if (!r.createdAt.startsWith(params.month)) continue;
+      if (!cleaningRecordDate(r).startsWith(params.month)) continue;
       if (params.branch != null && r.branchId !== params.branch) continue;
       let row = byEmployee.get(r.employeeId);
       if (!row) {

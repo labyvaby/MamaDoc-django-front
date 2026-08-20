@@ -12,9 +12,9 @@ import {
 } from "@mui/material";
 import ChevronLeft from "@mui/icons-material/ChevronLeft";
 import ChevronRight from "@mui/icons-material/ChevronRight";
-import dayjs from "dayjs";
 
-import type { CleaningRecord } from "../../api/cleaning";
+import { isCleaningBackdated, type CleaningRecord } from "../../api/cleaning";
+import { formatCleaningCreatedAt, formatCleaningDate } from "./recordDate";
 
 interface PhotoViewerDialogProps {
   /** null — диалог закрыт. */
@@ -73,10 +73,11 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       {record && (
         <>
           <DialogTitle sx={{ pb: 1 }}>
-            {record.typeName} · {dayjs(record.createdAt).format("DD.MM.YYYY HH:mm")}
+            {record.typeName} · {formatCleaningDate(record)}
             <Typography variant="body2" color="text.secondary">
               {record.employeeName} · фото {Math.min(index, record.photos.length - 1) + 1} из{" "}
               {record.photos.length}
+              {isCleaningBackdated(record) && ` · запись создана ${formatCleaningCreatedAt(record)}`}
             </Typography>
           </DialogTitle>
           <DialogContent>

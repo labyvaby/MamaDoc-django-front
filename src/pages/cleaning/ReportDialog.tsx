@@ -23,7 +23,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
-import { getErrorMessage } from "../../api/client";
+import { ApiError, getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { prepareImageForUpload, PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { CustomDatePicker } from "../../components/ui";
@@ -90,7 +90,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
   const employees = employeesQuery.data ?? [];
 
   // Дату уборки выбирает только админ (cleaning.manage) — уборщица отмечает
-  // уборку текущим днём. Поле скрыто, пока бэк не принимает дату (см. флаг).
+  // уборку текущим днём.
   const showDate = canBackdate && CLEANING_BACKDATE_ENABLED;
 
   // Единая точка освобождения blob-URL превью.
@@ -245,7 +245,14 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
       onSuccess();
       onClose();
     } catch (err) {
-      setError(getErrorMessage(err));
+      // 409 — месяц заморожен в ЗП. Проверяется по дате уборки, поэтому ловится
+      // именно при отметке задним числом: запись изменила бы уже посчитанную
+      // зарплату. Общий текст про «конфликт данных» тут бесполезен.
+      setError(
+        err instanceof ApiError && err.status === 409
+          ? "Месяц закрыт в зарплате — отметить уборку за эту дату нельзя, пока бухгалтер не разморозит период."
+          : getErrorMessage(err),
+      );
     } finally {
       setBusy(false);
     }
