@@ -239,7 +239,10 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     setIsActive(next.isActive);
     // Черновик мог быть записан до появления поля — тогда считаем услугу видимой.
     setOnlineBookingVisible(next.onlineBookingVisible !== false);
-    setAllowPriceOverride(next.allowPriceOverride !== false);
+    // Черновик мог быть записан до появления тумблера — тогда у него нет этого
+    // поля, и `!== false` дал бы true, молча включив смену цены у услуги, где
+    // она запрещена. Падаем на текущее значение услуги, а не на «разрешено».
+    setAllowPriceOverride(next.allowPriceOverride ?? base.allowPriceOverride);
     setDraftRestored(Boolean(draft));
     // selectedBranchIds baseline заполняется в эффекте синхронизации филиалов —
     // он выполняется следом и знает актуальный availableBranches.
