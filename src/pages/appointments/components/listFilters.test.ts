@@ -186,16 +186,50 @@ describe("employeeMoneyTotals", () => {
     expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 0, paid: 0 });
   });
 
-  it("считает чек на ноль закрытым: скидка 100% — это не «не оплачено»", () => {
+  // Скидка вводится на чек целиком, строки услуг приходят с бэка до скидки:
+  // без её учёта сумма группы врача была больше принятой кассой.
+  it("режет сумму строк на скидку приёма", () => {
+    const list = [
+      appt({
+        services: [line({ employee: { id: 20, fullName: "А" }, lineTotal: "2700.00" })],
+        totalAmount: "2700.00",
+        discountAmount: "1350.00",
+        payableAmount: "1350.00",
+        paidTotal: "1350.00",
+        paymentStatus: "paid",
+      }),
+    ];
+    expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 1350, paid: 1350 });
+  });
+
+  // Скидка на чек с товарами разносится пропорционально: услуги 2000 из
+  // общего чека 2500 со скидкой 500 → на врача приходится 2000 × 0.8.
+  it("разносит скидку чека с товарами пропорционально", () => {
+    const list = [
+      appt({
+        services: [line({ employee: { id: 20, fullName: "А" }, lineTotal: "2000.00" })],
+        totalAmount: "2500.00",
+        discountAmount: "500.00",
+        payableAmount: "2000.00",
+        paidTotal: "2000.00",
+        paymentStatus: "paid",
+      }),
+    ];
+    expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 1600, paid: 1600 });
+  });
+
+  it("чек на ноль закрыт, но денег за 100% скидкой нет", () => {
     const list = [
       appt({
         services: [line({ employee: { id: 20, fullName: "А" }, lineTotal: "1600.00" })],
+        totalAmount: "1600.00",
+        discountAmount: "1600.00",
         payableAmount: "0.00",
         paidTotal: "0.00",
         paymentStatus: "discounted",
       }),
     ];
-    expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 1600, paid: 1600 });
+    expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 0, paid: 0 });
   });
 
   it("группа «без специалиста» считается по строкам без исполнителя", () => {
