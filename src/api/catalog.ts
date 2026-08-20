@@ -146,6 +146,13 @@ export interface Service {
    * `true`.
    */
   onlineBookingVisible: boolean;
+  /**
+   * Разрешена ли врачу смена цены этой услуги в приёме. Второе условие поверх
+   * права `appointments.price_override`: право говорит «кому можно», справочник
+   * — «у какой услуги». Миграция выставила `true` существующим услугам, у новых
+   * по умолчанию `false`. На бэке — `allow_price_override`.
+   */
+  allowPriceOverride: boolean;
   imageUrl: string | null;
   sortOrder: number;
   /** Категория услуги; null — без категории. */
@@ -196,6 +203,8 @@ export interface ServiceCreatePayload {
   isActive?: boolean;
   /** Видимость на публичной витрине; отсутствие — дефолт бэка (`true`). */
   onlineBookingVisible?: boolean;
+  /** Разрешить врачу менять цену услуги; отсутствие — дефолт бэка (`false`). */
+  allowPriceOverride?: boolean;
   sortOrder?: number;
   /** Категория; null/отсутствие — без категории. */
   category?: ServiceCategory | null;
@@ -216,6 +225,8 @@ export interface ServiceUpdatePayload {
   isActive?: boolean;
   /** Видимость на публичной витрине; отсутствие поля не меняет её. */
   onlineBookingVisible?: boolean;
+  /** Разрешить врачу менять цену; отсутствие поля не меняет флаг. */
+  allowPriceOverride?: boolean;
   sortOrder?: number;
   /**
    * When present and non-empty → sync branch assignments.
@@ -341,6 +352,9 @@ function normalizeService(service: Service): Service {
     // Дефолт бэка — true (миграция выставила его активным услугам); на
     // окружении, где поля ещё нет, услуга считается видимой.
     onlineBookingVisible: service.onlineBookingVisible !== false,
+    // Отсутствие поля — бэк ещё без тумблера; считаем цену изменяемой, чтобы
+    // выкат фронта раньше бэка не отнял у врачей то, что у них уже работало.
+    allowPriceOverride: service.allowPriceOverride !== false,
     relatedProductId: service.relatedProductId ?? null,
     relatedProduct: normalizeRelatedProduct(service.relatedProduct),
     relatedProducts: normalizeRelatedProducts(service),

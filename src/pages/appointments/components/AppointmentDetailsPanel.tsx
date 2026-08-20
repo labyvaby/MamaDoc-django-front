@@ -503,6 +503,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
+          sl.allowPriceOverride !== false &&
           !isPaymentAccepted &&
           !isCancelled &&
           activeEmployeeId != null &&
