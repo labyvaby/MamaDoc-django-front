@@ -276,10 +276,15 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
   const theme = useTheme();
   const rows = React.useMemo(() => buildTimeline(day), [day]);
 
-  if (day.dayOff) {
+  // Приём есть, а смены в этот день нет (или это выходной): раньше здесь стояла
+  // заглушка «нет графика» и приёмы не показывались вообще — врач выглядел
+  // пустой колонкой. Показываем приёмы, но помечаем: окон для записи тут нет.
+  const offSchedule = (!day.scheduled || day.dayOff) && rows.some((r) => r.kind === "appt");
+
+  if (day.dayOff && !offSchedule) {
     return <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>;
   }
-  if (!day.scheduled) {
+  if (!day.scheduled && !offSchedule) {
     return <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>;
   }
   if (rows.length === 0) {
@@ -294,6 +299,24 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
 
   return (
     <Stack spacing={0.5}>
+      {offSchedule && (
+        <Alert
+          severity="warning"
+          icon={false}
+          sx={{
+            py: 0,
+            px: 1,
+            borderRadius: "8px",
+            "& .MuiAlert-message": {
+              py: 0.5,
+              fontSize: dense ? "0.6875rem" : "0.75rem",
+              lineHeight: 1.35,
+            },
+          }}
+        >
+          {t("slots.offScheduleAppointments")}
+        </Alert>
+      )}
       {rows.map((row) => {
         if (row.kind === "appt") {
           const { appt } = row;
@@ -556,13 +579,6 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   const [dragScrollLeft, setDragScrollLeft] = React.useState(0);
   const isDragMovedRef = React.useRef(false);
 
-  // Смена дня, специальности или запроса пересобирает набор колонок —
-  // возвращаемся к первому врачу, иначе подсветка указывает не на того.
-  React.useEffect(() => {
-    setActiveDocIdx(0);
-    matrixScrollRef.current?.scrollTo({ left: 0 });
-  }, [selDay, specId, search]);
-
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const container = matrixScrollRef.current;
@@ -790,19 +806,21 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // Выбор врача в рельсе — это фильтр сетки (отдельного экрана врача нет):
   // остаётся одна колонка, вид и поведение окон те же.
   const gridDocs = selectedDoc ? [selectedDoc] : docs;
-  // В БУДУЩЕЕ навбар показывает только реальные смены: выходные, отпуск и дни
-  // без расписания не должны выглядеть как даты, на которые можно записать
-  // пациента. В ПРОШЛОМ — только дни, где были приёмы (история); пустые дни
-  // (смена без единого приёма или вообще без смены) в ленту не попадают.
+  // В БУДУЩЕЕ навбар показывает смены, а также дни, где смены ни у кого нет,
+  // но есть приёмы: иначе такой день исчезал из ленты вместе с приёмами, и
+  // найти их во «Окнах» было нельзя. Выходные и дни без расписания и без
+  // приёмов в ленту не попадают — они не должны выглядеть как даты, на которые
+  // можно записать пациента (счётчик окон на плитке и так покажет «нет»).
+  // В ПРОШЛОМ — только дни, где были приёмы (история); пустые дни (смена без
+  // единого приёма или вообще без смены) в ленту не попадают.
   const selectableDays = React.useMemo(() => {
     const map = new Map<string, AvailabilityDay>();
     const source = selectedDoc ? [selectedDoc] : docs;
     for (const { emp } of source) {
       for (const d of emp.days) {
         const isPast = d.date < todayIso;
-        const include = isPast
-          ? (d.appointments?.length ?? 0) > 0
-          : d.scheduled;
+        const hasAppointments = (d.appointments?.length ?? 0) > 0;
+        const include = isPast ? hasAppointments : d.scheduled || hasAppointments;
         if (!include) continue;
         const existing = map.get(d.date);
         if (!existing) {
@@ -843,20 +861,39 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
 
   const selectedDay = selectableDays.find((day) => day.date === selDay) ?? null;
 
-  // Колонку врача показываем, если у него в этот день была смена ИЛИ есть
-  // приёмы: прошлые дни попадают в ленту по приёмам, и приём мог быть создан
-  // вне планового расписания.
+  // Колонка есть у врача со сменой в этот день, а также у врача без смены, но с
+  // приёмами (приём вне планового расписания — так бывает). Пустых колонок при
+  // этом не появляется: DayTimeline рисует такие приёмы и помечает их «вне
+  // графика», а врач вообще без смены и без приёмов в список не попадает.
   const activeDayDate = selectedDay?.date ?? selDay ?? todayIso;
   const activeDocsOnDay = React.useMemo(
     () =>
       gridDocs.filter(({ emp }) => {
         const d = emp.days.find((x) => x.date === activeDayDate);
         if (!d) return false;
-        if ((d.appointments?.length ?? 0) > 0) return true;
-        return d.scheduled && !d.dayOff;
+        if (d.scheduled && !d.dayOff) return true;
+        return (d.appointments?.length ?? 0) > 0;
       }),
     [gridDocs, activeDayDate],
   );
+  /** Состав колонок дня — по нему сбрасываем пейджер, см. эффект ниже. */
+  const activeDocsKey = activeDocsOnDay.map(({ emp }) => emp.employeeId).join(",");
+
+  // Смена дня, специальности или запроса пересобирает набор колонок —
+  // возвращаемся к первому врачу дня, а не остаёмся на прежней позиции: у
+  // другого дня и врачи другие, и «третий по счёту» — уже не тот человек.
+  // Состав дня (activeDocsKey) в зависимостях нужен отдельно от selDay:
+  // список может смениться и без смены дня (догрузился чанк, сняли фильтр),
+  // а браузер сохраняет scrollLeft, и пейджер оставался на чужом индексе.
+  // useLayoutEffect, а не useEffect: браузер сохраняет scrollLeft контейнера
+  // при смене содержимого, и в обычном эффекте кадр успевал отрисоваться со
+  // старой позицией — шапка показывала первого врача, а под ней оставалась
+  // колонка предыдущего.
+  React.useLayoutEffect(() => {
+    setActiveDocIdx(0);
+    matrixScrollRef.current?.scrollTo({ left: 0 });
+  }, [selDay, specId, search, activeDocsKey]);
+
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
   const selectedMonthLabel = `${MONTHS_NOMINATIVE[selectedMonth.month()]} ${selectedMonth.year()}`;
 
@@ -1502,6 +1539,13 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   const current = activeDocsOnDay[Math.min(activeDocIdx, activeDocsOnDay.length - 1)];
                   const currentDay = current.emp.days.find((x) => x.date === activeDayDate);
                   const currentFree = currentDay?.freeCount ?? 0;
+                  const currentAppts = currentDay?.appointments?.length ?? 0;
+                  // Врач попал в колонки по приёмам, а не по смене: пишем это
+                  // прямо в пейджере, иначе «нет окон» выглядит как «всё занято».
+                  const currentOffSchedule =
+                    Boolean(currentDay) &&
+                    (!currentDay!.scheduled || currentDay!.dayOff) &&
+                    currentAppts > 0;
                   const many = activeDocsOnDay.length > 1;
                   const specLabel =
                     specLabelByEmployee.get(current.emp.employeeId) ?? t("slots.specialist");
@@ -1565,17 +1609,25 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           >
                             {specLabel}
                             {" · "}
-                            <Box
-                              component="span"
-                              sx={{
-                                color: currentFree > 0 ? "success.main" : "text.disabled",
-                                fontWeight: currentFree > 0 ? 600 : 400,
-                              }}
-                            >
-                              {currentFree > 0
-                                ? t("slots.freeSlotsCountShort", { count: currentFree })
-                                : t("slots.noSlotsShort")}
-                            </Box>
+                            {currentOffSchedule ? (
+                              <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                                {t("slots.offSchedule")}
+                                {" · "}
+                                {t("slots.visitsCount", { count: currentAppts })}
+                              </Box>
+                            ) : (
+                              <Box
+                                component="span"
+                                sx={{
+                                  color: currentFree > 0 ? "success.main" : "text.disabled",
+                                  fontWeight: currentFree > 0 ? 600 : 400,
+                                }}
+                              >
+                                {currentFree > 0
+                                  ? t("slots.freeSlotsCountShort", { count: currentFree })
+                                  : t("slots.noSlotsShort")}
+                              </Box>
+                            )}
                           </Typography>
                         </Box>
                         {many ? (
@@ -1627,6 +1679,9 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         {activeDocsOnDay.map(({ emp }, idx) => {
                           const day = emp.days.find((x) => x.date === activeDayDate);
                           const free = day?.freeCount ?? 0;
+                          const dayAppts = day?.appointments?.length ?? 0;
+                          const itemOffSchedule =
+                            Boolean(day) && (!day!.scheduled || day!.dayOff) && dayAppts > 0;
                           const selected = idx === activeDocIdx;
                           const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                           return (
@@ -1659,14 +1714,22 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                               <ListItemText
                                 primary={emp.fullName}
                                 secondary={
-                                  free > 0
-                                    ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
-                                    : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
+                                  itemOffSchedule
+                                    ? `${itemSpec} · ${t("slots.offSchedule")} · ${t("slots.visitsCount", { count: dayAppts })}`
+                                    : free > 0
+                                      ? `${itemSpec} · ${t("slots.freeSlotsCount", { count: free })}`
+                                      : `${itemSpec} · ${t("slots.noFreeSlotsShort")}`
                                 }
                                 primaryTypographyProps={{ variant: "body2", fontWeight: 600, noWrap: true }}
                                 secondaryTypographyProps={{
                                   variant: "caption",
-                                  sx: { color: free > 0 ? "success.main" : "text.disabled" },
+                                  sx: {
+                                    color: itemOffSchedule
+                                      ? "warning.main"
+                                      : free > 0
+                                        ? "success.main"
+                                        : "text.disabled",
+                                  },
                                 }}
                               />
                               {selected && (
@@ -1735,7 +1798,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   display: "flex",
                   flexDirection: "row",
                   overflowX: "auto",
-                  scrollSnapType: { xs: "x proximity", md: "none" },
+                  // mandatory, а не proximity: с proximity короткий свайп
+                  // возвращался на прежнего врача или замирал между колонками —
+                  // на экране оказывались две половины расписания. Теперь любой
+                  // свайп доводится до колонки, то есть до следующего врача.
+                  scrollSnapType: { xs: "x mandatory", md: "none" },
                   WebkitOverflowScrolling: "touch",
                   cursor: isFinePointer ? (isDragging ? "grabbing" : "grab") : "default",
                   userSelect: isDragging ? "none" : "auto",
@@ -1745,6 +1812,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 {activeDocsOnDay.map(({ emp, sum }) => {
                   const docDay = emp.days.find((d) => d.date === activeDayDate)!;
                   const specName = specId ? specs.find((s) => s.id === specId)?.name : null;
+                  const docOffSchedule =
+                    Boolean(docDay) &&
+                    (!docDay.scheduled || docDay.dayOff) &&
+                    (docDay.appointments?.length ?? 0) > 0;
 
                   return (
                     <Box
@@ -1757,6 +1828,10 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         flex: { xs: "0 0 100%", md: "0 0 33.3333%" },
                         minWidth: 175,
                         scrollSnapAlign: { xs: "start", md: "none" },
+                        // Один свайп — ровно один врач: без этого инерция
+                        // пролетала мимо двух-трёх колонок и было непонятно,
+                        // кого показали.
+                        scrollSnapStop: { xs: "always", md: "normal" },
                         height: "100%",
                         display: "flex",
                         flexDirection: "column",
@@ -1824,6 +1899,12 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             </Typography>
                             <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: "0.6875rem" }}>
                               {specName ?? t("slots.specialist")}
+                              {docOffSchedule && (
+                                <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
+                                  {" · "}
+                                  {t("slots.offSchedule")}
+                                </Box>
+                              )}
                             </Typography>
                           </Box>
                         </Stack>
