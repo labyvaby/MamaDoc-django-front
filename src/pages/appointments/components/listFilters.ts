@@ -177,6 +177,30 @@ function serviceLineTotal(line: AppointmentServiceLine): number {
 }
 
 /**
+ * Множитель скидки приёма: во сколько раз строка дешевле своей каталожной цены.
+ *
+ * Скидка вводится на приём целиком (`discountAmount`, дровер оплаты), а строки
+ * услуг приходят с бэка ДО скидки — `lineTotal` её не знает. Без множителя чек
+ * со скидкой 50% попадал в сумму врача полностью, и группа показывала больше,
+ * чем касса приняла.
+ *
+ * ⚠ Допущение фронта: разбивки скидки по строкам бэк не отдаёт, поэтому она
+ * разносится пропорционально — по всем строкам приёма и по товарам в нём, если
+ * они есть (база — `totalAmount`). Кому именно из двух специалистов скидали —
+ * из данных не следует.
+ */
+function discountFactor(appt: DjangoAppointment): number {
+  const discount = parseFloat(appt.discountAmount ?? "") || 0;
+  if (discount <= 0) return 1;
+
+  const total = parseFloat(appt.totalAmount ?? "") || 0;
+  if (total <= 0) return 1;
+
+  const factor = (total - discount) / total;
+  return factor > 0 ? (factor < 1 ? factor : 1) : 0;
+}
+
+/**
  * Какая доля чека приёма уже закрыта деньгами: 0 — не платили, 1 — закрыт.
  *
  * ⚠ Допущение фронта: разбивки оплаты по строкам услуг бэк не отдаёт, поэтому
@@ -224,8 +248,11 @@ export function employeeMoneyTotals(
       .reduce((sum, sl) => sum + serviceLineTotal(sl), 0);
 
     if (lineSum <= 0) continue;
-    accrued += lineSum;
-    paid += lineSum * paidShare(appt);
+    // Скидка приёма живёт на чеке, а не в строках (см. discountFactor) —
+    // без неё сумма группы завышена на весь размер скидки.
+    const net = lineSum * discountFactor(appt);
+    accrued += net;
+    paid += net * paidShare(appt);
   }
 
   return { accrued, paid };

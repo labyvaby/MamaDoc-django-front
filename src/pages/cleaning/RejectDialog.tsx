@@ -12,12 +12,12 @@ import {
   Typography,
 } from "@mui/material";
 import { useNotification } from "@refinedev/core";
-import dayjs from "dayjs";
 
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { getErrorMessage } from "../../api/client";
 import { rejectCleaningRecord, type CleaningRecord } from "../../api/cleaning";
+import { formatCleaningDate } from "./recordDate";
 
 interface RejectDialogProps {
   /** null — диалог закрыт. */
@@ -78,8 +78,7 @@ const RejectDialog: React.FC<RejectDialogProps> = ({ record, onClose, onSuccess 
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <Typography variant="body2" color="text.secondary">
-            {record?.typeName} ·{" "}
-            {record ? dayjs(record.createdAt).format("DD.MM.YYYY HH:mm") : ""} ·{" "}
+            {record?.typeName} · {record ? formatCleaningDate(record) : ""} ·{" "}
             {record?.employeeName}
           </Typography>
           <TextField

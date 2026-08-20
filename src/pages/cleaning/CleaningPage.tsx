@@ -57,9 +57,11 @@ import {
   getCleaningRecords,
   getCleaningSummary,
   getCleaningTypes,
+  isCleaningBackdated,
   type CleaningRecord,
   type CleaningRecordStatus,
 } from "../../api/cleaning";
+import { cleaningDateTooltip, formatCleaningDate } from "./recordDate";
 import ReportDialog from "./ReportDialog";
 import PhotoViewerDialog from "./PhotoViewerDialog";
 import RejectDialog from "./RejectDialog";
@@ -263,11 +265,26 @@ const CleaningPage: React.FC = () => {
   const columns = React.useMemo<GridColDef<CleaningRecord>[]>(
     () => [
       {
-        field: "createdAt",
+        // Дата уборки (performedAt), а не момент создания записи: по ней бэк
+        // считает месяц, сводку и ЗП. Момент создания — в тултипе.
+        field: "performedAt",
         headerName: "Дата",
-        width: 130,
+        width: 140,
         sortable: false,
-        valueFormatter: (value: string) => dayjs(value).format("DD.MM.YYYY HH:mm"),
+        renderCell: (p) => (
+          <Tooltip title={cleaningDateTooltip(p.row)}>
+            <Stack sx={{ minWidth: 0, justifyContent: "center", height: "100%" }}>
+              <Typography variant="body2" noWrap>
+                {formatCleaningDate(p.row)}
+              </Typography>
+              {isCleaningBackdated(p.row) && (
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  задним числом
+                </Typography>
+              )}
+            </Stack>
+          </Tooltip>
+        ),
       },
       {
         field: "typeName",
