@@ -1,0 +1,88 @@
+{
+  "brandTitle": "Онлайн-запись",
+  "metaDescription": "Онлайн-запись: выберите {{specialist.acc}}, услугу и удобное время.",
+  "nav": {
+    "about": "О нас",
+    "directions": "Направления",
+    "services": "Услуги и цены",
+    "specialists": "{{specialist.nomPl, capitalize}}",
+    "branches": "Адреса",
+    "reviews": "Отзывы",
+    "book": "Записаться"
+  },
+  "hero": {
+    "title": "Онлайн-запись за пару минут",
+    "taglineDefault": "Выберите {{specialist.acc}}, услугу и удобное время — подтверждение придёт по телефону.",
+    "cta": "Записаться онлайн",
+    "call": "Позвонить",
+    "statSpecialists_one": "{{count}} {{specialist.nom}}",
+    "statSpecialists_few": "{{count}} {{specialist.gen}}",
+    "statSpecialists_many": "{{count}} {{specialist.genPl}}",
+    "statDirections_one": "{{count}} направление",
+    "statDirections_few": "{{count}} направления",
+    "statDirections_many": "{{count}} направлений",
+    "statBranches_one": "{{count}} {{branch.nom}}",
+    "statBranches_few": "{{count}} {{branch.gen}}",
+    "statBranches_many": "{{count}} {{branch.genPl}}",
+    "today": "сегодня",
+    "nearestSlots": "Ближайшее свободное время"
+  },
+  "about": {
+    "title": "О нас"
+  },
+  "directions": {
+    "title": "Направления",
+    "subtitle": "Выберите направление — покажем, кто принимает и когда есть свободное время",
+    "empty": "Направления пока не заполнены."
+  },
+  "services": {
+    "title": "Услуги и цены",
+    "subtitle": "Актуальный прайс — цены обновляются вместе с прайсом {{org.gen}}",
+    "duration": "{{count}} мин",
+    "all": "Все услуги при записи",
+    "empty": "Прайс пока не заполнен."
+  },
+  "specialists": {
+    "title": "{{specialist.nomPl, capitalize}}",
+    "subtitle": "Свободное время видно сразу на странице записи",
+    "experience_one": "{{count}} год опыта",
+    "experience_few": "{{count}} года опыта",
+    "experience_many": "{{count}} лет опыта",
+    "freeToday_one": "Сегодня {{count}} окно",
+    "freeToday_few": "Сегодня {{count}} окна",
+    "freeToday_many": "Сегодня {{count}} окон",
+    "book": "Записаться",
+    "all": "Показать всех",
+    "empty": "{{specialist.nomPl, capitalize}} пока не добавлены."
+  },
+  "branches": {
+    "title": "Адреса",
+    "subtitle": "Приходите в удобный {{branch.nom}}",
+    "route": "Маршрут",
+    "call": "Позвонить",
+    "empty": "Адреса пока не заполнены."
+  },
+  "reviews": {
+    "title": "Отзывы",
+    "subtitle": "Оставляют те, кто уже был на {{visit.pre}}",
+    "about": "О {{specialist.pre}} {{name}}",
+    "empty": "Отзывов пока нет."
+  },
+  "cta": {
+    "title": "Готовы записаться?",
+    "subtitle": "Свободное время видно онлайн, звонить не нужно.",
+    "button": "Выбрать время"
+  },
+  "footer": {
+    "contacts": "Контакты",
+    "workHours": "Часы работы",
+    "links": "Разделы",
+    "socials": "Мы в соцсетях",
+    "bookLink": "Онлайн-запись",
+    "rights": "Все права защищены."
+  },
+  "preview": {
+    "badge": "Предпросмотр — так сайт увидит гость",
+    "hint": "Правки видны только в этой вкладке, пока не сохранены."
+  }
+}

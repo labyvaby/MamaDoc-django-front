@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 
 import { BOOKING_ORG_SLUG } from "../../api/publicBooking";
 
@@ -41,10 +41,17 @@ export function bookPath(path: string, orgSlug: string): string {
   return `${pathname}?${params.toString()}`;
 }
 
-/** Клиника текущей страницы витрины. */
+/**
+ * Клиника текущей страницы витрины или лендинга.
+ *
+ * Лендинг живёт по красивому адресу `/site/<slug>`, где организация стоит в
+ * пути, а не в query — рассылать клиенту `/site?org=klinika-21` было бы странно.
+ * Путь приоритетнее: если он есть, `?org=` в том же адресе бессмысленен.
+ */
 export function useBookingOrgSlug(): string {
   const [searchParams] = useSearchParams();
-  return orgSlugFromSearch(searchParams);
+  const { orgSlug } = useParams<{ orgSlug?: string }>();
+  return orgSlug?.trim() || orgSlugFromSearch(searchParams);
 }
 
 export interface BookingNav {

@@ -209,6 +209,24 @@ export interface OrganizationPreview {
 export interface OrganizationDetail extends OrganizationPreview {
   address: string | null;
   phones: string[];
+  /**
+   * Вертикаль бизнеса — от неё зависит терминология публичных страниц
+   * («врач» в клинике, «мастер» в салоне). В контракте §2 поля нет, тикет —
+   * `MamaDoc/backend_ticket_public_landing.md` §1. Пока не отдаётся, публичные
+   * страницы говорят терминами клиники (DEFAULT_VERTICAL).
+   */
+  vertical?: string | null;
+  /**
+   * Оформление лендинга `/site`, которое владелец задал в CRM (слоган, «о нас»,
+   * соцсети, набор блоков). Хранится на бэке как есть — свободный JSON внутри
+   * `themeConfig.landing` организации, и сюда попадает без разбора полей.
+   *
+   * Форму значения проверяет фронт (`parseLandingConfig`): это пользовательский
+   * ввод из CRM, а не контракт. Поля бэк не отдаёт до тикета
+   * `MamaDoc/backend_ticket_public_landing.md` §2 — до тех пор гость видит
+   * лендинг, целиком собранный из данных CRM.
+   */
+  landing?: unknown;
 }
 
 /** Услуга (§2, service preview). base_price — строка Decimal. */

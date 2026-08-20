@@ -108,7 +108,7 @@ interface BookingBrand {
   iconUrl: string | null;
 }
 
-function useBookingBrand(organization: OrganizationDetail | null): BookingBrand {
+export function useBookingBrand(organization: OrganizationDetail | null): BookingBrand {
   const orgSlug = useBookingOrgSlug();
   const isDefaultOrg = orgSlug === BOOKING_ORG_SLUG;
   return React.useMemo(
@@ -153,7 +153,7 @@ function absoluteUrl(path: string): string {
  * превью ссылки одинаково для всех страниц витрины и описывает организацию по
  * умолчанию. Персональное превью врача требует серверного рендеринга.
  */
-function usePageMeta(title: string | null, description: string, imageUrl: string | null) {
+export function usePageMeta(title: string | null, description: string, imageUrl: string | null) {
   React.useEffect(() => {
     if (!title) return;
     const previousTitle = document.title;
@@ -186,7 +186,7 @@ function usePageMeta(title: string | null, description: string, imageUrl: string
  * логотип CRM. Иконки CRM снимаем и возвращаем целиком: у них разные `type`
  * (ico и svg), подменить один `href` нельзя — браузер отрисует не то.
  */
-function useFavicon(href: string | null) {
+export function useFavicon(href: string | null) {
   React.useEffect(() => {
     if (!href) return;
     const replaced = Array.from(

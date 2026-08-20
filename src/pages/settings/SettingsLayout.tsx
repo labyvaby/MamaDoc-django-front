@@ -16,6 +16,7 @@ import { Link as RouterLink, useLocation } from "react-router";
 
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
+import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
@@ -83,6 +84,12 @@ const TAB_DEFS: TabDef[] = [
     key: "branches",
     to: "/settings/branches",
     icon: <StoreOutlined fontSize="small" />,
+    group: "clinic",
+  },
+  {
+    key: "site",
+    to: "/settings/site",
+    icon: <LanguageOutlined fontSize="small" />,
     group: "clinic",
   },
   {
