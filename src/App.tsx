@@ -48,6 +48,9 @@ import {
   SETTINGS_TAB_PERMISSIONS,
 } from "./config/accessPermissions";
 import { useCanChecker } from "./hooks/useCan";
+import { usePermissions } from "./hooks/usePermissions";
+import { useModuleGate } from "./hooks/useModuleGate";
+import { resolveHomeRoute } from "./config/homeRoute";
 import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
@@ -124,23 +127,18 @@ const ProfilePage = lazy(() => import("./pages/profile"));
 // Вспомогательный компонент для защиты корневого редиректа
 const RootRedirect = () => {
   const { loading, can } = useCanChecker();
-  // Рабочие пространства приёмов гейтятся отдельными page-правами, поэтому
-  // корень ведёт на первое доступное: Регистратура → Кабинет врача →
-  // Процедурный кабинет. Fallback остаётся /appointments (AccessDenied
-  // подскажет запросить право, это честнее пустого экрана).
-  if (loading) {
+  const { role, activeEmployee } = usePermissions();
+  const { loading: moduleLoading, moduleGate } = useModuleGate();
+  if (loading || moduleLoading) {
     return <LinearProgress />;
   }
-  if (can(PAGE_PERMISSIONS.appointmentsRegistry)) {
-    return <Navigate to="/appointments" replace />;
-  }
-  if (can(PAGE_PERMISSIONS.doctorRoom)) {
-    return <Navigate to="/doctor" replace />;
-  }
-  if (can(PAGE_PERMISSIONS.nurseRoom)) {
-    return <Navigate to="/nurse" replace />;
-  }
-  return <Navigate to="/appointments" replace />;
+  const path = resolveHomeRoute({
+    roleCode: role?.name,
+    can,
+    canOpenModule: moduleGate,
+    hasActiveEmployee: activeEmployee != null,
+  });
+  return <Navigate to={path} replace />;
 };
 
 const DjangoQueryCacheReset = () => {
@@ -561,7 +559,10 @@ function App() {
                         <Route
                           path="doctor"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.doctorRoom}>
+                            <RequirePermission
+                              permission={PAGE_PERMISSIONS.doctorRoom}
+                              fallback={<Navigate to="/" replace />}
+                            >
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="me" />
                               </Suspense>
@@ -571,7 +572,10 @@ function App() {
                         <Route
                           path="nurse"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.nurseRoom}>
+                            <RequirePermission
+                              permission={PAGE_PERMISSIONS.nurseRoom}
+                              fallback={<Navigate to="/" replace />}
+                            >
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="nurse" />
                               </Suspense>
@@ -670,7 +674,10 @@ function App() {
                             <Route
                               path="appointments"
                               element={
-                                <RequirePermission permission={PAGE_PERMISSIONS.appointmentsRegistry}>
+                                <RequirePermission
+                                  permission={PAGE_PERMISSIONS.appointmentsRegistry}
+                                  fallback={<Navigate to="/" replace />}
+                                >
                                   <Suspense fallback={<LinearProgress />}>
                                     <AppointmentsPage />
                                   </Suspense>

@@ -21,6 +21,8 @@ import React from "react";
 import {
   formatPhoneLocalDisplay,
   getPhoneLocalMaxLength,
+  normalizePhoneLocal,
+  parsePhoneInput,
   type PhoneCountryCode,
 } from "../utility/phone";
 
@@ -49,15 +51,14 @@ export interface UsePhoneLocalInputResult {
  * @param countryCode код страны — от него зависит максимальная длина номера
  * @param local       текущие цифры номера (то, что лежит в состоянии формы)
  * @param setLocal    сеттер этих цифр
- * @param normalize   доп. обработка перед сохранением (например
- *                    `normalizePhoneLocal` на экране входа: там нет обработчика
- *                    вставки, и код страны из буфера отрезает именно она)
+ * @param setCountryCode меняет страну, когда пользователь набрал или вставил
+ *                       её код прямо в поле локального номера
  */
 export function usePhoneLocalInput(
   countryCode: PhoneCountryCode,
   local: string,
   setLocal: (digits: string) => void,
-  normalize?: (countryCode: PhoneCountryCode, digits: string) => string,
+  setCountryCode?: (countryCode: PhoneCountryCode) => void,
 ): UsePhoneLocalInputResult {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   // Куда вернуть каретку после перерисовки: число цифр слева от неё.
@@ -70,19 +71,26 @@ export function usePhoneLocalInput(
    * останется символ, которого нет в состоянии.
    */
   const applyDigits = React.useCallback(
-    (el: HTMLInputElement, raw: string, caretDigits: number) => {
-      const digits = normalize ? normalize(countryCode, raw) : raw;
-      if (digits === local) {
-        const formatted = formatPhoneLocalDisplay(countryCode, local);
+    (
+      el: HTMLInputElement,
+      nextCountryCode: PhoneCountryCode,
+      raw: string,
+      caretDigits: number,
+    ) => {
+      const digits = normalizePhoneLocal(nextCountryCode, raw);
+      const countryChanged = nextCountryCode !== countryCode;
+      if (digits === local && !countryChanged) {
+        const formatted = formatPhoneLocalDisplay(nextCountryCode, local);
         el.value = formatted;
         const pos = caretAfterDigits(formatted, caretDigits);
         el.setSelectionRange(pos, pos);
         return;
       }
       caretDigitsRef.current = caretDigits;
+      if (countryChanged) setCountryCode?.(nextCountryCode);
       setLocal(digits);
     },
-    [countryCode, local, normalize, setLocal],
+    [countryCode, local, setCountryCode, setLocal],
   );
 
   React.useLayoutEffect(() => {
@@ -101,11 +109,16 @@ export function usePhoneLocalInput(
       const el = event.target as HTMLInputElement;
       const raw = el.value;
       const caret = el.selectionStart ?? raw.length;
+      const parsed = parsePhoneInput(countryCode, raw);
 
       applyDigits(
         el,
-        raw.replace(/\D/g, "").slice(0, getPhoneLocalMaxLength(countryCode)),
-        raw.slice(0, caret).replace(/\D/g, "").length,
+        parsed.countryCode,
+        parsed.local,
+        Math.min(
+          parsed.local.length,
+          raw.slice(0, caret).replace(/\D/g, "").length,
+        ),
       );
     },
     [applyDigits, countryCode],
@@ -142,6 +155,7 @@ export function usePhoneLocalInput(
       event.preventDefault();
       applyDigits(
         el,
+        countryCode,
         (value.slice(0, start) + value.slice(end))
           .replace(/\D/g, "")
           .slice(0, getPhoneLocalMaxLength(countryCode)),

@@ -205,7 +205,12 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
   const [phoneCountry, setPhoneCountry] = React.useState<PhoneCountryCode>("+996");
   const [phoneLocal, setPhoneLocal] = React.useState("");
   // Правка в середине номера не должна выбрасывать курсор в конец.
-  const phoneInput = usePhoneLocalInput(phoneCountry, phoneLocal, setPhoneLocal);
+  const phoneInput = usePhoneLocalInput(
+    phoneCountry,
+    phoneLocal,
+    setPhoneLocal,
+    setPhoneCountry,
+  );
   const [email, setEmail] = React.useState("");
   const [status, setStatus] = React.useState<"active" | "inactive" | "fired">("active");
   const [clinicalRole, setClinicalRole] = React.useState<"doctor" | "nurse" | "other">("other");

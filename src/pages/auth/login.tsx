@@ -36,7 +36,7 @@ import { PhoneCountryCodeSelect } from "../../components/ui";
 import {
   composePhone,
   getPhoneLocalMaxLength,
-  normalizePhoneLocal,
+  isPhoneLocalComplete,
   formatPhoneLocalDisplay,
   parsePhone,
   type PhoneCountryCode,
@@ -89,7 +89,9 @@ const saveAuthPhone = (fullPhone: string) => {
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const redirectTo = params.get("to") || "/appointments";
+  // Без явного deep-link ведём на корень: RootRedirect выберет первую реально
+  // доступную рабочую страницу (врач → /doctor, медсестра → /nurse и т.д.).
+  const redirectTo = params.get("to") || "/";
 
   const [authMethod, setAuthMethod] = React.useState<"email" | "phone">(readSavedAuthMethod);
 
@@ -98,9 +100,8 @@ const LoginPage: React.FC = () => {
     () => readSavedPhone().countryCode,
   );
   const [phoneLocal, setPhoneLocal] = React.useState(() => readSavedPhone().local);
-  // Правка в середине номера не должна выбрасывать курсор в конец. Обработчика
-  // вставки здесь нет, поэтому код страны из буфера по-прежнему режет
-  // normalizePhoneLocal — теперь внутри хука.
+  // Правка в середине номера не должна выбрасывать курсор в конец. Код страны
+  // и trunk-префикс нормализуются внутри общего хука.
   const phoneInput = usePhoneLocalInput(
     phoneCountryCode,
     phoneLocal,
@@ -108,7 +109,7 @@ const LoginPage: React.FC = () => {
       setPhoneLocal(digits);
       clearError();
     },
-    normalizePhoneLocal,
+    setPhoneCountryCode,
   );
   const [lastSentPhone, setLastSentPhone] = React.useState<string | null>(null);
   const [otpCode, setOtpCode] = React.useState("");
@@ -197,9 +198,7 @@ const LoginPage: React.FC = () => {
     setErrorMsg(null);
 
     const digits = phoneLocal.replace(/[^0-9]/g, "");
-    const maxLen = getPhoneLocalMaxLength(phoneCountryCode);
-
-    if (digits.length < maxLen) {
+    if (!isPhoneLocalComplete(phoneCountryCode, digits)) {
       setErrorMsg("Введите полный номер телефона");
       setLoading(false);
       return;
@@ -295,8 +294,8 @@ const LoginPage: React.FC = () => {
 
   // Инлайн-валидация: показываем подсказку у поля, только когда пользователь
   // уже что-то ввёл, но значение ещё неполное/некорректное.
-  const phoneMaxLen = getPhoneLocalMaxLength(phoneCountryCode);
-  const phoneIncomplete = phoneLocal.length > 0 && phoneLocal.length < phoneMaxLen;
+  const phoneIncomplete =
+    phoneLocal.length > 0 && !isPhoneLocalComplete(phoneCountryCode, phoneLocal);
   const emailInvalid =
     email.trim().includes("@") && !EMAIL_RE.test(email.trim());
 

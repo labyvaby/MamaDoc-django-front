@@ -8,6 +8,7 @@ import {
   PHONE_COUNTRIES,
   PRIMARY_PHONE_COUNTRY_COUNT,
   normalizePhoneLocal,
+  parsePhoneInput,
   parsePastedPhone,
   phonePlaceholder,
   type PhoneCountryInfo,
@@ -167,9 +168,10 @@ export const PhoneField: React.FC<{
         disabled={disabled}
         value={phone}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-          // Ввод сразу приводим к формату страны: лишние цифры не влезут,
-          // местный trunk-префикс (0 или 8) снимается.
-          onPhoneChange(normalizePhoneLocal(country.dialCode, e.target.value));
+          const parsed = parsePhoneInput(country.dialCode, e.target.value);
+          const nextCountry = list.find((c) => c.dialCode === parsed.countryCode);
+          if (nextCountry) onCountryChange(nextCountry);
+          onPhoneChange(parsed.local);
         }}
         onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
           // Вставленный номер может прийти с кодом страны («+996 700…»,

@@ -35,6 +35,7 @@ import {
   getPhoneExactLength,
   isPhoneLocalComplete,
   normalizePhoneLocal,
+  parsePhoneInput,
   parsePastedPhone,
   phonePlaceholder,
   type PhoneCountryInfo,
@@ -295,11 +296,11 @@ export const GuestDialog: React.FC<{
             autoComplete="tel"
             value={phone}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              // Ввод сразу приводим к формату страны: лишние цифры не влезут,
-              // местный trunk-префикс (0 или 8) снимается.
-              const next = normalizePhoneLocal(country.dialCode, e.target.value);
-              setPhone(next);
-              if (isPhoneLocalComplete(country.dialCode, next)) setShowPhoneError(false);
+              const parsed = parsePhoneInput(country.dialCode, e.target.value);
+              const nextCountry = list.find((c) => c.dialCode === parsed.countryCode);
+              if (nextCountry) setCountry(nextCountry);
+              setPhone(parsed.local);
+              if (isPhoneLocalComplete(parsed.countryCode, parsed.local)) setShowPhoneError(false);
             }}
             onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
               // Вставленный номер может прийти с кодом страны («+996 700…»,

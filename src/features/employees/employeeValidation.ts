@@ -11,7 +11,10 @@
 
 import {
   composePhone,
+  getPhoneExactLength,
   getPhoneLocalMaxLength,
+  getPhoneLocalMinLength,
+  isPhoneLocalComplete,
   type PhoneCountryCode,
 } from "../../utility/phone";
 
@@ -35,9 +38,10 @@ export function validatePhoneLocal(
 ): string {
   if (!local) return ""; // optional
   if (!/^\d+$/.test(local)) return "Только цифры";
-  const maxLen = getPhoneLocalMaxLength(countryCode);
-  if (local.length !== maxLen) {
-    return `Для ${countryCode} требуется ровно ${maxLen} цифр`;
+  if (!isPhoneLocalComplete(countryCode, local)) {
+    const exact = getPhoneExactLength(countryCode);
+    if (exact != null) return `Для ${countryCode} требуется ровно ${exact} цифр`;
+    return `Для ${countryCode} требуется от ${getPhoneLocalMinLength(countryCode)} до ${getPhoneLocalMaxLength(countryCode)} цифр`;
   }
   return "";
 }

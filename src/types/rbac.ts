@@ -12,7 +12,7 @@
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'unavailable';
 
 // Типы ролей в системе
-export type RoleName = 'superadmin' | 'admin' | 'administrator' | 'doctor' | 'nurse' | 'receptionist' | 'registrator' | 'accountant' | 'manager' | 'owner';
+export type RoleName = 'superadmin' | 'admin' | 'administrator' | 'doctor' | 'nurse' | 'receptionist' | 'registrator' | 'accountant' | 'manager' | 'cleaner' | 'owner';
 
 // Интерфейс роли
 export interface Role {
@@ -35,6 +35,7 @@ export const ROLE_HOME_PAGES: Record<RoleName, string> = {
   registrator: '/appointments',
   accountant: '/appointments',
   manager: '/appointments',
+  cleaner: '/cleaning',
   owner: '/appointments',
 };
 

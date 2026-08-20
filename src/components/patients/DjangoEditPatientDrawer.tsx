@@ -135,7 +135,12 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
   // Правка в середине номера не должна выбрасывать курсор в конец.
-  const phoneInput = usePhoneLocalInput(phoneCountryCode, phone, setPhone);
+  const phoneInput = usePhoneLocalInput(
+    phoneCountryCode,
+    phone,
+    setPhone,
+    setPhoneCountryCode,
+  );
   const [birth, setBirth] = React.useState("");
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
