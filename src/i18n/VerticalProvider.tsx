@@ -95,3 +95,35 @@ export const useT = (
 
   return { t, term: glossary, vertical };
 };
+
+/**
+ * Вертикаль для публичных страниц (витрина `/book/*`, лендинг `/site`).
+ *
+ * `VerticalProvider` берёт вертикаль из активной организации в `/auth/me/`, а у
+ * гостя сессии сотрудника нет — там всегда получалась клиника, и салон красоты
+ * на своей же витрине читал «Запишитесь к врачу». Публичные страницы знают свою
+ * организацию из публичного API, поэтому вертикаль приходит сюда параметром.
+ *
+ * Синглтон глоссария (`setCurrentGlossary`) здесь трогаем осознанно: на
+ * публичных страницах код вне React (`tt()`, api/*) должен говорить теми же
+ * терминами. Витрина и CRM в одной вкладке одновременно не живут — витрина
+ * рендерится вне staff-layout.
+ */
+export const PublicVerticalProvider: React.FC<{
+  /** Код вертикали «с провода»: валидируем здесь, снаружи он просто строка. */
+  vertical: string | null | undefined;
+  children: React.ReactNode;
+}> = ({ vertical, children }) => {
+  const resolved: Vertical = isVertical(vertical) ? vertical : DEFAULT_VERTICAL;
+
+  useEffect(() => {
+    setCurrentGlossary(resolved);
+  }, [resolved]);
+
+  const value = useMemo<VerticalContextValue>(
+    () => ({ vertical: resolved, glossary: getGlossary(resolved) }),
+    [resolved]
+  );
+
+  return <VerticalContext.Provider value={value}>{children}</VerticalContext.Provider>;
+};

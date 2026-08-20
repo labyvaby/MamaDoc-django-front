@@ -44,6 +44,9 @@ export const PAGE_PERMISSIONS = {
 export const SETTINGS_TAB_PERMISSIONS = {
   organization: "organization.view",
   branches: "branches.view",
+  // Сайт-визитку настраивает тот же, кто правит организацию: конструктор
+  // пишет в её themeConfig, отдельного кода прав на бэке нет.
+  site: "organization.view",
   roles: "rbac.roles.view",
   memberships: "rbac.memberships.view",
   specializations: "staff.specializations.view",

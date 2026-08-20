@@ -267,52 +267,75 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
         </Typography>
       </Box>
 
-      {entry.branchName && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          noWrap
-          sx={{ width: 120, flexShrink: 0, display: { xs: "none", md: "block" } }}
-        >
-          {entry.branchName}
-        </Typography>
-      )}
+      {/* Колонки справа держат фиксированную ширину и рендерятся всегда, даже
+          пустыми: чип «Наличные» шире «Карты», и на авто-ширине он сдвигал
+          название филиала от строки к строке (жалоба 20.08.2026). По той же
+          причине пустой филиал занимает своё место, а не исчезает. */}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        noWrap
+        sx={{ width: 120, flexShrink: 0, display: { xs: "none", md: "block" } }}
+      >
+        {entry.branchName ?? ""}
+      </Typography>
 
       {/* Способ безнала — отдельным чипом: у наличных, баланса, страховых и
           продаж товаров его нет, и подменять им метод было бы неверно. */}
-      {cashlessName && (
+      <Box
+        sx={{
+          width: 132,
+          flexShrink: 0,
+          display: { xs: "none", lg: "flex" },
+          justifyContent: "flex-end",
+        }}
+      >
+        {cashlessName && (
+          <Chip
+            label={cashlessName}
+            // Длинное название способа обрезается по ширине колонки (лейбл чипа
+            // сам ставит эллипсис) — полное видно по наведению. Расширять
+            // колонку под самый длинный способ нельзя: она снова начнёт ездить.
+            title={cashlessName}
+            size="small"
+            variant="outlined"
+            sx={{
+              maxWidth: "100%",
+              height: 24,
+              borderRadius: "7px",
+              fontWeight: 500,
+              fontSize: "0.72rem",
+              color: "text.secondary",
+            }}
+          />
+        )}
+      </Box>
+
+      <Box
+        sx={{
+          width: 96,
+          flexShrink: 0,
+          display: { xs: "none", md: "flex" },
+          justifyContent: "flex-end",
+        }}
+      >
         <Chip
-          label={cashlessName}
+          label={METHOD_LABELS[entry.method] ?? entry.method}
           size="small"
-          variant="outlined"
-          sx={{
-            display: { xs: "none", lg: "inline-flex" },
-            maxWidth: 160,
+          sx={(t) => ({
+            maxWidth: "100%",
             height: 24,
             borderRadius: "7px",
             fontWeight: 500,
             fontSize: "0.72rem",
-            color: "text.secondary",
-          }}
+            color: `${methodPaletteKey}.${methodPaletteKey === "primary" ? "onSurface" : "main"}`,
+            bgcolor: alpha(
+              t.palette[methodPaletteKey].main,
+              t.palette.mode === "dark" ? 0.18 : 0.1,
+            ),
+          })}
         />
-      )}
-
-      <Chip
-        label={METHOD_LABELS[entry.method] ?? entry.method}
-        size="small"
-        sx={(t) => ({
-          display: { xs: "none", md: "inline-flex" },
-          height: 24,
-          borderRadius: "7px",
-          fontWeight: 500,
-          fontSize: "0.72rem",
-          color: `${methodPaletteKey}.${methodPaletteKey === "primary" ? "onSurface" : "main"}`,
-          bgcolor: alpha(
-            t.palette[methodPaletteKey].main,
-            t.palette.mode === "dark" ? 0.18 : 0.1,
-          ),
-        })}
-      />
+      </Box>
 
       <Typography
         variant="body2"

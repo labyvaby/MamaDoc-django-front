@@ -94,6 +94,7 @@ const PublicBookDoctorsPage = lazy(() => import("./pages/public-booking/DoctorsP
 const PublicBookDoctorPage = lazy(() => import("./pages/public-booking/DoctorBookingPage"));
 const PublicBookMyBookingsPage = lazy(() => import("./pages/public-booking/MyBookingsPage"));
 const PublicBookByCodePage = lazy(() => import("./pages/public-booking/BookingByCodePage"));
+const PublicLandingPage = lazy(() => import("./pages/public-site"));
 const ExpenseCategoriesSettingsPage = lazy(() => import("./pages/settings/ExpenseCategoriesSettingsPage"));
 const TasksSettingsPage = lazy(() => import("./pages/settings/TasksSettingsPage"));
 const DiagnosesSettingsPage = lazy(() => import("./pages/settings/DiagnosesSettingsPage"));
@@ -104,6 +105,7 @@ const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/djang
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
+const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"));
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
 const SpecializationsSettingsPage = lazy(() => import("./pages/settings/SpecializationsSettingsPage"));
@@ -704,6 +706,16 @@ function App() {
                               }
                             />
                             <Route
+                              path="settings/site"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.site}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SiteSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
                               path="settings/roles"
                               element={
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.roles}>
@@ -1041,6 +1053,27 @@ function App() {
                           element={
                             <Suspense fallback={<LinearProgress />}>
                               <PublicBookByCodePage />
+                            </Suspense>
+                          }
+                        />
+                        {/* Лендинг организации: сайт-визитка на данных CRM, из
+                            которого кнопки ведут в воронку /book. Два адреса —
+                            `/site/<slug>` для ссылок наружу (его дают в рекламе)
+                            и `/site` для организации по умолчанию либо `?org=`,
+                            как на витрине записи. */}
+                        <Route
+                          path="site"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicLandingPage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
+                          path="site/:orgSlug"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <PublicLandingPage />
                             </Suspense>
                           }
                         />
