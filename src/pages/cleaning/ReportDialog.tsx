@@ -21,6 +21,7 @@ import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
+import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { ApiError, getErrorMessage } from "../../api/client";
@@ -34,8 +35,13 @@ import {
   CLEANING_PHOTO_TARGET_BYTES,
   createCleaningRecord,
   getCleaningEmployees,
+  type CleaningEmployee,
   type CleaningType,
 } from "../../api/cleaning";
+
+// Стабильная ссылка на пустой список: `?? []` пересоздавал бы массив каждый
+// рендер и обнулял мемоизацию сортировки.
+const NO_EMPLOYEES: CleaningEmployee[] = [];
 
 interface ReportDialogProps {
   open: boolean;
@@ -87,7 +93,36 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
     queryFn: ({ signal }) => getCleaningEmployees(orgId, signal),
     enabled: open && canAssign,
   });
-  const employees = employeesQuery.data ?? [];
+  const employees = employeesQuery.data ?? NO_EMPLOYEES;
+
+  // Роль сотрудника берём из справочника штата: /cleaning/employees/ отдаёт
+  // только id и ФИО (проверено на проде 20.08.2026), а в списке кандидатов
+  // помимо уборщиц сидят все, у кого есть право отмечать уборку — регистраторы
+  // и суперадмины. Без подписи выбрать нужного человека можно только по памяти.
+  // Тикет на поле `role` в ответе — MamaDoc/backend_ticket_cleaning_employee_role.md.
+  const { employees: staff } = useAllActiveEmployees(open && canAssign);
+  const roleByEmployee = React.useMemo(() => {
+    const map = new Map<number, { name: string; code: string }>();
+    staff.forEach((emp) => {
+      if (emp.role) map.set(emp.id, { name: emp.role.name, code: emp.role.code });
+    });
+    return map;
+  }, [staff]);
+
+  // Уборщицы — наверх списка, остальные (право есть, но уборка не их работа) —
+  // ниже, каждая группа по алфавиту. Сотрудник другого филиала в справочник
+  // штата не попадает (бэк режет его по активному филиалу) — тогда роли нет и
+  // человек остаётся в общей группе без подписи, а не исчезает из выбора.
+  const sortedEmployees = React.useMemo(
+    () =>
+      [...employees].sort((a, b) => {
+        const aCleaner = roleByEmployee.get(a.id)?.code === "cleaner" ? 0 : 1;
+        const bCleaner = roleByEmployee.get(b.id)?.code === "cleaner" ? 0 : 1;
+        if (aCleaner !== bCleaner) return aCleaner - bCleaner;
+        return a.fullName.localeCompare(b.fullName, "ru");
+      }),
+    [employees, roleByEmployee],
+  );
 
   // Дату уборки выбирает только админ (cleaning.manage) — уборщица отмечает
   // уборку текущим днём.
@@ -272,6 +307,17 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
               value={employeeId === "" ? "" : String(employeeId)}
               onChange={(e) => setEmployeeId(Number(e.target.value))}
               disabled={busy || employeesQuery.isLoading}
+              // Пункт списка двухстрочный (ФИО + роль), а в закрытом поле
+              // нужна одна строка — иначе высота поля скачет и роль ломает
+              // выравнивание с остальными полями формы.
+              SelectProps={{
+                renderValue: (value) => {
+                  const emp = employees.find((e) => String(e.id) === String(value));
+                  if (!emp) return "";
+                  const role = roleByEmployee.get(emp.id)?.name;
+                  return role ? `${emp.fullName} · ${role}` : emp.fullName;
+                },
+              }}
               {...v.field(
                 "employeeId",
                 employeesQuery.isError
@@ -282,11 +328,23 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
               )}
               error={Boolean(employeesQuery.error) || Boolean(v.errorOf("employeeId"))}
             >
-              {employees.map((emp) => (
-                <MenuItem key={emp.id} value={String(emp.id)}>
-                  {emp.fullName}
-                </MenuItem>
-              ))}
+              {sortedEmployees.map((emp) => {
+                const role = roleByEmployee.get(emp.id)?.name;
+                return (
+                  <MenuItem key={emp.id} value={String(emp.id)}>
+                    <Stack spacing={0} sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" noWrap>
+                        {emp.fullName}
+                      </Typography>
+                      {role && (
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {role}
+                        </Typography>
+                      )}
+                    </Stack>
+                  </MenuItem>
+                );
+              })}
             </TextField>
           )}
           {showDate && (
