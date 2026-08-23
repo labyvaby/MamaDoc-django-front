@@ -42,6 +42,12 @@ export const PAGE_PERMISSIONS = {
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],
   conclusionPrint: "medical.conclusions.print",
+  clients: "clients.view",
+  pos: "pos.view",
+  inventory: "warehouse.manage",
+  ecommerce: "ecommerce.view",
+  targets: "targets.view",
+  messaging: "messaging.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
