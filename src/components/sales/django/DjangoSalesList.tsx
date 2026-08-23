@@ -22,13 +22,18 @@ import { useT } from "../../../i18n/VerticalProvider";
 
 type TFunc = (key: string, options?: Record<string, unknown>) => string;
 
-/** Подпись способа оплаты по суммам нал/безнал. */
+/**
+ * Подпись способа оплаты по суммам нал/безнал. У чисто безналичной продажи
+ * вместо общего «Безнал» показываем сам терминал («Bakai POS») — ради этого
+ * заказчик и просил способ в продажах. У смешанной оставляем «Смеш.»: способ
+ * относится только к карточной части, и в узком чипе это не объяснить.
+ */
 const paymentLabel = (sale: DjangoSale, t: TFunc): string | null => {
     const cash = sale.paidCash > 0;
     const card = sale.paidCard > 0;
     if (cash && card) return t("list.paymentMixed");
     if (cash) return t("list.paymentCash");
-    if (card) return t("list.paymentCard");
+    if (card) return sale.cashlessMethodName || t("list.paymentCard");
     return null;
 };
 
@@ -176,9 +181,16 @@ export const DjangoSalesList: React.FC<DjangoSalesListProps> = ({
                                                 {paymentLabel(sale, t) && (
                                                     <Chip
                                                         label={paymentLabel(sale, t)}
+                                                        title={paymentLabel(sale, t) ?? undefined}
                                                         size="small"
                                                         variant="outlined"
-                                                        sx={{ height: 22, borderRadius: "7px" }}
+                                                        sx={{
+                                                            height: 22,
+                                                            borderRadius: "7px",
+                                                            // Название терминала длиннее «Безнал» — режем,
+                                                            // чтобы не выдавить сумму и статус из строки.
+                                                            maxWidth: 130,
+                                                        }}
                                                     />
                                                 )}
                                                 <Chip

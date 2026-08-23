@@ -45,7 +45,24 @@ export type DjangoSale = {
     /** Только для записей из приёма: оплата всего приёма с баланса/бонусов. */
     paidBalance: number;
     paidBonuses: number;
+    /**
+     * Способ безнала карточной части продажи. Поля приходят только после
+     * доработки бэка (тикет `backend_ticket_sales_cashless_method.md`):
+     * `undefined` — бэк способ не хранит, `null` — продажа без безнала или
+     * проведённая до появления поля.
+     */
+    cashlessMethodId?: number | null;
+    cashlessMethodName?: string | null;
 };
+
+/**
+ * Хранит ли бэк способ безнала у продаж. Ключ есть в ответе → доработка
+ * выложена. Проверяется по записи, а не по значению: `null` — законный ответ
+ * для наличной продажи.
+ */
+export function saleHasCashlessMethodField(sale: DjangoSale | undefined): boolean {
+    return sale != null && "cashlessMethodId" in sale;
+}
 
 export type SaleDayTotal = {
     day: string; // YYYY-MM-DD
@@ -66,6 +83,13 @@ export type SaleListFilters = {
     search?: string | null;
     paymentMethod?: SalePaymentFilter | null;
     status?: SaleStatusFilter | null;
+    /**
+     * Способ безнала. ⚠ Слать только когда бэк поле поддерживает
+     * (`saleHasCashlessMethodField`): неизвестный параметр он проглатывает
+     * молча — проверено на проде 24.08.2026, `cashlessMethodId=999999` даёт тот
+     * же count. Кассир принял бы нефильтрованные суммы за отфильтрованные.
+     */
+    cashlessMethodId?: number | null;
     /** Обязателен суперпользователю: без него бэк отдаёт 400 (фикс 29.07.2026). */
     organizationId?: number | null;
 };
@@ -110,6 +134,12 @@ export type SaleWriteData = {
     comment?: string;
     /** Обязателен в org-wide режиме (филиал не выбран в свитчере). */
     branchId?: number;
+    /**
+     * Способ безнала для карточной части. Отправляется только когда бэк поле
+     * поддерживает — иначе кассир выбрал бы терминал, который никуда не
+     * сохранится.
+     */
+    cashlessMethodId?: number | null;
 };
 
 // ── Raw payloads (decimal-safe strings from the backend) ─────────────────────
@@ -160,6 +190,7 @@ function appendSaleFilters(q: URLSearchParams, f: SaleListFilters): void {
     if (f.search) q.set("search", f.search);
     if (f.paymentMethod) q.set("paymentMethod", f.paymentMethod);
     if (f.status) q.set("status", f.status);
+    if (f.cashlessMethodId != null) q.set("cashlessMethodId", String(f.cashlessMethodId));
     if (f.organizationId != null) q.set("organizationId", String(f.organizationId));
 }
 

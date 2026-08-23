@@ -37,6 +37,8 @@ import {
     SaleListFilters,
 } from "../../../api/sales";
 import { getProducts } from "../../../api/warehouse";
+import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
+import { useSalesCashlessSupport } from "../../../hooks/useSalesCashlessSupport";
 
 import { DjangoSalesList } from "../../../components/sales/django/DjangoSalesList";
 import { DjangoSaleDetails } from "../../../components/sales/django/DjangoSaleDetails";
@@ -92,7 +94,7 @@ const DjangoSalesPage: React.FC = () => {
     // /warehouse/sales/ отвечает 400. Одного permLoading мало — при
     // перезагрузке сессии он снимается раньше, чем приезжает активная
     // организация, и страница показывала «Ошибка загрузки продаж».
-    const { organizationId: orgId, orgReady } = useActiveScope();
+    const { organizationId: orgId, branchId: activeBranchId, orgReady } = useActiveScope();
     const canView = useCan(["warehouse.sales.view", "warehouse.view"]);
     const canManageSales = useCan("warehouse.sales.manage");
 
@@ -116,6 +118,10 @@ const DjangoSalesPage: React.FC = () => {
     const [statusUI, setStatusUI] = useState<SalesStatusUI>(
         () => (searchParams.get("status") as SalesStatusUI) || "all",
     );
+    const [methodUI, setMethodUI] = useState<number | "all">(() => {
+        const v = searchParams.get("method");
+        return v ? Number(v) || "all" : "all";
+    });
     const [view, setView] = useState<SalesView>(
         () => (searchParams.get("view") as SalesView) || "list",
     );
@@ -138,10 +144,11 @@ const DjangoSalesPage: React.FC = () => {
         if (search) p.set("q", search);
         if (paymentUI !== "all") p.set("pay", paymentUI);
         if (statusUI !== "all") p.set("status", statusUI);
+        if (methodUI !== "all") p.set("method", String(methodUI));
         if (view !== "list") p.set("view", view);
         setSearchParams(p, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [period, customFrom, customTo, search, paymentUI, statusUI, view]);
+    }, [period, customFrom, customTo, search, paymentUI, statusUI, methodUI, view]);
 
     const range = useMemo(
         () => computeRange(period, customFrom, customTo),
@@ -151,6 +158,20 @@ const DjangoSalesPage: React.FC = () => {
     // Произвольный период без обеих дат — не запрашиваем (показываем подсказку).
     const rangeReady = !(period === "custom" && (!customFrom || !customTo));
 
+    // ── Способ безнала ────────────────────────────────────────────────────────
+    // Фильтр и селект в форме появляются только когда бэк способ у продажи
+    // хранит: иначе `?cashlessMethodId=` он проглотит молча и покажет
+    // нефильтрованные суммы как отфильтрованные.
+    const cashlessSupported = useSalesCashlessSupport(!permLoading && canView);
+    // Скрытые способы нужны: терминал могли убрать уже после продаж по нему.
+    const { methods: cashlessMethods } = useCashlessMethods(cashlessSupported, {
+        organizationId: orgId ?? null,
+        // Филиал сессии, если он выбран: в режиме «Все филиалы» фильтр должен
+        // показывать терминалы всей организации, иначе — только своей кассы.
+        branchId: activeBranchId ?? null,
+        includeInactive: true,
+    });
+
     const apiFilters = useMemo<SaleListFilters>(
         () => ({
             dateFrom: range.from,
@@ -158,9 +179,10 @@ const DjangoSalesPage: React.FC = () => {
             search: debouncedSearch || null,
             paymentMethod: paymentUI === "all" ? null : paymentUI,
             status: statusUI === "all" ? null : statusUI,
+            cashlessMethodId: cashlessSupported && methodUI !== "all" ? methodUI : null,
             organizationId: orgId ?? null,
         }),
-        [range, debouncedSearch, paymentUI, statusUI, orgId],
+        [range, debouncedSearch, paymentUI, statusUI, methodUI, cashlessSupported, orgId],
     );
     const filtersKey = useMemo(() => JSON.stringify(apiFilters), [apiFilters]);
 
@@ -171,7 +193,7 @@ const DjangoSalesPage: React.FC = () => {
     }, [period, range]);
 
     const hasActiveFilters =
-        period !== "month" || !!search || paymentUI !== "all" || statusUI !== "all";
+        period !== "month" || !!search || paymentUI !== "all" || statusUI !== "all" || methodUI !== "all";
 
     const handleReset = () => {
         setPeriod("month");
@@ -180,6 +202,7 @@ const DjangoSalesPage: React.FC = () => {
         setSearch("");
         setPaymentUI("all");
         setStatusUI("all");
+        setMethodUI("all");
     };
 
     // ── Данные: KPI ───────────────────────────────────────────────────────────
@@ -418,6 +441,9 @@ const DjangoSalesPage: React.FC = () => {
                     onPaymentMethodChange={setPaymentUI}
                     status={statusUI}
                     onStatusChange={setStatusUI}
+                    cashlessMethods={cashlessMethods}
+                    cashlessMethodId={methodUI}
+                    onCashlessMethodChange={setMethodUI}
                     hasActiveFilters={hasActiveFilters}
                     onReset={handleReset}
                 />
@@ -511,6 +537,7 @@ const DjangoSalesPage: React.FC = () => {
                 sale={saleToEdit}
                 availableProducts={availableProducts}
                 onSaved={refetchCurrent}
+                cashlessSupported={cashlessSupported}
             />
 
             {/* Деталь на мобильном — bottom sheet (вид «Список») */}

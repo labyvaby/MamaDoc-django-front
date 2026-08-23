@@ -27,6 +27,11 @@ export interface PaymentInfo {
   discountAmount?: number;
   cash: number;
   card: number;
+  /**
+   * Способ безнала («Bakai POS», «MBank»…) — подписью к строке «Безналичными».
+   * Пусто — операция способа не хранит или проведена до появления справочника.
+   */
+  cashlessMethodName?: string | null;
   balance?: number;
   bonuses?: number;
   /** Покрыто страховой компанией */
@@ -72,7 +77,7 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
 }) => {
   const theme = useTheme();
   const {
-    discountAmount, baseTotal, cash, card,
+    discountAmount, baseTotal, cash, card, cashlessMethodName,
     balance = 0, bonuses = 0, insurance = 0, insurerName, policyNumber,
     finalTotal, debt = 0, status,
   } = payment;
@@ -324,7 +329,9 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
                     <Box sx={{ p: 0.5, borderRadius: 1, bgcolor: alpha(theme.palette.info.main, 0.1), display: 'flex' }}>
                       <CreditCardOutlined sx={{ fontSize: 18, color: 'info.main' }} />
                     </Box>
-                    <Typography variant="body2" color="text.secondary" fontWeight={500}>Безналичными</Typography>
+                    <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                      Безналичными{cashlessMethodName ? ` · ${cashlessMethodName}` : ""}
+                    </Typography>
                   </Stack>
                   <Typography variant="body2" fontWeight={700}>{formatAmount(card)} сом</Typography>
                 </Stack>

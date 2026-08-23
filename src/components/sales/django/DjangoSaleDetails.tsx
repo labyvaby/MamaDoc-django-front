@@ -355,6 +355,7 @@ export const DjangoSaleDetails: React.FC<DjangoSaleDetailsProps> = ({
                                     discountAmount: discountAmount || undefined,
                                     cash: sale.paidCash,
                                     card: sale.paidCard,
+                                    cashlessMethodName: sale.cashlessMethodName,
                                     finalTotal: sale.totalAmount,
                                     debt,
                                     status: displayStatus,
