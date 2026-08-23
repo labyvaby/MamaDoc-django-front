@@ -6,8 +6,8 @@ import type { ShortYearMode } from "../../utility/shortYear";
 
 export type { ShortYearMode };
 
-/** Формат ru-локали MUI X: используется, когда пикеру не передали свой `format`. */
-const DEFAULT_DATE_FORMAT = "DD.MM.YYYY";
+/** Год в полях даты вводится двумя цифрами — век дописывается по `shortYearMode`. */
+const DEFAULT_DATE_FORMAT = "DD.MM.YY";
 
 /**
  * Обертка над MUI X DatePicker с открытием по двойному клику.
@@ -17,8 +17,8 @@ const DEFAULT_DATE_FORMAT = "DD.MM.YYYY";
  * чтобы избежать конфликтов версий/контекста и ошибок вида
  * "MUI X: Can not find the date and time pickers localization context".
  * - Открывается при двойном клике на поле ввода
- * - Короткий год дописывается сам: «27.07.95» + Enter/уход из поля → 27.07.1995
- *   (MUI X сам по себе оставляет 0095 и подсвечивает поле ошибкой)
+ * - Год двузначный: «270795» → 27.07.1995, век подставляется по второй цифре
+ *   (правило века — `shortYearMode`, у dayjs своя жёсткая граница 69/68 — она нам не подходит)
  */
 export type CustomDatePickerProps = React.ComponentProps<typeof DatePicker> & {
   /**
@@ -30,7 +30,8 @@ export type CustomDatePickerProps = React.ComponentProps<typeof DatePicker> & {
 };
 
 export function CustomDatePicker(props: CustomDatePickerProps) {
-  const { slotProps, shortYearMode: _shortYearMode, ...rest } = props;
+  const { slotProps, shortYearMode: _shortYearMode, format, ...rest } = props;
+  const dateFormat = typeof format === "string" ? format : DEFAULT_DATE_FORMAT;
   const [open, setOpen] = React.useState(false);
 
   const handleDoubleClick = () => {
@@ -44,7 +45,7 @@ export function CustomDatePicker(props: CustomDatePickerProps) {
   const shortYear = useShortYearHandlers({
     value: props.value,
     onChange: props.onChange as ((value: never, context: never) => void) | undefined,
-    format: rest.format,
+    format: dateFormat,
     defaultFormat: DEFAULT_DATE_FORMAT,
     mode: resolveShortYearMode(props, "past"),
     granularity: "day",
@@ -53,6 +54,7 @@ export function CustomDatePicker(props: CustomDatePickerProps) {
 
   return (
     <DatePicker
+      format={dateFormat}
       open={open}
       onOpen={() => setOpen(true)}
       onClose={() => setOpen(false)}

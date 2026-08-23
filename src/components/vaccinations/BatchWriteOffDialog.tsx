@@ -191,7 +191,6 @@ const BatchWriteOffDialog: React.FC<BatchWriteOffDialogProps> = ({ open, onClose
             label="Дата списания"
             value={occurredAt}
             onChange={(v) => setOccurredAt(v as Dayjs | null)}
-            format="DD.MM.YYYY"
             maxDate={dayjs()}
             slotProps={{ textField: { size: "small", fullWidth: true } }}
           />

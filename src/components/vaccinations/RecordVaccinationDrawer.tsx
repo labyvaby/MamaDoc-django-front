@@ -655,7 +655,6 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   label="Дата введения"
                   value={administeredAt}
                   onChange={(v) => setAdministeredAt(v as Dayjs | null)}
-                  format="DD.MM.YYYY"
                   maxDate={dayjs()}
                   slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />
@@ -751,7 +750,6 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   label="Срок годности (со слов)"
                   value={expiresAtManual}
                   onChange={(v) => setExpiresAtManual(v as Dayjs | null)}
-                  format="DD.MM.YYYY"
                   shortYearMode="future"
                   slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />

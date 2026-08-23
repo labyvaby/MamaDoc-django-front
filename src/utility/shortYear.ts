@@ -103,8 +103,12 @@ function buildIso(parts: FieldParts, year: number): string | null {
  * Разобрать то, что набрано в поле даты (или даты со временем), и дописать век,
  * если год короче четырёх цифр.
  *
- * Работает с текстом, а не с датой из MUI X: пока в секции года меньше четырёх цифр,
+ * Работает с текстом, а не с датой из MUI X: пока секция года не заполнена целиком,
  * пикер считает ввод невалидным и наружу отдаёт Invalid Date — развернуть год из него нельзя.
+ *
+ * Двузначный формат («DD.MM.YY») разбираем сами по той же причине, что и четырёхзначный:
+ * MUI X отдал бы «95» в dayjs, а тот делит век жёсткой границей (69 → 1969, 68 → 2068),
+ * не по режиму поля.
  *
  * @returns ISO `YYYY-MM-DD` (или `YYYY-MM-DDTHH:mm:ss`, если время уже набрано),
  *   либо null — если год уже полный, ввод неполный или дата не существует.
@@ -116,7 +120,6 @@ export function expandShortYearInText(
   currentYear: number,
 ): string | null {
   if (mode === "off") return null;
-  if (!format.includes("YYYY")) return null; // двузначный формат года MUI X разворачивает сам
 
   const parts = parseFieldText(text, format);
   if (!parts || parts.year === null) return null;

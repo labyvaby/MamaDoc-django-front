@@ -1177,7 +1177,7 @@ const VaccinationsPage: React.FC = () => {
                 }}
                 views={["year", "month"]}
                 openTo="month"
-                format="MM.YYYY"
+                format="MM.YY"
                 shortYearMode="nearest"
                 slotProps={{ textField: { size: "small", sx: { minWidth: 170 } } }}
               />

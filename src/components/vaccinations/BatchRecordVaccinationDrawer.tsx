@@ -243,7 +243,6 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
             label="Дата введения"
             value={administeredAt}
             onChange={(v) => setAdministeredAt(v as Dayjs | null)}
-            format="DD.MM.YYYY"
             maxDate={dayjs()}
             slotProps={{ textField: { fullWidth: true } }}
           />
