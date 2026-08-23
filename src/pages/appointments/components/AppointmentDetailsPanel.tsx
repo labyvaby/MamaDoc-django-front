@@ -49,7 +49,11 @@ import type { AppointmentServiceLine, DjangoAppointment } from "../../../api/app
 import { getAppointmentPayments } from "../../../api/payments";
 import { getPatient } from "../../../api/patients";
 import { formatPatientAge } from "../../../utility/age";
-import { getPatientSchedule, getRecords, getVaccines } from "../../../api/vaccinations";
+import {
+  getPatientSchedule,
+  getRecordsByAppointment,
+  getVaccines,
+} from "../../../api/vaccinations";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import {
   djangoQueryKeys,
@@ -268,10 +272,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   /**
    * Вакцина в счёте ≠ прививка в карте: товар с меткой «вакцина» продаётся
-   * строкой счёта, а запись в карту прививок бэк сам не создаёт (обратной связи
-   * строка → запись в контракте нет, serviceLineId приходит пустым). Поэтому
-   * сверяем сами: справочник вакцин даёт productId, записи пациента — что уже
-   * оформлено по этому приёму.
+   * строкой счёта, а запись в карту заводит медсестра. С 21.08.2026 связь
+   * двусторонняя — запись хранит productLineId проданной строки, поэтому
+   * сверяем по нему; справочник вакцин нужен, чтобы знать vaccineId строки.
    */
   const productLines = React.useMemo(() => appt.productLines ?? [], [appt.productLines]);
   const hasProductLines = productLines.length > 0;
@@ -284,11 +287,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
-  const patientRecordsQuery = useQuery({
-    queryKey: djangoQueryKeys.vaccinations.records({ patientId, orgId }),
-    queryFn: ({ signal }) =>
-      getRecords({ patientId: patientId!, organizationId: orgId }, signal),
-    enabled: canRecordVaccination && hasProductLines && patientId != null,
+  // Записи именно этого приёма: фильтр ?appointmentId появился 21.08.2026 —
+  // раньше приходилось тянуть всю историю пациента и отсеивать вручную.
+  const apptRecordsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.records({ appointmentId: appt.id, orgId }),
+    queryFn: ({ signal }) => getRecordsByAppointment(appt.id, orgId, signal),
+    enabled: canRecordVaccination && hasProductLines,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
@@ -300,19 +304,39 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     return map;
   }, [vaccinesQuery.data]);
 
-  const patientRecords = React.useMemo(
-    () => (patientRecordsQuery.data ?? []).filter((r) => r.status !== "canceled"),
-    [patientRecordsQuery.data],
+  const apptRecords = React.useMemo(
+    () => apptRecordsQuery.data ?? [],
+    [apptRecordsQuery.data],
   );
 
+  /** Точная привязка: строка счёта закрыта конкретной записью. */
+  const recordedLineIds = React.useMemo(
+    () =>
+      new Set(
+        apptRecords.map((r) => r.productLineId).filter((id): id is number => id != null),
+      ),
+    [apptRecords],
+  );
+
+  /**
+   * Запасной счёт по вакцине — для записей, созданных до появления
+   * productLineId (у них поле пустое, привязать их к строке уже нечем).
+   */
   const recordedByVaccineId = React.useMemo(() => {
     const map = new Map<number, number>();
-    for (const r of patientRecords) {
-      if (r.appointmentId !== appt.id) continue;
+    for (const r of apptRecords) {
+      if (r.productLineId != null) continue;
       map.set(r.vaccineId, (map.get(r.vaccineId) ?? 0) + 1);
     }
     return map;
-  }, [patientRecords, appt.id]);
+  }, [apptRecords]);
+
+  /** № дозы для строки счёта берём из прогноза календаря, иначе первая. */
+  const doseNumberForVaccine = React.useCallback(
+    (vaccineId: number) =>
+      dueDoses.find((d) => d.vaccineId === vaccineId)?.doseNumber ?? 1,
+    [dueDoses],
+  );
 
 
   // Запрос отзыва — статус виден в AppointmentWhenBlock, кнопка живёт в
@@ -1091,6 +1115,18 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               }}
               vaccineByProductId={canRecordVaccination ? vaccineByProductId : undefined}
               recordedByVaccineId={recordedByVaccineId}
+              recordedLineIds={recordedLineIds}
+              // Оформление прямо со строки: запись садится на проданную вакцину,
+              // счёт и склад второй раз не трогаются (бэк, 21.08.2026).
+              onRecordVaccine={
+                canRecordVaccination && onRecordVaccination && isAppointmentActive
+                  ? (vaccineId) =>
+                      onRecordVaccination(appt, {
+                        vaccineId,
+                        doseNumber: doseNumberForVaccine(vaccineId),
+                      })
+                  : undefined
+              }
             />
 
             {/* Положенные дозы — ПОСЛЕ услуг и товаров: это подсказка «заодно

@@ -13,20 +13,28 @@ export const SCHEDULE_STATUS_META: Record<ScheduleStatus, { label: string; color
   planned: { label: "Запланирована", color: "info" },
   overdue: { label: "Просрочена", color: "error" },
   done: { label: "Сделана", color: "success" },
+  /** Синоним "done" из changelog'а 21.08.2026; на проде бэк отдаёт "done". */
+  completed: { label: "Сделана", color: "success" },
   skipped: { label: "Пропущена", color: null },
 };
 
+/** Для выпадашек: без "completed" — он дублирует "done" по смыслу и подписи. */
 export const SCHEDULE_STATUS_OPTIONS = (
   Object.keys(SCHEDULE_STATUS_META) as ScheduleStatus[]
-).map((value) => ({ value, label: SCHEDULE_STATUS_META[value].label }));
+)
+  .filter((value) => value !== "completed")
+  .map((value) => ({ value, label: SCHEDULE_STATUS_META[value].label }));
 
 /**
- * Статус записи о прививке. Гайд фиксирует только "pending" (в ответе) и приём
- * PATCH {status:"canceled"}; "done" и точные подписи — предположение фронта.
+ * Статус записи о прививке. "draft" бэк ставит сам при продаже товара-вакцины в
+ * приёме — медсестра ещё не оформила дозу; "done"/"completed" и точные подписи —
+ * предположение фронта (на проде записи приходят в "pending").
  */
 export const RECORD_STATUS_META: Record<string, { label: string; color: ToneName }> = {
+  draft: { label: "Не оформлена", color: "warning" },
   pending: { label: "Проведена", color: "success" },
   done: { label: "Завершена", color: "success" },
+  completed: { label: "Завершена", color: "success" },
   canceled: { label: "Отменена", color: "error" },
 };
 
@@ -97,7 +105,7 @@ export function scheduleDateInfo(scheduledDate: string, status: ScheduleStatus):
   const date = dayjs(scheduledDate);
   const today = dayjs().startOf("day");
   const diff = date.startOf("day").diff(today, "day");
-  const closed = status === "done" || status === "skipped";
+  const closed = status === "done" || status === "completed" || status === "skipped";
   if (closed) return { text: date.format("DD.MM.YYYY"), overdue: false, soon: false };
   const plural = (n: number) => (n === 1 ? "день" : n < 5 ? "дня" : "дней");
   if (diff < 0) {
