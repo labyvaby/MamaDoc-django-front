@@ -122,6 +122,7 @@ const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
+const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -542,6 +543,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoWarehousesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="retail"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <RetailDashboardPage />
                               </Suspense>
                             </RequirePermission>
                           }

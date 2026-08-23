@@ -47,6 +47,7 @@ export function resolveHomeRoute({
   if (canOpenModule("cleaning")) return "/cleaning";
 
   const secondaryRoutes: Array<[string | string[], string]> = [
+    [PAGE_PERMISSIONS.pos, "/retail"],
     [PAGE_PERMISSIONS.expenses, "/expenses"],
     [PAGE_PERMISSIONS.achievements, "/achievements"],
     [PAGE_PERMISSIONS.patients, "/patients"],
