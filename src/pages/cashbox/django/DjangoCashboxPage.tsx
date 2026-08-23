@@ -18,18 +18,14 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useCan } from "../../../hooks/useCan";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
-import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
+import { getCashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
-import FlowCard, { formatSom, type FlowBreakdownRow } from "./FlowCard";
-import {
-  cashboxBreakdownItems,
-  unattributedSalesItem,
-  type CashlessBreakdownItem,
-} from "../../../components/finance/CashlessMethodBreakdown";
+import FlowCard from "./FlowCard";
+import { cardFlowNumbers } from "./flowNumbers";
+import { formatSom } from "./money";
 import CashBalanceCard from "./CashBalanceCard";
 import CashFlowFeed from "./CashFlowFeed";
 import { useT } from "../../../i18n/VerticalProvider";
-import { tt } from "../../../i18n/t";
 
 // ── Period presets ────────────────────────────────────────────────────────────
 
@@ -62,49 +58,12 @@ const RANGE_PRESETS: DateRangePreset[] = [
   },
 ];
 
-// ── Summary math (безнал) ─────────────────────────────────────────────────────
-
-type FlowNumbers = {
-  inflow: number;
-  outflow: number;
-  breakdown: FlowBreakdownRow[];
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const num = (s: string | undefined): number => {
   const n = parseFloat(s ?? "0");
   return Number.isNaN(n) ? 0 : n;
 };
-
-function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
-  const payments = num(s?.cardIncome);
-  const sales = num(s?.salesCardIncome);
-  const refunds = num(s?.cardRefunds);
-  const expenses = num(s?.cardExpenses);
-  const supplies = num(s?.supplyCardExpenses);
-
-  return {
-    inflow: payments + sales,
-    outflow: refunds + expenses + supplies,
-    breakdown: [
-      { key: "payment", label: tt("cashbox:paymentsBreakdown"), amount: payments, direction: 1 },
-      { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
-      { key: "refund", label: "Возвраты", amount: refunds, direction: -1 },
-      { key: "expense", label: "Расходы", amount: expenses, direction: -1 },
-      { key: "supply", label: "Закупки товара", amount: supplies, direction: -1 },
-    ],
-  };
-}
-
-/**
- * Разрез безнала по способам. Продажи товаров бэк в него не включает (склад не
- * хранит терминал), поэтому дописываем их строкой сами: без неё список не
- * сходился бы с итогом карточки «Безнал».
- */
-function cardMethodItems(s: CashboxSummary | undefined): CashlessBreakdownItem[] {
-  const rows = cashboxBreakdownItems(s?.byCashlessMethod);
-  if (rows.length === 0) return [];
-  return [...rows, ...unattributedSalesItem(num(s?.salesCardIncome))];
-}
 
 function periodLabel(range: DateRange): string {
   const f = range.from.locale("ru");
@@ -180,7 +139,6 @@ const DjangoCashboxPage: React.FC = () => {
   const loading = periodQuery.isLoading;
 
   const cardFlow = cardFlowNumbers(period);
-  const cardMethods = cardMethodItems(period);
   const windowLabel = periodLabel(range);
 
   const insuranceIncome = num(period?.insuranceIncome);
@@ -253,7 +211,6 @@ const DjangoCashboxPage: React.FC = () => {
                 inflow={cardFlow.inflow}
                 outflow={cardFlow.outflow}
                 breakdown={cardFlow.breakdown}
-                byMethod={cardMethods}
                 loading={loading}
               />
             </Box>
@@ -287,7 +244,13 @@ const DjangoCashboxPage: React.FC = () => {
             <CashFlowFeed
               baseFilters={baseFeedFilters}
               enabled={queriesEnabled}
-              splitReady={cardMethods.length > 0}
+              splitReady={(period?.byCashlessMethod?.length ?? 0) > 0}
+              // Продажи товаров попадают в разрез только после доработки бэка
+              // (тикет backend_ticket_sales_cashless_method.md). Признак —
+              // поле salesIncome в строках разреза, а не флаг в коде.
+              salesSplitReady={
+                period?.byCashlessMethod?.some((r) => r.salesIncome !== undefined) ?? false
+              }
             />
           </Box>
         </Box>

@@ -7,55 +7,11 @@ import "dayjs/locale/ru";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppCard } from "../../../components/ui";
-import { getCashboxSummary, type CashboxSummary } from "../../../api/cashbox";
+import { getCashboxSummary } from "../../../api/cashbox";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
-import { formatSom, FlowBreakdownBlock, type FlowBreakdownRow } from "./FlowCard";
-import { tt } from "../../../i18n/t";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const num = (s: string | null | undefined): number => {
-  const n = parseFloat(s ?? "0");
-  return Number.isNaN(n) ? 0 : n;
-};
-
-/** Наличный остаток по учёту: всё с начала записей до сегодня. */
-function cashNet(s: CashboxSummary): number {
-  return (
-    num(s.cashIncome) +
-    num(s.salesCashIncome) -
-    num(s.cashRefunds) -
-    num(s.cashExpenses) -
-    num(s.supplyCashExpenses)
-  );
-}
-
-type CashFlowNumbers = {
-  inflow: number;
-  outflow: number;
-  breakdown: FlowBreakdownRow[];
-};
-
-/** Наличный поток за окно — те же строки, что у безнала, но по cash-полям. */
-function cashFlowNumbers(s: CashboxSummary | undefined): CashFlowNumbers {
-  const payments = num(s?.cashIncome);
-  const sales = num(s?.salesCashIncome);
-  const refunds = num(s?.cashRefunds);
-  const expenses = num(s?.cashExpenses);
-  const supplies = num(s?.supplyCashExpenses);
-
-  return {
-    inflow: payments + sales,
-    outflow: refunds + expenses + supplies,
-    breakdown: [
-      { key: "payment", label: tt("cashbox:paymentsBreakdown"), amount: payments, direction: 1 },
-      { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
-      { key: "refund", label: "Возвраты", amount: refunds, direction: -1 },
-      { key: "expense", label: "Расходы", amount: expenses, direction: -1 },
-      { key: "supply", label: "Закупки товара", amount: supplies, direction: -1 },
-    ],
-  };
-}
+import { FlowBreakdownBlock, Hint } from "./FlowBreakdown";
+import { cashFlowNumbers, cashNet } from "./flowNumbers";
+import { formatSom } from "./money";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -169,13 +125,12 @@ const CashBalanceCard: React.FC<Props> = ({ branchId, branchName, organizationId
         </Box>
 
         {/* Движение наличных за сегодня (не зависит от выбранного дня) */}
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: "block", mt: 1.75, fontWeight: 600 }}
-        >
-          движение за сегодня
-        </Typography>
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mt: 1.75 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            движение за сегодня
+          </Typography>
+          <Hint text="Остаток — по всем операциям с начала учёта, движение — всегда за сегодня. Выбранный сверху период на эту карточку не влияет." />
+        </Stack>
         <FlowBreakdownBlock
           inflow={todayFlow.inflow}
           outflow={todayFlow.outflow}
@@ -183,10 +138,6 @@ const CashBalanceCard: React.FC<Props> = ({ branchId, branchName, organizationId
           loading={todayFlowQuery.isLoading}
           color="success"
         />
-        <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 1.25 }}>
-          Остаток и движение не зависят от выбранного дня: остаток — по всем операциям с начала
-          учёта, движение — всегда за сегодня.
-        </Typography>
       </Box>
     </AppCard>
   );

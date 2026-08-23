@@ -4,20 +4,10 @@ import { alpha } from "@mui/material/styles";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 
 import { AppCard } from "../../../components/ui";
-import { subtleBg } from "../../../theme/uiHelpers";
-import CashlessMethodBreakdown, {
-  type CashlessBreakdownItem,
-} from "../../../components/finance/CashlessMethodBreakdown";
+import { FlowBreakdownBlock, type FlowBreakdownRow } from "./FlowBreakdown";
+import { formatSom } from "./money";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export type FlowBreakdownRow = {
-  key: string;
-  label: string;
-  amount: number;
-  /** +1 — приход, −1 — расход */
-  direction: 1 | -1;
-};
 
 type Props = {
   /** Подпись окна отчёта, напр. «за 19 июля» или «за 1 – 19 июл». */
@@ -26,152 +16,9 @@ type Props = {
   inflow: number;
   /** Расход за окно (сумма отрицательных потоков, положительное число) */
   outflow: number;
-  breakdown: FlowBreakdownRow[];
-  /**
-   * Разрез по способам безнала. Сумма строк сходится с итогом карточки:
-   * нетто способов плюс продажи товаров, у которых терминала нет.
-   */
-  byMethod?: CashlessBreakdownItem[];
-  loading: boolean;
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-export function formatSom(value: number): string {
-  return (
-    value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " с"
-  );
-}
-
-function signedSom(value: number, direction: 1 | -1): string {
-  return (direction > 0 ? "+ " : "− ") + formatSom(value);
-}
-
-/** Нетто способа: минус ставим сами, чтобы знак читался так же, как в разбивке. */
-function netSom(value: number): string {
-  return (value < 0 ? "− " : "") + formatSom(Math.abs(value));
-}
-
-// ── Shared breakdown block ────────────────────────────────────────────────────
-
-type BreakdownBlockProps = {
-  inflow: number;
-  outflow: number;
+  /** Разрез по типам операций: оплаты, продажи, возвраты, расходы, закупки. */
   breakdown: FlowBreakdownRow[];
   loading: boolean;
-  /** Палитра акцента: primary — безнал, success — наличные. */
-  color?: "primary" | "success";
-};
-
-/**
- * Рейка приход/расход + разбивка по типам операций. Общий кусок карточек
- * «Безнал» (за выбранное окно) и «Наличные» (всегда за сегодня).
- */
-export const FlowBreakdownBlock: React.FC<BreakdownBlockProps> = ({
-  inflow,
-  outflow,
-  breakdown,
-  loading,
-  color = "primary",
-}) => {
-  const railTotal = inflow + outflow;
-  const accent = `${color}.main`;
-
-  return (
-    <>
-      {/* Рейка приход/расход */}
-      <Box
-        aria-hidden
-        sx={(t) => ({
-          mt: 1.75,
-          height: 8,
-          borderRadius: "4px",
-          overflow: "hidden",
-          display: "flex",
-          bgcolor: subtleBg(t, true),
-        })}
-      >
-        <Box
-          sx={{
-            width: railTotal > 0 ? `${(inflow / railTotal) * 100}%` : 0,
-            bgcolor: accent,
-            transition: "width .4s cubic-bezier(.22,1,.36,1)",
-          }}
-        />
-        <Box
-          sx={{
-            width: railTotal > 0 ? `${(outflow / railTotal) * 100}%` : 0,
-            bgcolor: accent,
-            opacity: 0.35,
-            transition: "width .4s cubic-bezier(.22,1,.36,1)",
-          }}
-        />
-      </Box>
-      <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.75, mb: 1.75 }}>
-        <Typography variant="caption" color={accent} sx={{ fontVariantNumeric: "tabular-nums" }}>
-          приход{" "}
-          <Box component="span" fontWeight={600}>
-            {loading ? "…" : formatSom(inflow)}
-          </Box>
-        </Typography>
-        <Typography
-          variant="caption"
-          color={accent}
-          sx={{ fontVariantNumeric: "tabular-nums", opacity: 0.75 }}
-        >
-          расход{" "}
-          <Box component="span" fontWeight={600}>
-            {loading ? "…" : `− ${formatSom(outflow)}`}
-          </Box>
-        </Typography>
-      </Stack>
-
-      {/* Разбивка по типам операций */}
-      <Stack spacing={0.25} sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.25 }}>
-        {breakdown.map((row) => {
-          const empty = row.amount === 0;
-          return (
-            <Stack
-              key={row.key}
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-              sx={{ py: 0.5 }}
-            >
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Box
-                  sx={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    flexShrink: 0,
-                    bgcolor: empty ? "text.disabled" : accent,
-                  }}
-                />
-                <Typography variant="body2" color="text.secondary">
-                  {row.label}
-                </Typography>
-              </Stack>
-              {loading ? (
-                <Skeleton width={72} height={18} />
-              ) : (
-                <Typography
-                  variant="body2"
-                  fontWeight={empty ? 400 : 600}
-                  sx={{
-                    fontVariantNumeric: "tabular-nums",
-                    color: empty ? "text.disabled" : accent,
-                  }}
-                >
-                  {empty ? "—" : signedSom(row.amount, row.direction)}
-                </Typography>
-              )}
-            </Stack>
-          );
-        })}
-      </Stack>
-    </>
-  );
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -186,7 +33,6 @@ const FlowCard: React.FC<Props> = ({
   inflow,
   outflow,
   breakdown,
-  byMethod,
   loading,
 }) => {
   const net = inflow - outflow;
@@ -249,11 +95,8 @@ const FlowCard: React.FC<Props> = ({
           outflow={outflow}
           breakdown={breakdown}
           loading={loading}
+          storageKey="mamadoc:cashbox:cardFlowExpanded"
         />
-
-        {/* Скелет не рисуем: разреза может не быть вовсе (старый бэк, период
-            без безнала), и мигающий заголовок выглядел бы как потеря данных. */}
-        <CashlessMethodBreakdown items={loading ? [] : (byMethod ?? [])} formatAmount={netSom} />
       </Box>
     </AppCard>
   );
