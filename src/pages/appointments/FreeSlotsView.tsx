@@ -99,6 +99,13 @@ function shortName(name: string): string {
   return `${parts[0]} ${initialsTail}`;
 }
 
+/** Ширина зоны стрелки пейджера: под ней текст карточки погашен маской. */
+const PAGER_ARROW_ZONE = 34;
+/** Зона справа: счётчик «2/7» плюс стрелка «вперёд». */
+const PAGER_COUNTER_ZONE = 72;
+/** Края трека гасим, чтобы уезжающее имя не сталкивалось со стрелками. */
+const PAGER_EDGE_MASK = `linear-gradient(90deg, transparent 0, #000 ${PAGER_ARROW_ZONE}px, #000 calc(100% - ${PAGER_COUNTER_ZONE}px), transparent 100%)`;
+
 /** Стабильный цвет аватара по имени (аналог stringToColor из оригинала). */
 function avatarColor(name: string): string {
   let h = 0;
@@ -561,12 +568,67 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   // подсветки активного аватара в мобильной полосе врачей.
   const [activeDocIdx, setActiveDocIdx] = React.useState(0);
   const [docMenuAnchor, setDocMenuAnchor] = React.useState<HTMLElement | null>(null);
+  // Карточка врача в мобильной шапке — такая же карусель, как колонки под ней:
+  // трек сдвигаем на тот же дробный прогресс скролла, поэтому имя едет вместе с
+  // расписанием (и при свайпе пальцем, и при тапе по стрелкам), а не
+  // перескакивает по окончании слайда.
+  const pagerTrackRef = React.useRef<HTMLDivElement>(null);
+  const pagerRafRef = React.useRef<number | null>(null);
+  const pagerLastLeftRef = React.useRef(-1);
+  const pagerStillFramesRef = React.useRef(0);
 
-  const handleMatrixScroll = React.useCallback(() => {
+  /**
+   * Ставит трек шапки в ту же точку, где стоит сетка. Прогресс дробный, ширина
+   * трека равна ширине колонки, поэтому сдвиг совпадает с сеткой один в один.
+   * Пишем прямо в style: ререндер шапки на каждый кадр прокрутки дороже самой
+   * анимации.
+   */
+  const syncPagerToScroll = React.useCallback(() => {
     const el = matrixScrollRef.current;
     if (!el || el.clientWidth === 0) return;
-    setActiveDocIdx(Math.round(el.scrollLeft / el.clientWidth));
+    const left = el.scrollLeft;
+    if (left === pagerLastLeftRef.current) {
+      pagerStillFramesRef.current += 1;
+      return;
+    }
+    pagerStillFramesRef.current = 0;
+    pagerLastLeftRef.current = left;
+    const progress = left / el.clientWidth;
+    if (pagerTrackRef.current) {
+      pagerTrackRef.current.style.transform = `translate3d(${-progress * 100}%, 0, 0)`;
+    }
+    const idx = Math.round(progress);
+    setActiveDocIdx((prev) => (prev === idx ? prev : idx));
   }, []);
+
+  // Событие scroll браузер отдаёт реже кадров (а на инерционном скролле ещё и с
+  // задержкой), поэтому по событию сдвигаем трек сразу, а дальше до конца
+  // прокрутки ведём его в rAF-петле — иначе карточка догоняет расписание рывками.
+  const handleMatrixScroll = React.useCallback(() => {
+    syncPagerToScroll();
+    if (pagerRafRef.current != null) return;
+    const step = () => {
+      if (!matrixScrollRef.current) {
+        pagerRafRef.current = null;
+        return;
+      }
+      syncPagerToScroll();
+      // Несколько спокойных кадров подряд — прокрутка кончилась, петлю гасим.
+      if (pagerStillFramesRef.current >= 4) {
+        pagerRafRef.current = null;
+        return;
+      }
+      pagerRafRef.current = requestAnimationFrame(step);
+    };
+    pagerRafRef.current = requestAnimationFrame(step);
+  }, [syncPagerToScroll]);
+
+  React.useEffect(
+    () => () => {
+      if (pagerRafRef.current != null) cancelAnimationFrame(pagerRafRef.current);
+    },
+    [],
+  );
 
   const scrollToDoc = React.useCallback((idx: number) => {
     const el = matrixScrollRef.current;
@@ -574,6 +636,50 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
     el.scrollTo({ left: idx * el.clientWidth, behavior: "smooth" });
     setActiveDocIdx(idx);
   }, []);
+
+  // Шапку можно тянуть пальцем так же, как сетку: карточка — вторая «ручка»
+  // той же карусели. Тянем не сам трек, а scrollLeft сетки — трек за ней
+  // повторяет, поэтому расхождения между ними не появляется по определению.
+  const pagerDragRef = React.useRef<{ startX: number; startLeft: number; moved: boolean } | null>(
+    null,
+  );
+  /** Был ли последний жест перетаскиванием — тогда меню по клику не открываем. */
+  const pagerDragMovedRef = React.useRef(false);
+
+  const handlePagerPointerDown = React.useCallback((e: React.PointerEvent) => {
+    const el = matrixScrollRef.current;
+    if (!el || e.button !== 0) return;
+    pagerDragRef.current = { startX: e.clientX, startLeft: el.scrollLeft, moved: false };
+    pagerDragMovedRef.current = false;
+  }, []);
+
+  const handlePagerPointerMove = React.useCallback((e: React.PointerEvent) => {
+    const drag = pagerDragRef.current;
+    const el = matrixScrollRef.current;
+    if (!drag || !el) return;
+    const dx = e.clientX - drag.startX;
+    // Порог, чтобы дрожание пальца на тапе не считалось перетаскиванием.
+    if (!drag.moved && Math.abs(dx) < 4) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      pagerDragMovedRef.current = true;
+      // Со snap на сетке scrollLeft прилипал бы к колонке и палец «терял» карточку.
+      el.style.scrollSnapType = "none";
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    el.scrollLeft = drag.startLeft - dx;
+  }, []);
+
+  const handlePagerPointerUp = React.useCallback(() => {
+    const drag = pagerDragRef.current;
+    const el = matrixScrollRef.current;
+    pagerDragRef.current = null;
+    if (!drag || !el || !drag.moved) return;
+    el.style.scrollSnapType = "";
+    // Доводим до врача, как это делает snap после свайпа по сетке.
+    if (el.clientWidth > 0) scrollToDoc(Math.round(el.scrollLeft / el.clientWidth));
+  }, [scrollToDoc]);
+
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStartX, setDragStartX] = React.useState(0);
   const [dragScrollLeft, setDragScrollLeft] = React.useState(0);
@@ -892,6 +998,8 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   React.useLayoutEffect(() => {
     setActiveDocIdx(0);
     matrixScrollRef.current?.scrollTo({ left: 0 });
+    pagerLastLeftRef.current = 0;
+    if (pagerTrackRef.current) pagerTrackRef.current.style.transform = "translate3d(0, 0, 0)";
   }, [selDay, specId, search, activeDocsKey]);
 
   const selectedMonth = dayjs(selectedDay?.date ?? selectableDays[0]?.date ?? todayIso);
@@ -1477,7 +1585,11 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
               display: { xs: "flex", md: "none" },
               alignItems: "center",
               gap: 0.5,
-              px: 0.5,
+              // Без боковых отступов: трек пейджера должен быть ровно той же
+              // ширины, что и колонка расписания под ним, иначе карточка едет
+              // чуть медленнее сетки и это читается как рассинхрон. Отступы
+              // живут внутри карточек и полей.
+              px: 0,
               py: 0.75,
               flexShrink: 0,
               borderBottom: "1px solid",
@@ -1492,6 +1604,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t("slots.searchSpecialist")}
+                sx={{ mx: 0.5 }}
                 InputProps={{
                   startAdornment: (
                     <SearchOutlined sx={{ fontSize: 18, color: "text.disabled", mr: 0.75 }} />
@@ -1520,6 +1633,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                       onClick={() => setMobileSearchOpen(true)}
                       sx={{
                         flexShrink: 0,
+                        ml: 0.5,
                         border: "1px solid",
                         borderColor: search ? "primary.main" : "divider",
                         borderRadius: "8px",
@@ -1536,45 +1650,52 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                   // Пейджер врача: кто сейчас перед глазами, его специализация,
                   // сколько у него свободных окон и позиция в списке дня.
                   // Тап по имени открывает выбор из всех врачей дня.
-                  const current = activeDocsOnDay[Math.min(activeDocIdx, activeDocsOnDay.length - 1)];
-                  const currentDay = current.emp.days.find((x) => x.date === activeDayDate);
-                  const currentFree = currentDay?.freeCount ?? 0;
-                  const currentAppts = currentDay?.appointments?.length ?? 0;
-                  // Врач попал в колонки по приёмам, а не по смене: пишем это
-                  // прямо в пейджере, иначе «нет окон» выглядит как «всё занято».
-                  const currentOffSchedule =
-                    Boolean(currentDay) &&
-                    (!currentDay!.scheduled || currentDay!.dayOff) &&
-                    currentAppts > 0;
+                  // Карточки всех врачей дня лежат в одном треке и едут вместе с
+                  // колонками расписания — сдвиг трека считает handleMatrixScroll.
                   const many = activeDocsOnDay.length > 1;
-                  const specLabel =
-                    specLabelByEmployee.get(current.emp.employeeId) ?? t("slots.specialist");
+                  const safeIdx = Math.min(activeDocIdx, activeDocsOnDay.length - 1);
                   return (
-                    <>
-                      {many && (
-                        <IconButton
-                          size="small"
-                          aria-label={t("slots.pagerPrev")}
-                          disabled={activeDocIdx <= 0}
-                          onClick={() => scrollToDoc(activeDocIdx - 1)}
-                        >
-                          <KeyboardArrowLeftOutlined sx={{ fontSize: 20 }} />
-                        </IconButton>
-                      )}
-
-                      <Stack
-                        direction="row"
-                        alignItems="center"
-                        spacing={1}
-                        onClick={(e) => setDocMenuAnchor(e.currentTarget)}
+                    <Box
+                      sx={{
+                        position: "relative",
+                        flex: 1,
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      {/* Трек во всю ширину шапки, стрелки и счётчик — поверх него.
+                          Иначе окно карусели было бы уже колонки расписания на
+                          ширину кнопок, карточка ехала бы медленнее сетки, и
+                          движение читалось бы как рассинхрон. Теперь шаг трека
+                          равен шагу колонки, а край текста гасит маска. */}
+                      <Box
+                        onClick={(e) => {
+                          if (pagerDragMovedRef.current) return;
+                          setDocMenuAnchor(e.currentTarget);
+                        }}
+                        onPointerDown={handlePagerPointerDown}
+                        onPointerMove={handlePagerPointerMove}
+                        onPointerUp={handlePagerPointerUp}
+                        onPointerCancel={handlePagerPointerUp}
                         aria-label={t("slots.chooseSpecialist")}
                         sx={{
                           flex: 1,
                           minWidth: 0,
-                          px: 0.75,
+                          overflow: "hidden",
                           py: 0.5,
                           borderRadius: "10px",
-                          cursor: "pointer",
+                          cursor: many ? "grab" : "pointer",
+                          // Горизонталь забираем себе, вертикальный скролл
+                          // страницы оставляем браузеру.
+                          touchAction: "pan-y",
+                          userSelect: "none",
+                          ...(many
+                            ? {
+                                maskImage: PAGER_EDGE_MASK,
+                                WebkitMaskImage: PAGER_EDGE_MASK,
+                              }
+                            : null),
                           "&:active": { bgcolor: subtleBg(theme) },
                           "@media (hover: hover)": {
                             "&:hover": { bgcolor: subtleBg(theme) },
@@ -1582,73 +1703,146 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                         }}
                       >
                         <Box
-                          sx={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: "9px",
-                            flexShrink: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#fff",
-                            fontSize: "0.7rem",
-                            fontWeight: 600,
-                            bgcolor: avatarColor(current.emp.fullName),
-                          }}
+                          ref={pagerTrackRef}
+                          sx={{ display: "flex", width: "100%", willChange: "transform" }}
                         >
-                          {initials(current.emp.fullName)}
-                        </Box>
-                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography variant="body2" fontWeight={600} noWrap sx={{ lineHeight: 1.25 }}>
-                            {shortName(current.emp.fullName)}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            noWrap
-                            sx={{ display: "block", fontSize: "0.6875rem", color: "text.secondary" }}
-                          >
-                            {specLabel}
-                            {" · "}
-                            {currentOffSchedule ? (
-                              <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>
-                                {t("slots.offSchedule")}
-                                {" · "}
-                                {t("slots.visitsCount", { count: currentAppts })}
-                              </Box>
-                            ) : (
-                              <Box
-                                component="span"
+                          {activeDocsOnDay.map(({ emp }) => {
+                            const day = emp.days.find((x) => x.date === activeDayDate);
+                            const free = day?.freeCount ?? 0;
+                            const appts = day?.appointments?.length ?? 0;
+                            // Врач попал в колонки по приёмам, а не по смене: пишем это
+                            // прямо в пейджере, иначе «нет окон» выглядит как «всё занято».
+                            const offSchedule =
+                              Boolean(day) && (!day!.scheduled || day!.dayOff) && appts > 0;
+                            const specLabel =
+                              specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
+                            return (
+                              <Stack
+                                key={emp.employeeId}
+                                direction="row"
+                                alignItems="center"
+                                spacing={1}
                                 sx={{
-                                  color: currentFree > 0 ? "success.main" : "text.disabled",
-                                  fontWeight: currentFree > 0 ? 600 : 400,
+                                  flex: "0 0 100%",
+                                  minWidth: 0,
+                                  // Место под наложенные стрелки и счётчик, чтобы в
+                                  // покое имя не оказалось под ними.
+                                  pl: many ? `${PAGER_ARROW_ZONE}px` : 0.75,
+                                  pr: many ? `${PAGER_COUNTER_ZONE}px` : 0.75,
                                 }}
                               >
-                                {currentFree > 0
-                                  ? t("slots.freeSlotsCountShort", { count: currentFree })
-                                  : t("slots.noSlotsShort")}
-                              </Box>
-                            )}
-                          </Typography>
+                                <Box
+                                  sx={{
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: "9px",
+                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    color: "#fff",
+                                    fontSize: "0.7rem",
+                                    fontWeight: 600,
+                                    bgcolor: avatarColor(emp.fullName),
+                                  }}
+                                >
+                                  {initials(emp.fullName)}
+                                </Box>
+                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                  <Typography
+                                    variant="body2"
+                                    fontWeight={600}
+                                    noWrap
+                                    sx={{ lineHeight: 1.25 }}
+                                  >
+                                    {shortName(emp.fullName)}
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    noWrap
+                                    sx={{
+                                      display: "block",
+                                      fontSize: "0.6875rem",
+                                      color: "text.secondary",
+                                    }}
+                                  >
+                                    {specLabel}
+                                    {" · "}
+                                    {offSchedule ? (
+                                      <Box
+                                        component="span"
+                                        sx={{ color: "warning.main", fontWeight: 600 }}
+                                      >
+                                        {t("slots.offSchedule")}
+                                        {" · "}
+                                        {t("slots.visitsCount", { count: appts })}
+                                      </Box>
+                                    ) : (
+                                      <Box
+                                        component="span"
+                                        sx={{
+                                          color: free > 0 ? "success.main" : "text.disabled",
+                                          fontWeight: free > 0 ? 600 : 400,
+                                        }}
+                                      >
+                                        {free > 0
+                                          ? t("slots.freeSlotsCountShort", { count: free })
+                                          : t("slots.noSlotsShort")}
+                                      </Box>
+                                    )}
+                                  </Typography>
+                                </Box>
+                              </Stack>
+                            );
+                          })}
                         </Box>
-                        {many ? (
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
-                          >
-                            {activeDocIdx + 1}/{activeDocsOnDay.length}
-                          </Typography>
-                        ) : (
-                          <ExpandMoreOutlined sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
-                        )}
-                      </Stack>
+                      </Box>
+
+                      {many && (
+                        <IconButton
+                          size="small"
+                          aria-label={t("slots.pagerPrev")}
+                          disabled={safeIdx <= 0}
+                          onClick={() => scrollToDoc(safeIdx - 1)}
+                          sx={{ position: "absolute", left: 0, zIndex: 1 }}
+                        >
+                          <KeyboardArrowLeftOutlined sx={{ fontSize: 20 }} />
+                        </IconButton>
+                      )}
+
+                      {many ? (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{
+                            position: "absolute",
+                            right: `${PAGER_ARROW_ZONE}px`,
+                            zIndex: 1,
+                            fontVariantNumeric: "tabular-nums",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {safeIdx + 1}/{activeDocsOnDay.length}
+                        </Typography>
+                      ) : (
+                        <ExpandMoreOutlined
+                          sx={{
+                            position: "absolute",
+                            right: 4,
+                            fontSize: 18,
+                            color: "text.secondary",
+                            pointerEvents: "none",
+                          }}
+                        />
+                      )}
 
                       {many && (
                         <IconButton
                           size="small"
                           aria-label={t("slots.pagerNext")}
-                          disabled={activeDocIdx >= activeDocsOnDay.length - 1}
-                          onClick={() => scrollToDoc(activeDocIdx + 1)}
+                          disabled={safeIdx >= activeDocsOnDay.length - 1}
+                          onClick={() => scrollToDoc(safeIdx + 1)}
+                          sx={{ position: "absolute", right: 0, zIndex: 1 }}
                         >
                           <KeyboardArrowRightOutlined sx={{ fontSize: 20 }} />
                         </IconButton>
@@ -1682,7 +1876,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           const dayAppts = day?.appointments?.length ?? 0;
                           const itemOffSchedule =
                             Boolean(day) && (!day!.scheduled || day!.dayOff) && dayAppts > 0;
-                          const selected = idx === activeDocIdx;
+                          const selected = idx === safeIdx;
                           const itemSpec = specLabelByEmployee.get(emp.employeeId) ?? t("slots.specialist");
                           return (
                             <MenuItem
@@ -1739,7 +1933,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                           );
                         })}
                       </Menu>
-                    </>
+                    </Box>
                   );
                 })()}
               </>
