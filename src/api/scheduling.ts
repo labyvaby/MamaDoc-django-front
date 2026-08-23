@@ -88,6 +88,13 @@ export interface AvailabilitySlot {
   end: string;
   free: boolean;
   appointmentId: number | null;
+  /**
+   * Филиал занявшего слот приёма; у свободного слота — null (занимать нечем).
+   *
+   * Поле диагностическое: после серверного скоупа (21.08.2026) оно равно
+   * запрошенному branchId, но позволяет увидеть расхождение прямо в ответе.
+   */
+  branchId: number | null;
   patientName: string | null;
 }
 
@@ -100,6 +107,13 @@ export interface AvailabilitySlot {
  */
 export interface AvailabilityAppointment {
   id: number;
+  /**
+   * Филиал приёма — обязателен. При запросе с branchId здесь всегда он же
+   * (чужих приёмов в выдаче нет с 21.08.2026); поле по-настоящему работает в
+   * org-wide режиме суперпользователя, где филиалы разные.
+   */
+  branchId: number;
+  branchName: string;
   start: string; // HH:MM
   end: string;
   patientName: string;
@@ -112,8 +126,7 @@ export interface AvailabilityDay {
   dayOff: boolean;
   freeCount: number;
   slots: AvailabilitySlot[];
-  /** undefined — бэкенд ещё без этого поля (фронт деплоится раньше). */
-  appointments?: AvailabilityAppointment[];
+  appointments: AvailabilityAppointment[];
 }
 
 export interface EmployeeAvailability {

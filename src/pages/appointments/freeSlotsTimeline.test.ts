@@ -1,15 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 import { buildTimeline } from "./freeSlotsTimeline";
-import type { AvailabilityDay, AvailabilitySlot } from "../../api/scheduling";
+import type {
+  AvailabilityAppointment,
+  AvailabilityDay,
+  AvailabilitySlot,
+} from "../../api/scheduling";
 
 /** Слот сетки: свободный, занятый приёмом или прошедший. */
 function slot(
   start: string,
   end: string,
-  { free = true, appointmentId = null as number | null, patientName = null as string | null } = {},
+  {
+    free = true,
+    appointmentId = null as number | null,
+    patientName = null as string | null,
+    branchId = null as number | null,
+  } = {},
 ): AvailabilitySlot {
-  return { start, end, free, appointmentId, patientName };
+  return { start, end, free, appointmentId, patientName, branchId };
+}
+
+/** Приём дня. Филиал в таймлайне не участвует — берём один и тот же. */
+function appt(
+  fields: Omit<AvailabilityAppointment, "branchId" | "branchName">,
+): AvailabilityAppointment {
+  return { branchId: 13, branchName: "Мама Доктор Плюс", ...fields };
 }
 
 function day(overrides: Partial<AvailabilityDay> = {}): AvailabilityDay {
@@ -19,6 +35,7 @@ function day(overrides: Partial<AvailabilityDay> = {}): AvailabilityDay {
     dayOff: false,
     freeCount: 0,
     slots: [],
+    appointments: [],
     ...overrides,
   };
 }
@@ -36,13 +53,13 @@ describe("buildTimeline", () => {
           slot("12:30", "13:00"),
         ],
         appointments: [
-          {
+          appt({
             id: 7,
             start: "11:45",
             end: "12:15",
             patientName: "Абдиллаева М.",
             status: "scheduled",
-          },
+          }),
         ],
       }),
     );
@@ -61,8 +78,8 @@ describe("buildTimeline", () => {
       day({
         slots: [slot("09:00", "09:30"), slot("10:00", "10:30")],
         appointments: [
-          { id: 1, start: "09:40", end: "10:10", patientName: "Б", status: "arrived" },
-          { id: 2, start: "08:15", end: "08:45", patientName: "А", status: "completed" },
+          appt({ id: 1, start: "09:40", end: "10:10", patientName: "Б", status: "arrived" }),
+          appt({ id: 2, start: "08:15", end: "08:45", patientName: "А", status: "completed" }),
         ],
       }),
     );
@@ -83,16 +100,18 @@ describe("buildTimeline", () => {
   });
 
   it("без поля appointments (старый бэкенд) рисует сетку как есть", () => {
-    // Фронт может задеплоиться раньше бэка — вид не должен остаться без
-    // занятых окон, пусть и со временем слота.
-    const rows = buildTimeline(
-      day({
+    // В схеме поле обязательное, но прод стоит на ветке deploy/* и может
+    // отвечать по-старому — вид не должен остаться без занятых окон, пусть и
+    // со временем слота. Ответ вне контракта, поэтому приведение типа.
+    const rows = buildTimeline({
+      ...day({
         slots: [
           slot("11:30", "12:00", { free: false, appointmentId: 7, patientName: "Абдиллаева М." }),
           slot("12:30", "13:00"),
         ],
       }),
-    );
+      appointments: undefined as unknown as AvailabilityAppointment[],
+    });
 
     expect(rows.map((r) => [r.kind, r.start])).toEqual([
       ["slot", "11:30"],
