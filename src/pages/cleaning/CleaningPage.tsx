@@ -38,15 +38,18 @@ import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import {
   ListEmptyState,
+  ListLoadingSkeleton,
   MonthNavigation,
   PageHeader,
   SegmentedTabs,
+  UserAvatar,
   cascadeContainer,
   cascadeItem,
 } from "../../components/ui";
+import { subtleBg } from "../../theme/uiHelpers";
 import { ApiError, getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
 import {
@@ -66,57 +69,16 @@ import ReportDialog from "./ReportDialog";
 import PhotoViewerDialog from "./PhotoViewerDialog";
 import RejectDialog from "./RejectDialog";
 import SummaryTable from "./SummaryTable";
+import PhotoStrip, { fitPhotoCount } from "./PhotoStrip";
+import RecordCard from "./RecordCard";
+import StatusTiles, { type StatusCounts } from "./StatusTiles";
+import { StatusChip } from "./meta";
 
 dayjs.locale("ru");
 
 const MotionBox = motion(Box);
 
 const PAGE_SIZE = 20;
-
-const STATUS_META: Record<
-  CleaningRecordStatus,
-  { label: string; color: "warning" | "success" | "error" }
-> = {
-  pending: { label: "Ждёт подтверждения", color: "warning" },
-  approved: { label: "Подтверждена", color: "success" },
-  rejected: { label: "Отклонена", color: "error" },
-};
-
-/** Статус-чип по гайду §5.5: точка + текст на статус-тинте, радиус 7px. */
-const StatusChip: React.FC<{ status: CleaningRecordStatus }> = ({ status }) => {
-  const meta = STATUS_META[status];
-  return (
-    <Box
-      sx={(t) => {
-        const c = t.palette[meta.color];
-        return {
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 0.75,
-          height: 24,
-          px: 1,
-          borderRadius: "7px",
-          fontSize: "0.75rem",
-          fontWeight: 500,
-          whiteSpace: "nowrap",
-          bgcolor: alpha(c.main, t.palette.mode === "dark" ? 0.2 : 0.14),
-          color: t.palette.mode === "dark" ? c.light : c.dark,
-        };
-      }}
-    >
-      <Box
-        sx={(t) => ({
-          width: 7,
-          height: 7,
-          borderRadius: "50%",
-          bgcolor: t.palette[meta.color].main,
-          flexShrink: 0,
-        })}
-      />
-      {meta.label}
-    </Box>
-  );
-};
 
 const CleaningPage: React.FC = () => {
   usePageTitle("Уборка");
@@ -141,7 +103,9 @@ const CleaningPage: React.FC = () => {
   const [typeFilter, setTypeFilter] = React.useState<number | "all">("all");
   const [page, setPage] = React.useState(0); // 0-based для DataGrid
 
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  // Карточный вид — по md: телефон попадает в брейкпоинт sm (360px), поэтому
+  // граница "мобильного" в проекте всегда 768 (см. docs/ui-style-guide.md).
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const monthStr = month.format("YYYY-MM");
 
   const invalidate = React.useCallback(
@@ -182,6 +146,44 @@ const CleaningPage: React.FC = () => {
   });
   const rows = recordsQuery.data?.results ?? [];
   const total = recordsQuery.data?.count ?? 0;
+
+  // Счётчики для плиток-фильтров. Отдельного эндпоинта со сводкой по статусам
+  // нет, но DRF отдаёт `count` в пагинации — три запроса по одной строке
+  // дешевле, чем выгружать месяц целиком. Фильтр по типу учитываем: иначе
+  // числа на плитках не сходились бы с таблицей.
+  const statusCountsQuery = useQuery({
+    queryKey: djangoQueryKeys.cleaning.records({
+      month: monthStr,
+      type: typeFilter,
+      counts: true,
+      orgId: orgId ?? null,
+    }),
+    queryFn: async ({ signal }): Promise<StatusCounts> => {
+      const statuses: CleaningRecordStatus[] = ["pending", "approved", "rejected"];
+      const responses = await Promise.all(
+        statuses.map((status) =>
+          getCleaningRecords(
+            {
+              dateFrom: month.format("YYYY-MM-DD"),
+              dateTo: month.endOf("month").format("YYYY-MM-DD"),
+              status,
+              type: typeFilter === "all" ? undefined : typeFilter,
+              page: 1,
+              pageSize: 1,
+              organizationId: orgId,
+            },
+            signal,
+          ),
+        ),
+      );
+      return {
+        pending: responses[0].count,
+        approved: responses[1].count,
+        rejected: responses[2].count,
+      };
+    },
+    placeholderData: keepPreviousData,
+  });
 
   const summaryQuery = useQuery({
     queryKey: djangoQueryKeys.cleaning.summary({ month: monthStr, orgId: orgId ?? null }),
@@ -261,6 +263,30 @@ const CleaningPage: React.FC = () => {
     [orgId, notify, invalidate],
   );
 
+  // Один пустой экран на оба представления — таблицу и карточки.
+  const emptyState = (
+    <ListEmptyState
+      icon={<CleaningServicesOutlined />}
+      title="За этот месяц уборок нет"
+      description={
+        canCreate
+          ? "Отметьте уборку с фотоотчётом — администратор подтвердит её, и она попадёт в зарплату."
+          : "Здесь появятся записи с фотоотчётами, когда сотрудники начнут отмечать уборки."
+      }
+      action={
+        canCreate ? (
+          <Button
+            variant="outlined"
+            startIcon={<AddAPhotoOutlined />}
+            onClick={() => setReportOpen(true)}
+          >
+            Отметить уборку
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+
   // ── Колонки ───────────────────────────────────────────────────────────────
   const columns = React.useMemo<GridColDef<CleaningRecord>[]>(
     () => [
@@ -287,10 +313,12 @@ const CleaningPage: React.FC = () => {
         ),
       },
       {
+        // Ширина фиксированная: раньше колонка была flex и забирала весь
+        // свободный простор под короткое «Ежедневная уборка», из-за чего
+        // фотоотчёту оставалось 150px на 15 снимков. Теперь простор у «Фото».
         field: "typeName",
         headerName: "Тип уборки",
-        flex: 1,
-        minWidth: 200,
+        width: 230,
         sortable: false,
         renderCell: (p) => (
           <Stack sx={{ minWidth: 0, justifyContent: "center", height: "100%" }}>
@@ -311,33 +339,36 @@ const CleaningPage: React.FC = () => {
       {
         field: "employeeName",
         headerName: "Сотрудник",
-        width: 200,
-        sortable: false,
-      },
-      {
-        field: "photos",
-        headerName: "Фото",
-        width: 150,
+        flex: 0.6,
+        minWidth: 200,
         sortable: false,
         renderCell: (p) => (
-          <Stack direction="row" gap={0.5} alignItems="center" sx={{ height: "100%" }}>
-            {p.row.photos.map((photo, i) => (
-              <Box
-                key={photo.id}
-                component="img"
-                src={photo.url}
-                alt={`Фото ${i + 1}`}
-                onClick={() => setViewer({ record: p.row, index: i })}
-                sx={{
-                  width: 36,
-                  height: 36,
-                  objectFit: "cover",
-                  borderRadius: 1,
-                  cursor: "pointer",
-                  border: `1px solid ${theme.palette.divider}`,
-                }}
-              />
-            ))}
+          <Stack direction="row" alignItems="center" gap={1} sx={{ height: "100%", minWidth: 0 }}>
+            <UserAvatar name={p.row.employeeName} size={28} />
+            <Typography variant="body2" noWrap>
+              {p.row.employeeName}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        // Фотоотчёт — главное содержимое строки, поэтому свободное место отдано
+        // ему: сколько миниатюр влезло, столько и показываем, остальные — «+N».
+        field: "photos",
+        headerName: "Фото",
+        flex: 1,
+        minWidth: 160,
+        // Больше 15 снимков в записи не бывает (CLEANING_MAX_PHOTOS), поэтому
+        // шире ленты колонке расти незачем — остаток ширины уходит соседям.
+        maxWidth: 660,
+        sortable: false,
+        renderCell: (p) => (
+          <Stack direction="row" alignItems="center" sx={{ height: "100%", minWidth: 0 }}>
+            <PhotoStrip
+              photos={p.row.photos}
+              maxVisible={fitPhotoCount(p.colDef.computedWidth)}
+              onOpen={(index) => setViewer({ record: p.row, index })}
+            />
           </Stack>
         ),
       },
@@ -421,7 +452,7 @@ const CleaningPage: React.FC = () => {
         },
       },
     ],
-    [canManage, reviewBusyId, theme.palette.divider, handleApprove],
+    [canManage, reviewBusyId, handleApprove],
   );
 
   return (
@@ -489,26 +520,25 @@ const CleaningPage: React.FC = () => {
 
         {tab === "records" && (
           <>
+            {/* Статус — плитками: видно и распределение за месяц, и сколько
+                записей ждёт решения, а клик работает как фильтр. */}
+            <MotionBox variants={cascadeItem}>
+              <StatusTiles
+                counts={statusCountsQuery.data ?? null}
+                value={statusFilter}
+                loading={statusCountsQuery.isLoading}
+                onChange={(v) => {
+                  setStatusFilter(v);
+                  setPage(0);
+                }}
+              />
+            </MotionBox>
+
             {/* Фильтры */}
             <MotionBox
               variants={cascadeItem}
               sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5 }}
             >
-            <TextField
-              select
-              size="small"
-              label="Статус"
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value as CleaningRecordStatus | "all"); setPage(0); }}
-              sx={{ width: { xs: "100%", sm: 220 } }}
-            >
-              <MenuItem value="all">Все статусы</MenuItem>
-              {(Object.keys(STATUS_META) as CleaningRecordStatus[]).map((s) => (
-                <MenuItem key={s} value={s}>
-                  {STATUS_META[s].label}
-                </MenuItem>
-              ))}
-            </TextField>
             <TextField
               select
               size="small"
@@ -554,7 +584,56 @@ const CleaningPage: React.FC = () => {
             </Alert>
           )}
 
-          <MotionBox variants={cascadeItem} sx={{ flex: 1, minHeight: 0 }}>
+          <MotionBox
+            variants={cascadeItem}
+            sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+          >
+            {isMobile ? (
+              <>
+                <Stack gap={1.25} sx={{ flex: 1, minHeight: 0, overflowY: "auto", pb: 1 }}>
+                  {recordsQuery.isLoading && rows.length === 0 && <ListLoadingSkeleton rows={4} />}
+                  {!recordsQuery.isLoading && rows.length === 0 && emptyState}
+                  {rows.map((row) => (
+                    <RecordCard
+                      key={row.id}
+                      record={row}
+                      canManage={canManage}
+                      busy={reviewBusyId === row.id}
+                      onOpenPhoto={(index) => setViewer({ record: row, index })}
+                      onApprove={(r) => void handleApprove(r)}
+                      onReject={setRejectTarget}
+                      onDelete={setDeleteTarget}
+                    />
+                  ))}
+                </Stack>
+                {total > PAGE_SIZE && (
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    sx={{ pt: 0.5 }}
+                  >
+                    <Button
+                      size="small"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    >
+                      Назад
+                    </Button>
+                    <Typography variant="caption" color="text.secondary">
+                      {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} из {total}
+                    </Typography>
+                    <Button
+                      size="small"
+                      disabled={(page + 1) * PAGE_SIZE >= total}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Вперёд
+                    </Button>
+                  </Stack>
+                )}
+              </>
+            ) : (
             <DataGrid<CleaningRecord>
               rows={rows}
               columns={columns}
@@ -568,38 +647,18 @@ const CleaningPage: React.FC = () => {
               disableRowSelectionOnClick
               rowHeight={56}
               columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-              columnVisibilityModel={{ employeeName: !isMobile }}
               localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
-              slots={{
-                noRowsOverlay: () => (
-                  <ListEmptyState
-                    icon={<CleaningServicesOutlined />}
-                    title="За этот месяц уборок нет"
-                    description={
-                      canCreate
-                        ? "Отметьте уборку с фотоотчётом — администратор подтвердит её, и она попадёт в зарплату."
-                        : "Здесь появятся записи с фотоотчётами, когда сотрудники начнут отмечать уборки."
-                    }
-                    action={
-                      canCreate ? (
-                        <Button
-                          variant="outlined"
-                          startIcon={<AddAPhotoOutlined />}
-                          onClick={() => setReportOpen(true)}
-                        >
-                          Отметить уборку
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                ),
-              }}
+              slots={{ noRowsOverlay: () => emptyState }}
               sx={{
                 bgcolor: "background.paper",
                 borderRadius: "14px",
                 "& .MuiDataGrid-columnHeaders": { bgcolor: "background.paper" },
+                // Строка целиком ведёт себя как «карточка» отчёта: подсветка
+                // помогает не потерять нужную при 20 записях на странице.
+                "& .MuiDataGrid-row:hover": { bgcolor: subtleBg(theme, true) },
               }}
             />
+            )}
           </MotionBox>
         </>
       )}
