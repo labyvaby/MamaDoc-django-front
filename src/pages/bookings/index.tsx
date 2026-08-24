@@ -241,10 +241,9 @@ const BookingsPage: React.FC = () => {
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
   const organizationId = activeOrganization?.id ?? undefined;
   const orgKey = activeOrganization?.id ?? null;
-  // Активный филиал уходит в запрос всегда: сегодня бэк его игнорирует, а после
-  // деплоя скоупинга фильтрация включится без релиза фронта (см. комментарий в
-  // api/bookings.ts). В queryKey он тоже нужен — иначе после деплоя кэш отдал бы
-  // выдачу предыдущего филиала.
+  // Активный филиал уходит в запрос всегда: без него бэк отдаёт брони всей
+  // организации (см. комментарий в api/bookings.ts). В queryKey он тоже нужен —
+  // иначе при смене филиала кэш отдал бы выдачу предыдущего.
   const branchId = activeBranch?.id ?? undefined;
   const branchKey = branchId ?? null;
   // Признак мультифилиальной организации — только для подписи «Все филиалы»:
