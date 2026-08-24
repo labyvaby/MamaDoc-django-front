@@ -19,7 +19,12 @@ import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
-import { createRecord, getBatches, type VaccineBatch } from "../../api/vaccinations";
+import {
+  createRecord,
+  getBatches,
+  parseDuplicateDoseConflict,
+  type VaccineBatch,
+} from "../../api/vaccinations";
 import type { DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
@@ -185,7 +190,18 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
     } else {
       // Успешные сохранены — оставляем только неудавшиеся, чтобы повтор не задвоил.
       setRows(snapshot.filter((_, i) => failedIdx.includes(i)));
-      setError(`Сохранено ${snapshot.length - failedIdx.length} из ${snapshot.length}. Повторите для оставшихся.`);
+      // Частая причина отказа — доза уже зарегистрирована в этом приёме (409):
+      // повторять её бессмысленно, поэтому показываем текст бэка.
+      const conflict = failedIdx
+        .map((i) => {
+          const res = results[i];
+          return res.status === "rejected" ? parseDuplicateDoseConflict(res.reason) : null;
+        })
+        .find((m): m is string => m != null);
+      setError(
+        `Сохранено ${snapshot.length - failedIdx.length} из ${snapshot.length}.` +
+          (conflict ? ` ${conflict}` : " Повторите для оставшихся."),
+      );
     }
   };
 
@@ -227,7 +243,6 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
             label="Дата введения"
             value={administeredAt}
             onChange={(v) => setAdministeredAt(v as Dayjs | null)}
-            format="DD.MM.YYYY"
             maxDate={dayjs()}
             slotProps={{ textField: { fullWidth: true } }}
           />

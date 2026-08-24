@@ -35,9 +35,12 @@ import {
 import {
   createRecord,
   getBatches,
+  getRecordsByAppointment,
   getVaccines,
+  parseDuplicateDoseConflict,
   type CreateRecordPayload,
 } from "../../api/vaccinations";
+import { getAppointment } from "../../api/appointments";
 import { searchPatients, type DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
@@ -165,6 +168,8 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   const [appointmentId, setAppointmentId] = React.useState(
     initialAppointmentId != null ? String(initialAppointmentId) : "",
   );
+  /** Строка товара приёма, к которой привязать дозу (при нескольких одинаковых). */
+  const [productLineId, setProductLineId] = React.useState<number | "">("");
   const [notes, setNotes] = React.useState("");
   const [draftRestored, setDraftRestored] = React.useState(false);
 
@@ -359,6 +364,54 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
   });
 
+  // ── Строки товара приёма: к какой привязать дозу ──
+  // Если вакцина уже продана в этом приёме, бэк сажает запись на готовую строку
+  // и не берёт денег повторно. Когда таких строк несколько, он не угадывает —
+  // productLineId нужно прислать явно, иначе привязки не будет.
+  const linkedAppointmentId =
+    appointmentId.trim() === "" ? null : Number(appointmentId.trim());
+
+  const appointmentQuery = useQuery({
+    queryKey: djangoQueryKeys.appointments.detail(linkedAppointmentId ?? 0),
+    queryFn: () => getAppointment(linkedAppointmentId!),
+    enabled: open && linkedAppointmentId != null && Number.isFinite(linkedAppointmentId),
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+
+  const apptRecordsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.records({ appointmentId: linkedAppointmentId, orgId }),
+    queryFn: ({ signal }) => getRecordsByAppointment(linkedAppointmentId!, orgId, signal),
+    enabled: open && linkedAppointmentId != null && Number.isFinite(linkedAppointmentId),
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
+
+  const selectedVaccine = React.useMemo(
+    () => (vaccinesQuery.data ?? []).find((v) => v.id === vaccineId) ?? null,
+    [vaccinesQuery.data, vaccineId],
+  );
+
+  /** Строки этого приёма с той же вакциной, ещё не занятые другой записью. */
+  const freeVaccineLines = React.useMemo(() => {
+    if (scenario !== "ours" || selectedVaccine?.productId == null) return [];
+    const taken = new Set(
+      (apptRecordsQuery.data ?? []).map((r) => r.productLineId).filter((id): id is number => id != null),
+    );
+    return (appointmentQuery.data?.productLines ?? []).filter(
+      (line) =>
+        line.product?.id === selectedVaccine.productId &&
+        line.status !== "canceled" &&
+        !taken.has(line.id),
+    );
+  }, [scenario, selectedVaccine, appointmentQuery.data, apptRecordsQuery.data]);
+
+  // Одна свободная строка — бэк найдёт её сам; выбор показываем только когда их
+  // несколько и решение за медсестрой.
+  React.useEffect(() => {
+    setProductLineId((prev) =>
+      prev !== "" && freeVaccineLines.some((l) => l.id === prev) ? prev : "",
+    );
+  }, [freeVaccineLines]);
+
   const employeesQuery = useQuery({
     queryKey: [...djangoQueryKeys.reference.employees, "vaccinations-administered-by", orgId],
     queryFn: ({ signal }) =>
@@ -418,6 +471,10 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       };
       if (scenario === "ours") {
         payload.batchId = batchId === "" ? undefined : (batchId as number);
+        // При одной свободной строке бэк найдёт её сам, при нескольких — берём
+        // выбранную; иначе доза уйдёт мимо продажи и счёт вырастет второй раз.
+        if (productLineId !== "") payload.productLineId = productLineId;
+        else if (freeVaccineLines.length === 1) payload.productLineId = freeVaccineLines[0].id;
         // Цену отправляем ТОЛЬКО при ручной правке (priceTouched) — иначе бэк сам
         // фиксирует snapshot batch.product.price (гайд 23.07.2026, п.6). Префилл
         // остаётся лишь preview, чтобы не переопределять цену устаревшим значением.
@@ -435,7 +492,11 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
       onClose();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : "Не удалось сохранить прививку"),
+    onError: (e) =>
+      setError(
+        parseDuplicateDoseConflict(e) ??
+          (e instanceof Error ? e.message : "Не удалось сохранить прививку"),
+      ),
   });
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
@@ -594,7 +655,6 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   label="Дата введения"
                   value={administeredAt}
                   onChange={(v) => setAdministeredAt(v as Dayjs | null)}
-                  format="DD.MM.YYYY"
                   maxDate={dayjs()}
                   slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />
@@ -690,7 +750,6 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   label="Срок годности (со слов)"
                   value={expiresAtManual}
                   onChange={(v) => setExpiresAtManual(v as Dayjs | null)}
-                  format="DD.MM.YYYY"
                   shortYearMode="future"
                   slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />
@@ -760,6 +819,34 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   ),
                 }}
               />
+
+              {/* Вакцина уже продана в приёме — доза садится на готовую строку,
+                  счёт и склад второй раз не трогаются. */}
+              {freeVaccineLines.length === 1 && (
+                <Alert severity="success" sx={{ py: 0.5 }}>
+                  Вакцина уже продана в этом приёме — доза привяжется к строке счёта, сумма не
+                  изменится.
+                </Alert>
+              )}
+              {freeVaccineLines.length > 1 && (
+                <TextField
+                  select
+                  label="Строка счёта"
+                  value={productLineId === "" ? "" : String(productLineId)}
+                  onChange={(e) =>
+                    setProductLineId(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  fullWidth
+                  size="small"
+                  helperText="В приёме несколько таких вакцин — укажите, какую оформляете"
+                >
+                  {freeVaccineLines.map((line, i) => (
+                    <MenuItem key={line.id} value={String(line.id)}>
+                      №{i + 1} · {line.product.name} · {line.lineTotal}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
 
               <TextField
                 label="Заметка"

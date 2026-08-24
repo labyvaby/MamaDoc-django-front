@@ -27,6 +27,10 @@ export interface AppointmentProductLinesProps {
   vaccineByProductId?: Map<number, ProductVaccineRef>;
   /** vaccineId → сколько прививок этой вакцины уже внесено по этому приёму. */
   recordedByVaccineId?: Map<number, number>;
+  /** id строк счёта, уже закрытых записью о прививке (точная привязка). */
+  recordedLineIds?: Set<number>;
+  /** Оформить прививку по этой строке; не задан — только индикация. */
+  onRecordVaccine?: (vaccineId: number, line: AppointmentProductLine) => void;
 }
 
 /** Товары, проданные в рамках визита (списываются со склада). */
@@ -37,6 +41,8 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
   onProductClick,
   vaccineByProductId,
   recordedByVaccineId,
+  recordedLineIds,
+  onRecordVaccine,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -47,22 +53,25 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
   );
 
   /**
-   * Сколько доз каждой вакцины уже покрыто записями в карте. Идём по строкам и
-   * «расходуем» счётчик: две строки одной вакцины при одной записи не должны
-   * обе показывать «внесена».
+   * Закрыта ли строка записью в карте. Приоритет у точной привязки
+   * (record.productLineId), счётчик по вакцине — только для старых записей без
+   * неё: две строки одной вакцины при одной записи не должны обе показывать
+   * «внесена». Строка-вакцина без карточки в справочнике опознаётся по
+   * product.isVaccine — оформить её нельзя (нет vaccineId), но предупредить надо.
    */
   const coverage = React.useMemo(() => {
     const left = new Map(recordedByVaccineId ?? []);
     return visible.map((pl) => {
       const vaccine = vaccineByProductId?.get(pl.product?.id ?? -1);
-      if (!vaccine) return null;
+      if (!vaccine) return pl.product?.isVaccine ? { vaccine: null, recorded: false } : null;
+      if (recordedLineIds?.has(pl.id)) return { vaccine, recorded: true };
       const qty = Number(pl.quantity) || 1;
       const available = left.get(vaccine.vaccineId) ?? 0;
       const covered = Math.min(qty, available);
       left.set(vaccine.vaccineId, available - covered);
       return { vaccine, recorded: covered >= qty };
     });
-  }, [visible, vaccineByProductId, recordedByVaccineId]);
+  }, [visible, vaccineByProductId, recordedByVaccineId, recordedLineIds]);
 
   if (visible.length === 0) return null;
 
@@ -125,10 +134,9 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
               </Box>
 
               {/* Товар помечен как вакцина: видно, внесена ли прививка в карту.
-                  Оформить её отсюда нельзя — createRecord всегда добавляет в счёт
-                  СВОЮ строку и списывает партию, так что по уже проданному товару
-                  получился бы дубль денег и минус две дозы вместо одной (проверено
-                  на живом API 17.08.2026). Поэтому здесь только индикация. */}
+                  С 21.08.2026 оформить можно прямо отсюда — запись привязывается
+                  к этой строке счёта (productLineId), повторного биллинга и
+                  списания партии не будет. */}
               {vaccineInfo && (
                 <Stack
                   direction="row"
@@ -148,16 +156,32 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
                       />
                     </Tooltip>
                   ) : (
-                    <Tooltip title={t("details.vaccineNotRecordedHint")}>
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        color="warning"
-                        icon={<WarningAmberOutlined sx={{ fontSize: 16 }} />}
-                        label={t("details.vaccineNotRecorded")}
-                        sx={{ borderRadius: "7px" }}
-                      />
-                    </Tooltip>
+                    <>
+                      <Tooltip title={t("details.vaccineNotRecordedHint")}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          icon={<WarningAmberOutlined sx={{ fontSize: 16 }} />}
+                          label={t("details.vaccineNotRecorded")}
+                          sx={{ borderRadius: "7px" }}
+                        />
+                      </Tooltip>
+                      {vaccineInfo.vaccine && onRecordVaccine && (
+                        <Chip
+                          size="small"
+                          color="primary"
+                          icon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
+                          label="Оформить"
+                          onClick={(e) => {
+                            // Строка кликабельна сама по себе (карточка товара).
+                            e.stopPropagation();
+                            onRecordVaccine(vaccineInfo.vaccine!.vaccineId, pl);
+                          }}
+                          sx={{ borderRadius: "7px" }}
+                        />
+                      )}
+                    </>
                   )}
                 </Stack>
               )}

@@ -29,14 +29,27 @@ function isDayjsValue(value: unknown): value is Dayjs {
 }
 
 /**
- * Секция года среди секций поля: у неё единственной верхняя граница 9999.
- * По индексу секции или по aria-label ориентироваться нельзя — порядок задаётся форматом,
- * а подпись переводится вместе с локалью.
+ * Секция года среди секций поля. У четырёхзначного года верхняя граница 9999 — по ней
+ * секция и опознаётся; у двузначного («DD.MM.YY») граница 99, поэтому там дополнительно
+ * сверяем позицию секции с позицией токена года в формате.
+ * По aria-label ориентироваться нельзя — подпись переводится вместе с локалью.
  */
-const YEAR_SECTION_MAX = "9999";
+const FORMAT_TOKENS = /D{1,2}|M{1,2}|Y{2,4}|H{1,2}|m{1,2}|s{1,2}/g;
 
-function isYearSection(target: EventTarget | null): target is HTMLElement {
-  return target instanceof HTMLElement && target.getAttribute("aria-valuemax") === YEAR_SECTION_MAX;
+function isYearSection(target: EventTarget | null, format: string): target is HTMLElement {
+  if (!(target instanceof HTMLElement)) return false;
+
+  const max = target.getAttribute("aria-valuemax");
+  if (max === "9999") return true;
+  if (max !== "99") return false;
+
+  const group = target.closest('[role="group"]');
+  if (!group) return false;
+
+  const tokens = format.match(FORMAT_TOKENS) ?? [];
+  const yearIndex = tokens.findIndex((token) => token.startsWith("Y"));
+  const sections = Array.from(group.querySelectorAll('[role="spinbutton"]'));
+  return yearIndex >= 0 && sections.indexOf(target) === yearIndex;
 }
 
 /** Достать набранный текст поля даты из цели события (секция → группа → скрытый input). */
@@ -99,13 +112,20 @@ export function useShortYearHandlers(options: ShortYearFieldOptions) {
     firstDigit: null,
   });
 
+  // Печатал ли пользователь в секции года. У двузначного формата поле не различает 1920 и 2020,
+  // поэтому дату, пришедшую из календаря, по уходу из поля не трогаем — только набранную руками.
+  const yearTyped = React.useRef(false);
+
+  const fmt = typeof format === "string" ? format : defaultFormat;
+  const twoDigitYear = !fmt.includes("YYYY");
+
   const normalize = (target: EventTarget | null): boolean => {
     if (mode === "off" || !onChange) return false;
+    if (twoDigitYear && !yearTyped.current) return false;
 
     const text = readFieldText(target);
     if (!text) return false;
 
-    const fmt = typeof format === "string" ? format : defaultFormat;
     const iso = expandShortYearInText(text, fmt, mode, dayjs().year());
     if (!iso) return false;
 
@@ -127,6 +147,7 @@ export function useShortYearHandlers(options: ShortYearFieldOptions) {
     onBlur: (event: React.FocusEvent<HTMLDivElement>) => {
       yearTyping.current = { section: null, firstDigit: null };
       normalize(event.target);
+      yearTyped.current = false;
       (textFieldProps?.onBlur as ((e: React.FocusEvent<HTMLDivElement>) => void) | undefined)?.(event);
     },
     onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -142,8 +163,9 @@ export function useShortYearHandlers(options: ShortYearFieldOptions) {
       // так что третья цифра начинает новый год, а не продолжает старый.
       if (mode !== "off" && onChange) {
         const section = event.target;
-        if (/^[0-9]$/.test(event.key) && isYearSection(section)) {
+        if (/^[0-9]$/.test(event.key) && isYearSection(section, fmt)) {
           const typing = yearTyping.current;
+          yearTyped.current = true;
 
           if (typing.section !== section || typing.firstDigit === null) {
             yearTyping.current = { section, firstDigit: Number(event.key) };
@@ -151,7 +173,6 @@ export function useShortYearHandlers(options: ShortYearFieldOptions) {
             yearTyping.current = { section: null, firstDigit: null };
 
             const shortYear = typing.firstDigit * 10 + Number(event.key);
-            const fmt = typeof format === "string" ? format : defaultFormat;
             const iso = buildIsoWithYear(
               readFieldText(section) ?? "",
               fmt,

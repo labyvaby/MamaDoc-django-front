@@ -409,10 +409,10 @@ export interface ProfessionalsFilters extends PublicPageParams {
   search?: string;
 }
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
+function buildQuery(params: Record<string, string | number | null | undefined>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== "") q.set(k, String(v));
+    if (v != null && v !== "") q.set(k, String(v));
   }
   const s = q.toString();
   return s ? `?${s}` : "";
@@ -557,6 +557,18 @@ export interface CalendarParams {
   dateTo?: string;
   /** Задаёт длительность слота; без него — шаг 30 минут. */
   serviceId?: number;
+  /**
+   * Филиал, в котором считается занятость (ответ бэка от 21.08.2026).
+   *
+   * Параметр опциональный, и без него бэк берёт занятость по всей организации —
+   * врач филиала A показывался занятым своими приёмами филиала B. Поэтому
+   * передаём всегда, когда филиал известен: это тот же филиал, что уйдёт в
+   * POST /bookings/, — окна показываем там, где и заведём приём.
+   *
+   * Недоступный или чужой филиал → 400 validation_error (проверка та же, что у
+   * брони, — общий хелпер resolve_employee_branch на бэке).
+   */
+  branchId?: number | null;
 }
 
 /** Календарь врача (§4). Прошедшие дни/время отфильтрованы бэком. */
@@ -569,6 +581,7 @@ export function getProfessionalCalendar(
     date_from: params.dateFrom,
     date_to: params.dateTo,
     service_id: params.serviceId,
+    branch_id: params.branchId,
   });
   // Календарь — список без пагинации: возвращаем плоский массив дней.
   return getList<CalendarDay>(`/professionals/${idOrSlug}/calendar/${query}`, signal).then(
@@ -584,9 +597,11 @@ export function getProfessionalAvailableTimes(
   idOrSlug: IdOrSlug,
   date: string,
   serviceIds?: number[],
+  /** Филиал занятости — см. CalendarParams.branchId. */
+  branchId?: number | null,
   signal?: AbortSignal,
 ): Promise<AvailableTimes> {
-  const query = buildQuery({ date, service_ids: serviceIds?.join(",") });
+  const query = buildQuery({ date, service_ids: serviceIds?.join(","), branch_id: branchId });
   return getItem<AvailableTimes>(`/professionals/${idOrSlug}/available-times/${query}`, signal);
 }
 
@@ -598,10 +613,12 @@ export function getProfessionalAvailableServices(
   idOrSlug: IdOrSlug,
   date: string,
   time: string,
+  /** Филиал занятости — см. CalendarParams.branchId. */
+  branchId?: number | null,
   signal?: AbortSignal,
 ): Promise<PublicList<PublicService>> {
   return getList<PublicService>(
-    `/professionals/${idOrSlug}/available-services/${buildQuery({ date, time })}`,
+    `/professionals/${idOrSlug}/available-services/${buildQuery({ date, time, branch_id: branchId })}`,
     signal,
   );
 }

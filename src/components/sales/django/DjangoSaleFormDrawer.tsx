@@ -29,8 +29,9 @@ import { ApiError, isAbortError } from "../../../api/client";
 import { orgWide } from "../../../api/scope";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
 import { useT } from "../../../i18n/VerticalProvider";
-import { DiscountInput } from "../../ui";
+import { DiscountInput, CashlessMethodSelect } from "../../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 
 // CSS to hide spin buttons
@@ -83,6 +84,8 @@ type SaleDraftFields = {
     branchLabel: string | null;
     cash: number | "";
     card: number | "";
+    /** Способ безнала; в старых черновиках поля нет — читаем как «не выбран». */
+    cashlessMethodId?: number | "";
     discountPercent: number;
     comment: string;
 };
@@ -112,6 +115,7 @@ function sameAsBaseline(a: SaleDraftFields, b: SaleDraftFields): boolean {
         a.branchLabel === b.branchLabel &&
         a.cash === b.cash &&
         a.card === b.card &&
+        (a.cashlessMethodId ?? "") === (b.cashlessMethodId ?? "") &&
         a.discountPercent === b.discountPercent &&
         a.comment === b.comment
     );
@@ -124,6 +128,12 @@ interface DjangoSaleFormDrawerProps {
     sale: DjangoSale | null;
     availableProducts: SaleProductOption[];
     onSaved: () => void;
+    /**
+     * Бэк хранит способ безнала у продажи (см. `useSalesCashlessSupport`).
+     * Пока нет — селект не показываем: выбор кассира ушёл бы в никуда, а он бы
+     * считал, что терминал учтён.
+     */
+    cashlessSupported?: boolean;
 }
 
 export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
@@ -132,6 +142,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     sale,
     availableProducts,
     onSaved,
+    cashlessSupported = false,
 }) => {
     const { t } = useT("sales");
     const { open: notify } = useNotification();
@@ -161,8 +172,30 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
     // Payment State
     const [cash, setCash] = useState<number | "">("");
     const [card, setCard] = useState<number | "">("");
+    const [cashlessMethodId, setCashlessMethodId] = useState<number | "">("");
     const [discountPercent, setDiscountPercent] = useState<number>(0);
     const [comment, setComment] = useState("");
+
+    // ── Способ безнала ────────────────────────────────────────────────────────
+    // Скоуп — сама продажа (её организация и филиал), не активная сессия: в
+    // режиме «Все филиалы» иначе предложился бы терминал соседней кассы.
+    const saleBranchId = isEdit
+        ? sale?.branchId ?? null
+        : selectedBranch?.id ?? activeBranch?.id ?? null;
+    // Пока филиал неизвестен (org-wide создание до выбора), справочник не
+    // запрашиваем: ответ по всей организации — это и есть чужие терминалы.
+    const branchScopeReady = saleBranchId != null;
+    const {
+        methods: cashlessMethods,
+        isLoading: cashlessMethodsLoading,
+        isError: cashlessMethodsFailed,
+        isRequired: cashlessMethodRequired,
+        defaultMethodId: cashlessDefaultMethodId,
+        blocksSubmit: cashlessMethodsBlockSubmit,
+    } = useCashlessMethods(open && cashlessSupported && branchScopeReady, {
+        organizationId: sale?.organizationId ?? orgId ?? null,
+        branchId: saleBranchId,
+    });
 
     const [draftRestored, setDraftRestored] = useState(false);
     const baselineRef = useRef<SaleDraftFields | null>(null);
@@ -233,6 +266,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 branchLabel: null,
                 cash: sale.paidCash || "",
                 card: sale.paidCard || "",
+                cashlessMethodId: sale.cashlessMethodId ?? "",
                 discountPercent: sale.discountPercent || 0,
                 comment: sale.comment || "",
             };
@@ -250,6 +284,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             }
             setCash(next.cash);
             setCard(next.card);
+            setCashlessMethodId(next.cashlessMethodId ?? "");
             setDiscountPercent(next.discountPercent);
             setComment(next.comment);
             setDraftRestored(Boolean(draft));
@@ -269,6 +304,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             }
             setCash(draft?.cash ?? "");
             setCard(draft?.card ?? "");
+            setCashlessMethodId(draft?.cashlessMethodId ?? "");
             setDiscountPercent(draft?.discountPercent ?? 0);
             setComment(draft?.comment ?? "");
             setDraftRestored(Boolean(draft));
@@ -289,6 +325,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             branchLabel: selectedBranch?.name ?? null,
             cash,
             card,
+            cashlessMethodId,
             discountPercent,
             comment,
         };
@@ -312,7 +349,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
         if (!open) return;
         const id = setTimeout(() => flushDraftRef.current(), 400);
         return () => clearTimeout(id);
-    }, [open, sale, isEdit, selectedPatient, selectedBranch, cash, card, discountPercent, comment]);
+    }, [open, sale, isEdit, selectedPatient, selectedBranch, cash, card, cashlessMethodId, discountPercent, comment]);
 
     const handleClose = () => {
         flushDraftRef.current();
@@ -333,6 +370,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                 }
                 setCash(b.cash);
                 setCard(b.card);
+                setCashlessMethodId(b.cashlessMethodId ?? "");
                 setDiscountPercent(b.discountPercent);
                 setComment(b.comment);
             }
@@ -343,6 +381,7 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             setSelectedBranch(null);
             setCash("");
             setCard("");
+            setCashlessMethodId("");
             setDiscountPercent(0);
             setComment("");
         }
@@ -372,11 +411,36 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
 
     const hasValidProduct = productLines.some((line) => line.productId && line.quantity && line.quantity > 0);
 
+    // Поле способа нужно только там, где есть безналичная сумма.
+    const needsCashlessMethod = cashlessSupported && paidCard > 0;
+    // Способ по умолчанию (дефолт филиала, иначе единственный) — см. хук.
+    useEffect(() => {
+        if (!needsCashlessMethod || cashlessMethodId !== "") return;
+        if (cashlessDefaultMethodId === "") return;
+        setCashlessMethodId(cashlessDefaultMethodId);
+    }, [needsCashlessMethod, cashlessMethodId, cashlessDefaultMethodId]);
+
+    /**
+     * Способ мешает сохранению. Непрогруженный справочник блокирует наравне с
+     * невыбранным способом: пустой список из-за ошибки нельзя трактовать как
+     * «способ не нужен».
+     */
+    const cashlessError = !needsCashlessMethod
+        ? null
+        : !branchScopeReady
+            ? t("form.cashlessBranchFirst")
+            : cashlessMethodsBlockSubmit
+                ? t("form.cashlessNotLoaded")
+                : cashlessMethodRequired && !cashlessMethodId
+                    ? t("form.cashlessRequired")
+                    : null;
+
     const handleSubmit = async () => {
         setTouched(true);
         const validLines = productLines.filter((line) => line.productId && line.quantity && line.quantity > 0);
         if (validLines.length === 0) return;
         if (showBranchSelect && !selectedBranch) return;
+        if (cashlessError) return;
 
         const data: SaleWriteData = {
             patientId: selectedPatient?.id ?? null,
@@ -391,6 +455,12 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
             paidCard,
             ...(showBranchSelect && selectedBranch
                 ? { branchId: selectedBranch.id }
+                : {}),
+            // Способ отправляем только когда бэк его хранит. При правке продажи,
+            // где безнал убрали, шлём null — иначе у наличной продажи остался бы
+            // терминал от прошлой версии.
+            ...(cashlessSupported
+                ? { cashlessMethodId: paidCard > 0 && cashlessMethodId ? Number(cashlessMethodId) : null }
                 : {}),
         };
 
@@ -813,6 +883,37 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                             </Stack>
                         </Stack>
 
+                        {/* Конкретный способ безнала (карта / Бакай / терминал…) */}
+                        {needsCashlessMethod && (
+                            <Box>
+                                {!branchScopeReady ? (
+                                    // Org-wide создание до выбора филиала: справочник по всей
+                                    // организации показал бы терминалы чужих касс.
+                                    <Typography
+                                        variant="body2"
+                                        color={touched ? "error.main" : "text.secondary"}
+                                    >
+                                        {t("form.cashlessBranchFirst")}
+                                    </Typography>
+                                ) : (
+                                    <CashlessMethodSelect
+                                        methods={cashlessMethods}
+                                        value={cashlessMethodId}
+                                        onChange={setCashlessMethodId}
+                                        error={touched && Boolean(cashlessError)}
+                                        loading={cashlessMethodsLoading}
+                                        loadFailed={cashlessMethodsFailed}
+                                        disabled={loading}
+                                        branchNote={
+                                            activeBranch && saleBranchId !== activeBranch.id
+                                                ? t("form.cashlessOtherBranchNote")
+                                                : null
+                                        }
+                                    />
+                                )}
+                            </Box>
+                        )}
+
                         <Divider sx={{ my: 1 }} />
 
                         {/* Итого к оплате */}
@@ -892,10 +993,20 @@ export const DjangoSaleFormDrawer: React.FC<DjangoSaleFormDrawerProps> = ({
                     fullWidth
                     size="large"
                     onClick={handleSubmit}
-                    disabled={!hasValidProduct || loading || (showBranchSelect && !selectedBranch)}
+                    disabled={
+                        !hasValidProduct ||
+                        loading ||
+                        (showBranchSelect && !selectedBranch) ||
+                        Boolean(cashlessError)
+                    }
                 >
                     {loading ? <CircularProgress size={24} color="inherit" /> : isEdit ? t("form.submitEdit") : t("form.submitCreate")}
                 </Button>
+                {Boolean(cashlessError) && (
+                    <Typography variant="caption" color="error" sx={{ display: "block", mt: 1 }}>
+                        {cashlessError}
+                    </Typography>
+                )}
             </Box>
         </Drawer>
     );

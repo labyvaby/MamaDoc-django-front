@@ -4,8 +4,8 @@ import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import { resolveShortYearMode, useShortYearHandlers } from "./shortYearField";
 import type { ShortYearMode } from "../../utility/shortYear";
 
-/** Формат ru-локали MUI X: используется, когда пикеру не передали свой `format`. */
-const DEFAULT_DATE_TIME_FORMAT = "DD.MM.YYYY HH:mm";
+/** Год в полях даты вводится двумя цифрами — век дописывается по `shortYearMode`. */
+const DEFAULT_DATE_TIME_FORMAT = "DD.MM.YY HH:mm";
 
 /**
  * Обертка над MUI X DateTimePicker с minutesStep=5 по умолчанию.
@@ -15,8 +15,8 @@ const DEFAULT_DATE_TIME_FORMAT = "DD.MM.YYYY HH:mm";
  * чтобы избежать конфликтов версий/контекста и ошибок вида
  * "MUI X: Can not find the date and time pickers localization context".
  * - Открывается при двойном клике на поле ввода
- * - Короткий год дописывается сам: «27.07.95 10:00» + Enter/уход из поля → 27.07.2095…
- *   век берётся по правилу `shortYearMode` (по умолчанию — ближайший год)
+ * - Год двузначный: «27.07.95 10:00» → 1995, век берётся по правилу `shortYearMode`
+ *   (по умолчанию — ближайший год)
  */
 export type CustomDateTimePickerProps = React.ComponentProps<typeof DateTimePicker> & {
   /**
@@ -28,7 +28,8 @@ export type CustomDateTimePickerProps = React.ComponentProps<typeof DateTimePick
 };
 
 export function CustomDateTimePicker(props: CustomDateTimePickerProps) {
-  const { minutesStep, slotProps, shortYearMode: _shortYearMode, ...rest } = props;
+  const { minutesStep, slotProps, shortYearMode: _shortYearMode, format, ...rest } = props;
+  const dateTimeFormat = typeof format === "string" ? format : DEFAULT_DATE_TIME_FORMAT;
   const [open, setOpen] = React.useState(false);
 
   const handleDoubleClick = () => {
@@ -42,7 +43,7 @@ export function CustomDateTimePicker(props: CustomDateTimePickerProps) {
   const shortYear = useShortYearHandlers({
     value: props.value,
     onChange: props.onChange as ((value: never, context: never) => void) | undefined,
-    format: rest.format,
+    format: dateTimeFormat,
     defaultFormat: DEFAULT_DATE_TIME_FORMAT,
     mode: resolveShortYearMode(props, "nearest"),
     granularity: "minute",
@@ -51,6 +52,7 @@ export function CustomDateTimePicker(props: CustomDateTimePickerProps) {
 
   return (
     <DateTimePicker
+      format={dateTimeFormat}
       minutesStep={minutesStep ?? 15}
       shouldDisableTime={(value, view) => view === "minutes" && value.minute() % (minutesStep ?? 15) !== 0}
       // @ts-ignore

@@ -189,6 +189,17 @@ const DoctorBookingPage: React.FC = () => {
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<GuestBookingResult | null>(null);
 
+  /**
+   * Филиал записи. В публичном каталоге источник один — основной филиал врача
+   * (открытый вопрос §7.4 тикета), и он же уходит в POST /bookings/.
+   *
+   * Этим же филиалом скоупим занятость (branch_id в calendar/available-times/
+   * available-services, ответ бэка от 21.08.2026): без параметра бэк считает
+   * занятость по всей организации, и приёмы врача в другом филиале гасили здесь
+   * свободные окна. Показываем окна того филиала, в который заведём приём.
+   */
+  const branchId = doctor?.branch?.id ?? null;
+
   // Карточка врача + отзывы + страны.
   React.useEffect(() => {
     const controller = new AbortController();
@@ -216,7 +227,7 @@ const DoctorBookingPage: React.FC = () => {
     if (!doctor) return;
     const controller = new AbortController();
     setCalendarLoading(true);
-    getProfessionalCalendar(idOrSlug, {}, controller.signal)
+    getProfessionalCalendar(idOrSlug, { branchId }, controller.signal)
       .then((days) => {
         setCalendar(days);
         // Сразу открываем ближайший свободный день — это то, что ищет пациент.
@@ -231,7 +242,7 @@ const DoctorBookingPage: React.FC = () => {
       })
       .finally(() => setCalendarLoading(false));
     return () => controller.abort();
-  }, [doctor, idOrSlug]);
+  }, [doctor, idOrSlug, branchId]);
 
   // Первое раскрытие блока услуг: он теперь ниже расписания и на телефоне
   // остаётся за краем экрана — иначе гость не заметит, что появился шаг 3.
@@ -269,7 +280,6 @@ const DoctorBookingPage: React.FC = () => {
 
   // Филиал обязателен всегда (без branch_id → 400), услуга — пока бэк не
   // принимает пустой service_ids (см. BOOKING_NO_SERVICE_ENABLED).
-  const branchId = doctor?.branch?.id ?? null;
   const canBook =
     !doctor ||
     ((BOOKING_NO_SERVICE_ENABLED || doctor.services.length > 0) && branchId !== null);
@@ -283,7 +293,7 @@ const DoctorBookingPage: React.FC = () => {
       }
       setTimesLoading(true);
       try {
-        const res = await getProfessionalAvailableTimes(idOrSlug, date, serviceIds);
+        const res = await getProfessionalAvailableTimes(idOrSlug, date, serviceIds, branchId);
         setFilteredTimes(res.times);
         return res.times;
       } catch {
@@ -293,7 +303,7 @@ const DoctorBookingPage: React.FC = () => {
         setTimesLoading(false);
       }
     },
-    [idOrSlug],
+    [idOrSlug, branchId],
   );
 
   const handleDateChange = async (date: string) => {
@@ -314,7 +324,7 @@ const DoctorBookingPage: React.FC = () => {
     // Услуги, которые помещаются в это окно, — их и предлагаем выбрать.
     setServicesLoading(true);
     try {
-      const res = await getProfessionalAvailableServices(idOrSlug, selectedDate, time);
+      const res = await getProfessionalAvailableServices(idOrSlug, selectedDate, time, branchId);
       const items: PickableService[] = res.items.map((s) => ({
         id: s.id,
         name: s.name,

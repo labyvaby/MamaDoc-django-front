@@ -15,6 +15,7 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import { DateRangeField } from "../../ui";
+import type { DjangoCashlessMethod } from "../../../api/cashlessMethods";
 import { useT } from "../../../i18n/VerticalProvider";
 
 /** Пресеты периода для панели фильтров продаж. */
@@ -38,6 +39,14 @@ export interface SalesFilterBarProps {
     onPaymentMethodChange: (v: SalesPaymentUI) => void;
     status: SalesStatusUI;
     onStatusChange: (v: SalesStatusUI) => void;
+    /**
+     * Способы безнала для фильтра — вместе со скрытыми: терминал могли убрать
+     * из справочника уже после того, как через него прошли продажи.
+     * Пустой список = бэк способ у продаж не хранит, селект не показываем.
+     */
+    cashlessMethods?: DjangoCashlessMethod[];
+    cashlessMethodId?: number | "all";
+    onCashlessMethodChange?: (v: number | "all") => void;
     hasActiveFilters: boolean;
     onReset: () => void;
 }
@@ -56,6 +65,9 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
     onPaymentMethodChange,
     status,
     onStatusChange,
+    cashlessMethods = [],
+    cashlessMethodId = "all",
+    onCashlessMethodChange,
     hasActiveFilters,
     onReset,
 }) => {
@@ -150,6 +162,28 @@ export const SalesFilterBar: React.FC<SalesFilterBarProps> = ({
                         <MenuItem value="cash">{t("filterBar.paymentCash")}</MenuItem>
                         <MenuItem value="cashless">{t("filterBar.paymentCashless")}</MenuItem>
                     </TextField>
+
+                    {cashlessMethods.length > 0 && onCashlessMethodChange && (
+                        <TextField
+                            select
+                            size="small"
+                            label={t("filterBar.methodLabel")}
+                            value={cashlessMethodId}
+                            onChange={(e) =>
+                                onCashlessMethodChange(
+                                    e.target.value === "all" ? "all" : Number(e.target.value),
+                                )
+                            }
+                            sx={{ minWidth: 170 }}
+                        >
+                            <MenuItem value="all">{t("filterBar.methodAny")}</MenuItem>
+                            {cashlessMethods.map((m) => (
+                                <MenuItem key={m.id} value={m.id}>
+                                    {m.name}
+                                </MenuItem>
+                            ))}
+                        </TextField>
+                    )}
 
                     <TextField
                         select

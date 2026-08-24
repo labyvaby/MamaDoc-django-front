@@ -1,22 +1,26 @@
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 
 /**
  * Модуль «Прививки» (vaccinations).
  *
- * Контракт: frontend-vaccinations-guide.md (бэкенд реализован, Этапы 1–2:
- * учёт + календарь; Этап 3 — аналитика по партиям/сроку — пока нет).
+ * Контракт: frontend-vaccinations-guide.md + changelog от 21.08.2026
+ * (`vaccinations_frontend_changelog.md`): привязка дозы к строке товара приёма,
+ * пагинация дашборда, ageDays/maxAgeMonths в шаблоне календаря.
  * НЕ менять форму без согласования с бэкенд-командой.
  *
- * Права на проде ролям пока НЕ выданы — все запросы кроме superuser вернут 403
- * (это отдельный шаг бэка/тимлида). Моки оставлены для локальной отладки без
- * бэка (VACCINATIONS_USE_MOCKS = true).
+ * Моки оставлены для локальной отладки без бэка (VACCINATIONS_USE_MOCKS = true).
  *
- * Открытые вопросы бэку (предположения фронта, не факт из гайда):
- * - скоуп по филиалам (branchId) — проверяем на живом API;
- * - patientName в слотах дашборда «кому пора» (гайд не фиксирует, но UI нужен);
+ * Расхождения changelog'а с живым API (проверено 23.08.2026 на newcrm.pediatr.kg,
+ * орг 1) — верим API, не тексту:
+ * - статус сделанного слота — "done", а не обещанный "completed"
+ *   (`?status=completed` отдаёт 0 записей);
+ * - `?status` на `/records/` игнорируется (все 8 записей приходят при любом);
+ * - записей в статусе "draft" на проде пока нет — автосоздание черновика при
+ *   продаже товара-вакцины вживую не наблюдалось.
+ *
+ * Открытые вопросы бэку (предположения фронта, не факт из документации):
  * - точный набор injectionSite (гайд показывает только "left_arm").
- * organizationId query-параметром суперпользователю закладываем проактивно
- * (как в tasks/achievements) — лишний параметр бэк проигнорирует.
+ * organizationId query-параметром суперпользователю обязателен.
  */
 
 export const VACCINATIONS_USE_MOCKS = false;
@@ -32,28 +36,22 @@ export const VACCINATION_BATCH_WRITEOFF_ENABLED = true;
 /**
  * Резать ли дашборд «Кому пора» по активному филиалу.
  *
- * Пока false: бэк создаёт плановые слоты с `branchId: null` (498 из 500 на тесте),
- * а фильтр по филиалу строгий — `?branchId=12` отдаёт 0 записей. С включённым
- * скоупом вкладка показывала «Нет запланированных прививок» при сотнях
- * просроченных доз в базе (проверено 17.08.2026 на тесте и на проде).
- *
- * Вернуть в true, когда бэк начнёт проставлять филиал слоту либо отдавать
- * `branchId: null` как общий для всех филиалов — тикет
- * `MamaDoc/backend_ticket_vaccinations_product_line_link.md`, п. 5.4.
+ * С 21.08.2026 слоты без филиала (`branchId: null`) бэк считает общими и отдаёт
+ * при любом `?branchId`: на проде `?branchId=1` возвращает 1758 слотов из 1761
+ * (проверено 23.08.2026). Раньше фильтр был строгим и вкладка пустела при сотнях
+ * просроченных доз — поэтому скоуп держали выключенным.
  */
-export const VACCINATION_SCHEDULE_BRANCH_SCOPING = false;
+export const VACCINATION_SCHEDULE_BRANCH_SCOPING = true;
 
 /**
- * Сколько плановых доз бэк отдаёт в дашборд «Кому пора» максимум.
+ * Размер страницы дашборда «Кому пора».
  *
- * Жёсткий предел на стороне сервера: `page_size` и `limit` игнорируются, список
- * идёт по возрастанию даты — то есть приезжают САМЫЕ СТАРЫЕ дозы, а актуальные
- * в выдачу не попадают вовсе. Из фильтров работает только `dueBefore` (верхняя
- * граница); `dueAfter`/`dueFrom`/`ordering`/`status` бэк игнорирует, поэтому
- * отфильтровать «свежие» ни на сервере, ни на клиенте нельзя (проверено
- * 17.08.2026). Используем, чтобы честно предупредить: список неполон.
+ * `GET /vaccinations/schedule/` с 21.08.2026 пагинирован (`count/next/previous`),
+ * по умолчанию отдаёт 20 записей — для таблицы мало. Прежний обходной путь
+ * (сервер игнорировал `pageSize`/`ordering`/`status` и отдавал первые 500 самых
+ * старых доз) больше не нужен: все фильтры работают.
  */
-export const SCHEDULE_DASHBOARD_HARD_LIMIT = 500;
+export const SCHEDULE_DASHBOARD_PAGE_SIZE = 50;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,10 +191,20 @@ export interface BatchWriteOff {
 export type InjectionSite = string;
 
 /**
- * Статус записи о прививке. Гайд показывает "pending" в ответе и принимает
- * PATCH {status:"canceled"}; "done" — предположение. Поле терпимо к строке.
+ * Статус записи о прививке.
+ *
+ * "draft" (с 21.08.2026) бэк ставит сам, когда регистратор продал товар-вакцину
+ * в приёме, — медсестре остаётся дозаполнить. "done" — предположение фронта
+ * (гайд обещает "completed", но на проде записи только в "pending", проверено
+ * 23.08.2026). Поле терпимо к произвольной строке.
  */
-export type VaccinationRecordStatus = "pending" | "done" | "canceled" | string;
+export type VaccinationRecordStatus =
+  | "draft"
+  | "pending"
+  | "done"
+  | "completed"
+  | "canceled"
+  | string;
 
 /** Кто вводил прививку — объект (как employee в строке услуги приёма), не число. */
 export interface VaccinationAdministeredBy {
@@ -214,6 +222,13 @@ export interface VaccinationRecord {
   branchId: number;
   appointmentId: number | null;
   serviceLineId: number | null;
+  /**
+   * Строка товара приёма, к которой привязана доза (с 21.08.2026). Пока она
+   * заполнена, повторного биллинга и списания склада не происходит: запись
+   * «садится» на уже проданную вакцину. null у записей старше фикса и у доз без
+   * приёма.
+   */
+  productLineId: number | null;
   vaccineId: number;
   vaccineName: string;
   batchId: number | null;
@@ -240,6 +255,8 @@ export interface RecordsFilters {
   branchId?: number;
   dateFrom?: string; // YYYY-MM-DD
   dateTo?: string;
+  /** Записи одного приёма (с 21.08.2026). Фильтра по статусу у эндпоинта нет. */
+  appointmentId?: number;
   organizationId?: number;
 }
 
@@ -251,6 +268,12 @@ export interface CreateRecordPayload {
   administeredAt: string; // ISO
   doseNumber: number;
   appointmentId?: number | null;
+  /**
+   * К какой строке товара приёма привязать дозу. Если у приёма ровно одна
+   * свободная строка этой вакцины — бэк найдёт её сам и поле можно не слать;
+   * при нескольких строках без него привязка не состоится.
+   */
+  productLineId?: number | null;
   /** Сценарий 1: партия склада (при isExternal бэк обнулит). */
   batchId?: number | null;
   injectionSite?: InjectionSite;
@@ -274,7 +297,15 @@ export interface UpdateRecordPayload {
   reactionNotes?: string;
 }
 
-export type ScheduleStatus = "planned" | "overdue" | "done" | "skipped";
+/**
+ * Статус слота календаря.
+ *
+ * ⚠ Сделанная доза на проде — "done"; changelog от 21.08.2026 обещает
+ * "completed", но `?status=completed` отдаёт 0 записей, а `?status=done` — три
+ * (проверено 23.08.2026 на newcrm.pediatr.kg). "completed" держим в типе как
+ * запасной вариант, чтобы чипы не пропали, если бэк всё-таки переименует.
+ */
+export type ScheduleStatus = "planned" | "overdue" | "done" | "completed" | "skipped";
 
 /** Слот календаря прививок. status="overdue" вычисляется бэком на лету. */
 export interface VaccinationScheduleSlot {
@@ -301,16 +332,37 @@ export interface VaccinationScheduleSlot {
   dueWindowDays: number | null;
   mandatory: boolean | null;
   label: string;
-  /** Для дашборда «кому пора» (все пациенты) — открытый вопрос бэку, UI терпит отсутствие. */
+  /** Для дашборда «Кому пора» (все пациенты) — бэк заполняет с 21.08.2026. */
   patientName?: string;
   patientPhone?: string;
 }
 
 export interface ScheduleDashboardFilters {
+  dueAfter?: string; // YYYY-MM-DD
   dueBefore?: string; // YYYY-MM-DD
+  status?: ScheduleStatus;
   branchId?: number;
   patientId?: number;
+  /** Поле сортировки бэка (минус = по убыванию), например "-scheduledDate". */
+  ordering?: string;
+  page?: number;
+  pageSize?: number;
   organizationId?: number;
+}
+
+/** Страница дашборда «Кому пора»: бэк пагинирует выдачу с 21.08.2026. */
+export interface ScheduleDashboardPage {
+  items: VaccinationScheduleSlot[];
+  /** Всего слотов под фильтром (не на странице). */
+  count: number;
+  hasNext: boolean;
+  /**
+   * Ответ пришёл пагинированным. false — перед нами бэк старее 21.08.2026: он
+   * отдаёт весь список массивом и молча игнорирует `status`/`ordering`/`pageSize`,
+   * поэтому фильтровать и считать сводку приходится на клиенте (так на тестовом
+   * контуре 23.08.2026, пока прод уже новый).
+   */
+  paginated: boolean;
 }
 
 export interface UpdateSchedulePayload {
@@ -699,6 +751,8 @@ export function getRecords(
     if (filters.branchId != null) list = list.filter((r) => r.branchId === filters.branchId);
     if (filters.dateFrom) list = list.filter((r) => r.administeredAt.slice(0, 10) >= filters.dateFrom!);
     if (filters.dateTo) list = list.filter((r) => r.administeredAt.slice(0, 10) <= filters.dateTo!);
+    if (filters.appointmentId != null)
+      list = list.filter((r) => r.appointmentId === filters.appointmentId);
     return mockDelay(list);
   }
   const q = new URLSearchParams();
@@ -706,12 +760,28 @@ export function getRecords(
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) q.set("dateTo", filters.dateTo);
+  if (filters.appointmentId != null) q.set("appointmentId", String(filters.appointmentId));
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   const qs = q.toString();
   return apiRequest<{ results: VaccinationRecord[] } | VaccinationRecord[]>(
     `/vaccinations/records/${qs ? `?${qs}` : ""}`,
     { signal },
   ).then(toList);
+}
+
+/**
+ * Записи прививок одного приёма — для индикатора «оформлена / не оформлена» в
+ * карточке приёма. Отменённые дозы отбрасываем: строка товара после отмены
+ * снова свободна.
+ */
+export function getRecordsByAppointment(
+  appointmentId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<VaccinationRecord[]> {
+  return getRecords({ appointmentId, organizationId }, signal).then((list) =>
+    list.filter((r) => r.appointmentId === appointmentId && r.status !== "canceled"),
+  );
 }
 
 export function getRecord(
@@ -743,6 +813,7 @@ export function createRecord(
       branchId: payload.branchId,
       appointmentId: payload.appointmentId ?? null,
       serviceLineId: null,
+      productLineId: payload.productLineId ?? null,
       vaccineId: payload.vaccineId,
       vaccineName: vaccine?.name ?? `Вакцина #${payload.vaccineId}`,
       batchId: payload.isExternal ? null : payload.batchId ?? null,
@@ -774,6 +845,19 @@ export function createRecord(
     method: "POST",
     body: payload,
   });
+}
+
+/**
+ * Доза уже зарегистрирована в этом приёме (HTTP 409 на связку
+ * appointmentId + vaccineId + doseNumber, с 21.08.2026). Возвращает текст бэка
+ * — он человекочитаемый («Прививка дозы 1 уже зарегистрирована в этом приёме»).
+ */
+export function parseDuplicateDoseConflict(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null;
+  const detail = (err.payload as { detail?: unknown } | null)?.detail;
+  return typeof detail === "string" && detail
+    ? detail
+    : "Эта доза уже зарегистрирована в приёме.";
 }
 
 export function updateRecord(
@@ -839,28 +923,51 @@ export function getPatientHistory(
   ).then(toList);
 }
 
-/** Дашборд «кому пора» — по всем пациентам филиала. */
+/** Дашборд «Кому пора» — по всем пациентам филиала, страницами. */
 export function getScheduleDashboard(
   filters: ScheduleDashboardFilters = {},
   signal?: AbortSignal,
-): Promise<VaccinationScheduleSlot[]> {
+): Promise<ScheduleDashboardPage> {
+  const pageSize = filters.pageSize ?? SCHEDULE_DASHBOARD_PAGE_SIZE;
+  const page = filters.page ?? 1;
   if (VACCINATIONS_USE_MOCKS) {
     let list = mockSlots.filter((s) => s.status === "planned" || s.status === "overdue");
+    if (filters.status) list = list.filter((s) => s.status === filters.status);
     if (filters.branchId != null) list = list.filter((s) => s.branchId === filters.branchId);
     if (filters.patientId != null) list = list.filter((s) => s.patientId === filters.patientId);
+    if (filters.dueAfter) list = list.filter((s) => s.scheduledDate >= filters.dueAfter!);
     if (filters.dueBefore) list = list.filter((s) => s.scheduledDate <= filters.dueBefore!);
-    return mockDelay(list);
+    const from = (page - 1) * pageSize;
+    return mockDelay({
+      items: list.slice(from, from + pageSize),
+      count: list.length,
+      hasNext: from + pageSize < list.length,
+      paginated: true,
+    });
   }
   const q = new URLSearchParams();
+  if (filters.dueAfter) q.set("dueAfter", filters.dueAfter);
   if (filters.dueBefore) q.set("dueBefore", filters.dueBefore);
+  if (filters.status) q.set("status", filters.status);
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.patientId != null) q.set("patientId", String(filters.patientId));
+  if (filters.ordering) q.set("ordering", filters.ordering);
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
-  const qs = q.toString();
-  return apiRequest<{ results: VaccinationScheduleSlot[] } | VaccinationScheduleSlot[]>(
-    `/vaccinations/schedule/${qs ? `?${qs}` : ""}`,
-    { signal },
-  ).then(toList);
+  q.set("page", String(page));
+  q.set("pageSize", String(pageSize));
+  return apiRequest<
+    { results: VaccinationScheduleSlot[]; count?: number; next?: string | null } | VaccinationScheduleSlot[]
+  >(`/vaccinations/schedule/?${q.toString()}`, { signal }).then((data) => {
+    const items = toList(data);
+    // Пагинации может не быть у старого бэка — тогда пришёл весь список разом.
+    const paginated = !Array.isArray(data);
+    return {
+      items,
+      count: paginated ? data.count ?? items.length : items.length,
+      hasNext: paginated ? Boolean(data.next) : false,
+      paginated,
+    };
+  });
 }
 
 export function updateSchedule(
@@ -930,6 +1037,13 @@ export interface CalendarTemplateRow {
   vaccineName: string;
   doseNumber: number;
   ageMonths: number;
+  /**
+   * Точный возраст в днях (с 21.08.2026) — для доз вроде «4,5 месяца» (135 дней).
+   * Если заполнен, бэк считает срок по нему, а ageMonths игнорирует.
+   */
+  ageDays: number | null;
+  /** Верхняя граница возраста: пациенту старше слот не создаётся (с 21.08.2026). */
+  maxAgeMonths: number | null;
   dueWindowDays: number;
   mandatory: boolean;
   label: string;
@@ -940,6 +1054,8 @@ export interface CreateCalendarTemplatePayload {
   vaccineId: number;
   doseNumber: number;
   ageMonths: number;
+  ageDays?: number | null;
+  maxAgeMonths?: number | null;
   dueWindowDays: number;
   mandatory?: boolean;
   label?: string;
@@ -981,6 +1097,11 @@ export function updateCalendarTemplate(
   );
 }
 
+/**
+ * Удаление строки шаблона. С 21.08.2026 бэк каскадом сносит нетронутые слоты
+ * пациентов (planned, без заметок и без записи) — «осиротевшие» дозы больше не
+ * блокируют повторное создание строки. Пропущенные и уже сделанные сохраняются.
+ */
 export function deleteCalendarTemplate(
   templateId: number,
   organizationId?: number,

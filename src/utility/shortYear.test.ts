@@ -72,10 +72,22 @@ describe("expandShortYearInText", () => {
     expect(expandShortYearInText("29.02.0096", FMT, "past", NOW)).toBe("1996-02-29");
   });
 
+  it("двузначный формат года разворачивает по режиму, а не по границе dayjs", () => {
+    const FMT2 = "DD.MM.YY";
+    expect(expandShortYearInText("27.07.95", FMT2, "past", NOW)).toBe("1995-07-27");
+    // dayjs развернул бы «30» и «68» в 2030/2068 — для даты рождения это будущее
+    expect(expandShortYearInText("27.07.30", FMT2, "past", NOW)).toBe("1930-07-27");
+    expect(expandShortYearInText("27.07.68", FMT2, "past", NOW)).toBe("1968-07-27");
+    // а «69» dayjs увёл бы в прошлое — для срока годности это уже просрочка
+    expect(expandShortYearInText("27.07.69", FMT2, "future", NOW)).toBe("2069-07-27");
+    expect(expandShortYearInText("27.07.30 14:30", "DD.MM.YY HH:mm", "nearest", NOW)).toBe("2030-07-27T14:30:00");
+    expect(expandShortYearInText("07.30", "MM.YY", "nearest", NOW)).toBe("2030-07");
+  });
+
   it("учитывает порядок частей в формате", () => {
     expect(expandShortYearInText("0095-07-27", "YYYY-MM-DD", "past", NOW)).toBe("1995-07-27");
     expect(expandShortYearInText("07/27/0095", "MM/DD/YYYY", "past", NOW)).toBe("1995-07-27");
-    expect(expandShortYearInText("27.07.95", "DD.MM.YY", "past", NOW)).toBeNull();
+    expect(expandShortYearInText("27.07.0095", "YYYY-MM-DD", "past", NOW)).toBeNull(); // слотов больше, чем токенов
   });
 });
 

@@ -29,7 +29,7 @@ export interface CashboxFilters {
  * Строка разреза безнала по способам оплаты. Считается бэком из тех же
  * запросов, что и итоги, поэтому суммы сходятся: `income` → `cardIncome`,
  * `refunds` → `cardRefunds`, `expenses` → `cardExpenses`,
- * `supplyExpenses` → `supplyCardExpenses`.
+ * `supplyExpenses` → `supplyCardExpenses`, `salesIncome` → `salesCardIncome`.
  *
  * `cashlessMethodId: null` — операции без способа: платежи до появления
  * справочника и безнал, проведённый мимо него. Такие деньги не теряются, а
@@ -37,7 +37,6 @@ export interface CashboxFilters {
  *
  * Строки собираются из операций, а не из справочника: скрытый способ с
  * движениями за период остаётся, способ без движений не приходит вовсе.
- * Продаж товаров в разрезе нет — склад не хранит, каким терминалом принято.
  */
 export interface CashlessMethodBreakdownRow {
   cashlessMethodId: number | null;
@@ -46,6 +45,13 @@ export interface CashlessMethodBreakdownRow {
   refunds: string;
   expenses: string;
   supplyExpenses: string;
+  /**
+   * Продажи товаров по этому способу (карточная часть, `salesCardIncome`).
+   * Приходит только после доработки бэка (тикет
+   * `backend_ticket_sales_cashless_method.md`); пока поля нет, строка «Продажи
+   * товаров» в кассе показывается без разреза.
+   */
+  salesIncome?: string;
   /** Операции всех видов: оплаты + возвраты + расходы + закупки. */
   count: number;
 }

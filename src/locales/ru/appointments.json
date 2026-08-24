@@ -647,6 +647,160 @@
     "noSlots": "нет окон",
     "grid": "Сетка {{specialist.genPl}}"
   },
+  "journal": {
+    "count": {
+      "appointments_one": "{{count}} {{visit.nom}}",
+      "appointments_few": "{{count}} {{visit.gen}}",
+      "appointments_many": "{{count}} {{visit.genPl}}",
+      "procedures_one": "{{count}} {{procedure.nom}}",
+      "procedures_few": "{{count}} {{procedure.gen}}",
+      "procedures_many": "{{count}} {{procedure.genPl}}"
+    },
+    "omni": {
+      "groupPatient": "{{patient.nom, capitalize}}",
+      "groupDoctor": "{{specialist.nom, capitalize}}",
+      "groupNurse": "{{assistant.nom, capitalize}}",
+      "groupService": "{{service.nom, capitalize}}",
+      "addMore": "Добавить условие или найти по тексту",
+      "clear": "Очистить поиск и условия"
+    },
+    "summary": {
+      "revenue": "Выручка",
+      "debt": "Долг",
+      "averageCheck": "Средний чек",
+      "som": "сом",
+      "closedHint_one": "{{count}} чек закрыт",
+      "closedHint_few": "{{count}} чека закрыто",
+      "closedHint_many": "{{count}} чеков закрыто",
+      "accruedHint": "начислено {{amount}}",
+      "debtorsHint_one": "{{count}} незакрытый счёт",
+      "debtorsHint_few": "{{count}} незакрытых счёта",
+      "debtorsHint_many": "{{count}} незакрытых счетов",
+      "discountedHint_one": "{{count}} запись со скидкой",
+      "discountedHint_few": "{{count}} записи со скидкой",
+      "discountedHint_many": "{{count}} записей со скидкой",
+      "ofTotal": "из {{total}}",
+      "materials": "Материалы",
+      "materialsHint": "списано со склада",
+      "units": "ед.",
+      "patients": "{{patient.nomPl, capitalize}}",
+      "perPatientHint": "по {{value}} на {{patient.acc}}"
+    },
+    "grouping": {
+      "days": "По дням",
+      "courses": "По курсам"
+    },
+    "courses": {
+      "showMore_one": "Показать ещё {{count}} {{patient.acc}}",
+      "showMore_few": "Показать ещё {{count}} {{patient.genPl}}",
+      "showMore_many": "Показать ещё {{count}} {{patient.genPl}}"
+    },
+    "pulse": {
+      "month": "Пульс месяца",
+      "year": "Пульс года",
+      "paid": "оплачено",
+      "debt": "долг",
+      "tooltipMoney_one": "{{date}} · {{count}} запись · {{amount}} сом",
+      "tooltipMoney_few": "{{date}} · {{count}} записи · {{amount}} сом",
+      "tooltipMoney_many": "{{date}} · {{count}} записей · {{amount}} сом",
+      "tooltipVisits_one": "{{date}} · {{count}} запись",
+      "tooltipVisits_few": "{{date}} · {{count}} записи",
+      "tooltipVisits_many": "{{date}} · {{count}} записей"
+    },
+    "payFilter": {
+      "all": "Все",
+      "paid": "Оплачено",
+      "discounted": "Со скидкой",
+      "partial": "Долг",
+      "unpaid": "Не оплачено",
+      "refunded": "Возврат"
+    },
+    "period": {
+      "prev": "Предыдущий период",
+      "next": "Следующий период",
+      "wholeYear": "Весь год"
+    },
+    "views": {
+      "feed": "Лента",
+      "table": "Таблица",
+      "insights": "Разрезы"
+    },
+    "export": "Выгрузить",
+    "exporting": "Готовим файл…",
+    "exportError": "Не удалось собрать файл выгрузки",
+    "shownOf": "показано {{shown}} из {{total}}",
+    "feed": {
+      "dayRevenue": "выручка",
+      "dayDebt": "долг",
+      "minutes": "{{count}} мин",
+      "noPatient": "Без {{patient.gen}}",
+      "debtOf": "долг {{amount}}",
+      "materials": "поз.",
+      "showMore_one": "Показать ещё {{count}} запись",
+      "showMore_few": "Показать ещё {{count}} записи",
+      "showMore_many": "Показать ещё {{count}} записей"
+    },
+    "details": {
+      "composition": "Состав {{visit.gen}}",
+      "noPerformer": "Исполнитель не указан",
+      "products": "Товары",
+      "consumptions": "Расходники",
+      "createdAt": "Создан {{at}}",
+      "money": "Деньги",
+      "charged": "Начислено",
+      "discount": "Скидка",
+      "paid": "Оплачено",
+      "rest": "Остаток",
+      "total": "Итого",
+      "sliceShare": "В этот журнал попадает {{amount}} из {{visit.gen}}",
+      "actions": "Действия"
+    },
+    "actions": {
+      "pay": "Принять оплату",
+      "openConclusion": "Открыть {{conclusion.acc}}",
+      "fillConclusion": "Заполнить {{conclusion.acc}}",
+      "edit": "Изменить {{visit.acc}}",
+      "printInvoice": "Печать счёта",
+      "openCard": "Полная карточка"
+    },
+    "table": {
+      "date": "Дата",
+      "time": "Время",
+      "when": "Когда",
+      "patient": "{{patient.nom, capitalize}}",
+      "services": "{{service.nomPl, capitalize}}",
+      "status": "Статус",
+      "accrued": "Начислено",
+      "paid": "Оплачено",
+      "debt": "Остаток",
+      "totalsTitle_one": "Итого по срезу · {{count}} запись",
+      "totalsTitle_few": "Итого по срезу · {{count}} записи",
+      "totalsTitle_many": "Итого по срезу · {{count}} записей"
+    },
+    "insights": {
+      "performers": "Исполнители",
+      "nurses": "{{assistant.nomPl, capitalize}}",
+      "topServices": "Топ {{service.genPl}}",
+      "topProcedures": "Топ {{procedure.genPl}}",
+      "byRevenue": "по выручке",
+      "byCount": "по количеству",
+      "peakHours": "Часы пик",
+      "peakHint": "записей по дню и часу",
+      "heatCell": "{{day}}, {{hour}}:00 — {{count}}",
+      "consumptions": "Списано со склада",
+      "consumptionsHint": "расходники {{procedure.genPl}}",
+      "noConsumptions": "Списаний за срез нет",
+      "paymentMix": "Структура оплаты",
+      "records_one": "{{count}} запись",
+      "records_few": "{{count}} записи",
+      "records_many": "{{count}} записей",
+      "paymentUnknown": "Без статуса"
+    },
+    "empty": {
+      "title": "За этот срез записей нет",
+      "description": "Снимите условие поиска, фильтр оплаты или выберите другой период"
+    }
+  },
   "registry": {
     "noSelection": "Выберите {{record.acc}} для просмотра деталей",
     "wholeYearLabel": "{{year}} · весь год",
@@ -684,7 +838,9 @@
     "appointmentsPageTitle": "Все {{visit.nomPl}}",
     "appointmentsListLabel": "{{visit.nomPl, capitalize}}",
     "appointmentsSearchPlaceholder": "Поиск {{patient.gen}}, {{service.gen}}...",
-    "proceduresSearchPlaceholder": "Поиск {{patient.gen}}, процедуры..."
+    "proceduresPageTitle": "Все {{procedure.nomPl}}",
+    "proceduresListLabel": "{{procedure.nomPl, capitalize}}",
+    "proceduresSearchPlaceholder": "Поиск {{patient.gen}}, {{procedure.gen}}..."
   },
   "bankConfirmation": {
     "title": "Подтвердить банковский платёж",

@@ -10,6 +10,7 @@ import {
   Typography,
 } from "@mui/material";
 import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
+import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import { useSearchParams } from "react-router";
 
@@ -28,10 +29,10 @@ import { useBookingNav } from "./orgSlug";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { formatDayMonth, isoInDays, telHref, todayIso } from "./format";
 import {
-  BOOKING_PRIMARY,
-  BOOKING_PRIMARY_HOVER,
   BOOKING_RADIUS,
   BORDER,
+  CARD_ACTION_BORDER,
+  CARD_CALL_BORDER,
   TILE_RADIUS,
   nearestTone,
 } from "./theme";
@@ -56,10 +57,11 @@ const SPECIALTY_MIN_H = 18;
 const SLOTS_MIN_H = { xs: 44, lg: 24 };
 /**
  * Весь низ карточки: строка окон с отступами (10 + SLOTS_MIN_H + 8) и кнопка
- * (~31). Врач без окон показывает вместо этого обведённый блок со звонком —
- * резерв держит обе карточки в сетке одной высоты.
+ * (30 по макету). Врач без окон показывает вместо этого обведённый блок со
+ * звонком (64 по макету) — резерв держит обе карточки в сетке одной высоты,
+ * поэтому он равен более высокой из двух веток.
  */
-const ACTION_AREA_MIN_H = { xs: 93, lg: 73 };
+const ACTION_AREA_MIN_H = { xs: 92, lg: 72 };
 
 // ── Ближайшие свободные окна ─────────────────────────────────────────────────
 
@@ -236,13 +238,16 @@ const cardActionSx = {
   justifyContent: "center",
   width: "100%",
   boxSizing: "border-box",
-  py: 0.75,
+  // 5, а не 6: в макете отступ 6px отмерян от края кнопки, а рамка нарисована
+  // внутрь и в высоту не входит. В CSS рамка высоту прибавляет, поэтому 5 + 1.
+  py: "5px",
   px: 1,
   border: "1px solid",
   borderRadius: 999,
   fontFamily: "inherit",
+  // Кнопка карточки по макету: 30px высотой — подпись 12/18 плюс padding 6/6.
   fontSize: 12,
-  lineHeight: 1.43,
+  lineHeight: "18px",
   textAlign: "center",
 } as const;
 
@@ -386,19 +391,23 @@ const DoctorCardItem: React.FC<{
             <Box
               sx={{
                 mt: "auto",
-                mx: "-1px",
                 display: "flex",
                 flexDirection: "column",
-                border: "1px solid #C7C7C7",
+                // В макете рамка блока 0.5px против 1px у кнопки, но Chrome при
+                // dpr 1 всё равно рисует обе по пикселю, а полупиксельный стык
+                // с кнопкой размывал бы линию. Поэтому 1px и точное перекрытие.
+                border: `1px solid ${CARD_CALL_BORDER}`,
                 borderRadius: BOOKING_RADIUS,
               }}
             >
               <Typography
                 sx={{
-                  py: 0.75,
+                  // Полоса подписи по макету — 34px: текст 12/18 плюс 8/8.
+                  py: 1,
                   px: 1,
                   fontSize: 12,
                   lineHeight: "18px",
+                  color: "text.secondary",
                   textAlign: "center",
                 }}
               >
@@ -410,24 +419,36 @@ const DoctorCardItem: React.FC<{
                 // Клик по кнопке не должен заодно открывать карточку врача.
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 sx={{
-                  // Та же геометрия, что у «Записаться»: обе кнопки в ленте
-                  // карточек должны читаться как одна и та же кнопка.
+                  // Та же геометрия и та же белая кнопка с рамкой, что у
+                  // «Записаться»: обе кнопки в ленте карточек должны читаться
+                  // как одна и та же кнопка. Заливка обещала бы основное
+                  // действие, которого у врача без окон как раз нет.
                   ...cardActionSx,
-                  borderColor: "transparent",
-                  bgcolor: BOOKING_PRIMARY,
-                  color: "#FFFFFF",
-                  fontWeight: 500,
+                  // Рамка той же толщины, что у «Записаться», но темнее — в
+                  // макете кнопка внутри блока обведена цветом подписи, и
+                  // именно контраст, а не толщина, отделяет её от рамки блока.
+                  borderColor: CARD_CALL_BORDER,
+                  // В макете кнопка шириной со весь блок: её контур ложится
+                  // поверх блочного, а не рядом с ним. Отрицательные поля
+                  // повторяют это — иначе по низу и бокам шли бы две линии, а
+                  // скругления 16px и капсулы расходились бы в углах.
+                  mx: "-1px",
+                  mb: "-1px",
+                  width: "calc(100% + 2px)",
+                  color: "text.primary",
                   textDecoration: "none",
-                  "&:hover": { bgcolor: BOOKING_PRIMARY_HOVER },
+                  gap: 1,
+                  "&:hover": { bgcolor: "background.default" },
                 }}
               >
+                <PhoneOutlined sx={{ fontSize: 14 }} />
                 {t("contactClinic")}
               </Box>
             </Box>
           ) : (
             <>
               <AvailabilityRow day={day} onMore={onOpen} />
-              <Box component="span" sx={{ ...cardActionSx, borderColor: "#C7C7C7" }}>
+              <Box component="span" sx={{ ...cardActionSx, borderColor: CARD_ACTION_BORDER }}>
                 {t("bookAction")}
               </Box>
             </>

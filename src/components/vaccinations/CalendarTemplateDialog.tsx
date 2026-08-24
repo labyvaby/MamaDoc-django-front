@@ -49,6 +49,8 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
   const [vaccineId, setVaccineId] = React.useState<number | "">("");
   const [doseNumber, setDoseNumber] = React.useState("1");
   const [ageMonths, setAgeMonths] = React.useState("");
+  const [ageDays, setAgeDays] = React.useState("");
+  const [maxAgeMonths, setMaxAgeMonths] = React.useState("");
   const [dueWindowDays, setDueWindowDays] = React.useState("30");
   const [mandatory, setMandatory] = React.useState(true);
   const [label, setLabel] = React.useState("");
@@ -68,6 +70,8 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
     setVaccineId(row?.vaccineId ?? "");
     setDoseNumber(row ? String(row.doseNumber) : "1");
     setAgeMonths(row ? String(row.ageMonths) : "");
+    setAgeDays(row?.ageDays != null ? String(row.ageDays) : "");
+    setMaxAgeMonths(row?.maxAgeMonths != null ? String(row.maxAgeMonths) : "");
     setDueWindowDays(row ? String(row.dueWindowDays) : "30");
     setMandatory(row?.mandatory ?? true);
     setLabel(row?.label ?? "");
@@ -83,6 +87,8 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
         vaccineId: vaccineId as number,
         doseNumber: numOrNull(doseNumber) ?? 1,
         ageMonths: age ?? 0,
+        ageDays: numOrNull(ageDays),
+        maxAgeMonths: numOrNull(maxAgeMonths),
         dueWindowDays: due ?? 0,
         mandatory,
         label: label.trim(),
@@ -146,6 +152,26 @@ const CalendarTemplateDialog: React.FC<CalendarTemplateDialogProps> = ({ open, o
               onChange={(e) => setAgeMonths(e.target.value.replace(/[^\d]/g, ""))}
               inputProps={{ inputMode: "numeric" }}
               {...form.field("ageMonths", "0 — при рождении")}
+            />
+          </Stack>
+          <Stack direction="row" spacing={2}>
+            <TextField
+              label="Возраст, дней"
+              size="small"
+              fullWidth
+              value={ageDays}
+              onChange={(e) => setAgeDays(e.target.value.replace(/[^\d]/g, ""))}
+              inputProps={{ inputMode: "numeric" }}
+              helperText="135 = 4,5 мес; заполнено — месяцы не в счёт"
+            />
+            <TextField
+              label="Не старше, мес"
+              size="small"
+              fullWidth
+              value={maxAgeMonths}
+              onChange={(e) => setMaxAgeMonths(e.target.value.replace(/[^\d]/g, ""))}
+              inputProps={{ inputMode: "numeric" }}
+              helperText="Старшим слот не создаётся"
             />
           </Stack>
           <TextField

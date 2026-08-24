@@ -336,6 +336,12 @@ export interface AppointmentProductShort {
   name: string;
   unit: string;
   price: string;
+  /**
+   * Товар — вакцина (с 21.08.2026). По нему модуль прививок понимает, что
+   * проданную дозу нужно оформить записью, и привязывается к строке вместо
+   * повторного биллинга.
+   */
+  isVaccine?: boolean;
 }
 
 /** A product line within an appointment (read side). */

@@ -538,7 +538,6 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                         </Typography>
                         <CustomDatePicker shortYearMode="nearest"
                           value={startDate ? dayjs(startDate) : null}
-                          format="DD.MM.YYYY"
                           onChange={(val) => {
                             const newDate = val ? val.format("YYYY-MM-DD") : "";
                             setStartDate(newDate);
@@ -611,7 +610,6 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                         </Typography>
                         <CustomDatePicker shortYearMode="nearest"
                           value={endDate ? dayjs(endDate) : null}
-                          format="DD.MM.YYYY"
                           onChange={(val) =>
                             setEndDate(val ? val.format("YYYY-MM-DD") : "")
                           }
@@ -693,7 +691,6 @@ const ShiftFormDrawer: React.FC<ShiftFormDrawerProps> = ({
                                 </Typography>
                                 <CustomDatePicker shortYearMode="nearest"
                                   value={endDate ? dayjs(endDate) : null}
-                                  format="DD.MM.YYYY"
                                   onChange={(val) =>
                                     setEndDate(val ? val.format("YYYY-MM-DD") : "")
                                   }

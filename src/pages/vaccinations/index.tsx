@@ -62,7 +62,7 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
-  SCHEDULE_DASHBOARD_HARD_LIMIT,
+  SCHEDULE_DASHBOARD_PAGE_SIZE,
   VACCINATION_BATCH_WRITEOFF_ENABLED,
   VACCINATION_SCHEDULE_BRANCH_SCOPING,
   getCalendarTemplate,
@@ -73,6 +73,7 @@ import {
   updateSchedule,
   type CalendarTemplateRow,
   type MonthlyReportRow,
+  type ScheduleStatus,
   type Vaccine,
   type VaccineBatch,
   type VaccinationRecord,
@@ -249,16 +250,64 @@ const VaccinationsPage: React.FC = () => {
 
   const enabled = !permLoading && canView;
 
-  // Плановые дозы приходят без филиала (branchId: null), а фильтр на бэке строгий —
-  // с филиалом список пустой. До исправления смотрим по всей организации, см.
-  // VACCINATION_SCHEDULE_BRANCH_SCOPING.
+  // Слоты без филиала бэк считает общими и отдаёт при любом ?branchId,
+  // см. VACCINATION_SCHEDULE_BRANCH_SCOPING.
   const dueBranchId = VACCINATION_SCHEDULE_BRANCH_SCOPING ? branchId : null;
 
+  // Дашборд пагинируется сервером: доз в базе тысячи, целиком их не тянем.
+  const [duePagination, setDuePagination] = React.useState({
+    page: 0,
+    pageSize: SCHEDULE_DASHBOARD_PAGE_SIZE,
+  });
+  const [dueStatus, setDueStatus] = React.useState<"all" | "overdue" | "planned">("all");
+
+  const dueFilters = {
+    branchId: dueBranchId ?? undefined,
+    status: dueStatus === "all" ? undefined : (dueStatus as ScheduleStatus),
+    ordering: "scheduledDate",
+    organizationId: orgId,
+  };
+
   const dueQuery = useQuery({
-    queryKey: djangoQueryKeys.vaccinations.schedule({ branchId: dueBranchId, orgId }),
+    queryKey: djangoQueryKeys.vaccinations.schedule({
+      branchId: dueBranchId,
+      orgId,
+      status: dueStatus,
+      page: duePagination.page,
+      pageSize: duePagination.pageSize,
+    }),
     queryFn: ({ signal }) =>
-      getScheduleDashboard({ branchId: dueBranchId ?? undefined, organizationId: orgId }, signal),
+      getScheduleDashboard(
+        { ...dueFilters, page: duePagination.page + 1, pageSize: duePagination.pageSize },
+        signal,
+      ),
     enabled: enabled && tab === "due",
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+  });
+
+  // Старый бэк отдаёт весь список массивом и игнорирует status/pageSize —
+  // тогда фильтруем, считаем и листаем на клиенте, как делали до 21.08.2026.
+  const serverPaged = dueQuery.data?.paginated ?? true;
+
+  // Плитки «Просрочено» и «На неделю» считаем по всей базе, а не по текущей
+  // странице: сервер отдаёт count при pageSize=1, это дешевле, чем тянуть список.
+  const weekEdge = dayjs().add(7, "day").format("YYYY-MM-DD");
+  const dueCountsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.schedule({
+      branchId: dueBranchId,
+      orgId,
+      counters: weekEdge,
+    }),
+    queryFn: async ({ signal }) => {
+      const common = { branchId: dueBranchId ?? undefined, organizationId: orgId, pageSize: 1 };
+      const [overdue, week] = await Promise.all([
+        getScheduleDashboard({ ...common, status: "overdue" }, signal),
+        getScheduleDashboard({ ...common, status: "planned", dueBefore: weekEdge }, signal),
+      ]);
+      return { overdue: overdue.count, week: week.count };
+    },
+    enabled: enabled && tab === "due" && serverPaged,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -363,22 +412,34 @@ const VaccinationsPage: React.FC = () => {
     [t],
   );
 
-  const dueRows = dueQuery.data ?? [];
-  const overdueCount = dueRows.filter((s) => s.status === "overdue").length;
-  const weekCount = dueRows.filter((s) => {
-    const d = dayjs(s.scheduledDate);
-    return s.status === "planned" && d.diff(dayjs(), "day") <= 7;
-  }).length;
+  const dueRows = React.useMemo(() => {
+    const items = dueQuery.data?.items ?? [];
+    if (serverPaged || dueStatus === "all") return items;
+    return items.filter((s) => s.status === dueStatus);
+  }, [dueQuery.data, serverPaged, dueStatus]);
+  const dueTotal = serverPaged ? dueQuery.data?.count ?? 0 : dueRows.length;
+
+  const localCounts = React.useMemo(() => {
+    if (serverPaged) return null;
+    const all = dueQuery.data?.items ?? [];
+    return {
+      overdue: all.filter((s) => s.status === "overdue").length,
+      week: all.filter((s) => s.status === "planned" && s.scheduledDate <= weekEdge).length,
+    };
+  }, [serverPaged, dueQuery.data, weekEdge]);
+
+  const overdueCount = (localCounts ?? dueCountsQuery.data)?.overdue ?? 0;
+  const weekCount = (localCounts ?? dueCountsQuery.data)?.week ?? 0;
 
   // Живая подпись под заголовком: на «Кому пора» подсвечивает главное —
   // сколько всего запланировано и сколько из них просрочено; на других
   // вкладках — нейтральное описание раздела.
   const heroSubtitle = React.useMemo(() => {
     if (tab !== "due") return "Иммунопрофилактика и календарь прививок";
-    if (dueRows.length === 0) return "Иммунопрофилактика и календарь прививок";
-    const total = `${dueRows.length} ${pluralSlots(dueRows.length)}`;
+    if (dueTotal === 0) return "Иммунопрофилактика и календарь прививок";
+    const total = `${dueTotal} ${pluralSlots(dueTotal)}`;
     return overdueCount > 0 ? `${total} · ${overdueCount} просрочено` : total;
-  }, [tab, dueRows.length, overdueCount]);
+  }, [tab, dueTotal, overdueCount]);
 
   const dueColumns = React.useMemo<GridColDef<VaccinationScheduleSlot>[]>(
     () => [
@@ -765,10 +826,21 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "ageMonths",
         headerName: "Возраст",
-        width: 120,
+        width: 150,
         sortable: false,
+        // ageDays точнее месяцев (135 дн = 4,5 мес) и имеет приоритет у бэка,
+        // maxAgeMonths отсекает переросших — показываем оба, когда заданы.
         renderCell: ({ row }) => (
-          <Typography variant="body2">{row.ageMonths} мес</Typography>
+          <Box sx={twoLineCellSx}>
+            <Typography variant="body2" noWrap>
+              {row.ageDays != null ? `${row.ageDays} дн` : `${row.ageMonths} мес`}
+            </Typography>
+            {row.maxAgeMonths != null && (
+              <Typography variant="caption" color="text.secondary" noWrap>
+                до {row.maxAgeMonths} мес
+              </Typography>
+            )}
+          </Box>
         ),
       },
       {
@@ -1016,7 +1088,27 @@ const VaccinationsPage: React.FC = () => {
           <Box sx={{ flex: 1 }} />
 
           {tab === "due" && (
-            <Stack direction="row" gap={1} flexWrap="wrap">
+            <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={dueStatus}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setDueStatus(v as typeof dueStatus);
+                  setDuePagination((p) => ({ ...p, page: 0 }));
+                }}
+              >
+                <ToggleButton value="all" sx={{ textTransform: "none", px: 1.5 }}>
+                  Все
+                </ToggleButton>
+                <ToggleButton value="overdue" sx={{ textTransform: "none", px: 1.5 }}>
+                  Просроченные
+                </ToggleButton>
+                <ToggleButton value="planned" sx={{ textTransform: "none", px: 1.5 }}>
+                  Запланированные
+                </ToggleButton>
+              </ToggleButtonGroup>
               {overdueCount > 0 && (
                 <StatTile icon={<EventBusyOutlined />} label="Просрочено" value={overdueCount} tone="error" />
               )}
@@ -1085,7 +1177,7 @@ const VaccinationsPage: React.FC = () => {
                 }}
                 views={["year", "month"]}
                 openTo="month"
-                format="MM.YYYY"
+                format="MM.YY"
                 shortYearMode="nearest"
                 slotProps={{ textField: { size: "small", sx: { minWidth: 170 } } }}
               />
@@ -1101,13 +1193,6 @@ const VaccinationsPage: React.FC = () => {
         {tab === "due" && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Плановые дозы показаны по всей организации: филиал у них пока не проставляется.
-          </Alert>
-        )}
-        {tab === "due" && dueRows.length >= SCHEDULE_DASHBOARD_HARD_LIMIT && (
-          <Alert severity="warning" sx={{ mb: 1.5 }}>
-            Список неполный: сервер отдаёт только первые {SCHEDULE_DASHBOARD_HARD_LIMIT} доз,
-            начиная с самых давних. Свежие сроки сюда пока не попадают — ищите пациента через
-            его карту, вкладку «Прививки».
           </Alert>
         )}
         {tab === "report" && reportBranchId == null && (
@@ -1143,7 +1228,10 @@ const VaccinationsPage: React.FC = () => {
                 slots={{ noRowsOverlay: NoRows("Нет запланированных прививок") }}
                 localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
                 sx={gridSx}
-                initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+                paginationMode={serverPaged ? "server" : "client"}
+                rowCount={serverPaged ? dueTotal : undefined}
+                paginationModel={duePagination}
+                onPaginationModelChange={setDuePagination}
                 pageSizeOptions={[25, 50, 100]}
               />
             </Box>

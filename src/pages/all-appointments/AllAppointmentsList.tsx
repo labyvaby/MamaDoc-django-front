@@ -1,11 +1,11 @@
 /**
  * AllAppointmentsList — Все приёмы (Django backend).
- * Тонкая обёртка над AppointmentsRegistryView: реестр всех приёмов
- * в оформлении страницы товаров (чипы-сводки по оплате, лента сотрудников,
- * Drawer фильтров). Data layer: Django REST API, без Supabase.
+ * Тонкая обёртка над RegistryJournalView: журнал всех приёмов за период
+ * (сводка + пульс, лента по дням, таблица, разрезы). Data layer: Django REST
+ * API, без Supabase.
  */
 import React from "react";
-import AppointmentsRegistryView from "../appointments/components/AppointmentsRegistryView";
+import RegistryJournalView from "../appointments/components/registry/RegistryJournalView";
 import { useSeesOwnAppointmentsOnly } from "../appointments/useOwnScope";
 import { useT } from "../../i18n/VerticalProvider";
 
@@ -16,7 +16,8 @@ export const AllAppointmentsList: React.FC = () => {
   // employeeId=me вернул бы пустой список.
   const seesOwnOnly = useSeesOwnAppointmentsOnly();
   return (
-    <AppointmentsRegistryView
+    <RegistryJournalView
+      variant="appointments"
       pageTitle={t("allRegistry.appointmentsPageTitle")}
       listLabel={t("allRegistry.appointmentsListLabel")}
       searchPlaceholder={t("allRegistry.appointmentsSearchPlaceholder")}

@@ -71,7 +71,6 @@ const DueDateField: React.FC<DueDateFieldProps> = ({
           label={label}
           value={date}
           onChange={setDate}
-          format="DD.MM.YYYY"
           minDate={dayjs().startOf("day")}
           slotProps={{ textField: { fullWidth: true } }}
         />

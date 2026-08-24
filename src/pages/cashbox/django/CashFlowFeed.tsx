@@ -32,7 +32,7 @@ import {
   type CashboxMethod,
 } from "../../../api/cashbox";
 import { djangoQueryKeys } from "../../../api/queryKeys";
-import { formatSom } from "./FlowCard";
+import { formatSom } from "./money";
 import { tt } from "../../../i18n/t";
 import { CASHLESS_METHODS_ENABLED } from "../../../api/cashlessMethods";
 import { useCashlessMethods } from "../../../hooks/useCashlessMethods";
@@ -383,6 +383,12 @@ type Props = {
    * непустого справочника для показа мало.
    */
   splitReady: boolean;
+  /**
+   * Бэк хранит способ и у продаж товаров (поле `salesIncome` в разрезе сводки).
+   * Пока нет — продажи под фильтром по способу не приходят вовсе, и мы прячем
+   * их чип, чтобы он не вёл в заведомо пустую выборку.
+   */
+  salesSplitReady?: boolean;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -392,7 +398,12 @@ type Props = {
  * направления (все / приход / расход), типа и метода оплаты, с группировкой
  * по дням и пагинацией.
  */
-const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled, splitReady }) => {
+const CashFlowFeed: React.FC<Props> = ({
+  baseFilters,
+  enabled,
+  splitReady,
+  salesSplitReady = false,
+}) => {
   const [dir, setDir] = React.useState<Direction>("all");
   const [type, setType] = React.useState<CashboxEntryType | "">("");
   const [method, setMethod] = React.useState<CashboxMethod | "">("");
@@ -417,12 +428,13 @@ const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled, splitReady }) => 
     setPage(1);
   }, [baseKey]);
 
-  // Чипы типов подстраиваются под выбранное направление. Продажи товаров
-  // способа не хранят вовсе, поэтому под фильтром по способу бэк их не отдаёт —
-  // убираем и чип, чтобы он не вёл в заведомо пустую выборку.
+  // Чипы типов подстраиваются под выбранное направление. Пока продажи товаров
+  // способа не хранят, под фильтром по способу бэк их не отдаёт — убираем и
+  // чип, чтобы он не вёл в заведомо пустую выборку.
+  const hideSaleChip = cashlessMethodId !== "" && !salesSplitReady;
   const chipTypes: CashboxEntryType[] = (
     dir === "in" ? IN_TYPES : dir === "out" ? OUT_TYPES : [...IN_TYPES, ...OUT_TYPES]
-  ).filter((k) => !(cashlessMethodId !== "" && k === "sale"));
+  ).filter((k) => !(hideSaleChip && k === "sale"));
 
   const entryType: CashboxEntryType[] | "all" = type
     ? [type]
@@ -546,7 +558,7 @@ const CashFlowFeed: React.FC<Props> = ({ baseFilters, enabled, splitReady }) => 
 
       {/* Продажи товаров терминал не сохраняют, поэтому под фильтром по способу
           не приходят вовсе — без этой подписи это выглядело бы как пропажа. */}
-      {cashlessMethodId !== "" && (
+      {hideSaleChip && (
         <Typography variant="caption" color="text.secondary" sx={{ px: 2.5, display: "block" }}>
           Продажи товаров в разрезе по способам не участвуют: терминал в продаже
           не сохраняется.

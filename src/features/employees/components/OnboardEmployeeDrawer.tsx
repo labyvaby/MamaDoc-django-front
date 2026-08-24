@@ -695,7 +695,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                             fullWidth: true,
                             size: "small",
                             InputLabelProps: { shrink: true },
-                            placeholder: "дд.мм.гггг",
+                            placeholder: "дд.мм.гг",
                             disabled: busy,
                             // Enter сохраняет, как в остальных полях; короткий год
                             // перехватит CustomDatePicker и допишет век.
@@ -747,7 +747,7 @@ const OnboardEmployeeDrawer: React.FC<OnboardEmployeeDrawerProps> = ({
                             fullWidth: true,
                             size: "small",
                             InputLabelProps: { shrink: true },
-                            placeholder: "дд.мм.гггг",
+                            placeholder: "дд.мм.гг",
                             disabled: busy,
                             onKeyDown: submitOnEnter,
                           },
