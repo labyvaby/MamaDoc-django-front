@@ -113,7 +113,7 @@ const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSetting
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
-// (AppointmentsRegistryView), а не рабочий кабинет с навигацией по дням.
+// (registry/RegistryJournalView), а не рабочий кабинет с навигацией по дням.
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));

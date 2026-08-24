@@ -1,10 +1,10 @@
 /**
  * AllProceduresList — Все процедуры (Django backend).
- * Обёртка над AppointmentsRegistryView (оформление — как страница товаров).
- * Отличие от «Все приёмы»: показываются только приёмы с участием медсестры
- * (clinicalRole === "nurse"), лента сотрудников и фильтр услуг — строго по
- * медсестринским строкам, чтобы из совместного приёма не появлялась группа
- * врача. Data layer: Django REST API, без Supabase.
+ * Обёртка над RegistryJournalView. Отличие от «Все приёмы»: показываются
+ * только приёмы с участием медсестры (clinicalRole === "nurse"), а в срез
+ * попадают строго медсестринские строки — иначе из совместного приёма в журнал
+ * процедур попали бы деньги врача. Четвёртая карточка разрезов — списание
+ * материалов вместо структуры оплаты.
  *
  * Скоуп: непривилегированная медсестра видит только свои процедуры ("me"),
  * управляющие роли и суперпользователь — процедуры всех медсестёр (у них нет
@@ -13,7 +13,7 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import AppointmentsRegistryView from "../appointments/components/AppointmentsRegistryView";
+import RegistryJournalView from "../appointments/components/registry/RegistryJournalView";
 import { useSeesOwnAppointmentsOnly } from "../appointments/useOwnScope";
 import { getDjangoEmployees } from "../../api/staff";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
@@ -62,13 +62,13 @@ export const AllProceduresList: React.FC = () => {
   );
 
   return (
-    <AppointmentsRegistryView
-      pageTitle="Все процедуры"
-      listLabel="Процедуры"
+    <RegistryJournalView
+      variant="procedures"
+      pageTitle={t("allRegistry.proceduresPageTitle")}
+      listLabel={t("allRegistry.proceduresListLabel")}
       searchPlaceholder={t("allRegistry.proceduresSearchPlaceholder")}
       getLines={nurseLines}
       isVisible={hasNurseLine}
-      groupEmployeeIds={nurseIds}
       extraLoading={!seesOwnOnly && nurseIdsQuery.isLoading}
       employeeId={seesOwnOnly ? "me" : undefined}
     />

@@ -33,7 +33,7 @@ export const VISIT_FILTER_CODES: StatusCode[] = [
 /**
  * Статусы оплаты. Цвет берётся не своей таблицей тонов, а через код статуса из
  * appointmentStatuses — иначе фильтр «Долг» желтел бы при красном чипе в строке
- * (та же конвенция, что в реестрах: AppointmentsRegistryView).
+ * (та же конвенция, что в журнале реестров: registry/RegistryJournalView).
  *
  * «Оплачено» стоит первым: это главный фильтр конца смены, и в переносящемся
  * ряду чипов он не должен уезжать во вторую строку.
@@ -43,7 +43,7 @@ export const VISIT_FILTER_CODES: StatusCode[] = [
  * ⚠ Список заодно задаёт допустимые значения URL-параметра `pay`
  * (useReceptionFilters), поэтому `?pay=unpaid` теперь отбраковывается — это
  * осознанно: фильтра, который нельзя снять кликом по чипу, быть не должно.
- * В реестрах (AppointmentsRegistryView) свой набор чипов, «Не оплачено» там
+ * В журнале реестров (registry/) свой набор чипов, «Не оплачено» там
  * осталось.
  *
  * «Возврат» своего чипа в строке не имеет и остаётся нейтральным.
@@ -162,7 +162,7 @@ export function matchesAppointmentSearch(appt: DjangoAppointment, query: string)
  * всему дню — отсюда цепочка фолбэков, как в карточке приёма
  * (AppointmentDetailsPanel: price → service.basePrice).
  */
-function serviceLineTotal(line: AppointmentServiceLine): number {
+export function serviceLineTotal(line: AppointmentServiceLine): number {
   const lineTotal = parseFloat(String(line.lineTotal ?? ""));
   if (Number.isFinite(lineTotal) && lineTotal > 0) return lineTotal;
 
@@ -189,7 +189,7 @@ function serviceLineTotal(line: AppointmentServiceLine): number {
  * они есть (база — `totalAmount`). Кому именно из двух специалистов скидали —
  * из данных не следует.
  */
-function discountFactor(appt: DjangoAppointment): number {
+export function discountFactor(appt: DjangoAppointment): number {
   const discount = parseFloat(appt.discountAmount ?? "") || 0;
   if (discount <= 0) return 1;
 
@@ -208,7 +208,7 @@ function discountFactor(appt: DjangoAppointment): number {
  * суммам. Кто именно из двух специалистов «уже оплачен» при половине чека —
  * из данных не следует, и точный ответ потребовал бы поля от бэка.
  */
-function paidShare(appt: DjangoAppointment): number {
+export function paidShare(appt: DjangoAppointment): number {
   const payable =
     parseFloat(appt.payableAmount ?? "") ||
     (parseFloat(appt.totalAmount ?? "") || 0) - (parseFloat(appt.discountAmount ?? "") || 0);
