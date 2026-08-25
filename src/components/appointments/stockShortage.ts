@@ -20,10 +20,10 @@ const qty = (value: string | null): string => {
 /** Общий алерт формы: что не хватило, где и сколько. */
 export function stockShortageMessage(
   shortage: AppointmentStockShortage,
-  /** Название товара из формы — в ответе бэка только productId. */
+  /** Название товара из формы; в новом конверте бэк называет его и сам. */
   productName: string | null,
 ): string {
-  const product = productName ?? tt("appointments:addDrawer.product");
+  const product = productName ?? shortage.productName ?? tt("appointments:addDrawer.product");
   const params = {
     product,
     warehouse: shortage.warehouseName ?? "",
