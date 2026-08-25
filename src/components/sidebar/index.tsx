@@ -85,6 +85,7 @@ import WorkOutlineOutlined from "@mui/icons-material/WorkOutline";
 import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
+import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -634,6 +635,17 @@ const SidebarSecondary: React.FC = () => {
             В Django-mode: Регистратура → /appointments
             Остальные → placeholder (видны в меню, не скрыты)
             ══════════════════════════════════════════ */}
+
+        {/* Сводка — общий главный экран. Без гейта: состав виджетов
+            определяется правами внутри самой страницы. */}
+        {show("my-work") && (
+          <SidebarMenuItem
+            to="/dashboard"
+            icon={<InsightsOutlined />}
+            label="Сводка"
+            collapsed={siderCollapsed}
+          />
+        )}
 
         {/* Регистратура — в Django-mode ведёт на /appointments */}
         {show("my-work") && can_.registratura && (

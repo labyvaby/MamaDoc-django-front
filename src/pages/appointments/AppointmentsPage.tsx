@@ -462,6 +462,30 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
    * перезагрузка страницы снова открывала бы дровер.
    */
   const [searchParams, setSearchParams] = useSearchParams();
+
+  /**
+   * `?date=YYYY-MM-DD` открывает регистратуру сразу на нужном дне. Нужен для
+   * переходов извне — например, из сводки по клику на день пиковой загрузки.
+   * Параметр одноразовый, как и остальные: иначе он перебивал бы дату, которую
+   * пользователь выбрал руками после перехода.
+   */
+  React.useEffect(() => {
+    const raw = searchParams.get("date");
+    if (!raw) return;
+    // Формат проверяем регулярным выражением: плагин строгого разбора
+    // (customParseFormat) в проекте не подключён, и dayjs молча съел бы мусор.
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? dayjs(raw) : null;
+    if (parsed?.isValid()) setDate(parsed);
+    setSearchParams(
+      (prev: URLSearchParams) => {
+        const next = new URLSearchParams(prev);
+        next.delete("date");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
+
   React.useEffect(() => {
     const apptRaw = searchParams.get("appointment");
     const isNew = searchParams.get("new") === "1";
