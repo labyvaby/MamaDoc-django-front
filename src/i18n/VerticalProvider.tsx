@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { usePermissions } from "../hooks/usePermissions";
-import { getGlossary, isVertical, setCurrentGlossary } from "./glossary";
+import { getGlossary, isVertical, resolveGlossary, setCurrentGlossary } from "./glossary";
+import { GLOSSARY_CONFIG_KEY, readGlossaryOverrides } from "./glossaryOverrides";
 import { DEFAULT_VERTICAL, type Glossary, type Vertical } from "./types";
 import type { Namespace } from "./index";
 
@@ -52,15 +53,28 @@ export const VerticalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     devVertical ??
     (isVertical(activeOrganization?.vertical) ? activeOrganization.vertical : DEFAULT_VERTICAL);
 
+  // Собственная терминология организации (конструктор в настройках) лежит в
+  // themeConfig — том же поле, что палитра и лендинг. Пересобираем только при
+  // смене самого объекта, а не на каждый рендер: строка сравнения дешевле,
+  // чем сверка 18 терминов по 12 форм.
+  const overridesKey = JSON.stringify(
+    activeOrganization?.themeConfig?.[GLOSSARY_CONFIG_KEY] ?? null,
+  );
+  const overrides = useMemo(
+    () => readGlossaryOverrides(activeOrganization?.themeConfig),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [overridesKey],
+  );
+
   // Синхронизируем модульный синглтон — им пользуется код вне React
   // (api/*, форматтеры), где контекст недоступен.
   useEffect(() => {
-    setCurrentGlossary(vertical);
-  }, [vertical]);
+    setCurrentGlossary(vertical, overrides);
+  }, [vertical, overrides]);
 
   const value = useMemo<VerticalContextValue>(
-    () => ({ vertical, glossary: getGlossary(vertical) }),
-    [vertical]
+    () => ({ vertical, glossary: resolveGlossary(vertical, overrides) }),
+    [vertical, overrides]
   );
 
   return <VerticalContext.Provider value={value}>{children}</VerticalContext.Provider>;

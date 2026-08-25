@@ -48,24 +48,45 @@ export type TermForms = {
  * src/locales/glossary/*.json — иначе строка отрендерится как «{{term.nom}}».
  * Полноту профилей стережёт тест-скрипт `npm run i18n:check`.
  */
-export type TermKey =
-  | "patient"
-  | "visit"
-  | "specialist"
-  | "assistant"
-  | "org"
-  | "branch"
-  | "room"
-  | "card"
-  | "conclusion"
-  | "diagnosis"
-  | "procedure"
-  | "service"
-  | "record"
-  | "complaint"
-  | "anamnesis"
-  | "vaccine"
-  | "employee"
-  | "shift";
+export const TERM_KEYS = [
+  "patient",
+  "visit",
+  "specialist",
+  "assistant",
+  "org",
+  "branch",
+  "room",
+  "card",
+  "conclusion",
+  "diagnosis",
+  "procedure",
+  "service",
+  "record",
+  "complaint",
+  "anamnesis",
+  "vaccine",
+  "employee",
+  "shift",
+] as const;
+
+export type TermKey = (typeof TERM_KEYS)[number];
+
+/** Словоформы термина без грамматического рода — 6 падежей × 2 числа. */
+export const FORM_KEYS = [
+  "nom",
+  "gen",
+  "dat",
+  "acc",
+  "ins",
+  "pre",
+  "nomPl",
+  "genPl",
+  "datPl",
+  "accPl",
+  "insPl",
+  "prePl",
+] as const;
+
+export type FormKey = (typeof FORM_KEYS)[number];
 
 export type Glossary = Record<TermKey, TermForms>;
