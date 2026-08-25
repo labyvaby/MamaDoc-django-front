@@ -52,8 +52,9 @@ type Props = {
   /** Палитра акцента: primary — безнал, success — наличные. */
   color?: "primary" | "success";
   /**
-   * Ключ хранения раскрытых строк. Раскрытие — рабочая привычка кассира,
-   * поэтому переживает перезагрузку страницы.
+   * Ключ хранения состояния строк. Разрез раскрыт по умолчанию — кассир смотрит
+   * его каждый день; в хранилище едут только ручные отклонения от дефолта,
+   * поэтому свёрнутая строка переживает перезагрузку страницы.
    */
   storageKey?: string;
 };
@@ -237,7 +238,7 @@ export const FlowBreakdownBlock: React.FC<Props> = ({
 
   const toggle = (key: string) => {
     setExpanded((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
+      const next = { ...prev, [key]: prev[key] === false };
       if (storageKey) {
         try {
           window.localStorage.setItem(storageKey, JSON.stringify(next));
@@ -261,7 +262,9 @@ export const FlowBreakdownBlock: React.FC<Props> = ({
         subRows[0].amount * (subRows[0].direction ?? row.direction) - row.amount * row.direction,
       ) < 0.005;
     const expandable = !empty && !loading && subRows.length > 0 && !sameAsRow;
-    const isOpen = expandable && expanded[row.key] === true;
+    // Дефолт — раскрыто: в expanded лежат только явные решения кассира,
+    // отсутствие ключа означает «открыто».
+    const isOpen = expandable && expanded[row.key] !== false;
 
     return (
       <Box
