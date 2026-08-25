@@ -29,7 +29,14 @@
     "copied": "Скопировано",
     "prev": "Предыдущая бронь",
     "next": "Следующая бронь",
-    "openOnSite": "Открыть карточку записи на сайте"
+    "openOnSite": "Открыть карточку записи на сайте",
+    "prepaymentSection": "Онлайн-предоплата",
+    "prepaymentAmount": "Сумма",
+    "prepaymentPaidAt": "Оплачена",
+    "prepaymentWaiting": "Пациент ещё не оплатил. Бронь держит время, подтвердить её можно будет после оплаты.",
+    "prepaymentNeedsAttention": "Деньги получены, а {{visit.gen}} не будет: бронь отменена или отмечена неявка.",
+    "prepaymentCopyLink": "Скопировать ссылку на оплату",
+    "prepaymentLinkCopied": "Ссылка скопирована"
   },
 
   "cancelConfirm": {

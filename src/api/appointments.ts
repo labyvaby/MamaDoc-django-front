@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { apiRequest, ApiError } from "./client";
+import { apiRequest, ApiError, parseErrorEnvelope } from "./client";
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
@@ -39,6 +39,17 @@ function humanizeBackendMessage(raw: string): string {
 
 export function parseBackendError(err: unknown): string {
   if (err instanceof ApiError) {
+    // Новый конверт: имя поля приезжает отдельно от текста, поэтому чистить
+    // префиксы не нужно — общий разбор в client.ts уже собрал сообщение.
+    // Подсказку про невыбранный филиал (см. humanizeBackendMessage) сохраняем:
+    // в конверте её признак — ключ branchId в details.fields, а не текст.
+    const envelope = parseErrorEnvelope(err.payload);
+    if (envelope) {
+      const fields = envelope.details?.fields;
+      const hasBranch =
+        fields && typeof fields === "object" && !Array.isArray(fields) && "branchId" in fields;
+      return hasBranch ? humanizeBackendMessage("$.parsed_body.branchId") : err.message;
+    }
     const p = err.payload as Record<string, unknown> | null | undefined;
     if (p && typeof p === "object") {
       // { error: "..." }
@@ -134,11 +145,18 @@ export function parseOverlapConflict(
  * `warehouseId`, `warehouseName`, `required`, `available`) — тикет
  * `backend_ticket_product_stock_branch_scoping.md`, п. 3.
  *
+ * С 25.08.2026 те же поля приезжают в конверте: `error.code =
+ * INSUFFICIENT_STOCK`, данные — в `error.details`, плюс `productName`;
+ * `required`/`available` там обе строки-decimal с тремя знаками. Держим обе
+ * формы: прод пока отвечает по-старому.
+ *
  * Не путать с `AppointmentConsumptionWarning`: то — неблокирующее предупреждение
  * автосписания расходников (остаток уходит в минус, приём сохраняется).
  */
 export interface AppointmentStockShortage {
   productId: number | null;
+  /** Есть только в новом конверте — старая форма товар не называла. */
+  productName: string | null;
   warehouseId: number | null;
   warehouseName: string | null;
   /** decimal-строки/числа как пришли от бэка — только для показа. */
@@ -163,6 +181,16 @@ export function parseInsufficientStock(
   err: unknown,
 ): AppointmentStockShortage | null {
   if (!(err instanceof ApiError) || err.status !== 400) return null;
+
+  // Новый конверт: код в error.code, данные — плоским объектом в error.details.
+  // `details.code` бэк оставил как legacy-дубль, ветвимся на error.code.
+  if (err.code === "INSUFFICIENT_STOCK" && err.details) {
+    // Текст берём из конверта, а не из err.message: последний мог быть собран
+    // вызывающим кодом (тесты, ручные throw).
+    const message = parseErrorEnvelope(err.payload)?.message || err.message;
+    return toStockShortage(err.details, message);
+  }
+
   const p = err.payload as Record<string, unknown> | null | undefined;
   if (!p || typeof p !== "object" || !Array.isArray(p.detail)) return null;
   for (const raw of p.detail as unknown[]) {
@@ -170,18 +198,27 @@ export function parseInsufficientStock(
     const item = raw as Record<string, unknown>;
     const code = String(item.code ?? item.type ?? "").toLowerCase();
     if (code !== "insufficient_stock") continue;
-    return {
-      productId: asNumberOrNull(item.productId),
-      warehouseId: asNumberOrNull(item.warehouseId),
-      warehouseName: asStringOrNull(item.warehouseName),
-      required: asStringOrNull(item.required),
-      available: asStringOrNull(item.available),
-      // Живьём msg приходит с префиксом поля («products: Недостаточно…»,
-      // проверено на проде 03.08.2026) — пользователю он ни о чём не говорит.
-      msg: asStringOrNull(item.msg)?.replace(/^\s*products?\s*:\s*/i, "") ?? null,
-    };
+    return toStockShortage(item, asStringOrNull(item.msg));
   }
   return null;
+}
+
+/** Общий маппинг полей: в обеих формах имена совпадают, отличается обёртка. */
+function toStockShortage(
+  item: Record<string, unknown>,
+  message: string | null,
+): AppointmentStockShortage {
+  return {
+    productId: asNumberOrNull(item.productId),
+    productName: asStringOrNull(item.productName),
+    warehouseId: asNumberOrNull(item.warehouseId),
+    warehouseName: asStringOrNull(item.warehouseName),
+    required: asStringOrNull(item.required),
+    available: asStringOrNull(item.available),
+    // Живьём msg приходит с префиксом поля («products: Недостаточно…»,
+    // проверено на проде 03.08.2026) — пользователю он ни о чём не говорит.
+    msg: message?.replace(/^\s*products?\s*:\s*/i, "") ?? null,
+  };
 }
 
 // ── Nested shapes ─────────────────────────────────────────────────────────────

@@ -10,7 +10,11 @@ import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import QRCode from "react-qr-code";
 import { useParams } from "react-router";
 
-import { getBookingByCode, type PublicBookingDetail } from "../../api/publicBooking";
+import {
+  getBookingByCode,
+  type PublicBookingDetail,
+  type PublicBookingPayment,
+} from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
@@ -51,6 +55,77 @@ function formatDate(date: string): string {
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric", weekday: "long" });
 }
 
+/** Сколько минут осталось у ссылки банка; null — срок неизвестен или прошёл. */
+function minutesLeft(expiresAt: string | null): number | null {
+  if (!expiresAt) return null;
+  const end = new Date(expiresAt).getTime();
+  if (!Number.isFinite(end)) return null;
+  const diff = Math.ceil((end - Date.now()) / 60000);
+  return diff > 0 ? diff : null;
+}
+
+/**
+ * Предоплата на карточке брони. Пока не оплачено — это главное на экране:
+ * без оплаты бронь не подтвердится и время освободится через 15 минут.
+ */
+const PaymentBlock: React.FC<{
+  payment: PublicBookingPayment;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}> = ({ payment, t }) => {
+  if (payment.status === "paid") {
+    return <Alert severity="success">{t("byCode.payPaid")}</Alert>;
+  }
+  if (payment.status === "expired") {
+    return <Alert severity="warning">{t("byCode.payExpired")}</Alert>;
+  }
+  if (payment.status === "failed") {
+    return <Alert severity="error">{t("byCode.payFailed")}</Alert>;
+  }
+
+  const left = minutesLeft(payment.expiresAt);
+  return (
+    <Paper
+      elevation={0}
+      sx={{ p: 2, borderRadius: BOOKING_RADIUS, border: `1px solid ${BORDER}` }}
+    >
+      <Stack spacing={1.25}>
+        <Typography sx={{ fontSize: 16, fontWeight: 700 }}>{t("byCode.payTitle")}</Typography>
+        <Typography sx={{ fontSize: 13, color: MUTED }}>{t("byCode.payHint")}</Typography>
+        <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
+          {t("byCode.payAmount", { amount: formatPrice(Number(payment.amount)) })}
+        </Typography>
+        {payment.paylinkUrl && (
+          <Button
+            href={payment.paylinkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{
+              alignSelf: "flex-start",
+              px: 3,
+              py: 1.25,
+              borderRadius: 99,
+              bgcolor: BOOKING_PRIMARY,
+              color: "#FFFFFF",
+              fontWeight: 600,
+              textTransform: "none",
+              "&:hover": { bgcolor: BOOKING_PRIMARY },
+            }}
+          >
+            {t("byCode.payButton")}
+          </Button>
+        )}
+        {left != null && (
+          <Typography sx={{ fontSize: 12, color: MUTED }}>
+            {t("byCode.payExpiresIn", { minutes: left })}
+          </Typography>
+        )}
+        {/* Оплату подтверждает только бэк — страница опрашивает его сама. */}
+        <Typography sx={{ fontSize: 12, color: MUTED }}>{t("byCode.payChecking")}</Typography>
+      </Stack>
+    </Paper>
+  );
+};
+
 const Row: React.FC<{ icon: React.ReactNode; children: React.ReactNode }> = ({ icon, children }) => (
   <Stack direction="row" alignItems="flex-start" spacing={1}>
     <Box sx={{ color: MUTED, display: "flex", mt: "2px" }}>{icon}</Box>
@@ -86,6 +161,30 @@ const BookingByCodePage: React.FC = () => {
       });
     return () => ctrl.abort();
   }, [code]);
+
+  /**
+   * Пока предоплата в статусе pending, опрашиваем ту же ручку: кнопка банка
+   * «Я оплатил(а)» ничего не доказывает, признак оплаты один — status "paid".
+   * Опрос останавливается сам, как только статус изменился.
+   */
+  const paymentStatus = booking?.payment?.status ?? null;
+  React.useEffect(() => {
+    if (paymentStatus !== "pending") return;
+    const ctrl = new AbortController();
+    const id = window.setInterval(() => {
+      getBookingByCode(code, ctrl.signal)
+        .then((b) => {
+          if (!ctrl.signal.aborted) setBooking(b);
+        })
+        .catch(() => {
+          /* сеть моргнула — повторим на следующем тике */
+        });
+    }, 5000);
+    return () => {
+      window.clearInterval(id);
+      ctrl.abort();
+    };
+  }, [paymentStatus, code]);
 
   const handleCopy = async () => {
     try {
@@ -150,6 +249,11 @@ const BookingByCodePage: React.FC = () => {
                 color={STATUS_COLOR[booking.status] ?? "default"}
                 sx={{ alignSelf: "flex-start" }}
               />
+
+              {/* ── Онлайн-предоплата: главный экран для неоплаченной брони ── */}
+              {booking.payment && (
+                <PaymentBlock payment={booking.payment} t={t} />
+              )}
 
               <Row icon={<EventOutlined sx={{ fontSize: 20 }} />}>
                 <Typography sx={{ fontSize: 18, fontWeight: 700 }}>

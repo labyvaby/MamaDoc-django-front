@@ -1,17 +1,17 @@
 import { apiRequest } from "./client";
 
 /**
- * Скоупинг броней по филиалу — на 06.08.2026 бэком не реализован (тикет
- * `MamaDoc/backend_ticket_bookings_branch_scoping.md`). Проверено на живом API
- * (test и prod одинаково): `GET /bookings/` не отдаёт `branchId`/`branchName` и
- * молча игнорирует `?branchId` — выдача одна и та же для любого филиала и даже
- * для несуществующего (`branchId=999` → `200`, тот же `count`).
+ * Скоупинг броней по филиалу работает с 20.08.2026 (проверено на проде): в
+ * ответе есть `branchId`/`branchName`, а `?branchId` фильтрует выдачу.
  *
- * Флага «включить фильтр» здесь нет намеренно: `branchId` уходит в запрос
- * всегда (сейчас безвреден, а после деплоя бэка фильтрация заработает без
- * релиза фронта), а UI определяет готовность по факту — есть ли филиал в
- * ответе (`bookingHasBranch`). Так интерфейс не обещает разделение, которого
- * ещё нет, и не показывает пустую колонку «Филиал».
+ * ⚠ Фильтрует только явный параметр: **без `branchId` бэк отдаёт всю
+ * организацию**, активный филиал сессии сам не подставляет. Поэтому `branchId`
+ * обязателен в любом запросе к `/bookings/`, включая счётчики и бейджи, —
+ * иначе число не сойдётся со списком и будет одинаковым во всех филиалах.
+ *
+ * UI определяет готовность по факту — есть ли филиал в ответе
+ * (`bookingHasBranch`): так колонка «Филиал» не появляется пустой на данных,
+ * созданных до скоупинга.
  */
 export function bookingHasBranch(b: BookingListItem): boolean {
   return b.branchId != null || !!b.branchName;
@@ -22,14 +22,40 @@ export function bookingHasBranch(b: BookingListItem): boolean {
 // CRM-сторона). Все имена полей — camelCase. CRM = source of truth.
 
 export type BookingStatus =
+  /**
+   * Бронь к врачу с предоплатой: слот держится, банк ещё не подтвердил
+   * оплату. Подтвердить её нельзя (400) — после оплаты бэк сам переводит
+   * бронь в `pending`, а по истечении 15 минут снимает поллером.
+   */
+  | "awaiting_payment"
   | "pending"
   | "confirmed"
   | "cancelled"
   | "completed"
   | "no_show";
 
-/** Статусы, в которые персонал может перевести бронь (pending недопустим). */
-export type BookingManageStatus = Exclude<BookingStatus, "pending">;
+/**
+ * Статусы, в которые персонал может перевести бронь. `pending` — начальный,
+ * `awaiting_payment` ставит только бэк по факту выставленной ссылки банка.
+ */
+export type BookingManageStatus = Exclude<
+  BookingStatus,
+  "pending" | "awaiting_payment"
+>;
+
+/**
+ * Состояние онлайн-предоплаты брони (наряд A, Bakai Paylink).
+ * `null` в поле брони — врач предоплату не требует, предоплаты нет вовсе.
+ */
+export type BookingPrepaymentStatus =
+  /** ссылка выставлена, банк молчит */
+  | "pending"
+  /** банк подтвердил оплату — бронь ушла в `pending` и ждёт администратора */
+  | "paid"
+  /** 15 минут вышли, бронь снята поллером */
+  | "expired"
+  /** банк отказал, бронь снята */
+  | "failed";
 
 /**
  * Откуда пришла бронь: `public` — наша витрина `/book` (нативный `/api/v1`),
@@ -63,11 +89,21 @@ export interface BookingListItem {
   /** Привязка к CRM-приёму. */
   appointmentId: number | null;
   /**
-   * Филиал брони. Бэк ещё не сериализует эти поля (06.08.2026) — отсюда `?:`;
-   * появление хотя бы одного из них и означает, что скоупинг заработал.
+   * Филиал брони. `?:` — потому что до 20.08.2026 бэк этих полей не отдавал;
+   * наличие хотя бы одного означает, что скоупинг живой (`bookingHasBranch`).
    */
   branchId?: number | null;
   branchName?: string | null;
+  /** null — врач предоплату не требует, предоплаты у брони нет. */
+  prepaymentStatus?: BookingPrepaymentStatus | null;
+  /** Сумма предоплаты, decimal-строка. */
+  prepaymentAmount?: string | null;
+  /** ISO-время оплаты по данным банка. */
+  prepaymentPaidAt?: string | null;
+  /** Докуда действует ссылка на оплату (15 минут от создания). */
+  prepaymentExpiresAt?: string | null;
+  /** Деньги есть, а приёма не будет: бронь отменена или неявка. */
+  prepaymentNeedsAttention?: boolean;
 }
 
 /**
@@ -101,6 +137,8 @@ export interface BookingDetail extends BookingListItem {
   /** Подсказки бэка по телефону брони (проверено на живом API 05.08.2026). */
   patientMatches: BookingPatientMatch[];
   syncedAt: string | null;
+  /** Ссылка банка — админ может переслать её пациенту, пока оплата `pending`. */
+  prepaymentPayUrl?: string | null;
 }
 
 export interface BookingsResponse {
@@ -115,11 +153,13 @@ export interface BookingsFilters {
   dateFrom: string;
   dateTo: string;
   status?: BookingStatus;
+  /** Состояние онлайн-предоплаты — те же 4 значения, что у брони. */
+  prepaymentStatus?: BookingPrepaymentStatus;
   doctorId?: number;
   /** По имени/телефону пациента и коду подтверждения. */
   search?: string;
   organizationId?: number;
-  /** Активный филиал. Бэк его пока игнорирует — см. комментарий в начале файла. */
+  /** Активный филиал. Без него бэк отдаёт всю организацию — см. начало файла. */
   branchId?: number;
   page?: number;
   pageSize?: number;
@@ -136,6 +176,7 @@ export function getBookings(
   q.set("dateFrom", filters.dateFrom);
   q.set("dateTo", filters.dateTo);
   if (filters.status) q.set("status", filters.status);
+  if (filters.prepaymentStatus) q.set("prepaymentStatus", filters.prepaymentStatus);
   if (filters.doctorId != null) q.set("doctorId", String(filters.doctorId));
   if (filters.search) q.set("search", filters.search);
   if (filters.organizationId != null) {

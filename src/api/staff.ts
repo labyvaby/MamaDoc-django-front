@@ -75,6 +75,13 @@ export interface DjangoEmployee {
   onlineBookingEnabled?: boolean;
   /** Требуется ли предоплата при записи к этому врачу (Paylink, отдельная фича). */
   prepaymentRequired?: boolean;
+  /**
+   * Сумма онлайн-предоплаты этого врача, decimal-строка («500.00»); с
+   * 23.08.2026 сумма своя у каждого врача, а не общая на организацию.
+   * ⚠ Включить `prepaymentRequired` без положительной суммы нельзя — бэк
+   * ответит 400: врач с флагом и суммой 0 означал бы «оплатите 0 сом».
+   */
+  prepaymentAmount?: string;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -103,6 +110,13 @@ export interface DjangoEmployeeListItem {
   onlineBookingEnabled?: boolean;
   /** Требуется ли предоплата при записи к этому врачу (Paylink, отдельная фича). */
   prepaymentRequired?: boolean;
+  /**
+   * Сумма онлайн-предоплаты этого врача, decimal-строка («500.00»); с
+   * 23.08.2026 сумма своя у каждого врача, а не общая на организацию.
+   * ⚠ Включить `prepaymentRequired` без положительной суммы нельзя — бэк
+   * ответит 400: врач с флагом и суммой 0 означал бы «оплатите 0 сом».
+   */
+  prepaymentAmount?: string;
   photoUrl: string | null;
   role: DjangoRoleShort | null;
   specializations: DjangoSpecializationShort[];
@@ -126,6 +140,10 @@ export interface CreateEmployeePayload {
   status?: "active" | "inactive" | "fired";
   clinicalRole?: ClinicalRole;
   organizationId?: number | null;
+  /** Требовать предоплату при онлайн-записи к этому врачу. */
+  prepaymentRequired?: boolean;
+  /** Сумма предоплаты; обязательна, когда `prepaymentRequired: true`. */
+  prepaymentAmount?: string;
 }
 
 export function createEmployee(
@@ -195,6 +213,14 @@ export interface UpdateEmployeePayload {
   clinicalRole?: ClinicalRole;
   /** Видимость на публичной витрине; отсутствие поля её не меняет. */
   onlineBookingEnabled?: boolean;
+  /**
+   * Предоплата при онлайн-записи. Флаг и сумму шлём **одним** PATCH: бэк
+   * проверяет пару и на `true` без положительной суммы отвечает 400. Правку
+   * других полей это не задевает — проверка срабатывает, только когда запрос
+   * трогает одно из двух.
+   */
+  prepaymentRequired?: boolean;
+  prepaymentAmount?: string;
   /** Полный набор операционных филиалов (замена целиком); не слать, если не менялся. */
   employeeBranchIds?: number[];
 }

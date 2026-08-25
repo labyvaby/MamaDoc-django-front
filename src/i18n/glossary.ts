@@ -1,5 +1,9 @@
 import clinicGlossary from "../locales/glossary/clinic.json";
 import beautyGlossary from "../locales/glossary/beauty.json";
+import {
+  applyGlossaryOverrides,
+  type GlossaryOverrides,
+} from "./glossaryOverrides";
 import { DEFAULT_VERTICAL, type Glossary, type Vertical } from "./types";
 
 /**
@@ -32,14 +36,27 @@ export const getGlossary = (vertical: Vertical | null | undefined): Glossary =>
   PROFILES[vertical ?? DEFAULT_VERTICAL] ?? PROFILES[DEFAULT_VERTICAL];
 
 /**
+ * Глоссарий вертикали с терминологией организации поверх него — то, что
+ * реально видит пользователь. Оверрайды приходят из themeConfig организации
+ * (см. glossaryOverrides.ts) и могут отсутствовать: тогда это чистый профиль.
+ */
+export const resolveGlossary = (
+  vertical: Vertical | null | undefined,
+  overrides?: GlossaryOverrides | null,
+): Glossary => applyGlossaryOverrides(getGlossary(vertical), overrides);
+
+/**
  * Текущий глоссарий как модульный синглтон — для кода вне React
  * (api/*, утилиты, форматтеры), где хук useT() недоступен.
  * В компонентах используйте useT(), он реактивен к смене организации.
  */
 let currentGlossary: Glossary = PROFILES[DEFAULT_VERTICAL];
 
-export const setCurrentGlossary = (vertical: Vertical | null | undefined): void => {
-  currentGlossary = getGlossary(vertical);
+export const setCurrentGlossary = (
+  vertical: Vertical | null | undefined,
+  overrides?: GlossaryOverrides | null,
+): void => {
+  currentGlossary = resolveGlossary(vertical, overrides);
 };
 
 export const getCurrentGlossary = (): Glossary => currentGlossary;

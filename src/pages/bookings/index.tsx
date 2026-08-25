@@ -41,6 +41,7 @@ import {
   bookingHasBranch,
   type BookingListItem,
   type BookingStatus,
+  type BookingPrepaymentStatus,
 } from "../../api/bookings";
 import { getDjangoEmployees } from "../../api/staff";
 import {
@@ -52,7 +53,14 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import { bookingShowcaseUrl } from "../public-booking/format";
 import BookingDetailDrawer from "./BookingDetailDrawer";
-import { BOOKING_STATUS_OPTIONS, StatusChip, statusTone } from "./meta";
+import {
+  BOOKING_PREPAYMENT_META,
+  BOOKING_STATUS_OPTIONS,
+  PrepaymentChip,
+  StatusChip,
+  hasPrepayment,
+  statusTone,
+} from "./meta";
 import { useT } from "../../i18n/VerticalProvider";
 
 const PAGE_SIZE = 20;
@@ -241,10 +249,9 @@ const BookingsPage: React.FC = () => {
   const needsOrg = (isSuper || isMultiOrg) && !activeOrganization;
   const organizationId = activeOrganization?.id ?? undefined;
   const orgKey = activeOrganization?.id ?? null;
-  // Активный филиал уходит в запрос всегда: сегодня бэк его игнорирует, а после
-  // деплоя скоупинга фильтрация включится без релиза фронта (см. комментарий в
-  // api/bookings.ts). В queryKey он тоже нужен — иначе после деплоя кэш отдал бы
-  // выдачу предыдущего филиала.
+  // Активный филиал уходит в запрос всегда: без него бэк отдаёт брони всей
+  // организации (см. комментарий в api/bookings.ts). В queryKey он тоже нужен —
+  // иначе при смене филиала кэш отдал бы выдачу предыдущего.
   const branchId = activeBranch?.id ?? undefined;
   const branchKey = branchId ?? null;
   // Признак мультифилиальной организации — только для подписи «Все филиалы»:
@@ -261,6 +268,10 @@ const BookingsPage: React.FC = () => {
   const [dateTo, setDateTo] = React.useState(() => dayjs().endOf("month"));
   const [status, setStatus] = React.useState<BookingStatus | "">("");
   const [doctorId, setDoctorId] = React.useState<number | "">("");
+  // Фильтр по состоянию онлайн-предоплаты — ортогонален статусу брони:
+  // администратор сначала разбирает оплаченные.
+  const [prepaymentStatus, setPrepaymentStatus] =
+    React.useState<BookingPrepaymentStatus | "">("");
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(0);
@@ -275,7 +286,7 @@ const BookingsPage: React.FC = () => {
   // Сброс на первую страницу при смене фильтров.
   React.useEffect(() => {
     setPage(0);
-  }, [dateFrom, dateTo, status, doctorId, search, orgKey, branchKey]);
+  }, [dateFrom, dateTo, status, doctorId, prepaymentStatus, search, orgKey, branchKey]);
 
   const fromStr = dateFrom.format("YYYY-MM-DD");
   const toStr = dateTo.format("YYYY-MM-DD");
@@ -292,12 +303,14 @@ const BookingsPage: React.FC = () => {
   const hasActiveFilters =
     status !== "" ||
     doctorId !== "" ||
+    prepaymentStatus !== "" ||
     search !== "" ||
     activePresetKey !== "month";
 
   const handleResetFilters = () => {
     setStatus("");
     setDoctorId("");
+    setPrepaymentStatus("");
     setSearchInput("");
     setDateFrom(dayjs().startOf("month"));
     setDateTo(dayjs().endOf("month"));
@@ -308,6 +321,7 @@ const BookingsPage: React.FC = () => {
     dateTo: toStr,
     status: status === "" ? undefined : status,
     doctorId: doctorId === "" ? undefined : doctorId,
+    prepaymentStatus: prepaymentStatus === "" ? undefined : prepaymentStatus,
     search: search || undefined,
     organizationId,
     branchId,
@@ -333,6 +347,7 @@ const BookingsPage: React.FC = () => {
     dateFrom: fromStr,
     dateTo: toStr,
     doctorId: doctorId === "" ? undefined : doctorId,
+    prepaymentStatus: prepaymentStatus === "" ? undefined : prepaymentStatus,
     search: search || undefined,
     organizationId,
     branchId,
@@ -382,6 +397,18 @@ const BookingsPage: React.FC = () => {
       ...(query.data?.results ?? []),
     ];
     return sample.some(bookingHasBranch);
+  }, [statsQuery.data, query.data]);
+
+  /**
+   * Есть ли в выборке брони с предоплатой. Колонку «Оплата» и фильтр по ней
+   * показываем только тогда — у клиники без предоплаты они были бы пустыми.
+   */
+  const prepaymentLive = React.useMemo(() => {
+    const sample = [
+      ...(statsQuery.data?.all ?? []),
+      ...(query.data?.results ?? []),
+    ];
+    return sample.some(hasPrepayment);
   }, [statsQuery.data, query.data]);
 
   /** Пустой выборке предупреждать не о чем. */
@@ -537,8 +564,31 @@ const BookingsPage: React.FC = () => {
         sortable: false,
         renderCell: ({ row }) => <StatusChip status={row.status} />,
       },
+      // Колонка появляется, только когда предоплата в выборке вообще есть.
+      ...(prepaymentLive
+        ? [
+            {
+              field: "prepaymentStatus",
+              headerName: "Оплата",
+              width: 190,
+              sortable: false,
+              renderCell: ({ row }: { row: BookingListItem }) =>
+                row.prepaymentStatus ? (
+                  <PrepaymentChip
+                    status={row.prepaymentStatus}
+                    amount={row.prepaymentAmount}
+                    needsAttention={row.prepaymentNeedsAttention}
+                  />
+                ) : (
+                  <Typography variant="caption" color="text.disabled">
+                    —
+                  </Typography>
+                ),
+            } as GridColDef<BookingListItem>,
+          ]
+        : []),
     ],
-    [todayStr, t, branchScopingLive],
+    [todayStr, t, branchScopingLive, prepaymentLive],
   );
 
   if (!permLoading && !canView) return <AccessDenied />;
@@ -621,6 +671,28 @@ const BookingsPage: React.FC = () => {
                 </MenuItem>
               ))}
             </TextField>
+
+            {prepaymentLive && (
+              <TextField
+                select
+                size="small"
+                label="Предоплата"
+                value={prepaymentStatus}
+                onChange={(e) =>
+                  setPrepaymentStatus(e.target.value as BookingPrepaymentStatus | "")
+                }
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="">Любая</MenuItem>
+                {(Object.keys(BOOKING_PREPAYMENT_META) as BookingPrepaymentStatus[]).map(
+                  (code) => (
+                    <MenuItem key={code} value={code}>
+                      {BOOKING_PREPAYMENT_META[code].label}
+                    </MenuItem>
+                  ),
+                )}
+              </TextField>
+            )}
 
             {hasActiveFilters && (
               <Button
@@ -846,6 +918,13 @@ const BookingsPage: React.FC = () => {
                           {formatKGS(b.totalPrice)}
                         </Typography>
                         <StatusChip status={b.status} />
+                        {b.prepaymentStatus && (
+                          <PrepaymentChip
+                            status={b.prepaymentStatus}
+                            amount={b.prepaymentAmount}
+                            needsAttention={b.prepaymentNeedsAttention}
+                          />
+                        )}
                       </Stack>
                     </ButtonBase>
                   ))}

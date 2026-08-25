@@ -13,13 +13,118 @@ type RequestOptions = Omit<RequestInit, "body"> & {
 export class ApiError extends Error {
   status: number;
   payload: unknown;
+  /**
+   * Машинный код нового конверта (`error.code`) — единственное, на чём
+   * разрешено ветвиться. `null`, если ответ пришёл в старой форме или это
+   * исключение контракта (auth-ручки, appointment_overlap).
+   */
+  code: string | null;
+  /** `error.details` как есть — форма зависит от кода (docs/backend-error-contract.md §4). */
+  details: Record<string, unknown> | null;
+  /** `error.trace_id` — тот же id, что в заголовке X-Request-Id, логах и Sentry. */
+  traceId: string | null;
 
   constructor(message: string, status: number, payload: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.payload = payload;
+    const envelope = parseErrorEnvelope(payload);
+    this.code = envelope?.code ?? null;
+    this.details = envelope?.details ?? null;
+    this.traceId = envelope?.traceId ?? null;
   }
+}
+
+/**
+ * Конверт ошибок бэкенда: `{"error": {code, message, details, trace_id}}`.
+ * Поля внутри `error` — snake_case, содержимое `details` — camelCase.
+ *
+ * Живёт рядом со старыми формами, а не вместо них: на 25.08.2026 конверт
+ * выложен только на test, прод (newcrm.pediatr.kg) отвечает `{"detail":[…]}`.
+ * Плюс места, которые конверт не используют **никогда** (полный список —
+ * docs/backend-error-contract.md §5): все `/api/auth/**`, `/api/orgs/`,
+ * `/api/onboarding/complete/` → `{"error": "строка"}`; `appointment_overlap`
+ * (409) → плоский объект без обёртки; `/api/public/**`, `/api/v1/**`,
+ * `/api/client-portal/**` → свой конверт.
+ */
+export interface ApiErrorEnvelope {
+  /** Стабильный идентификатор: VALIDATION_ERROR, MODULE_DISABLED, … */
+  code: string;
+  /** Свободный текст, готовый к показу пользователю (может быть пустым). */
+  message: string;
+  /** Структурированные детали кода или null — ключ в ответе есть всегда. */
+  details: Record<string, unknown> | null;
+  traceId: string | null;
+}
+
+/**
+ * Распознать новый конверт. `{error: "строка"}` (auth-ручки) конвертом НЕ
+ * считается — его разбирает старая ветка extractErrorMessage.
+ */
+export function parseErrorEnvelope(payload: unknown): ApiErrorEnvelope | null {
+  if (!payload || typeof payload !== "object") return null;
+  const body = (payload as Record<string, unknown>).error;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const e = body as Record<string, unknown>;
+  if (typeof e.code !== "string" || !e.code) return null;
+  const details =
+    e.details && typeof e.details === "object" && !Array.isArray(e.details)
+      ? (e.details as Record<string, unknown>)
+      : null;
+  const traceId = e.trace_id ?? e.traceId;
+  return {
+    code: e.code,
+    message: typeof e.message === "string" ? e.message : "",
+    details,
+    traceId: typeof traceId === "string" && traceId ? traceId : null,
+  };
+}
+
+/** Машинный код ошибки, если он есть. Ветвиться только по нему, не по тексту. */
+export function getErrorCode(err: unknown): string | null {
+  return err instanceof ApiError ? err.code : null;
+}
+
+/** `error.trace_id` — можно показать в тосте: по нему бэк находит запрос в Sentry. */
+export function getErrorTraceId(err: unknown): string | null {
+  return err instanceof ApiError ? err.traceId : null;
+}
+
+/**
+ * Ошибки по полям формы: `details.fields` у VALIDATION_ERROR. Ключ — camelCase-имя
+ * поля ровно как в запросе, для вложенных структур это полный путь с индексами
+ * (`lines[0].productId`).
+ */
+export function getErrorFields(err: unknown): Record<string, string> | null {
+  const fields = err instanceof ApiError ? err.details?.fields : undefined;
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields as Record<string, unknown>)) {
+    if (typeof value === "string") out[key] = value;
+    else if (Array.isArray(value)) {
+      const strs = value.filter((v): v is string => typeof v === "string");
+      if (strs.length) out[key] = strs.join(", ");
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * 403 «модуль не подключён» (`MODULE_DISABLED`) — право у пользователя есть,
+ * модуль у организации выключен: раздел нужно скрыть или задизейблить, а не
+ * показывать «недостаточно прав». Обычный `FORBIDDEN` означает «прав нет».
+ * Возвращает код модуля (`details.module`) или null, если ошибка другая.
+ */
+export function getDisabledModule(err: unknown): string | null {
+  if (getErrorCode(err) !== "MODULE_DISABLED") return null;
+  const module = (err as ApiError).details?.module;
+  return typeof module === "string" && module ? module : null;
+}
+
+/** 403 из-за выключенного модуля, даже если `details.module` не пришёл. */
+export function isModuleDisabled(err: unknown): boolean {
+  return getErrorCode(err) === "MODULE_DISABLED";
 }
 
 /** Сообщение при обрыве связи (offline, DNS, CORS-preflight, сервер недоступен). */
@@ -131,6 +236,18 @@ function formatFieldError(key: string, message: string): string {
   return label ? `${label}: ${message}` : message;
 }
 
+/**
+ * Ключ `details.fields` — путь, а не имя: `lines[0].productId`. Индекс бэк
+ * сохраняет намеренно (две невалидные строки одного массива иначе схлопнутся),
+ * поэтому номер строки показываем, а подпись ищем по последнему сегменту.
+ */
+function formatFieldPathError(path: string, message: string): string {
+  const leaf = path.split(".").pop() ?? path;
+  const base = formatFieldError(leaf.replace(/\[\d+\]$/, ""), message);
+  const index = path.match(/\[(\d+)\]/);
+  return index ? `Строка ${Number(index[1]) + 1}, ${base}` : base;
+}
+
 /** Резервный человеческий текст по коду статуса, когда в теле нет сообщения. */
 function fallbackByStatus(status: number): string {
   switch (status) {
@@ -179,8 +296,44 @@ export function extractErrorMessage(payload: unknown, status: number): string {
   }
   const p = payload as Record<string, unknown>;
 
+  // { error: { code, message, details, trace_id } } — конверт бэка с 18.08.2026.
+  // Разбор по полям информативнее общего message: у VALIDATION_ERROR message —
+  // текст первого поля без его имени («Обязательное поле.»).
+  const envelope = parseErrorEnvelope(payload);
+  if (envelope) {
+    const fields = envelope.details?.fields;
+    if (fields && typeof fields === "object" && !Array.isArray(fields)) {
+      const parts: string[] = [];
+      for (const [key, value] of Object.entries(fields as Record<string, unknown>)) {
+        const text = Array.isArray(value)
+          ? value.filter((v) => typeof v === "string" || typeof v === "number").map(String).join(", ")
+          : typeof value === "string" || typeof value === "number"
+          ? String(value)
+          : "";
+        if (text) parts.push(formatFieldPathError(key, text));
+      }
+      if (parts.length) return parts.join("; ");
+    }
+    // Незнакомый code — не повод падать: показываем message, как требует контракт.
+    const message = envelope.message || fallbackByStatus(status);
+    // 500 внутренностей не содержит принципиально, и пользователю остаётся
+    // сослаться на запрос: trace_id === X-Request-Id, по нему бэк ищет в Sentry.
+    return status >= 500 && envelope.traceId
+      ? `${message} Код обращения: ${envelope.traceId}`
+      : message;
+  }
+
   // { error: "..." }
-  if (typeof p.error === "string" && p.error) return p.error;
+  if (typeof p.error === "string" && p.error) {
+    const message = typeof p.message === "string" ? p.message.trim() : "";
+    // Публичный API витрины и партнёрский S2S кладут в `error` машинный код,
+    // а текст — в `message` (`{"error":"validation_error","message":"Онлайн-
+    // предоплата не настроена…"}`). Показать «validation_error» пациенту
+    // нельзя. У auth-ручек CRM, наоборот, в `error` лежит готовая фраза —
+    // отличаем по виду: код это одно слово из латиницы, цифр и _/.
+    const looksLikeCode = /^[a-z0-9_.]+$/i.test(p.error);
+    return looksLikeCode && message ? message : p.error;
+  }
 
   // { detail: "..." }
   if (typeof p.detail === "string" && p.detail) return p.detail;
@@ -271,6 +424,10 @@ export async function apiRequest<T>(
     return undefined as T;
   }
 
+  // Тело читаем до статусных событий: по нему 403 «прав нет» отличается от
+  // 403 «модуль выключен» (код MODULE_DISABLED), а это разные реакции.
+  const payload = await response.json().catch(() => null);
+
   // Сессия протухла посреди работы: уведомляем приложение глобально,
   // usePermissions переведёт authStatus в unauthenticated и RequireAuth
   // уведёт на /login вместо бесконечных «Ошибка загрузки».
@@ -279,14 +436,14 @@ export async function apiRequest<T>(
   }
   // A role may have been changed while this tab was open. Refresh the cached
   // access matrix after the first rejected action so stale buttons disappear.
-  if (response.status === 403) {
+  // Выключенный модуль правами не лечится — матрицу не перечитываем.
+  if (response.status === 403 && parseErrorEnvelope(payload)?.code !== "MODULE_DISABLED") {
     window.dispatchEvent(new Event("mamadoc:api-forbidden"));
   }
   if (response.status === 429) {
     notifyRateLimited();
   }
 
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
   }
@@ -332,17 +489,19 @@ export async function apiRequestWithHeaders<T>(
     return { data: undefined as T, headers: response.headers };
   }
 
+  const payload = await response.json().catch(() => null);
+
   if (response.status === 401) {
     window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
   }
-  if (response.status === 403) {
+  // Выключенный модуль (MODULE_DISABLED) правами не лечится — см. apiRequest.
+  if (response.status === 403 && parseErrorEnvelope(payload)?.code !== "MODULE_DISABLED") {
     window.dispatchEvent(new Event("mamadoc:api-forbidden"));
   }
   if (response.status === 429) {
     notifyRateLimited();
   }
 
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
   }

@@ -85,6 +85,7 @@ import WorkOutlineOutlined from "@mui/icons-material/WorkOutline";
 import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
+import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -343,7 +344,7 @@ const SidebarSecondary: React.FC = () => {
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const { isSuperAdmin, activeEmployee, loading: permissionsLoading } = usePermissions();
+  const { isSuperAdmin, activeEmployee, activeBranch, loading: permissionsLoading } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const hasVisibleSettingsTab = Object.entries(
@@ -468,12 +469,17 @@ const SidebarSecondary: React.FC = () => {
   // enabled/needsOrg на самой странице «Брони»).
   const bookingsBadgeEnabled =
     can_.bookings && !permissionsLoading && (!isSuper || orgId != null);
+  // Филиал в бейдже обязателен: бэк скоупит брони только по явному `branchId`
+  // (без параметра отдаёт всю организацию), поэтому иначе бейдж показывал бы
+  // одно и то же число во всех филиалах — не то, что человек увидит в списке.
+  const badgeBranchId = activeBranch?.id ?? undefined;
   // Два count-запроса вместо выгрузки строк: всего pending в окне и сколько из
   // них на прошедшие даты (только они решают цвет).
   const bookingsPendingQuery = useQuery({
     queryKey: djangoQueryKeys.bookings.list({
       badge: "pending-total",
       orgId: orgId ?? null,
+      branch: badgeBranchId ?? null,
       from: bookingsWindow.pastFrom,
       to: bookingsWindow.futureTo,
     }),
@@ -484,6 +490,7 @@ const SidebarSecondary: React.FC = () => {
           dateTo: bookingsWindow.futureTo,
           status: "pending",
           organizationId: orgId,
+          branchId: badgeBranchId,
           page: 1,
           pageSize: 1,
         },
@@ -500,6 +507,7 @@ const SidebarSecondary: React.FC = () => {
     queryKey: djangoQueryKeys.bookings.list({
       badge: "pending-overdue",
       orgId: orgId ?? null,
+      branch: badgeBranchId ?? null,
       from: bookingsWindow.pastFrom,
       to: bookingsWindow.yesterday,
     }),
@@ -510,6 +518,7 @@ const SidebarSecondary: React.FC = () => {
           dateTo: bookingsWindow.yesterday,
           status: "pending",
           organizationId: orgId,
+          branchId: badgeBranchId,
           page: 1,
           pageSize: 1,
         },
@@ -627,6 +636,17 @@ const SidebarSecondary: React.FC = () => {
             В Django-mode: Регистратура → /appointments
             Остальные → placeholder (видны в меню, не скрыты)
             ══════════════════════════════════════════ */}
+
+        {/* Сводка — общий главный экран. Без гейта: состав виджетов
+            определяется правами внутри самой страницы. */}
+        {show("my-work") && (
+          <SidebarMenuItem
+            to="/dashboard"
+            icon={<InsightsOutlined />}
+            label="Сводка"
+            collapsed={siderCollapsed}
+          />
+        )}
 
         {/* Регистратура — в Django-mode ведёт на /appointments */}
         {show("my-work") && can_.registratura && (

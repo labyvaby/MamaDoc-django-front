@@ -64,6 +64,7 @@ import { djangoDataProvider } from "./config/djangoDataProvider";
 const UnderConstruction = lazy(() =>
   import("./pages/placeholder").then((m) => ({ default: m.UnderConstruction })),
 );
+const DashboardPage = lazy(() => import("./pages/dashboard"));
 const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
@@ -477,6 +478,17 @@ function App() {
                                 <AllProceduresPage />
                               </Suspense>
                             </RequireSuperAdmin>
+                          }
+                        />
+                        {/* Сводка — общий главный экран. Права проверяются не на
+                            странице, а на каждом виджете: пустой экран закрыт
+                            заглушкой, отдельного кода на бэке не заводили. */}
+                        <Route
+                          path="dashboard"
+                          element={
+                            <Suspense fallback={<LinearProgress />}>
+                              <DashboardPage />
+                            </Suspense>
                           }
                         />
                         <Route

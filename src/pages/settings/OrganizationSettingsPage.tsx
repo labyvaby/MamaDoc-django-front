@@ -18,6 +18,7 @@ import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import LayersOutlined from "@mui/icons-material/LayersOutlined";
 import TranslateOutlined from "@mui/icons-material/TranslateOutlined";
+import SpellcheckOutlined from "@mui/icons-material/SpellcheckOutlined";
 import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 
@@ -38,8 +39,15 @@ import {
 import { ApiError } from "../../api/client";
 import { PHOTO_ACCEPT, PHOTO_SOURCE_MAX_BYTES } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
-import { SUPPORTED_VERTICALS } from "../../i18n/glossary";
+import { SUPPORTED_VERTICALS, getGlossary } from "../../i18n/glossary";
+import {
+  buildGlossaryThemeConfig,
+  changedTermKeys,
+  readGlossaryOverrides,
+  type GlossaryOverrides,
+} from "../../i18n/glossaryOverrides";
 import type { Vertical } from "../../i18n/types";
+import TerminologyDrawer from "./terminology/TerminologyDrawer";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -104,10 +112,6 @@ const OrganizationSettingsPage: React.FC = () => {
 
   const { activeOrganization, isSuperAdmin, hasPermission } = usePermissions();
   const canUpdate = isSuperAdmin() || hasPermission("organization.update");
-  // Терминология переведена под вертикаль только частично (см. settings.json
-  // organization.vertical.superadminOnlyNote) — переключатель пока виден
-  // только суперадмину, не самой организации.
-  const canEditVertical = isSuperAdmin();
 
   const orgId = activeOrganization?.id ?? null;
 
@@ -122,6 +126,13 @@ const OrganizationSettingsPage: React.FC = () => {
   const [busy, setBusy] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
+
+  // Своя терминология организации: хранится в themeConfig, поэтому живёт
+  // отдельно от полей формы и сохраняется своим PATCH (см. handleSaveTerms).
+  const [overrides, setOverrides] = React.useState<GlossaryOverrides>({});
+  const [termsOpen, setTermsOpen] = React.useState(false);
+  const [termsSaving, setTermsSaving] = React.useState(false);
+  const [termsError, setTermsError] = React.useState<string | null>(null);
 
   const [logoBusy, setLogoBusy] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string | null>(null);
@@ -142,6 +153,7 @@ const OrganizationSettingsPage: React.FC = () => {
       setScope(data.patientScope);
       setOverlapMode(data.appointmentOverlapMode);
       setVertical(data.vertical);
+      setOverrides(readGlossaryOverrides(data.themeConfig));
     } catch (err) {
       setLoadError(extractErrorMessage(err));
     } finally {
@@ -157,7 +169,11 @@ const OrganizationSettingsPage: React.FC = () => {
   const nameDirty = !!org && trimmedName !== "" && trimmedName !== org.name;
   const scopeDirty = !!org && scope !== org.patientScope;
   const overlapDirty = !!org && overlapMode !== org.appointmentOverlapMode;
-  const verticalDirty = !!org && canEditVertical && vertical !== org.vertical;
+  const verticalDirty = !!org && vertical !== org.vertical;
+  // Основа терминологии — СОХРАНЁННАЯ вертикаль: несохранённое переключение
+  // радиокнопки не должно менять эталон, от которого считаются оверрайды.
+  const termBase = getGlossary(org?.vertical);
+  const changedCount = changedTermKeys(termBase, overrides).length;
   const dirty = nameDirty || scopeDirty || overlapDirty || verticalDirty;
 
   // Название обязательно: пустое поле блокирует сохранение и получает фокус.
@@ -192,6 +208,34 @@ const OrganizationSettingsPage: React.FC = () => {
       setSaveError(extractErrorMessage(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Сохраняет терминологию организации.
+   *
+   * themeConfig — общий мешок настроек (палитра CRM, лендинг `/site`), поэтому
+   * патч всегда строится поверх текущего значения: иначе правка слов сотрёт
+   * тему и настройки сайта. После сохранения перечитываем /auth/me/ — оттуда
+   * VerticalProvider берёт термины, и интерфейс переименовывается без
+   * перезагрузки страницы.
+   */
+  const handleSaveTerms = async (next: GlossaryOverrides) => {
+    if (!org) return;
+    setTermsSaving(true);
+    setTermsError(null);
+    try {
+      const updated = await updateOrganization(org.id, {
+        themeConfig: buildGlossaryThemeConfig(org.themeConfig, next),
+      });
+      setOrg(updated);
+      setOverrides(readGlossaryOverrides(updated.themeConfig));
+      setTermsOpen(false);
+      retryAuth();
+    } catch (err) {
+      setTermsError(extractErrorMessage(err));
+    } finally {
+      setTermsSaving(false);
     }
   };
 
@@ -443,48 +487,80 @@ const OrganizationSettingsPage: React.FC = () => {
               </RadioGroup>
             </FormControl>
 
-            {/* Vertical (terminology) — superadmin only, see canEditVertical */}
-            {canEditVertical && (
-              <FormControl disabled={busy}>
+            {/* Профиль терминологии: стандартный набор вертикалей */}
+            <FormControl disabled={!canUpdate || busy}>
+              <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
+                <TranslateOutlined fontSize="small" color="action" />
+                <FormLabel sx={{ fontWeight: 600 }}>
+                  {t("organization.vertical.sectionTitle")}
+                </FormLabel>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" mb={1}>
+                {t("organization.vertical.sectionHint")}
+              </Typography>
+              <Alert severity="info" sx={{ mb: 1 }}>
+                {t("organization.vertical.coverageNote")}
+              </Alert>
+              <RadioGroup
+                value={vertical}
+                onChange={(e) => {
+                  setVertical(e.target.value as Vertical);
+                  setSaved(false);
+                }}
+              >
+                {VERTICAL_OPTIONS.map((opt) => (
+                  <FormControlLabel
+                    key={opt.value}
+                    value={opt.value}
+                    control={<Radio size="small" />}
+                    sx={{ alignItems: "flex-start", mt: 0.5 }}
+                    label={
+                      <Box sx={{ py: 0.25 }}>
+                        <Typography variant="body2" fontWeight={500}>
+                          {opt.label}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {opt.hint}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                ))}
+              </RadioGroup>
+            </FormControl>
+
+            {/* Свои термины организации — поверх выбранного профиля */}
+            {org && (
+              <Box>
                 <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
-                  <TranslateOutlined fontSize="small" color="action" />
+                  <SpellcheckOutlined fontSize="small" color="action" />
                   <FormLabel sx={{ fontWeight: 600 }}>
-                    {t("organization.vertical.sectionTitle")}
+                    {t("terminology.sectionTitle")}
                   </FormLabel>
                 </Stack>
-                <Typography variant="caption" color="text.secondary" mb={1}>
-                  {t("organization.vertical.sectionHint")}
+                <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                  {t("terminology.sectionHint")}
                 </Typography>
-                <Alert severity="warning" sx={{ mb: 1 }}>
-                  {t("organization.vertical.superadminOnlyNote")}
-                </Alert>
-                <RadioGroup
-                  value={vertical}
-                  onChange={(e) => {
-                    setVertical(e.target.value as Vertical);
-                    setSaved(false);
-                  }}
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  alignItems={{ xs: "stretch", sm: "center" }}
+                  gap={1}
                 >
-                  {VERTICAL_OPTIONS.map((opt) => (
-                    <FormControlLabel
-                      key={opt.value}
-                      value={opt.value}
-                      control={<Radio size="small" />}
-                      sx={{ alignItems: "flex-start", mt: 0.5 }}
-                      label={
-                        <Box sx={{ py: 0.25 }}>
-                          <Typography variant="body2" fontWeight={500}>
-                            {opt.label}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {opt.hint}
-                          </Typography>
-                        </Box>
-                      }
-                    />
-                  ))}
-                </RadioGroup>
-              </FormControl>
+                  <AppButton
+                    variant="outlined"
+                    onClick={() => setTermsOpen(true)}
+                    disabled={!canUpdate || busy}
+                    startIcon={<SpellcheckOutlined fontSize="small" />}
+                  >
+                    {t("terminology.openButton")}
+                  </AppButton>
+                  <Typography variant="caption" color="text.secondary">
+                    {changedCount > 0
+                      ? t("terminology.summaryChanged", { count: changedCount })
+                      : t("terminology.summaryClean")}
+                  </Typography>
+                </Stack>
+              </Box>
             )}
 
             {!canUpdate && (
@@ -522,6 +598,22 @@ const OrganizationSettingsPage: React.FC = () => {
           </>
         )}
       </Stack>
+
+      {org && (
+        <TerminologyDrawer
+          open={termsOpen}
+          onClose={() => {
+            setTermsOpen(false);
+            setTermsError(null);
+          }}
+          vertical={org.vertical}
+          base={termBase}
+          value={overrides}
+          onSave={handleSaveTerms}
+          saving={termsSaving}
+          saveError={termsError}
+        />
+      )}
     </SettingsLayout>
   );
 };

@@ -28,7 +28,7 @@ import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import DrawerBase from "./DrawerBase";
@@ -48,6 +48,7 @@ import {
   type DjangoBank,
 } from "../../../api/staff";
 import { getBranches } from "../../../api/organization";
+import { getPublicFeatures } from "../../../api/publicBooking";
 import { getServices, type Service } from "../../../api/catalog";
 import { orgWide } from "../../../api/scope";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
@@ -93,6 +94,7 @@ import {
   validateBankAccountNumber,
   validateInn,
   validateBik,
+  validatePrepaymentAmount,
 } from "../employeeValidation";
 
 export type DjangoEditEmployeeDrawerProps = {
@@ -137,6 +139,19 @@ function serializeSalary(v: SalarySettingsValue): string {
   });
 }
 
+/** «500.00» → «500» для поля ввода: хвостовые нули кассиру ни о чём не говорят. */
+function decimalToInput(value: string | null | undefined): string {
+  if (value == null || value === "") return "";
+  const n = Number(String(value).replace(",", "."));
+  return isFinite(n) ? String(n) : String(value);
+}
+
+/** Поле ввода → decimal-строка бэка. Пустое поле при выключенной предоплате = 0. */
+function inputToDecimal(value: string): string {
+  const n = Number(value.trim().replace(",", "."));
+  return isFinite(n) && n > 0 ? n.toFixed(2) : "0.00";
+}
+
 const serializeBranchIds = (list: DjangoEmployeeBranch[]) =>
   JSON.stringify(list.map((b) => b.id).sort((a, b) => a - b));
 
@@ -163,6 +178,8 @@ type EditableDraftFields = {
   status: "active" | "inactive";
   clinicalRole: "doctor" | "nurse" | "other";
   onlineBookingEnabled: boolean;
+  prepaymentRequired: boolean;
+  prepaymentAmount: string;
   telegramId: string;
   instagram: string;
   birthDate: string;
@@ -192,6 +209,8 @@ function sameAsBaseline(a: EditableDraftFields, b: EditableDraftFields): boolean
     a.status === b.status &&
     a.clinicalRole === b.clinicalRole &&
     a.onlineBookingEnabled === b.onlineBookingEnabled &&
+    a.prepaymentRequired === b.prepaymentRequired &&
+    a.prepaymentAmount === b.prepaymentAmount &&
     a.telegramId === b.telegramId &&
     a.instagram === b.instagram &&
     a.birthDate === b.birthDate &&
@@ -252,6 +271,14 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // поля переключатель не показываем и в PATCH не шлём — неизвестное поле бэк
   // отклоняет вместе со всем запросом, и карточка перестала бы сохраняться.
   const [onlineBookingSupported, setOnlineBookingSupported] = React.useState(false);
+  // Онлайн-предоплата: сумма своя у каждого врача (решение заказчика 23.08.2026),
+  // орг-настройки нет. Флаг без положительной суммы бэк отклоняет (400) —
+  // поэтому шлём их одним PATCH и блокируем сохранение до ввода суммы.
+  const [prepaymentRequired, setPrepaymentRequired] = React.useState(false);
+  const [prepaymentAmount, setPrepaymentAmount] = React.useState("");
+  // Знает ли бэк пару полей — как с онлайн-записью: неизвестное поле в PATCH
+  // отклоняет весь запрос, и карточка перестала бы сохраняться.
+  const [prepaymentSupported, setPrepaymentSupported] = React.useState(false);
   const [telegramId, setTelegramId] = React.useState("");
   const [instagram, setInstagram] = React.useState("");
   const [birthDate, setBirthDate] = React.useState("");
@@ -314,6 +341,22 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setPhoneCountry,
   );
 
+  /**
+   * Включён ли Paylink у организации. Флаг предоплаты у врача сам по себе
+   * ничего не даёт: пока `paylinkEnabled: false`, витрина отвечает на создание
+   * брони «Онлайн-предоплата не настроена для этой организации» — то есть
+   * записаться к такому врачу нельзя вовсе. Проверяем публичной ручкой (без
+   * авторизации) и предупреждаем прямо в карточке.
+   */
+  const featuresQuery = useQuery({
+    queryKey: ["public-booking", "features"],
+    queryFn: ({ signal }) => getPublicFeatures(signal),
+    enabled: prepaymentSupported,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const paylinkOff = featuresQuery.data?.paylinkEnabled === false;
+
   const errors = React.useMemo(
     () => ({
       fullName: validateFullName(fullName),
@@ -325,8 +368,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       bankAccountNumber: canManagePrivate ? validateBankAccountNumber(bankAccountNumber) : "",
       inn: canManagePrivate ? validateInn(inn) : "",
       bik: canManagePrivate ? validateBik(bik) : "",
+      prepaymentAmount: validatePrepaymentAmount(prepaymentRequired, prepaymentAmount),
     }),
-    [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, instagram, bankAccountNumber, inn, bik, canManagePrivate],
+    [fullName, phoneLocal, phoneCountry, email, birthDate, telegramId, instagram, bankAccountNumber, inn, bik, canManagePrivate, prepaymentRequired, prepaymentAmount],
   );
 
   const hasErrors = Object.values(errors).some(Boolean);
@@ -397,6 +441,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     );
     setOnlineBookingEnabled(record.onlineBookingEnabled !== false);
     setOnlineBookingSupported(record.onlineBookingEnabled != null);
+    setPrepaymentRequired(record.prepaymentRequired === true);
+    setPrepaymentAmount(decimalToInput(record.prepaymentAmount));
+    setPrepaymentSupported(record.prepaymentRequired != null);
     setTelegramId(record.telegram_id || "");
     setInstagram(record.instagram || "");
     setBirthDate(record.birth_date || "");
@@ -446,6 +493,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         setClinicalRole(full.clinicalRole ?? "other");
         setOnlineBookingEnabled(full.onlineBookingEnabled !== false);
         setOnlineBookingSupported(full.onlineBookingEnabled != null);
+        setPrepaymentRequired(full.prepaymentRequired === true);
+        setPrepaymentAmount(decimalToInput(full.prepaymentAmount));
+        setPrepaymentSupported(full.prepaymentRequired != null);
         setSpecializations(full.specializations ?? []);
         setOperationalBranches(full.operationalBranches ?? []);
         initialBranchIdsRef.current = serializeBranchIds(full.operationalBranches ?? []);
@@ -465,6 +515,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           status: record.status === "inactive" ? "inactive" : "active",
           clinicalRole: full.clinicalRole ?? "other",
           onlineBookingEnabled: full.onlineBookingEnabled !== false,
+          prepaymentRequired: full.prepaymentRequired === true,
+          prepaymentAmount: decimalToInput(full.prepaymentAmount),
           telegramId: full.telegramId || "",
           instagram: full.instagram || "",
           birthDate: full.birthDate || "",
@@ -490,6 +542,9 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
           setClinicalRole(draft.clinicalRole);
           // Черновик мог быть записан до появления поля — тогда считаем врача видимым.
           setOnlineBookingEnabled(draft.onlineBookingEnabled !== false);
+          // Черновик мог быть записан до появления полей предоплаты.
+          setPrepaymentRequired(draft.prepaymentRequired === true);
+          setPrepaymentAmount(draft.prepaymentAmount ?? "");
           setTelegramId(draft.telegramId);
           setInstagram(draft.instagram);
           setBirthDate(draft.birthDate);
@@ -620,6 +675,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       status,
       clinicalRole,
       onlineBookingEnabled,
+      prepaymentRequired,
+      prepaymentAmount,
       telegramId,
       instagram,
       birthDate,
@@ -649,7 +706,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     return () => clearTimeout(id);
   }, [
     record, fullName, nickname, phoneCountry, phoneLocal, email, status, clinicalRole,
-    onlineBookingEnabled, telegramId, instagram, birthDate, hiredAt, bankAccountNumber,
+    onlineBookingEnabled, prepaymentRequired, prepaymentAmount, telegramId, instagram, birthDate, hiredAt, bankAccountNumber,
     inn, address, notes, bank, bik, operationalBranches,
   ]);
 
@@ -672,6 +729,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       setStatus(b.status);
       setClinicalRole(b.clinicalRole);
       setOnlineBookingEnabled(b.onlineBookingEnabled);
+      setPrepaymentRequired(b.prepaymentRequired);
+      setPrepaymentAmount(b.prepaymentAmount);
       setTelegramId(b.telegramId);
       setInstagram(b.instagram);
       setBirthDate(b.birthDate);
@@ -710,6 +769,11 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         clinicalRole,
         // Только если бэк знает поле (см. onlineBookingSupported).
         ...(onlineBookingSupported && { onlineBookingEnabled }),
+        // Флаг и сумму бэк проверяет парой: `true` без положительной суммы → 400.
+        ...(prepaymentSupported && {
+          prepaymentRequired,
+          prepaymentAmount: inputToDecimal(prepaymentAmount),
+        }),
         telegramId: telegramId.trim() || null,
         instagram: instagram.trim().replace(/^@/, "") || null,
         notes: notes.trim() || null,
@@ -852,6 +916,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         role_id: updated.role ? String(updated.role.id) : null,
         clinicalRole: updated.clinicalRole ?? "other",
         onlineBookingEnabled: updated.onlineBookingEnabled ?? null,
+        prepaymentRequired: updated.prepaymentRequired ?? null,
+        prepaymentAmount: updated.prepaymentAmount ?? null,
         updated_at: updated.updatedAt,
         _djangoRole: updated.role ?? null,
         _djangoSpecializations: updated.specializations ?? [],
@@ -1368,6 +1434,63 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   onChange={(e) => setOnlineBookingEnabled(e.target.checked)}
                   disabled={busy}
                 />
+              </Paper>
+            )}
+
+            {/* Онлайн-предоплата этого врача. Сумма своя у каждого врача, а не
+                общая на организацию (решение заказчика 23.08.2026), поэтому
+                настраивается здесь, а не в настройках клиники. Флаг без суммы
+                бэк отклоняет — сумму спрашиваем сразу под переключателем. */}
+            {prepaymentSupported && clinicalRole === "doctor" && (
+              <Paper elevation={0} variant="outlined" sx={{ p: 1 }}>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  gap={1}
+                >
+                  <Stack spacing={0.25}>
+                    <Typography variant="body2">Предоплата при записи</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Пациент оплачивает бронь картой, деньги попадают в оплату
+                      {" "}приёма. Без оплаты бронь не подтверждается.
+                    </Typography>
+                  </Stack>
+                  <Switch
+                    checked={prepaymentRequired}
+                    onChange={(e) => {
+                      setPrepaymentRequired(e.target.checked);
+                      touch("prepaymentAmount");
+                    }}
+                    disabled={busy}
+                  />
+                </Stack>
+                {prepaymentRequired && paylinkOff && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    Онлайн-предоплата не подключена для организации — записаться
+                    к этому врачу через сайт не получится, пока её не включат.
+                  </Alert>
+                )}
+                {prepaymentRequired && (
+                  <Box sx={{ mt: 1 }}>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      label="Сумма предоплаты"
+                      value={prepaymentAmount}
+                      onChange={(e) => setPrepaymentAmount(e.target.value)}
+                      onBlur={() => touch("prepaymentAmount")}
+                      onKeyDown={submitOnEnter}
+                      disabled={busy}
+                      error={Boolean(showError("prepaymentAmount"))}
+                      helperText={showError("prepaymentAmount") || "Например, 500"}
+                      inputProps={{ inputMode: "decimal" }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">сом</InputAdornment>,
+                      }}
+                    />
+                  </Box>
+                )}
               </Paper>
             )}
 

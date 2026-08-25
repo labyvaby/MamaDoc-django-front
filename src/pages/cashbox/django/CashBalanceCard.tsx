@@ -137,6 +137,7 @@ const CashBalanceCard: React.FC<Props> = ({ branchId, branchName, organizationId
           breakdown={todayFlow.breakdown}
           loading={todayFlowQuery.isLoading}
           color="success"
+          storageKey="mamadoc:cashbox:cashFlowExpanded"
         />
       </Box>
     </AppCard>

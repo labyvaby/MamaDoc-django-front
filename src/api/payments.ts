@@ -32,6 +32,14 @@ export interface AppointmentPayment {
   cashlessMethodId?: number | null;
   /** Название способа безнала — джойном, как insurerName */
   cashlessMethodName?: string | null;
+  /**
+   * Строка пришла онлайн-предоплатой брони, а не из кассы: метод `card`,
+   * способ безнала «Бакай Paylink», дата кассы — день оплаты банку.
+   * Её нельзя перезаписать обычной оплатой и **нельзя присылать в apply**
+   * (её дата кассы вне разрешённых пресетов → 400).
+   * `undefined` — окружение без релиза предоплаты, предоплат там не бывает.
+   */
+  isPrepayment?: boolean;
 }
 
 export interface AppointmentRefund {
@@ -62,6 +70,18 @@ export interface PaymentSummary {
   /** Total bonus points refunded for this appointment */
   bonusRefunded?: string;
   debt: string;
+  /**
+   * Онлайн-предоплата брони, уже проведённая в приём (входит в `paidTotal`).
+   * Форма оплаты вычитает её из суммы к вводу: в поля кассир вносит только
+   * то, что платят на месте. `undefined` = 0 (окружение без релиза).
+   */
+  prepaidTotal?: string;
+  /**
+   * Уплачено сверх суммы к оплате — приём вышел дешевле предоплаты. Долг в
+   * минус не уходит, разница показывается здесь. Что с ней делать — вопрос
+   * заказчику, UI под возврат/баланс пока не рисуем.
+   */
+  overpaidAmount?: string;
   paymentStatus: PaymentStatus;
   /** Appointment workflow status mirrored from backend (cancelled/no_show → debt always "0.00") */
   appointmentStatus?: string;
@@ -125,6 +145,20 @@ export interface CreateRefundResponse {
    * `refundConsumptionWarnings`).
    */
   consumptionWarnings?: AppointmentConsumptionWarning[];
+}
+
+/**
+ * Платежи, которые заводит касса, — без строк онлайн-предоплаты брони.
+ * Предоплата приходит из банка отдельной `card`-строкой, защищена от
+ * replace-all и в `apply` не отправляется (её дата кассы — день оплаты банку,
+ * а бэк принимает только «сегодня» или «дату приёма»). Форма оплаты сидирует
+ * поля, способ безнала и дату кассы только из этого списка. На окружении без
+ * релиза предоплаты `isPrepayment` нет и фильтр ничего не меняет.
+ */
+export function manualPaymentsOf(
+  summary: PaymentSummary | undefined | null,
+): AppointmentPayment[] {
+  return (summary?.payments ?? []).filter((p) => !p.isPrepayment);
 }
 
 /** Предупреждения возврата — из корня ответа или из вложенной сводки. */
