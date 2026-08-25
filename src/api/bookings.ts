@@ -22,14 +22,40 @@ export function bookingHasBranch(b: BookingListItem): boolean {
 // CRM-сторона). Все имена полей — camelCase. CRM = source of truth.
 
 export type BookingStatus =
+  /**
+   * Бронь к врачу с предоплатой: слот держится, банк ещё не подтвердил
+   * оплату. Подтвердить её нельзя (400) — после оплаты бэк сам переводит
+   * бронь в `pending`, а по истечении 15 минут снимает поллером.
+   */
+  | "awaiting_payment"
   | "pending"
   | "confirmed"
   | "cancelled"
   | "completed"
   | "no_show";
 
-/** Статусы, в которые персонал может перевести бронь (pending недопустим). */
-export type BookingManageStatus = Exclude<BookingStatus, "pending">;
+/**
+ * Статусы, в которые персонал может перевести бронь. `pending` — начальный,
+ * `awaiting_payment` ставит только бэк по факту выставленной ссылки банка.
+ */
+export type BookingManageStatus = Exclude<
+  BookingStatus,
+  "pending" | "awaiting_payment"
+>;
+
+/**
+ * Состояние онлайн-предоплаты брони (наряд A, Bakai Paylink).
+ * `null` в поле брони — врач предоплату не требует, предоплаты нет вовсе.
+ */
+export type BookingPrepaymentStatus =
+  /** ссылка выставлена, банк молчит */
+  | "pending"
+  /** банк подтвердил оплату — бронь ушла в `pending` и ждёт администратора */
+  | "paid"
+  /** 15 минут вышли, бронь снята поллером */
+  | "expired"
+  /** банк отказал, бронь снята */
+  | "failed";
 
 /**
  * Откуда пришла бронь: `public` — наша витрина `/book` (нативный `/api/v1`),
@@ -68,6 +94,16 @@ export interface BookingListItem {
    */
   branchId?: number | null;
   branchName?: string | null;
+  /** null — врач предоплату не требует, предоплаты у брони нет. */
+  prepaymentStatus?: BookingPrepaymentStatus | null;
+  /** Сумма предоплаты, decimal-строка. */
+  prepaymentAmount?: string | null;
+  /** ISO-время оплаты по данным банка. */
+  prepaymentPaidAt?: string | null;
+  /** Докуда действует ссылка на оплату (15 минут от создания). */
+  prepaymentExpiresAt?: string | null;
+  /** Деньги есть, а приёма не будет: бронь отменена или неявка. */
+  prepaymentNeedsAttention?: boolean;
 }
 
 /**
@@ -101,6 +137,8 @@ export interface BookingDetail extends BookingListItem {
   /** Подсказки бэка по телефону брони (проверено на живом API 05.08.2026). */
   patientMatches: BookingPatientMatch[];
   syncedAt: string | null;
+  /** Ссылка банка — админ может переслать её пациенту, пока оплата `pending`. */
+  prepaymentPayUrl?: string | null;
 }
 
 export interface BookingsResponse {
@@ -115,6 +153,8 @@ export interface BookingsFilters {
   dateFrom: string;
   dateTo: string;
   status?: BookingStatus;
+  /** Состояние онлайн-предоплаты — те же 4 значения, что у брони. */
+  prepaymentStatus?: BookingPrepaymentStatus;
   doctorId?: number;
   /** По имени/телефону пациента и коду подтверждения. */
   search?: string;
@@ -136,6 +176,7 @@ export function getBookings(
   q.set("dateFrom", filters.dateFrom);
   q.set("dateTo", filters.dateTo);
   if (filters.status) q.set("status", filters.status);
+  if (filters.prepaymentStatus) q.set("prepaymentStatus", filters.prepaymentStatus);
   if (filters.doctorId != null) q.set("doctorId", String(filters.doctorId));
   if (filters.search) q.set("search", filters.search);
   if (filters.organizationId != null) {

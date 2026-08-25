@@ -35,6 +35,7 @@ import {
   getAppointmentPayments,
   applyAppointmentPayment,
   parseBackendError,
+  manualPaymentsOf,
   type PaymentSummary,
   type PaymentStatus,
   type ApplyPaymentPayload,
@@ -370,8 +371,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     if (paymentsTouchedRef.current) return;
     if (seededPaymentsForRef.current === appointmentId) return;
     seededPaymentsForRef.current = appointmentId;
+    // Онлайн-предоплата в поля формы не попадает: она живёт в журнале сама,
+    // в apply её слать нельзя (дата кассы вне пресетов → 400), а сумма к
+    // оплате ниже уже уменьшена на неё.
+    const manualPayments = manualPaymentsOf(summary);
     const sumByMethod = (method: string) =>
-      (summary.payments ?? [])
+      manualPayments
         .filter((p) => p.method === method)
         .reduce((acc, p) => acc + parseDecimal(p.amount), 0);
     const cashSum = sumByMethod("cash");
@@ -381,23 +386,22 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     setCard(cardSum > 0 ? cardSum : "");
     setInsurance(insuranceSum > 0 ? insuranceSum : "");
     // Seed insurer + policy from the first insurance journal row.
-    const insurancePayment = (summary.payments ?? []).find(
-      (p) => p.method === "insurance",
-    );
+    const insurancePayment = manualPayments.find((p) => p.method === "insurance");
     if (insurancePayment) {
       setInsurerId(insurancePayment.insurerId ?? "");
       setPolicyNumber(insurancePayment.policyNumber ?? "");
     }
     // Способ безнала — из первой card-строки: apply работает по replace-all,
     // и при повторном сохранении (правка скидки) выбранный способ иначе
-    // молча слетел бы в пустой.
-    const cardPayment = (summary.payments ?? []).find((p) => p.method === "card");
+    // молча слетел бы в пустой. Предоплату здесь пропускаем — иначе форма
+    // подхватила бы «Бакай Paylink» и переписала им выбор регистратора.
+    const cardPayment = manualPayments.find((p) => p.method === "card");
     setCashlessMethodId(cardPayment?.cashlessMethodId ?? "");
     // Seed the cash-date choice from an existing card/insurance payment, so
     // re-saving (e.g. editing the discount) doesn't silently reset a
     // previously chosen "дата приёма" back to "сегодня" (replace-all semantics
     // on the backend recreate these rows on every apply).
-    const dateSourcePayment = (summary.payments ?? []).find(
+    const dateSourcePayment = manualPayments.find(
       (p) => (p.method === "card" || p.method === "insurance") && p.cashDate,
     );
     if (dateSourcePayment && appointment?.scheduledAt) {
@@ -477,8 +481,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     // выше) — раз мы его отбрасываем, восстанавливаем суммы из summary напрямую
     // (тот эффект повторно не сработает: summary не меняется), а не из пустой формы.
     if (summary) {
+      const manualPayments = manualPaymentsOf(summary);
       const sumByMethod = (method: string) =>
-        (summary.payments ?? [])
+        manualPayments
           .filter((p) => p.method === method)
           .reduce((acc, p) => acc + parseDecimal(p.amount), 0);
       const cashSum = sumByMethod("cash");
@@ -487,12 +492,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCash(cashSum > 0 ? cashSum : "");
       setCard(cardSum > 0 ? cardSum : "");
       setInsurance(insuranceSum > 0 ? insuranceSum : "");
-      const insurancePayment = (summary.payments ?? []).find((p) => p.method === "insurance");
+      const insurancePayment = manualPayments.find((p) => p.method === "insurance");
       setInsurerId(insurancePayment?.insurerId ?? "");
       setPolicyNumber(insurancePayment?.policyNumber ?? "");
-      const cardPayment = (summary.payments ?? []).find((p) => p.method === "card");
+      const cardPayment = manualPayments.find((p) => p.method === "card");
       setCashlessMethodId(cardPayment?.cashlessMethodId ?? "");
-      const dateSourcePayment = (summary.payments ?? []).find(
+      const dateSourcePayment = manualPayments.find(
         (p) => (p.method === "card" || p.method === "insurance") && p.cashDate,
       );
       if (dateSourcePayment && appointment?.scheduledAt) {
@@ -522,9 +527,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const total = parseDecimal(summary?.totalAmount ?? appointment?.totalAmount);
   const discountRaw = parseDecimal(discountStr);
   const discount = Math.max(0, Math.min(discountRaw, total));
-  const payable = discountTouchedRef.current || !summary
+  // Онлайн-предоплата уже лежит в журнале приёма и в поля формы не попадает —
+  // значит вычитаем её из суммы, которую кассир добирает на месте. Иначе
+  // превью долга врёт: форма покажет остаток, которого бэк уже не ждёт.
+  const prepaid = parseDecimal(summary?.prepaidTotal);
+  const payableGross = discountTouchedRef.current || !summary
     ? Math.max(0, total - discount)
     : parseDecimal(summary.payableAmount);
+  const payable = Math.max(0, payableGross - prepaid);
   const cashNum = Number(cash || 0);
   const cardNum = Number(card || 0);
   const insuranceNum = Number(insurance || 0);
@@ -555,6 +565,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     : false;
   const needsDateChoice = isDifferentDay && (cardNum > 0 || insuranceNum > 0);
 
+  const overpaidAmount = parseDecimal(summary?.overpaidAmount);
   const refundedTotal = parseDecimal(summary?.refundedTotal);
   const hasRefunds =
     (summary?.refunds?.length ?? 0) > 0 || refundedTotal > 0;
@@ -566,9 +577,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const debt = hasRefunds
     ? parseDecimal(summary?.debt)
     : Math.max(0, payable - netPaid);
+  // Статус считаем от полной суммы и всех денег приёма, включая предоплату:
+  // иначе приём, закрытый предоплатой целиком, показывался бы «Не оплачен»
+  // (в полях формы 0, добирать нечего).
+  const settledPreview = computeStatus(payableGross, netPaid + prepaid, discount, total);
   const statusPreview = hasRefunds
-    ? summary?.paymentStatus ?? computeStatus(payable, netPaid, discount, total)
-    : computeStatus(payable, netPaid, discount, total);
+    ? summary?.paymentStatus ?? settledPreview
+    : settledPreview;
   const applyBlockedByRefund = hasRefunds;
   const hasBonusPayment = (summary?.payments ?? []).some((p) => p.method === "bonus");
   const applyBlockedByBonus = hasBonusPayment;
@@ -1259,8 +1274,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   </Stack>
                 )}
 
-                {/* Balance/bonus/insurance used display */}
-                {(balanceUsed > 0 || bonusUsed > 0 || insuranceNum > 0) && (
+                {/* Balance/bonus/insurance/prepayment used display */}
+                {(balanceUsed > 0 || bonusUsed > 0 || insuranceNum > 0 || prepaid > 0) && (
                   <Paper
                     elevation={0}
                     sx={{
@@ -1272,6 +1287,16 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                     }}
                   >
                     <Stack spacing={0.5}>
+                      {prepaid > 0 && (
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography variant="caption" color="success.main">
+                            {t("payment.prepaid")}
+                          </Typography>
+                          <Typography variant="caption" color="success.main" fontWeight={600}>
+                            {t("payment.minusAmount", { amount: prepaid.toLocaleString() })}
+                          </Typography>
+                        </Stack>
+                      )}
                       {balanceUsed > 0 && (
                         <Stack direction="row" justifyContent="space-between">
                           <Typography variant="caption" color="success.main">{t("payment.fromAccount")}</Typography>
@@ -1348,6 +1373,20 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                   </Paper>
                 )}
 
+                {/* Приём вышел дешевле предоплаты: бэк закрывает его как
+                    оплаченный, долг 0, а разницу отдаёт в overpaidAmount.
+                    Что делать с этими деньгами — вопрос заказчику. */}
+                {overpaidAmount > 0 && (
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" color="text.secondary">
+                      {t("payment.overpaidAmount")}
+                    </Typography>
+                    <Typography variant="body2" color="warning.main" fontWeight={700}>
+                      {t("common:currency.amountShort", { amount: overpaidAmount.toLocaleString() })}
+                    </Typography>
+                  </Stack>
+                )}
+
                 {overpaid && (
                   <Alert severity="error" sx={{ py: 0.5 }}>
                     {t("payment.overpaid")}
@@ -1386,15 +1425,29 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 {t("payment.history")}
               </Typography>
               {summary.payments.map((p) => (
-                <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="caption" color="text.secondary">
-                    {paymentMethodLabel(p.method, p.cashlessMethodName)}
-                    {p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""}
-                    {p.method === "insurance" && p.policyNumber ? ` (${p.policyNumber})` : ""}
-                    {(p.method === "card" || p.method === "insurance") && p.cashDate
-                      ? t("payment.cashDateSuffix", { date: dayjs(p.cashDate).format("D MMM") })
-                      : ""}
-                  </Typography>
+                <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                  {/* Предоплата — не касса: показываем откуда деньги и за какой
+                      день они прошли, иначе непонятно, почему долг меньше
+                      стоимости. Строка неизменяемая, править её нечем. */}
+                  {p.isPrepayment ? (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={t("payment.prepaidChip", {
+                        date: dayjs(p.cashDate).format("D MMM"),
+                      })}
+                      sx={{ height: 20, fontSize: "0.7rem" }}
+                    />
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      {paymentMethodLabel(p.method, p.cashlessMethodName)}
+                      {p.method === "insurance" && p.insurerName ? ` · ${p.insurerName}` : ""}
+                      {p.method === "insurance" && p.policyNumber ? ` (${p.policyNumber})` : ""}
+                      {(p.method === "card" || p.method === "insurance") && p.cashDate
+                        ? t("payment.cashDateSuffix", { date: dayjs(p.cashDate).format("D MMM") })
+                        : ""}
+                    </Typography>
+                  )}
                   <Typography variant="caption" fontWeight={500}>{t("common:currency.amountShort", { amount: p.amount })}</Typography>
                 </Stack>
               ))}

@@ -141,6 +141,23 @@ export function validateBik(value: string): string {
   return "";
 }
 
+// ── Сумма онлайн-предоплаты ───────────────────────────────────────────────────
+
+/**
+ * Сумма обязательна и должна быть положительной, когда предоплата включена:
+ * бэк отвечает 400 на пару «флаг без суммы», а врач с суммой 0 означал бы
+ * «оплатите 0 сом, чтобы записаться». Выключенная предоплата суммы не требует.
+ */
+export function validatePrepaymentAmount(required: boolean, value: string): string {
+  if (!required) return "";
+  const v = value.trim().replace(",", ".");
+  if (!v) return "Укажите сумму предоплаты";
+  const n = Number(v);
+  if (!isFinite(n)) return "Сумма должна быть числом";
+  if (n <= 0) return "Сумма предоплаты должна быть больше нуля";
+  return "";
+}
+
 // ── Логин ─────────────────────────────────────────────────────────────────────
 
 export function validateUsername(value: string): string {

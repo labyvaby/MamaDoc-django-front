@@ -756,7 +756,25 @@ export interface PublicBookingDetail {
   services: BookingServiceRef[];
   doctor: BookingDoctorRef | null;
   branch: BookingBranchRef | null;
-  payment: unknown | null;
+  payment: PublicBookingPayment | null;
+}
+
+/**
+ * Онлайн-предоплата брони (Bakai Paylink). `null` у брони без предоплаты.
+ *
+ * Кнопка банка «Я оплатил(а)» ничего не доказывает — единственный признак
+ * оплаты для витрины — `status: "paid"` в этом ответе, поэтому страницу
+ * результата опрашиваем этой же ручкой.
+ */
+export interface PublicBookingPayment {
+  /** `pending` — ждём банк, `paid` — деньги дошли, `expired`/`failed` — бронь снята. */
+  status: "pending" | "paid" | "expired" | "failed";
+  /** Сумма к оплате, decimal-строка. */
+  amount: string;
+  /** Ссылка банка — куда вести пациента (snake_case `paylink_url` на проводе). */
+  paylinkUrl: string | null;
+  /** Докуда действует ссылка: 15 минут от создания. */
+  expiresAt: string | null;
 }
 
 /**

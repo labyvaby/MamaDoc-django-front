@@ -154,7 +154,16 @@
     "duration": "· {{minutes}} мин",
     "copy": "Копировать",
     "yandexMaps": "Яндекс.Карты",
-    "googleMaps": "Google Карты"
+    "googleMaps": "Google Карты",
+    "payTitle": "Оплатите предоплату",
+    "payHint": "Без оплаты {{record.nom}} не подтвердится и время освободится.",
+    "payAmount": "К оплате: {{amount}}",
+    "payButton": "Перейти к оплате",
+    "payExpiresIn": "Ссылка действует ещё {{minutes}} мин",
+    "payChecking": "Проверяем оплату…",
+    "payPaid": "Оплата получена — {{record.nom}} подтверждается клиникой.",
+    "payExpired": "Время оплаты истекло, {{record.nom}} снята. Запишитесь заново.",
+    "payFailed": "Банк отклонил оплату, {{record.nom}} снята. Попробуйте записаться ещё раз."
   },
 
   "auth": {

@@ -40,6 +40,8 @@ export function mapDjangoListItemToRow(d: DjangoEmployeeListItem): EmployesRow {
     passport_photos: null,
     clinicalRole: d.clinicalRole ?? null,
     onlineBookingEnabled: d.onlineBookingEnabled ?? null,
+    prepaymentRequired: d.prepaymentRequired ?? null,
+    prepaymentAmount: d.prepaymentAmount ?? null,
     // Explicit fields (non-prefixed)
     _djangoRole: d.role ?? null,
     _djangoSpecializations: d.specializations ?? [],
@@ -79,6 +81,8 @@ export function mapDjangoFullToRow(
     passport_photos: null,
     clinicalRole: d.clinicalRole ?? null,
     onlineBookingEnabled: d.onlineBookingEnabled ?? null,
+    prepaymentRequired: d.prepaymentRequired ?? null,
+    prepaymentAmount: d.prepaymentAmount ?? null,
     _djangoRole: d.role ?? null,
     _djangoSpecializations: d.specializations ?? [],
     _djangoOperationalBranches: d.operationalBranches ?? [],

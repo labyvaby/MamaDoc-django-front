@@ -50,6 +50,10 @@ export type Employee = {
   clinicalRole?: "doctor" | "nurse" | "other" | null;
   /** Виден ли сотрудник на публичной витрине онлайн-записи (`/book`). */
   onlineBookingEnabled?: boolean | null;
+  /** Требуется ли онлайн-предоплата при записи к этому врачу. */
+  prepaymentRequired?: boolean | null;
+  /** Сумма предоплаты этого врача, decimal-строка («500.00»). */
+  prepaymentAmount?: string | null;
 
   created_at?: string;
   updated_at?: string;

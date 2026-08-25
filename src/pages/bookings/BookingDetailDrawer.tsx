@@ -24,6 +24,7 @@ import EventOutlined from "@mui/icons-material/EventOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import LinkOutlined from "@mui/icons-material/LinkOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CallOutlined from "@mui/icons-material/CallOutlined";
 import ChatOutlined from "@mui/icons-material/ChatOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
@@ -56,6 +57,8 @@ import {
   bookingTimeHint,
   bookingTimeRange,
   isTerminalBookingStatus,
+  prepaymentExpiryText,
+  PrepaymentChip,
   StatusChip,
 } from "./meta";
 import ConfirmBookingDialog from "./ConfirmBookingDialog";
@@ -185,6 +188,17 @@ const BookingDetailDrawer: React.FC<Props> = ({
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [open, busy, confirmOpen, cancelOpen, goPrev, goNext]);
+
+  // Ссылка банка живёт 15 минут — админ может переслать её пациенту, пока
+  // оплата в статусе pending.
+  const handleCopyPayUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify?.({ type: "success", message: t("detail.prepaymentLinkCopied") });
+    } catch {
+      /* буфер недоступен (нет https / отказ в правах) */
+    }
+  };
 
   const handleCopyPhone = async (phone: string) => {
     try {
@@ -458,6 +472,63 @@ const BookingDetailDrawer: React.FC<Props> = ({
                 </Typography>
               )}
             </Section>
+
+            {/* ── Онлайн-предоплата: только когда она у брони есть ── */}
+            {b.prepaymentStatus && (
+              <>
+                <Divider />
+                <Section icon={<CreditCardOutlined />} title={t("detail.prepaymentSection")}>
+                  <Stack spacing={1.25} alignItems="flex-start">
+                    <PrepaymentChip
+                      status={b.prepaymentStatus}
+                      amount={b.prepaymentAmount}
+                      needsAttention={b.prepaymentNeedsAttention}
+                    />
+                    {b.prepaymentNeedsAttention && (
+                      <Alert severity="warning" sx={{ width: "100%" }}>
+                        {t("detail.prepaymentNeedsAttention")}
+                      </Alert>
+                    )}
+                    <Stack direction="row" spacing={3} flexWrap="wrap" useFlexGap>
+                      {b.prepaymentAmount && (
+                        <Field
+                          label={t("detail.prepaymentAmount")}
+                          value={formatKGS(b.prepaymentAmount)}
+                        />
+                      )}
+                      {b.prepaymentPaidAt && (
+                        <Field
+                          label={t("detail.prepaymentPaidAt")}
+                          value={dayjs(b.prepaymentPaidAt).format("DD.MM.YYYY HH:mm")}
+                        />
+                      )}
+                    </Stack>
+                    {b.prepaymentStatus === "pending" && (
+                      <>
+                        <Typography variant="body2" color="text.secondary">
+                          {t("detail.prepaymentWaiting")}
+                        </Typography>
+                        {prepaymentExpiryText(b.prepaymentExpiresAt) && (
+                          <Typography variant="caption" color="warning.main">
+                            {prepaymentExpiryText(b.prepaymentExpiresAt)}
+                          </Typography>
+                        )}
+                        {b.prepaymentPayUrl && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleCopyPayUrl(b.prepaymentPayUrl as string)}
+                            sx={{ textTransform: "none" }}
+                          >
+                            {t("detail.prepaymentCopyLink")}
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </Stack>
+                </Section>
+              </>
+            )}
 
             <Divider />
 

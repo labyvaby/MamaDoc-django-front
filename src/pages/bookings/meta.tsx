@@ -3,8 +3,9 @@ import { Box, Chip } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
 import dayjs from "dayjs";
 
-import type { BookingStatus } from "../../api/bookings";
+import type { BookingPrepaymentStatus, BookingStatus } from "../../api/bookings";
 import { subtleBg } from "../../theme/uiHelpers";
+import { formatKGS } from "../../utility/format";
 
 type ChipColor = "default" | "success" | "warning" | "error" | "info";
 
@@ -12,6 +13,9 @@ export const BOOKING_STATUS_META: Record<
   BookingStatus,
   { label: string; color: ChipColor }
 > = {
+  // Ещё не заявка: бронь держит слот и ждёт подтверждения оплаты банком,
+  // администратору с ней делать нечего — потому нейтральный тон.
+  awaiting_payment: { label: "Ждёт оплаты", color: "default" },
   pending: { label: "Ожидает", color: "warning" },
   confirmed: { label: "Подтверждена", color: "info" },
   completed: { label: "Завершена", color: "success" },
@@ -20,6 +24,7 @@ export const BOOKING_STATUS_META: Record<
 };
 
 export const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string }[] = [
+  { value: "awaiting_payment", label: "Ждёт оплаты" },
   { value: "pending", label: "Ожидает" },
   { value: "confirmed", label: "Подтверждена" },
   { value: "completed", label: "Завершена" },
@@ -96,6 +101,85 @@ export const StatusChip: React.FC<{ status: BookingStatus; size?: "small" | "med
   );
 };
 
+// ── Онлайн-предоплата ─────────────────────────────────────────────────────────
+
+export const BOOKING_PREPAYMENT_META: Record<
+  BookingPrepaymentStatus,
+  { label: string; color: ChipColor }
+> = {
+  pending: { label: "Ждём оплату", color: "warning" },
+  paid: { label: "Оплачена", color: "success" },
+  expired: { label: "Ссылка истекла", color: "default" },
+  failed: { label: "Оплата не прошла", color: "error" },
+};
+
+/**
+ * Сколько осталось у ссылки банка (15 минут от создания). Это ответ на вопрос
+ * «почему бронь исчезла»: по истечении её снимает поллер. У оплаченной брони
+ * таймер уже не важен — деньги пришли, дальше решает администратор.
+ */
+export function prepaymentExpiryText(expiresAt: string | null | undefined): string | null {
+  if (!expiresAt) return null;
+  const end = dayjs(expiresAt);
+  if (!end.isValid()) return null;
+  const minutes = end.diff(dayjs(), "minute");
+  if (minutes < 0) return "ссылка истекла";
+  return `ссылка действует ещё ${Math.max(minutes, 1)} мин`;
+}
+
+/** Есть ли у брони онлайн-предоплата вообще (у врача без неё поле null). */
+export function hasPrepayment(b: {
+  prepaymentStatus?: BookingPrepaymentStatus | null;
+}): boolean {
+  return b.prepaymentStatus != null;
+}
+
+/**
+ * Статус оплаты рядом со статусом брони: оплаченная должна отличаться от
+ * неоплаченной — её администратор подтверждает в первую очередь.
+ * `prepaymentNeedsAttention` (деньги есть, приёма не будет) выделяем отдельно:
+ * такие брони обязаны быть на виду.
+ */
+export const PrepaymentChip: React.FC<{
+  status: BookingPrepaymentStatus;
+  amount?: string | null;
+  needsAttention?: boolean;
+}> = ({ status, amount, needsAttention }) => {
+  const m = BOOKING_PREPAYMENT_META[status];
+  if (!m) return <>{status}</>;
+  const label = amount ? `${m.label} · ${formatKGS(amount)}` : m.label;
+  return (
+    <Chip
+      size="small"
+      label={needsAttention ? `⚠ ${label}` : label}
+      sx={(t) => {
+        const tone = needsAttention
+          ? t.palette.error
+          : m.color === "success"
+            ? t.palette.success
+            : m.color === "warning"
+              ? t.palette.warning
+              : m.color === "error"
+                ? t.palette.error
+                : null;
+        return {
+          fontWeight: 500,
+          height: 24,
+          borderRadius: "7px",
+          color: tone
+            ? t.palette.mode === "dark"
+              ? tone.light
+              : tone.dark
+            : "text.secondary",
+          bgcolor: tone
+            ? alpha(tone.main, t.palette.mode === "dark" ? 0.2 : 0.14)
+            : subtleBg(t, true),
+        };
+      }}
+    />
+  );
+};
+
 // ── Время брони ───────────────────────────────────────────────────────────────
 
 /**
@@ -133,6 +217,9 @@ export function bookingTimeHint(
   status: BookingStatus,
 ): BookingTimeHint | null {
   if (isTerminalBookingStatus(status)) return null;
+  // Бронь, ждущая оплаты, администратора не касается: её судьбу решает банк, а
+  // не обработка — по истечении ссылки её снимет поллер.
+  if (status === "awaiting_payment") return null;
   const start = bookingStart(date, time);
   if (!start.isValid()) return null;
   const now = dayjs();
