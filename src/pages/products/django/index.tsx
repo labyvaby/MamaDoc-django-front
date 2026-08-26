@@ -28,6 +28,7 @@ import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
+import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import dayjs from "dayjs";
 
 import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile } from "../../../components/ui";
@@ -55,6 +56,7 @@ import {
   DjangoProductImage,
 } from "../../../api/warehouse";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
+import { DjangoRetailModelDrawer } from "../../../components/products/django/DjangoRetailModelDrawer";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
 
 /**
@@ -89,7 +91,7 @@ const DjangoProductsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { loading: permLoading } = usePermissions();
+  const { loading: permLoading, activeOrganization } = usePermissions();
   // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
   const orgId = useApiOrgId();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
@@ -98,6 +100,8 @@ const DjangoProductsPage: React.FC = () => {
   // Drawers
   const [formDrawerOpen, setFormDrawerOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<DjangoProduct | null>(null);
+  const [retailModelDrawerOpen, setRetailModelDrawerOpen] = React.useState(false);
+  const isRetail = activeOrganization?.vertical === "retail";
 
   // Filter Drawer
   const [filterDrawerOpen, setFilterDrawerOpen] = React.useState(false);
@@ -346,6 +350,16 @@ const DjangoProductsPage: React.FC = () => {
         showTitle={false}
         addButtonText={canManage ? "Добавить товар" : undefined}
         onAdd={canManage ? handleAddClick : undefined}
+        leftActions={isRetail && canManage ? (
+          <Button
+            variant="outlined"
+            startIcon={<GridViewOutlined />}
+            onClick={() => setRetailModelDrawerOpen(true)}
+            sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+          >
+            Модель одежды
+          </Button>
+        ) : undefined}
         showSearch
         searchVal={searchQuery}
         onSearchChange={setSearchQuery}
@@ -682,6 +696,15 @@ const DjangoProductsPage: React.FC = () => {
         onClose={() => setFormDrawerOpen(false)}
         product={editingProduct}
         onSaved={fetchProducts}
+      />
+
+      <DjangoRetailModelDrawer
+        open={retailModelDrawerOpen}
+        onClose={() => setRetailModelDrawerOpen(false)}
+        onSaved={() => {
+          fetchProducts();
+          fetchCategories();
+        }}
       />
 
       <ProductFilterDrawer
