@@ -37,6 +37,7 @@ import {
 } from "../../../api/warehouse";
 import { ApiError } from "../../../api/client";
 import { useFormValidation } from "../../../hooks/useFormValidation";
+import { usePermissions } from "../../../hooks/usePermissions";
 import { AppCard, cascadeContainer, cascadeItem } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
@@ -161,6 +162,10 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     onSaved,
 }) => {
     const { open: notify } = useNotification();
+    const { enabledModules } = usePermissions();
+    // Медицинский признак доступен только организациям с модулем вакцинации.
+    // Не полагаемся на текущую вертикаль: доступ определяется серверным скоупом.
+    const canUseVaccines = enabledModules.includes("vaccinations");
     const isEdit = !!product;
     const [values, setValues] = React.useState<FormValues>(defaultValues);
     const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -186,18 +191,18 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                     comment: product.comment,
                     isForSale: product.isForSale,
                     isInfusion: product.isInfusion,
-                    isVaccine: product.isVaccine,
+                    isVaccine: canUseVaccines && product.isVaccine,
                     price: product.price,
                 };
                 baselineRef.current = baseline;
                 const draft = readFormDraft<ProductDraft>(editDraftKeyFor(product.id), DRAFT_TTL_MS);
-                setValues(draft ?? baseline);
+                setValues(draft ? { ...draft, isVaccine: canUseVaccines && draft.isVaccine } : baseline);
                 setDraftRestored(Boolean(draft));
             } else {
                 baselineRef.current = null;
                 const draft = readFormDraft<ProductDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
                 if (draft) {
-                    setValues(draft);
+                    setValues({ ...draft, isVaccine: canUseVaccines && draft.isVaccine });
                     setDraftRestored(true);
                 } else {
                     setValues(defaultValues);
@@ -213,7 +218,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
             setPreviewUrl(null);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, product]);
+    }, [open, product, canUseVaccines]);
 
     // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
     // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
@@ -283,7 +288,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                 comment: values.comment.trim(),
                 isForSale: values.isForSale,
                 isInfusion: values.isInfusion,
-                isVaccine: values.isVaccine,
+                isVaccine: canUseVaccines && values.isVaccine,
                 price: Number(values.price) || 0,
             };
 
@@ -575,7 +580,8 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
 
                             {/* Vaccine flag: источник истины «это вакцина». Включение
                                 авто-создаёт/активирует медкарточку в разделе «Вакцины». */}
-                            <Paper
+                            {canUseVaccines && (
+                              <Paper
                                 elevation={0}
                                 variant="outlined"
                                 sx={{ p: 1.5, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2 }}
@@ -592,7 +598,8 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                     onChange={(e) => setValues((s) => ({ ...s, isVaccine: e.target.checked }))}
                                     disabled={busy}
                                 />
-                            </Paper>
+                              </Paper>
+                            )}
                         </Stack>
                         </MotionBox>
 
