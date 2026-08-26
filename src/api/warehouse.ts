@@ -66,14 +66,14 @@ export type DjangoProduct = {
     organizationId: number;
     name: string;
     /** Артикул SKU; у вариантов одежды генерируется из префикса модели. */
-    sku: string | null;
+    sku?: string | null;
     category: string;
-    categoryId: number | null;
+    categoryId?: number | null;
     barcode: string;
-    barcodes: string[];
+    barcodes?: string[];
     /** Родительская модель одежды; null у обычного товара. */
-    modelId: number | null;
-    attributes: DjangoProductAttributeValue[];
+    modelId?: number | null;
+    attributes?: DjangoProductAttributeValue[];
     unit: string;
     /** Цена продажи, сом. */
     price: number;
