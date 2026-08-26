@@ -21,6 +21,7 @@ import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import RemoveShoppingCartOutlined from "@mui/icons-material/RemoveShoppingCartOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { PageHeader } from "../../../components/ui";
@@ -43,6 +44,7 @@ import {
     DjangoWarehouse,
     DjangoStockItem,
     DjangoStockMovement,
+    DjangoProduct,
 } from "../../../api/warehouse";
 
 // Components
@@ -56,6 +58,7 @@ import {
 import { DjangoTransferDrawer } from "../../../components/storage/django/DjangoTransferDrawer";
 import { DjangoWarehouseList } from "../../../components/storage/django/DjangoWarehouseList";
 import { DjangoAddWarehouseDrawer } from "../../../components/storage/django/DjangoAddWarehouseDrawer";
+import { DjangoWarehouseDocumentsDrawer } from "../../../components/storage/django/DjangoWarehouseDocumentsDrawer";
 
 /**
  * Страница «Остатки» — объединяет бывшие «Склад» и «Движение товара»:
@@ -105,11 +108,14 @@ const DjangoWarehousesPage: React.FC = () => {
     const [editingWarehouse, setEditingWarehouse] = React.useState<DjangoWarehouse | null>(null);
     // Панель управления складами (список + CRUD)
     const [manageOpen, setManageOpen] = React.useState(false);
+    // Документы склада: инвентаризация и переоценка.
+    const [documentsOpen, setDocumentsOpen] = React.useState(false);
     // Перемещение между складами
     const [transferOpen, setTransferOpen] = React.useState(false);
 
     // All Products for Selector (for adding new items)
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
+    const [catalogProducts, setCatalogProducts] = React.useState<DjangoProduct[]>([]);
     // Цены товаров (продажные) — для оценки стоимости остатка на складе.
     const [productPrices, setProductPrices] = React.useState<Map<number, number>>(new Map());
 
@@ -123,6 +129,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 getProducts(undefined, { organizationId: orgId }),
             ]);
             setWarehouses(ws);
+            setCatalogProducts(prods);
             setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
             setProductPrices(new Map(prods.map((p) => [p.id, p.price || 0])));
             setSelectedWarehouseId((prev) => {
@@ -330,6 +337,7 @@ const DjangoWarehousesPage: React.FC = () => {
                 getProducts(undefined, { organizationId: orgId })
                     .then((prods) => {
                         setAvailableProducts(prods.map((p) => ({ id: p.id, label: p.name })));
+                        setCatalogProducts(prods);
                         setProductPrices(new Map(prods.map((p) => [p.id, p.price || 0])));
                     })
                     .catch(() => undefined);
@@ -531,6 +539,17 @@ const DjangoWarehousesPage: React.FC = () => {
                             spacing={1}
                             sx={{ width: { xs: "100%", sm: "auto" }, flexGrow: { sm: 1 }, justifyContent: { sm: "flex-end" } }}
                         >
+                            {canManage && (
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<FactCheckOutlined />}
+                                    onClick={() => setDocumentsOpen(true)}
+                                    sx={{ textTransform: "none", flex: { xs: 1, sm: "0 0 auto" } }}
+                                >
+                                    Операции
+                                </Button>
+                            )}
                             <Button
                                 variant="outlined"
                                 size="small"
@@ -708,6 +727,20 @@ const DjangoWarehousesPage: React.FC = () => {
                 onSuccess={loadInitialData}
                 editItem={editingWarehouse}
                 activeBranchId={activeBranchId}
+            />
+
+            <DjangoWarehouseDocumentsDrawer
+                open={documentsOpen}
+                onClose={() => setDocumentsOpen(false)}
+                warehouses={warehouses}
+                products={catalogProducts}
+                defaultWarehouseId={selectedWarehouseId}
+                activeBranchId={activeBranchId}
+                organizationId={orgId}
+                onChanged={() => {
+                    void fetchStock();
+                    void loadInitialData();
+                }}
             />
 
             {/* Add/Remove Movement Drawer */}
