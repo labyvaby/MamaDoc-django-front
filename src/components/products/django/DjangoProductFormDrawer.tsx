@@ -165,7 +165,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
     const { enabledModules } = usePermissions();
     // Медицинский признак доступен только организациям с модулем вакцинации.
     // Не полагаемся на текущую вертикаль: доступ определяется серверным скоупом.
-    const canUseVaccines = enabledModules.includes("vaccinations");
+    const canUseVaccines = (enabledModules ?? []).includes("vaccinations");
     const isEdit = !!product;
     const [values, setValues] = React.useState<FormValues>(defaultValues);
     const [photoFile, setPhotoFile] = React.useState<File | null>(null);
