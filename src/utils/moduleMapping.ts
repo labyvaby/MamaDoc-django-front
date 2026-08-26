@@ -27,6 +27,15 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   vaccinations: 'vaccinations',
   announcements: 'announcements',
   profigram: 'profigram',
+  pos: 'pos',
+  promotions: 'promotions',
+  loyalty: 'loyalty',
+  printforms: 'printforms',
+  targets: 'targets',
+  ecommerce: 'ecommerce',
+  reviews: 'reviews',
+  notifications: 'announcements',
+  telegram_bot: 'telegram_bot',
 };
 
 /**
