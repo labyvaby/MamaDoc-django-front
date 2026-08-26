@@ -137,6 +137,8 @@ export type DjangoProductCategoryNode = {
     organizationId: number;
     name: string;
     parentId: number | null;
+    /** Поля, выбранные администратором для этой категории. */
+    attributeIds: number[];
     isActive: boolean;
     productCount: number;
     createdAt: string;
@@ -369,6 +371,7 @@ export function getProductCategories(
 export type ProductWriteData = {
     name?: string;
     category?: string;
+    categoryId?: number;
     barcode?: string;
     unit?: string;
     description?: string;
@@ -450,6 +453,7 @@ export function getProductCategoryTree(
 export function createProductCategory(data: {
     name: string;
     parentId?: number;
+    attributeIds?: number[];
     organizationId?: number;
 }): Promise<DjangoProductCategoryNode> {
     const { organizationId, ...body } = data;
@@ -457,6 +461,16 @@ export function createProductCategory(data: {
     return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${qs}`, {
         method: "POST",
         body,
+    });
+}
+
+export function updateProductCategory(
+    id: number,
+    data: { name?: string; parentId?: number; clearParent?: boolean; attributeIds?: number[]; isActive?: boolean },
+): Promise<DjangoProductCategoryNode> {
+    return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${id}/`, {
+        method: "PATCH",
+        body: data,
     });
 }
 
