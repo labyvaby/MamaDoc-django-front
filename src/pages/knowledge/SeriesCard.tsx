@@ -8,6 +8,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 
 import { formatDateRu } from "../../utility/format";
 import { type KnowledgeSeriesGroup } from "../../api/knowledge";
+import { partsLabel } from "./folders";
 import FeedCover from "./FeedCover";
 import HighlightedText from "./HighlightedText";
 import { useArticleCover } from "./useArticleCover";
@@ -19,23 +20,17 @@ const cardSx: SxProps<Theme> = (t) => ({
   "&:hover": { borderColor: alpha(t.palette.primary.main, 0.28) },
 });
 
-/** «3 части» — существительное склоняется по числу. */
-const partsLabel = (n: number): string => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${n} часть`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} части`;
-  return `${n} частей`;
-};
-
 interface PartDotsProps {
   total: number;
   /** Индексы (0-based) прочитанных частей. */
   readFlags: boolean[];
 }
 
-/** Точки прогресса: закрашенная = прочитанная часть. */
-const PartDots: React.FC<PartDotsProps> = ({ total, readFlags }) => (
+/**
+ * Точки прогресса: закрашенная = прочитанная часть. Экспортируется — той же
+ * шкалой пользуется мобильная строка серии (SeriesRow).
+ */
+export const PartDots: React.FC<PartDotsProps> = ({ total, readFlags }) => (
   <Stack direction="row" gap={0.5} alignItems="center">
     {Array.from({ length: total }).map((_, i) => (
       <Box

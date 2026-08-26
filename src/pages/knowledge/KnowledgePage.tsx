@@ -7,6 +7,7 @@ import {
   Chip,
   Card,
   Divider,
+  Fab,
   IconButton,
   Link,
   ListItemIcon,
@@ -18,6 +19,8 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import {
   keepPreviousData,
@@ -60,16 +63,18 @@ import {
   getKnowledgeSeries,
   groupArticleFeed,
   setArticleFolder,
-  type KnowledgeArticleListItem,
   type KnowledgeArticlePayload,
 } from "../../api/knowledge";
 import ArticleDraggable from "./ArticleDraggable";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
 import CategoriesDialog from "./CategoriesDialog";
 import FeedCard from "./FeedCard";
+import { ArticleRow, SeriesRow } from "./FeedRow";
+import { SORT_OPTIONS, sortArticles, type SortKey } from "./feedSort";
 import FolderTile from "./FolderTile";
 import FoldersDialog from "./FoldersDialog";
 import { ARTICLE_DND_TYPE, readDraggedArticleIds } from "./folders";
+import MobileToolbar from "./MobileToolbar";
 import SeriesCard from "./SeriesCard";
 import { useReadArticles } from "./useReadArticles";
 
@@ -80,23 +85,18 @@ import { useReadArticles } from "./useReadArticles";
  */
 const ARTICLES_PAGE_SIZE = 60;
 
-/** Сортировка — клиентская: серверного ordering у бэка не подтверждено. */
-type SortKey = "recent" | "oldest" | "title";
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "recent", label: "Сначала новые" },
-  { value: "oldest", label: "Сначала старые" },
-  { value: "title", label: "По алфавиту" },
-];
-
 const MotionBox = motion(Box);
 
-/** Сетка карточек ленты. */
+/**
+ * Сетка карточек ленты — только от планшета: до md лента показывается строками
+ * (см. FeedRow). Раньше здесь стоял `sm: repeat(2, 1fr)`, а `sm` в теме — это
+ * 360px, то есть телефон попадал в две колонки и вторая уезжала за край экрана
+ * вместе с горизонтальной прокруткой страницы.
+ */
 const feedGridSx = {
   display: "grid",
   gridTemplateColumns: {
     xs: "1fr",
-    sm: "repeat(2, 1fr)",
     md: "repeat(3, 1fr)",
     lg: "repeat(4, 1fr)",
   },
@@ -121,18 +121,21 @@ const FeedCardSkeleton: React.FC = () => (
   </Card>
 );
 
-const sortArticles = (
-  articles: KnowledgeArticleListItem[],
-  sort: SortKey,
-): KnowledgeArticleListItem[] => {
-  const list = [...articles];
-  if (sort === "title") return list.sort((a, b) => a.title.localeCompare(b.title, "ru"));
-  const dir = sort === "oldest" ? 1 : -1;
-  return list.sort((a, b) => dir * a.updatedAt.localeCompare(b.updatedAt));
-};
+/** Скелетон строки ленты (мобильный вид). */
+const FeedRowSkeleton: React.FC = () => (
+  <Card variant="outlined" sx={{ borderRadius: "14px", display: "flex", gap: 1.25, p: 1 }}>
+    <Skeleton variant="rounded" width={96} height={72} sx={{ borderRadius: "10px", flexShrink: 0 }} />
+    <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Skeleton variant="text" width="80%" />
+      <Skeleton variant="text" width="45%" />
+    </Box>
+  </Card>
+);
 
 const KnowledgePage: React.FC = () => {
   usePageTitle("База знаний");
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
@@ -248,6 +251,30 @@ const KnowledgePage: React.FC = () => {
   );
 
   const allLoaded = !articlesQuery.hasNextPage;
+
+  /**
+   * Дозагрузка сама, по приближению к концу ленты. Кнопка «Показать ещё»
+   * оставалась единственным способом добрать страницу: на телефоне это лишний
+   * тап после каждых шестидесяти материалов, да ещё и в конце длинной прокрутки.
+   * Наблюдаем за маркером внутри самого скроллера — лента прокручивается не
+   * страницей, а своим контейнером, и наблюдателю по вьюпорту маркер не виден.
+   */
+  const scrollerRef = React.useRef<HTMLDivElement | null>(null);
+  const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = articlesQuery;
+  React.useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasNextPage || isFetchingNextPage) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void fetchNextPage();
+      },
+      { root: scrollerRef.current, rootMargin: "400px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   /** Счётчики плиток считает бэк (`articleCount`) — по запросу на плитку не ходим. */
   const folderCounts = React.useMemo(
@@ -406,42 +433,49 @@ const KnowledgePage: React.FC = () => {
   });
   const knownSeries = seriesQuery.data ?? [];
 
+  const openEditor = () => {
+    setEditorError(null);
+    setEditorOpen(true);
+  };
+
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <PageHeader
-        title="База знаний"
-        showTitle={false}
-        onAdd={canManage ? () => { setEditorError(null); setEditorOpen(true); } : undefined}
-        addButtonText="Статья"
-        addButtonIcon={<PostAddOutlined />}
-        showSearch
-        searchVal={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Поиск по материалам"
-        loading={articlesQuery.isFetching}
-        actions={
-          canManage ? (
-            <Stack direction="row" gap={1} sx={{ flexShrink: 0 }}>
-              <Button
-                variant="outlined"
-                startIcon={<CreateNewFolderOutlined />}
-                onClick={() => setFoldersOpen(true)}
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                Папки
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<CategoryOutlined />}
-                onClick={() => setCategoriesOpen(true)}
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                Разделы
-              </Button>
-            </Stack>
-          ) : undefined
-        }
-      />
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
+      {!isMobile && (
+        <PageHeader
+          title="База знаний"
+          showTitle={false}
+          onAdd={canManage ? openEditor : undefined}
+          addButtonText="Статья"
+          addButtonIcon={<PostAddOutlined />}
+          showSearch
+          searchVal={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Поиск по материалам"
+          loading={articlesQuery.isFetching}
+          actions={
+            canManage ? (
+              <Stack direction="row" gap={1} sx={{ flexShrink: 0 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<CreateNewFolderOutlined />}
+                  onClick={() => setFoldersOpen(true)}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Папки
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<CategoryOutlined />}
+                  onClick={() => setCategoriesOpen(true)}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Разделы
+                </Button>
+              </Stack>
+            ) : undefined
+          }
+        />
+      )}
 
       <MotionBox
         variants={cascadeContainer}
@@ -452,11 +486,35 @@ const KnowledgePage: React.FC = () => {
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          gap: 1.5,
+          gap: isMobile ? 1 : 1.5,
           px: t.appLayout.page.paddingX,
+          // На телефоне общей шапки страницы нет — отступ сверху берём на себя.
+          pt: isMobile ? 1 : 0,
           pb: 1.5,
         })}
       >
+        {isMobile && (
+          <MotionBox
+            variants={cascadeItem}
+            sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+          >
+            <MobileToolbar
+              search={search}
+              onSearchChange={setSearch}
+              loading={articlesQuery.isFetching}
+              categories={categories}
+              categoryCounts={categoryCounts}
+              total={total}
+              categoryFilter={categoryFilter}
+              onCategoryFilter={setCategoryFilter}
+              sort={sort}
+              onSortChange={setSort}
+              canManage={canManage}
+              onOpenFolders={() => setFoldersOpen(true)}
+              onOpenCategories={() => setCategoriesOpen(true)}
+            />
+          </MotionBox>
+        )}
         {/* Хлебные крошки открытой папки. «База знаний» — ещё и зона сброса:
             карточку, брошенную на неё, вынимаем из папки. */}
         {openFolderId != null && (
@@ -503,10 +561,16 @@ const KnowledgePage: React.FC = () => {
           </MotionBox>
         )}
 
-        {/* Фильтр по разделам + сортировка */}
+        {/* Фильтр по разделам + сортировка. На телефоне то же самое живёт в
+            MobileToolbar: чипы в один прокручиваемый ряд, сортировка — в лист. */}
         <MotionBox
           variants={cascadeItem}
-          sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}
+          sx={{
+            display: isMobile ? "none" : "flex",
+            gap: 0.75,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
         >
           {categories.length > 0 && (
             <>
@@ -562,16 +626,35 @@ const KnowledgePage: React.FC = () => {
         </MotionBox>
 
         {/* Лента материалов (видео — внутри статей) */}
-        <MotionBox variants={cascadeItem} sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <MotionBox
+          ref={scrollerRef}
+          variants={cascadeItem}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            // Ничего не должно уезжать за правый край — на телефоне лишняя
+            // горизонтальная прокрутка страницы ощущается как сломанный экран.
+            overflowX: "hidden",
+            WebkitOverflowScrolling: "touch",
+            // Место под плавающую кнопку «Статья»: без него последняя строка
+            // списка оказывалась под ней.
+            pb: isMobile && canManage ? 8 : 0,
+          }}
+        >
           {articlesQuery.isError && (
             <Alert severity="error" sx={{ mb: 1.5 }}>
               {getErrorMessage(articlesQuery.error)}
             </Alert>
           )}
 
-          {/* Папки: только в корне. Плитка — цель перетаскивания карточек. */}
+          {/* Папки: только в корне. Плитка — цель перетаскивания карточек.
+              На телефоне папки едут полкой в один прокручиваемый ряд: столбиком
+              пять папок отжимали первую статью за нижний край экрана.
+              Перетаскивания на тач-устройствах нет, поэтому там плитка — только
+              вход в папку, а перекладывают статьи кнопкой на строке. */}
           {showFolders && (
-            <Box sx={{ mb: 2 }}>
+            <Box sx={{ mb: isMobile ? 1.5 : 2 }}>
               <Typography
                 variant="overline"
                 color="text.secondary"
@@ -580,26 +663,55 @@ const KnowledgePage: React.FC = () => {
               >
                 Папки
               </Typography>
-              <Box sx={folderGridSx}>
-                {folders.map((folder) => (
-                  <FolderTile
-                    key={folder.id}
-                    name={folder.name}
-                    count={folderCounts.get(folder.id) ?? 0}
-                    onOpen={() => openFolder(folder.id)}
-                    onDropArticles={
-                      canManage ? (ids) => void moveArticles(ids, folder.id) : undefined
-                    }
-                    onEdit={canManage ? () => setFoldersOpen(true) : undefined}
-                  />
-                ))}
-              </Box>
+              {isMobile ? (
+                <Box
+                  sx={{
+                    display: "flex",
+                    gap: 1,
+                    overflowX: "auto",
+                    pb: 0.5,
+                    mx: -0.5,
+                    px: 0.5,
+                    scrollSnapType: "x proximity",
+                    scrollbarWidth: "none",
+                    "&::-webkit-scrollbar": { display: "none" },
+                    overscrollBehaviorX: "contain",
+                    "& > *": { flex: "0 0 auto", width: 186, scrollSnapAlign: "start" },
+                  }}
+                >
+                  {folders.map((folder) => (
+                    <Box key={folder.id}>
+                      <FolderTile
+                        compact
+                        name={folder.name}
+                        count={folderCounts.get(folder.id) ?? 0}
+                        onOpen={() => openFolder(folder.id)}
+                      />
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Box sx={folderGridSx}>
+                  {folders.map((folder) => (
+                    <FolderTile
+                      key={folder.id}
+                      name={folder.name}
+                      count={folderCounts.get(folder.id) ?? 0}
+                      onOpen={() => openFolder(folder.id)}
+                      onDropArticles={
+                        canManage ? (ids) => void moveArticles(ids, folder.id) : undefined
+                      }
+                      onEdit={canManage ? () => setFoldersOpen(true) : undefined}
+                    />
+                  ))}
+                </Box>
+              )}
               {feed.length > 0 && (
                 <Typography
                   variant="overline"
                   color="text.secondary"
                   component="div"
-                  sx={{ mt: 2, mb: 0.75 }}
+                  sx={{ mt: isMobile ? 1.5 : 2, mb: 0.75 }}
                 >
                   Статьи вне папок
                 </Typography>
@@ -624,7 +736,10 @@ const KnowledgePage: React.FC = () => {
                   ? "Попробуйте изменить запрос или снять фильтр по разделу."
                   : openFolderId != null
                   ? canManage
-                    ? "Перетащите карточку статьи на папку в общем списке — или воспользуйтесь кнопкой на карточке."
+                    ? isMobile
+                      ? // На телефоне перетаскивания нет — подсказываем кнопку.
+                        "В общем списке нажмите кнопку с папкой справа от статьи и выберите эту папку."
+                      : "Перетащите карточку статьи на папку в общем списке — или воспользуйтесь кнопкой на карточке."
                     : "Статьи появятся здесь, когда их сюда сложат."
                   : canManage
                   ? "Соберите здесь инструкции для команды — в статьи можно вставлять картинки и видео с YouTube, а длинный материал разбить на части."
@@ -643,9 +758,11 @@ const KnowledgePage: React.FC = () => {
               }
             />
           )}
-          <Box sx={feedGridSx}>
+          <Box sx={isMobile ? { display: "flex", flexDirection: "column", gap: 1 } : feedGridSx}>
             {feedLoading &&
-              Array.from({ length: 8 }).map((_, i) => <FeedCardSkeleton key={`s_${i}`} />)}
+              Array.from({ length: isMobile ? 7 : 8 }).map((_, i) =>
+                isMobile ? <FeedRowSkeleton key={`s_${i}`} /> : <FeedCardSkeleton key={`s_${i}`} />,
+              )}
             {feed.map((item) => {
               // Серию переносим целиком: её части иначе расползутся по папкам, и
               // в корне серия схлопнется в неполную карточку.
@@ -653,14 +770,44 @@ const KnowledgePage: React.FC = () => {
                 item.kind === "series"
                   ? item.series.parts.map((p) => p.article.id)
                   : [item.article.id];
+              const openArticle = (id: number) => navigate(`/knowledge/${id}`);
+              const onMove = canManage
+                ? (anchor: HTMLElement) => setMoveMenu({ anchor, articleIds })
+                : undefined;
+
+              // Телефон: строка вместо карточки, и без обёртки перетаскивания —
+              // нативного HTML5-drag на тач-устройствах нет, а кнопка «в папку»
+              // у строки своя, в потоке, а не поверх миниатюры.
+              if (isMobile) {
+                return item.kind === "series" ? (
+                  <SeriesRow
+                    key={item.key}
+                    series={item.series}
+                    orgId={orgId}
+                    isRead={isRead}
+                    highlight={debouncedSearch}
+                    onOpen={openArticle}
+                    onMove={onMove}
+                  />
+                ) : (
+                  <ArticleRow
+                    key={item.key}
+                    article={item.article}
+                    orgId={orgId}
+                    read={isRead(item.article.id)}
+                    highlight={debouncedSearch}
+                    onOpen={openArticle}
+                    onMove={onMove}
+                  />
+                );
+              }
+
               return (
                 <ArticleDraggable
                   key={item.key}
                   articleIds={articleIds}
                   enabled={canManage}
-                  onMoveClick={
-                    canManage ? (anchor) => setMoveMenu({ anchor, articleIds }) : undefined
-                  }
+                  onMoveClick={onMove}
                 >
                   {item.kind === "series" ? (
                     <SeriesCard
@@ -668,7 +815,7 @@ const KnowledgePage: React.FC = () => {
                       orgId={orgId}
                       isRead={isRead}
                       highlight={debouncedSearch}
-                      onOpen={(id) => navigate(`/knowledge/${id}`)}
+                      onOpen={openArticle}
                     />
                   ) : (
                     <FeedCard
@@ -676,7 +823,7 @@ const KnowledgePage: React.FC = () => {
                       orgId={orgId}
                       read={isRead(item.article.id)}
                       highlight={debouncedSearch}
-                      onOpen={(id) => navigate(`/knowledge/${id}`)}
+                      onOpen={openArticle}
                     />
                   )}
                 </ArticleDraggable>
@@ -684,18 +831,29 @@ const KnowledgePage: React.FC = () => {
             })}
           </Box>
 
-          {/* Дозагрузка: раньше лента молча обрезалась на сотне материалов */}
+          {/* Дозагрузка: раньше лента молча обрезалась на сотне материалов.
+              Маркер ниже подтягивает следующую страницу сам, кнопка осталась
+              страховкой на случай, если IntersectionObserver недоступен. */}
           {!feedLoading && !allLoaded && (
-            <Stack alignItems="center" gap={0.5} sx={{ py: 2 }}>
-              <Button
-                variant="outlined"
-                startIcon={<ExpandMoreOutlined />}
-                onClick={() => void articlesQuery.fetchNextPage()}
-                disabled={articlesQuery.isFetchingNextPage}
-              >
-                {articlesQuery.isFetchingNextPage ? "Загрузка…" : "Показать ещё"}
-              </Button>
-              <Typography variant="caption" color="text.secondary">
+            <Stack alignItems="center" gap={0.75} sx={{ py: 2 }}>
+              <Box ref={sentinelRef} sx={{ width: 1, height: 1 }} />
+              {articlesQuery.isFetchingNextPage ? (
+                <>
+                  {isMobile ? <FeedRowSkeleton /> : null}
+                  <Typography variant="caption" color="text.secondary">
+                    Загрузка…
+                  </Typography>
+                </>
+              ) : (
+                <Button
+                  variant="outlined"
+                  startIcon={<ExpandMoreOutlined />}
+                  onClick={() => void articlesQuery.fetchNextPage()}
+                >
+                  Показать ещё
+                </Button>
+              )}
+              <Typography variant="caption" color="text.secondary" align="center">
                 Показано {visibleArticles.length} из {total}
                 {sort !== "recent" && " · сортировка применяется к загруженным"}
               </Typography>
@@ -703,6 +861,25 @@ const KnowledgePage: React.FC = () => {
           )}
         </MotionBox>
       </MotionBox>
+
+      {/* Новая статья на телефоне — плавающая кнопка: в шапке она занимала
+          отдельную строку, а поиск сжимался до «Пои…». */}
+      {isMobile && canManage && (
+        <Fab
+          color="primary"
+          onClick={openEditor}
+          aria-label="Новая статья"
+          sx={{
+            position: "fixed",
+            right: 16,
+            bottom: 24,
+            boxShadow: "none",
+            zIndex: (t) => t.zIndex.fab,
+          }}
+        >
+          <PostAddOutlined />
+        </Fab>
+      )}
 
       {/* Диалоги/дроверы */}
       <ArticleEditorDrawer

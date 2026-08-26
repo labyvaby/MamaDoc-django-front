@@ -7,11 +7,16 @@ import {
   Divider,
   IconButton,
   Link,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   Skeleton,
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +26,8 @@ import { useNavigate, useParams } from "react-router";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
+import ListAltOutlined from "@mui/icons-material/ListAltOutlined";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useModuleGate } from "../../hooks/useModuleGate";
@@ -28,7 +35,7 @@ import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { getErrorMessage } from "../../api/client";
 import { formatDateRu } from "../../utility/format";
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { ConfirmDialog } from "../../components/ui";
+import { AppBottomSheet, ConfirmDialog } from "../../components/ui";
 import {
   PDF_LINK_TITLE,
   deleteKnowledgeArticle,
@@ -42,6 +49,7 @@ import {
 } from "../../api/knowledge";
 import { pdfCardStyles } from "./pdfCard";
 import ArticleEditorDrawer from "./ArticleEditorDrawer";
+import ArticleLightbox from "./ArticleLightbox";
 import { SeriesFooterNav, SeriesHeader } from "./SeriesNav";
 import { useArticleSeries } from "./useArticleSeries";
 import { useReadArticles } from "./useReadArticles";
@@ -73,6 +81,15 @@ function processArticleHtml(html: string): { html: string; toc: TocItem[] } {
     el.setAttribute("rel", "noopener noreferrer");
     if (!(el.textContent ?? "").trim()) el.textContent = "Файл PDF";
   });
+  // Каждую таблицу — в свой горизонтальный скроллер. Без него таблица в четыре
+  // колонки распирала статью на телефоне, и вся страница начинала ездить влево-
+  // вправо; сжимать колонки до нечитаемого — тоже не выход.
+  doc.body.querySelectorAll("table").forEach((table) => {
+    const wrap = doc.createElement("div");
+    wrap.className = "table-scroll";
+    table.parentNode?.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  });
   return { html: doc.body.innerHTML, toc };
 }
 
@@ -89,6 +106,7 @@ function readingTimeMin(html: string): number {
 const ArticleViewPage: React.FC = () => {
   usePageTitle("База знаний");
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const { articleId: articleIdParam } = useParams();
   const articleId = Number(articleIdParam);
@@ -134,12 +152,53 @@ const ArticleViewPage: React.FC = () => {
   const readMin = React.useMemo(() => (article ? readingTimeMin(body) : 0), [article, body]);
   const showToc = processed.toc.length >= 2;
 
+  // ── Оглавление и действия на телефоне ─────────────────────────────────────
+  // На широком экране содержание стоит колонкой справа, а «изменить/удалить» —
+  // двумя иконками. На 390px колонки нет вовсе, а иконки жались к крошкам,
+  // поэтому там содержание уходит в лист, а действия — в меню.
+  const [tocOpen, setTocOpen] = React.useState(false);
+  const [actionsAnchor, setActionsAnchor] = React.useState<HTMLElement | null>(null);
+
+  // ── Просмотр картинок ─────────────────────────────────────────────────────
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const [lightbox, setLightbox] = React.useState<{ images: string[]; index: number } | null>(null);
+
+  /** Картинки статьи в порядке появления: обложка-герой, затем всё из текста. */
+  const collectImages = React.useCallback((): string[] => {
+    const inBody = Array.from(contentRef.current?.querySelectorAll("img") ?? []).map(
+      (img) => img.currentSrc || img.src,
+    );
+    return coverUrl && !coverError ? [coverUrl, ...inBody] : inBody;
+  }, [coverUrl, coverError]);
+
+  /**
+   * Клик по картинке в тексте открывает просмотр. Обработчик один на контейнер,
+   * а не разметка в HTML: контент приходит с бэка, и вешать на него слушатели
+   * поштучно значило бы переписывать содержимое статьи.
+   */
+  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName !== "IMG") return;
+    // Картинка внутри ссылки — это ссылка, а не иллюстрация.
+    if (target.closest("a")) return;
+    const images = collectImages();
+    const src = (target as HTMLImageElement).currentSrc || (target as HTMLImageElement).src;
+    const index = images.indexOf(src);
+    if (index >= 0) setLightbox({ images, index });
+  };
+
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   // ── Прогресс чтения ───────────────────────────────────────────────────────
   // Страница скроллит себя сама (см. корневой Box): лейаут приложения —
   // childrenBox с фиксированной высотой и overflow:hidden, поэтому без своего
   // контейнера длинная статья просто обрезалась бы без полосы прокрутки.
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [progress, setProgress] = React.useState(0);
+  /** Шапку статьи прижимаем к верху; грань под ней появляется только при прокрутке. */
+  const [scrolled, setScrolled] = React.useState(false);
 
   // Следующая статья открывается с начала: контейнер переиспользуется при
   // переходе между частями серии, иначе часть 2 открылась бы с середины.
@@ -156,6 +215,7 @@ const ArticleViewPage: React.FC = () => {
       const total = el.scrollHeight - el.clientHeight;
       // Короткая статья без прокрутки считается прочитанной сразу.
       setProgress(total > 80 ? Math.min(el.scrollTop / total, 1) : 1);
+      setScrolled(el.scrollTop > 4);
     };
     const onScroll = () => {
       cancelAnimationFrame(raf);
@@ -240,81 +300,128 @@ const ArticleViewPage: React.FC = () => {
         height: "100%",
         overflowY: "auto",
         overflowX: "hidden",
-        p: { xs: 1, md: 2 },
+        WebkitOverflowScrolling: "touch",
+        // На телефоне боковые отступы минимальные: свои поля есть у карточки
+        // статьи, и складывать их с полями страницы значит читать текст в
+        // колонку на две трети экрана.
+        px: { xs: 0.5, md: 2 },
+        pt: { xs: 0, md: 2 },
+        pb: { xs: 2, md: 2 },
         // Колонка текста по центру: ограничиваем содержимое, а не сам скроллер,
         // иначе полоса прокрутки уехала бы от края экрана.
         "& > *": { maxWidth: showToc ? 1120 : 880, mx: "auto" },
       }}
     >
-      {/* Прогресс чтения */}
-      {article && (
-        <Box
-          sx={(t) => ({
-            position: "sticky",
-            top: 0,
-            zIndex: 2,
-            height: 3,
-            mb: 1,
-            borderRadius: "2px",
-            bgcolor: alpha(t.palette.primary.main, 0.12),
-            overflow: "hidden",
-          })}
-        >
+      {/* Шапка статьи: прогресс чтения и навигация. Прижата к верху — «назад»,
+          содержание и действия нужны в любой точке текста, а мотать до начала
+          ради них на телефоне особенно неудобно. */}
+      <Box
+        sx={(t) => ({
+          position: "sticky",
+          top: 0,
+          zIndex: 3,
+          bgcolor: "background.default",
+          pt: { xs: 0.5, md: 0 },
+          mb: { xs: 1, md: 2 },
+          borderBottom: `1px solid ${scrolled ? t.palette.divider : "transparent"}`,
+          transition: "border-color .15s ease",
+        })}
+      >
+        {article && (
           <Box
-            sx={{
-              height: "100%",
-              width: `${Math.round(progress * 100)}%`,
-              bgcolor: "primary.main",
-              transition: "width .1s linear",
-            }}
-          />
-        </Box>
-      )}
-
-      <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2 }}>
-        <IconButton onClick={() => navigate("/knowledge")}>
-          <ArrowBackOutlined />
-        </IconButton>
-        <Breadcrumbs sx={{ minWidth: 0, "& .MuiBreadcrumbs-ol": { flexWrap: "nowrap" } }}>
-          <Link
-            component="button"
-            type="button"
-            underline="hover"
-            color="text.secondary"
-            variant="body2"
-            onClick={() => navigate("/knowledge")}
+            sx={(t) => ({
+              height: 3,
+              mb: 0.5,
+              borderRadius: "2px",
+              bgcolor: alpha(t.palette.primary.main, 0.12),
+              overflow: "hidden",
+            })}
           >
-            База знаний
-          </Link>
-          {series.ref && series.index >= 0 && (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              noWrap
-              sx={{ maxWidth: { xs: 120, sm: 240 } }}
-            >
-              {series.ref.name}
-            </Typography>
-          )}
-          <Typography variant="body2" color="text.primary" noWrap sx={{ maxWidth: { xs: 160, sm: 360 } }}>
-            {series.index >= 0 ? partLabel(series.parts[series.index]) : article?.title ?? "…"}
-          </Typography>
-        </Breadcrumbs>
-        {canManage && article && (
-          <Stack direction="row" gap={0.5} sx={{ ml: "auto" }}>
-            <Tooltip title="Изменить">
-              <IconButton onClick={() => { setEditorError(null); setEditorOpen(true); }}>
-                <EditOutlined />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Удалить">
-              <IconButton color="error" onClick={() => setDeleting(true)}>
-                <DeleteOutlineOutlined />
-              </IconButton>
-            </Tooltip>
-          </Stack>
+            <Box
+              sx={{
+                height: "100%",
+                width: `${Math.round(progress * 100)}%`,
+                bgcolor: "primary.main",
+                transition: "width .1s linear",
+              }}
+            />
+          </Box>
         )}
-      </Stack>
+
+        <Stack direction="row" alignItems="center" gap={0.5} sx={{ pb: 0.5 }}>
+          <IconButton onClick={() => navigate("/knowledge")} aria-label="К списку материалов">
+            <ArrowBackOutlined />
+          </IconButton>
+
+          {/* Телефон: одна строка с названием вместо цепочки крошек — на 390px
+              из «База знаний / Серия / Часть» всё равно оставались многоточия. */}
+          {isMobile ? (
+            <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, minWidth: 0 }}>
+              {series.index >= 0
+                ? partLabel(series.parts[series.index])
+                : article?.title ?? "…"}
+            </Typography>
+          ) : (
+            <Breadcrumbs sx={{ minWidth: 0, "& .MuiBreadcrumbs-ol": { flexWrap: "nowrap" } }}>
+              <Link
+                component="button"
+                type="button"
+                underline="hover"
+                color="text.secondary"
+                variant="body2"
+                onClick={() => navigate("/knowledge")}
+              >
+                База знаний
+              </Link>
+              {series.ref && series.index >= 0 && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  noWrap
+                  sx={{ maxWidth: 240 }}
+                >
+                  {series.ref.name}
+                </Typography>
+              )}
+              <Typography variant="body2" color="text.primary" noWrap sx={{ maxWidth: 360 }}>
+                {series.index >= 0 ? partLabel(series.parts[series.index]) : article?.title ?? "…"}
+              </Typography>
+            </Breadcrumbs>
+          )}
+
+          <Stack direction="row" gap={0.25} sx={{ ml: "auto", flexShrink: 0 }}>
+            {isMobile && showToc && (
+              <Tooltip title="Содержание">
+                <IconButton onClick={() => setTocOpen(true)} aria-label="Содержание">
+                  <ListAltOutlined />
+                </IconButton>
+              </Tooltip>
+            )}
+            {canManage && article && !isMobile && (
+              <>
+                <Tooltip title="Изменить">
+                  <IconButton onClick={() => { setEditorError(null); setEditorOpen(true); }}>
+                    <EditOutlined />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Удалить">
+                  <IconButton color="error" onClick={() => setDeleting(true)}>
+                    <DeleteOutlineOutlined />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
+            {canManage && article && isMobile && (
+              <IconButton
+                onClick={(e) => setActionsAnchor(e.currentTarget)}
+                aria-label="Действия со статьёй"
+              >
+                <MoreVertOutlined />
+              </IconButton>
+            )}
+          </Stack>
+        </Stack>
+      </Box>
 
       {articleQuery.isLoading && (
         <Paper variant="outlined" sx={{ p: { xs: 2, md: 4 }, borderRadius: "14px" }}>
@@ -346,7 +453,7 @@ const ArticleViewPage: React.FC = () => {
         )}
         <Paper
           variant="outlined"
-          sx={{ p: { xs: 2, md: 4 }, borderRadius: "14px" }}
+          sx={{ p: { xs: 1.75, md: 4 }, borderRadius: "14px" }}
         >
           {coverUrl && !coverError && (
             <Box
@@ -354,13 +461,15 @@ const ArticleViewPage: React.FC = () => {
               src={coverUrl}
               alt=""
               onError={() => setCoverError(true)}
+              onClick={() => setLightbox({ images: collectImages(), index: 0 })}
               sx={{
                 display: "block",
                 width: "100%",
-                maxHeight: 320,
+                maxHeight: { xs: 240, md: 320 },
                 objectFit: "cover",
                 borderRadius: "10px",
                 mb: 2,
+                cursor: "zoom-in",
               }}
             />
           )}
@@ -392,9 +501,16 @@ const ArticleViewPage: React.FC = () => {
           <Divider sx={{ my: 2 }} />
           {/* content — HTML из TipTap; санитизация по allowlist на бэке (контракт). */}
           <Box
+            ref={contentRef}
+            onClick={handleContentClick}
             dangerouslySetInnerHTML={{ __html: processed.html }}
             sx={{
-              "& p": { m: 0, mb: 1.25, lineHeight: 1.7 },
+              // Кегль на телефоне чуть крупнее: инструкции читают с рук, и
+              // базовые 14px в узкой колонке заставляют щуриться.
+              fontSize: { xs: "1.02rem", md: "inherit" },
+              // Длинная ссылка или код не должны распирать колонку.
+              overflowWrap: "anywhere",
+              "& p": { m: 0, mb: 1.25, lineHeight: { xs: 1.75, md: 1.7 } },
               "& h2": { mt: 2.5, mb: 1, fontSize: "1.3rem" },
               "& h3": { mt: 2, mb: 1, fontSize: "1.1rem" },
               "& ul, & ol": { pl: 3, mb: 1.25 },
@@ -416,7 +532,10 @@ const ArticleViewPage: React.FC = () => {
               "& a": { color: "primary.main" },
               // PDF-вложение — карточка с меткой формата (см. pdfCard.ts).
               [`& a[title="${PDF_LINK_TITLE}"]`]: pdfCardStyles(theme),
-              "& img": { maxWidth: "100%", borderRadius: 1.5 },
+              // Картинка открывается на весь экран (ArticleLightbox): в базе
+              // знаний половина иллюстраций — сфотографированные памятки, и в
+              // колонке шириной в телефон надписи на них не разобрать.
+              "& img": { maxWidth: "100%", borderRadius: 1.5, cursor: "zoom-in" },
               // Видео в статье (@tiptap/extension-youtube).
               "& div[data-youtube-video]": {
                 my: 2,
@@ -430,7 +549,18 @@ const ArticleViewPage: React.FC = () => {
                   borderRadius: 1.5,
                 },
               },
-              "& table": { borderCollapse: "collapse", width: "100%" },
+              // Таблица едет в своём скроллере (обёртку ставит
+              // processArticleHtml), а не тащит за собой всю страницу.
+              "& .table-scroll": {
+                overflowX: "auto",
+                my: 1.5,
+                WebkitOverflowScrolling: "touch",
+              },
+              "& table": {
+                borderCollapse: "collapse",
+                width: "100%",
+                minWidth: { xs: 460, md: 0 },
+              },
               "& td, & th": { border: `1px solid ${theme.palette.divider}`, p: 1 },
               // Якорь не прячется под sticky-прогрессбаром при переходе из оглавления.
               "& h2, & h3": { scrollMarginTop: 16 },
@@ -468,11 +598,7 @@ const ArticleViewPage: React.FC = () => {
                   component="button"
                   type="button"
                   underline="none"
-                  onClick={() =>
-                    document
-                      .getElementById(item.id)
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                  }
+                  onClick={() => scrollToSection(item.id)}
                   sx={{
                     display: "block",
                     textAlign: "left",
@@ -494,6 +620,81 @@ const ArticleViewPage: React.FC = () => {
         )}
         </Stack>
       )}
+
+      {/* Содержание на телефоне: лист вместо боковой колонки. */}
+      <AppBottomSheet open={tocOpen} onClose={() => setTocOpen(false)}>
+        <Box sx={{ px: 2, pb: 2 }}>
+          <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+            Содержание
+          </Typography>
+          <Stack gap={0.25}>
+            {processed.toc.map((item) => (
+              <Link
+                key={item.id}
+                component="button"
+                type="button"
+                underline="none"
+                onClick={() => {
+                  setTocOpen(false);
+                  scrollToSection(item.id);
+                }}
+                sx={{
+                  display: "block",
+                  textAlign: "left",
+                  minHeight: 44,
+                  py: 1,
+                  pl: item.level === 3 ? 2.5 : 1,
+                  pr: 1,
+                  borderRadius: "10px",
+                  fontSize: "0.95rem",
+                  color: item.level === 3 ? "text.secondary" : "text.primary",
+                  "&:active": { bgcolor: "action.hover" },
+                }}
+              >
+                {item.text}
+              </Link>
+            ))}
+          </Stack>
+        </Box>
+      </AppBottomSheet>
+
+      {/* Действия со статьёй на телефоне — вместо двух иконок в шапке. */}
+      <Menu
+        open={actionsAnchor !== null}
+        anchorEl={actionsAnchor}
+        onClose={() => setActionsAnchor(null)}
+      >
+        <MenuItem
+          onClick={() => {
+            setActionsAnchor(null);
+            setEditorError(null);
+            setEditorOpen(true);
+          }}
+        >
+          <ListItemIcon>
+            <EditOutlined fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Изменить</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setActionsAnchor(null);
+            setDeleting(true);
+          }}
+        >
+          <ListItemIcon>
+            <DeleteOutlineOutlined fontSize="small" color="error" />
+          </ListItemIcon>
+          <ListItemText primaryTypographyProps={{ color: "error.main" }}>Удалить</ListItemText>
+        </MenuItem>
+      </Menu>
+
+      <ArticleLightbox
+        images={lightbox?.images ?? []}
+        index={lightbox?.index ?? null}
+        onIndexChange={(index) => setLightbox((s) => (s ? { ...s, index } : s))}
+        onClose={() => setLightbox(null)}
+      />
 
       <ArticleEditorDrawer
         open={editorOpen}

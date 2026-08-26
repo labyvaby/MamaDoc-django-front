@@ -990,16 +990,27 @@ const ArticleEditorDrawer: React.FC<ArticleEditorDrawerProps> = ({
           </Stack>
           {coverUploadError && <Alert severity="error">{coverUploadError}</Alert>}
 
-          {/* Тулбар */}
+          {/* Тулбар. На телефоне двадцать кнопок переносами занимали три строки
+              и уезжали вверх вместе с текстом — там панель едет одним
+              прокручиваемым рядом и прилипает к верху формы, чтобы «жирный» и
+              «список» были под рукой в любом месте статьи. */}
           <Stack
             direction="row"
             gap={0.25}
-            flexWrap="wrap"
             sx={{
               p: 0.5,
               borderRadius: 1.5,
               border: `1px solid ${theme.palette.divider}`,
               bgcolor: "background.paper",
+              flexWrap: { xs: "nowrap", md: "wrap" },
+              overflowX: { xs: "auto", md: "visible" },
+              overscrollBehaviorX: "contain",
+              scrollbarWidth: "none",
+              "&::-webkit-scrollbar": { display: "none" },
+              "& > *": { flexShrink: 0 },
+              position: { xs: "sticky", md: "static" },
+              top: 0,
+              zIndex: 2,
             }}
           >
             {tb("Отменить", <UndoOutlined fontSize="small" />, false, () => editor?.chain().focus().undo().run(), !editorState?.canUndo)}

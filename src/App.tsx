@@ -426,7 +426,13 @@ function App() {
                                 childrenBoxProps={{
                                   sx: {
                                     p: 1,
-                                    height: { xs: "calc(100dvh - 56px)", sm: "calc(100vh - 64px)" },
+                                    // ⚠ Порог — md, а не sm: `sm` в теме равен
+                                    // 360px, и телефон попадал в ветку рабочего
+                                    // стола — вычиталось 64px вместо 56px, а
+                                    // 100vh на мобильном браузере считается по
+                                    // экрану без адресной строки, из-за чего низ
+                                    // страницы уходил под неё.
+                                    height: { xs: "calc(100dvh - 56px)", md: "calc(100vh - 64px)" },
                                     overflow: "hidden",
                                     position: "relative",
                                   }

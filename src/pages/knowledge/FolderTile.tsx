@@ -21,6 +21,12 @@ interface FolderTileProps {
   onDropArticles?: (articleIds: number[]) => void;
   /** Переименование/удаление — только с knowledge.manage. */
   onEdit?: () => void;
+  /**
+   * Компактный вид для телефона: плитка живёт в прокручиваемой полке над
+   * лентой, поэтому иконка и отступы мельче — иначе пять папок съедали треть
+   * экрана до первой статьи.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -40,6 +46,7 @@ const FolderTile: React.FC<FolderTileProps> = ({
   onOpen,
   onDropArticles,
   onEdit,
+  compact = false,
 }) => {
   const [dragOver, setDragOver] = React.useState(false);
   const canDrop = onDropArticles != null;
@@ -77,13 +84,13 @@ const FolderTile: React.FC<FolderTileProps> = ({
         "&:hover": { borderColor: alpha(t.palette.primary.main, 0.28) },
       })}
     >
-      <CardActionArea onClick={onOpen} sx={{ p: 1.5 }}>
-        <Stack direction="row" alignItems="center" gap={1.25}>
+      <CardActionArea onClick={onOpen} sx={{ p: compact ? 1.25 : 1.5, borderRadius: "14px" }}>
+        <Stack direction="row" alignItems="center" gap={compact ? 1 : 1.25}>
           <Box
             sx={(t) => ({
-              width: 40,
-              height: 40,
-              borderRadius: "10px",
+              width: compact ? 32 : 40,
+              height: compact ? 32 : 40,
+              borderRadius: compact ? "8px" : "10px",
               bgcolor: dragOver ? alpha(t.palette.primary.main, 0.12) : subtleBg(t, true),
               display: "flex",
               alignItems: "center",
@@ -92,9 +99,9 @@ const FolderTile: React.FC<FolderTileProps> = ({
             })}
           >
             {dragOver ? (
-              <FolderOpenOutlined sx={{ fontSize: 22, color: "primary.main" }} />
+              <FolderOpenOutlined sx={{ fontSize: compact ? 18 : 22, color: "primary.main" }} />
             ) : (
-              <FolderOutlined sx={{ fontSize: 22, color: "primary.main" }} />
+              <FolderOutlined sx={{ fontSize: compact ? 18 : 22, color: "primary.main" }} />
             )}
           </Box>
           <Box sx={{ minWidth: 0, flex: 1 }}>
