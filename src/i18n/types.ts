@@ -11,7 +11,7 @@
  */
 
 /** Код вертикали бизнеса. Приходит с бэкенда в activeOrganization.vertical. */
-export type Vertical = "clinic" | "beauty";
+export type Vertical = "clinic" | "beauty" | "retail";
 
 /** Вертикаль по умолчанию, когда бэкенд поле не прислал. */
 export const DEFAULT_VERTICAL: Vertical = "clinic";

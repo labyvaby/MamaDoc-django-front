@@ -9,6 +9,9 @@ import { DEFAULT_VERTICAL, type Glossary, type Vertical } from "./types";
 const PROFILES: Record<Vertical, Glossary> = {
   clinic: clinicGlossary as Glossary,
   beauty: beautyGlossary as Glossary,
+  // В ритейле базовые сущности совпадают с салоном: клиент, сотрудник,
+  // филиал и смена. Специфические медицинские разделы скрываются модулями.
+  retail: beautyGlossary as Glossary,
 };
 
 /** Список поддерживаемых вертикалей — для настроек и валидации. */
@@ -18,6 +21,7 @@ export const SUPPORTED_VERTICALS = Object.keys(PROFILES) as Vertical[];
 export const VERTICAL_LABELS: Record<Vertical, string> = {
   clinic: "Медицинская клиника",
   beauty: "Салон красоты",
+  retail: "Магазин / ритейл",
 };
 
 /** Проверка, что строка с бэкенда — известная нам вертикаль. */
