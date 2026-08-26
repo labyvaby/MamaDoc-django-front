@@ -1,692 +1,190 @@
 import React from "react";
 import {
-    Autocomplete,
-    Box,
-    Button,
-    CircularProgress,
-    Divider,
-    Drawer,
-    IconButton,
-    InputAdornment,
-    Stack,
-    TextField,
-    Tooltip,
-    Typography,
-    CardContent,
-    Avatar,
-    Paper,
-    Switch,
-    ToggleButton,
-    ToggleButtonGroup,
+    Alert, Autocomplete, Avatar, Box, Button, CardContent, Chip, CircularProgress,
+    Divider, Drawer, IconButton, InputAdornment, MenuItem, Paper, Stack, Switch,
+    TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
-import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import QrCodeOutlined from "@mui/icons-material/QrCodeOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
+import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
+import PaletteOutlined from "@mui/icons-material/PaletteOutlined";
+import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
+import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
-import {
-    DjangoProduct,
-    createProduct,
-    updateProduct,
-    uploadProductImage,
-} from "../../../api/warehouse";
+
 import { ApiError } from "../../../api/client";
+import {
+    createProduct, createProductModel, generateProductMatrix, getProductAttributes,
+    getProductCategoryTree, replaceProductGenericAttributes, type DjangoProduct,
+    type DjangoProductAttribute, type DjangoProductAttributeValueOption,
+    type DjangoProductCategoryNode, updateProduct, uploadProductImage,
+} from "../../../api/warehouse";
+import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { useFormValidation } from "../../../hooks/useFormValidation";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { AppCard, cascadeContainer, cascadeItem } from "../../ui";
 import { DjangoProductGallery } from "./DjangoProductGallery";
-import { readFormDraft, writeFormDraft, clearFormDraft } from "../../../utility/formDraft";
 import { PHOTO_ACCEPT } from "../../../utility/imageCompression";
 
-const noSpinnersSx = {
-    "& input[type=number]": { MozAppearance: "textfield" },
-    "& input[type=number]::-webkit-outer-spin-button": { WebkitAppearance: "none", margin: 0 },
-    "& input[type=number]::-webkit-inner-spin-button": { WebkitAppearance: "none", margin: 0 },
-};
-
-/**
- * Каноничный список единиц измерения для дропдауна. Поле `unit` на бэке —
- * свободная строка, поэтому Autocomplete с freeSolo: можно выбрать из списка
- * или ввести своё (совместимость со старыми значениями).
- */
-const PRODUCT_UNITS = [
-    "шт",
-    "упак",
-    "мл",
-    "л",
-    "г",
-    "кг",
-    "амп",
-    "фл",
-    "таб",
-    "доза",
-    "шприц",
-    "набор",
-];
-
-type FormValues = {
-    name: string;
-    category: string;
-    barcode: string;
-    unit: string;
-    description: string;
-    comment: string;
-    isForSale: boolean;
-    isInfusion: boolean;
-    isVaccine: boolean;
-    price: number;
-};
-
-const defaultValues: FormValues = {
-    name: "",
-    category: "",
-    barcode: "",
-    unit: "",
-    description: "",
-    comment: "",
-    isForSale: true,
-    isInfusion: false,
-    isVaccine: false,
-    price: 0,
-};
-
+const UNITS = ["шт", "упак", "мл", "л", "г", "кг", "амп", "фл", "таб", "доза", "шприц", "набор"];
 const MotionStack = motion(Stack);
 const MotionBox = motion(Box);
 
-// ── черновик формы (localStorage) ────────────────────────────────────────────
-// Защита от случайной потери введённых данных при закрытии дровера (крестик,
-// клик по фону, Esc). Компонент работает в двух режимах:
-//  - создание: черновик по общему ключу, очищается после успешного сабмита,
-//    «Очистить» сбрасывает форму к пустым значениям;
-//  - редактирование: ключ включает id товара, черновик пишется только если
-//    текущие значения отличаются от исходных данных товара (baseline),
-//    «Очистить» откатывает к baseline, а не к пустой форме.
-// Фото не сохраняем (File не сериализуется).
-
-const ADD_DRAFT_KEY = "mamadoc:products:add-draft";
-const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // старше суток — считаем неактуальным
-
-type ProductDraft = FormValues & { savedAt: number };
-
-function editDraftKeyFor(productId: number): string {
-    return `mamadoc:products:edit-draft:${productId}`;
-}
-
-function isDraftEmpty(d: FormValues): boolean {
-    return (
-        !d.name.trim() &&
-        !d.category.trim() &&
-        !d.barcode.trim() &&
-        !d.unit.trim() &&
-        !d.description.trim() &&
-        !d.comment.trim() &&
-        d.isForSale === defaultValues.isForSale &&
-        !d.isInfusion &&
-        !d.isVaccine &&
-        !d.price
-    );
-}
-
-function sameAsBaseline(a: FormValues, b: FormValues): boolean {
-    return (
-        a.name === b.name &&
-        a.category === b.category &&
-        a.barcode === b.barcode &&
-        a.unit === b.unit &&
-        a.description === b.description &&
-        a.comment === b.comment &&
-        a.isForSale === b.isForSale &&
-        a.isInfusion === b.isInfusion &&
-        a.isVaccine === b.isVaccine &&
-        a.price === b.price
-    );
-}
-
-type DjangoProductFormDrawerProps = {
-    open: boolean;
-    onClose: () => void;
-    /** null → создание нового товара. */
-    product: DjangoProduct | null;
-    onSaved?: () => void;
+type FormValues = {
+    name: string; category: string; barcode: string; unit: string; description: string;
+    comment: string; isForSale: boolean; isInfusion: boolean; isVaccine: boolean; price: number;
 };
+const blank: FormValues = {
+    name: "", category: "", barcode: "", unit: "шт", description: "", comment: "",
+    isForSale: true, isInfusion: false, isVaccine: false, price: 0,
+};
+type Props = { open: boolean; onClose: () => void; product: DjangoProduct | null; onSaved?: () => void };
 
-export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = ({
-    open,
-    onClose,
-    product,
-    onSaved,
-}) => {
+/** One catalogue drawer: a single item or a colour × size matrix. */
+export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, product, onSaved }) => {
     const { open: notify } = useNotification();
-    const { enabledModules } = usePermissions();
-    // Медицинский признак доступен только организациям с модулем вакцинации.
-    // Не полагаемся на текущую вертикаль: доступ определяется серверным скоупом.
+    const orgId = useApiOrgId();
+    const { enabledModules, activeOrganization } = usePermissions();
+    const isRetail = activeOrganization?.vertical === "retail";
     const canUseVaccines = (enabledModules ?? []).includes("vaccinations");
-    const isEdit = !!product;
-    const [values, setValues] = React.useState<FormValues>(defaultValues);
-    const [photoFile, setPhotoFile] = React.useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+    const isEdit = Boolean(product);
+    const [mode, setMode] = React.useState<"single" | "variants">("single");
+    const [values, setValues] = React.useState<FormValues>(blank);
+    const [photo, setPhoto] = React.useState<File | null>(null);
+    const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
+    const [attributes, setAttributes] = React.useState<DjangoProductAttribute[]>([]);
+    const [categories, setCategories] = React.useState<DjangoProductCategoryNode[]>([]);
+    const [generic, setGeneric] = React.useState<Record<number, number | null>>({});
+    const [colorAttributeId, setColorAttributeId] = React.useState<number | null>(null);
+    const [sizeAttributeId, setSizeAttributeId] = React.useState<number | null>(null);
+    const [colors, setColors] = React.useState<number[]>([]);
+    const [sizes, setSizes] = React.useState<number[]>([]);
+    const [categoryId, setCategoryId] = React.useState<number | null>(null);
+    const [skuPrefix, setSkuPrefix] = React.useState("");
+    const [loadingSchema, setLoadingSchema] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
-    const [draftRestored, setDraftRestored] = React.useState(false);
-    const form = useFormValidation({
-        name: values.name.trim() ? null : "Введите название товара",
-    });
+    const form = useFormValidation({ name: values.name.trim() ? null : "Введите название товара" });
 
-    const baselineRef = React.useRef<FormValues | null>(null);
+    const genericAttributes = attributes.filter((item) => item.isActive && item.role === "generic");
+    const colorAttributes = attributes.filter((item) => item.isActive && item.role === "color");
+    const sizeAttributes = attributes.filter((item) => item.isActive && item.role === "size");
+    const colorAttribute = colorAttributes.find((item) => item.id === colorAttributeId);
+    const sizeAttribute = sizeAttributes.find((item) => item.id === sizeAttributeId);
 
-    // ── загрузка данных товара / восстановление черновика ──────────────────
-    React.useEffect(() => {
-        if (open) {
-            if (product) {
-                const baseline: FormValues = {
-                    name: product.name,
-                    category: product.category,
-                    barcode: product.barcode,
-                    unit: product.unit,
-                    description: product.description,
-                    comment: product.comment,
-                    isForSale: product.isForSale,
-                    isInfusion: product.isInfusion,
-                    isVaccine: canUseVaccines && product.isVaccine,
-                    price: product.price,
-                };
-                baselineRef.current = baseline;
-                const draft = readFormDraft<ProductDraft>(editDraftKeyFor(product.id), DRAFT_TTL_MS);
-                setValues(draft ? { ...draft, isVaccine: canUseVaccines && draft.isVaccine } : baseline);
-                setDraftRestored(Boolean(draft));
-            } else {
-                baselineRef.current = null;
-                const draft = readFormDraft<ProductDraft>(ADD_DRAFT_KEY, DRAFT_TTL_MS);
-                if (draft) {
-                    setValues({ ...draft, isVaccine: canUseVaccines && draft.isVaccine });
-                    setDraftRestored(true);
-                } else {
-                    setValues(defaultValues);
-                    setDraftRestored(false);
-                }
-            }
-            setPhotoFile(null);
-            setPreviewUrl(null);
-            setBusy(false);
-            form.reset();
-        } else if (previewUrl) {
-            URL.revokeObjectURL(previewUrl);
-            setPreviewUrl(null);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, product, canUseVaccines]);
-
-    // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
-    // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы
-    // при закрытии до истечения debounce (быстрый ввод + сразу закрыть) успеть
-    // синхронно записать черновик, а не потерять его вместе с отменённым таймером.
-    const flushDraftRef = React.useRef<() => void>(() => {});
-    flushDraftRef.current = () => {
-        if (product) {
-            const key = editDraftKeyFor(product.id);
-            if (baselineRef.current && sameAsBaseline(values, baselineRef.current)) {
-                clearFormDraft(key);
-            } else {
-                writeFormDraft(key, values);
-            }
-        } else if (isDraftEmpty(values)) {
-            clearFormDraft(ADD_DRAFT_KEY);
-        } else {
-            writeFormDraft(ADD_DRAFT_KEY, values);
-        }
-    };
+    const loadSchema = React.useCallback(async () => {
+        if (!isRetail) return;
+        setLoadingSchema(true);
+        try {
+            const [nextAttributes, nextCategories] = await Promise.all([
+                getProductAttributes(undefined, orgId), getProductCategoryTree(undefined, orgId),
+            ]);
+            setAttributes(nextAttributes); setCategories(nextCategories);
+            setColorAttributeId((old) => old ?? nextAttributes.find((a) => a.role === "color" && a.isActive)?.id ?? null);
+            setSizeAttributeId((old) => old ?? nextAttributes.find((a) => a.role === "size" && a.isActive)?.id ?? null);
+        } catch (error) {
+            console.error("Unable to load product form schema", error);
+            notify?.({ type: "error", message: "Не удалось загрузить свойства товара" });
+        } finally { setLoadingSchema(false); }
+    }, [isRetail, notify, orgId]);
 
     React.useEffect(() => {
         if (!open) return;
-        const id = setTimeout(() => flushDraftRef.current(), 400);
-        return () => clearTimeout(id);
-    }, [open, product, values]);
+        setValues(product ? {
+            name: product.name, category: product.category, barcode: product.barcode, unit: product.unit || "шт",
+            description: product.description, comment: product.comment, isForSale: product.isForSale,
+            isInfusion: product.isInfusion, isVaccine: canUseVaccines && product.isVaccine, price: product.price,
+        } : blank);
+        setMode("single"); setPhoto(null); setPhotoUrl(null); setSkuPrefix(""); setCategoryId(product?.categoryId ?? null);
+        setColors([]); setSizes([]);
+        setGeneric(Object.fromEntries((product?.attributes ?? []).filter((item) => item.role === "generic").map((item) => [item.attributeId, item.valueId])));
+        setBusy(false); form.reset(); void loadSchema();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, product, canUseVaccines, loadSchema]);
 
-    const handleClose = () => {
-        flushDraftRef.current();
-        onClose();
+    React.useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
+
+    const genericIds = () => Object.values(generic).filter((id): id is number => typeof id === "number");
+    const setPhotoFile = (file: File | null) => {
+        if (photoUrl) URL.revokeObjectURL(photoUrl);
+        setPhoto(file); setPhotoUrl(file ? URL.createObjectURL(file) : null);
     };
+    const set = (patch: Partial<FormValues>) => setValues((current) => ({ ...current, ...patch }));
 
-    const handleDiscardDraft = () => {
-        if (product) {
-            clearFormDraft(editDraftKeyFor(product.id));
-            if (baselineRef.current) setValues(baselineRef.current);
-        } else {
-            clearFormDraft(ADD_DRAFT_KEY);
-            setValues(defaultValues);
-        }
-        setDraftRestored(false);
-    };
-
-    const handleFileChange = (file: File | null) => {
-        setPhotoFile(file);
-        setPreviewUrl(file ? URL.createObjectURL(file) : null);
-    };
-
-    const submitOnEnter = (e: React.KeyboardEvent) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            void handleSubmit();
-        }
-    };
-
-    const handleSubmit = async () => {
+    const save = async () => {
         if (!form.validate()) return;
-
+        if (mode === "variants" && (!colorAttribute || !sizeAttribute || !colors.length || !sizes.length)) {
+            notify?.({ type: "error", message: "Выберите хотя бы один цвет и размер" }); return;
+        }
         setBusy(true);
         try {
-            const common = {
-                name: values.name.trim(),
-                category: values.category.trim(),
-                barcode: values.barcode.trim(),
-                unit: values.unit.trim() || "шт",
-                description: values.description.trim(),
-                comment: values.comment.trim(),
-                isForSale: values.isForSale,
-                isInfusion: values.isInfusion,
-                isVaccine: canUseVaccines && values.isVaccine,
-                price: Number(values.price) || 0,
-            };
-
-            let saved: DjangoProduct;
-            if (isEdit && product) {
-                // Остаток здесь не задаётся — управляется через движения
-                // (приход/списание/передача).
-                saved = await updateProduct(product.id, common);
+            if (mode === "variants") {
+                const model = await createProductModel({
+                    name: values.name.trim(), skuPrefix: skuPrefix.trim(), categoryId: categoryId ?? undefined,
+                    description: values.description.trim(), organizationId: orgId,
+                });
+                const matrix = await generateProductMatrix({
+                    modelId: model.id, rowValueIds: colors, columnValueIds: sizes,
+                    attributeValueIds: genericIds(), price: Number(values.price) || 0,
+                    unit: values.unit.trim() || "шт", generateBarcodes: true,
+                });
+                notify?.({ type: "success", message: `Добавлено вариантов: ${matrix.filled}` });
             } else {
-                saved = await createProduct(common);
+                const payload = {
+                    name: values.name.trim(), category: values.category.trim(), barcode: values.barcode.trim(),
+                    unit: values.unit.trim() || "шт", description: values.description.trim(), comment: values.comment.trim(),
+                    isForSale: values.isForSale, isInfusion: values.isInfusion,
+                    isVaccine: canUseVaccines && values.isVaccine, price: Number(values.price) || 0,
+                };
+                const saved = isEdit && product ? await updateProduct(product.id, payload) : await createProduct(payload);
+                if (isRetail) await replaceProductGenericAttributes(saved.id, genericIds());
+                if (photo) await uploadProductImage(saved.id, photo);
+                notify?.({ type: "success", message: isEdit ? "Товар обновлён" : "Товар добавлен" });
             }
-
-            if (photoFile) {
-                await uploadProductImage(saved.id, photoFile);
-            }
-
-            clearFormDraft(isEdit && product ? editDraftKeyFor(product.id) : ADD_DRAFT_KEY);
-            onSaved?.();
-            notify?.({
-                type: "success",
-                message: isEdit ? "Товар обновлен" : "Товар добавлен",
-            });
-            onClose();
-        } catch (e: unknown) {
-            console.error("Save product failed:", e);
-            const message = e instanceof ApiError
-                ? e.message
-                : "Не удалось сохранить товар";
-            notify?.({ type: "error", message });
-        } finally {
-            setBusy(false);
-        }
+            onSaved?.(); onClose();
+        } catch (error) {
+            console.error("Unable to save product", error);
+            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось сохранить товар" });
+        } finally { setBusy(false); }
     };
 
-    return (
-        <Drawer
-            anchor="right"
-            open={open}
-            onClose={busy ? undefined : handleClose}
-            PaperProps={{ sx: { width: { xs: 320, sm: 480, md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
-        >
-            <Box sx={{ width: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
-                <Box
-                    sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        px: 2,
-                        py: 1.5,
-                    }}
-                >
-                    <Typography variant="h6">{isEdit ? "Редактировать товар" : "Добавить товар"}</Typography>
-                    <Stack direction="row" alignItems="center" gap={0.5}>
-                        {draftRestored && (
-                            <Tooltip title="Восстановлен черновик — очистить?">
-                                <IconButton onClick={handleDiscardDraft} aria-label="Очистить черновик">
-                                    <RestoreOutlined fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        <IconButton onClick={busy ? undefined : handleClose} aria-label="Закрыть">
-                            <CloseOutlined />
-                        </IconButton>
-                    </Stack>
-                </Box>
-                <Divider />
-                <Box
-                    sx={{
-                        p: 2,
-                        flex: 1,
-                        overflowY: "auto",
-                        scrollbarWidth: "none",
-                        msOverflowStyle: "none",
-                        "&::-webkit-scrollbar": {
-                            display: "none",
-                        },
-                    }}
-                >
-                    <MotionStack spacing={3} variants={cascadeContainer} initial="hidden" animate="show">
-                        {/* Галерея (для существующего товара) или одиночный аплоадер (при создании) */}
-                        <MotionBox variants={cascadeItem}>
-                        {isEdit && product ? (
-                            <DjangoProductGallery productId={product.id} onChanged={onSaved} />
-                        ) : (
-                        <Stack spacing={0.5}>
-                            <AppCard variant="outlined" sx={{ borderStyle: "dashed" }} disableContentPadding>
-                                <CardContent
-                                    sx={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 1.5,
-                                        py: 2,
-                                        cursor: "pointer",
-                                    }}
-                                    onClick={() => {
-                                        const el = document.getElementById("django-product-photo-input") as HTMLInputElement | null;
-                                        el?.click();
-                                    }}
-                                >
-                                    <Avatar
-                                        variant="rounded"
-                                        src={previewUrl || undefined}
-                                        sx={{ width: 48, height: 48 }}
-                                    >
-                                        <PhotoCameraOutlined />
-                                    </Avatar>
-                                    <Box sx={{ flex: 1 }}>
-                                        <Typography variant="body2">
-                                            {photoFile ? photoFile.name : "Загрузить фото"}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Необязательно
-                                        </Typography>
-                                    </Box>
-                                    <input
-                                        id="django-product-photo-input"
-                                        type="file"
-                                        accept={PHOTO_ACCEPT}
-                                        style={{ display: "none" }}
-                                        onChange={(e) => {
-                                            const f = e.target.files?.[0] || null;
-                                            handleFileChange(f);
-                                        }}
-                                    />
-                                </CardContent>
-                            </AppCard>
-                        </Stack>
-                        )}
-                        </MotionBox>
+    const selectValues = (label: string, attribute: DjangoProductAttribute | undefined, ids: number[], onChange: (next: number[]) => void, icon: React.ReactNode) => {
+        const options = attribute?.values.filter((item) => item.isActive) ?? [];
+        return <Autocomplete<DjangoProductAttributeValueOption, true, false, false> multiple size="small" options={options} value={options.filter((item) => ids.includes(item.id))}
+            onChange={(_, next) => onChange(next.map((item) => item.id))} getOptionLabel={(item) => item.value}
+            isOptionEqualToValue={(a, b) => a.id === b.id} disabled={!attribute || busy || loadingSchema}
+            renderTags={(tags, getTagProps) => tags.map((item, index) => <Chip {...getTagProps({ index })} key={item.id} size="small" label={item.value} />)}
+            renderInput={(params) => <TextField {...params} label={label} placeholder={attribute ? "Выберите значения" : "Настройте свойство"}
+                helperText="Значения и порядок меняются в настройках." InputProps={{ ...params.InputProps, startAdornment: <InputAdornment position="start">{icon}</InputAdornment> }} />} />;
+    };
 
-                        {/* Name Input */}
-                        <MotionBox variants={cascadeItem}>
-                        <Stack spacing={0.5}>
-                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                Название товара *
-                            </Typography>
-                            <TextField
-                                placeholder="Введите название товара"
-                                value={values.name}
-                                onChange={(e) => setValues((s) => ({ ...s, name: e.target.value }))}
-                                onKeyDown={submitOnEnter}
-                                fullWidth
-                                size="small"
-                                autoFocus
-                                disabled={busy}
-                                {...form.field("name")}
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <Inventory2Outlined fontSize="small" color="disabled" />
-                                        </InputAdornment>
-                                    ),
-                                    endAdornment: values.name.trim() ? (
-                                        <InputAdornment position="end">
-                                            <CheckCircleOutlined fontSize="small" color="success" />
-                                        </InputAdornment>
-                                    ) : undefined,
-                                }}
-                            />
-                        </Stack>
-                        </MotionBox>
-
-                        {/* Barcode */}
-                        <MotionBox variants={cascadeItem}>
-                        <Stack spacing={0.5}>
-                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                Штрихкод
-                            </Typography>
-                            <TextField
-                                placeholder="Введите штрихкод"
-                                value={values.barcode}
-                                onChange={(e) => setValues((s) => ({ ...s, barcode: e.target.value }))}
-                                onKeyDown={submitOnEnter}
-                                fullWidth
-                                size="small"
-                                disabled={busy}
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <QrCodeOutlined fontSize="small" color="disabled" />
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
-                        </Stack>
-                        </MotionBox>
-
-                        {/* ── Классификация ── */}
-                        <MotionBox variants={cascadeItem}>
-                        <Stack spacing={1.5}>
-                            <Divider />
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
-                                Классификация
-                            </Typography>
-                            <Stack direction="row" spacing={2}>
-                                {/* Category */}
-                                <Stack spacing={0.5} sx={{ flex: 1 }}>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                        Категория
-                                    </Typography>
-                                    <TextField
-                                        placeholder="Категория"
-                                        value={values.category}
-                                        onChange={(e) => setValues((s) => ({ ...s, category: e.target.value }))}
-                                        onKeyDown={submitOnEnter}
-                                        fullWidth
-                                        size="small"
-                                        disabled={busy}
-                                        InputProps={{
-                                            startAdornment: (
-                                                <InputAdornment position="start">
-                                                    <CategoryOutlined fontSize="small" color="disabled" />
-                                                </InputAdornment>
-                                            ),
-                                        }}
-                                    />
-                                </Stack>
-                                {/* Unit */}
-                                <Stack spacing={0.5} sx={{ flex: 1 }}>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                        Ед. измерения
-                                    </Typography>
-                                    <Autocomplete
-                                        freeSolo
-                                        size="small"
-                                        options={PRODUCT_UNITS}
-                                        value={values.unit}
-                                        onChange={(_, v) => setValues((s) => ({ ...s, unit: v ?? "" }))}
-                                        onInputChange={(_, v) => setValues((s) => ({ ...s, unit: v }))}
-                                        disabled={busy}
-                                        renderInput={(params) => (
-                                            <TextField {...params} placeholder="Единица" fullWidth size="small" />
-                                        )}
-                                    />
-                                </Stack>
-                            </Stack>
-                        </Stack>
-                        </MotionBox>
-
-                        {/* ── Статус и параметры ── */}
-                        <MotionBox variants={cascadeItem}>
-                        <Stack spacing={1.5}>
-                            <Divider />
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
-                                Статус и параметры
-                            </Typography>
-
-                            {/* Sale Status Toggle */}
-                            <Paper
-                                elevation={0}
-                                variant="outlined"
-                                sx={{
-                                    p: 1,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                }}
-                            >
-                                <Typography variant="body2">Статус продажи</Typography>
-                                <ToggleButtonGroup
-                                    exclusive
-                                    size="small"
-                                    value={values.isForSale ? "active" : "hidden"}
-                                    onChange={(_, v) => {
-                                        if (v) setValues((s) => ({ ...s, isForSale: v === "active" }));
-                                    }}
-                                    disabled={busy}
-                                >
-                                    <ToggleButton
-                                        value="active"
-                                        sx={{
-                                            textTransform: "none",
-                                            px: 2,
-                                            py: 0.5,
-                                            "&.Mui-selected": {
-                                                bgcolor: "success.main",
-                                                color: "success.contrastText",
-                                                "&:hover": { bgcolor: "success.dark" },
-                                            },
-                                        }}
-                                    >
-                                        Активно
-                                    </ToggleButton>
-                                    <ToggleButton value="hidden" sx={{ textTransform: "none", px: 2, py: 0.5 }}>
-                                        Недоступно
-                                    </ToggleButton>
-                                </ToggleButtonGroup>
-                            </Paper>
-
-                            {/* Vaccine flag: источник истины «это вакцина». Включение
-                                авто-создаёт/активирует медкарточку в разделе «Вакцины». */}
-                            {canUseVaccines && (
-                              <Paper
-                                elevation={0}
-                                variant="outlined"
-                                sx={{ p: 1.5, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2 }}
-                            >
-                                <Box sx={{ minWidth: 0 }}>
-                                    <Typography variant="body2">Вакцина</Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Включение создаёт карточку вакцины в разделе «Вакцины»
-                                        и позволяет заводить партии.
-                                    </Typography>
-                                </Box>
-                                <Switch
-                                    checked={values.isVaccine}
-                                    onChange={(e) => setValues((s) => ({ ...s, isVaccine: e.target.checked }))}
-                                    disabled={busy}
-                                />
-                              </Paper>
-                            )}
-                        </Stack>
-                        </MotionBox>
-
-                        {/* ── Цена и описание ── */}
-                        <MotionBox variants={cascadeItem}>
-                        <Stack spacing={1.5}>
-                            <Divider />
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
-                                Цена и описание
-                            </Typography>
-
-                            {/* Price */}
-                            <Stack spacing={0.5}>
-                                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                    Стоимость
-                                </Typography>
-                                <TextField
-                                    placeholder="0"
-                                    type="number"
-                                    value={values.price || ""}
-                                    onChange={(e) =>
-                                        setValues((s) => ({ ...s, price: Number(e.target.value) || 0 }))
-                                    }
-                                    onKeyDown={submitOnEnter}
-                                    fullWidth
-                                    size="small"
-                                    disabled={busy}
-                                    InputProps={{
-                                        startAdornment: (
-                                            <InputAdornment position="start">
-                                                <PaymentsOutlined fontSize="small" color="disabled" />
-                                            </InputAdornment>
-                                        ),
-                                        endAdornment: (
-                                            <Stack direction="row" alignItems="center" spacing={0.5}>
-                                                {values.price > 0 && (
-                                                    <CheckCircleOutlined fontSize="small" color="success" />
-                                                )}
-                                                <Typography variant="caption" color="text.secondary">сом</Typography>
-                                            </Stack>
-                                        ),
-                                    }}
-                                    sx={{ ...noSpinnersSx }}
-                                />
-                            </Stack>
-
-                            {/* Description */}
-                            <Stack spacing={0.5}>
-                                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                    Описание
-                                </Typography>
-                                <TextField
-                                    placeholder="Добавьте описание (необязательно)"
-                                    value={values.description}
-                                    onChange={(e) => setValues((s) => ({ ...s, description: e.target.value }))}
-                                    fullWidth
-                                    multiline
-                                    rows={3}
-                                    disabled={busy}
-                                />
-                            </Stack>
-                        </Stack>
-                        </MotionBox>
-                    </MotionStack>
-                </Box>
-                <Box sx={{ p: 2, borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
-                    <Stack direction="row" gap={1} justifyContent="flex-end">
-                        <Button onClick={handleClose} disabled={busy}>
-                            Отмена
-                        </Button>
-                        <Button
-                            variant="contained"
-                            onClick={handleSubmit}
-                            disabled={busy}
-                        >
-                            {busy ? (
-                                <Stack direction="row" alignItems="center" spacing={1}>
-                                    <CircularProgress size={18} />
-                                    <span>Сохранение…</span>
-                                </Stack>
-                            ) : (
-                                "Сохранить"
-                            )}
-                        </Button>
-                    </Stack>
-                </Box>
-            </Box>
-        </Drawer>
-    );
+    const variantMode = mode === "variants";
+    return <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose}
+        PaperProps={{ sx: { width: { xs: 360, sm: 540, md: 600 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}>
+        <Box sx={{ minHeight: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.75 }}>
+                <Box><Typography variant="h6">{isEdit ? "Редактировать товар" : "Добавить товар"}</Typography><Typography variant="caption" color="text.secondary">{variantMode ? "Одна карточка сразу создаст варианты по цветам и размерам." : "Карточка товара и все её свойства в одном месте."}</Typography></Box>
+                <IconButton onClick={busy ? undefined : onClose} aria-label="Закрыть"><CloseOutlined /></IconButton>
+            </Stack><Divider />
+            <Box sx={{ p: { xs: 2, sm: 2.5 }, flex: 1, overflowY: "auto" }}>
+                <MotionStack spacing={2.5} variants={cascadeContainer} initial="hidden" animate="show">
+                    {isRetail && !isEdit && <MotionBox variants={cascadeItem}><Paper variant="outlined" sx={{ p: 0.75, bgcolor: "action.hover" }}><ToggleButtonGroup exclusive fullWidth size="small" value={mode} onChange={(_, next) => next && setMode(next)} disabled={busy}><ToggleButton value="single" sx={{ textTransform: "none", gap: 0.75 }}><Inventory2Outlined fontSize="small" />Обычный товар</ToggleButton><ToggleButton value="variants" sx={{ textTransform: "none", gap: 0.75 }}><GridViewOutlined fontSize="small" />Товар с вариантами</ToggleButton></ToggleButtonGroup></Paper></MotionBox>}
+                    {!variantMode && <MotionBox variants={cascadeItem}>{isEdit && product ? <DjangoProductGallery productId={product.id} onChanged={onSaved} /> : <AppCard variant="outlined" sx={{ borderStyle: "dashed" }} disableContentPadding><CardContent onClick={() => document.getElementById("django-product-photo-input")?.click()} sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1.5, cursor: "pointer" }}><Avatar variant="rounded" src={photoUrl || undefined} sx={{ width: 48, height: 48 }}><PhotoCameraOutlined /></Avatar><Box sx={{ flex: 1 }}><Typography variant="body2">{photo ? photo.name : "Загрузить фото"}</Typography><Typography variant="caption" color="text.secondary">Необязательно</Typography></Box><input id="django-product-photo-input" type="file" accept={PHOTO_ACCEPT} hidden onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} /></CardContent></AppCard>}</MotionBox>}
+                    <MotionBox variants={cascadeItem}><Stack spacing={0.75}><Typography variant="body2" color="text.secondary" fontWeight={700}>{variantMode ? "Название модели *" : "Название товара *"}</Typography><TextField autoFocus fullWidth size="small" value={values.name} disabled={busy} placeholder={variantMode ? "Например, Пальто шерстяное oversize" : "Введите название товара"} onChange={(e) => set({ name: e.target.value })} {...form.field("name")} InputProps={{ startAdornment: <InputAdornment position="start"><Inventory2Outlined fontSize="small" color="disabled" /></InputAdornment> }} /></Stack></MotionBox>
+                    {!variantMode && <MotionBox variants={cascadeItem}><TextField fullWidth size="small" label="Штрихкод" value={values.barcode} disabled={busy} placeholder="Введите штрихкод" onChange={(e) => set({ barcode: e.target.value })} InputProps={{ startAdornment: <InputAdornment position="start"><QrCodeOutlined fontSize="small" color="disabled" /></InputAdornment> }} /></MotionBox>}
+                    <MotionBox variants={cascadeItem}><Stack spacing={1.25}><Divider /><Typography variant="caption" fontWeight={700} color="text.secondary">Классификация</Typography>{variantMode ? <><TextField select fullWidth size="small" label="Категория" value={categoryId ?? ""} disabled={busy || loadingSchema} onChange={(e) => setCategoryId(e.target.value === "" ? null : Number(e.target.value))} InputProps={{ startAdornment: <InputAdornment position="start"><CategoryOutlined fontSize="small" color="disabled" /></InputAdornment> }}><MenuItem value="">Без категории</MenuItem>{categories.filter((item) => item.isActive).map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}</TextField><TextField fullWidth size="small" label="Префикс артикула" value={skuPrefix} disabled={busy} placeholder="MONO-PLT" helperText="Варианты получат артикулы вида MONO-PLT-BLK-42." onChange={(e) => setSkuPrefix(e.target.value.toUpperCase())} /></> : <TextField fullWidth size="small" label="Категория" value={values.category} disabled={busy} placeholder="Например, Верхняя одежда" onChange={(e) => set({ category: e.target.value })} InputProps={{ startAdornment: <InputAdornment position="start"><CategoryOutlined fontSize="small" color="disabled" /></InputAdornment> }} />}<Autocomplete freeSolo size="small" options={UNITS} value={values.unit} disabled={busy} onChange={(_, next) => set({ unit: next ?? "шт" })} onInputChange={(_, next) => set({ unit: next })} renderInput={(params) => <TextField {...params} label="Единица измерения" />} /></Stack></MotionBox>
+                    {isRetail && <MotionBox variants={cascadeItem}><Stack spacing={1.25}><Divider /><Stack direction="row" alignItems="center" justifyContent="space-between"><Typography variant="caption" fontWeight={700} color="text.secondary">Свойства товара</Typography><Tooltip title="Настроить набор полей"><IconButton size="small" component="a" href="/settings/product-attributes"><SettingsOutlined fontSize="small" /></IconButton></Tooltip></Stack>{loadingSchema ? <Stack alignItems="center" py={2}><CircularProgress size={22} /></Stack> : genericAttributes.length ? genericAttributes.map((attribute) => { const options = attribute.values.filter((item) => item.isActive); const selected = options.find((item) => item.id === generic[attribute.id]) ?? null; return <Autocomplete key={attribute.id} size="small" options={options} value={selected} onChange={(_, next) => setGeneric((current) => ({ ...current, [attribute.id]: next?.id ?? null }))} getOptionLabel={(item) => item.value} isOptionEqualToValue={(a, b) => a.id === b.id} disabled={busy} renderInput={(params) => <TextField {...params} label={attribute.name} placeholder="Не выбрано" />} />; }) : <Alert severity="info" icon={<SettingsOutlined fontSize="inherit" />}>В «Настройках → Свойства товара» добавьте бренд, сезон, материал или свои поля. Они автоматически появятся здесь.</Alert>}</Stack></MotionBox>}
+                    {variantMode && <MotionBox variants={cascadeItem}><Stack spacing={1.25}><Divider /><Typography variant="caption" fontWeight={700} color="text.secondary">Варианты</Typography><TextField select fullWidth size="small" label="Свойство цвета" value={colorAttributeId ?? ""} disabled={busy || loadingSchema} onChange={(e) => { setColorAttributeId(e.target.value === "" ? null : Number(e.target.value)); setColors([]); }}><MenuItem value="">Не выбрано</MenuItem>{colorAttributes.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}</TextField>{selectValues("Цвета *", colorAttribute, colors, setColors, <PaletteOutlined fontSize="small" />)}<TextField select fullWidth size="small" label="Размерная сетка" value={sizeAttributeId ?? ""} disabled={busy || loadingSchema} onChange={(e) => { setSizeAttributeId(e.target.value === "" ? null : Number(e.target.value)); setSizes([]); }}><MenuItem value="">Не выбрано</MenuItem>{sizeAttributes.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}</TextField>{selectValues("Размеры *", sizeAttribute, sizes, setSizes, <StraightenOutlined fontSize="small" />)}<Alert severity="info" variant="outlined">Новые цвета, размеры и пользовательские поля создаются в настройках — так справочник остаётся единым.</Alert></Stack></MotionBox>}
+                    {!variantMode && <MotionBox variants={cascadeItem}><Stack spacing={1.25}><Divider /><Typography variant="caption" fontWeight={700} color="text.secondary">Статус</Typography><Paper variant="outlined" sx={{ p: 1.25, display: "flex", alignItems: "center", justifyContent: "space-between" }}><Typography variant="body2">Статус продажи</Typography><ToggleButtonGroup exclusive size="small" value={values.isForSale ? "active" : "hidden"} disabled={busy} onChange={(_, next) => next && set({ isForSale: next === "active" })}><ToggleButton value="active" sx={{ textTransform: "none" }}>Активно</ToggleButton><ToggleButton value="hidden" sx={{ textTransform: "none" }}>Скрыто</ToggleButton></ToggleButtonGroup></Paper>{canUseVaccines && <Paper variant="outlined" sx={{ p: 1.25, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}><Box><Typography variant="body2">Вакцина</Typography><Typography variant="caption" color="text.secondary">Показывать в разделе прививок.</Typography></Box><Switch checked={values.isVaccine} disabled={busy} onChange={(e) => set({ isVaccine: e.target.checked })} /></Paper>}</Stack></MotionBox>}
+                    <MotionBox variants={cascadeItem}><Stack spacing={1.25}><Divider /><Typography variant="caption" fontWeight={700} color="text.secondary">Цена и описание</Typography><TextField fullWidth size="small" label="Цена продажи, сом" type="number" value={values.price || ""} disabled={busy} placeholder="0" onChange={(e) => set({ price: Number(e.target.value) || 0 })} InputProps={{ startAdornment: <InputAdornment position="start"><PaymentsOutlined fontSize="small" color="disabled" /></InputAdornment> }} /><TextField fullWidth multiline rows={3} label="Описание" value={values.description} disabled={busy} placeholder="Необязательно" onChange={(e) => set({ description: e.target.value })} /></Stack></MotionBox>
+                </MotionStack>
+            </Box><Divider />
+            <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ p: 2 }}><Button onClick={onClose} disabled={busy}>Отмена</Button><Button variant="contained" onClick={() => void save()} disabled={busy || loadingSchema} startIcon={busy ? <CircularProgress size={16} color="inherit" /> : <CheckCircleOutlined />}>{busy ? "Сохранение…" : variantMode ? "Создать варианты" : "Сохранить"}</Button></Stack>
+        </Box>
+    </Drawer>;
 };
