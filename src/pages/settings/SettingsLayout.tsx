@@ -189,7 +189,19 @@ const TAB_DEFS: TabDef[] = [
 export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
+  const { activeOrganization } = usePermissions();
+  const retailHiddenTabs: SettingsTabKey[] = [
+    "site",
+    "specializations",
+    "banks",
+    "insurers",
+    "diagnoses",
+    "conclusionForms",
+  ];
   return TAB_DEFS.filter((tab) => {
+    if (activeOrganization?.vertical === "retail" && retailHiddenTabs.includes(tab.key)) {
+      return false;
+    }
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;
