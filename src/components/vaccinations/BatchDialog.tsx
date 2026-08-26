@@ -214,7 +214,7 @@ const BatchDialog: React.FC<BatchDialogProps> = ({ open, onClose, batch }) => {
           />
           {product == null && (
             <Alert severity="warning" sx={{ py: 0.25 }}>
-              Без товара склада прививка не спишет остаток и окажется бесплатной (не попадёт в счёт).
+              Без товара склада вакцина не спишет остаток и окажется бесплатной (не попадёт в счёт).
             </Alert>
           )}
 

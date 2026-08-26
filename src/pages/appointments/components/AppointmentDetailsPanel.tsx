@@ -35,7 +35,6 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DirectionsWalkOutlined from "@mui/icons-material/DirectionsWalkOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
@@ -108,7 +107,7 @@ interface AppointmentDetailsPanelProps {
   canManageFinance: boolean;
   canViewFinance: boolean;
   canDelete?: boolean;
-  /** vaccinations.record — показывать «Ввести прививку» в карточке приёма. */
+  /** vaccinations.record — показывать «Ввести вакцину» в карточке приёма. */
   canRecordVaccination?: boolean;
   /** Открыта ли третья колонка с заключением (состояние страницы). */
   isConclusionVisible?: boolean;
@@ -122,7 +121,7 @@ interface AppointmentDetailsPanelProps {
   /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
   onStartAppointment?: (a: DjangoAppointment) => void;
   /**
-   * Ввести прививку по этому приёму (регистратура). prefill — из прогноза
+   * Ввести вакцину по этому приёму (регистратура). prefill — из прогноза
    * календаря (положенная доза): подставит вакцину и № дозы в дровер.
    */
   onRecordVaccination?: (
@@ -254,7 +253,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   }, [appt.patient?.id, queryClient]);
 
   // Прогноз календаря пациента: положенные (planned/overdue) дозы — чтобы ввести
-  // прививку в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
+  // вакцину в 1–2 клика прямо из приёма (вакцина/доза предзаполнятся).
   const patientId = appt.patient?.id ?? null;
   const scheduleQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.patientSchedule(patientId ?? 0),
@@ -271,7 +270,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   );
 
   /**
-   * Вакцина в счёте ≠ прививка в карте: товар с меткой «вакцина» продаётся
+   * Вакцина в счёте ≠ вакцина в карте: товар с меткой «вакцина» продаётся
    * строкой счёта, а запись в карту заводит медсестра. С 21.08.2026 связь
    * двусторонняя — запись хранит productLineId проданной строки, поэтому
    * сверяем по нему; справочник вакцин нужен, чтобы знать vaccineId строки.
@@ -711,17 +710,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       ),
       disabled: review.isPending,
       onClick: review.requestReview,
-    });
-  }
-
-  // Ввести прививку — право vaccinations.record, приём с пациентом и активный.
-  if (canRecordVaccination && onRecordVaccination && appt.patient && isAppointmentActive) {
-    actions.push({
-      key: "vaccine",
-      label: t("details.recordVaccine"),
-      icon: <VaccinesOutlined fontSize="small" />,
-      color: "primary",
-      onClick: () => onRecordVaccination(appt),
     });
   }
 

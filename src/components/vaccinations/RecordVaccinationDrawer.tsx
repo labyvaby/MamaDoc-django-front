@@ -59,7 +59,7 @@ type RecordVaccinationDrawerProps = {
   /**
    * Заблокировать сценарий и скрыть переключатель:
    * - "ours" — только «со склада» (регистратура, ввод по приёму);
-   * - "external" — только «внешняя» (модуль «Прививки» — исторические прививки).
+   * - "external" — только «внешняя» (модуль «Вакцины» — исторические вакцины).
    * Не задан — доступны оба (переключатель показан).
    */
   lockedScenario?: Scenario;
@@ -495,7 +495,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     onError: (e) =>
       setError(
         parseDuplicateDoseConflict(e) ??
-          (e instanceof Error ? e.message : "Не удалось сохранить прививку"),
+          (e instanceof Error ? e.message : "Не удалось сохранить вакцину"),
       ),
   });
 
@@ -537,7 +537,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     >
       <Box sx={{ display: "flex", alignItems: "center", px: 3, py: 2, borderBottom: 1, borderColor: "divider" }}>
         <Typography variant="h6" fontWeight={600} sx={{ flex: 1, letterSpacing: -0.15 }}>
-          {lockedScenario === "external" ? "Внешняя прививка" : "Ввод прививки"}
+          {lockedScenario === "external" ? "Внешняя вакцина" : "Ввод вакцины"}
         </Typography>
         <Stack direction="row" alignItems="center" gap={0.5}>
           {draftRestored && (
@@ -558,7 +558,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
           {error && <Alert severity="error">{error}</Alert>}
           {branchId == null && (
             <Alert severity="warning">
-              Не выбран активный филиал — ввод прививки недоступен. Переключите филиал вверху.
+              Не выбран активный филиал — ввод вакцины недоступен. Переключите филиал вверху.
             </Alert>
           )}
 
@@ -754,7 +754,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   slotProps={{ textField: { fullWidth: true, size: "small", onKeyDown: submitOnEnter } }}
                 />
                 <Alert severity="info" sx={{ py: 0.5 }}>
-                  Внешняя прививка: склад не трогается, строка в счёт не добавляется.
+                  Внешняя вакцина: склад не трогается, строка в счёт не добавляется.
                 </Alert>
               </Stack>
             </MotionBox>

@@ -184,7 +184,7 @@ const StatTile: React.FC<{
 
 const VaccinationsPage: React.FC = () => {
   const { t } = useT("vaccinations");
-  usePageTitle("Прививки");
+  usePageTitle("Вакцины");
   const theme = useTheme();
   const { can, loading: permLoading } = useCanChecker();
   const { activeBranch } = usePermissions();
@@ -435,8 +435,8 @@ const VaccinationsPage: React.FC = () => {
   // сколько всего запланировано и сколько из них просрочено; на других
   // вкладках — нейтральное описание раздела.
   const heroSubtitle = React.useMemo(() => {
-    if (tab !== "due") return "Иммунопрофилактика и календарь прививок";
-    if (dueTotal === 0) return "Иммунопрофилактика и календарь прививок";
+    if (tab !== "due") return "Иммунопрофилактика и календарь вакцин";
+    if (dueTotal === 0) return "Иммунопрофилактика и календарь вакцин";
     const total = `${dueTotal} ${pluralSlots(dueTotal)}`;
     return overdueCount > 0 ? `${total} · ${overdueCount} просрочено` : total;
   }, [tab, dueTotal, overdueCount]);
@@ -509,9 +509,9 @@ const VaccinationsPage: React.FC = () => {
         headerName: "",
         width: 180,
         sortable: false,
-        // Ввод «со склада» отсюда убран: администрирование прививки — из
+        // Ввод «со склада» отсюда убран: администрирование вакцины — из
         // регистратуры (по приёму). Здесь оставляем только «Пропустить»
-        // (управление календарём). Внешние прививки — кнопкой в шапке.
+        // (управление календарём). Внешние вакцины — кнопкой в шапке.
         renderCell: ({ row }) => (
           <Stack direction="row" gap={0.75} alignItems="center">
             {canUpdatePatient && (
@@ -980,7 +980,7 @@ const VaccinationsPage: React.FC = () => {
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
-        title="Прививки"
+        title="Вакцины"
         showTitle={false}
         loading={
           dueQuery.isFetching ||
@@ -1022,7 +1022,7 @@ const VaccinationsPage: React.FC = () => {
           </Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: -0.2, lineHeight: 1.2 }}>
-              Прививки
+              Вакцины
             </Typography>
             <Typography variant="body2" color="text.secondary" noWrap>
               {heroSubtitle}
@@ -1122,7 +1122,7 @@ const VaccinationsPage: React.FC = () => {
 
           {(tab === "due" || tab === "records") && canRecord && (
             <AppButton variant="contained" startIcon={<AddOutlined />} onClick={() => openDrawerFor(null)}>
-              Добавить внешнюю прививку
+              Добавить внешнюю вакцину
             </AppButton>
           )}
           {tab === "vaccines" && canManage && (
@@ -1187,7 +1187,7 @@ const VaccinationsPage: React.FC = () => {
 
         {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "due" && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
-            Выберите активный филиал, чтобы увидеть прививки по нему.
+            Выберите активный филиал, чтобы увидеть вакцины по нему.
           </Alert>
         )}
         {tab === "due" && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
@@ -1225,7 +1225,7 @@ const VaccinationsPage: React.FC = () => {
                 rowHeight={64}
                 columnHeaderHeight={theme.appLayout.table.headerRowHeight}
                 getRowClassName={(p) => (p.row.status === "overdue" ? "row-overdue" : "")}
-                slots={{ noRowsOverlay: NoRows("Нет запланированных прививок") }}
+                slots={{ noRowsOverlay: NoRows("Нет запланированных вакцин") }}
                 localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
                 sx={gridSx}
                 paginationMode={serverPaged ? "server" : "client"}
@@ -1505,9 +1505,9 @@ const VaccinationsPage: React.FC = () => {
 function pluralSlots(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "прививка запланирована";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "прививки запланированы";
-  return "прививок запланировано";
+  if (mod10 === 1 && mod100 !== 11) return "вакцина запланирована";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "вакцины запланированы";
+  return "вакцин запланировано";
 }
 
 /** Обёртка для двухстрочной ячейки DataGrid: флекс на .MuiDataGrid-cell

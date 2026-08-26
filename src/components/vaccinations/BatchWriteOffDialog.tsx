@@ -146,7 +146,7 @@ const BatchWriteOffDialog: React.FC<BatchWriteOffDialogProps> = ({ open, onClose
           )}
           {batch?.productId == null && (
             <Alert severity="info" sx={{ py: 0.25 }}>
-              Партия без товара склада — списание изменит только учёт прививок, остаток товара
+              Партия без товара склада — списание изменит только учёт вакцин, остаток товара
               не поменяется.
             </Alert>
           )}

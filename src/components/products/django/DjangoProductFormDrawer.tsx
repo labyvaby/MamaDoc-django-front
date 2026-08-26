@@ -574,7 +574,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                             </Paper>
 
                             {/* Vaccine flag: источник истины «это вакцина». Включение
-                                авто-создаёт/активирует медкарточку в разделе «Прививки». */}
+                                авто-создаёт/активирует медкарточку в разделе «Вакцины». */}
                             <Paper
                                 elevation={0}
                                 variant="outlined"
@@ -583,7 +583,7 @@ export const DjangoProductFormDrawer: React.FC<DjangoProductFormDrawerProps> = (
                                 <Box sx={{ minWidth: 0 }}>
                                     <Typography variant="body2">Вакцина</Typography>
                                     <Typography variant="caption" color="text.secondary">
-                                        Включение создаёт карточку вакцины в разделе «Прививки»
+                                        Включение создаёт карточку вакцины в разделе «Вакцины»
                                         и позволяет заводить партии.
                                     </Typography>
                                 </Box>

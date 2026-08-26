@@ -25,11 +25,11 @@ export interface AppointmentProductLinesProps {
   onProductClick?: (productId: number, productName: string) => void;
   /** productId → вакцина справочника (товар с меткой «вакцина»). */
   vaccineByProductId?: Map<number, ProductVaccineRef>;
-  /** vaccineId → сколько прививок этой вакцины уже внесено по этому приёму. */
+  /** vaccineId → сколько доз этой вакцины уже внесено по этому приёму. */
   recordedByVaccineId?: Map<number, number>;
-  /** id строк счёта, уже закрытых записью о прививке (точная привязка). */
+  /** id строк счёта, уже закрытых записью о вакцине (точная привязка). */
   recordedLineIds?: Set<number>;
-  /** Оформить прививку по этой строке; не задан — только индикация. */
+  /** Оформить вакцину по этой строке; не задан — только индикация. */
   onRecordVaccine?: (vaccineId: number, line: AppointmentProductLine) => void;
 }
 
@@ -133,7 +133,7 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
                 </Typography>
               </Box>
 
-              {/* Товар помечен как вакцина: видно, внесена ли прививка в карту.
+              {/* Товар помечен как вакцина: видно, внесена ли запись в карту.
                   С 21.08.2026 оформить можно прямо отсюда — запись привязывается
                   к этой строке счёта (productLineId), повторного биллинга и
                   списания партии не будет. */}

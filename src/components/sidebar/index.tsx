@@ -739,9 +739,9 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Прививки */}
+        {/* Вакцины */}
         {show("org") && can_.vaccinations && (
-          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Прививки" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
         )}
 
         {/* Все приемы */}

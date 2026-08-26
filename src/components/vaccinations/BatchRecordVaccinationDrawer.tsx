@@ -44,7 +44,7 @@ type BatchRecordVaccinationDrawerProps = {
 type Row = BatchDoseInput & { batchId: number | "" };
 
 /**
- * Групповой ввод прививок за один визит («Ввести выбранные»): N положенных доз
+ * Групповой ввод вакцин за один визит («Ввести выбранные»): N положенных доз
  * ребёнку вводятся одним экраном и одним сохранением (N POST /records/ с общим
  * appointmentId). Партия по каждой вакцине выбирается сама (FEFO), общие поля —
  * дата, кто вводил, место укола. Цену не шлём — бэк снимает snapshot.
@@ -221,7 +221,7 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
     >
       <Box sx={{ display: "flex", alignItems: "center", px: 3, py: 2, borderBottom: 1, borderColor: "divider" }}>
         <Typography variant="h6" fontWeight={600} sx={{ flex: 1, letterSpacing: -0.15 }}>
-          Ввод прививок{rows.length ? ` (${rows.length})` : ""}
+          Ввод вакцин{rows.length ? ` (${rows.length})` : ""}
         </Typography>
         <IconButton size="small" onClick={onClose} aria-label="Закрыть" disabled={busy}>
           <CloseOutlined fontSize="small" />
@@ -267,7 +267,7 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
           fullWidth
           value={injectionSite}
           onChange={(e) => setInjectionSite(e.target.value)}
-          helperText="Применяется ко всем прививкам ниже"
+          helperText="Применяется ко всем вакцинам ниже"
         >
           {INJECTION_SITE_OPTIONS.map((o) => (
             <MenuItem key={o.value} value={o.value}>
@@ -278,7 +278,7 @@ const BatchRecordVaccinationDrawer: React.FC<BatchRecordVaccinationDrawerProps> 
 
         {/* ── Список доз ── */}
         <Typography variant="caption" color="text.secondary">
-          Прививки
+          Вакцины
         </Typography>
         <Stack spacing={1.25}>
           {rows.map((r, idx) => {

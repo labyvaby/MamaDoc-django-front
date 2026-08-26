@@ -22,8 +22,8 @@ import {
 import { printVaccinationCertificate } from "../../../components/vaccinations/vaccinationCertificate";
 import { injectionSiteLabel, scheduleDateInfo } from "../../vaccinations/meta";
 
-// Карточка пациента — только просмотр календаря/истории прививок. Ввод
-// («со склада») делается из регистратуры по приёму, внешние — в модуле «Прививки».
+// Карточка пациента — только просмотр календаря/истории вакцин. Ввод
+// («со склада») делается из регистратуры по приёму, внешние — в модуле «Вакцины».
 type PatientVaccinationsPanelProps = {
   patient: DjangoPatient | null;
 };
@@ -155,7 +155,7 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
       <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pr: 0.5 }}>
         {error ? (
           <Alert severity="error">
-            {error instanceof Error ? error.message : "Ошибка загрузки прививок"}
+            {error instanceof Error ? error.message : "Ошибка загрузки вакцин"}
           </Alert>
         ) : loading ? (
           <Stack spacing={1}>
@@ -167,10 +167,10 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
           <Stack spacing={2.5}>
             {/* ── План ── */}
             <Box>
-              <SectionTitle>Календарь прививок</SectionTitle>
+              <SectionTitle>Календарь вакцин</SectionTitle>
               {planned.length === 0 && other.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Нет запланированных прививок.
+                  Нет запланированных вакцин.
                 </Typography>
               ) : (
                 <Stack spacing={2} sx={{ mt: 0.75 }}>
@@ -231,10 +231,10 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
 
             {/* ── История ── */}
             <Box>
-              <SectionTitle>История прививок</SectionTitle>
+              <SectionTitle>История вакцин</SectionTitle>
               {history.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Прививки ещё не вводились.
+                  Вакцины ещё не вводились.
                 </Typography>
               ) : (
                 <Stack spacing={1} sx={{ mt: 0.75 }}>
