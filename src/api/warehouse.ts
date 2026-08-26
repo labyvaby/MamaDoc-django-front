@@ -65,8 +65,15 @@ export type DjangoProduct = {
     id: number;
     organizationId: number;
     name: string;
+    /** Артикул SKU; у вариантов одежды генерируется из префикса модели. */
+    sku: string | null;
     category: string;
+    categoryId: number | null;
     barcode: string;
+    barcodes: string[];
+    /** Родительская модель одежды; null у обычного товара. */
+    modelId: number | null;
+    attributes: DjangoProductAttributeValue[];
     unit: string;
     /** Цена продажи, сом. */
     price: number;
@@ -96,6 +103,77 @@ export type DjangoProduct = {
     branchStock: number | null;
     createdAt: string;
     updatedAt: string;
+};
+
+export type DjangoProductAttributeValue = {
+    attributeId: number;
+    attributeName: string;
+    role: "generic" | "color" | "size";
+    valueId: number;
+    value: string;
+};
+
+export type DjangoProductAttributeValueOption = {
+    id: number;
+    attributeId: number;
+    value: string;
+    code: string;
+    position: number;
+    isActive: boolean;
+};
+
+export type DjangoProductAttribute = {
+    id: number;
+    organizationId: number;
+    name: string;
+    role: "generic" | "color" | "size";
+    isOrdered: boolean;
+    isActive: boolean;
+    values: DjangoProductAttributeValueOption[];
+};
+
+export type DjangoProductCategoryNode = {
+    id: number;
+    organizationId: number;
+    name: string;
+    parentId: number | null;
+    isActive: boolean;
+    productCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DjangoProductModel = {
+    id: number;
+    organizationId: number;
+    name: string;
+    skuPrefix: string;
+    categoryId: number | null;
+    categoryName: string | null;
+    description: string;
+    isActive: boolean;
+    productCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DjangoProductMatrix = {
+    modelId: number;
+    modelName: string;
+    rows: Array<{ valueId: number; value: string; code: string; position: number }>;
+    columns: Array<{ valueId: number; value: string; code: string; position: number }>;
+    cells: Array<{
+        rowValueId: number | null;
+        columnValueId: number | null;
+        productId: number;
+        sku: string | null;
+        name: string;
+        price: string;
+        stock: string;
+    }>;
+    rowTotal: number;
+    columnTotal: number;
+    filled: number;
 };
 
 /** Перемещение товара между складами (GET источник — лента движений). */
@@ -356,6 +434,101 @@ export async function uploadProductImage(
 export function deleteProductImage(id: number): Promise<void> {
     return apiRequest<void>(`/warehouse/products/${id}/image/`, {
         method: "DELETE",
+    });
+}
+
+// ── Retail catalogue: attributes, categories and apparel matrices (v2) ─────
+
+export function getProductCategoryTree(
+    signal?: AbortSignal,
+    organizationId?: number,
+): Promise<DjangoProductCategoryNode[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductCategoryNode[]>(`/v2/warehouse/product-categories/${qs}`, { signal });
+}
+
+export function createProductCategory(data: {
+    name: string;
+    parentId?: number;
+    organizationId?: number;
+}): Promise<DjangoProductCategoryNode> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
+export function getProductAttributes(
+    signal?: AbortSignal,
+    organizationId?: number,
+): Promise<DjangoProductAttribute[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductAttribute[]>(`/v2/warehouse/product-attributes/${qs}`, { signal });
+}
+
+export function createProductAttribute(data: {
+    name: string;
+    role: DjangoProductAttribute["role"];
+    isOrdered?: boolean;
+    organizationId?: number;
+}): Promise<DjangoProductAttribute> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductAttribute>(`/v2/warehouse/product-attributes/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
+export function createProductAttributeValue(
+    attributeId: number,
+    data: { value: string; code?: string; position?: number },
+): Promise<DjangoProductAttributeValueOption> {
+    return apiRequest<DjangoProductAttributeValueOption>(
+        `/v2/warehouse/product-attributes/${attributeId}/values/`,
+        { method: "POST", body: data },
+    );
+}
+
+export function getProductModels(
+    signal?: AbortSignal,
+    organizationId?: number,
+): Promise<DjangoProductModel[]> {
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductModel[]>(`/v2/warehouse/product-models/${qs}`, { signal });
+}
+
+export function createProductModel(data: {
+    name: string;
+    skuPrefix?: string;
+    categoryId?: number;
+    description?: string;
+    organizationId?: number;
+}): Promise<DjangoProductModel> {
+    const { organizationId, ...body } = data;
+    const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
+    return apiRequest<DjangoProductModel>(`/v2/warehouse/product-models/${qs}`, {
+        method: "POST",
+        body,
+    });
+}
+
+export function generateProductMatrix(data: {
+    modelId: number;
+    rowValueIds: number[];
+    columnValueIds: number[];
+    /** Бренд, сезон, состав и другие свойства, одинаковые для всей модели. */
+    attributeValueIds?: number[];
+    price: number;
+    unit?: string;
+    generateBarcodes?: boolean;
+}): Promise<DjangoProductMatrix> {
+    const { modelId, ...body } = data;
+    return apiRequest<DjangoProductMatrix>(`/v2/warehouse/product-models/${modelId}/matrix/`, {
+        method: "POST",
+        body,
     });
 }
 
