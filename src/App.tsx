@@ -46,7 +46,7 @@ import {
   PAGE_PERMISSIONS,
   SETTINGS_TAB_PERMISSIONS,
 } from "./config/accessPermissions";
-import { useCanChecker } from "./hooks/useCan";
+import { useWorkspaceHome } from "./hooks/useWorkspaceHome";
 import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
@@ -123,24 +123,18 @@ const ProfilePage = lazy(() => import("./pages/profile"));
 
 // Вспомогательный компонент для защиты корневого редиректа
 const RootRedirect = () => {
-  const { loading, can } = useCanChecker();
   // Рабочие пространства приёмов гейтятся отдельными page-правами, поэтому
   // корень ведёт на первое доступное: Регистратура → Кабинет врача →
-  // Процедурный кабинет. Fallback остаётся /appointments (AccessDenied
-  // подскажет запросить право, это честнее пустого экрана).
+  // Процедурный кабинет (useWorkspaceHome). Если ни одного права нет —
+  // «Сводка»: она открыта всем аутентифицированным, а состав виджетов
+  // определяется правами внутри страницы. Раньше fallback вёл на
+  // /appointments, и вход без права appointments.registry.view заканчивался
+  // экраном «Нет доступа».
+  const { loading, workspacePath } = useWorkspaceHome();
   if (loading) {
     return <LinearProgress />;
   }
-  if (can(PAGE_PERMISSIONS.appointmentsRegistry)) {
-    return <Navigate to="/appointments" replace />;
-  }
-  if (can(PAGE_PERMISSIONS.doctorRoom)) {
-    return <Navigate to="/doctor" replace />;
-  }
-  if (can(PAGE_PERMISSIONS.nurseRoom)) {
-    return <Navigate to="/nurse" replace />;
-  }
-  return <Navigate to="/appointments" replace />;
+  return <Navigate to={workspacePath ?? "/dashboard"} replace />;
 };
 
 const DjangoQueryCacheReset = () => {
@@ -383,7 +377,7 @@ function App() {
                       {
                         name: "vaccinations",
                         list: "/vaccinations",
-                        meta: { label: "Прививки" }
+                        meta: { label: "Вакцины" }
                       },
                       {
                         name: "achievements",

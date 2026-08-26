@@ -18,7 +18,7 @@ export const UnderConstruction: React.FC = () => {
         Мы работаем над этой функцией. Пожалуйста, загляните позже.
       </Typography>
       <Box>
-        <AppButton component={RouterLink} to="/appointments" variant="contained">
+        <AppButton component={RouterLink} to="/" variant="contained">
           Вернуться назад
         </AppButton>
       </Box>

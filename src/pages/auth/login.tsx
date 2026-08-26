@@ -89,7 +89,14 @@ const saveAuthPhone = (fullPhone: string) => {
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const redirectTo = params.get("to") || "/appointments";
+  // По умолчанию — корень: RootRedirect в App.tsx раскладывает вход по правам
+  // (Регистратура → Кабинет врача → Процедурный → Сводка). Хардкод
+  // "/appointments" бросал врача на Регистратуру, которой у него нет, и вход
+  // заканчивался экраном «Нет доступа». Возврат на /login тоже отбрасываем,
+  // иначе после успешного входа страница логина зацикливается на себя.
+  const requestedRedirect = params.get("to");
+  const redirectTo =
+    requestedRedirect && !requestedRedirect.startsWith("/login") ? requestedRedirect : "/";
 
   const [authMethod, setAuthMethod] = React.useState<"email" | "phone">(readSavedAuthMethod);
 

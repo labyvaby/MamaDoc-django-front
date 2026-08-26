@@ -33,7 +33,10 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   handleGoHome = () => {
-    window.location.href = "/appointments";
+    // Корень, а не /appointments: RootRedirect уведёт на доступную страницу
+    // (у врача нет права на Регистратуру — иначе после сбоя он попадал бы
+    // прямиком на «Нет доступа»).
+    window.location.href = "/";
   };
 
   render() {

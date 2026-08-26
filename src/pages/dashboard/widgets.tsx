@@ -25,6 +25,7 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { useCanChecker } from "../../hooks/useCan";
+import { useWorkspaceHome } from "../../hooks/useWorkspaceHome";
 import { MetricTile } from "./MetricTile";
 import { Sparkline } from "./Sparkline";
 import { WidgetError, type WidgetProps } from "./widgetKit";
@@ -43,6 +44,7 @@ import { previousRange, sumDayCounts, toDailySeries, type PeriodRange } from "./
  */
 export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
   const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
+  const { workspacePath } = useWorkspaceHome();
 
   const useCounts = (r: PeriodRange) =>
     useQuery({
@@ -85,7 +87,10 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
             <Grid item xs={6}>
               <MetricTile
                 label="Всего записей"
-              href="/appointments"
+                // Не «Регистратура» жёстко: у врача её нет, клик по плитке
+                // приводил на «Нет доступа». Без рабочего пространства плитка
+                // остаётся без перехода.
+                href={workspacePath ?? undefined}
                 value={total}
                 icon={<EventAvailableOutlined />}
                 loading={query.isLoading}
