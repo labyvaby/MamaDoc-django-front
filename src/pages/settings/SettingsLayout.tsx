@@ -34,6 +34,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { useCanChecker } from "../../hooks/useCan";
@@ -74,6 +75,12 @@ type TabDef = {
 
 /** Labels come from t(`layout.tabs.${key}`) — see useVisibleSettingsTabs. */
 const TAB_DEFS: TabDef[] = [
+  {
+    key: "productAttributes",
+    to: "/settings/product-attributes",
+    icon: <Inventory2Outlined fontSize="small" />,
+    group: "catalogs",
+  },
   {
     key: "organization",
     to: "/settings/organization",
@@ -202,6 +209,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
     if (activeOrganization?.vertical === "retail" && retailHiddenTabs.includes(tab.key)) {
       return false;
     }
+    if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;

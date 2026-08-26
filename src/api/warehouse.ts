@@ -492,6 +492,49 @@ export function createProductAttributeValue(
     );
 }
 
+export function updateProductAttribute(
+    id: number,
+    data: { name?: string; isOrdered?: boolean; isActive?: boolean },
+): Promise<DjangoProductAttribute> {
+    return apiRequest<DjangoProductAttribute>(`/v2/warehouse/product-attributes/${id}/`, {
+        method: "PATCH",
+        body: data,
+    });
+}
+
+export function deleteProductAttribute(id: number): Promise<void> {
+    return apiRequest<void>(`/v2/warehouse/product-attributes/${id}/`, {
+        method: "DELETE",
+    });
+}
+
+export function updateProductAttributeValue(
+    id: number,
+    data: { value?: string; code?: string; position?: number; isActive?: boolean },
+): Promise<DjangoProductAttributeValueOption> {
+    return apiRequest<DjangoProductAttributeValueOption>(`/v2/warehouse/attribute-values/${id}/`, {
+        method: "PATCH",
+        body: data,
+    });
+}
+
+export function deleteProductAttributeValue(id: number): Promise<void> {
+    return apiRequest<void>(`/v2/warehouse/attribute-values/${id}/`, {
+        method: "DELETE",
+    });
+}
+
+/** Сохраняет поля, заданные администратором (бренд, материал, сезон и т. п.). */
+export function replaceProductGenericAttributes(
+    productId: number,
+    attributeValueIds: number[],
+): Promise<DjangoProductAttributeValue[]> {
+    return apiRequest<DjangoProductAttributeValue[]>(
+        `/v2/warehouse/products/${productId}/attributes/`,
+        { method: "PUT", body: { attributeValueIds } },
+    );
+}
+
 export function getProductModels(
     signal?: AbortSignal,
     organizationId?: number,

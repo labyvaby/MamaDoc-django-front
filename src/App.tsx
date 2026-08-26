@@ -115,6 +115,7 @@ const SpecializationsSettingsPage = lazy(() => import("./pages/settings/Speciali
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
+const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
 // (AppointmentsRegistryView), а не рабочий кабинет с навигацией по дням.
@@ -797,6 +798,16 @@ function App() {
                                 }
                               />
                             )}
+                            <Route
+                              path="settings/product-attributes"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.productAttributes}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ProductAttributesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
                             <Route
                               path="settings/expense-categories"
                               element={

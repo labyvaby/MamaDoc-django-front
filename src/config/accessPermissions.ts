@@ -73,6 +73,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
+  productAttributes: "warehouse.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
