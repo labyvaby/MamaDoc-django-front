@@ -424,7 +424,7 @@ const SidebarSecondary: React.FC = () => {
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
     reports: can(PAGE_PERMISSIONS.reports),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
-    load: can(PAGE_PERMISSIONS.reports),
+    load: !isRetail && can(PAGE_PERMISSIONS.reports),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
@@ -837,7 +837,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Отзывы (Django-mode only) */}
-        {show("management") && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
+        {show("management") && !isRetail && can(PAGE_PERMISSIONS.reviews) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 
