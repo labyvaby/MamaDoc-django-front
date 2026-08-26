@@ -1,7 +1,7 @@
 import React from "react";
 import {
-    Alert, Box, Button, Chip, CircularProgress, Divider, Drawer, IconButton,
-    MenuItem, Paper, Stack, Switch, TextField, Typography,
+    Alert, Box, Button, Checkbox, Chip, CircularProgress, Divider, Drawer, FormControlLabel,
+    IconButton, MenuItem, Paper, Stack, Switch, TextField, Typography,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -9,12 +9,14 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import PaletteOutlined from "@mui/icons-material/PaletteOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import LabelOutlined from "@mui/icons-material/LabelOutlined";
+import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { ApiError } from "../../api/client";
 import {
-    createProductAttribute, createProductAttributeValue, getProductAttributes,
-    type DjangoProductAttribute, updateProductAttribute,
+    createProductAttribute, createProductAttributeValue, createProductCategory,
+    getProductAttributes, getProductCategoryTree, type DjangoProductAttribute,
+    type DjangoProductCategoryNode, updateProductAttribute, updateProductCategory,
 } from "../../api/warehouse";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -22,92 +24,35 @@ import { SettingsLayout } from "./SettingsLayout";
 
 type Role = DjangoProductAttribute["role"];
 const roleInfo: Record<Role, { title: string; description: string; icon: React.ReactNode }> = {
-    generic: { title: "Обычное поле", description: "Бренд, материал, сезон, коллекция и другие поля карточки товара.", icon: <LabelOutlined fontSize="small" /> },
-    color: { title: "Цвет", description: "Создаёт строки матрицы вариантов.", icon: <PaletteOutlined fontSize="small" /> },
-    size: { title: "Размерная сетка", description: "Создаёт столбцы матрицы; порядок значений сохраняется.", icon: <StraightenOutlined fontSize="small" /> },
+    generic: { title: "Обычное поле", description: "Бренд, материал, сезон, коллекция и другие поля товара.", icon: <LabelOutlined fontSize="small" /> },
+    color: { title: "Цвет", description: "Вместе с размером создаёт варианты товара.", icon: <PaletteOutlined fontSize="small" /> },
+    size: { title: "Размерная сетка", description: "Вместе с цветом создаёт варианты товара.", icon: <StraightenOutlined fontSize="small" /> },
 };
-
-type EditorProps = {
-    item: DjangoProductAttribute | null;
-    open: boolean;
-    onClose: () => void;
-    onChanged: () => void;
-    organizationId?: number;
-};
-
-const AttributeEditor: React.FC<EditorProps> = ({ item, open, onClose, onChanged, organizationId }) => {
+type AttributeEditorProps = { item: DjangoProductAttribute | null; open: boolean; onClose: () => void; onChanged: () => void; organizationId?: number };
+const AttributeEditor: React.FC<AttributeEditorProps> = ({ item, open, onClose, onChanged, organizationId }) => {
     const { open: notify } = useNotification();
-    const [name, setName] = React.useState("");
-    const [role, setRole] = React.useState<Role>("generic");
-    const [valuesText, setValuesText] = React.useState("");
-    const [active, setActive] = React.useState(true);
-    const [busy, setBusy] = React.useState(false);
-    React.useEffect(() => {
-        if (!open) return;
-        setName(item?.name ?? ""); setRole(item?.role ?? "generic"); setValuesText(""); setActive(item?.isActive ?? true); setBusy(false);
-    }, [item, open]);
-    const save = async () => {
-        if (!name.trim()) return;
-        setBusy(true);
-        try {
-            const attribute = item
-                ? await updateProductAttribute(item.id, { name: name.trim(), isActive: active })
-                : await createProductAttribute({ name: name.trim(), role, organizationId });
-            const known = new Set((item?.values ?? []).map((value) => value.value.toLocaleLowerCase()));
-            const additions = [...new Set(valuesText.split(",").map((value) => value.trim()).filter(Boolean))];
-            for (const value of additions) {
-                if (!known.has(value.toLocaleLowerCase())) await createProductAttributeValue(attribute.id, { value });
-            }
-            notify?.({ type: "success", message: item ? "Свойство обновлено" : "Свойство добавлено" });
-            onChanged(); onClose();
-        } catch (error) {
-            notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось сохранить свойство" });
-        } finally { setBusy(false); }
-    };
-    return <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose}
-        PaperProps={{ sx: { width: { xs: 360, sm: 480 }, maxWidth: "100vw" } }}>
-        <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 2 }}>
-                <Box><Typography variant="h6">{item ? "Настроить свойство" : "Новое свойство"}</Typography><Typography variant="caption" color="text.secondary">Это поле автоматически появится в дровере товара.</Typography></Box>
-                <IconButton onClick={onClose} disabled={busy}><CloseOutlined /></IconButton>
-            </Stack><Divider />
-            <Stack spacing={2} sx={{ p: 2, flex: 1 }}>
-                <TextField label="Название *" size="small" value={name} autoFocus disabled={busy} onChange={(e) => setName(e.target.value)} placeholder={role === "size" ? "Размер EU" : role === "color" ? "Цвет" : "Бренд"} />
-                <TextField select label="Тип поля" size="small" value={role} disabled={busy || Boolean(item)} onChange={(e) => setRole(e.target.value as Role)}>
-                    {(Object.keys(roleInfo) as Role[]).map((key) => <MenuItem key={key} value={key}><Stack><Typography variant="body2">{roleInfo[key].title}</Typography><Typography variant="caption" color="text.secondary">{roleInfo[key].description}</Typography></Stack></MenuItem>)}
-                </TextField>
-                <TextField label="Добавить значения" size="small" multiline minRows={2} value={valuesText} disabled={busy} onChange={(e) => setValuesText(e.target.value)} placeholder={role === "size" ? "S, M, L, XL" : role === "color" ? "Чёрный, Бежевый" : "Monogram, ..."} helperText="Введите через запятую. Для размеров порядок будет таким же, как здесь." />
-                {item && <Paper variant="outlined" sx={{ p: 1.25, display: "flex", alignItems: "center", justifyContent: "space-between" }}><Box><Typography variant="body2">Показывать в форме</Typography><Typography variant="caption" color="text.secondary">Выключенное свойство останется в истории, но исчезнет из новых форм.</Typography></Box><Switch checked={active} onChange={(e) => setActive(e.target.checked)} disabled={busy} /></Paper>}
-                {item && item.values.length > 0 && <Stack spacing={0.75}><Typography variant="caption" color="text.secondary">Текущие значения</Typography><Stack direction="row" gap={0.75} flexWrap="wrap">{item.values.map((value) => <Chip key={value.id} size="small" label={value.value} variant={value.isActive ? "filled" : "outlined"} />)}</Stack></Stack>}
-            </Stack><Divider />
-            <Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ p: 2 }}><Button onClick={onClose} disabled={busy}>Отмена</Button><Button variant="contained" disabled={busy || !name.trim()} onClick={() => void save()} startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}>{busy ? "Сохранение…" : "Сохранить"}</Button></Stack>
-        </Box>
-    </Drawer>;
+    const [name, setName] = React.useState(""); const [role, setRole] = React.useState<Role>("generic"); const [valuesText, setValuesText] = React.useState(""); const [active, setActive] = React.useState(true); const [busy, setBusy] = React.useState(false);
+    React.useEffect(() => { if (open) { setName(item?.name ?? ""); setRole(item?.role ?? "generic"); setValuesText(""); setActive(item?.isActive ?? true); setBusy(false); } }, [item, open]);
+    const save = async () => { if (!name.trim()) return; setBusy(true); try { const attribute = item ? await updateProductAttribute(item.id, { name: name.trim(), isActive: active }) : await createProductAttribute({ name: name.trim(), role, organizationId }); const known = new Set((item?.values ?? []).map((value) => value.value.toLowerCase())); for (const value of [...new Set(valuesText.split(",").map((value) => value.trim()).filter(Boolean))]) if (!known.has(value.toLowerCase())) await createProductAttributeValue(attribute.id, { value }); notify?.({ type: "success", message: item ? "Поле обновлено" : "Поле добавлено" }); onChanged(); onClose(); } catch (error) { notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось сохранить поле" }); } finally { setBusy(false); } };
+    return <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose} PaperProps={{ sx: { width: { xs: 360, sm: 480 }, maxWidth: "100vw" } }}><Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}><Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 2 }}><Box><Typography variant="h6">{item ? "Настроить поле" : "Новое поле"}</Typography><Typography variant="caption" color="text.secondary">Поле можно включить в нужные категории.</Typography></Box><IconButton onClick={onClose} disabled={busy}><CloseOutlined /></IconButton></Stack><Divider /><Stack spacing={2} sx={{ p: 2, flex: 1 }}><TextField label="Название *" size="small" autoFocus value={name} disabled={busy} onChange={(e) => setName(e.target.value)} /><TextField select label="Тип" size="small" value={role} disabled={busy || Boolean(item)} onChange={(e) => setRole(e.target.value as Role)}>{(Object.keys(roleInfo) as Role[]).map((key) => <MenuItem key={key} value={key}>{roleInfo[key].title}</MenuItem>)}</TextField><TextField label="Добавить значения" size="small" multiline minRows={2} value={valuesText} disabled={busy} onChange={(e) => setValuesText(e.target.value)} placeholder={role === "size" ? "S, M, L, XL" : role === "color" ? "Чёрный, Бежевый" : "Monogram, ..."} helperText="Введите через запятую. Для размера порядок будет таким же." />{item && <Paper variant="outlined" sx={{ p: 1.25, display: "flex", justifyContent: "space-between", alignItems: "center" }}><Box><Typography variant="body2">Поле активно</Typography><Typography variant="caption" color="text.secondary">Отключённые поля не показываются в новых формах.</Typography></Box><Switch checked={active} onChange={(e) => setActive(e.target.checked)} /></Paper>}</Stack><Divider /><Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ p: 2 }}><Button onClick={onClose} disabled={busy}>Отмена</Button><Button variant="contained" disabled={busy || !name.trim()} onClick={() => void save()}>{busy ? "Сохранение…" : "Сохранить"}</Button></Stack></Box></Drawer>;
+};
+
+type CategoryEditorProps = { item: DjangoProductCategoryNode | null; attributes: DjangoProductAttribute[]; categories: DjangoProductCategoryNode[]; open: boolean; onClose: () => void; onChanged: () => void; organizationId?: number };
+const CategoryEditor: React.FC<CategoryEditorProps> = ({ item, attributes, categories, open, onClose, onChanged, organizationId }) => {
+    const { open: notify } = useNotification();
+    const [name, setName] = React.useState(""); const [parentId, setParentId] = React.useState<number | null>(null); const [attributeIds, setAttributeIds] = React.useState<number[]>([]); const [active, setActive] = React.useState(true); const [busy, setBusy] = React.useState(false);
+    React.useEffect(() => { if (open) { setName(item?.name ?? ""); setParentId(item?.parentId ?? null); setAttributeIds(item?.attributeIds ?? []); setActive(item?.isActive ?? true); setBusy(false); } }, [item, open]);
+    const toggle = (id: number) => setAttributeIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
+    const save = async () => { if (!name.trim()) return; setBusy(true); try { if (item) await updateProductCategory(item.id, { name: name.trim(), parentId: parentId ?? undefined, clearParent: item.parentId != null && parentId == null, attributeIds, isActive: active }); else await createProductCategory({ name: name.trim(), parentId: parentId ?? undefined, attributeIds, organizationId }); notify?.({ type: "success", message: item ? "Категория обновлена" : "Категория добавлена" }); onChanged(); onClose(); } catch (error) { notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось сохранить категорию" }); } finally { setBusy(false); } };
+    const hasColor = attributes.some((a) => a.id && attributeIds.includes(a.id) && a.role === "color"); const hasSize = attributes.some((a) => a.id && attributeIds.includes(a.id) && a.role === "size");
+    return <Drawer anchor="right" open={open} onClose={busy ? undefined : onClose} PaperProps={{ sx: { width: { xs: 360, sm: 520 }, maxWidth: "100vw" } }}><Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}><Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 2 }}><Box><Typography variant="h6">{item ? "Настроить категорию" : "Новая категория"}</Typography><Typography variant="caption" color="text.secondary">Отметьте, какие поля увидит сотрудник после выбора категории.</Typography></Box><IconButton onClick={onClose} disabled={busy}><CloseOutlined /></IconButton></Stack><Divider /><Stack spacing={2} sx={{ p: 2, flex: 1, overflowY: "auto" }}><TextField label="Название категории *" size="small" autoFocus value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder="Одежда" /><TextField select label="Родительская категория" size="small" value={parentId ?? ""} disabled={busy} onChange={(e) => setParentId(e.target.value === "" ? null : Number(e.target.value))}><MenuItem value="">Без родителя</MenuItem>{categories.filter((category) => category.id !== item?.id && category.isActive).map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}</TextField><Divider /><Typography variant="subtitle2">Поля в дровере товара</Typography><Typography variant="body2" color="text.secondary">Выберите то, что относится именно к этой категории. Ничего лишнего в форме не появится.</Typography>{attributes.filter((attribute) => attribute.isActive).map((attribute) => <Paper key={attribute.id} variant="outlined" sx={{ px: 1, py: 0.25 }}><FormControlLabel control={<Checkbox checked={attributeIds.includes(attribute.id)} onChange={() => toggle(attribute.id)} disabled={busy} />} label={<Stack><Stack direction="row" gap={0.75} alignItems="center">{roleInfo[attribute.role].icon}<Typography variant="body2">{attribute.name}</Typography></Stack><Typography variant="caption" color="text.secondary">{roleInfo[attribute.role].description}</Typography></Stack>} /></Paper>)}{hasColor !== hasSize && <Alert severity="warning">Для товарной матрицы включите одновременно «Цвет» и «Размер». По отдельности они не сохраняются.</Alert>}{hasColor && hasSize && <Alert severity="success">Эта категория будет создавать варианты по цветам и размерам.</Alert>}{item && <Paper variant="outlined" sx={{ p: 1.25, display: "flex", justifyContent: "space-between", alignItems: "center" }}><Typography variant="body2">Категория активна</Typography><Switch checked={active} onChange={(e) => setActive(e.target.checked)} /></Paper>}</Stack><Divider /><Stack direction="row" justifyContent="flex-end" spacing={1} sx={{ p: 2 }}><Button onClick={onClose} disabled={busy}>Отмена</Button><Button variant="contained" disabled={busy || !name.trim() || hasColor !== hasSize} onClick={() => void save()}>{busy ? "Сохранение…" : "Сохранить"}</Button></Stack></Box></Drawer>;
 };
 
 const ProductAttributesSettingsPage: React.FC = () => {
-    const { open: notify } = useNotification();
-    const orgId = useApiOrgId();
-    const { activeOrganization, loading: permissionsLoading } = usePermissions();
-    const [items, setItems] = React.useState<DjangoProductAttribute[]>([]);
-    const [loading, setLoading] = React.useState(false);
-    const [editorItem, setEditorItem] = React.useState<DjangoProductAttribute | null | undefined>(undefined);
-    const load = React.useCallback(async () => {
-        if (activeOrganization?.vertical !== "retail") return;
-        setLoading(true);
-        try { setItems(await getProductAttributes(undefined, orgId)); }
-        catch (error) { notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось загрузить свойства" }); }
-        finally { setLoading(false); }
-    }, [activeOrganization?.vertical, notify, orgId]);
+    const { open: notify } = useNotification(); const orgId = useApiOrgId(); const { activeOrganization, loading: permissionsLoading } = usePermissions();
+    const [attributes, setAttributes] = React.useState<DjangoProductAttribute[]>([]); const [categories, setCategories] = React.useState<DjangoProductCategoryNode[]>([]); const [loading, setLoading] = React.useState(false); const [attributeEditor, setAttributeEditor] = React.useState<DjangoProductAttribute | null | undefined>(undefined); const [categoryEditor, setCategoryEditor] = React.useState<DjangoProductCategoryNode | null | undefined>(undefined);
+    const load = React.useCallback(async () => { if (activeOrganization?.vertical !== "retail") return; setLoading(true); try { const [nextAttributes, nextCategories] = await Promise.all([getProductAttributes(undefined, orgId), getProductCategoryTree(undefined, orgId)]); setAttributes(nextAttributes); setCategories(nextCategories); } catch (error) { notify?.({ type: "error", message: error instanceof ApiError ? error.message : "Не удалось загрузить настройки товара" }); } finally { setLoading(false); } }, [activeOrganization?.vertical, notify, orgId]);
     React.useEffect(() => { void load(); }, [load]);
-    return <SettingsLayout><Stack spacing={3}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2} flexWrap="wrap"><Box><Typography variant="h6" fontWeight={600}>Свойства товара</Typography><Typography variant="body2" color="text.secondary">Соберите поля единого дровера: бренд, материал, сезон, цвета и размерные сетки.</Typography></Box><Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => setEditorItem(null)} disabled={loading || permissionsLoading}>Добавить свойство</Button></Stack>
-        {activeOrganization && activeOrganization.vertical !== "retail" && <Alert severity="info">Настройка вариантов доступна организациям с вертикалью «Розничная торговля».</Alert>}
-        {loading && <Stack alignItems="center" py={5}><CircularProgress size={26} /></Stack>}
-        {!loading && activeOrganization?.vertical === "retail" && !items.length && <Alert severity="info">Сначала создайте «Бренд», «Цвет» и «Размер EU». После этого форма «Добавить товар» сможет создавать обычные товары и варианты одежды.</Alert>}
-        <Stack spacing={1.25}>{items.map((item) => <Paper key={item.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1.5}><Stack spacing={0.75} sx={{ minWidth: 0, flex: 1 }}><Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap">{roleInfo[item.role].icon}<Typography fontWeight={600}>{item.name}</Typography><Chip size="small" label={roleInfo[item.role].title} variant="outlined" /><Chip size="small" label={item.isActive ? "В форме" : "Скрыто"} color={item.isActive ? "success" : "default"} variant="outlined" /></Stack><Typography variant="caption" color="text.secondary">{roleInfo[item.role].description}</Typography>{item.values.length > 0 && <Stack direction="row" gap={0.75} flexWrap="wrap">{item.values.map((value) => <Chip key={value.id} size="small" label={value.value} variant={value.isActive ? "filled" : "outlined"} />)}</Stack>}</Stack><IconButton size="small" onClick={() => setEditorItem(item)}><EditOutlined fontSize="small" /></IconButton></Stack></Paper>)}</Stack>
-        <AttributeEditor open={editorItem !== undefined} item={editorItem ?? null} onClose={() => setEditorItem(undefined)} onChanged={() => void load()} organizationId={orgId} />
-    </Stack></SettingsLayout>;
+    return <SettingsLayout><Stack spacing={3}><Box><Typography variant="h6" fontWeight={600}>Категории и поля товаров</Typography><Typography variant="body2" color="text.secondary">Сначала создайте поля, затем соберите из них форму каждой категории. Дровер товара сам подстроится после выбора категории.</Typography></Box>{activeOrganization && activeOrganization.vertical !== "retail" && <Alert severity="info">Настройка форм категорий доступна организациям с вертикалью «Розничная торговля».</Alert>}{loading && <Stack alignItems="center" py={5}><CircularProgress size={26} /></Stack>}{!loading && activeOrganization?.vertical === "retail" && <><Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}><Typography variant="subtitle1" fontWeight={600}>Категории</Typography><Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => setCategoryEditor(null)} disabled={permissionsLoading}>Добавить категорию</Button></Stack>{!categories.length && <Alert severity="info">Создайте, например, «Одежда» и включите в неё «Бренд», «Цвет» и «Размер».</Alert>}<Stack spacing={1}>{categories.map((category) => { const fields = attributes.filter((attribute) => category.attributeIds.includes(attribute.id)); return <Paper key={category.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction="row" justifyContent="space-between" gap={1}><Stack spacing={0.75}><Stack direction="row" alignItems="center" gap={0.75}><CategoryOutlined fontSize="small" /><Typography fontWeight={600}>{category.name}</Typography><Chip size="small" label={category.isActive ? "Активна" : "Скрыта"} color={category.isActive ? "success" : "default"} variant="outlined" /></Stack><Stack direction="row" gap={0.75} flexWrap="wrap">{fields.length ? fields.map((field) => <Chip key={field.id} size="small" label={field.name} />) : <Typography variant="caption" color="text.secondary">Базовая форма без дополнительных полей</Typography>}</Stack></Stack><IconButton size="small" onClick={() => setCategoryEditor(category)}><EditOutlined fontSize="small" /></IconButton></Stack></Paper>; })}</Stack><Divider /><Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}><Typography variant="subtitle1" fontWeight={600}>Поля</Typography><Button size="small" variant="outlined" startIcon={<AddOutlined />} onClick={() => setAttributeEditor(null)} disabled={permissionsLoading}>Добавить поле</Button></Stack><Stack spacing={1}>{attributes.map((attribute) => <Paper key={attribute.id} variant="outlined" sx={{ p: 1.25 }}><Stack direction="row" justifyContent="space-between"><Stack spacing={0.5}><Stack direction="row" gap={0.75} alignItems="center">{roleInfo[attribute.role].icon}<Typography fontWeight={600}>{attribute.name}</Typography><Chip size="small" label={roleInfo[attribute.role].title} variant="outlined" /></Stack><Typography variant="caption" color="text.secondary">{roleInfo[attribute.role].description}</Typography><Stack direction="row" gap={0.5} flexWrap="wrap">{attribute.values.map((value) => <Chip key={value.id} size="small" label={value.value} variant={value.isActive ? "filled" : "outlined"} />)}</Stack></Stack><IconButton size="small" onClick={() => setAttributeEditor(attribute)}><EditOutlined fontSize="small" /></IconButton></Stack></Paper>)}</Stack></>}<AttributeEditor open={attributeEditor !== undefined} item={attributeEditor ?? null} onClose={() => setAttributeEditor(undefined)} onChanged={() => void load()} organizationId={orgId} /><CategoryEditor open={categoryEditor !== undefined} item={categoryEditor ?? null} attributes={attributes} categories={categories} onClose={() => setCategoryEditor(undefined)} onChanged={() => void load()} organizationId={orgId} /></Stack></SettingsLayout>;
 };
-
 export default ProductAttributesSettingsPage;
