@@ -353,12 +353,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
-  // Ввод прививки из карточки приёма (регистратура): приём, для которого открыт дровер.
+  // Ввод вакцины из карточки приёма (регистратура): приём, для которого открыт дровер.
   const [vaccineAppt, setVaccineAppt] = React.useState<DjangoAppointment | null>(null);
   // Предзаполнение из прогноза календаря (клик «Ввести» на положенной дозе):
   // вакцина + № дозы. null — общий ввод без прогноза.
   const [vaccinePrefill, setVaccinePrefill] = React.useState<{ vaccineId: number; doseNumber: number } | null>(null);
-  // Стабильный stub пациента для дровера прививки: без мемо новый объект на каждый
+  // Стабильный stub пациента для дровера вакцины: без мемо новый объект на каждый
   // рендер (heartbeat autosync) сбрасывал бы форму (resetForm зависит от initialPatient).
   const vaccinePatientStub = React.useMemo(
     () =>
@@ -367,7 +367,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         : null,
     [vaccineAppt, activeOrganization?.id],
   );
-  // Групповой ввод прививок (несколько положенных доз за один визит).
+  // Групповой ввод вакцин (несколько положенных доз за один визит).
   const [multiVaccineAppt, setMultiVaccineAppt] = React.useState<DjangoAppointment | null>(null);
   const [multiVaccineDoses, setMultiVaccineDoses] = React.useState<BatchDoseInput[]>([]);
   const multiVaccinePatientStub = React.useMemo(
@@ -386,7 +386,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const canDelete = isSuperAdmin() || can("appointments.delete");
   const canViewFinance = can("finance.view");
   const canManageFinance = can("finance.manage");
-  // Регистратор может ввести прививку прямо из карточки приёма — если бэк выдал
+  // Регистратор может ввести вакцину прямо из карточки приёма — если бэк выдал
   // роли право vaccinations.record (иначе кнопка не показывается).
   const canRecordVaccination = can("vaccinations.record");
 
@@ -1291,7 +1291,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         onSaved={handlePaymentSaved}
       />
 
-      {/* Ввод прививки из карточки приёма (регистратура): пациент и appointmentId
+      {/* Ввод вакцины из карточки приёма (регистратура): пациент и appointmentId
           подставляются из выбранного приёма, строка вакцины уйдёт в его счёт. */}
       <RecordVaccinationDrawer
         open={vaccineAppt != null}

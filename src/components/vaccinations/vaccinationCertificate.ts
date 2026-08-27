@@ -9,7 +9,7 @@ const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] ?? c));
 
 /**
- * Печать прививочного сертификата пациента (выписка из электронной карты).
+ * Печать сертификата о вакцинации пациента (выписка из электронной карты).
  * Открывает отдельное окно с самодостаточным HTML и вызывает печать. Это
  * внутренний документ клиники по её собственным данным — без гос-брендинга.
  */
@@ -53,7 +53,7 @@ export function printVaccinationCertificate(
   const dob = patient.birthDate ? dayjs(patient.birthDate).format("DD.MM.YYYY") : "—";
 
   win.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8">
-    <title>Прививочный сертификат — ${esc(patient.fullName)}</title>
+    <title>Сертификат о вакцинации — ${esc(patient.fullName)}</title>
     <style>
       body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color:#1a1a1a; margin:32px; }
       h1 { font-size:20px; margin:0 0 4px; }
@@ -69,7 +69,7 @@ export function printVaccinationCertificate(
       .foot { margin-top:32px; font-size:11px; color:#999; }
       @media print { body { margin:12mm; } }
     </style></head><body>
-    <h1>Прививочный сертификат</h1>
+    <h1>Сертификат о вакцинации</h1>
     <div class="sub">${esc(tt("vaccinations:certificate.subtitle"))}</div>
     <div class="meta">
       <div><b>${esc(tt("vaccinations:certificate.patientLabel"))}</b> ${esc(patient.fullName)}</div>
@@ -77,15 +77,15 @@ export function printVaccinationCertificate(
       ${patient.phone ? `<div><b>Телефон:</b> ${esc(patient.phone)}</div>` : ""}
       <div><b>Дата выписки:</b> ${dayjs().format("DD.MM.YYYY")}</div>
     </div>
-    <h2>Проведённые прививки</h2>
+    <h2>Проведённые вакцины</h2>
     ${
       done.length
         ? `<table><thead><tr><th>Дата</th><th>Вакцина</th><th>Доза</th><th>Место</th><th>Тип</th><th>Кто вводил</th></tr></thead><tbody>${doneRows}</tbody></table>`
-        : `<div class="empty">Нет данных о проведённых прививках.</div>`
+        : `<div class="empty">Нет данных о проведённых вакцинах.</div>`
     }
     ${
       upcoming.length
-        ? `<h2>Предстоящие прививки</h2><table><thead><tr><th>Дата</th><th>Вакцина</th><th>Доза</th><th>Статус</th></tr></thead><tbody>${upcomingRows}</tbody></table>`
+        ? `<h2>Предстоящие вакцины</h2><table><thead><tr><th>Дата</th><th>Вакцина</th><th>Доза</th><th>Статус</th></tr></thead><tbody>${upcomingRows}</tbody></table>`
         : ""
     }
     <div class="foot">${esc(tt("vaccinations:certificate.footer"))}</div>

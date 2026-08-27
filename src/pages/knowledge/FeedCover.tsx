@@ -24,6 +24,12 @@ interface FeedCoverProps {
   icon?: React.ReactNode;
   /** Плашки поверх обложки — например «3 части». */
   overlay?: React.ReactNode;
+  /**
+   * Миниатюра для мобильной строки списка: пропорция 4:3 вместо 16:9 и мелкая
+   * буква. На телефоне обложка 16:9 во всю ширину занимала пол-экрана — в списке
+   * помещалось полторы карточки.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -31,7 +37,14 @@ interface FeedCoverProps {
  * буква на плоской подложке (без градиентов и теней, гайд §5.2).
  * Общая для карточки статьи и карточки серии, чтобы лента выглядела единой.
  */
-const FeedCover: React.FC<FeedCoverProps> = ({ seed, title, coverUrl, icon, overlay }) => {
+const FeedCover: React.FC<FeedCoverProps> = ({
+  seed,
+  title,
+  coverUrl,
+  icon,
+  overlay,
+  compact = false,
+}) => {
   const theme = useTheme();
   const cover = theme.palette[coverColorKey(seed)];
   // Битая ссылка на обложку — откатываемся на «обложку из буквы».
@@ -42,7 +55,7 @@ const FeedCover: React.FC<FeedCoverProps> = ({ seed, title, coverUrl, icon, over
   return (
     <Box
       sx={{
-        aspectRatio: "16/9",
+        aspectRatio: compact ? "4/3" : "16/9",
         position: "relative",
         display: "flex",
         alignItems: "center",
@@ -65,7 +78,7 @@ const FeedCover: React.FC<FeedCoverProps> = ({ seed, title, coverUrl, icon, over
           <Typography
             component="span"
             sx={{
-              fontSize: "3rem",
+              fontSize: compact ? "1.75rem" : "3rem",
               fontWeight: 700,
               lineHeight: 1,
               letterSpacing: -1,
@@ -78,11 +91,11 @@ const FeedCover: React.FC<FeedCoverProps> = ({ seed, title, coverUrl, icon, over
           <Box
             sx={{
               position: "absolute",
-              right: 10,
-              bottom: 8,
+              right: compact ? 5 : 10,
+              bottom: compact ? 4 : 8,
               display: "flex",
               color: alpha(cover.main, 0.55),
-              "& .MuiSvgIcon-root": { fontSize: 18 },
+              "& .MuiSvgIcon-root": { fontSize: compact ? 14 : 18 },
             }}
           >
             {icon ?? <ArticleOutlined />}

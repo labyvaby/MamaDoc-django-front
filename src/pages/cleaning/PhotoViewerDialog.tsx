@@ -164,6 +164,13 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (count === 0) return;
+    // Нажатие на кнопку внутри сцены (стрелки листания) — не жест по фото.
+    // Без этой проверки клик по стрелке и листал, и переключал масштаб: жест
+    // получался нулевой длины, а нулевой жест — это «тап по фото».
+    if ((e.target as HTMLElement).closest("button")) {
+      gestureRef.current = null;
+      return;
+    }
     gestureRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pan: zoom > 1 };
     setDragging(true);
     // Захват указателя нужен, чтобы жест не терялся при выходе за края сцены.
@@ -229,7 +236,12 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     color: "common.white",
     bgcolor: alpha(theme.palette.common.black, 0.4),
     "&:hover": { bgcolor: alpha(theme.palette.common.black, 0.6) },
-    "&.Mui-disabled": { color: alpha(theme.palette.common.white, 0.3) },
+    "&.Mui-disabled": {
+      color: alpha(theme.palette.common.white, 0.3),
+      // MUI делает погашенную кнопку прозрачной для указателя — нажатие на
+      // крайнюю стрелку проваливалось в сцену и увеличивало фото.
+      pointerEvents: "auto",
+    },
   };
 
   return (

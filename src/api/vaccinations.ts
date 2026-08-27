@@ -1,7 +1,7 @@
 import { ApiError, apiRequest } from "./client";
 
 /**
- * Модуль «Прививки» (vaccinations).
+ * Модуль «Вакцины» (vaccinations).
  *
  * Контракт: frontend-vaccinations-guide.md + changelog от 21.08.2026
  * (`vaccinations_frontend_changelog.md`): привязка дозы к строке товара приёма,
@@ -59,7 +59,7 @@ export const SCHEDULE_DASHBOARD_PAGE_SIZE = 50;
  * Справочник вакцин. Источник истины «это вакцина» с 23.07.2026 — флаг
  * товара склада `isVaccine`; товары-вакцины тянем через
  * getProducts({ isVaccine: true }). Карточка вакцины авто-создаётся бэком при
- * переключении товара в isVaccine=true; в разделе прививок редактируем только
+ * переключении товара в isVaccine=true; в разделе вакцин редактируем только
  * медицинские поля (manufacturer/targetDisease/dosesRequired/... — см. гайд).
  */
 export interface Vaccine {
@@ -104,7 +104,7 @@ export interface VaccineBatch {
   branchId: number;
   vaccineId: number;
   vaccineName: string;
-  /** Товар склада: без него ввод прививки НЕ спишет остаток и НЕ создаст строку счёта. */
+  /** Товар склада: без него ввод вакцины НЕ спишет остаток и НЕ создаст строку счёта. */
   productId: number | null;
   /** Read-поля товара (с 23.07.2026): имя и актуальная цена Product.price (строка-decimal). */
   productName: string | null;
@@ -191,7 +191,7 @@ export interface BatchWriteOff {
 export type InjectionSite = string;
 
 /**
- * Статус записи о прививке.
+ * Статус записи о вакцине.
  *
  * "draft" (с 21.08.2026) бэк ставит сам, когда регистратор продал товар-вакцину
  * в приёме, — медсестре остаётся дозаполнить. "done" — предположение фронта
@@ -206,7 +206,7 @@ export type VaccinationRecordStatus =
   | "canceled"
   | string;
 
-/** Кто вводил прививку — объект (как employee в строке услуги приёма), не число. */
+/** Кто вводил вакцину — объект (как employee в строке услуги приёма), не число. */
 export interface VaccinationAdministeredBy {
   id: number;
   fullName: string;
@@ -214,7 +214,7 @@ export interface VaccinationAdministeredBy {
   nickname: string | null;
 }
 
-/** Запись о введённой прививке. */
+/** Запись о введённой вакцине. */
 export interface VaccinationRecord {
   id: number;
   organizationId: number;
@@ -307,7 +307,7 @@ export interface UpdateRecordPayload {
  */
 export type ScheduleStatus = "planned" | "overdue" | "done" | "completed" | "skipped";
 
-/** Слот календаря прививок. status="overdue" вычисляется бэком на лету. */
+/** Слот календаря вакцин. status="overdue" вычисляется бэком на лету. */
 export interface VaccinationScheduleSlot {
   id: number;
   organizationId: number;
@@ -739,7 +739,7 @@ export function getBatchWriteOffs(
   ).then(toList);
 }
 
-// ── API: записи о прививках ────────────────────────────────────────────────────
+// ── API: записи о вакцинах ────────────────────────────────────────────────────
 
 export function getRecords(
   filters: RecordsFilters = {},
@@ -770,7 +770,7 @@ export function getRecords(
 }
 
 /**
- * Записи прививок одного приёма — для индикатора «оформлена / не оформлена» в
+ * Записи вакцин одного приёма — для индикатора «оформлена / не оформлена» в
  * карточке приёма. Отменённые дозы отбрасываем: строка товара после отмены
  * снова свободна.
  */
@@ -850,7 +850,7 @@ export function createRecord(
 /**
  * Доза уже зарегистрирована в этом приёме (HTTP 409 на связку
  * appointmentId + vaccineId + doseNumber, с 21.08.2026). Возвращает текст бэка
- * — он человекочитаемый («Прививка дозы 1 уже зарегистрирована в этом приёме»).
+ * — он человекочитаемый («Вакцина дозы 1 уже зарегистрирована в этом приёме»).
  */
 export function parseDuplicateDoseConflict(err: unknown): string | null {
   if (!(err instanceof ApiError) || err.status !== 409) return null;
@@ -882,7 +882,7 @@ export function cancelRecord(recordId: number, organizationId?: number): Promise
   return updateRecord(recordId, { status: "canceled" }, organizationId);
 }
 
-/** Наблюдение после прививки (реакция). */
+/** Наблюдение после вакцины (реакция). */
 export function addReactionNote(
   recordId: number,
   reactionNotes: string,
@@ -908,7 +908,7 @@ export function getPatientSchedule(
   ).then(toList);
 }
 
-/** История сделанных прививок пациента. */
+/** История сделанных вакцин пациента. */
 export function getPatientHistory(
   patientId: number,
   organizationId?: number,

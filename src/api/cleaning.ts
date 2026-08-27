@@ -492,15 +492,29 @@ export function deleteCleaningRecord(
  * тикете cleaning-модуля; форма ответа 1-в-1 с GET /reports/active-months/.
  */
 export function getCleaningActiveMonths(
-  organizationId?: number,
+  params: { organizationId?: number; branch?: number } = {},
   signal?: AbortSignal,
 ): Promise<string[]> {
   if (CLEANING_USE_MOCKS) {
-    const months = new Set(mockRecords.map((r) => cleaningRecordDate(r).slice(0, 7)));
+    const months = new Set(
+      mockRecords
+        .filter((r) => params.branch == null || r.branchId === params.branch)
+        .map((r) => cleaningRecordDate(r).slice(0, 7)),
+    );
     return mockDelay([...months]);
   }
+  const q = new URLSearchParams();
+  if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
+  // ⚠ `branch` здесь бэк ИГНОРИРУЕТ — проверено на проде 27.08.2026 (org 1):
+  // ?branch=1, ?branch=13 и даже ?branch=999 отдают один и тот же набор
+  // месяцев. Параметр оставлен намеренно: он безвреден (200, лишний query) и
+  // заработает сам, когда бэк поддержит фильтр. До этого лента месяцев шире
+  // списка — месяц, где уборки были только в чужом филиале, кликается и даёт
+  // пустую таблицу. Тикет: backend_ticket_cleaning_branch_scoping.md §3.
+  if (params.branch != null) q.set("branch", String(params.branch));
+  const qs = q.toString();
   return apiRequest<{ months: string[] }>(
-    withOrg("/cleaning/active-months/", organizationId),
+    `/cleaning/active-months/${qs ? `?${qs}` : ""}`,
     { signal },
   ).then((data) => (Array.isArray(data?.months) ? data.months : []));
 }

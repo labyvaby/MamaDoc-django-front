@@ -40,7 +40,23 @@ export const SeriesHeader: React.FC<SeriesHeaderProps> = ({
       </Typography>
     </Stack>
 
-    <Stack direction="row" gap={0.75} flexWrap="wrap">
+    {/* До планшета шаги едут одним прокручиваемым рядом: серия из шести частей
+        переносами занимала три строки над каждой статьёй. */}
+    <Box
+      sx={{
+        display: "flex",
+        gap: 0.75,
+        flexWrap: { xs: "nowrap", md: "wrap" },
+        overflowX: { xs: "auto", md: "visible" },
+        mx: { xs: -0.5, md: 0 },
+        px: { xs: 0.5, md: 0 },
+        pb: { xs: 0.5, md: 0 },
+        scrollbarWidth: "none",
+        "&::-webkit-scrollbar": { display: "none" },
+        overscrollBehaviorX: "contain",
+        "& > *": { flexShrink: 0 },
+      }}
+    >
       {parts.map((part, i) => {
         const current = i === index;
         const read = isRead(part.article.id);
@@ -90,7 +106,7 @@ export const SeriesHeader: React.FC<SeriesHeaderProps> = ({
           </Tooltip>
         );
       })}
-    </Stack>
+    </Box>
   </Paper>
 );
 
@@ -100,10 +116,16 @@ interface SeriesFooterNavProps {
   onOpen: (articleId: number) => void;
 }
 
-/** Переход к соседней части внизу статьи — «дочитал и пошёл дальше». */
+/**
+ * Переход к соседней части внизу статьи — «дочитал и пошёл дальше».
+ *
+ * ⚠ Порог столбик/ряд — `md`, а не `sm`: `sm` в теме равен 360px, и телефон
+ * попадал в ряд, где две кнопки с названиями частей делили 390px пополам.
+ * «Дальше» на телефоне идёт первой — это основное действие.
+ */
 export const SeriesFooterNav: React.FC<SeriesFooterNavProps> = ({ prev, next, onOpen }) => (
   <Stack
-    direction={{ xs: "column", sm: "row" }}
+    direction={{ xs: "column-reverse", md: "row" }}
     gap={1}
     sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: "divider" }}
   >
@@ -112,7 +134,7 @@ export const SeriesFooterNav: React.FC<SeriesFooterNavProps> = ({ prev, next, on
         variant="outlined"
         startIcon={<ArrowBackOutlined />}
         onClick={() => onOpen(prev.article.id)}
-        sx={{ justifyContent: "flex-start", maxWidth: { sm: "48%" } }}
+        sx={{ justifyContent: "flex-start", maxWidth: { md: "48%" } }}
       >
         <Box sx={{ minWidth: 0, textAlign: "left" }}>
           <Typography variant="caption" color="text.secondary" component="div">
@@ -129,9 +151,13 @@ export const SeriesFooterNav: React.FC<SeriesFooterNavProps> = ({ prev, next, on
         variant="contained"
         endIcon={<ArrowForwardOutlined />}
         onClick={() => onOpen(next.article.id)}
-        sx={{ justifyContent: "flex-end", ml: { sm: "auto" }, maxWidth: { sm: "48%" } }}
+        sx={{
+          justifyContent: { xs: "space-between", md: "flex-end" },
+          ml: { md: "auto" },
+          maxWidth: { md: "48%" },
+        }}
       >
-        <Box sx={{ minWidth: 0, textAlign: "right" }}>
+        <Box sx={{ minWidth: 0, textAlign: { xs: "left", md: "right" } }}>
           <Typography variant="caption" sx={{ opacity: 0.8 }} component="div">
             Часть {next.partNumber}
           </Typography>

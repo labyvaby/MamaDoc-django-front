@@ -72,7 +72,7 @@ export type DjangoProduct = {
     price: number;
     isInfusion: boolean;
     /**
-     * Товар-вакцина. Источник истины для раздела «Прививки» с 23.07.2026
+     * Товар-вакцина. Источник истины для раздела «Вакцины» с 23.07.2026
      * (миграция warehouse.0005 проставила флаг товарам категории «Вакцины»,
      * дальше — только boolean). Переключение в true авто-создаёт/активирует
      * медкарточку вакцины на бэке.
@@ -240,7 +240,7 @@ export async function getProducts(
     opts: {
         includeInactive?: boolean;
         category?: string;
-        /** Только товары-вакцины (?isVaccine=true) — для пикеров раздела «Прививки». */
+        /** Только товары-вакцины (?isVaccine=true) — для пикеров раздела «Вакцины». */
         isVaccine?: boolean;
         organizationId?: number;
         /**

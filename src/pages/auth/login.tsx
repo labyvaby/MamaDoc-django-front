@@ -91,7 +91,11 @@ const LoginPage: React.FC = () => {
   const [params] = useSearchParams();
   // Без явного deep-link ведём на корень: RootRedirect выберет первую реально
   // доступную рабочую страницу (врач → /doctor, медсестра → /nurse и т.д.).
-  const redirectTo = params.get("to") || "/";
+  // Возврат на /login тоже отбрасываем: иначе после успешного входа страница
+  // логина зацикливается на себя.
+  const requestedRedirect = params.get("to");
+  const redirectTo =
+    requestedRedirect && !requestedRedirect.startsWith("/login") ? requestedRedirect : "/";
 
   const [authMethod, setAuthMethod] = React.useState<"email" | "phone">(readSavedAuthMethod);
 

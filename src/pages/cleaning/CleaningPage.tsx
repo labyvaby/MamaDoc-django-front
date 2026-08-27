@@ -37,7 +37,7 @@ import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useModuleGate } from "../../hooks/useModuleGate";
-import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useActiveScope } from "../../hooks/useActiveScope";
 import { useTheme } from "@mui/material/styles";
 import {
   ListEmptyState,
@@ -85,7 +85,12 @@ const CleaningPage: React.FC = () => {
   const theme = useTheme();
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
-  const orgId = useApiOrgId();
+  // Скоуп страницы: организация + активный филиал. Уборка — событие филиала, и
+  // бэк по сессии его не сужает (без явного `branch` в query отдаются все
+  // филиалы организации, см. аудит скоупинга), поэтому филиал передаём сами.
+  // branchId undefined (суперадмин без выбранного филиала) = вся организация,
+  // как было раньше.
+  const { organizationId: orgId, branchId } = useActiveScope();
   const { moduleGate } = useModuleGate();
 
   // Доступ к странице гейтит RequireModule (App.tsx); здесь — права на действия.
@@ -128,6 +133,7 @@ const CleaningPage: React.FC = () => {
       type: typeFilter,
       page,
       orgId: orgId ?? null,
+      branchId: branchId ?? null,
     }),
     queryFn: ({ signal }) =>
       getCleaningRecords(
@@ -136,6 +142,7 @@ const CleaningPage: React.FC = () => {
           dateTo: month.endOf("month").format("YYYY-MM-DD"),
           status: statusFilter === "all" ? undefined : statusFilter,
           type: typeFilter === "all" ? undefined : typeFilter,
+          branch: branchId,
           page: page + 1,
           pageSize: PAGE_SIZE,
           organizationId: orgId,
@@ -157,6 +164,7 @@ const CleaningPage: React.FC = () => {
       type: typeFilter,
       counts: true,
       orgId: orgId ?? null,
+      branchId: branchId ?? null,
     }),
     queryFn: async ({ signal }): Promise<StatusCounts> => {
       const statuses: CleaningRecordStatus[] = ["pending", "approved", "rejected"];
@@ -168,6 +176,7 @@ const CleaningPage: React.FC = () => {
               dateTo: month.endOf("month").format("YYYY-MM-DD"),
               status,
               type: typeFilter === "all" ? undefined : typeFilter,
+              branch: branchId,
               page: 1,
               pageSize: 1,
               organizationId: orgId,
@@ -186,9 +195,16 @@ const CleaningPage: React.FC = () => {
   });
 
   const summaryQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.summary({ month: monthStr, orgId: orgId ?? null }),
+    queryKey: djangoQueryKeys.cleaning.summary({
+      month: monthStr,
+      orgId: orgId ?? null,
+      branchId: branchId ?? null,
+    }),
     queryFn: ({ signal }) =>
-      getCleaningSummary({ month: monthStr, organizationId: orgId }, signal),
+      getCleaningSummary(
+        { month: monthStr, branch: branchId, organizationId: orgId },
+        signal,
+      ),
     enabled: tab === "summary",
   });
 
@@ -196,8 +212,12 @@ const CleaningPage: React.FC = () => {
   // (уборщица работает в нём с первого дня). Будущие месяцы в набор не
   // попадают и потому скрыты. Пока список не загружен (null) — без фильтра.
   const monthsQuery = useQuery({
-    queryKey: djangoQueryKeys.cleaning.activeMonths(orgId ?? null),
-    queryFn: ({ signal }) => getCleaningActiveMonths(orgId, signal),
+    queryKey: djangoQueryKeys.cleaning.activeMonths({
+      orgId: orgId ?? null,
+      branchId: branchId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getCleaningActiveMonths({ organizationId: orgId, branch: branchId }, signal),
   });
   const activeMonths = React.useMemo(() => {
     if (!monthsQuery.data) return null;

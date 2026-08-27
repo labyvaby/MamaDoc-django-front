@@ -127,6 +127,9 @@ const ProfilePage = lazy(() => import("./pages/profile"));
 
 // Вспомогательный компонент для защиты корневого редиректа
 const RootRedirect = () => {
+  // Корень раскладывает вход по правам (config/homeRoute.ts): раньше здесь
+  // был хардкод /appointments, и вход без права appointments.registry.view
+  // заканчивался экраном «Нет доступа».
   const { loading, can } = useCanChecker();
   const { role, activeEmployee } = usePermissions();
   const { loading: moduleLoading, moduleGate } = useModuleGate();
@@ -382,7 +385,7 @@ function App() {
                       {
                         name: "vaccinations",
                         list: "/vaccinations",
-                        meta: { label: "Прививки" }
+                        meta: { label: "Вакцины" }
                       },
                       {
                         name: "achievements",
@@ -431,7 +434,13 @@ function App() {
                                 childrenBoxProps={{
                                   sx: {
                                     p: 1,
-                                    height: { xs: "calc(100dvh - 56px)", sm: "calc(100vh - 64px)" },
+                                    // ⚠ Порог — md, а не sm: `sm` в теме равен
+                                    // 360px, и телефон попадал в ветку рабочего
+                                    // стола — вычиталось 64px вместо 56px, а
+                                    // 100vh на мобильном браузере считается по
+                                    // экрану без адресной строки, из-за чего низ
+                                    // страницы уходил под неё.
+                                    height: { xs: "calc(100dvh - 56px)", md: "calc(100vh - 64px)" },
                                     overflow: "hidden",
                                     position: "relative",
                                   }
@@ -480,15 +489,18 @@ function App() {
                             </RequireSuperAdmin>
                           }
                         />
-                        {/* Сводка — общий главный экран. Права проверяются не на
-                            странице, а на каждом виджете: пустой экран закрыт
-                            заглушкой, отдельного кода на бэке не заводили. */}
+                        {/* Сводка — пока только суперадминистратору (решение
+                            заказчика 27.08.2026). Состав виджетов внутри
+                            определяется правами, но сам раздел скрыт от
+                            организаций до отдельного распоряжения. */}
                         <Route
                           path="dashboard"
                           element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <DashboardPage />
-                            </Suspense>
+                            <RequireSuperAdmin>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DashboardPage />
+                              </Suspense>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route

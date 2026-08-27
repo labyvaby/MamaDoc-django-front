@@ -43,6 +43,18 @@ import { previousRange, sumDayCounts, toDailySeries, type PeriodRange } from "./
  */
 export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
   const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
+  // Куда ведёт плитка: первое доступное рабочее пространство приёмов. Общую
+  // «главную по правам» (resolveHomeRoute) здесь брать нельзя — она может
+  // вернуть /cleaning или /profile, и плитка «Всего записей» уводила бы не
+  // туда. Нет ни одного из трёх прав — плитка остаётся без перехода.
+  const { can } = useCanChecker();
+  const workspacePath = can(PAGE_PERMISSIONS.appointmentsRegistry)
+    ? "/appointments"
+    : can(PAGE_PERMISSIONS.doctorRoom)
+    ? "/doctor"
+    : can(PAGE_PERMISSIONS.nurseRoom)
+    ? "/nurse"
+    : undefined;
 
   const useCounts = (r: PeriodRange) =>
     useQuery({
@@ -85,7 +97,9 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
             <Grid item xs={6}>
               <MetricTile
                 label="Всего записей"
-              href="/appointments"
+                // Не «Регистратура» жёстко: у врача её нет, клик по плитке
+                // приводил на «Нет доступа».
+                href={workspacePath}
                 value={total}
                 icon={<EventAvailableOutlined />}
                 loading={query.isLoading}

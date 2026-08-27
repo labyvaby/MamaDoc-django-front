@@ -197,7 +197,7 @@ export const PERMISSIONS = {
   KNOWLEDGE_VIEW: 'knowledge.view',
   KNOWLEDGE_MANAGE: 'knowledge.manage',
 
-  // Прививки (контракт: frontend-vaccinations-guide.md)
+  // Вакцины (контракт: frontend-vaccinations-guide.md)
   VACCINATIONS_VIEW: 'vaccinations.view',
   VACCINATIONS_MANAGE: 'vaccinations.manage',
   VACCINATIONS_RECORD: 'vaccinations.record',

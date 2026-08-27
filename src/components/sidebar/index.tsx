@@ -637,9 +637,9 @@ const SidebarSecondary: React.FC = () => {
             Остальные → placeholder (видны в меню, не скрыты)
             ══════════════════════════════════════════ */}
 
-        {/* Сводка — общий главный экран. Без гейта: состав виджетов
-            определяется правами внутри самой страницы. */}
-        {show("my-work") && (
+        {/* Сводка — пока только суперадминистратору (решение заказчика
+            27.08.2026). Роут закрыт RequireSuperAdmin в App.tsx. */}
+        {show("my-work") && isSuper && (
           <SidebarMenuItem
             to="/dashboard"
             icon={<InsightsOutlined />}
@@ -740,9 +740,9 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Прививки */}
+        {/* Вакцины */}
         {show("org") && can_.vaccinations && (
-          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Прививки" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
         )}
 
         {/* Все приемы */}
