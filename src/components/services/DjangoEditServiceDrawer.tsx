@@ -99,6 +99,7 @@ type ServiceEditDraft = {
   description: string;
   isActive: boolean;
   onlineBookingVisible: boolean;
+  allowPriceOverride: boolean;
   selectedBranchIds: number[];
 };
 
@@ -124,6 +125,7 @@ function sameAsBaseline(
     a.description === b.description &&
     a.isActive === b.isActive &&
     a.onlineBookingVisible === b.onlineBookingVisible &&
+    a.allowPriceOverride === b.allowPriceOverride &&
     sameIdSet(a.selectedBranchIds, b.selectedBranchIds)
   );
 }
@@ -148,6 +150,9 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
   const [isActive, setIsActive] = React.useState(record.isActive ?? true);
   const [onlineBookingVisible, setOnlineBookingVisible] = React.useState(
     record.onlineBookingVisible !== false,
+  );
+  const [allowPriceOverride, setAllowPriceOverride] = React.useState(
+    record.allowPriceOverride !== false,
   );
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(record.imageUrl ?? null);
@@ -223,6 +228,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       description: record.description ?? "",
       isActive: record.isActive ?? true,
       onlineBookingVisible: record.onlineBookingVisible !== false,
+      allowPriceOverride: record.allowPriceOverride !== false,
     };
     const next = draft ?? base;
     setName(next.name);
@@ -233,6 +239,10 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     setIsActive(next.isActive);
     // Черновик мог быть записан до появления поля — тогда считаем услугу видимой.
     setOnlineBookingVisible(next.onlineBookingVisible !== false);
+    // Черновик мог быть записан до появления тумблера — тогда у него нет этого
+    // поля, и `!== false` дал бы true, молча включив смену цены у услуги, где
+    // она запрещена. Падаем на текущее значение услуги, а не на «разрешено».
+    setAllowPriceOverride(next.allowPriceOverride ?? base.allowPriceOverride);
     setDraftRestored(Boolean(draft));
     // selectedBranchIds baseline заполняется в эффекте синхронизации филиалов —
     // он выполняется следом и знает актуальный availableBranches.
@@ -272,6 +282,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       description,
       isActive,
       onlineBookingVisible,
+      allowPriceOverride,
       selectedBranchIds: selectedBranches.map((b) => b.id),
     };
     const key = draftKeyFor(record.id);
@@ -296,6 +307,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
     description,
     isActive,
     onlineBookingVisible,
+    allowPriceOverride,
     selectedBranches,
   ]);
 
@@ -316,6 +328,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setDescription(b.description);
       setIsActive(b.isActive);
       setOnlineBookingVisible(b.onlineBookingVisible);
+      setAllowPriceOverride(b.allowPriceOverride);
       setSelectedBranches(availableBranches.filter((br) => b.selectedBranchIds.includes(br.id)));
     }
     setDraftRestored(false);
@@ -330,6 +343,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
       setDescription(record.description ?? "");
       setIsActive(record.isActive ?? true);
       setOnlineBookingVisible(record.onlineBookingVisible !== false);
+      setAllowPriceOverride(record.allowPriceOverride !== false);
       setPhotoFile(null);
       setPhotoPreview(record.imageUrl ?? null);
       setRemovePhoto(false);
@@ -394,6 +408,7 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
         basePrice: String(priceNum),
         isActive,
         ...(SERVICE_ONLINE_VISIBILITY_ENABLED ? { onlineBookingVisible } : {}),
+        allowPriceOverride,
         branchIds: selectedBranches.map((b) => b.id),
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
         ...relatedProductsPayload(
@@ -766,6 +781,34 @@ const DjangoEditServiceDrawer: React.FC<Props> = ({ open, onClose, record, onUpd
                     />
                   </Paper>
                 )}
+
+                {/* Право `appointments.price_override` говорит, КОМУ можно
+                    менять цену; этот тумблер — У КАКОЙ услуги. Выключен —
+                    иконка правки цены в приёме не показывается, а прямой
+                    запрос к API отклоняется бэком. */}
+                <Paper
+                  elevation={0}
+                  variant="outlined"
+                  sx={{
+                    p: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
+                  }}
+                >
+                  <Stack spacing={0.25}>
+                    <Typography variant="body2">{t("form.allowPriceOverrideLabel")}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("form.allowPriceOverrideHint")}
+                    </Typography>
+                  </Stack>
+                  <Switch
+                    checked={allowPriceOverride}
+                    onChange={(e) => setAllowPriceOverride(e.target.checked)}
+                    disabled={busy}
+                  />
+                </Paper>
               </Stack>
             </MotionBox>
           </MotionStack>

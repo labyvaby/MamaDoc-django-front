@@ -41,12 +41,16 @@ import { VerticalProvider } from "./i18n/VerticalProvider";
 import { tt } from "./i18n/t";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { RequirePermission } from "./components/rbac/RequirePermission";
+import { RequireSuperAdmin } from "./components/rbac/RequireSuperAdmin";
 import { RequireModule } from "./components/rbac/RequireModule";
 import {
   PAGE_PERMISSIONS,
   SETTINGS_TAB_PERMISSIONS,
 } from "./config/accessPermissions";
-import { useWorkspaceHome } from "./hooks/useWorkspaceHome";
+import { useCanChecker } from "./hooks/useCan";
+import { usePermissions } from "./hooks/usePermissions";
+import { useModuleGate } from "./hooks/useModuleGate";
+import { resolveHomeRoute } from "./config/homeRoute";
 import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 // import { RoleDebugNotification } from "./components/debug/RoleDebugNotification"; // ⚠️ Временно отключено
 
@@ -123,18 +127,22 @@ const ProfilePage = lazy(() => import("./pages/profile"));
 
 // Вспомогательный компонент для защиты корневого редиректа
 const RootRedirect = () => {
-  // Рабочие пространства приёмов гейтятся отдельными page-правами, поэтому
-  // корень ведёт на первое доступное: Регистратура → Кабинет врача →
-  // Процедурный кабинет (useWorkspaceHome). Если ни одного права нет —
-  // «Сводка»: она открыта всем аутентифицированным, а состав виджетов
-  // определяется правами внутри страницы. Раньше fallback вёл на
-  // /appointments, и вход без права appointments.registry.view заканчивался
-  // экраном «Нет доступа».
-  const { loading, workspacePath } = useWorkspaceHome();
-  if (loading) {
+  // Корень раскладывает вход по правам (config/homeRoute.ts): раньше здесь
+  // был хардкод /appointments, и вход без права appointments.registry.view
+  // заканчивался экраном «Нет доступа».
+  const { loading, can } = useCanChecker();
+  const { role, activeEmployee } = usePermissions();
+  const { loading: moduleLoading, moduleGate } = useModuleGate();
+  if (loading || moduleLoading) {
     return <LinearProgress />;
   }
-  return <Navigate to={workspacePath ?? "/dashboard"} replace />;
+  const path = resolveHomeRoute({
+    roleCode: role?.name,
+    can,
+    canOpenModule: moduleGate,
+    hasActiveEmployee: activeEmployee != null,
+  });
+  return <Navigate to={path} replace />;
 };
 
 const DjangoQueryCacheReset = () => {
@@ -457,24 +465,28 @@ function App() {
                         <Route index element={<RootRedirect />} />
                         <Route path="home" element={<RootRedirect />} />
                         <Route path="patient-search" element={<Navigate to="/patients" replace />} />
+                        {/* Исторические реестры «Все приёмы» / «Все процедуры» —
+                            только суперадминистратор (пожелание заказчика
+                            19.08.2026). Гейт ролевой, а не по праву: организация
+                            не должна открыть их себе через редактор ролей. */}
                         <Route
                           path="all-appointments"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.allAppointments}>
+                            <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllAppointmentsPage />
                               </Suspense>
-                            </RequirePermission>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route
                           path="all-procedures"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.allProcedures}>
+                            <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
                                 <AllProceduresPage />
                               </Suspense>
-                            </RequirePermission>
+                            </RequireSuperAdmin>
                           }
                         />
                         {/* Сводка — общий главный экран. Права проверяются не на
@@ -568,7 +580,10 @@ function App() {
                         <Route
                           path="doctor"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.doctorRoom}>
+                            <RequirePermission
+                              permission={PAGE_PERMISSIONS.doctorRoom}
+                              fallback={<Navigate to="/" replace />}
+                            >
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="me" />
                               </Suspense>
@@ -578,7 +593,10 @@ function App() {
                         <Route
                           path="nurse"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.nurseRoom}>
+                            <RequirePermission
+                              permission={PAGE_PERMISSIONS.nurseRoom}
+                              fallback={<Navigate to="/" replace />}
+                            >
                               <Suspense fallback={<LinearProgress />}>
                                 <AppointmentsPage scope="nurse" />
                               </Suspense>
@@ -677,7 +695,10 @@ function App() {
                             <Route
                               path="appointments"
                               element={
-                                <RequirePermission permission={PAGE_PERMISSIONS.appointmentsRegistry}>
+                                <RequirePermission
+                                  permission={PAGE_PERMISSIONS.appointmentsRegistry}
+                                  fallback={<Navigate to="/" replace />}
+                                >
                                   <Suspense fallback={<LinearProgress />}>
                                     <AppointmentsPage />
                                   </Suspense>

@@ -27,6 +27,7 @@ import { getServices, type Service } from "../../api/catalog";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useCan } from "../../hooks/useCan";
 import AppointmentStatusChips from "../appointments/AppointmentStatusChips";
 import { useT } from "../../i18n/VerticalProvider";
 
@@ -68,6 +69,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
   const [priceById, setPriceById] = React.useState<Map<number, string>>(new Map());
   const [appointments, setAppointments] = React.useState<DjangoAppointment[]>([]);
   const orgId = useApiOrgId();
+  const canSeeServices = useCan("staff.services.view");
 
   React.useEffect(() => {
     if (!doctorId || !open) {
@@ -84,7 +86,13 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
     // never ends up empty.
     Promise.all([
       getDjangoEmployee(doctorId, ctrl.signal).catch(() => null),
-      getEmployeeServices(doctorId, ctrl.signal).catch(() => [] as EmployeeServiceAssignment[]),
+      // Чужие услуги — только по staff.services.view. Без права не ходим
+      // вовсе: запрос всё равно вернёт 403, а секция скрывается сама.
+      canSeeServices
+        ? getEmployeeServices(doctorId, ctrl.signal).catch(
+            () => [] as EmployeeServiceAssignment[],
+          )
+        : Promise.resolve([] as EmployeeServiceAssignment[]),
       getServices(orgWide(orgId), undefined, ctrl.signal).catch(() => [] as Service[]),
       getAppointments(orgWide(orgId), { employeeId: doctorId }, ctrl.signal).catch(() => [] as DjangoAppointment[]),
     ])
@@ -106,7 +114,7 @@ const DjangoDoctorQuickViewDrawer: React.FC<Props> = ({
       active = false;
       ctrl.abort();
     };
-  }, [doctorId, open, orgId]);
+  }, [doctorId, open, orgId, canSeeServices]);
 
   const ROLE_LABEL: Record<string, string> = {
     doctor: t("doctorQuickView.roleDoctor"),

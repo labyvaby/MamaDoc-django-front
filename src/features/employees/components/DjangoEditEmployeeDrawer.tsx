@@ -331,10 +331,15 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const [busy, setBusy] = React.useState(false);
   const [serverError, setServerError] = React.useState<string | null>(null);
   // Правка в середине номера не должна выбрасывать курсор в конец.
-  const phoneInput = usePhoneLocalInput(phoneCountry, phoneLocal, (digits) => {
-    setPhoneLocal(digits);
-    setServerError(null);
-  });
+  const phoneInput = usePhoneLocalInput(
+    phoneCountry,
+    phoneLocal,
+    (digits) => {
+      setPhoneLocal(digits);
+      setServerError(null);
+    },
+    setPhoneCountry,
+  );
 
   /**
    * Включён ли Paylink у организации. Флаг предоплаты у врача сам по себе

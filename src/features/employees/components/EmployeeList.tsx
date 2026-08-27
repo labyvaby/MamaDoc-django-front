@@ -3,7 +3,6 @@ import { Stack, Typography, IconButton, Box, Chip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
-import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import type { EmployesRow } from "../types";
 import { UserAvatar } from "../../../components/ui";
 import { subtleBg } from "../../../theme/uiHelpers";
@@ -115,7 +114,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
       getEmployeePosition(e, t).label || statusText || t("list.fallbackEmployee");
 
     const photoUrl = e.photo_url || null;
-    const hasPassports = Boolean(e.passport_photos && e.passport_photos.length > 0);
     const selected = selectedId != null && String(e.id) === String(selectedId);
     const isActive = e.status === "active";
     const isFired = e.status === "fired";
@@ -173,12 +171,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
             <Typography variant="body2" fontWeight={500} noWrap>
               {e.full_name || t("list.noName")}
             </Typography>
-            {hasPassports && (
-              <DescriptionOutlined
-                sx={{ fontSize: 15, color: "primary.onSurface", flexShrink: 0 }}
-                titleAccess={t("list.passportUploaded")}
-              />
-            )}
           </Stack>
           <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
             {subline}

@@ -9,9 +9,6 @@ import {
   CardHeader,
   CardContent,
   Box,
-  ImageList,
-  ImageListItem,
-  Modal,
   IconButton,
   Tooltip,
 } from "@mui/material";
@@ -25,7 +22,6 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import ContactPageOutlined from "@mui/icons-material/ContactPageOutlined";
-import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import WorkOutlined from "@mui/icons-material/WorkOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -241,7 +237,6 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onEdit,
 }) => {
   const { t } = useT("employees");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [related, setRelated] = useState<RelatedModalType>(null);
   // Выбранный месяц для «связанных данных» — якорь "YYYY-MM-DD" (1-е число месяца).
   const [relatedMonth, setRelatedMonth] = useState<string>(() =>
@@ -253,9 +248,15 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
     setRelatedMonth((m) => dayjs(m).add(delta, "month").startOf("month").format("YYYY-MM-DD"));
 
   const { activeEmployee, activeOrganization } = usePermissions();
-  const canViewAttendance = useCan("attendance.view");
-  const canViewExpenses = useCan(["finance.view", "finance.expense.view"]);
-  const canViewPayroll = useCan("payroll.view");
+  // Связанные разделы карточки гейтятся СВОИМИ правами, а не модульными:
+  // «ведёт СКУД» или «смотрит кассу» ещё не значит «вправе смотреть смены,
+  // расходы и зарплату конкретного коллеги». Свои данные владелец карточки
+  // видит без этих прав — ниже везде `|| isOwnCard`.
+  const canViewAttendance = useCan("staff.related.attendance.view");
+  const canViewExpenses = useCan("staff.related.expenses.view");
+  // Услуги сотрудника вынесены из staff.view/staff.update в свои права,
+  // чтобы назначение услуг настраивалось отдельно от доступа к карточке.
+  const canViewPayroll = useCan("staff.related.payroll.view");
   const canViewAchievements = useCan("achievements.view");
   const apiOrgId = useApiOrgId();
 
@@ -264,6 +265,9 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   // Своя карточка: сотрудник всегда видит свои связанные данные (own-bypass).
   const isOwnCard = activeEmployee?.id != null && empIdNum === activeEmployee.id;
+  // Свои услуги врач видит всегда; чужие — по staff.services.view (та же
+  // модель, что у связанных разделов). Границу держит бэкенд.
+  const canViewServices = useCan("staff.services.view") || isOwnCard;
 
   // ── Живые показатели «связанных данных» за текущий месяц ────────────────────
   // Общие хуки с модалками (одинаковые queryKey → один запрос на кеш).
@@ -727,88 +731,6 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
               </Box>
             )}
 
-            {/* Паспортные фото */}
-            {emp.passport_photos && emp.passport_photos.length > 0 && (
-              <Box>
-                <SectionHeader icon={<ContactPageOutlined />} title={t("card.sections.passportPhotos")} />
-                <ImageList cols={3} gap={10} sx={{ m: 0 }}>
-                  {emp.passport_photos.map((url, i) => (
-                    <ImageListItem
-                      key={i}
-                      sx={{
-                        border: "1px solid",
-                        borderColor: "divider",
-                        borderRadius: "10px",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <Box
-                        component="img"
-                        src={url}
-                        alt={t("card.passportAlt", { index: i + 1 })}
-                        onClick={() => setPreviewUrl(url)}
-                        sx={{
-                          width: "100%",
-                          height: 100,
-                          objectFit: "cover",
-                          display: "block",
-                          cursor: "pointer",
-                          "&:hover": { opacity: 0.8 },
-                        }}
-                      />
-                    </ImageListItem>
-                  ))}
-                </ImageList>
-              </Box>
-            )}
-
-            {/* Превью фото */}
-            <Modal open={!!previewUrl} onClose={() => setPreviewUrl(null)}>
-              <Box
-                onClick={() => setPreviewUrl(null)}
-                sx={{
-                  position: "fixed",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  bgcolor: (t) => alpha(t.palette.common.black, 0.85),
-                  zIndex: 1300,
-                }}
-              >
-                <IconButton
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPreviewUrl(null);
-                  }}
-                  sx={{
-                    position: "absolute",
-                    top: 20,
-                    right: 20,
-                    color: "common.white",
-                    bgcolor: (t) => alpha(t.palette.common.white, 0.1),
-                    "&:hover": { bgcolor: (t) => alpha(t.palette.common.white, 0.2) },
-                  }}
-                >
-                  <CloseOutlined />
-                </IconButton>
-                {previewUrl && (
-                  <Box
-                    component="img"
-                    src={previewUrl}
-                    alt={t("card.passportPreviewAlt")}
-                    onClick={(e) => e.stopPropagation()}
-                    sx={{
-                      width: "70vw",
-                      height: "70vh",
-                      objectFit: "contain",
-                      borderRadius: "10px",
-                    }}
-                  />
-                )}
-              </Box>
-            </Modal>
-
             {/* Связанные данные — своё видит всегда, чужое по правам */}
             {empIdNum > 0 &&
               (canViewAttendance || canViewExpenses || canViewPayroll || isOwnCard) && (
@@ -918,6 +840,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
             )}
 
             {/* Услуги сотрудника */}
+            {canViewServices && (
             <Box>
               <SectionHeader
                 icon={<LocalOfferOutlined />}
@@ -1018,6 +941,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 </Typography>
               )}
             </Box>
+            )}
 
             {emp && empIdNum > 0 && (
               <EmployeeRelatedModal

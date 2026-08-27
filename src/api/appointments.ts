@@ -332,6 +332,13 @@ export interface AppointmentServiceLine {
   /** id заключения, если оно создано. */
   conclusionId?: number | null;
   /**
+   * Разрешает ли справочник менять цену этой услуги. В отличие от
+   * `priceOverrideLocked` приёма («уже нельзя — деньги приняты») это свойство
+   * самой услуги и за время приёма не меняется. Поля нет на бэке без тумблера —
+   * тогда считаем разрешённым (см. `normalizeAppointment`).
+   */
+  allowPriceOverride?: boolean;
+  /**
    * Расходники строки (снапшот состава услуги на момент записи: правка
    * справочника уже созданный приём не меняет). Нормализуется в массив.
    */
@@ -420,11 +427,15 @@ export function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
     : Array.isArray(raw.serviceLines)
     ? raw.serviceLines
     : [];
-  // consumptions нормализуем в массив: на окружении без деплоя состава поля нет,
-  // и UI не должен проверять Array.isArray на каждой строке услуги.
+  // consumptions нормализуем в массив, allowPriceOverride — в булев: на
+  // окружении без деплоя этих полей нет, и UI не должен проверять их наличие
+  // на каждой строке услуги.
   const services: AppointmentServiceLine[] = rawServices.map((line) => ({
     ...(line as AppointmentServiceLine),
     consumptions: Array.isArray(line.consumptions) ? line.consumptions : [],
+    // Бэк без тумблера поля не отдаёт — считаем цену изменяемой, чтобы фронт
+    // впереди бэка не спрятал иконку у тех, кому она уже работала.
+    allowPriceOverride: line.allowPriceOverride !== false,
   }));
   const productLines: AppointmentProductLine[] = Array.isArray(raw.productLines)
     ? raw.productLines

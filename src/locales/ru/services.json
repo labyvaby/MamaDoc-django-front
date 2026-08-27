@@ -96,6 +96,8 @@
     "statusLabel": "Статус {{service.gen}}",
     "onlineBookingLabel": "Онлайн-запись",
     "onlineBookingHint": "Показывать в онлайн-записи на сайте",
+    "allowPriceOverrideLabel": "Разрешить врачу менять цену этой услуги",
+    "allowPriceOverrideHint": "Врач сможет изменить цену только до принятия оплаты и только у своей услуги",
     "sectionPricing": "Стоимость и филиалы",
     "sectionComposition": "Расходники",
     "sectionExtra": "Дополнительно",

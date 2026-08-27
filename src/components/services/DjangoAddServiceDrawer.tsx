@@ -96,6 +96,7 @@ type ServiceAddDraft = {
   description: string;
   isActive: boolean;
   onlineBookingVisible: boolean;
+  allowPriceOverride: boolean;
   selectedBranchIds: number[];
 };
 
@@ -108,6 +109,7 @@ function isDraftEmpty(d: Omit<ServiceAddDraft, "savedAt">): boolean {
     !d.description.trim() &&
     d.isActive === true &&
     d.onlineBookingVisible === true &&
+    d.allowPriceOverride === false &&
     d.selectedBranchIds.length === 0
   );
 }
@@ -132,6 +134,8 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
   const [isActive, setIsActive] = React.useState(true);
   // Дефолт бэка для новой услуги — видима в онлайн-записи.
   const [onlineBookingVisible, setOnlineBookingVisible] = React.useState(true);
+  // Дефолт бэка для новой услуги — цену меняет только справочник (opt-in).
+  const [allowPriceOverride, setAllowPriceOverride] = React.useState(false);
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null);
   const [selectedBranches, setSelectedBranches] = React.useState<RbacBranch[]>([]);
@@ -175,6 +179,8 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       setIsActive(draft.isActive);
       // Черновик мог быть записан до появления поля — тогда услуга видима.
       setOnlineBookingVisible(draft.onlineBookingVisible !== false);
+      // Черновик мог быть записан до появления тумблера — тогда он выключен.
+      setAllowPriceOverride(draft.allowPriceOverride === true);
       setDraftRestored(true);
     } else {
       setDraftRestored(false);
@@ -213,6 +219,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       description,
       isActive,
       onlineBookingVisible,
+      allowPriceOverride,
       selectedBranchIds: selectedBranches.map((b) => b.id),
     };
     if (isDraftEmpty(draft)) {
@@ -235,6 +242,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     description,
     isActive,
     onlineBookingVisible,
+    allowPriceOverride,
     selectedBranches,
   ]);
 
@@ -253,6 +261,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     setDescription("");
     setIsActive(true);
     setOnlineBookingVisible(true);
+    setAllowPriceOverride(false);
     setSelectedBranches(
       activeBranch ? availableBranches.filter((b) => b.id === activeBranch.id) : [],
     );
@@ -268,6 +277,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       setDescription("");
       setIsActive(true);
       setOnlineBookingVisible(true);
+      setAllowPriceOverride(false);
       setPhotoFile(null);
       setPhotoPreview(null);
       setSelectedBranches([]);
@@ -336,6 +346,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
         basePrice: String(priceNum),
         isActive,
         ...(SERVICE_ONLINE_VISIBILITY_ENABLED ? { onlineBookingVisible } : {}),
+        allowPriceOverride,
         branchIds: effectiveBranchIds,
         ...(SERVICE_CATEGORIES_ENABLED ? { category: category || null } : {}),
         ...relatedProductsPayload(
@@ -711,6 +722,29 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
                     />
                   </Paper>
                 )}
+                <Paper
+                  elevation={0}
+                  variant="outlined"
+                  sx={{
+                    p: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
+                  }}
+                >
+                  <Stack spacing={0.25}>
+                    <Typography variant="body2">{t("form.allowPriceOverrideLabel")}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("form.allowPriceOverrideHint")}
+                    </Typography>
+                  </Stack>
+                  <Switch
+                    checked={allowPriceOverride}
+                    onChange={(e) => setAllowPriceOverride(e.target.checked)}
+                    disabled={busy}
+                  />
+                </Paper>
               </Stack>
             </MotionBox>
           </MotionStack>

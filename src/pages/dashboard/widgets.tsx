@@ -25,7 +25,6 @@ import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
 import { useCanChecker } from "../../hooks/useCan";
-import { useWorkspaceHome } from "../../hooks/useWorkspaceHome";
 import { MetricTile } from "./MetricTile";
 import { Sparkline } from "./Sparkline";
 import { WidgetError, type WidgetProps } from "./widgetKit";
@@ -44,7 +43,18 @@ import { previousRange, sumDayCounts, toDailySeries, type PeriodRange } from "./
  */
 export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
   const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-  const { workspacePath } = useWorkspaceHome();
+  // Куда ведёт плитка: первое доступное рабочее пространство приёмов. Общую
+  // «главную по правам» (resolveHomeRoute) здесь брать нельзя — она может
+  // вернуть /cleaning или /profile, и плитка «Всего записей» уводила бы не
+  // туда. Нет ни одного из трёх прав — плитка остаётся без перехода.
+  const { can } = useCanChecker();
+  const workspacePath = can(PAGE_PERMISSIONS.appointmentsRegistry)
+    ? "/appointments"
+    : can(PAGE_PERMISSIONS.doctorRoom)
+    ? "/doctor"
+    : can(PAGE_PERMISSIONS.nurseRoom)
+    ? "/nurse"
+    : undefined;
 
   const useCounts = (r: PeriodRange) =>
     useQuery({
@@ -88,9 +98,8 @@ export const AppointmentsWidget: React.FC<WidgetProps> = ({ range, periodKey, sc
               <MetricTile
                 label="Всего записей"
                 // Не «Регистратура» жёстко: у врача её нет, клик по плитке
-                // приводил на «Нет доступа». Без рабочего пространства плитка
-                // остаётся без перехода.
-                href={workspacePath ?? undefined}
+                // приводил на «Нет доступа».
+                href={workspacePath}
                 value={total}
                 icon={<EventAvailableOutlined />}
                 loading={query.isLoading}

@@ -5,4 +5,5 @@
 
 export { CanAccess } from './CanAccess';
 export { RequirePermission } from './RequirePermission';
+export { RequireSuperAdmin } from './RequireSuperAdmin';
 export { AccessDenied } from './AccessDenied';

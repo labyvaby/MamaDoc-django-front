@@ -93,8 +93,8 @@ export const PHONE_COUNTRY_CODES = PHONE_COUNTRIES.map((c) => c.dialCode);
 
 export const DEFAULT_PHONE_COUNTRY_CODE: PhoneCountryCode = "+996";
 
-/** Диапазон длины для стран без фиксированной длины (E.164). */
-const FALLBACK_RANGE = { min: 6, max: 14 };
+/** Допустимое общее количество цифр международного номера по E.164. */
+const E164_TOTAL_RANGE = { min: 8, max: 15 };
 
 export interface ParsedPhone {
   countryCode: PhoneCountryCode;
@@ -114,7 +114,18 @@ export function findPhoneCountry(dialCode: string): PhoneCountryInfo | undefined
  * Для незнакомого кода — верхняя граница E.164, чтобы не мешать вводу.
  */
 export function getPhoneLocalMaxLength(countryCode: PhoneCountryCode): number {
-  return findPhoneCountry(countryCode)?.digits ?? FALLBACK_RANGE.max;
+  const exact = findPhoneCountry(countryCode)?.digits;
+  if (exact != null) return exact;
+  const countryDigits = countryCode.replace(/\D/g, "").length;
+  return Math.max(1, E164_TOTAL_RANGE.max - countryDigits);
+}
+
+/** Минимальная длина локальной части, согласованная с E.164-валидацией API. */
+export function getPhoneLocalMinLength(countryCode: PhoneCountryCode): number {
+  const exact = findPhoneCountry(countryCode)?.digits;
+  if (exact != null) return exact;
+  const countryDigits = countryCode.replace(/\D/g, "").length;
+  return Math.max(1, E164_TOTAL_RANGE.min - countryDigits);
 }
 
 /** Точная длина номера страны; null — длина не фиксирована. */
@@ -183,6 +194,34 @@ export function parsePastedPhone(currentCode: PhoneCountryCode, raw: string): Pa
   return { countryCode: currentCode, local: normalizePhoneLocal(currentCode, digits) };
 }
 
+/**
+ * Разбирает значение при обычном наборе в локальном поле.
+ *
+ * Помимо полной вставки распознаёт выбранный код страны, набранный без плюса.
+ * Например, при выбранном `+996` ввод `996` очищает локальную часть: код уже
+ * показан слева, а последующие цифры набираются как национальный номер.
+ *
+ * Чужой код без `+` по первым трём цифрам не перехватываем. Кыргызский местный
+ * номер вполне может начинаться на `992`–`998`, поэтому раннее переключение
+ * страны сделало бы такие номера невозможными. Чужая страна распознаётся по
+ * явному `+` либо когда введён полный номер длиннее локального лимита.
+ */
+export function parsePhoneInput(currentCode: PhoneCountryCode, raw: string): ParsedPhone {
+  const trimmed = String(raw ?? "").trim();
+  const digits = trimmed.replace(/[^0-9]/g, "");
+  if (!digits) return { countryCode: currentCode, local: "" };
+
+  const typedDial = [...new Set(PHONE_COUNTRY_CODES)]
+    .sort((a, b) => b.length - a.length)
+    .find((dial) => {
+      const bare = dial.slice(1);
+      return digits === bare && (trimmed.startsWith("+") || dial === currentCode);
+    });
+
+  if (typedDial) return { countryCode: typedDial, local: "" };
+  return parsePastedPhone(currentCode, raw);
+}
+
 /** Минимум от события вставки — чтобы не тянуть в утилиту типы React. */
 export interface PhonePasteEvent {
   preventDefault: () => void;
@@ -213,7 +252,10 @@ export function isPhoneLocalComplete(countryCode: PhoneCountryCode, local: strin
   const digits = String(local ?? "").replace(/[^0-9]/g, "");
   const exact = getPhoneExactLength(countryCode);
   if (exact != null) return digits.length === exact;
-  return digits.length >= FALLBACK_RANGE.min && digits.length <= FALLBACK_RANGE.max;
+  return (
+    digits.length >= getPhoneLocalMinLength(countryCode) &&
+    digits.length <= getPhoneLocalMaxLength(countryCode)
+  );
 }
 
 /** Подсказка в поле под нужную длину: «000 000 000», «000 000 00 00». */
