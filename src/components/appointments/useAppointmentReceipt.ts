@@ -1,5 +1,5 @@
 import React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAppointment } from "../../api/appointments";
 import { getAppointmentPayments } from "../../api/payments";
@@ -11,6 +11,7 @@ import {
 import { usePermissions } from "../../hooks/usePermissions";
 import { useAuthUserNames } from "../../hooks/useAuthUserNames";
 import {
+  hasAcceptedPayment,
   printAppointmentInvoice,
   DEFAULT_INVOICE_PAGE_SIZE,
   type InvoicePageSize,
@@ -26,6 +27,30 @@ export type ReceiptPrintResult =
   | "printed"
   /** Всплывающее окно заблокировал браузер. */
   | "blocked";
+
+/**
+ * Есть ли по приёму принятая оплата — то есть можно ли предлагать печать чека.
+ * Экранам вроде заключения статус оплаты не приходит, поэтому тянем сам приём:
+ * ключ тот же, что у детали приёма, так что запрос обычно уже в кэше, а если
+ * нет — он же пригодится самой печати. Ошибку (у врача может не быть доступа)
+ * трактуем как «чека нет»: молча печатать неоплаченный приём хуже.
+ */
+export function useReceiptAvailable(
+  appointmentId: number | null,
+  enabled: boolean,
+): boolean {
+  const query = useQuery({
+    queryKey:
+      appointmentId != null
+        ? djangoQueryKeys.appointments.detail(appointmentId)
+        : ["django", "appointments", "detail", "closed"],
+    queryFn: () => getAppointment(appointmentId!),
+    enabled: enabled && appointmentId != null,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    retry: false,
+  });
+  return hasAcceptedPayment(query.data);
+}
 
 export function useAppointmentReceipt() {
   const queryClient = useQueryClient();

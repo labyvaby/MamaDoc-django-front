@@ -505,12 +505,10 @@ export function getCleaningActiveMonths(
   }
   const q = new URLSearchParams();
   if (params.organizationId != null) q.set("organizationId", String(params.organizationId));
-  // ⚠ `branch` здесь бэк ИГНОРИРУЕТ — проверено на проде 27.08.2026 (org 1):
-  // ?branch=1, ?branch=13 и даже ?branch=999 отдают один и тот же набор
-  // месяцев. Параметр оставлен намеренно: он безвреден (200, лишний query) и
-  // заработает сам, когда бэк поддержит фильтр. До этого лента месяцев шире
-  // списка — месяц, где уборки были только в чужом филиале, кликается и даёт
-  // пустую таблицу. Тикет: backend_ticket_cleaning_branch_scoping.md §3.
+  // Фильтр по филиалу бэк включил 27.08.2026 (ветка `codex/cleaning-branch-scoping`
+  // на проде): ?branch=999 → 400 «Филиал не найден или не принадлежит
+  // организации», ?branch= недоступного филиала → 404 — как в /cleaning/records/.
+  // Тикет backend_ticket_cleaning_branch_scoping.md §3 закрыт.
   if (params.branch != null) q.set("branch", String(params.branch));
   const qs = q.toString();
   return apiRequest<{ months: string[] }>(
