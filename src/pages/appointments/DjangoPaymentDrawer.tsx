@@ -726,6 +726,12 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         : applyAppointmentPayment(appointmentId, payload);
     },
     onSuccess: (result) => {
+      // A successfully applied operation must never be restored as a draft.
+      // Without this, reopening a future appointment could prefill the amount
+      // from the previous prepayment and make an accidental duplicate likely.
+      if (appointmentId !== null) clearPaymentDraft(appointmentId);
+      paymentsTouchedRef.current = false;
+      discountTouchedRef.current = false;
       prepaymentRequestKeyRef.current = null;
       queryClient.setQueryData(djangoQueryKeys.appointments.payments(result.appointmentId), result);
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.payments(result.appointmentId) });
