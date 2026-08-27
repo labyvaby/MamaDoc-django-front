@@ -489,15 +489,18 @@ function App() {
                             </RequireSuperAdmin>
                           }
                         />
-                        {/* Сводка — общий главный экран. Права проверяются не на
-                            странице, а на каждом виджете: пустой экран закрыт
-                            заглушкой, отдельного кода на бэке не заводили. */}
+                        {/* Сводка — пока только суперадминистратору (решение
+                            заказчика 27.08.2026). Состав виджетов внутри
+                            определяется правами, но сам раздел скрыт от
+                            организаций до отдельного распоряжения. */}
                         <Route
                           path="dashboard"
                           element={
-                            <Suspense fallback={<LinearProgress />}>
-                              <DashboardPage />
-                            </Suspense>
+                            <RequireSuperAdmin>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DashboardPage />
+                              </Suspense>
+                            </RequireSuperAdmin>
                           }
                         />
                         <Route
