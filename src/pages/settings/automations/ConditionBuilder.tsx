@@ -3,7 +3,6 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   IconButton,
   MenuItem,
   Paper,
@@ -36,7 +35,11 @@ import {
   type ConditionLeafForm,
   type ConditionNodeForm,
 } from "./automationForm";
-import { useConditionReferences, type ReferenceOption } from "./useConditionReferences";
+import { FieldValueInput } from "./FieldValueInput";
+import {
+  useConditionReferences,
+  type ConditionReferences,
+} from "./useConditionReferences";
 
 export interface ConditionBuilderProps {
   event: AutomationCatalogEvent | undefined;
@@ -49,19 +52,51 @@ export interface ConditionBuilderProps {
   disabled?: boolean;
 }
 
-/** Есть ли в дереве поле такого типа — по нему гейтим загрузку справочника. */
-function usesFieldType(
-  node: ConditionNodeForm | null,
-  fields: AutomationCatalogField[],
-  fieldType: string,
-): boolean {
-  if (!node) return false;
+/** Коды полей, уже использованных в дереве условий. */
+function usedFieldCodes(node: ConditionNodeForm | null, acc = new Set<string>()): Set<string> {
+  if (!node) return acc;
   if (node.kind === "group") {
-    return node.items.some((item) => usesFieldType(item, fields, fieldType));
+    node.items.forEach((item) => usedFieldCodes(item, acc));
+  } else {
+    acc.add(node.field);
   }
-  return fields.some(
-    (field) => field.code === node.field && field.fieldType === fieldType,
-  );
+  return acc;
+}
+
+/**
+ * Поля, которые есть смысл предлагать.
+ *
+ * Поле, у которого нечего выбрать, — тупик: пользователь ставит «Сотрудник
+ * равно», а список пуст. Прячем такие: помеченные `hidden` в каталоге,
+ * `select` без значений и поля-ссылки с пустым справочником организации.
+ * Числа и текст остаются всегда — там значение вводится, а не выбирается.
+ *
+ * Уже использованное в правиле поле не прячем никогда, даже если справочник
+ * опустел: иначе открытие старого правила молча выкинуло бы его условие.
+ */
+function usableFields(
+  fields: AutomationCatalogField[],
+  references: ConditionReferences,
+  used: Set<string>,
+): AutomationCatalogField[] {
+  return fields.filter((field) => {
+    if (used.has(field.code)) return true;
+    // Поля-ссылки на сущности каталог помечает hidden: пользователю нужны
+    // читаемые условия, а не выбор «Услуга = 42».
+    if (field.hidden) return false;
+    switch (field.fieldType) {
+      case "select":
+        return field.options.length > 0;
+      case "branch":
+        return !references.loaded.branch || references.branch.length > 0;
+      case "service":
+        return !references.loaded.service || references.service.length > 0;
+      case "employee":
+        return !references.loaded.employee || references.employee.length > 0;
+      default:
+        return true;
+    }
+  });
 }
 
 /**
@@ -81,13 +116,21 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
   disabled = false,
 }) => {
   const { t } = useT("settings");
-  const fields = event?.fields ?? [];
+  const allFields = React.useMemo(() => event?.fields ?? [], [event]);
 
+  // Справочники тянем сразу для всех типов, которые событие вообще может
+  // предложить, а не только для уже добавленных условий: без этого нельзя
+  // узнать, есть ли что выбирать, и решить, показывать ли поле.
   const references = useConditionReferences(organizationId, {
-    branch: usesFieldType(value, fields, "branch"),
-    service: usesFieldType(value, fields, "service"),
-    employee: usesFieldType(value, fields, "employee"),
+    branch: allFields.some((f) => f.fieldType === "branch"),
+    service: allFields.some((f) => f.fieldType === "service"),
+    employee: allFields.some((f) => f.fieldType === "employee"),
   });
+
+  const fields = React.useMemo(
+    () => usableFields(allFields, references, usedFieldCodes(value)),
+    [allFields, references, value],
+  );
 
   const firstField = fields[0];
 
@@ -168,7 +211,7 @@ interface NodeProps {
   depth: number;
   fields: AutomationCatalogField[];
   groupOperators: string[];
-  references: ReturnType<typeof useConditionReferences>;
+  references: ConditionReferences;
   errors: Record<string, string>;
   disabled: boolean;
   onPatch: (key: string, fn: (node: ConditionNodeForm) => ConditionNodeForm) => void;
@@ -388,9 +431,15 @@ const LeafNode: React.FC<NodeProps & { node: ConditionLeafForm }> = ({
           </TextField>
 
           {needsValue && (
-            <ConditionValueInput
+            <FieldValueInput
               spec={spec}
               isList={isList}
+              required
+              label={
+                isList
+                  ? t("automations.conditions.valuesLabel")
+                  : t("automations.conditions.valueLabel")
+              }
               value={node.value}
               values={node.values}
               references={references}
@@ -418,153 +467,6 @@ const LeafNode: React.FC<NodeProps & { node: ConditionLeafForm }> = ({
         )}
       </Stack>
     </Paper>
-  );
-};
-
-interface ValueInputProps {
-  spec: AutomationCatalogField | undefined;
-  isList: boolean;
-  value: string;
-  values: string[];
-  references: ReturnType<typeof useConditionReferences>;
-  disabled: boolean;
-  onValue: (value: string) => void;
-  onValues: (values: string[]) => void;
-}
-
-/**
- * Ввод значения условия по типу поля из каталога.
- *
- * `select` — значения каталога, поля-ссылки — справочники организации,
- * числа — свободный ввод. Тип `client` намеренно остаётся вводом ID: список
- * пациентов слишком велик, чтобы грузить его в выпадающий список.
- */
-const ConditionValueInput: React.FC<ValueInputProps> = ({
-  spec,
-  isList,
-  value,
-  values,
-  references,
-  disabled,
-  onValue,
-  onValues,
-}) => {
-  const { t } = useT("settings");
-  const fieldType = spec?.fieldType ?? "text";
-
-  let options: ReferenceOption[] | null = null;
-  if (fieldType === "select") {
-    options = (spec?.options ?? []).map((option) => ({
-      value: option.value,
-      label: option.label,
-    }));
-  } else if (fieldType === "branch") {
-    options = references.branch;
-  } else if (fieldType === "service") {
-    options = references.service;
-  } else if (fieldType === "employee") {
-    options = references.employee;
-  }
-
-  const numeric = fieldType === "decimal" || fieldType === "integer";
-
-  if (options) {
-    if (isList) {
-      return (
-        <TextField
-          select
-          size="small"
-          label={t("automations.conditions.valuesLabel")}
-          value={values}
-          onChange={(e) => {
-            const next = e.target.value;
-            onValues(typeof next === "string" ? next.split(",") : (next as unknown as string[]));
-          }}
-          disabled={disabled}
-          sx={{ minWidth: 240, flex: 1 }}
-          SelectProps={{
-            multiple: true,
-            renderValue: (selected) => (
-              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                {(selected as string[]).map((item) => (
-                  <Chip
-                    key={item}
-                    size="small"
-                    label={options?.find((o) => o.value === item)?.label ?? item}
-                  />
-                ))}
-              </Box>
-            ),
-          }}
-          helperText={
-            references.isLoading ? t("automations.conditions.loadingReference") : undefined
-          }
-        >
-          {options.map((option) => (
-            <MenuItem key={option.value} value={option.value}>
-              {option.label}
-            </MenuItem>
-          ))}
-        </TextField>
-      );
-    }
-    return (
-      <TextField
-        select
-        size="small"
-        label={t("automations.conditions.valueLabel")}
-        value={options.some((option) => option.value === value) ? value : ""}
-        onChange={(e) => onValue(e.target.value)}
-        disabled={disabled}
-        sx={{ minWidth: 220, flex: 1 }}
-        helperText={
-          references.isLoading ? t("automations.conditions.loadingReference") : undefined
-        }
-      >
-        {options.map((option) => (
-          <MenuItem key={option.value} value={option.value}>
-            {option.label}
-          </MenuItem>
-        ))}
-      </TextField>
-    );
-  }
-
-  if (isList) {
-    return (
-      <TextField
-        size="small"
-        label={t("automations.conditions.valuesLabel")}
-        // Список произвольных значений вводится через запятую; бэк ждёт массив,
-        // разбор делаем здесь, чтобы форма хранила уже готовые элементы.
-        value={values.join(", ")}
-        onChange={(e) =>
-          onValues(
-            e.target.value
-              .split(",")
-              .map((item) => item.trim())
-              .filter(Boolean),
-          )
-        }
-        disabled={disabled}
-        sx={{ minWidth: 240, flex: 1 }}
-      />
-    );
-  }
-
-  return (
-    <TextField
-      size="small"
-      label={t("automations.conditions.valueLabel")}
-      value={value}
-      onChange={(e) => onValue(e.target.value)}
-      disabled={disabled}
-      // Деньги уходят на бэк decimal-строкой, поэтому type остаётся text:
-      // number-инпут в разных локалях подставляет запятую и ломает разбор.
-      inputProps={numeric ? { inputMode: "decimal" } : undefined}
-      helperText={numeric ? t("automations.conditions.numericHint") : undefined}
-      sx={{ minWidth: 220, flex: 1 }}
-    />
   );
 };
 

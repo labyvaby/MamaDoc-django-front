@@ -1,5 +1,6 @@
 import {
   MAX_DELAY_MINUTES,
+  PROFICHAT_PUSH_CHANNEL,
   OPERATORS_WITHOUT_VALUE,
   OPERATORS_WITH_LIST_VALUE,
   isConditionGroup,
@@ -50,6 +51,8 @@ export interface ActionForm {
   delayMinutes: string;
   channel: string;
   recipientField: string;
+  /** Заголовок push-уведомления. Для SMS и WhatsApp не используется. */
+  title: string;
   body: string;
 }
 
@@ -78,6 +81,7 @@ export function makeAction(recipientField: string): ActionForm {
     delayMinutes: "0",
     channel: "sms",
     recipientField,
+    title: "",
     body: "",
   };
 }
@@ -139,6 +143,7 @@ export function automationToForm(automation: Automation): AutomationForm {
       delayMinutes: String(action.delayMinutes),
       channel: String(action.config.channel ?? "sms"),
       recipientField: String(action.config.recipientField ?? "client_phone"),
+      title: String(action.config.title ?? ""),
       body: String(action.config.body ?? ""),
     })),
   };
@@ -182,6 +187,9 @@ export function toSaveInput(
         channel: action.channel,
         recipientField: action.recipientField,
         body: action.body,
+        // Заголовок хранится только там, где он есть: у SMS и WhatsApp его
+        // нет вовсе, и пустой ключ в конфиге лишь путал бы при чтении правила.
+        ...(supportsTitle(action.channel) ? { title: action.title } : {}),
       },
     })),
     ...(organizationId != null ? { organizationId } : {}),
@@ -364,14 +372,87 @@ export function supportsBranchFilter(
   return Boolean(event?.fields.some((field) => field.code === "branch_id"));
 }
 
+/**
+ * Есть ли у канала заголовок.
+ *
+ * Push показывается в шторке телефона двумя строками, поэтому у него есть
+ * заголовок; SMS и WhatsApp — один сплошной текст, и заголовку там взяться
+ * неоткуда.
+ */
+export function supportsTitle(channel: string): boolean {
+  return channel === PROFICHAT_PUSH_CHANNEL;
+}
+
 /** Черновик payload для dry run: все переменные события пустыми строками. */
 export function samplePayload(
   event: AutomationCatalogEvent | undefined,
+  form?: AutomationForm,
 ): Record<string, string> {
   const payload: Record<string, string> = {};
   for (const variable of event?.variables ?? []) payload[variable] = "";
+  // Скрытые поля (ID-шные ссылки) в форму прогона не выносим: условие на них
+  // теперь не собрать, а руками вводить service_id незачем. Исключение —
+  // старое правило, где такое условие уже сохранено: без поля его нельзя
+  // было бы проверить.
+  const usedInConditions = form ? conditionFieldCodes(form.conditions) : new Set<string>();
   for (const field of event?.fields ?? []) {
-    if (!(field.code in payload)) payload[field.code] = "";
+    if (field.code in payload) continue;
+    if (field.hidden && !usedInConditions.has(field.code)) continue;
+    payload[field.code] = "";
   }
   return payload;
+}
+
+/** Коды полей, на которые ссылается дерево условий. */
+function conditionFieldCodes(node: ConditionNodeForm | null): Set<string> {
+  const codes = new Set<string>();
+  const walk = (item: ConditionNodeForm): void => {
+    if (item.kind === "group") item.items.forEach(walk);
+    else codes.add(item.field);
+  };
+  if (node) walk(node);
+  return codes;
+}
+
+/** Зачем поле нужно в пробном прогоне — показывается подписью под полем. */
+export type PayloadFieldRole = "condition" | "recipient" | "template";
+
+/** Переменные, встречающиеся в шаблоне: `{{code}}` и `{{ code }}`. */
+export function templateVariables(body: string): string[] {
+  return [...body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((match) => match[1]);
+}
+
+/**
+ * Поля payload, которые реально влияют на результат прогона, с указанием роли.
+ *
+ * Событие даёт полтора десятка полей, и форма из шестнадцати пустых строк не
+ * говорит, что заполнять. Значение имеют только три группы: поля из условий
+ * (от них зависит совпадение), получатель (иначе отправка провалится) и
+ * переменные, подставляемые в текст. Остальное на прогон не влияет вовсе.
+ */
+export function relevantPayloadFields(
+  form: AutomationForm,
+): Map<string, PayloadFieldRole[]> {
+  const roles = new Map<string, PayloadFieldRole[]>();
+  const add = (code: string, role: PayloadFieldRole) => {
+    if (!code) return;
+    const list = roles.get(code) ?? [];
+    if (!list.includes(role)) list.push(role);
+    roles.set(code, list);
+  };
+
+  const walk = (node: ConditionNodeForm): void => {
+    if (node.kind === "group") node.items.forEach(walk);
+    else add(node.field, "condition");
+  };
+  if (form.conditions) walk(form.conditions);
+
+  for (const action of form.actions) {
+    add(action.recipientField, "recipient");
+    templateVariables(action.body).forEach((code) => add(code, "template"));
+    if (supportsTitle(action.channel)) {
+      templateVariables(action.title).forEach((code) => add(code, "template"));
+    }
+  }
+  return roles;
 }

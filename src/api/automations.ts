@@ -34,6 +34,12 @@ export interface AutomationCatalogField {
   fieldType: string;
   operators: string[];
   options: AutomationFieldOption[];
+  /**
+   * Поле есть у события, но конструктор его не предлагает (ID-шные ссылки).
+   * Приходит в каталоге, чтобы сохранённые условия оставались читаемыми, а
+   * `branch_id` продолжал включать выбор филиала у правила.
+   */
+  hidden?: boolean;
 }
 
 export interface AutomationCatalogEvent {
@@ -42,6 +48,20 @@ export interface AutomationCatalogEvent {
   module: string;
   fields: AutomationCatalogField[];
   variables: string[];
+  /**
+   * Код переменной → подпись для интерфейса. Показывать пользователю нужно
+   * подпись, а вставлять в шаблон — код. Кода может не быть в словаре: тогда
+   * показываем сам код (бэк может добавить переменную раньше подписи).
+   */
+  variableLabels: Record<string, string>;
+}
+
+/** Подпись переменной для интерфейса; фолбэк — сам код. */
+export function variableLabel(
+  event: AutomationCatalogEvent | undefined,
+  code: string,
+): string {
+  return event?.variableLabels?.[code] || code;
 }
 
 export interface AutomationCatalogActionConfigField {
@@ -50,6 +70,8 @@ export interface AutomationCatalogActionConfigField {
   type: string;
   options?: string[];
   default?: string;
+  /** Поле имеет смысл только для этих каналов (пусто = для всех). */
+  onlyForChannels?: string[];
 }
 
 export interface AutomationCatalogAction {
@@ -89,6 +111,8 @@ export type AutomationConditions =
 export interface AutomationActionConfig {
   channel?: string;
   recipientField?: string;
+  /** Заголовок push-уведомления; у SMS и WhatsApp заголовка нет. */
+  title?: string;
   body?: string;
   [key: string]: unknown;
 }
@@ -159,6 +183,9 @@ export interface AutomationJob {
 export interface AutomationRun {
   id: number;
   eventCode: string;
+  /** Правило, породившее запуск — общая история смешивает разные правила. */
+  automationId: number;
+  automationName: string;
   eventPayload: Record<string, unknown>;
   status: AutomationRunStatus;
   error: string;
@@ -180,6 +207,8 @@ export interface AutomationTestActionPreview {
   recipient: string;
   renderedBody: string;
   delayMinutes: number;
+  channel: string;
+  renderedTitle: string;
 }
 
 export interface AutomationTestResult {
@@ -257,6 +286,26 @@ export function getAutomationRuns(
 }
 
 /**
+ * История всех правил организации — источник данных вкладки «История».
+ * Формат Run тот же, что у истории одного правила, поэтому разбор общий.
+ */
+export function getOrganizationRuns(
+  params: { automationId?: number; status?: AutomationRunStatus } = {},
+  scope: Scope = {},
+  signal?: AbortSignal,
+): Promise<AutomationRun[]> {
+  const query = scopeParams({ organizationId: scope.organizationId });
+  if (params.automationId != null) {
+    query.set("automationId", String(params.automationId));
+  }
+  if (params.status) query.set("status", params.status);
+  const qs = query.toString();
+  return apiRequest<AutomationRun[]>(`${BASE}/runs/${qs ? `?${qs}` : ""}`, {
+    signal,
+  });
+}
+
+/**
  * Dry run: проверяет условия и рендер шаблона без сохранения и без вызова
  * провайдера. Успех отвечает `201`, хотя ничего не создаёт.
  */
@@ -286,6 +335,15 @@ export function isEmptyConditions(
   const node = conditions as AutomationConditionNode;
   return !isConditionGroup(node) && !(node as AutomationConditionLeaf).field;
 }
+
+/**
+ * Канал доставки через приложение ProfiChat.
+ *
+ * Бэкенд отдаёт его в списке каналов только когда интеграция включена и
+ * ключ задан, поэтому проверять доступность отдельно не нужно: нет в
+ * каталоге — нет и в выпадающем списке.
+ */
+export const PROFICHAT_PUSH_CHANNEL = "profichat_push";
 
 /** Операторы, которым `value` не нужен вовсе. */
 export const OPERATORS_WITHOUT_VALUE = new Set(["exists"]);

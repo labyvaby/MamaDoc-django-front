@@ -15,42 +15,45 @@ import {
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
+import SendOutlined from "@mui/icons-material/SendOutlined";
 
 import {
   MAX_DELAY_MINUTES,
   createAutomation,
   testAutomation,
   updateAutomation,
+  variableLabel,
   type Automation,
   type AutomationCatalog,
+  type AutomationCatalogEvent,
   type AutomationStatus,
   type AutomationTestResult,
 } from "../../../api/automations";
-import { getBranches } from "../../../api/organization";
-import {
-  djangoQueryKeys,
-  DJANGO_REFERENCE_STALE_TIME_MS,
-} from "../../../api/queryKeys";
 import { getErrorFields } from "../../../api/client";
 import { ConfirmDialog } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { ConditionBuilder } from "./ConditionBuilder";
+import { FieldValueInput } from "./FieldValueInput";
+import { PhonePayloadInput } from "./PhonePayloadInput";
 import {
   automationToForm,
   defaultRecipientField,
   emptyForm,
   hasErrors,
   makeAction,
+  supportsTitle,
+  relevantPayloadFields,
   retargetForm,
   samplePayload,
   supportsBranchFilter,
@@ -61,6 +64,7 @@ import {
   type AutomationForm,
   type FormErrors,
 } from "./automationForm";
+import { useConditionReferences } from "./useConditionReferences";
 
 const STATUSES: AutomationStatus[] = ["draft", "active", "paused"];
 
@@ -104,6 +108,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
   const [confirmClose, setConfirmClose] = useState(false);
   const [testPayload, setTestPayload] = useState<Record<string, string>>({});
   const [testResult, setTestResult] = useState<AutomationTestResult | null>(null);
+  const [showAllPayload, setShowAllPayload] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
   /** Куда вставлять переменную по клику — последнее сфокусированное поле текста. */
   const bodyRefs = useRef<Record<string, HTMLTextAreaElement | HTMLInputElement | null>>({});
@@ -113,11 +118,30 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     [catalog.events, form.eventCode],
   );
 
-  // Открытие диалога — единственный момент, когда форма берётся из пропсов:
-  // дальше правки живут в state, иначе рефетч списка затирал бы ввод.
+  /**
+   * Форма берётся из пропсов ровно один раз — при открытии диалога.
+   *
+   * Раньше в зависимостях эффекта лежал `catalog.events`, и любой рефетч
+   * каталога с изменившимся ответом пересобирал форму заново прямо поверх
+   * несохранённых правок: пользователь редактировал правило, возвращался в
+   * окно, TanStack Query обновлял каталог — и введённое молча заменялось
+   * исходными значениями. Со стороны это выглядело как «редактирование не
+   * сохраняется»: сохранялось то, что было до правок.
+   *
+   * Поэтому сбрасываем только на смену «что именно открыто», а каталог
+   * читаем через ref — он нужен лишь для черновика нового правила.
+   */
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+  const openedForRef = useRef<string | null>(null);
+  const openedFor = open ? `${automation?.id ?? "new"}` : null;
+
   useEffect(() => {
-    if (!open) return;
-    const next = automation ? automationToForm(automation) : emptyForm(catalog.events[0]);
+    if (openedFor === null || openedFor === openedForRef.current) return;
+    openedForRef.current = openedFor;
+    const next = automation
+      ? automationToForm(automation)
+      : emptyForm(catalogRef.current.events[0]);
     setForm(next);
     setErrors({ conditions: {}, actionFields: {} });
     setSubmitted(false);
@@ -126,16 +150,23 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     setSaveError(null);
     setTestResult(null);
     setTestError(null);
+    setShowAllPayload(false);
     setTestPayload(
-      samplePayload(catalog.events.find((item) => item.code === next.eventCode)),
+      samplePayload(
+        catalogRef.current.events.find((item) => item.code === next.eventCode),
+        next,
+      ),
     );
-  }, [open, automation, catalog.events]);
+    // Намеренно без catalog в зависимостях — см. комментарий выше.
+  }, [openedFor, automation]);
 
-  const branchesQuery = useQuery({
-    queryKey: [...djangoQueryKeys.organization.branches, organizationId ?? null],
-    queryFn: () => getBranches(organizationId ?? null),
-    enabled: open && supportsBranchFilter(event),
-    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  // Справочники для полей прогона. Ключи запросов те же, что использует
+  // ConditionBuilder, поэтому лишних обращений к сети не будет — ответ
+  // приходит из кэша TanStack Query.
+  const references = useConditionReferences(organizationId, {
+    branch: Boolean(event?.fields.some((f) => f.fieldType === "branch")),
+    service: Boolean(event?.fields.some((f) => f.fieldType === "service")),
+    employee: Boolean(event?.fields.some((f) => f.fieldType === "employee")),
   });
 
   const validationLabels = useMemo(
@@ -161,27 +192,32 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
 
   const update = (patch: Partial<AutomationForm>) => {
     setDirty(true);
+    setSaveError(null);
     setForm((prev) => ({ ...prev, ...patch }));
   };
 
   const changeEvent = (code: string) => {
     const next = catalog.events.find((item) => item.code === code);
+    const retargeted = retargetForm(form, next);
+    // Событие без branch_id не поддерживает фильтр по филиалу — сбрасываем,
+    // иначе сохранился бы филиал, который движок всё равно не проверит.
+    const nextForm = supportsBranchFilter(next)
+      ? retargeted.form
+      : { ...retargeted.form, branchId: null };
+
     setDirty(true);
-    setForm((prev) => {
-      const retargeted = retargetForm(prev, next);
-      setEventChanged(retargeted.changed);
-      // Событие без branch_id не поддерживает фильтр по филиалу — сбрасываем,
-      // иначе сохранился бы филиал, который движок всё равно не проверит.
-      return supportsBranchFilter(next)
-        ? retargeted.form
-        : { ...retargeted.form, branchId: null };
-    });
-    setTestPayload(samplePayload(next));
+    setSaveError(null);
+    setEventChanged(retargeted.changed);
+    setForm(nextForm);
+    // Payload считаем от уже перенацеленной формы: условия к этому моменту
+    // очищены от полей, которых у нового события нет.
+    setTestPayload(samplePayload(next, nextForm));
     setTestResult(null);
   };
 
   const updateAction = (key: string, patch: Partial<ActionForm>) => {
     setDirty(true);
+    setSaveError(null);
     setForm((prev) => ({
       ...prev,
       actions: prev.actions.map((action) =>
@@ -252,6 +288,24 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     },
   });
 
+  /**
+   * Прогон гоняем только по валидной форме: иначе `/test/` отвечает
+   * «Текст сообщения обязателен» общим красным блоком внизу, а поле, из-за
+   * которого это случилось, остаётся неподсвеченным где-то выше.
+   */
+  const runTest = () => {
+    setSubmitted(true);
+    const nextErrors = validateForm(form, event, validationLabels);
+    setErrors(nextErrors);
+    if (hasErrors(nextErrors)) {
+      setTestResult(null);
+      setTestError(t("automations.validation.fixErrors"));
+      return;
+    }
+    setTestError(null);
+    testMutation.mutate();
+  };
+
   const submit = () => {
     setSubmitted(true);
     const nextErrors = validateForm(form, event, validationLabels);
@@ -268,6 +322,20 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     if (dirty) setConfirmClose(true);
     else onClose();
   };
+
+  // Поля прогона: по умолчанию только те, что влияют на результат этого
+  // правила; остальные — по явному запросу.
+  const payloadRoles = useMemo(() => relevantPayloadFields(form), [form]);
+  const relevantKeys = useMemo(
+    () => Object.keys(testPayload).filter((key) => payloadRoles.has(key)),
+    [testPayload, payloadRoles],
+  );
+  const visiblePayloadKeys = showAllPayload ? Object.keys(testPayload) : relevantKeys;
+  const payloadHelper = (key: string) =>
+    payloadRoles
+      .get(key)
+      ?.map((role) => t(`automations.test.role.${role}`))
+      .join(" · ") || key;
 
   const branchSupported = supportsBranchFilter(event);
   const busy = saveMutation.isPending;
@@ -298,6 +366,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
           <Stack spacing={2.5}>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
+                required
                 fullWidth
                 size="small"
                 label={t("automations.editor.nameLabel")}
@@ -332,6 +401,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
             >
               <Stack spacing={1.5}>
                 <TextField
+                  required
                   select
                   size="small"
                   label={t("automations.event.label")}
@@ -368,13 +438,11 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                     sx={{ maxWidth: 420 }}
                   >
                     <MenuItem value="">{t("automations.editor.branchAll")}</MenuItem>
-                    {(branchesQuery.data ?? [])
-                      .filter((branch) => branch.isActive)
-                      .map((branch) => (
-                        <MenuItem key={branch.id} value={String(branch.id)}>
-                          {branch.name}
-                        </MenuItem>
-                      ))}
+                    {references.branch.map((branch) => (
+                      <MenuItem key={branch.value} value={branch.value}>
+                        {branch.label}
+                      </MenuItem>
+                    ))}
                   </TextField>
                 ) : (
                   <Typography variant="caption" color="text.secondary">
@@ -404,8 +472,15 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                   <Paper key={action.key} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                     <Stack spacing={1.5}>
                       <Stack direction="row" alignItems="center" spacing={1}>
+                        <SendOutlined fontSize="small" color="action" />
                         <Typography variant="subtitle2" sx={{ flex: 1 }}>
-                          {t("automations.action.title", { index: index + 1 })}
+                          {/* Название действия берём из каталога («Отправить
+                              сообщение»), а не нумеруем безымянно: порядковый
+                              номер нужен, только когда действий несколько. */}
+                          {actionLabel(catalog, action.actionType)}
+                          {form.actions.length > 1
+                            ? ` · ${t("automations.action.ordinal", { index: index + 1 })}`
+                            : ""}
                         </Typography>
                         <IconButton
                           size="small"
@@ -457,31 +532,68 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           sx={{ minWidth: 200 }}
                         />
 
-                        <TextField
-                          select
-                          size="small"
-                          label={t("automations.action.recipientLabel")}
-                          value={
-                            (event?.variables ?? []).includes(action.recipientField)
-                              ? action.recipientField
-                              : defaultRecipientField(event)
-                          }
-                          onChange={(e) =>
-                            updateAction(action.key, { recipientField: e.target.value })
-                          }
-                          disabled={busy}
-                          helperText={t("automations.action.recipientHint")}
-                          sx={{ minWidth: 220, flex: 1 }}
-                        >
-                          {(event?.variables ?? []).map((variable) => (
-                            <MenuItem key={variable} value={variable}>
-                              {variable}
-                            </MenuItem>
-                          ))}
-                        </TextField>
+                        {/* Выбор получателя показываем, только когда выбирать
+                            действительно есть из чего. У всех текущих событий
+                            телефон ровно один — спрашивать «откуда взять
+                            номер» бессмысленно, достаточно назвать источник. */}
+                        {recipientChoices(event, action.recipientField).length > 1 && (
+                          <TextField
+                            select
+                            size="small"
+                            label={t("automations.action.recipientLabel")}
+                            value={
+                              (event?.variables ?? []).includes(action.recipientField)
+                                ? action.recipientField
+                                : defaultRecipientField(event)
+                            }
+                            onChange={(e) =>
+                              updateAction(action.key, { recipientField: e.target.value })
+                            }
+                            disabled={busy}
+                            error={!action.recipientField.includes("phone")}
+                            helperText={
+                              action.recipientField.includes("phone")
+                                ? undefined
+                                : t("automations.action.recipientNotPhone")
+                            }
+                            sx={{ minWidth: 220, flex: 1 }}
+                          >
+                            {recipientChoices(event, action.recipientField).map((variable) => (
+                              <MenuItem key={variable} value={variable}>
+                                {variableLabel(event, variable)}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                        )}
                       </Stack>
 
+                      {recipientChoices(event, action.recipientField).length <= 1 && (
+                        <Typography variant="caption" color="text.secondary">
+                          {t("automations.action.recipientFixed", {
+                            name: variableLabel(event, action.recipientField),
+                          })}
+                        </Typography>
+                      )}
+
+                      {/* Заголовок есть только у push: в шторке телефона он
+                          отдельная строка. У SMS и WhatsApp такой строки нет,
+                          и поле там только сбивало бы с толку. */}
+                      {supportsTitle(action.channel) && (
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label={t("automations.action.titleLabel")}
+                          value={action.title}
+                          onChange={(e) => updateAction(action.key, { title: e.target.value })}
+                          disabled={busy}
+                          helperText={t("automations.action.titleHint", {
+                            name: form.name.trim() || t("automations.action.titleFallback"),
+                          })}
+                        />
+                      )}
+
                       <TextField
+                        required
                         fullWidth
                         multiline
                         rows={3}
@@ -505,15 +617,19 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           {t("automations.action.variablesLabel")}
                         </Typography>
                         {(event?.variables ?? []).map((variable) => (
-                          <Chip
-                            key={variable}
-                            size="small"
-                            variant="outlined"
-                            label={`{{${variable}}}`}
-                            onClick={() => insertVariable(action, variable)}
-                            disabled={busy}
-                            sx={{ fontFamily: "monospace", cursor: "pointer" }}
-                          />
+                          // Показываем подпись, вставляем код: пользователю
+                          // «Телефон клиента» понятнее, чем {{client_phone}},
+                          // а в тексте шаблона движку нужен именно код.
+                          <Tooltip key={variable} title={`{{${variable}}}`}>
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={variableLabel(event, variable)}
+                              onClick={() => insertVariable(action, variable)}
+                              disabled={busy}
+                              sx={{ cursor: "pointer" }}
+                            />
+                          </Tooltip>
                         ))}
                       </Box>
                     </Stack>
@@ -543,26 +659,65 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                   {t("automations.test.hint")}
                 </Typography>
 
-                <Box
-                  sx={{
-                    display: "grid",
-                    gap: 1.5,
-                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-                  }}
-                >
-                  {Object.keys(testPayload).map((key) => (
-                    <TextField
-                      key={key}
-                      size="small"
-                      label={key}
-                      value={testPayload[key]}
-                      onChange={(e) =>
-                        setTestPayload((prev) => ({ ...prev, [key]: e.target.value }))
-                      }
-                      disabled={testMutation.isPending}
-                    />
-                  ))}
-                </Box>
+                {visiblePayloadKeys.length === 0 ? (
+                  <Alert severity="info">{t("automations.test.nothingToFill")}</Alert>
+                ) : (
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gap: 1.5,
+                      gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                    }}
+                  >
+                    {visiblePayloadKeys.map((key) =>
+                      // Телефон вводится тем же полем, что и в карточке
+                      // пациента: код страны, маска, проверка длины.
+                      key.includes("phone") ? (
+                        <PhonePayloadInput
+                          key={key}
+                          label={payloadFieldLabel(event, key)}
+                          helperText={payloadHelper(key)}
+                          value={testPayload[key] ?? ""}
+                          onChange={(next) =>
+                            setTestPayload((prev) => ({ ...prev, [key]: next }))
+                          }
+                          disabled={testMutation.isPending}
+                        />
+                      ) : (
+                      // Тот же подбор значения, что и в условиях: поля-ссылки
+                      // выбираются названием, а не вводом branch_id = 3.
+                      <FieldValueInput
+                        key={key}
+                        spec={event?.fields.find((field) => field.code === key)}
+                        label={payloadFieldLabel(event, key)}
+                        value={testPayload[key] ?? ""}
+                        references={references}
+                        // Подпись объясняет, зачем поле нужно именно в этом
+                        // правиле: без этого форма выглядит как список из
+                        // полутора десятков непонятно чего.
+                        helperText={payloadHelper(key)}
+                        onValue={(next) =>
+                          setTestPayload((prev) => ({ ...prev, [key]: next }))
+                        }
+                        disabled={testMutation.isPending}
+                        fullWidth
+                      />
+                      ),
+                    )}
+                  </Box>
+                )}
+
+                {Object.keys(testPayload).length > relevantKeys.length && (
+                  <Box>
+                    <Button size="small" color="inherit" onClick={() => setShowAllPayload((v) => !v)}>
+                      {showAllPayload
+                        ? t("automations.test.showRelevant")
+                        : t("automations.test.showAll", {
+                            count: Object.keys(testPayload).length - relevantKeys.length,
+                          })}
+                    </Button>
+                  </Box>
+                )}
 
                 <Box>
                   <Button
@@ -574,7 +729,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         <PlayArrowOutlined />
                       )
                     }
-                    onClick={() => testMutation.mutate()}
+                    onClick={runTest}
                     disabled={testMutation.isPending || !form.eventCode}
                   >
                     {t("automations.test.run")}
@@ -585,26 +740,71 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
 
                 {testResult && (
                   <Stack spacing={1}>
-                    <Alert severity={testResult.matched ? "success" : "info"}>
-                      {testResult.matched
-                        ? t("automations.test.matched")
-                        : t("automations.test.notMatched")}
+                    <Alert
+                      severity={
+                        !testResult.matched
+                          ? "info"
+                          : // Совпало, но отправлять некуда — это провал, а не
+                            // успех: показывать зелёное «сообщения будут
+                            // отправлены» рядом с пустым получателем нельзя.
+                            testResult.actions.some((preview) => !preview.recipient)
+                            ? "warning"
+                            : "success"
+                      }
+                    >
+                      {!testResult.matched
+                        ? t("automations.test.notMatched")
+                        : testResult.actions.some((preview) => !preview.recipient)
+                          ? t("automations.test.matchedNoRecipient")
+                          : t("automations.test.matched")}
                     </Alert>
+                    {testResult.actions.length > 0 && (
+                      <Typography variant="caption" color="text.secondary">
+                        {t("automations.test.previewCaption")}
+                      </Typography>
+                    )}
                     {testResult.actions.map((preview, index) => (
                       <Paper key={index} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
                         <Stack spacing={0.5}>
                           <Typography variant="caption" color="text.secondary">
+                            {t(`automations.channels.${preview.channel}`, {
+                              defaultValue: preview.channel,
+                            })}
+                            {" · "}
                             {t("automations.test.resultRecipient")}:{" "}
-                            {preview.recipient || "—"}
+                            {preview.recipient || t("automations.test.recipientMissing")}
                             {" · "}
                             {t("automations.test.resultDelay", { count: preview.delayMinutes })}
                           </Typography>
+                          {/* Заголовок показываем отдельной строкой ровно
+                              так, как его увидят в шторке телефона. */}
+                          {supportsTitle(preview.channel) && (
+                            <Typography variant="subtitle2">
+                              {preview.renderedTitle || form.name.trim()}
+                            </Typography>
+                          )}
                           <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                             {preview.renderedBody}
                           </Typography>
-                          {!preview.recipient && (
+                          {!preview.recipient ? (
                             <Typography variant="caption" color="error">
                               {t("automations.test.emptyRecipient")}
+                            </Typography>
+                          ) : (
+                            // Получатель, не похожий на телефон, провайдер не
+                            // примет. Ловим здесь: в самой отправке это
+                            // всплыло бы через сутки ошибкой в истории.
+                            !looksLikePhone(preview.recipient) && (
+                              <Typography variant="caption" color="warning.main">
+                                {t("automations.test.recipientNotPhone")}
+                              </Typography>
+                            )
+                          )}
+                          {/* У push своё условие доставки, которого нет у SMS:
+                              номер должен принадлежать аккаунту ProfiChat. */}
+                          {supportsTitle(preview.channel) && (
+                            <Typography variant="caption" color="text.secondary">
+                              {t("automations.test.pushNotInApp")}
                             </Typography>
                           )}
                         </Stack>
@@ -653,6 +853,54 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     </>
   );
 };
+
+/**
+ * Переменные, которые имеет смысл предлагать как получателя.
+ *
+ * Бэк разрешает любую переменную события, но в списке «кому отправить» ФИО
+ * или дата — мусор: адресат SMS и WhatsApp это всегда телефон. Оставляем
+ * телефонные переменные плюс уже сохранённое значение (иначе редактирование
+ * старого правила молча подменило бы получателя). Если телефонных переменных
+ * у события нет вовсе, показываем полный список — выбрать всё равно надо.
+ */
+function recipientChoices(
+  event: AutomationCatalogEvent | undefined,
+  current: string,
+): string[] {
+  const variables = event?.variables ?? [];
+  const phones = variables.filter((variable) => variable.includes("phone"));
+  if (phones.length === 0) return variables;
+  return phones.includes(current) ? phones : [...phones, current].filter(Boolean);
+}
+
+/**
+ * Похоже ли значение на телефон: плюс и не меньше девяти цифр.
+ *
+ * Провайдер принимает только номер, поэтому получатель вроде «123123» —
+ * гарантированная ошибка отправки. Проверка нарочно грубая: строгий разбор
+ * номера здесь не нужен, задача — отличить телефон от названия услуги.
+ */
+function looksLikePhone(value: string): boolean {
+  return /^\+?\d[\d\s()-]{8,}$/.test(value.trim());
+}
+
+/** Название действия из каталога — «Отправить сообщение», а не код. */
+function actionLabel(catalog: AutomationCatalog, actionType: string): string {
+  return catalog.actions.find((item) => item.code === actionType)?.label ?? actionType;
+}
+
+/**
+ * Подпись поля в пробном прогоне: payload собирается и из переменных
+ * шаблона, и из полей условий — берём подпись из того каталога, где код есть.
+ */
+function payloadFieldLabel(
+  event: AutomationCatalogEvent | undefined,
+  code: string,
+): string {
+  const field = event?.fields.find((item) => item.code === code);
+  if (field) return field.label;
+  return variableLabel(event, code);
+}
 
 /** Каналы берём из configFields каталога, а не из своего списка. */
 function channelOptions(catalog: AutomationCatalog): string[] {

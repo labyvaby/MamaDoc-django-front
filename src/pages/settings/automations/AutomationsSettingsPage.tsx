@@ -11,12 +11,14 @@ import {
   Paper,
   Snackbar,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -39,7 +41,6 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../../api/queryKeys";
-import { PageHeader } from "../../../components/ui";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import { useCan } from "../../../hooks/useCan";
 import { useActiveScope } from "../../../hooks/useActiveScope";
@@ -47,9 +48,13 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
 import { SETTINGS_TAB_PERMISSIONS } from "../../../config/accessPermissions";
+import { SettingsLayout } from "../SettingsLayout";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
+import { AutomationHistoryTab } from "./AutomationHistoryTab";
 import { AutomationRunsDialog } from "./AutomationRunsDialog";
 import { automationToForm, toSaveInput } from "./automationForm";
+
+type TabKey = "rules" | "history";
 
 const STATUS_COLOR: Record<AutomationStatus, "default" | "success" | "warning"> = {
   draft: "default",
@@ -74,6 +79,7 @@ const AutomationsSettingsPage: React.FC = () => {
   const { organizationId, orgReady, isReady } = useActiveScope();
   const enabled = isReady && orgReady && canView;
 
+  const [tab, setTab] = useState<TabKey>("rules");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
   const [runsFor, setRunsFor] = useState<Automation | null>(null);
@@ -108,7 +114,7 @@ const AutomationsSettingsPage: React.FC = () => {
         status,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: djangoQueryKeys.automations.all });
+      invalidateAutomations();
       setMessage({ type: "success", text: t("automations.toggleSuccess") });
     },
     onError: (err) => {
@@ -121,47 +127,89 @@ const AutomationsSettingsPage: React.FC = () => {
 
   const rows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
 
-  if (!permLoading && !canView) return <AccessDenied />;
+  /**
+   * Обновить список и историю после записи. Каталог намеренно не трогаем:
+   * это справочник, он не меняется от сохранения правила, а его рефетч
+   * посреди открытого редактора приводил к пересборке формы поверх ввода.
+   */
+  const invalidateAutomations = () => {
+    queryClient.invalidateQueries({ queryKey: djangoQueryKeys.automations.mutable });
+    queryClient.invalidateQueries({ queryKey: djangoQueryKeys.automations.history(organizationId ?? null, {}), exact: false });
+  };
+
+  if (!permLoading && !canView) {
+    return (
+      <SettingsLayout>
+        <AccessDenied />
+      </SettingsLayout>
+    );
+  }
 
   const needsOrg = isReady && !orgReady;
 
+  // Обёртка SettingsLayout, а не собственный Box: она рисует левое меню
+  // настроек и сама держит отступы и прокрутку контента (как на всех
+  // остальных вкладках раздела).
   return (
-    <Box
-      sx={{
-        p: { xs: 2, md: 3 },
-        maxWidth: 1200,
-        mx: "auto",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <PageHeader title={t("automations.pageTitle")} showSearch={false} />
-
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1.5}
-        alignItems={{ xs: "stretch", sm: "center" }}
-        sx={{ mb: 2 }}
-      >
-        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-          {t("automations.subtitle")}
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddOutlined />}
-          disabled={!catalogQuery.data || catalogQuery.data.events.length === 0}
-          onClick={() => {
-            setEditing(null);
-            setEditorOpen(true);
-          }}
+    <SettingsLayout>
+      <Stack spacing={3}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          justifyContent="space-between"
+          alignItems={{ xs: "stretch", sm: "center" }}
         >
-          {t("automations.create")}
-        </Button>
-      </Stack>
+          <Box>
+            <Typography variant="h5" fontWeight={700} gutterBottom>
+              {t("automations.pageTitle")}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t("automations.subtitle")}
+            </Typography>
+          </Box>
+          {tab === "rules" && (
+            <Button
+              variant="contained"
+              startIcon={<AddOutlined />}
+              disabled={!catalogQuery.data || catalogQuery.data.events.length === 0}
+              onClick={() => {
+                setEditing(null);
+                setEditorOpen(true);
+              }}
+              sx={{ flexShrink: 0 }}
+            >
+              {t("automations.create")}
+            </Button>
+          )}
+        </Stack>
+
+        <Tabs
+          value={tab}
+          onChange={(_, next: TabKey) => setTab(next)}
+          sx={{ borderBottom: 1, borderColor: "divider" }}
+        >
+          <Tab
+            value="rules"
+            icon={<BoltOutlined fontSize="small" />}
+            iconPosition="start"
+            label={t("automations.tabs.rules")}
+          />
+          <Tab
+            value="history"
+            icon={<HistoryOutlined fontSize="small" />}
+            iconPosition="start"
+            label={t("automations.tabs.history")}
+          />
+        </Tabs>
 
       {needsOrg ? (
         <Alert severity="info">{t("automations.needsOrg")}</Alert>
+      ) : tab === "history" ? (
+        <AutomationHistoryTab
+          automations={rows}
+          organizationId={organizationId}
+          enabled={enabled}
+        />
       ) : catalogQuery.isError ? (
         <Alert severity="error">{t("automations.catalogError")}</Alert>
       ) : listQuery.isError ? (
@@ -237,6 +285,7 @@ const AutomationsSettingsPage: React.FC = () => {
           </Table>
         </TableContainer>
       )}
+      </Stack>
 
       <Menu
         open={menu != null}
@@ -288,7 +337,7 @@ const AutomationsSettingsPage: React.FC = () => {
           onClose={() => setEditorOpen(false)}
           onSaved={() => {
             setEditorOpen(false);
-            queryClient.invalidateQueries({ queryKey: djangoQueryKeys.automations.all });
+            invalidateAutomations();
             setMessage({ type: "success", text: t("automations.editor.saveSuccess") });
           }}
         />
@@ -315,7 +364,7 @@ const AutomationsSettingsPage: React.FC = () => {
           {message?.text}
         </Alert>
       </Snackbar>
-    </Box>
+    </SettingsLayout>
   );
 };
 

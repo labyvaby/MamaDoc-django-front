@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  Automation,
-  AutomationCatalogEvent,
+import {
+  PROFICHAT_PUSH_CHANNEL,
+  type Automation,
+  type AutomationCatalogEvent,
 } from "../../../api/automations";
 import {
   automationToForm,
   makeGroup,
   makeLeaf,
   nodeDepth,
+  relevantPayloadFields,
   removeNode,
   retargetForm,
+  samplePayload,
   supportsBranchFilter,
+  supportsTitle,
+  templateVariables,
   toSaveInput,
   validateForm,
   type AutomationForm,
@@ -35,6 +40,7 @@ const APPOINTMENT_EVENT: AutomationCatalogEvent = {
       fieldType: "branch",
       operators: ["eq", "in", "exists"],
       options: [],
+      hidden: true,
     },
     {
       code: "total_amount",
@@ -44,7 +50,13 @@ const APPOINTMENT_EVENT: AutomationCatalogEvent = {
       options: [],
     },
   ],
-  variables: ["client_name", "client_phone", "appointment_date"],
+  variables: ["client_name", "client_phone", "employee_phone", "appointment_date"],
+  variableLabels: {
+    client_name: "ФИО клиента",
+    client_phone: "Телефон клиента",
+    employee_phone: "Телефон сотрудника",
+    appointment_date: "Дата записи",
+  },
 };
 
 const CLIENT_EVENT: AutomationCatalogEvent = {
@@ -61,6 +73,7 @@ const CLIENT_EVENT: AutomationCatalogEvent = {
     },
   ],
   variables: ["client_name", "client_email"],
+  variableLabels: { client_name: "ФИО клиента" },
 };
 
 const LABELS = {
@@ -88,6 +101,7 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
         delayMinutes: "10",
         channel: "sms",
         recipientField: "client_phone",
+        title: "",
         body: "Здравствуйте, {{client_name}}!",
       },
     ],
@@ -286,10 +300,133 @@ describe("дерево условий", () => {
   });
 });
 
+describe("templateVariables", () => {
+  it("находит переменные с пробелами и без", () => {
+    expect(templateVariables("Привет, {{client_name}} и {{ appointment_date }}!")).toEqual([
+      "client_name",
+      "appointment_date",
+    ]);
+  });
+
+  it("не считает переменной вложенный путь", () => {
+    expect(templateVariables("{{client.name}}")).toEqual([]);
+  });
+});
+
+describe("relevantPayloadFields", () => {
+  it("собирает поля условий, получателя и переменные текста", () => {
+    const leaf = makeLeaf("status", "eq");
+    leaf.value = "confirmed";
+    const roles = relevantPayloadFields(baseForm({ conditions: leaf }));
+    expect(roles.get("status")).toEqual(["condition"]);
+    expect(roles.get("client_phone")).toEqual(["recipient"]);
+    expect(roles.get("client_name")).toEqual(["template"]);
+  });
+
+  it("не тянет поля, которые правило не использует", () => {
+    const roles = relevantPayloadFields(baseForm());
+    expect(roles.has("service_name")).toBe(false);
+    expect(roles.has("branch_id")).toBe(false);
+  });
+
+  it("одно поле может быть и получателем, и переменной текста", () => {
+    const form = baseForm();
+    form.actions[0].body = "Ваш номер {{client_phone}}";
+    expect(relevantPayloadFields(form).get("client_phone")).toEqual([
+      "recipient",
+      "template",
+    ]);
+  });
+});
+
+
+describe("samplePayload", () => {
+  it("не выносит в прогон скрытые ID-шные поля", () => {
+    const keys = Object.keys(samplePayload(APPOINTMENT_EVENT, baseForm()));
+    expect(keys).not.toContain("branch_id");
+    expect(keys).toContain("client_phone");
+    expect(keys).toContain("total_amount");
+  });
+
+  it("возвращает скрытое поле, если оно уже используется в условии", () => {
+    const leaf = makeLeaf("branch_id", "eq");
+    leaf.value = "3";
+    const keys = Object.keys(
+      samplePayload(APPOINTMENT_EVENT, baseForm({ conditions: leaf })),
+    );
+    expect(keys).toContain("branch_id");
+  });
+});
+
+
 describe("supportsBranchFilter", () => {
   it("true только для события с branch_id", () => {
     expect(supportsBranchFilter(APPOINTMENT_EVENT)).toBe(true);
     expect(supportsBranchFilter(CLIENT_EVENT)).toBe(false);
     expect(supportsBranchFilter(undefined)).toBe(false);
+  });
+});
+
+describe("канал ProfiChat push", () => {
+  it("заголовок есть только у push", () => {
+    expect(supportsTitle(PROFICHAT_PUSH_CHANNEL)).toBe(true);
+    expect(supportsTitle("sms")).toBe(false);
+    expect(supportsTitle("whatsapp")).toBe(false);
+  });
+
+  it("сохраняет заголовок для push", () => {
+    const form = baseForm();
+    form.actions[0].channel = PROFICHAT_PUSH_CHANNEL;
+    form.actions[0].title = "Напоминание";
+
+    const config = toSaveInput(form).actions[0].config;
+    expect(config.channel).toBe(PROFICHAT_PUSH_CHANNEL);
+    expect(config.title).toBe("Напоминание");
+  });
+
+  it("не пишет заголовок в конфиг SMS", () => {
+    const form = baseForm();
+    form.actions[0].title = "Останется в форме";
+
+    expect(toSaveInput(form).actions[0].config).not.toHaveProperty("title");
+  });
+
+  it("читает заголовок сохранённого правила", () => {
+    const automation = {
+      id: 1,
+      organizationId: 1,
+      branchId: null,
+      name: "Пуш",
+      eventCode: "appointment.created",
+      status: "active",
+      conditions: {},
+      actions: [
+        {
+          id: 1,
+          position: 0,
+          actionType: "send_message",
+          delayMinutes: 0,
+          config: {
+            channel: PROFICHAT_PUSH_CHANNEL,
+            recipientField: "client_phone",
+            title: "Запись создана",
+            body: "Ждём вас",
+          },
+        },
+      ],
+      createdAt: "",
+      updatedAt: "",
+    } as unknown as Automation;
+
+    expect(automationToForm(automation).actions[0].title).toBe("Запись создана");
+  });
+
+  it("переменные заголовка попадают в форму пробного прогона", () => {
+    const form = baseForm();
+    form.actions[0].channel = PROFICHAT_PUSH_CHANNEL;
+    form.actions[0].title = "Здравствуйте, {{client_name}}";
+    form.actions[0].body = "Ждём вас";
+
+    expect(relevantPayloadFields(form).get("client_name")).toContain("template");
   });
 });

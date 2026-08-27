@@ -84,12 +84,21 @@ export const djangoQueryKeys = {
 
   automations: {
     all: ["django", "automations"] as const,
+    // Всё, что меняется при сохранении правила. Каталог сюда НЕ входит: он
+    // справочник, а его рефетч посреди открытого редактора лишний.
+    mutable: ["django", "automations", "list"] as const,
     catalog: (organizationId: number | null | undefined) =>
       ["django", "automations", "catalog", organizationId ?? null] as const,
     list: (organizationId: number | null | undefined) =>
       ["django", "automations", "list", organizationId ?? null] as const,
     runs: (automationId: number, organizationId: number | null | undefined) =>
       ["django", "automations", automationId, "runs", organizationId ?? null] as const,
+    // Общая история организации — отдельный ключ: фильтры вкладки не должны
+    // сбрасывать кэш истории конкретного правила и наоборот.
+    history: (
+      organizationId: number | null | undefined,
+      filters: Record<string, unknown>,
+    ) => ["django", "automations", "history", organizationId ?? null, filters] as const,
   },
 
   announcements: {
