@@ -459,6 +459,32 @@ export function rejectCleaningRecord(
 }
 
 /**
+ * Исправить тип уже созданной уборки. Доступно только cleaning.manage для
+ * любого статуса записи; при смене типа бэкенд обновляет и сохранённую ставку,
+ * поэтому подтверждённая уборка пересчитывается в зарплате правильно.
+ * Подтверждённую запись из замороженного месяца бэкенд вернёт с 409.
+ */
+export function updateCleaningRecordType(
+  recordId: number,
+  typeId: number,
+  organizationId?: number,
+): Promise<CleaningRecord> {
+  if (CLEANING_USE_MOCKS) {
+    const record = mockRecords.find((r) => r.id === recordId);
+    const type = mockTypes.find((item) => item.id === typeId && item.isActive);
+    if (!record) return Promise.reject(new Error("Запись не найдена (мок)"));
+    if (!type) return Promise.reject(new Error("Активный тип уборки не найден (мок)"));
+    record.typeId = type.id;
+    record.typeName = type.name;
+    return mockDelay({ ...record });
+  }
+  return apiRequest<CleaningRecord>(
+    withOrg(`/cleaning/records/${recordId}/`, organizationId),
+    { method: "PATCH", body: { typeId } },
+  );
+}
+
+/**
  * Полное удаление записи об уборке (и её фото) — под правом cleaning.manage.
  * Реализовано бэком 21.07.2026 (тикет backend_ticket_cleaning_record_cancel.md).
  *

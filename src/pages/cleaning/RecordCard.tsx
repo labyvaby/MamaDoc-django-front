@@ -3,6 +3,7 @@ import { Box, Button, CircularProgress, IconButton, Stack, Tooltip, Typography }
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 
@@ -19,6 +20,7 @@ export interface RecordCardProps {
   onOpenPhoto: (index: number) => void;
   onApprove: (record: CleaningRecord) => void;
   onReject: (record: CleaningRecord) => void;
+  onEditType: (record: CleaningRecord) => void;
   onDelete: (record: CleaningRecord) => void;
 }
 
@@ -35,6 +37,7 @@ export const RecordCard: React.FC<RecordCardProps> = ({
   onOpenPhoto,
   onApprove,
   onReject,
+  onEditType,
   onDelete,
 }) => (
   <Stack
@@ -121,6 +124,11 @@ export const RecordCard: React.FC<RecordCardProps> = ({
                 </Button>
               </>
             )}
+            <Tooltip title="Изменить тип уборки">
+              <IconButton size="small" onClick={() => onEditType(record)}>
+                <EditOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Удалить запись">
               <IconButton size="small" onClick={() => onDelete(record)} sx={{ ml: "auto" }}>
                 <DeleteOutlineOutlined fontSize="small" />

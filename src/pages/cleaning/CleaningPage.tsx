@@ -30,6 +30,7 @@ import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
@@ -61,6 +62,7 @@ import {
   getCleaningSummary,
   getCleaningTypes,
   isCleaningBackdated,
+  updateCleaningRecordType,
   type CleaningRecord,
   type CleaningRecordStatus,
 } from "../../api/cleaning";
@@ -228,6 +230,38 @@ const CleaningPage: React.FC = () => {
   const [reportOpen, setReportOpen] = React.useState(false);
   const [viewer, setViewer] = React.useState<{ record: CleaningRecord; index: number } | null>(null);
   const [rejectTarget, setRejectTarget] = React.useState<CleaningRecord | null>(null);
+
+  // ── Исправление типа уборки ──────────────────────────────────────────────
+  const [typeEditTarget, setTypeEditTarget] = React.useState<CleaningRecord | null>(null);
+  const [typeEditId, setTypeEditId] = React.useState<number | "">("");
+  const [typeEditBusy, setTypeEditBusy] = React.useState(false);
+  const [typeEditError, setTypeEditError] = React.useState<string | null>(null);
+
+  const openTypeEdit = React.useCallback((record: CleaningRecord) => {
+    setTypeEditTarget(record);
+    setTypeEditId(record.typeId);
+    setTypeEditError(null);
+  }, []);
+
+  const handleTypeEdit = async () => {
+    if (!typeEditTarget || typeEditId === "") return;
+    setTypeEditBusy(true);
+    setTypeEditError(null);
+    try {
+      await updateCleaningRecordType(typeEditTarget.id, typeEditId, orgId);
+      notify?.({ type: "success", message: "Тип уборки изменён" });
+      setTypeEditTarget(null);
+      invalidate();
+    } catch (err) {
+      setTypeEditError(
+        err instanceof ApiError && err.status === 409
+          ? "Месяц закрыт в зарплате — тип подтверждённой уборки нельзя изменить, пока бухгалтер не разморозит период."
+          : getErrorMessage(err),
+      );
+    } finally {
+      setTypeEditBusy(false);
+    }
+  };
 
   // ── Подтверждение ─────────────────────────────────────────────────────────
   const [reviewBusyId, setReviewBusyId] = React.useState<number | null>(null);
@@ -424,7 +458,7 @@ const CleaningPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: canManage ? 132 : 20,
+        width: canManage ? 164 : 20,
         sortable: false,
         align: "right",
         headerAlign: "right",
@@ -458,6 +492,11 @@ const CleaningPage: React.FC = () => {
                       </Tooltip>
                     </>
                   )}
+                  <Tooltip title="Изменить тип уборки">
+                    <IconButton size="small" onClick={() => openTypeEdit(p.row)}>
+                      <EditOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   {/* Удаление — для любого статуса: исправление ошибочных
                       подтверждений/дублей (тикет cleaning-record-cancel). */}
                   <Tooltip title="Удалить запись">
@@ -472,7 +511,7 @@ const CleaningPage: React.FC = () => {
         },
       },
     ],
-    [canManage, reviewBusyId, handleApprove],
+    [canManage, reviewBusyId, handleApprove, openTypeEdit],
   );
 
   return (
@@ -622,6 +661,7 @@ const CleaningPage: React.FC = () => {
                       onOpenPhoto={(index) => setViewer({ record: row, index })}
                       onApprove={(r) => void handleApprove(r)}
                       onReject={setRejectTarget}
+                      onEditType={openTypeEdit}
                       onDelete={setDeleteTarget}
                     />
                   ))}
@@ -718,6 +758,61 @@ const CleaningPage: React.FC = () => {
         onClose={() => setRejectTarget(null)}
         onSuccess={invalidate}
       />
+
+      {/* Исправление типа доступно для pending/approved/rejected: статус записи
+          не меняется. В уже закрытой зарплате бэкенд безопасно вернёт 409. */}
+      <Dialog
+        open={typeEditTarget !== null}
+        onClose={typeEditBusy ? undefined : () => setTypeEditTarget(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Изменить тип уборки</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {typeEditTarget?.employeeName ? `${typeEditTarget.employeeName} · ` : ""}
+            {typeEditTarget ? formatCleaningDate(typeEditTarget) : ""}
+          </Typography>
+          <TextField
+            select
+            fullWidth
+            label="Тип уборки"
+            value={typeEditId === "" ? "" : String(typeEditId)}
+            onChange={(event) => setTypeEditId(Number(event.target.value))}
+            disabled={typeEditBusy}
+          >
+            {activeTypes.map((type) => (
+              <MenuItem key={type.id} value={String(type.id)}>
+                {type.name} · {type.rate} сом
+              </MenuItem>
+            ))}
+          </TextField>
+          {typeEditTarget?.status === "approved" && (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>
+              Уборка уже учтена в зарплате. После сохранения её сумма изменится
+              по ставке выбранного типа.
+            </Alert>
+          )}
+          {typeEditError && (
+            <Alert severity="error" sx={{ mt: 1.5 }}>
+              {typeEditError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTypeEditTarget(null)} disabled={typeEditBusy}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleTypeEdit}
+            disabled={typeEditBusy || typeEditId === ""}
+            startIcon={typeEditBusy ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {typeEditBusy ? "Сохранение…" : "Сохранить"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Удаление записи об уборке */}
       <Dialog
