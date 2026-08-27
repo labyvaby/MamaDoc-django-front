@@ -43,6 +43,7 @@ import {
   SERVICE_ONLINE_VISIBILITY_ENABLED,
   SERVICE_RELATED_PRODUCT_ENABLED,
   uploadServiceImage,
+  type Service,
   type ServiceCategory,
 } from "../../api/catalog";
 import { getProducts, type DjangoProduct } from "../../api/warehouse";
@@ -50,6 +51,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import type { RbacBranch } from "../../api/auth";
 import { useT } from "../../i18n/VerticalProvider";
+import { tt } from "../../i18n/t";
 import { cascadeContainer, cascadeItem } from "../ui";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
 
@@ -71,6 +73,12 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onCreated?: () => void;
+  /**
+   * Услуга-образец для кнопки «Дублировать»: поля предзаполняются её
+   * значениями, кроме названия (к нему добавляется «(копия)») и фото —
+   * картинка загружается файлом, скопировать её с чужой карточки нечем.
+   */
+  duplicateFrom?: Service | null;
 };
 
 const MotionStack = motion(Stack);
@@ -114,7 +122,12 @@ function isDraftEmpty(d: Omit<ServiceAddDraft, "savedAt">): boolean {
   );
 }
 
-const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) => {
+const DjangoAddServiceDrawer: React.FC<Props> = ({
+  open,
+  onClose,
+  onCreated,
+  duplicateFrom = null,
+}) => {
   const { t } = useT("services");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
@@ -165,9 +178,33 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     return () => ctrl.abort();
   }, [open, orgId]);
 
+  // Состав расходников копируем, когда справочник товаров уже загружен:
+  // строке формы нужен объект товара, а не только его id из образца.
+  React.useEffect(() => {
+    if (!open || !duplicateFrom || !SERVICE_RELATED_PRODUCT_ENABLED) return;
+    if (products.length === 0) return;
+    const rows = duplicateFrom.relatedProducts
+      .map((item) => {
+        const product = products.find((p) => p.id === item.id);
+        return product
+          ? {
+              product,
+              quantity: String(item.quantity),
+              autoWriteOff: item.autoWriteOff,
+              billable: item.billable,
+            }
+          : null;
+      })
+      .filter((row): row is RelatedProductRow => row !== null);
+    setRelatedProducts(rows);
+  }, [open, duplicateFrom, products]);
+
   // ── восстановление черновика (простые поля) ─────────────────────────────
   React.useEffect(() => {
-    if (!open) return;
+    // При дублировании поля задаёт услуга-образец — черновик здесь только
+    // помешал бы, поэтому его не читаем (и не удаляем: он ждёт обычного
+    // создания услуги).
+    if (!open || duplicateFrom) return;
     const draft = readFormDraft<ServiceAddDraft>(DRAFT_STORAGE_KEY, DRAFT_TTL_MS);
     draftRef.current = draft;
     if (draft) {
@@ -185,13 +222,32 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
     } else {
       setDraftRestored(false);
     }
-  }, [open]);
+  }, [open, duplicateFrom]);
+
+  // ── предзаполнение при дублировании ────────────────────────────────────
+  React.useEffect(() => {
+    if (!open || !duplicateFrom) return;
+    setName(tt("services:duplicate.nameSuffix", { name: duplicateFrom.name }));
+    setPrice(duplicateFrom.basePrice ?? "");
+    setDurationMinutes(String(duplicateFrom.durationMinutes || 30));
+    setCategory(duplicateFrom.category ?? "");
+    setDescription(duplicateFrom.description ?? "");
+    setIsActive(duplicateFrom.isActive);
+    setOnlineBookingVisible(duplicateFrom.onlineBookingVisible !== false);
+    setAllowPriceOverride(duplicateFrom.allowPriceOverride === true);
+    setDraftRestored(false);
+  }, [open, duplicateFrom]);
 
   // Pre-select activeBranch when drawer opens (not all branches), либо
   // восстанавливаем филиалы из черновика, если он был.
   React.useEffect(() => {
     if (!open) {
       setSelectedBranches([]);
+      return;
+    }
+    if (duplicateFrom) {
+      const sourceIds = duplicateFrom.branches.map((b) => b.id);
+      setSelectedBranches(availableBranches.filter((b) => sourceIds.includes(b.id)));
       return;
     }
     const draftIds = draftRef.current?.selectedBranchIds;
@@ -203,7 +259,7 @@ const DjangoAddServiceDrawer: React.FC<Props> = ({ open, onClose, onCreated }) =
       ? availableBranches.filter((b) => b.id === activeBranch.id)
       : [];
     setSelectedBranches(preselected);
-  }, [open, activeBranch, availableBranches]);
+  }, [open, activeBranch, availableBranches, duplicateFrom]);
 
   // ── сохранение черновика в localStorage (защита от случайного закрытия) ──
   // flushDraftRef всегда указывает на актуальный снэпшот полей — нужен, чтобы

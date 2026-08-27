@@ -265,9 +265,10 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   // Своя карточка: сотрудник всегда видит свои связанные данные (own-bypass).
   const isOwnCard = activeEmployee?.id != null && empIdNum === activeEmployee.id;
-  // Свои услуги врач видит всегда; чужие — по staff.services.view (та же
-  // модель, что у связанных разделов). Границу держит бэкенд.
-  const canViewServices = useCan("staff.services.view") || isOwnCard;
+  // Свои услуги врач видит всегда; чужие — по catalog.view (кода
+  // staff.services.view на бэке нет, см. DjangoEditEmployeeDrawer).
+  // Границу держит бэкенд.
+  const canViewServices = useCan("catalog.view") || isOwnCard;
 
   // ── Живые показатели «связанных данных» за текущий месяц ────────────────────
   // Общие хуки с модалками (одинаковые queryKey → один запрос на кеш).

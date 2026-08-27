@@ -39,6 +39,26 @@ export const djangoQueryKeys = {
       ["django", "appointments", "notifications", ids] as const,
     serviceProviders: () =>
       ["django", "appointments", "service-providers"] as const,
+    /** Матрица пар «услуга ↔ сотрудник» — счётчик исполнителей в списке услуг. */
+    serviceAssignments: (branchId: number | null) =>
+      ["django", "appointments", "service-assignments", branchId] as const,
+    /**
+     * Исполнители одной услуги (секция «Кто оказывает» в карточке услуги).
+     * Филиал в ключе: ручка сужает выдачу по нему.
+     */
+    servicePerformers: (
+      organizationId: number | null,
+      branchId: number | null,
+      serviceId: number | null,
+    ) =>
+      [
+        "django",
+        "appointments",
+        "service-providers",
+        organizationId,
+        branchId,
+        serviceId,
+      ] as const,
     formData: (context: { orgId?: number | null; branchId?: number | null; membershipId?: number | null } = {}) =>
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
@@ -253,6 +273,9 @@ export const djangoQueryKeys = {
      */
     activeEmployees: (organizationId: number | null | undefined) =>
       ["django", "staff", "activeEmployees", organizationId ?? null] as const,
+    /** Услуги одного сотрудника — персональные цена и длительность. */
+    employeeServices: (organizationId: number | null, employeeId: number) =>
+      ["django", "staff", "employeeServices", organizationId, employeeId] as const,
     specializations: (organizationId: number | null | undefined) =>
       ["django", "staff", "specializations", organizationId ?? null] as const,
     banks: (organizationId: number | null | undefined) =>
