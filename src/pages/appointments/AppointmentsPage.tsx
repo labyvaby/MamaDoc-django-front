@@ -350,6 +350,8 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Повторная запись из карточки брони: карта пациента и врач приходят в адресе.
   const [rebookPatientId, setRebookPatientId] = React.useState<number | null>(null);
   const [rebookEmployeeId, setRebookEmployeeId] = React.useState<number | null>(null);
+  // ?service= — запись на конкретную услугу (кнопка «Записать» в карточке услуги).
+  const [rebookServiceId, setRebookServiceId] = React.useState<number | null>(null);
   const [editTarget, setEditTarget] = React.useState<DjangoAppointment | null>(null);
   const [paymentTarget, setPaymentTarget] = React.useState<DjangoAppointment | null>(null);
   const [selectedAppt, setSelectedAppt] = React.useState<DjangoAppointment | null>(null);
@@ -503,13 +505,16 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     if (isNew) {
       setRebookPatientId(asId(searchParams.get("patient")));
       setRebookEmployeeId(asId(searchParams.get("employee")));
+      setRebookServiceId(asId(searchParams.get("service")));
       setCreateOpen(true);
     }
 
     setSearchParams(
       (prev: URLSearchParams) => {
         const next = new URLSearchParams(prev);
-        for (const key of ["appointment", "new", "patient", "employee"]) next.delete(key);
+        for (const key of ["appointment", "new", "patient", "employee", "service"]) {
+          next.delete(key);
+        }
         return next;
       },
       { replace: true },
@@ -1250,11 +1255,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
           setSlotPrefill(null);
           setRebookPatientId(null);
           setRebookEmployeeId(null);
+          setRebookServiceId(null);
         }}
         onCreated={() => {
           setSlotPrefill(null);
           setRebookPatientId(null);
           setRebookEmployeeId(null);
+          setRebookServiceId(null);
           handleCreated();
         }}
         initialDate={
@@ -1271,10 +1278,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         initialEmployeeId={
           slotPrefill ? slotPrefill.employeeId : rebookEmployeeId ?? filterEmployeeId
         }
-        initialServiceId={slotPrefill?.serviceId ?? null}
+        initialServiceId={slotPrefill?.serviceId ?? rebookServiceId}
         initialPatientId={rebookPatientId}
         initialBooking={slotPrefill?.booking ?? false}
-        showAllFieldsInitially={slotPrefill?.employeeId != null}
+        showAllFieldsInitially={slotPrefill?.employeeId != null || rebookServiceId != null}
       />
 
       <DjangoEditAppointmentDrawer

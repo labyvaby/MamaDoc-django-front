@@ -1351,6 +1351,9 @@ const DjangoSchedulePage: React.FC = () => {
             borderRadius: "14px",
             bgcolor: "background.paper",
             overflow: "hidden",
+            // Карточка с overflow:hidden теряет min-height:auto и в flex-колонке
+            // сжимается, обрезая таблицу и убивая скролл контейнера.
+            flexShrink: 0,
           }}
         >
           <Typography variant="subtitle2" fontWeight={600} sx={{ px: 2, py: 1.5 }}>
@@ -1447,6 +1450,9 @@ const DjangoSchedulePage: React.FC = () => {
             borderRadius: "14px",
             bgcolor: "background.paper",
             overflow: "hidden",
+            // Карточка с overflow:hidden теряет min-height:auto и в flex-колонке
+            // сжимается, обрезая таблицу и убивая скролл контейнера.
+            flexShrink: 0,
           }}
         >
           <Typography variant="subtitle2" fontWeight={600} sx={{ px: 2, py: 1.5 }}>

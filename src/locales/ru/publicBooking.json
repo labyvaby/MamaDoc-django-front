@@ -147,7 +147,19 @@
   "bookForOther": "другого {{patient.acc}}",
   "reminderOnTime": "Просим приходить вовремя: при опоздании время {{visit.gen}} может быть сокращено.",
   "reminderCancel": "Если не сможете прийти, предупредите заранее — не менее чем за 12 часов.",
-
+  "branches": {
+    "title": "{{branch.nomPl, capitalize}} и график",
+    "hint": "Выберите, куда вам удобнее приехать — время покажем для выбранного {{branch.gen}}.",
+    "single": "Приём проходит здесь",
+    "noSchedule": "График не задан",
+    "everyday": "Ежедневно",
+    "lunch": "перерыв {{from}} – {{to}}",
+    "excDayOff": "выходной",
+    "excVacation": "отпуск",
+    "excExtra": "дополнительно",
+    "excOverride": "другое время",
+    "loadFailed": "Не удалось загрузить график."
+  },
   "byCode": {
     "heading": "Ваша {{record.nom}}",
     "notFound": "{{record.nom, capitalize}} по этому коду не найдена. Проверьте ссылку или позвоните в {{org.acc}}.",
