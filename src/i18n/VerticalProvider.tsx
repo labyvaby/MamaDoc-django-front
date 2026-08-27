@@ -42,7 +42,7 @@ const readDevVertical = (): Vertical | null => {
  * соответствующий глоссарий вниз по дереву.
  *
  * Источник истины — поле `vertical` в activeOrganization из /auth/me/
- * (бэк отдаёт с 28.07.2026, choices "clinic" | "beauty"). Отсутствующее
+ * (бэк отдаёт один из известных фронту кодов, включая "retail"). Отсутствующее
  * или незнакомое значение трактуется как клиника (см. DEFAULT_VERTICAL).
  */
 export const VerticalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

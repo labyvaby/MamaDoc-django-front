@@ -344,7 +344,13 @@ const SidebarSecondary: React.FC = () => {
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const { isSuperAdmin, activeEmployee, activeBranch, loading: permissionsLoading } = usePermissions();
+  const {
+    isSuperAdmin,
+    activeEmployee,
+    activeBranch,
+    activeOrganization,
+    loading: permissionsLoading,
+  } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const hasVisibleSettingsTab = Object.entries(
@@ -356,6 +362,7 @@ const SidebarSecondary: React.FC = () => {
   );
   const orgId = useApiOrgId();
   const isSuper = isSuperAdmin();
+  const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -381,41 +388,41 @@ const SidebarSecondary: React.FC = () => {
     // правами (appointments.*_room/registry.view): организация сама решает в
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
-    registratura: isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry),
-    bookings: isSuper || can(PAGE_PERMISSIONS.bookings),
-    doctorRoom: isSuper || can(PAGE_PERMISSIONS.doctorRoom),
-    nurseRoom: isSuper || can(PAGE_PERMISSIONS.nurseRoom),
-    schedule: isSuper || can(PAGE_PERMISSIONS.schedule),
-    skud: isSuper || can(PAGE_PERMISSIONS.attendance),
+    registratura: !isRetail && can(PAGE_PERMISSIONS.appointmentsRegistry),
+    bookings: !isRetail && can(PAGE_PERMISSIONS.bookings),
+    doctorRoom: !isRetail && can(PAGE_PERMISSIONS.doctorRoom),
+    nurseRoom: !isRetail && can(PAGE_PERMISSIONS.nurseRoom),
+    schedule: !isRetail && can(PAGE_PERMISSIONS.schedule),
+    skud: can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
-    tasks: isSuper || can(PAGE_PERMISSIONS.tasks),
-    expenses: isSuper || can(PAGE_PERMISSIONS.expenses),
+    tasks: can(PAGE_PERMISSIONS.tasks),
+    expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
-    achievements: isSuper || can(PAGE_PERMISSIONS.achievements),
+    achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
-    employees: isSuper || can(PAGE_PERMISSIONS.employees),
-    patients: isSuper || can(PAGE_PERMISSIONS.patients),
-    vaccinations: isSuper || can(PAGE_PERMISSIONS.vaccinations),
+    employees: can(PAGE_PERMISSIONS.employees),
+    patients: !isRetail && can(PAGE_PERMISSIONS.patients),
+    vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
-    allAppointments: isSuper,
-    allProcedures: isSuper,
-    services: isSuper || can(PAGE_PERMISSIONS.services),
+    allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    allProcedures: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
-    products: isSuper || can(PAGE_PERMISSIONS.products),
-    sales: isSuper || can(PAGE_PERMISSIONS.sales),
-    storage: isSuper || can(PAGE_PERMISSIONS.warehouses),
+    products: can(PAGE_PERMISSIONS.products),
+    sales: can(PAGE_PERMISSIONS.sales),
+    storage: can(PAGE_PERMISSIONS.warehouses),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
-    salaryReports: isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
+    salaryReports: can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
     // В Django-режиме гейтим правом, а не ролью: роль-гейт скрывал «Отчеты»
     // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
-    reports: isSuper || can(PAGE_PERMISSIONS.reports),
-    cashbox: isSuper || can(PAGE_PERMISSIONS.cashbox),
-    load: isSuper || can(PAGE_PERMISSIONS.reports),
-    notifications: isSuper || can(PAGE_PERMISSIONS.notifications),
+    reports: can(PAGE_PERMISSIONS.reports),
+    cashbox: can(PAGE_PERMISSIONS.cashbox),
+    load: !isRetail && can(PAGE_PERMISSIONS.reports),
+    notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
 
@@ -799,7 +806,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Отзывы (Django-mode only) */}
-        {show("management") && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
+        {show("management") && !isRetail && can(PAGE_PERMISSIONS.reviews) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 

@@ -116,6 +116,7 @@ const SpecializationsSettingsPage = lazy(() => import("./pages/settings/Speciali
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
+const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
 // (registry/RegistryJournalView), а не рабочий кабинет с навигацией по дням.
@@ -123,6 +124,7 @@ const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
+const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -559,6 +561,16 @@ function App() {
                           }
                         />
                         <Route
+                          path="retail"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <RetailDashboardPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="schedule"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.schedule}>
@@ -798,6 +810,16 @@ function App() {
                                 }
                               />
                             )}
+                            <Route
+                              path="settings/product-attributes"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.productAttributes}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ProductAttributesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
                             <Route
                               path="settings/expense-categories"
                               element={

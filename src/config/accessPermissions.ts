@@ -39,6 +39,12 @@ export const PAGE_PERMISSIONS = {
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],
   conclusionPrint: "medical.conclusions.print",
+  clients: "clients.view",
+  pos: "pos.view",
+  inventory: "warehouse.manage",
+  ecommerce: "ecommerce.view",
+  targets: "targets.view",
+  messaging: "messaging.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
@@ -67,6 +73,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
+  productAttributes: "warehouse.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
