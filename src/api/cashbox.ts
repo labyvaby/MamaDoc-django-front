@@ -132,6 +132,11 @@ export interface CashboxEntry {
    */
   cashlessMethodId?: number | null;
   cashlessMethodName?: string | null;
+  /** Accounting day of a payment; may differ from createdAt. */
+  cashDate?: string | null;
+  isPrepayment?: boolean;
+  /** Current date of the appointment the prepayment is attached to. */
+  targetAppointmentDate?: string | null;
 }
 
 export interface CashboxEntriesResponse {

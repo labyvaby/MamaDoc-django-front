@@ -8,6 +8,7 @@ import {
   CircularProgress,
   Divider,
   Drawer,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   Paper,
@@ -15,6 +16,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  Switch,
   alpha,
 } from "@mui/material";
 import MenuItem from "@mui/material/MenuItem";
@@ -34,11 +36,13 @@ import dayjs from "dayjs";
 import {
   getAppointmentPayments,
   applyAppointmentPayment,
+  createManualAppointmentPrepayment,
   parseBackendError,
   manualPaymentsOf,
   type PaymentSummary,
   type PaymentStatus,
   type ApplyPaymentPayload,
+  type CreateManualPrepaymentPayload,
   type PaymentLineInput,
 } from "../../api/payments";
 import { getInsurers } from "../../api/insurers";
@@ -121,6 +125,13 @@ function fmt(n: number): string {
   return n.toFixed(2);
 }
 
+function newPaymentOperationKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function computeStatus(payable: number, paid: number, discount: number, total: number): PaymentStatus {
   if (payable <= 0 && discount > 0 && total > 0 && paid === 0) return "discounted";
   if (paid >= payable && payable > 0) return "paid";
@@ -173,7 +184,12 @@ type PaymentDraft = {
   bonusStr: string;
   note: string;
   paymentsTouched: boolean;
+  prepaymentMode: boolean;
 };
+
+type PaymentMutationInput =
+  | { prepayment: false; payload: ApplyPaymentPayload }
+  | { prepayment: true; payload: CreateManualPrepaymentPayload };
 
 function paymentDraftKey(appointmentId: number): string {
   return `mamadoc:appointments:payment-draft:${appointmentId}`;
@@ -213,10 +229,14 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const queryClient = useQueryClient();
   const appointmentId = appointment?.id ?? null;
   const patientId = appointment?.patient?.id ?? null;
+  const isFutureAppointment = appointment?.scheduledAt
+    ? dayjs(appointment.scheduledAt).startOf("day").isAfter(dayjs().startOf("day"))
+    : false;
 
   const discountTouchedRef = React.useRef(false);
   const paymentsTouchedRef = React.useRef(false);
-  const seededPaymentsForRef = React.useRef<number | null>(null);
+  const seededPaymentsForRef = React.useRef<string | null>(null);
+  const prepaymentRequestKeyRef = React.useRef<string | null>(null);
 
   const paymentQuery = useQuery({
     queryKey: appointmentId
@@ -255,6 +275,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const [cashDateConfirmed, setCashDateConfirmed] = React.useState(false);
   const [showCashDateDialog, setShowCashDateDialog] = React.useState(false);
   const [draftRestored, setDraftRestored] = React.useState(false);
+  const [prepaymentMode, setPrepaymentMode] = React.useState(false);
 
   // Справочник страховых (для строки «Страховка»); только активные.
   const insurersQuery = useQuery({
@@ -307,6 +328,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       paymentsTouchedRef.current = false;
       seededPaymentsForRef.current = null;
       setDraftRestored(false);
+      setPrepaymentMode(false);
+      prepaymentRequestKeyRef.current = null;
       return;
     }
     if (appointmentId !== prevAppointmentIdRef.current) {
@@ -327,6 +350,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setShowCashDateDialog(false);
       prevAppointmentIdRef.current = appointmentId;
       paymentsTouchedRef.current = false;
+      setPrepaymentMode(isFutureAppointment);
+      prepaymentRequestKeyRef.current = null;
 
       // Черновик — только если пользователь реально что-то вводил в прошлый
       // раз (см. условие записи ниже); подтягиваем поверх только что
@@ -346,12 +371,13 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         setNote(draft.note);
         discountTouchedRef.current = draft.discountTouched;
         paymentsTouchedRef.current = draft.paymentsTouched;
+        setPrepaymentMode(draft.prepaymentMode ?? isFutureAppointment);
         setDraftRestored(true);
       } else {
         setDraftRestored(false);
       }
     }
-  }, [open, appointmentId, appointment?.discountAmount]);
+  }, [open, appointmentId, appointment?.discountAmount, isFutureAppointment]);
 
   // Seed discount from summary
   const summaryDiscountRef = React.useRef<string | undefined>(undefined);
@@ -369,8 +395,22 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   React.useEffect(() => {
     if (!summary || appointmentId === null) return;
     if (paymentsTouchedRef.current) return;
-    if (seededPaymentsForRef.current === appointmentId) return;
-    seededPaymentsForRef.current = appointmentId;
+    const seedKey = `${appointmentId}:${prepaymentMode ? "prepayment" : "regular"}`;
+    if (seededPaymentsForRef.current === seedKey) return;
+    seededPaymentsForRef.current = seedKey;
+    if (prepaymentMode) {
+      setCash("");
+      setCard("");
+      setInsurance("");
+      setInsurerId("");
+      setCashlessMethodId("");
+      setPolicyNumber("");
+      setBalanceStr("0");
+      setBonusStr("0");
+      setCashDateChoice("today");
+      setCashDateConfirmed(true);
+      return;
+    }
     // Онлайн-предоплата в поля формы не попадает: она живёт в журнале сама,
     // в apply её слать нельзя (дата кассы вне пресетов → 400), а сумма к
     // оплате ниже уже уменьшена на неё.
@@ -414,7 +454,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       setCashDateChoice("today");
       setCashDateConfirmed(false);
     }
-  }, [summary, appointmentId, appointment?.scheduledAt]);
+  }, [summary, appointmentId, appointment?.scheduledAt, prepaymentMode]);
 
   // Сохранение черновика в localStorage (защита от случайного закрытия).
   // Пишем, только если пользователь реально что-то ввёл — иначе значения,
@@ -450,6 +490,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       bonusStr,
       note,
       paymentsTouched: paymentsTouchedRef.current,
+      prepaymentMode,
     });
   };
 
@@ -460,6 +501,7 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   }, [
     open, appointmentId, discountStr, cash, card, insurance,
     insurerId, cashlessMethodId, policyNumber, balanceStr, bonusStr, note,
+    prepaymentMode,
   ]);
 
   const handleClose = () => {
@@ -475,6 +517,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     setBonusStr("0");
     setNote("");
     paymentsTouchedRef.current = false;
+    setPrepaymentMode(isFutureAppointment);
+    prepaymentRequestKeyRef.current = null;
     setDraftRestored(false);
 
     // Черновик перекрывал уже сохранённые на бэке платежи (см. эффект сидинга
@@ -531,10 +575,16 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // значит вычитаем её из суммы, которую кассир добирает на месте. Иначе
   // превью долга врёт: форма покажет остаток, которого бэк уже не ждёт.
   const prepaid = parseDecimal(summary?.prepaidTotal);
+  const existingPaidNet = parseDecimal(summary?.paidNet ?? summary?.paidTotal);
   const payableGross = discountTouchedRef.current || !summary
     ? Math.max(0, total - discount)
     : parseDecimal(summary.payableAmount);
-  const payable = Math.max(0, payableGross - prepaid);
+  // В обычном режиме поля описывают итоговую картину обычных платежей, поэтому
+  // из лимита исключаем только защищённую предоплату. В режиме предоплаты поля
+  // — новая операция, и лимитом служит текущий чистый долг по всему журналу.
+  const payable = prepaymentMode
+    ? Math.max(0, payableGross - existingPaidNet)
+    : Math.max(0, payableGross - prepaid);
   const cashNum = Number(cash || 0);
   const cardNum = Number(card || 0);
   const insuranceNum = Number(insurance || 0);
@@ -563,7 +613,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   const isDifferentDay = appointment?.scheduledAt
     ? !dayjs(appointment.scheduledAt).isSame(dayjs(), "day")
     : false;
-  const needsDateChoice = isDifferentDay && (cardNum > 0 || insuranceNum > 0);
+  const needsDateChoice =
+    !prepaymentMode && isDifferentDay && (cardNum > 0 || insuranceNum > 0);
 
   const overpaidAmount = parseDecimal(summary?.overpaidAmount);
   const refundedTotal = parseDecimal(summary?.refundedTotal);
@@ -574,25 +625,33 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
   // so trust the backend's net figures; otherwise show a live preview from the
   // inputs, net of any refund.
   const netPaid = Math.max(0, totalPaid - refundedTotal);
-  const debt = hasRefunds
+  const debt = prepaymentMode
+    ? Math.max(0, payable - totalPaid)
+    : hasRefunds
     ? parseDecimal(summary?.debt)
     : Math.max(0, payable - netPaid);
   // Статус считаем от полной суммы и всех денег приёма, включая предоплату:
   // иначе приём, закрытый предоплатой целиком, показывался бы «Не оплачен»
   // (в полях формы 0, добирать нечего).
-  const settledPreview = computeStatus(payableGross, netPaid + prepaid, discount, total);
+  const settledPreview = computeStatus(
+    payableGross,
+    prepaymentMode ? existingPaidNet + totalPaid : netPaid + prepaid,
+    discount,
+    total,
+  );
   const statusPreview = hasRefunds
     ? summary?.paymentStatus ?? settledPreview
     : settledPreview;
-  const applyBlockedByRefund = hasRefunds;
+  const applyBlockedByRefund = hasRefunds && !prepaymentMode;
   const hasBonusPayment = (summary?.payments ?? []).some((p) => p.method === "bonus");
-  const applyBlockedByBonus = hasBonusPayment;
+  const applyBlockedByBonus = hasBonusPayment && !prepaymentMode;
 
   const discountInvalid = discountRaw < 0 || discountRaw > total + 0.001;
+  const prepaymentEmpty = prepaymentMode && totalPaid <= 0.001;
   const submitDisabled =
     discountInvalid || overpaid || balanceExceeded || bonusExceeded ||
     insurerMissing || cashlessMethodMissing || cashlessMethodPending ||
-    applyBlockedByRefund || applyBlockedByBonus;
+    applyBlockedByRefund || applyBlockedByBonus || prepaymentEmpty;
 
   // Способ по умолчанию (или единственный) подставляем сами: 95 % оплат идут
   // одним терминалом, выбирать его каждый раз вручную — лишний клик кассиру.
@@ -634,12 +693,40 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
     if (fill > 0) setBonusStr(fmt(fill));
   };
 
+  const handlePrepaymentModeChange = (next: boolean) => {
+    setPrepaymentMode(next);
+    paymentsTouchedRef.current = false;
+    seededPaymentsForRef.current = null;
+    prepaymentRequestKeyRef.current = null;
+    setCash("");
+    setCard("");
+    setInsurance("");
+    setInsurerId("");
+    setCashlessMethodId("");
+    setPolicyNumber("");
+    setBalanceStr("0");
+    setBonusStr("0");
+    setCashDateChoice("today");
+    setCashDateConfirmed(next);
+    setSaveError(null);
+  };
+
+  // A changed form is a new logical prepayment operation. After a network
+  // error, untouched fields keep the same key so a retry stays idempotent.
+  React.useEffect(() => {
+    prepaymentRequestKeyRef.current = null;
+  }, [cash, card, insurance, insurerId, cashlessMethodId, policyNumber,
+      balanceStr, bonusStr, discountStr, note, prepaymentMode]);
+
   const applyMutation = useMutation({
-    mutationFn: (payload: ApplyPaymentPayload) => {
+    mutationFn: ({ prepayment, payload }: PaymentMutationInput) => {
       if (!appointmentId) throw new Error(t("payment.noAppointment"));
-      return applyAppointmentPayment(appointmentId, payload);
+      return prepayment
+        ? createManualAppointmentPrepayment(appointmentId, payload)
+        : applyAppointmentPayment(appointmentId, payload);
     },
     onSuccess: (result) => {
+      prepaymentRequestKeyRef.current = null;
       queryClient.setQueryData(djangoQueryKeys.appointments.payments(result.appointmentId), result);
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.appointments.payments(result.appointmentId) });
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "list"] });
@@ -647,11 +734,15 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
       // Домашний агрегат (список приёмов на /appointments) — иначе бейджи
       // способов оплаты обновятся только после heartbeat/перезагрузки.
       void queryClient.invalidateQueries({ queryKey: ["django", "appointments", "home"] });
+      void queryClient.invalidateQueries({ queryKey: ["django", "cashbox"] });
       if (patientId && (balanceUsed > 0 || bonusUsed > 0)) {
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.balance(patientId) });
         void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.patients.transactions(patientId) });
       }
-      notify?.({ type: "success", message: t("payment.saved") });
+      notify?.({
+        type: "success",
+        message: prepaymentMode ? t("payment.prepaymentSaved") : t("payment.saved"),
+      });
       // Оплата, закрывающая чек (paid/discounted), сама списывает расходники
       // услуг со склада. Нехватка остатка оплату не блокирует — бэк уводит
       // остаток в минус и присылает предупреждение, наше дело показать его.
@@ -698,13 +789,24 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
         ...(cashDate ? { cashDate } : {}),
       });
     }
-    applyMutation.mutate({
+    const basePayload: ApplyPaymentPayload = {
       discountAmount: fmt(discount),
       payments,
       balanceAmount: balanceUsed > 0 ? fmt(balanceUsed) : undefined,
       bonusAmount: bonusUsed > 0 ? fmt(bonusUsed) : undefined,
       note: note.trim() || undefined,
-    });
+    };
+    if (prepaymentMode) {
+      const idempotencyKey =
+        prepaymentRequestKeyRef.current ?? newPaymentOperationKey();
+      prepaymentRequestKeyRef.current = idempotencyKey;
+      applyMutation.mutate({
+        prepayment: true,
+        payload: { ...basePayload, idempotencyKey },
+      });
+    } else {
+      applyMutation.mutate({ prepayment: false, payload: basePayload });
+    }
   };
 
   const handleSave = () => {
@@ -883,6 +985,38 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
             }}
           >
             <Stack spacing={2}>
+              {isFutureAppointment && (
+                <Box
+                  sx={{
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: 1.5,
+                    bgcolor: (theme) => alpha(theme.palette.info.main, 0.08),
+                    border: "1px solid",
+                    borderColor: (theme) => alpha(theme.palette.info.main, 0.25),
+                  }}
+                >
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={prepaymentMode}
+                        onChange={(_, checked) => handlePrepaymentModeChange(checked)}
+                        disabled={applyMutation.isPending}
+                      />
+                    )}
+                    label={t("payment.prepaymentMode", {
+                      date: dayjs(appointment?.scheduledAt).format("DD.MM.YYYY"),
+                    })}
+                    sx={{ m: 0, "& .MuiFormControlLabel-label": { fontWeight: 600 } }}
+                  />
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {prepaymentMode
+                      ? t("payment.prepaymentModeHint")
+                      : t("payment.regularModeHint")}
+                  </Typography>
+                </Box>
+              )}
+
               {/* Patient info */}
               <Box>
                 <Typography
@@ -1335,7 +1469,9 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
                 {/* Итого */}
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                    {t("payment.totalDue")}
+                    {prepaymentMode
+                      ? t("payment.prepaymentRemaining")
+                      : t("payment.totalDue")}
                   </Typography>
                   <Typography variant="h5" fontWeight={700} color="success.main">
                     {t("common:currency.amountShort", { amount: payable.toLocaleString() })}
@@ -1426,16 +1562,23 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
               </Typography>
               {summary.payments.map((p) => (
                 <Stack key={p.id} direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                  {/* Предоплата — не касса: показываем откуда деньги и за какой
-                      день они прошли, иначе непонятно, почему долг меньше
-                      стоимости. Строка неизменяемая, править её нечем. */}
+                  {/* Предоплата — защищённая строка журнала: показываем источник
+                      и фактическую дату кассы. Исправляется только возвратом. */}
                   {p.isPrepayment ? (
                     <Chip
                       size="small"
                       variant="outlined"
-                      label={t("payment.prepaidChip", {
+                      label={t(
+                        p.prepaymentSource === "manual"
+                          ? "payment.manualPrepaidChip"
+                          : "payment.onlinePrepaidChip",
+                        {
                         date: dayjs(p.cashDate).format("D MMM"),
-                      })}
+                        target: p.targetAppointmentDate
+                          ? dayjs(p.targetAppointmentDate).format("DD.MM.YYYY")
+                          : "",
+                        },
+                      )}
                       sx={{ height: 20, fontSize: "0.7rem" }}
                     />
                   ) : (
@@ -1504,6 +1647,8 @@ const DjangoPaymentDrawer: React.FC<DjangoPaymentDrawerProps> = ({
           >
             {applyMutation.isPending
               ? t("payment.saving")
+              : prepaymentMode
+              ? t("payment.acceptPrepayment")
               : summary?.payments && summary.payments.length > 0
               ? t("payment.updatePayment")
               : t("payment.confirmPayment")}

@@ -40,6 +40,10 @@ export interface AppointmentPayment {
    * `undefined` — окружение без релиза предоплаты, предоплат там не бывает.
    */
   isPrepayment?: boolean;
+  /** manual — регистратор; booking — Bakai/public booking */
+  prepaymentSource?: "manual" | "booking" | null;
+  /** Current appointment date; changes when the appointment is rescheduled. */
+  targetAppointmentDate?: string | null;
 }
 
 export interface AppointmentRefund {
@@ -131,6 +135,11 @@ export interface ApplyPaymentPayload {
   note?: string;
 }
 
+export interface CreateManualPrepaymentPayload extends ApplyPaymentPayload {
+  /** Reuse this value when retrying an uncertain request. */
+  idempotencyKey: string;
+}
+
 export interface RefundPayload {
   amount: string;
   reason: string;
@@ -189,6 +198,16 @@ export function applyAppointmentPayment(
 ): Promise<PaymentSummary> {
   return apiRequest<PaymentSummary>(
     `/appointments/${appointmentId}/payments/apply/`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function createManualAppointmentPrepayment(
+  appointmentId: number,
+  payload: CreateManualPrepaymentPayload,
+): Promise<PaymentSummary> {
+  return apiRequest<PaymentSummary>(
+    `/appointments/${appointmentId}/payments/prepayment/`,
     { method: "POST", body: payload },
   );
 }

@@ -112,6 +112,12 @@ function entrySubtitle(e: CashboxEntry): string {
   const titleIsTypeLabel = entryTitle(e) === TYPE_LABELS[e.entryType];
   const parts: string[] = titleIsTypeLabel ? [] : [TYPE_LABELS[e.entryType]];
   if (e.entryType === "payment") {
+    if (e.isPrepayment) {
+      const target = e.targetAppointmentDate
+        ? dayjs(e.targetAppointmentDate).format("DD.MM.YYYY")
+        : null;
+      parts.push(target ? `Предоплата за приём ${target}` : "Предоплата");
+    }
     if (e.appointmentId) parts.push(tt("cashbox:appointmentRef", { id: e.appointmentId }));
     if (e.insurerName) parts.push(e.insurerName);
   } else if (e.entryType === "refund") {
