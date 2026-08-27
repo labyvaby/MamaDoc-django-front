@@ -4,6 +4,7 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import { useParams } from "react-router";
 
@@ -14,11 +15,13 @@ import {
   getProfessionalAvailableTimes,
   getProfessionalCalendar,
   getProfessionalReviews,
+  getProfessionalSchedule,
   type AvailableTimeSlot,
   type CalendarDay,
   type GuestBookingResult,
   type ProfessionalDetail,
   type ProfessionalReview,
+  type ProfessionalScheduleBranch,
 } from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
 import { BOOKING_NO_SERVICE_ENABLED, PublicBookingShell } from "./shell";
@@ -41,6 +44,8 @@ import { primaryPhone, useBookingOrg } from "./useBookingOrg";
 import { useT } from "../../i18n/VerticalProvider";
 import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
 import { ScheduleCard } from "./booking/ScheduleCard";
+import { BranchesCard } from "./booking/BranchesCard";
+import { branchHasSchedule } from "./booking/schedule";
 import { ServicesCard, type PickableService } from "./booking/ServicesCard";
 import { DoctorCard } from "./booking/DoctorCard";
 import { ReviewsDialog } from "./booking/ReviewsDialog";
@@ -189,16 +194,32 @@ const DoctorBookingPage: React.FC = () => {
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<GuestBookingResult | null>(null);
 
+  /** Филиалы, где врача можно записать, с графиком (ручка расписания). */
+  const [scheduleBranches, setScheduleBranches] = React.useState<ProfessionalScheduleBranch[]>([]);
+  const [scheduleLoading, setScheduleLoading] = React.useState(true);
+  const [pickedBranchId, setPickedBranchId] = React.useState<number | null>(null);
+
   /**
-   * Филиал записи. В публичном каталоге источник один — основной филиал врача
-   * (открытый вопрос §7.4 тикета), и он же уходит в POST /bookings/.
+   * Филиал записи: выбор пациента, иначе основной филиал врача.
+   *
+   * Раньше источник был один — `doctor.branch` («домашний» филиал), и врача,
+   * который принимает и во втором филиале, витрина туда записать не могла.
+   * Список филиалов даёт ручка расписания — в карточке врача поле по-прежнему
+   * одно.
    *
    * Этим же филиалом скоупим занятость (branch_id в calendar/available-times/
    * available-services, ответ бэка от 21.08.2026): без параметра бэк считает
    * занятость по всей организации, и приёмы врача в другом филиале гасили здесь
    * свободные окна. Показываем окна того филиала, в который заведём приём.
+   *
+   * ⚠ Сами окна бэк по филиалу не режет: available-times/ строит их по графику
+   * врача независимо от branch_id (проверено на проде 28.08.2026) — branch_id
+   * влияет только на то, какие приёмы считаются занятыми. Поэтому филиал —
+   * осознанный выбор пациента рядом с графиком, а не вывод из времени
+   * (тикет backend_ticket_schedule_multi_branch_employee.md).
    */
-  const branchId = doctor?.branch?.id ?? null;
+  const branchId = pickedBranchId ?? doctor?.branch?.id ?? null;
+  const selectedBranch = scheduleBranches.find((b) => b.id === branchId) ?? null;
 
   // Карточка врача + отзывы + страны.
   React.useEffect(() => {
@@ -218,8 +239,45 @@ const DoctorBookingPage: React.FC = () => {
     getProfessionalReviews(idOrSlug, { limit: 20 }, controller.signal)
       .then((r) => setReviews(r.items))
       .catch(() => {});
+
+    setScheduleLoading(true);
+    setPickedBranchId(null);
+    getProfessionalSchedule(idOrSlug, {}, controller.signal)
+      .then((schedule) => setScheduleBranches(schedule.branches))
+      .catch((e) => {
+        // Расписание — дополнение к карточке: без него запись работает
+        // по-старому, в основной филиал врача.
+        if (!isAbortError(e)) setScheduleBranches([]);
+      })
+      .finally(() => setScheduleLoading(false));
     return () => controller.abort();
   }, [idOrSlug]);
+
+  /**
+   * Филиал по умолчанию. Основной филиал врача берём, только если в нём есть
+   * график: на проде обычная картина — «домашний» филиал 1 и смены в 13, и
+   * запись по умолчанию уходила бы в филиал, где врача в это время нет.
+   */
+  React.useEffect(() => {
+    if (scheduleLoading || pickedBranchId !== null || !scheduleBranches.length) return;
+    const home = scheduleBranches.find((b) => b.id === doctor?.branch?.id);
+    if (home && branchHasSchedule(home)) return;
+    const withSchedule = scheduleBranches.find(branchHasSchedule);
+    if (withSchedule) setPickedBranchId(withSchedule.id);
+    else if (!home) setPickedBranchId(scheduleBranches[0].id);
+  }, [scheduleLoading, scheduleBranches, pickedBranchId, doctor?.branch?.id]);
+
+  /** Смена филиала: окна и услуги считались для прежнего — сбрасываем выбор. */
+  const handleBranchChange = (id: number) => {
+    if (id === branchId) return;
+    setPickedBranchId(id);
+    setSelectedDate(null);
+    setSelectedTime(null);
+    setFilteredTimes(null);
+    setFilteredServices(null);
+    setSelectedServices([]);
+    setStep(1);
+  };
 
   // Календарь врача. Грузим без услуги — как только услуги выбраны, времена
   // пересчитываются через available-times.
@@ -598,6 +656,15 @@ const DoctorBookingPage: React.FC = () => {
                 </Typography>
               )}
             </Stack>
+            {scheduleBranches.length > 1 && selectedBranch && (
+              <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mt: -0.5 }}>
+                <PlaceOutlined sx={{ fontSize: 14, color: MUTED, flexShrink: 0 }} />
+                <Typography noWrap sx={{ fontSize: 12, color: MUTED }}>
+                  {selectedBranch.name}
+                  {selectedBranch.address ? ` · ${selectedBranch.address}` : ""}
+                </Typography>
+              </Stack>
+            )}
             {bookingFor}
             <BookButton onClick={handleBook} loading={submitting} fullWidth />
           </Box>
@@ -631,6 +698,15 @@ const DoctorBookingPage: React.FC = () => {
             <Alert severity="info">{t("bookingUnavailable")}</Alert>
           ) : (
             <>
+              {/* Адрес и график — до выбора даты: пациенту важно знать, куда
+                  ехать, а у врача филиалов может быть несколько. */}
+              <BranchesCard
+                branches={scheduleBranches}
+                loading={scheduleLoading}
+                selectedId={branchId}
+                onSelect={handleBranchChange}
+              />
+
               <StepIndicator current={step} />
 
               {scheduleBlock}
@@ -671,6 +747,14 @@ const DoctorBookingPage: React.FC = () => {
               >
                 {(selectedDate || selectedTime || chosenServices.length > 0) && (
                   <Stack direction="row" flexWrap="wrap" justifyContent="center" gap={1}>
+                    {/* Филиал в сводке — только когда их несколько: иначе это
+                        строка, которая ничего не уточняет. */}
+                    {scheduleBranches.length > 1 && selectedBranch && (
+                      <SummaryChip>
+                        <PlaceOutlined sx={{ fontSize: 13, color: MUTED }} />
+                        {selectedBranch.name}
+                      </SummaryChip>
+                    )}
                     {selectedDate && (
                       <SummaryChip>
                         <EventOutlined sx={{ fontSize: 13, color: MUTED }} />

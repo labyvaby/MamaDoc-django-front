@@ -372,6 +372,83 @@ export interface AvailableTimes {
   times: AvailableTimeSlot[];
 }
 
+// ── Расписание специалиста по филиалам ───────────────────────────────────────
+//
+// GET /api/v1/professionals/<id>/schedule/ (алиас /doctors/<id>/schedule/),
+// дока «frontend_professional_schedule_api.md», выложено на прод 28.08.2026
+// (на test.crm.operator.kg ещё 404 — проверено curl-ом).
+//
+// Единственный источник, из которого витрина узнаёт про второй филиал врача:
+// в ProfessionalDetail филиал один (branch, «домашний»).
+//
+// ⚠ Расписание — это рабочее время, а не свободные окна: занятость по-прежнему
+// только в available-times/. И ⚠ available-times/ строит окна по расписанию
+// врача независимо от branch_id (проверено на проде 28.08.2026, врач 23: смена
+// в филиале 13, окна те же и при branch_id=1) — филиал приёма определяется
+// выбором пациента, а не ответом бэка (тикет schedule_multi_branch_employee).
+
+/** Область действия правила/исключения: общий график организации или филиал. */
+export type ScheduleScope = "organization" | "branch";
+
+/** Тип исключения: выходной, отпуск, дополнительная смена, замена графика. */
+export type ScheduleExceptionKind = "day_off" | "vacation" | "extra" | "override";
+
+/** Правило графика: повторяющиеся дни недели внутри периода. */
+export interface ProfessionalScheduleRule {
+  id: number;
+  scope: ScheduleScope;
+  /** YYYY-MM-DD; null — период не ограничен. */
+  dateFrom: string | null;
+  dateTo: string | null;
+  /** 0 — понедельник … 6 — воскресенье (сверено с окнами на проде 28.08.2026). */
+  weekdays: number[];
+  /** HH:MM. */
+  startTime: string;
+  endTime: string;
+  /** Перерыв; null — без перерыва. */
+  lunchStart: string | null;
+  lunchEnd: string | null;
+  comment: string;
+}
+
+/** Исключение на конкретную дату — перебивает правило. */
+export interface ProfessionalScheduleException {
+  id: number;
+  scope: ScheduleScope;
+  /** YYYY-MM-DD. */
+  date: string;
+  kind: ScheduleExceptionKind;
+  /** HH:MM; у day_off/vacation — null. */
+  startTime: string | null;
+  endTime: string | null;
+  comment: string;
+}
+
+/**
+ * Филиал, где специалиста можно записать. Приходит и без графика (пустые
+ * rules/exceptions) — значит филиал доступен, но время в нём не задано.
+ */
+export interface ProfessionalScheduleBranch {
+  id: number;
+  slug: string;
+  name: string;
+  address: string;
+  /** Напр. "Asia/Bishkek". */
+  timezone: string;
+  rules: ProfessionalScheduleRule[];
+  exceptions: ProfessionalScheduleException[];
+}
+
+/** Ответ ручки расписания. */
+export interface ProfessionalSchedule {
+  professionalId: number;
+  professionalName: string;
+  organizationId: number;
+  dateFrom: string;
+  dateTo: string;
+  branches: ProfessionalScheduleBranch[];
+}
+
 // ── Мета (§5) ─────────────────────────────────────────────────────────────────
 
 /** Фича-флаги публичного API (§5). Все paylink-флаги пока false. */
@@ -621,6 +698,19 @@ export function getProfessionalAvailableServices(
     `/professionals/${idOrSlug}/available-services/${buildQuery({ date, time, branch_id: branchId })}`,
     signal,
   );
+}
+
+/**
+ * Расписание специалиста по филиалам. Без параметров — от сегодня на 180 дней;
+ * максимальный период — 366 дней (иначе 400), неизвестный специалист — 404.
+ */
+export function getProfessionalSchedule(
+  idOrSlug: IdOrSlug,
+  params: { dateFrom?: string; dateTo?: string } = {},
+  signal?: AbortSignal,
+): Promise<ProfessionalSchedule> {
+  const query = buildQuery({ date_from: params.dateFrom, date_to: params.dateTo });
+  return getItem<ProfessionalSchedule>(`/professionals/${idOrSlug}/schedule/${query}`, signal);
 }
 
 // ── Мета: функции (§5) ────────────────────────────────────────────────────────
