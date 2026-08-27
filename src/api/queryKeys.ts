@@ -82,6 +82,16 @@ export const djangoQueryKeys = {
       ["django", "notifications", "history", filters] as const,
   },
 
+  automations: {
+    all: ["django", "automations"] as const,
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "automations", "catalog", organizationId ?? null] as const,
+    list: (organizationId: number | null | undefined) =>
+      ["django", "automations", "list", organizationId ?? null] as const,
+    runs: (automationId: number, organizationId: number | null | undefined) =>
+      ["django", "automations", automationId, "runs", organizationId ?? null] as const,
+  },
+
   announcements: {
     all: ["django", "announcements"] as const,
     active: ["django", "announcements", "active"] as const,
