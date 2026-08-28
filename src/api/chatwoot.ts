@@ -37,6 +37,20 @@ export async function fetchChatwootEmbed(): Promise<ChatwootEmbed> {
   return apiRequest<ChatwootEmbed>("/chatwoot/embed/");
 }
 
+/** Открытые диалоги — те же числа, что Chatwoot показывает во вкладках. */
+export type ChatwootCounts = {
+  /** Назначены на этого сотрудника. */
+  mine: number;
+  /** Ничьи: ждут, пока кто-нибудь возьмёт. */
+  unassigned: number;
+  /** Все открытые в доступных ему инбоксах. */
+  total: number;
+};
+
+export async function fetchChatwootCounts(): Promise<ChatwootCounts> {
+  return apiRequest<ChatwootCounts>("/chatwoot/counts/");
+}
+
 /**
  * Причина отказа по ответу бэкенда.
  *

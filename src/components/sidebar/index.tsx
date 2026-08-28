@@ -24,6 +24,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
 import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
+import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 
 
@@ -531,6 +532,27 @@ const SidebarSecondary: React.FC = () => {
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
   });
+  // Чаты: бейдж — открытые диалоги, которые сотрудник реально видит.
+  // Запрос включён только при праве на раздел; 403 (нет связи с Чат-центром)
+  // и 404 (интеграция выключена) — не ошибка, а «бейджа нет», поэтому retry
+  // выключен и ошибка молча превращается в ноль.
+  const chatsCountsQuery = useQuery({
+    queryKey: ["chatwoot", "counts"],
+    queryFn: fetchChatwootCounts,
+    enabled: can_.chats,
+    retry: false,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const chatsCounts = chatsCountsQuery.data;
+  const chatsBadgeCount = chatsCounts
+    ? chatsCounts.mine + chatsCounts.unassigned
+    : 0;
+  // Свои диалоги — личный долг, поэтому краснее; ничьи сами по себе спокойнее.
+  const chatsBadgeColor: "error" | "primary" =
+    (chatsCounts?.mine ?? 0) > 0 ? "error" : "primary";
+
   const bookingsBadgeCount = bookingsPendingQuery.data?.count ?? 0;
   const bookingsBadgeColor: "error" | "primary" =
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
@@ -670,7 +692,7 @@ const SidebarSecondary: React.FC = () => {
             авторизацией. Пункт виден по праву chatwoot.view; сотрудник без
             учётки в Chatwoot увидит на странице заглушку «запросите доступ». */}
         {show("my-work") && can_.chats && (
-          <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} badgeCount={chatsBadgeCount} badgeColor={chatsBadgeColor} />
         )}
 
         {/* Кабинет врача */}
