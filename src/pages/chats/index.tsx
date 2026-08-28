@@ -1,14 +1,11 @@
 import React from "react";
-import { Alert, AlertTitle, Box, LinearProgress, Stack } from "@mui/material";
+import { Box, LinearProgress, Stack } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
 import { PageHeader } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import {
-  chatwootUnavailableReason,
-  fetchChatwootEmbed,
-  type ChatwootUnavailableReason,
-} from "../../api/chatwoot";
+import { chatwootUnavailableReason, fetchChatwootEmbed } from "../../api/chatwoot";
+import { ChatsUnavailable } from "./ChatsUnavailable";
 
 /**
  * Раздел «Чаты» — дашборд Chatwoot внутри CRM.
@@ -28,33 +25,10 @@ import {
  * потраченный токен и пользователь увидел бы форму логина Chatwoot.
  */
 
-const UNAVAILABLE_COPY: Record<
-  ChatwootUnavailableReason,
-  { title: string; body: string; severity: "info" | "warning" | "error" }
-> = {
-  no_account: {
-    title: "Доступ к чатам не настроен",
-    body:
-      "Вашей учётной записи ещё не сопоставлен аккаунт в системе чатов. " +
-      "Запросите доступ у администратора — после этого раздел откроется сам.",
-    severity: "info",
-  },
-  disabled: {
-    title: "Чаты недоступны",
-    body: "Для вашей организации раздел чатов не подключён.",
-    severity: "info",
-  },
-  unavailable: {
-    title: "Сервис чатов временно недоступен",
-    body: "Не удалось связаться с системой чатов. Попробуйте обновить страницу позже.",
-    severity: "error",
-  },
-};
-
 export const ChatsPage: React.FC = () => {
   usePageTitle("Чаты");
 
-  const { data, isPending, error } = useQuery({
+  const { data, isPending, error, refetch } = useQuery({
     queryKey: ["chatwoot", "embed"],
     queryFn: fetchChatwootEmbed,
     staleTime: 0,
@@ -73,15 +47,13 @@ export const ChatsPage: React.FC = () => {
   }
 
   if (error || !data) {
-    const copy = UNAVAILABLE_COPY[chatwootUnavailableReason(error)];
     return (
-      <Stack spacing={2}>
-        <PageHeader title="Чаты" />
-        <Alert severity={copy.severity}>
-          <AlertTitle>{copy.title}</AlertTitle>
-          {copy.body}
-        </Alert>
-      </Stack>
+      <Box sx={{ height: { xs: "auto", md: "calc(100vh - 96px)" } }}>
+        <ChatsUnavailable
+          reason={chatwootUnavailableReason(error)}
+          onRetry={() => void refetch()}
+        />
+      </Box>
     );
   }
 
