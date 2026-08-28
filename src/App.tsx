@@ -82,6 +82,7 @@ const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPag
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
+const ChatsPage = lazy(() => import("./pages/chats"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const VaccinationsPage = lazy(() => import("./pages/vaccinations"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
@@ -376,6 +377,11 @@ function App() {
                         list: "/bookings",
                         show: "/bookings/show/:id",
                         meta: { label: "Брони" }
+                      },
+                      {
+                        name: "chats",
+                        list: "/chats",
+                        meta: { label: "Чаты" }
                       },
                       {
                         name: "tasks",
@@ -846,6 +852,16 @@ function App() {
                                 <RequirePermission permission={PAGE_PERMISSIONS.bookings}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BookingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="chats"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.chats}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ChatsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

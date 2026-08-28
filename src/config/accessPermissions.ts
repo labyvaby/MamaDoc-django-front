@@ -34,6 +34,9 @@ export const PAGE_PERMISSIONS = {
   notifications: "notifications.manage",
   reviews: ["reviews.view", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
+  // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
+  // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
+  chats: "chatwoot.view",
   tasks: "tasks.list",
   vaccinations: "vaccinations.view",
   achievements: "achievements.view",

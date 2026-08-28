@@ -48,6 +48,7 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
@@ -383,6 +384,7 @@ const SidebarSecondary: React.FC = () => {
     // по-прежнему требуют appointments.view.
     registratura: isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry),
     bookings: isSuper || can(PAGE_PERMISSIONS.bookings),
+    chats: isSuper || can(PAGE_PERMISSIONS.chats),
     doctorRoom: isSuper || can(PAGE_PERMISSIONS.doctorRoom),
     nurseRoom: isSuper || can(PAGE_PERMISSIONS.nurseRoom),
     schedule: isSuper || can(PAGE_PERMISSIONS.schedule),
@@ -662,6 +664,13 @@ const SidebarSecondary: React.FC = () => {
             Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
           <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
+        )}
+
+        {/* Чаты — встроенный дашборд Chatwoot (chat.operator.kg) со сквозной
+            авторизацией. Пункт виден по праву chatwoot.view; сотрудник без
+            учётки в Chatwoot увидит на странице заглушку «запросите доступ». */}
+        {show("my-work") && can_.chats && (
+          <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />
         )}
 
         {/* Кабинет врача */}
