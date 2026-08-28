@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import {
-  chatwootDashboardUrl,
   chatwootUnavailableReason,
   fetchChatwootEmbed,
   type ChatwootUnavailableReason,
@@ -15,7 +14,14 @@ import {
  * Раздел «Чаты» — дашборд Chatwoot внутри CRM.
  *
  * Сотрудник уже авторизован в CRM, поэтому второй вход не нужен: бэкенд отдаёт
- * одноразовую ссылку, iframe открывает её, Chatwoot ставит свою сессию.
+ * одноразовую ссылку, iframe открывает её, Chatwoot ставит свою сессию и сам
+ * переходит на дашборд аккаунта.
+ *
+ * Навигацию внутри iframe мы намеренно **не перехватываем**. Ссылка входа —
+ * это SPA: событие `load` срабатывает на приходе HTML, а сам `POST /auth/sign_in`
+ * уходит уже после него. Если в этот момент сменить `src`, вход не успевает
+ * завершиться, одноразовый токен сгорает впустую и Chatwoot показывает форму
+ * пароля (проверено на стенде 28.08.2026).
  *
  * Ссылка сгорает при первом переходе, поэтому запрос не кэшируется
  * (`staleTime: 0`, `gcTime: 0`) — иначе возврат на вкладку подставил бы
@@ -57,15 +63,6 @@ export const ChatsPage: React.FC = () => {
     refetchOnWindowFocus: false,
   });
 
-  const [loggedIn, setLoggedIn] = React.useState(false);
-
-  // Первая загрузка iframe — это SSO-вход; после неё ведём на дашборд нужного
-  // аккаунта. Без этого шага пользователь, состоящий в нескольких аккаунтах
-  // Chatwoot, попадёт в тот, который открывал последним.
-  const handleLoaded = React.useCallback(() => {
-    setLoggedIn(true);
-  }, []);
-
   if (isPending) {
     return (
       <Stack spacing={2}>
@@ -88,10 +85,6 @@ export const ChatsPage: React.FC = () => {
     );
   }
 
-  const src = loggedIn
-    ? chatwootDashboardUrl(data.url, data.accountId)
-    : data.url;
-
   return (
     <Stack spacing={2} sx={{ height: "100%" }}>
       <PageHeader title="Чаты" />
@@ -106,9 +99,8 @@ export const ChatsPage: React.FC = () => {
       >
         <Box
           component="iframe"
-          src={src}
+          src={data.url}
           title="Чаты"
-          onLoad={handleLoaded}
           // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
           // ломается его собственная авторизация и WebSocket.
           allow="clipboard-write; microphone; camera; autoplay"

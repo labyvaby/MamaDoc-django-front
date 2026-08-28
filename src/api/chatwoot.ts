@@ -56,16 +56,3 @@ export function chatwootUnavailableReason(
   }
   return "unavailable";
 }
-
-/**
- * Адрес дашборда аккаунта. После входа по SSO-ссылке Chatwoot открывает
- * последний использованный аккаунт — у пользователя, состоящего в нескольких,
- * это может быть чужой. Поэтому сразу переводим iframe на нужный.
- */
-export function chatwootDashboardUrl(
-  embedUrl: string,
-  accountId: number,
-): string {
-  const origin = new URL(embedUrl).origin;
-  return `${origin}/app/accounts/${accountId}/dashboard`;
-}
