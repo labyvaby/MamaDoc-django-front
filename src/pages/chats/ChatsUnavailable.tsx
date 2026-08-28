@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Stack, Typography, alpha } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 import { motion } from "framer-motion";
 
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
@@ -15,12 +15,12 @@ import type { ChatwootUnavailableReason } from "../../api/chatwoot";
 /**
  * Экран раздела «Чаты», когда дашборд показать нельзя.
  *
- * Главный из трёх случаев — `no_account`: сотрудник в CRM есть, места в Центре
- * чатов у него нет. Это тупик только на вид: администратору, чтобы связать
+ * Главный из трёх случаев — `no_account`: сотрудник в CRM есть, места в
+ * Чат-центре у него нет. Это тупик только на вид: администратору, чтобы связать
  * учётки, нужны ровно имя и почта — поэтому экран не извиняется, а
  * подготавливает заявку, которую можно скопировать одной кнопкой.
  *
- * Остальные два случая сотрудник исправить не может, поэтому там нет ни шагов,
+ * Остальные два случая сотрудник исправить не может, поэтому там нет ни заявки,
  * ни призыва к действию — только честное объяснение.
  */
 
@@ -54,7 +54,7 @@ const DisconnectedChats: React.FC = () => (
         opacity="0.55"
       />
 
-      {/* Реплика Центра чатов — пунктиром: места пока нет. */}
+      {/* Реплика Чат-центра — пунктиром: места пока нет. */}
       <path
         className="dim"
         d="M76 42a8 8 0 0 1 8-8h34a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8h-1v9l-11-9H84a8 8 0 0 1-8-8V42Z"
@@ -148,12 +148,6 @@ const HandoffField: React.FC<{ label: string; value: string }> = ({
   );
 };
 
-const STEPS = [
-  "Откроет раздел «Связи с Chatwoot» в панели администратора.",
-  "Найдёт вас в Центре чатов по почте — или заведёт учётную запись, если её ещё нет.",
-  "Свяжет две учётки между собой.",
-];
-
 export const ChatsUnavailable: React.FC<{
   reason: ChatwootUnavailableReason;
   onRetry?: () => void;
@@ -165,21 +159,21 @@ export const ChatsUnavailable: React.FC<{
   const isNoAccount = reason === "no_account";
 
   const title = {
-    no_account: "Вас ещё не подключили к Центру чатов",
+    no_account: "Вас ещё не подключили к Чат-центру",
     disabled: "Чаты не подключены",
-    unavailable: "Центр чатов сейчас не отвечает",
+    unavailable: "Чат-центр сейчас не отвечает",
   }[reason];
 
   const lead = {
     no_account:
-      "В CRM вы авторизованы, но переписка с пациентами живёт в отдельной системе — " +
-      "Центре чатов. Учётную запись там выдаёт администратор, поэтому попросите его " +
-      "подключить вас: это займёт пару минут.",
+      "В CRM вы авторизованы, но переписка с пациентами живёт в отдельной " +
+      "системе — Чат-центре. Учётную запись там выдаёт администратор, поэтому " +
+      "попросите его подключить вас: это займёт пару минут.",
     disabled:
       "Для вашей организации раздел чатов пока не включён. Это делается один раз " +
       "на стороне администратора — сотрудникам ничего настраивать не нужно.",
     unavailable:
-      "Связаться с Центром чатов не удалось. Обычно это временно: попробуйте " +
+      "Связаться с Чат-центром не удалось. Обычно это временно: попробуйте " +
       "обновить через минуту. Если не пройдёт — сообщите администратору.",
   }[reason];
 
@@ -233,51 +227,6 @@ export const ChatsUnavailable: React.FC<{
                 заодно заполнить её, по ней и связывают учётные записи.
               </Typography>
             )}
-          </MotionStack>
-        )}
-
-        {isNoAccount && (
-          <MotionStack variants={cascadeItem} spacing={1.5}>
-            <Typography
-              variant="overline"
-              sx={{ color: "text.secondary", letterSpacing: "0.08em" }}
-            >
-              Что сделает администратор
-            </Typography>
-            <Stack component="ol" spacing={1.25} sx={{ m: 0, p: 0, listStyle: "none" }}>
-              {STEPS.map((step, index) => (
-                <Stack
-                  key={step}
-                  component="li"
-                  direction="row"
-                  spacing={1.5}
-                  alignItems="flex-start"
-                >
-                  <Box
-                    sx={{
-                      flexShrink: 0,
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      display: "grid",
-                      placeItems: "center",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "primary.main",
-                      bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
-                    }}
-                  >
-                    {index + 1}
-                  </Box>
-                  <Typography
-                    variant="body2"
-                    sx={{ color: "text.secondary", lineHeight: 1.6, pt: "2px" }}
-                  >
-                    {step}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
           </MotionStack>
         )}
 
