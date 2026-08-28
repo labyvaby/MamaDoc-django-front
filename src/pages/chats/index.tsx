@@ -85,13 +85,14 @@ export const ChatsPage: React.FC = () => {
     );
   }
 
+  // Заголовка здесь намеренно нет: Chatwoot рисует свою шапку, а раздел в CRM
+  // и так подписан в сайдбаре и во вкладке браузера (usePageTitle). Лишняя
+  // строка только отъедала бы высоту у списка диалогов.
   return (
-    <Stack spacing={2} sx={{ height: "100%" }}>
-      <PageHeader title="Чаты" />
+    <Box sx={{ height: "100%" }}>
       <Box
         sx={{
-          flex: 1,
-          minHeight: { xs: "70vh", md: "calc(100vh - 180px)" },
+          height: { xs: "80vh", md: "calc(100vh - 96px)" },
           borderRadius: 2,
           overflow: "hidden",
           border: (theme) => `1px solid ${theme.palette.divider}`,
@@ -107,7 +108,7 @@ export const ChatsPage: React.FC = () => {
           sx={{ width: "100%", height: "100%", border: 0, display: "block" }}
         />
       </Box>
-    </Stack>
+    </Box>
   );
 };
 
