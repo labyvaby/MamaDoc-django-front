@@ -20,9 +20,19 @@ import { ChatsUnavailable } from "./ChatsUnavailable";
  * завершиться, одноразовый токен сгорает впустую и Chatwoot показывает форму
  * пароля (проверено на стенде 28.08.2026).
  *
- * Ссылка сгорает при первом переходе, поэтому запрос не кэшируется
- * (`staleTime: 0`, `gcTime: 0`) — иначе возврат на вкладку подставил бы
- * потраченный токен и пользователь увидел бы форму логина Chatwoot.
+ * Ссылку берём РОВНО ОДИН РАЗ на каждое открытие раздела. Chatwoot хранит
+ * `sso_auth_token` по одному на пользователя, и каждая новая выдача затирает
+ * предыдущую: если запросить ссылку второй раз, пока iframe грузится с первой,
+ * та превращается в тыкву — `POST /auth/sign_in` отвечает 401, и вместо
+ * дашборда появляется форма пароля (наблюдалось на стенде 29.08.2026).
+ *
+ * Отсюда два предохранителя, и убирать их нельзя:
+ *
+ * 1. запрос не обновляется сам — `staleTime: Infinity`, без refetch на mount и
+ *    на фокус окна; `gcTime: 0` при этом гарантирует, что следующее открытие
+ *    раздела начнётся с чистого листа и получит свежую ссылку;
+ * 2. первый успешный `url` замораживается в состоянии, поэтому никакой
+ *    повторный рендер уже не подменит `src` у живого iframe.
  */
 
 export const ChatsPage: React.FC = () => {
@@ -31,13 +41,22 @@ export const ChatsPage: React.FC = () => {
   const { data, isPending, error, refetch } = useQuery({
     queryKey: ["chatwoot", "embed"],
     queryFn: fetchChatwootEmbed,
-    staleTime: 0,
+    // См. предохранитель №1 в шапке файла.
+    staleTime: Infinity,
     gcTime: 0,
     retry: false,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
-  if (isPending) {
+  // Предохранитель №2: адрес, с которым iframe начал вход, больше не меняется.
+  const [frozenUrl, setFrozenUrl] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setFrozenUrl((current) => current ?? data?.url ?? null);
+  }, [data?.url]);
+
+  if (isPending || (!error && !frozenUrl)) {
     return (
       <Stack spacing={2}>
         <PageHeader title="Чаты" />
@@ -72,7 +91,7 @@ export const ChatsPage: React.FC = () => {
       >
         <Box
           component="iframe"
-          src={data.url}
+          src={frozenUrl ?? undefined}
           title="Чаты"
           // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
           // ломается его собственная авторизация и WebSocket.
