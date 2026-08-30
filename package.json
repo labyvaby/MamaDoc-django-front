@@ -19,6 +19,7 @@
     "@refinedev/react-hook-form": "^5.0.4",
     "@refinedev/react-router": "^2.0.0",
     "@refinedev/simple-rest": "^6.0.0",
+    "@tanstack/react-query": "^5.101.4",
     "@tiptap/extension-image": "^3.29.0",
     "@tiptap/extension-youtube": "^3.27.3",
     "@tiptap/react": "^3.27.3",
