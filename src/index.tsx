@@ -10,6 +10,11 @@ dayjs.tz.setDefault("Asia/Bishkek");
 
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { installStaleBuildRecovery } from "./pwa/staleBuildRecovery";
+
+// A tab that survived a frontend deploy can briefly request an obsolete Vite
+// chunk. Reload once to obtain the current index.html and its asset manifest.
+installStaleBuildRecovery();
 
 // Dev-only: перехват fetch, чтобы отследить источники частых запросов к Employes
 if (import.meta.env.DEV && typeof window !== 'undefined' && typeof window.fetch === 'function') {
