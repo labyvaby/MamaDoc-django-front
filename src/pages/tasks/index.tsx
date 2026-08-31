@@ -1334,23 +1334,9 @@ const TasksPage: React.FC = () => {
             active={quickDue === "week"}
             onClick={() => toggleQuickDue("week")}
           />
-          <FilterChip
-            label="Срочные"
-            icon={<PriorityHighOutlined sx={{ fontSize: 15 }} />}
-            tone="error"
-            active={priority === "urgent"}
-            onClick={() => setPriority((p) => (p === "urgent" ? "" : "urgent"))}
-          />
-          {!boardMode && (
-            <FilterChip
-              label="В работе"
-              icon={<PlayArrowOutlined sx={{ fontSize: 15 }} />}
-              active={status === "in_progress"}
-              onClick={() => toggleStatus("in_progress")}
-              tooltip="Только задачи в работе"
-            />
-          )}
-
+          {/* Чипов «Срочные» и «В работе» здесь нет намеренно: в одном ряду они
+              дублировали пилюли «Приоритет» и «Статус», подсвечиваясь вместе с
+              ними — два контрола об одном состоянии. */}
           </>
           )}
 
