@@ -14,6 +14,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Popover,
   Skeleton,
   Stack,
   Tooltip,
@@ -37,10 +38,7 @@ import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
-import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
-import FiberNewOutlined from "@mui/icons-material/FiberNewOutlined";
-import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
@@ -50,6 +48,7 @@ import SendOutlined from "@mui/icons-material/SendOutlined";
 import SwapVertOutlined from "@mui/icons-material/SwapVertOutlined";
 import TableRowsOutlined from "@mui/icons-material/TableRowsOutlined";
 import TodayOutlined from "@mui/icons-material/TodayOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ViewKanbanOutlined from "@mui/icons-material/ViewKanbanOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
@@ -92,7 +91,7 @@ import {
   DJANGO_LIST_STALE_TIME_MS,
   DJANGO_REFERENCE_STALE_TIME_MS,
 } from "../../api/queryKeys";
-import { TaskPriorityChip, TaskStatusChip } from "../../components/tasks/TaskChips";
+import { TaskPriorityChip, TaskPriorityDot, TaskStatusChip } from "../../components/tasks/TaskChips";
 import CreateTaskDrawer from "../../components/tasks/CreateTaskDrawer";
 import TaskDetailDrawer from "../../components/tasks/TaskDetailDrawer";
 import TaskNotificationsBell from "../../components/tasks/TaskNotificationsBell";
@@ -152,67 +151,79 @@ type RowAction = {
   fn: (taskId: number, organizationId?: number) => Promise<Task>;
 };
 
-/** Компактная плитка сводки (по образцу StatTile из «Броней»); кликом фильтрует. */
-const StatTile: React.FC<{
-  icon: React.ReactNode;
+/**
+ * Показатель сводки: число и подпись без рамки и подложки. Плитки с иконками
+ * по весу спорили с вкладками — а сводка здесь второстепенна, читается «между
+ * делом». Кликом фильтрует, если передан onClick.
+ */
+const StatItem: React.FC<{
   label: string;
   value: React.ReactNode;
   tone?: "error" | "success";
   onClick?: () => void;
   active?: boolean;
-}> = ({ icon, label, value, tone, onClick, active }) => (
+}> = ({ label, value, tone, onClick, active }) => (
   <Stack
     direction="row"
-    alignItems="center"
-    gap={1.25}
+    alignItems="baseline"
+    gap={0.75}
     component={onClick ? ButtonBase : "div"}
     {...(onClick ? { onClick, focusRipple: true } : {})}
     sx={(t) => ({
-      px: 1.5,
-      py: 1,
-      borderRadius: "10px",
-      border: 1,
-      borderColor: active ? alpha(t.palette.primary.main, 0.5) : "divider",
-      bgcolor: active ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.14 : 0.07) : subtleBg(t),
-      minWidth: 130,
+      px: 1,
+      py: 0.5,
+      borderRadius: "8px",
       textAlign: "left",
-      transition: "border-color .15s ease, background-color .15s ease",
+      transition: "background-color .15s ease",
       ...(onClick && {
         cursor: "pointer",
-        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35) },
+        bgcolor: active ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08) : "transparent",
+        "&:hover": { bgcolor: active ? alpha(t.palette.primary.main, 0.2) : subtleBg(t, true) },
       }),
     })}
   >
-    <Box
-      sx={(t) => {
-        const accent =
-          tone === "error" ? t.palette.error : tone === "success" ? t.palette.success : t.palette.primary;
-        return {
-          width: 34,
-          height: 34,
-          borderRadius: "9px",
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: tone ? (t.palette.mode === "dark" ? accent.light : accent.dark) : "primary.onSurface",
-          bgcolor: alpha(accent.main, t.palette.mode === "dark" ? 0.16 : 0.1),
-          "& .MuiSvgIcon-root": { fontSize: 18 },
-        };
-      }}
+    <Typography
+      variant="subtitle2"
+      fontWeight={600}
+      sx={(t) => ({
+        lineHeight: 1.2,
+        color:
+          tone === "error"
+            ? t.palette.mode === "dark"
+              ? t.palette.error.light
+              : t.palette.error.dark
+            : tone === "success"
+            ? t.palette.mode === "dark"
+              ? t.palette.success.light
+              : t.palette.success.dark
+            : "text.primary",
+      })}
     >
-      {icon}
-    </Box>
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
-        {label}
-      </Typography>
-      <Typography variant="subtitle2" fontWeight={600} noWrap>
-        {value}
-      </Typography>
-    </Box>
+      {value}
+    </Typography>
+    <Typography variant="caption" color="text.secondary" noWrap>
+      {label}
+    </Typography>
   </Stack>
 );
+
+/** Лента показателей: одинаковая на всех вкладках, разделители вместо рамок. */
+const StatStrip: React.FC<React.PropsWithChildren> = ({ children }) => {
+  const items = React.Children.toArray(children).filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <Stack direction="row" alignItems="center" flexWrap="wrap" sx={{ rowGap: 0.5 }}>
+      {items.map((item, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && (
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.75, height: 16, alignSelf: "center" }} />
+          )}
+          {item}
+        </React.Fragment>
+      ))}
+    </Stack>
+  );
+};
 
 /**
  * Единая геометрия элементов ряда фильтров: чипы, селекты-пилюли, поля периода
@@ -322,6 +333,52 @@ const FilterPill: React.FC<{
           </MenuItem>
         ))}
       </Menu>
+    </>
+  );
+};
+
+/**
+ * Свёртка редко используемых фильтров на узком экране. Ряд фильтров ценен тем,
+ * что читается одной линией; при переносе на вторую строку он теряет смысл,
+ * поэтому на экранах уже lg лишние контролы уезжают под эту кнопку.
+ */
+const MoreFilters: React.FC<React.PropsWithChildren<{ activeCount: number }>> = ({
+  activeCount,
+  children,
+}) => {
+  const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
+  const open = Boolean(anchorEl);
+
+  return (
+    <>
+      <ButtonBase
+        focusRipple
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={(e) => setAnchorEl(e.currentTarget)}
+        sx={(t) => ({
+          ...pillSx(t, activeCount > 0),
+          display: "flex",
+          alignItems: "center",
+          gap: 0.75,
+        })}
+      >
+        <TuneOutlined sx={{ fontSize: 15, color: "inherit" }} />
+        <Box component="span">{activeCount > 0 ? `Ещё · ${activeCount}` : "Ещё"}</Box>
+      </ButtonBase>
+
+      <Popover
+        open={open}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        slotProps={{ paper: { sx: { mt: 0.5, borderRadius: "12px" } } }}
+      >
+        <Stack gap={1} alignItems="flex-start" sx={{ p: 1.5, minWidth: 220 }}>
+          {children}
+        </Stack>
+      </Popover>
     </>
   );
 };
@@ -504,6 +561,8 @@ const TasksPage: React.FC = () => {
   usePageTitle("Задачи");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  /** Уже lg ряд фильтров перестаёт влезать в одну строку — часть складываем. */
+  const compactFilters = useMediaQuery(theme.breakpoints.down("lg"));
   const { can, loading: permLoading } = useCanChecker();
   const { activeEmployee } = usePermissions();
   const orgId = useApiOrgId();
@@ -881,7 +940,7 @@ const TasksPage: React.FC = () => {
         headerName: "Приоритет",
         width: 115,
         sortable: false,
-        renderCell: ({ row }) => <TaskPriorityChip priority={row.priority} />,
+        renderCell: ({ row }) => <TaskPriorityDot priority={row.priority} />,
       },
       isArchive
         ? closedColumn
@@ -996,6 +1055,60 @@ const TasksPage: React.FC = () => {
       ? "В архиве пусто — закрытых задач нет"
       : "Задач не найдено";
 
+  /* Контролы, которые на узком экране уезжают под кнопку «Ещё». Держим их
+     переменными, чтобы один и тот же элемент рендерился и в строке, и в
+     свёртке — без копии разметки. */
+  const statusFilter =
+    // На канбане статус — это колонка, в архиве — сегмент выше;
+    // отдельный селект в обоих случаях только запутывает.
+    !boardMode && !isArchive ? (
+      <FilterPill
+        label="Статус"
+        icon={<PlayArrowOutlined />}
+        value={status}
+        options={TASK_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+        allLabel="Все статусы"
+        onChange={(v) => setStatus(v as TaskStatus | "")}
+      />
+    ) : null;
+
+  /* Дата подачи — в «Моих заявках» и в архиве */
+  const createdFilter = !createdFilterOn ? null : createdRange ? (
+    <Stack direction="row" alignItems="center" gap={0.25}>
+      <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+        Подана:
+      </Typography>
+      <DateRangeField
+        dense
+        value={createdRange}
+        onChange={(r) => setCreatedRange(r)}
+        presets={DEFAULT_RANGE_PRESETS}
+        minWidth={190}
+      />
+      <IconButton
+        size="small"
+        aria-label="Убрать фильтр по дате подачи"
+        onClick={() => setCreatedRange(null)}
+        sx={{ p: 0.5 }}
+      >
+        <CloseOutlined sx={{ fontSize: 15 }} />
+      </IconButton>
+    </Stack>
+  ) : (
+    <Button
+      size="small"
+      startIcon={<CalendarMonthOutlined sx={{ fontSize: 15 }} />}
+      onClick={() =>
+        setCreatedRange({ from: dayjs().subtract(29, "day").startOf("day"), to: dayjs().endOf("day") })
+      }
+      sx={(t) => pillSx(t)}
+    >
+      Дата подачи
+    </Button>
+  );
+
+  const foldedActiveCount = (status !== "" ? 1 : 0) + (createdRange ? 1 : 0);
+
   const NoRowsOverlay = () => (
     <Stack alignItems="center" justifyContent="center" sx={{ height: "100%", opacity: 0.75 }}>
       {isArchive ? (
@@ -1100,49 +1213,42 @@ const TasksPage: React.FC = () => {
 
           {/* ── Сводка: доска — по группе, мои — личный счётчик ── */}
           {tab === "board" && summary && !isMobile && (
-            <Stack direction="row" gap={1} flexWrap="wrap">
-              <StatTile
-                icon={<FiberNewOutlined />}
-                label="Новые"
+            <StatStrip>
+              <StatItem
+                label="новых"
                 value={summary.new}
                 onClick={boardMode ? undefined : () => toggleStatus("new")}
                 active={status === "new"}
               />
-              <StatTile
-                icon={<HourglassEmptyOutlined />}
-                label="В работе"
+              <StatItem
+                label="в работе"
                 value={summary.inProgress}
                 onClick={boardMode ? undefined : () => toggleStatus("in_progress")}
                 active={status === "in_progress"}
               />
-              {canManage && summary.awaitingApproval > 0 && (
-                <StatTile
-                  icon={<DoneAllOutlined />}
-                  label="Ждут подтверждения"
+              {canManage && summary.awaitingApproval > 0 ? (
+                <StatItem
+                  label="ждут подтверждения"
                   value={summary.awaitingApproval}
                   onClick={boardMode ? undefined : () => toggleStatus("awaiting_approval")}
                   active={status === "awaiting_approval"}
                 />
-              )}
-              {summary.overdue > 0 && (
-                <StatTile
-                  icon={<WarningAmberOutlined />}
-                  label="Просрочено"
+              ) : null}
+              {summary.overdue > 0 ? (
+                <StatItem
+                  label="просрочено"
                   value={summary.overdue}
                   tone="error"
                   onClick={() => toggleQuickDue("overdue")}
                   active={quickDue === "overdue"}
                 />
-              )}
-            </Stack>
+              ) : null}
+            </StatStrip>
           )}
           {tab === "mine" && myStats && !isMobile && (
-            <StatTile
-              icon={<EmojiEventsOutlined />}
-              label="Исполнено за неделю"
-              value={myStats.doneLast7Days}
-              tone="success"
-            />
+            <StatStrip>
+              <StatItem label="исполнено за неделю" value={myStats.doneLast7Days} tone="success" />
+            </StatStrip>
           )}
 
           {/* Вид доски: канбан ↔ таблица */}
@@ -1251,18 +1357,7 @@ const TasksPage: React.FC = () => {
           {/* Граница между «быстрыми» переключателями и точными фильтрами */}
           <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: "center" }} />
 
-          {/* На канбане статус — это колонка, в архиве — сегмент выше;
-              отдельный селект в обоих случаях только запутывает. */}
-          {!boardMode && !isArchive && (
-            <FilterPill
-              label="Статус"
-              icon={<PlayArrowOutlined />}
-              value={status}
-              options={TASK_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              allLabel="Все статусы"
-              onChange={(v) => setStatus(v as TaskStatus | "")}
-            />
-          )}
+          {!compactFilters && statusFilter}
 
           <FilterPill
             label="Категория"
@@ -1316,41 +1411,15 @@ const TasksPage: React.FC = () => {
             </Button>
           )}
 
-          {/* Дата подачи — в «Моих заявках» и в архиве */}
-          {createdFilterOn &&
-            (createdRange ? (
-              <Stack direction="row" alignItems="center" gap={0.25}>
-                <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-                  Подана:
-                </Typography>
-                <DateRangeField
-                  dense
-                  value={createdRange}
-                  onChange={(r) => setCreatedRange(r)}
-                  presets={DEFAULT_RANGE_PRESETS}
-                  minWidth={190}
-                />
-                <IconButton
-                  size="small"
-                  aria-label="Убрать фильтр по дате подачи"
-                  onClick={() => setCreatedRange(null)}
-                  sx={{ p: 0.5 }}
-                >
-                  <CloseOutlined sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Stack>
-            ) : (
-              <Button
-                size="small"
-                startIcon={<CalendarMonthOutlined sx={{ fontSize: 15 }} />}
-                onClick={() =>
-                  setCreatedRange({ from: dayjs().subtract(29, "day").startOf("day"), to: dayjs().endOf("day") })
-                }
-                sx={(t) => pillSx(t)}
-              >
-                Дата подачи
-              </Button>
-            ))}
+          {!compactFilters && createdFilter}
+
+          {/* Узкий экран: редкие фильтры под кнопкой, чтобы строка не переносилась */}
+          {compactFilters && (statusFilter || createdFilter) && (
+            <MoreFilters activeCount={foldedActiveCount}>
+              {statusFilter}
+              {createdFilter}
+            </MoreFilters>
+          )}
 
           {hasActiveFilters && (
             <Button
@@ -1506,7 +1575,23 @@ const TasksPage: React.FC = () => {
                 bgcolor: "background.paper",
                 borderRadius: "14px",
                 "& .MuiDataGrid-row": { cursor: "pointer" },
+                "& .MuiDataGrid-row:hover": { bgcolor: subtleBg(t, true) },
+                // Шапка — служебная строка, а не заголовок: тише по цвету и
+                // мельче по кеглю, чтобы первым читалось название задачи.
                 "& .MuiDataGrid-columnHeaders": { bgcolor: "background.paper" },
+                "& .MuiDataGrid-columnHeaderTitle": {
+                  fontSize: "0.75rem",
+                  fontWeight: 500,
+                  letterSpacing: "0.02em",
+                  color: "text.secondary",
+                },
+                // Вертикальные линии между колонками дробят строку; горизонтальные
+                // оставляем — они держат ритм списка.
+                "& .MuiDataGrid-columnSeparator": { display: "none" },
+                // Рамка фокуса на ячейке после клика по строке — визуальный мусор:
+                // выделения строк здесь нет, клик открывает карточку.
+                "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
+                  { outline: "none" },
                 // v7 центрирует контент ячейки line-height'ом — голая Typography
                 // из renderCell прилипает к верху строки. Центрируем флексом.
                 "& .MuiDataGrid-cell": { display: "flex", alignItems: "center" },

@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { useMutation, useQueries } from "@tanstack/react-query";
+import InboxOutlined from "@mui/icons-material/InboxOutlined";
 
 import { UserAvatar } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -16,8 +17,7 @@ import {
 } from "../../api/tasks";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../api/queryKeys";
 import { useInvalidateTasks } from "../../hooks/useInvalidateTasks";
-import { TaskPriorityChip } from "../../components/tasks/TaskChips";
-import { dueInfo, relativeTime, TASK_STATUS_META, TASKS_REFRESH_MS } from "./meta";
+import { dueInfo, relativeTime, TASK_PRIORITY_META, TASK_STATUS_META, TASKS_REFRESH_MS } from "./meta";
 
 /** Сколько задач тянем в колонку: доска — оперативный вид, не архив. */
 const COLUMN_SIZE = 50;
@@ -72,6 +72,12 @@ type BoardCardProps = {
 
 const BoardCard: React.FC<BoardCardProps> = ({ task, onOpen, onDragStart, onDragEnd, dragging }) => {
   const due = dueInfo(task.dueDate, task.status);
+  const priority = TASK_PRIORITY_META[task.priority];
+  // Цветом отмечаем только то, что требует внимания: «низкий» и «обычный»
+  // приоритеты полоски не получают — иначе колонка превращается в радугу и
+  // срочное перестаёт выделяться.
+  const accent = task.priority === "urgent" ? "error" : task.priority === "high" ? "warning" : null;
+
   return (
     <Box
       draggable
@@ -84,60 +90,95 @@ const BoardCard: React.FC<BoardCardProps> = ({ task, onOpen, onDragStart, onDrag
       onDragEnd={onDragEnd}
       onClick={onOpen}
       sx={(t) => ({
+        position: "relative",
+        overflow: "hidden",
         p: 1.25,
+        pl: 1.75,
         borderRadius: "12px",
         border: 1,
         borderColor: due?.overdue ? alpha(t.palette.error.main, 0.35) : "divider",
         bgcolor: "background.paper",
         cursor: "grab",
         opacity: dragging ? 0.45 : 1,
-        transition: "border-color .15s ease, opacity .15s ease",
-        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35) },
+        transition: "border-color .15s ease, background-color .15s ease, opacity .15s ease",
+        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35), bgcolor: subtleBg(t, true) },
         "&:active": { cursor: "grabbing" },
       })}
     >
-      <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.3 }}>
+      {/* Приоритет — полоской по левому краю вместо чипа: не занимает строку
+          и не спорит с заголовком за внимание. */}
+      {accent && (
+        <Tooltip title={`Приоритет: ${priority.label}`}>
+          <Box
+            sx={(t) => ({
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 3,
+              bgcolor: t.palette[accent].main,
+            })}
+          />
+        </Tooltip>
+      )}
+
+      <Typography
+        variant="body2"
+        fontWeight={600}
+        sx={{
+          lineHeight: 1.3,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
         {task.title}
       </Typography>
       <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ mt: 0.25 }}>
         {task.categoryName}
       </Typography>
 
-      {due && (
-        <Tooltip title={`Срок: ${due.exact}`}>
-          <Typography
-            variant="caption"
-            sx={{
-              display: "block",
-              mt: 0.5,
-              fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
-              color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : "text.secondary",
-            }}
-          >
-            {due.text}
-          </Typography>
-        </Tooltip>
-      )}
-
       <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 1 }}>
         {task.assigneeName ? (
-          <Tooltip title={task.assigneeName}>
-            <Box sx={{ display: "flex" }}>
-              <UserAvatar name={task.assigneeName} size={22} sx={{ borderRadius: "7px" }} />
-            </Box>
-          </Tooltip>
+          <>
+            <UserAvatar name={task.assigneeName} size={22} sx={{ borderRadius: "7px", flexShrink: 0 }} />
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
+              {task.assigneeName}
+            </Typography>
+          </>
         ) : (
-          <Typography variant="caption" color="text.disabled">
+          <Typography variant="caption" color="text.disabled" noWrap>
             Не назначена
           </Typography>
         )}
-        <Box sx={{ flex: 1 }} />
-        <TaskPriorityChip priority={task.priority} />
-      </Stack>
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.5 }}>
-        {relativeTime(task.createdAt)}
-      </Typography>
+        <Box sx={{ flex: 1, minWidth: 8 }} />
+
+        {/* Одна временная метка на карточку: срок, если он есть, иначе возраст
+            задачи — чтобы низ карточки читался с одного взгляда. */}
+        {due ? (
+          <Tooltip title={`Срок: ${due.exact}`}>
+            <Typography
+              variant="caption"
+              noWrap
+              sx={{
+                flexShrink: 0,
+                fontWeight: due.overdue || due.today || due.soon ? 600 : 400,
+                color: due.overdue ? "error.main" : due.today || due.soon ? "warning.main" : "text.secondary",
+              }}
+            >
+              {due.text}
+            </Typography>
+          </Tooltip>
+        ) : (
+          <Tooltip title="Задача без срока">
+            <Typography variant="caption" color="text.disabled" noWrap sx={{ flexShrink: 0 }}>
+              {relativeTime(task.createdAt)}
+            </Typography>
+          </Tooltip>
+        )}
+      </Stack>
     </Box>
   );
 };
@@ -276,9 +317,29 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
               {q.isLoading ? (
                 Array.from({ length: 3 }).map((_, k) => <Skeleton key={k} variant="rounded" height={92} />)
               ) : tasks.length === 0 ? (
-                <Typography variant="caption" color="text.disabled" sx={{ px: 0.5, py: 1 }}>
-                  Пусто
-                </Typography>
+                /* Пустая колонка — норма, а не ошибка: вместо серого «Пусто» в
+                   каждой из пяти колонок рисуем спокойную зону, которая заодно
+                   показывает, куда можно бросить карточку. */
+                <Stack
+                  alignItems="center"
+                  justifyContent="center"
+                  gap={0.75}
+                  sx={(t) => ({
+                    /* Высота карточки, а не всей колонки: зона читается как
+                       место под задачу, а не как пустое полотно. */
+                    minHeight: 96,
+                    borderRadius: "10px",
+                    border: "1px dashed",
+                    borderColor: droppable ? alpha(t.palette.primary.main, 0.45) : "divider",
+                    opacity: droppable ? 1 : 0.6,
+                    transition: "border-color .15s ease, opacity .15s ease",
+                  })}
+                >
+                  <InboxOutlined sx={{ fontSize: 22, color: "text.disabled" }} />
+                  <Typography variant="caption" color="text.disabled">
+                    {droppable ? "Перенести сюда" : "Нет задач"}
+                  </Typography>
+                </Stack>
               ) : (
                 <>
                   {tasks.map((task) => (
