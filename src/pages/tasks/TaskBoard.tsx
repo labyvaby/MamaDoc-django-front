@@ -61,7 +61,11 @@ function transitionFor(
     if (task.assigneeId != null && !mine && !canManage) return null;
     return { fn: takeTask, label: from === "paused" ? "Возобновить" : "Взять в работу" };
   }
-  if (to === "awaiting_approval" && from === "in_progress" && (mine || canManage)) {
+  if (to === "awaiting_approval" && from === "in_progress" && mine && !canManage) {
+    // Только для исполнителя без права приёмки: у обладателя tasks.manage тот же
+    // complete/ закрывает задачу сразу в done (api/tasks.ts), поэтому колонка
+    // «На подтверждении» для него не цель переноса — иначе доска обещает
+    // переход, которого нет, и карточка перепрыгивает через колонку.
     return { fn: completeTask, label: "Исполнить" };
   }
   if (to === "done") {
@@ -416,6 +420,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
       onError(
         to === "paused"
           ? "Поставить на паузу можно только из карточки задачи — нужна причина"
+          : to === "awaiting_approval" && task.status === "in_progress" && canManage
+          ? "У вас есть право подтверждать, поэтому «Исполнить» закрывает задачу сразу — переносите в «Исполнена»"
           : `Нельзя перенести «${TASK_STATUS_META[task.status].label}» → «${TASK_STATUS_META[to].label}»`,
       );
       return;
