@@ -237,8 +237,14 @@ const pillSx = (t: Theme, active = false, tone?: "error") => {
   const activeColor = t.palette.mode === "dark" ? accent.light : accent.dark;
   return {
     height: FILTER_PILL_HEIGHT,
+    // Тема задаёт кнопкам minHeight = controls.buttonHeight (40px) — без явного
+    // сброса Button в ряду оказывается выше чипов на 10px.
+    minHeight: FILTER_PILL_HEIGHT,
     px: 1.25,
     borderRadius: "9px",
+    // Отступ иконки у Button больше, чем у Chip: выравниваем, иначе элементы
+    // ряда «дышат» по-разному.
+    "& .MuiButton-startIcon": { mr: 0.75, ml: 0 },
     border: 1,
     borderColor: active ? alpha(accent.main, 0.45) : "divider",
     bgcolor: active ? alpha(accent.main, t.palette.mode === "dark" ? 0.18 : 0.1) : "transparent",
@@ -1412,7 +1418,16 @@ const TasksPage: React.FC = () => {
               size="small"
               onClick={handleResetFilters}
               startIcon={<CloseOutlined sx={{ fontSize: 15 }} />}
-              sx={{ textTransform: "none", flexShrink: 0, fontSize: "0.8125rem" }}
+              sx={{
+                textTransform: "none",
+                flexShrink: 0,
+                fontSize: "0.8125rem",
+                height: FILTER_PILL_HEIGHT,
+                minHeight: FILTER_PILL_HEIGHT,
+                px: 1.25,
+                borderRadius: "9px",
+                "& .MuiButton-startIcon": { mr: 0.75, ml: 0 },
+              }}
             >
               Сбросить
             </Button>
