@@ -70,6 +70,10 @@ export const SETTINGS_TAB_PERMISSIONS = {
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,
   notifications: PAGE_PERMISSIONS.notifications,
+  // Конструктор автоматизаций отправляет SMS/WhatsApp и на бэке гейтится тем
+  // же notifications.manage, что и настройки уведомлений — своего кода прав
+  // у модуля нет (docs/automations-api.md §2).
+  automations: PAGE_PERMISSIONS.notifications,
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;
