@@ -118,6 +118,8 @@ interface AppointmentDetailsPanelProps {
   /** Пациент подтвердил визит по телефону: scheduled → confirmed. */
   onConfirmVisit?: (a: DjangoAppointment) => void;
   onArrived?: (a: DjangoAppointment) => void;
+  /** Убрать ошибочную отметку «Пациент здесь». */
+  onUndoArrived?: (a: DjangoAppointment) => void;
   /** Врач начинает приём: перевести в in_progress (если ещё не завершён). */
   onStartAppointment?: (a: DjangoAppointment) => void;
   /**
@@ -160,6 +162,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onPay,
   onConfirmVisit,
   onArrived,
+  onUndoArrived,
   onStartAppointment,
   onRecordVaccination,
   onRecordVaccinationMulti,
@@ -1008,6 +1011,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               updatedByName={updatedByName}
               hasBankConfirmation={hasBankConfirmation}
               statusSource={statusChipsSource}
+              onUndoArrived={
+                canUpdate && appt.status === "arrived" && !isPaymentAccepted && onUndoArrived
+                  ? () => onUndoArrived(appt)
+                  : undefined
+              }
               paymentsLoading={payQuery.isLoading}
               hidePaymentChip={financeBlockVisible}
             />

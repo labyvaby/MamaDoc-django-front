@@ -16,6 +16,7 @@
     "insurance": "Страховка"
   },
   "chips": {
+    "undoArrived": "Отменить отметку «{{patient.nom, capitalize}} здесь»",
     "debt": "Долг {{amount}}",
     "debtOfTotal": "Долг {{amount}} из {{total}}",
     "discountPercent": "Скидка {{percent}}%",
