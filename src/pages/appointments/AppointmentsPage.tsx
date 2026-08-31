@@ -796,11 +796,38 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     [refreshAfterMutation, notify, notifyConsumptionWarnings],
   );
 
-  // "Пациент здесь": scheduled → arrived (status-only, overlap не проверяется).
+  // Запоминаем локальный статус перед «Пациент здесь»: если регистратор сразу
+  // заметил ошибочный клик, крестик вернёт confirmed именно в confirmed, а не
+  // сотрёт подтверждение. После перезагрузки истории статусов в API нет —
+  // безопасный фолбэк для отмены отметки тогда обычный scheduled.
+  const statusBeforeArrivalRef = React.useRef(
+    new Map<number, "scheduled" | "confirmed">(),
+  );
+
+  // "Пациент здесь": scheduled/confirmed → arrived (status-only, overlap не проверяется).
   const handleArrived = React.useCallback(
     async (appt: DjangoAppointment) => {
       try {
         const updated = await updateAppointment(appt.id, { status: "arrived" });
+        statusBeforeArrivalRef.current.set(
+          appt.id,
+          appt.status === "confirmed" ? "confirmed" : "scheduled",
+        );
+        notifyConsumptionWarnings(updated);
+        refreshAfterMutation();
+      } catch (e) {
+        notify?.({ type: "error", message: parseBackendError(e) });
+      }
+    },
+    [refreshAfterMutation, notify, notifyConsumptionWarnings],
+  );
+
+  const handleUndoArrived = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      const previousStatus = statusBeforeArrivalRef.current.get(appt.id) ?? "scheduled";
+      try {
+        const updated = await updateAppointment(appt.id, { status: previousStatus });
+        statusBeforeArrivalRef.current.delete(appt.id);
         notifyConsumptionWarnings(updated);
         refreshAfterMutation();
       } catch (e) {
@@ -890,6 +917,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       onPay={handlePay}
       onConfirmVisit={handleConfirmVisit}
       onArrived={handleArrived}
+      onUndoArrived={handleUndoArrived}
       onStartAppointment={handleStartAppointment}
       onRecordVaccination={(a, prefill) => {
         setVaccineAppt(a);
