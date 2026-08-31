@@ -52,6 +52,7 @@ import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWall
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
 import {
   getStatusConfig,
@@ -80,6 +81,11 @@ export interface AppointmentStatusChipsProps {
    * они несут доп. цифры, а не просто повторяют факт оплаты.
    */
   hidePayChip?: boolean;
+  /**
+   * Отменить случайную отметку «Пациент здесь». Крестик появляется только у
+   * статуса arrived и только там, где вызывающий явно разрешил это действие.
+   */
+  onUndoArrived?: () => void;
 }
 
 const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
@@ -88,6 +94,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   showPaymentMethodIcons = true,
   direction = "row",
   hidePayChip = false,
+  onUndoArrived,
 }) => {
   const { t } = useT("appointments");
   const methods = appt.paymentMethods ?? [];
@@ -104,6 +111,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   } = getStatusChipState(appt);
 
   const statusCfg = getStatusConfig(appt.status);
+  const canUndoArrived = appt.status === "arrived" && onUndoArrived != null;
 
   /** Стиль чипа + опциональная компактная высота.
    *  getStatusChipSx возвращает функцию от темы — её нельзя расплющить спредом
@@ -112,6 +120,16 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
     (theme: Theme) => ({
       ...(getStatusChipSx(statusCode) as (t: Theme) => Record<string, unknown>)(theme),
       ...(chipHeight != null ? { height: chipHeight } : {}),
+      ...(canUndoArrived
+        ? {
+            "& .MuiChip-deleteIcon": {
+              color: "inherit",
+              fontSize: 16,
+              opacity: 0.72,
+              "&:hover": { color: "inherit", opacity: 1 },
+            },
+          }
+        : {}),
       ...extra,
     });
 
@@ -122,6 +140,8 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       label={statusCfg.label}
       icon={isOverdue ? <ScheduleOutlined fontSize="small" /> : statusCfg.icon}
       size="small"
+      onDelete={canUndoArrived ? onUndoArrived : undefined}
+      deleteIcon={canUndoArrived ? <CloseOutlined /> : undefined}
       sx={chipSx(appt.status, isOverdue ? { borderStyle: "dashed" } : undefined)}
     />
   );
@@ -134,8 +154,8 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       flexWrap={direction === "row" ? "wrap" : undefined}
     >
       {showStatusChip &&
-        (isOverdue ? (
-          <Tooltip title={t("chips.overdue")}>
+        (isOverdue || canUndoArrived ? (
+          <Tooltip title={canUndoArrived ? t("chips.undoArrived") : t("chips.overdue")}>
             {/* span: Chip со sx-функцией не пробрасывает ref тултипу */}
             <span>{statusChip}</span>
           </Tooltip>
