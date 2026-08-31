@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { useMutation, useQueries } from "@tanstack/react-query";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import InboxOutlined from "@mui/icons-material/InboxOutlined";
 
 import { UserAvatar } from "../../components/ui";
@@ -64,13 +65,24 @@ function transitionFor(
 
 type BoardCardProps = {
   task: Task;
+  /** Порядок в колонке — задаёт лесенку появления. */
+  index: number;
   onOpen: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   dragging: boolean;
 };
 
-const BoardCard: React.FC<BoardCardProps> = ({ task, onOpen, onDragStart, onDragEnd, dragging }) => {
+const BoardCard: React.FC<BoardCardProps> = ({
+  task,
+  index,
+  onOpen,
+  onDragStart,
+  onDragEnd,
+  dragging,
+}) => {
+  // Системная настройка «уменьшить движение» — тогда карточки просто появляются.
+  const reduceMotion = useReducedMotion();
   const due = dueInfo(task.dueDate, task.status);
   const priority = TASK_PRIORITY_META[task.priority];
   // Цветом отмечаем только то, что требует внимания: «низкий» и «обычный»
@@ -79,6 +91,20 @@ const BoardCard: React.FC<BoardCardProps> = ({ task, onOpen, onDragStart, onDrag
   const accent = task.priority === "urgent" ? "error" : task.priority === "high" ? "warning" : null;
 
   return (
+    /* Обёртка отвечает только за появление и исчезновение: у motion.div свои
+       onDragStart/onDragEnd (pan-жесты), они конфликтуют с HTML5-перетаскиванием,
+       поэтому drag остаётся на внутреннем Box. */
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }}
+      transition={{
+        duration: 0.18,
+        ease: "easeOut",
+        // Лесенка сверху вниз: колонка «собирается», а не мигает целиком.
+        delay: reduceMotion ? 0 : Math.min(index * 0.03, 0.15),
+      }}
+    >
     <Box
       draggable
       onDragStart={(e) => {
@@ -180,6 +206,7 @@ const BoardCard: React.FC<BoardCardProps> = ({ task, onOpen, onDragStart, onDrag
         )}
       </Stack>
     </Box>
+    </motion.div>
   );
 };
 
@@ -342,19 +369,22 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
                 </Stack>
               ) : (
                 <>
-                  {tasks.map((task) => (
-                    <BoardCard
-                      key={task.id}
-                      task={task}
-                      dragging={dragged?.id === task.id}
-                      onOpen={() => onOpenTask(task.id)}
-                      onDragStart={() => setDragged(task)}
-                      onDragEnd={() => {
-                        setDragged(null);
-                        setHoverColumn(null);
-                      }}
-                    />
-                  ))}
+                  <AnimatePresence>
+                    {tasks.map((task, cardIndex) => (
+                      <BoardCard
+                        key={task.id}
+                        task={task}
+                        index={cardIndex}
+                        dragging={dragged?.id === task.id}
+                        onOpen={() => onOpenTask(task.id)}
+                        onDragStart={() => setDragged(task)}
+                        onDragEnd={() => {
+                          setDragged(null);
+                          setHoverColumn(null);
+                        }}
+                      />
+                    ))}
+                  </AnimatePresence>
                   {count > tasks.length && (
                     <Typography variant="caption" color="text.disabled" sx={{ px: 0.5 }}>
                       и ещё {count - tasks.length} — уточните фильтры
