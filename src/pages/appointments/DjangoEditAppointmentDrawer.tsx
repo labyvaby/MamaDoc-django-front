@@ -125,6 +125,7 @@ type ServiceRow = {
   employeeId: number | null;
   quantity: number;
   unitPrice: string;
+  durationMinutes: string;
   discountAmount: string;
   /**
    * По строке уже создано медзаключение (draft/completed): бэк не даёт удалить
@@ -241,6 +242,7 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     employeeId: null,
     quantity: 1,
     unitPrice: "",
+    durationMinutes: "",
     discountAmount: "",
     hasConclusion: false,
     consumptions: [],
@@ -465,6 +467,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
               employeeId: line.employee?.id ?? null,
               quantity: line.quantity ?? 1,
               unitPrice: line.unitPrice ?? "",
+              durationMinutes: String(line.durationMinutes ?? ""),
               discountAmount: line.discountAmount ?? "",
               hasConclusion: lineHasConclusion(line),
               consumptions: (line.consumptions ?? []).map(toConsumptionRow),
@@ -536,7 +539,12 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     setWorkMode(draft.workMode);
     setIsBooking(draft.isBooking);
     setSelectedPatient(draft.selectedPatient);
-    setServiceRows(draft.serviceRows);
+    setServiceRows(
+      draft.serviceRows.map((row) => ({
+        ...row,
+        durationMinutes: row.durationMinutes ?? "",
+      })),
+    );
     setProductRows(draft.productRows);
     setComplaints(draft.complaints);
     setDoctorComplaints(draft.doctorComplaints);
@@ -703,8 +711,14 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     services:
       validRows.length === 0
         ? t("addDrawer.errors.serviceRequired")
-        : incompatibleRows.length > 0
+          : incompatibleRows.length > 0
           ? t("addDrawer.errors.performerMismatch")
+          : serviceRows.some(
+              (r) =>
+                r.durationMinutes.trim() !== "" &&
+                (!Number.isInteger(Number(r.durationMinutes)) || Number(r.durationMinutes) <= 0),
+            )
+            ? t("priceField.invalidDuration")
           : null,
     // Комментарий к брони необязателен и при создании — иначе бронь без
     // комментария нельзя было бы сохранить при первой же правке.
@@ -741,7 +755,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     () =>
       validRows.reduce((sum, r) => {
         const svc = data.services.find((s) => s.id === r.serviceId);
-        return sum + (svc?.durationMinutes ?? 0) * (r.quantity > 0 ? r.quantity : 1);
+        const duration = r.durationMinutes.trim()
+          ? Number(r.durationMinutes)
+          : (svc?.durationMinutes ?? 0);
+        return sum + duration * (r.quantity > 0 ? r.quantity : 1);
       }, 0),
     [validRows, data.services],
   );
@@ -809,6 +826,9 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           employeeId: r.employeeId,
           quantity: r.quantity > 0 ? r.quantity : 1,
           ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
+          ...(r.durationMinutes.trim()
+            ? { durationMinutes: Number(r.durationMinutes) }
+            : {}),
           ...(r.discountAmount.trim() ? { discountAmount: r.discountAmount.trim() } : {}),
           // Расходники шлём только когда их правили руками и строка услуги
           // существует: у пересозданной строки (lineId сброшен) id расходов
@@ -934,6 +954,7 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
           // актуальную цену новой пары.
           lineId: null,
           unitPrice: "",
+          durationMinutes: "",
           discountAmount: "",
         };
       });
@@ -1501,8 +1522,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       // 13160).
                                       ...((v?.id ?? null) !== row.serviceId
                                         ? row.hasConclusion
-                                          ? { unitPrice: v ? String(v.basePrice) : "", discountAmount: "" }
-                                          : { lineId: null, unitPrice: "", discountAmount: "" }
+                                          ? { unitPrice: v ? String(v.basePrice) : "", durationMinutes: "", discountAmount: "" }
+                                          : { lineId: null, unitPrice: "", durationMinutes: "", discountAmount: "" }
                                         : {}),
                                       // Другая услуга — другой состав: бэк
                                       // пересобирает расходники из её справочника,
@@ -1534,11 +1555,16 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                       <ServicePriceField
                                         basePrice={selectedService.basePrice}
                                         value={row.unitPrice}
+                                        baseDurationMinutes={selectedService.durationMinutes}
+                                        durationValue={row.durationMinutes}
                                         // Строку с медзаключением без права
                                         // редактировать нельзя целиком — цена
                                         // не исключение.
                                         disabled={saving || (row.hasConclusion && !canEditLocked)}
                                         onChange={(next) => updateRow(index, { unitPrice: next })}
+                                        onDurationChange={(next) =>
+                                          updateRow(index, { durationMinutes: next })
+                                        }
                                         suffix={
                                           <>
                                             {rowAmount(row, data.services) !==
@@ -1550,11 +1576,6 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                             {discount > 0
                                               ? t("addDrawer.discountSuffix", {
                                                   amount: formatKGS(discount),
-                                                })
-                                              : ""}
-                                            {selectedService.durationMinutes
-                                              ? t("addDrawer.durationSuffix", {
-                                                  minutes: selectedService.durationMinutes,
                                                 })
                                               : ""}
                                           </>

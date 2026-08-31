@@ -15,7 +15,7 @@ import { apiRequest, ApiError, parseErrorEnvelope } from "./client";
 // Технические префиксы полей (startsAt:, service:, branch:, products: …) и
 // внутренние ссылки (приём #2) мешают читать ошибку обычному пользователю.
 // Чистим их, оставляя человеко-понятный текст.
-const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
+const _FIELD_PREFIX = /^\s*(starts_?at|ends_?at|service|services|serviceId|branch|branchId|employee|employeeId|products|product|patient|patientId|organization|organizationId|quantity|price|unitPrice|durationMinutes|duration_minutes|discountAmount|nonFieldErrors|__all__)\s*:\s*/i;
 
 function humanizeBackendMessage(raw: string): string {
   // Валидатор бэкенда: branchId обязателен, а активный филиал не выбран
@@ -466,6 +466,7 @@ export function normalizeAppointment(raw: RawAppointment): DjangoAppointment {
       ? raw.consumptionWarnings
       : [],
     priceOverrides: Array.isArray(raw.priceOverrides) ? raw.priceOverrides : [],
+    durationOverrides: Array.isArray(raw.durationOverrides) ? raw.durationOverrides : [],
   } as DjangoAppointment;
 }
 
@@ -528,6 +529,16 @@ export interface AppointmentPriceOverride {
   changedAt: string;
 }
 
+export interface AppointmentDurationOverride {
+  id: number;
+  serviceLineId: number | null;
+  oldDurationMinutes: number;
+  newDurationMinutes: number;
+  changedById?: number | null;
+  changedByName?: string | null;
+  changedAt: string;
+}
+
 export interface DjangoAppointment {
   id: number;
   organizationId: number;
@@ -557,6 +568,7 @@ export interface DjangoAppointment {
    * выкладки поля нет вовсе.
    */
   priceOverrides: AppointmentPriceOverride[];
+  durationOverrides: AppointmentDurationOverride[];
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
@@ -609,6 +621,8 @@ export interface AppointmentServiceLineCreate {
   employeeId: number | null;
   quantity?: number;
   unitPrice?: string;
+  /** Individual duration for this appointment only. */
+  durationMinutes?: number;
   discountAmount?: string;
   /**
    * Расходники строки. ⚠ Семантика бэка: **отсутствие ключа — не трогаем**,
@@ -692,6 +706,7 @@ interface BackendServiceLine {
   employeeId: number | null;
   quantity?: number;
   unitPrice?: string;
+  durationMinutes?: number;
   discountAmount?: string;
   consumptions?: BackendConsumption[];
 }
@@ -743,11 +758,12 @@ interface BackendUpdateBody {
 
 function toBackendServiceLines(services: AppointmentServiceLineCreate[]): BackendServiceLine[] {
   return services.map(
-    ({ id, serviceId, employeeId, quantity, unitPrice, discountAmount, consumptions }) => {
+    ({ id, serviceId, employeeId, quantity, unitPrice, durationMinutes, discountAmount, consumptions }) => {
       const line: BackendServiceLine = { serviceId, employeeId: employeeId ?? null };
       if (id != null) line.id = id;
       if (quantity !== undefined) line.quantity = quantity;
       if (unitPrice !== undefined && unitPrice !== "") line.unitPrice = unitPrice;
+      if (durationMinutes !== undefined) line.durationMinutes = durationMinutes;
       if (discountAmount !== undefined && discountAmount !== "") line.discountAmount = discountAmount;
       // Ключ доходит до бэка только когда он задан явно: undefined значит
       // «расходники не трогаем», а [] — «удалить все» (разная семантика).
@@ -1147,7 +1163,12 @@ export function updateAppointment(
  */
 export function overrideAppointmentServicePrice(
   appointmentId: number,
-  payload: { serviceLineId: number; unitPrice: string | number },
+  payload: {
+    serviceLineId: number;
+    unitPrice?: string | number;
+    durationMinutes?: number;
+    allowOverlap?: boolean;
+  },
 ): Promise<DjangoAppointment> {
   return apiRequest<RawAppointment>(
     `/appointments/${appointmentId}/price-override/`,

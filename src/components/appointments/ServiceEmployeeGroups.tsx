@@ -17,6 +17,7 @@ export interface ServiceGroupLine {
   name: string;
   imageUrl?: string | null;
   quantity: number;
+  durationMinutes?: number;
   /** Отформатированная сумма строки; null — не показывать (нет права на финансы). */
   amount: string | null;
   /**
@@ -243,9 +244,14 @@ const ServiceEmployeeGroups: React.FC<ServiceEmployeeGroupsProps> = ({
                         </Tooltip>
                         {conclusionMark(line.conclusionState, t)}
                       </Stack>
-                      {line.quantity > 1 && (
+                      {(line.quantity > 1 || line.durationMinutes) && (
                         <Typography variant="caption" color="text.secondary">
-                          × {line.quantity}
+                          {[
+                            line.quantity > 1 ? `× ${line.quantity}` : null,
+                            line.durationMinutes
+                              ? `${line.durationMinutes} ${t("priceField.minutesShort")}`
+                              : null,
+                          ].filter(Boolean).join(" · ")}
                         </Typography>
                       )}
                     </Box>

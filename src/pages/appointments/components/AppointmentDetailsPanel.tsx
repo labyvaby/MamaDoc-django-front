@@ -521,12 +521,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         name: sl.service?.name ?? "—",
         imageUrl: sl.service?.imageUrl ?? null,
         quantity: sl.quantity,
+        durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
         action:
           canOverridePrice &&
           !appt.priceOverrideLocked &&
-          sl.allowPriceOverride !== false &&
           !isPaymentAccepted &&
           !isCancelled &&
           activeEmployeeId != null &&
@@ -1131,11 +1131,12 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             {/* Правки цены — после состава визита и до жалоб: это про деньги
                 приёма, а не про его медицинскую часть. Блок сам скрывается,
                 пока цены не трогали. */}
-            {appt.priceOverrides.length > 0 && (
+            {(appt.priceOverrides.length > 0 || appt.durationOverrides.length > 0) && (
               <>
                 <Divider />
                 <AppointmentPriceHistory
                   overrides={appt.priceOverrides}
+                  durationOverrides={appt.durationOverrides}
                   services={appt.services}
                 />
               </>

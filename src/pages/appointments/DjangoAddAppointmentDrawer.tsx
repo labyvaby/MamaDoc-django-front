@@ -143,6 +143,8 @@ type ServiceRow = {
    * `appointments.price_override` (см. ServicePriceField).
    */
   unitPrice: string;
+  /** Индивидуальная длительность этой услуги только в создаваемом приёме. */
+  durationMinutes: string;
   /**
    * Расходники строки, когда их правили руками. Пока `null` — состав берётся из
    * справочника услуги (и следует количеству услуги), а `consumptions` в запрос
@@ -163,6 +165,7 @@ function newServiceRow(patch: Partial<ServiceRow> = {}): ServiceRow {
     employeeId: null,
     quantity: 1,
     unitPrice: "",
+    durationMinutes: "",
     consumptions: null,
     ...patch,
   };
@@ -593,6 +596,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                 (r) => r.consumptions !== null && hasInvalidConsumptionQuantity(r.consumptions),
               )
             ? t("consumptions.quantityError")
+            : serviceRows.some(
+                (r) =>
+                  r.durationMinutes.trim() !== "" &&
+                  (!Number.isInteger(Number(r.durationMinutes)) || Number(r.durationMinutes) <= 0),
+              )
+              ? t("priceField.invalidDuration")
             : null,
     products:
       overstockedRows.length > 0 ? t("addDrawer.errors.overStock") : null,
@@ -637,7 +646,10 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     () =>
       validRows.reduce((sum, r) => {
         const svc = data.services.find((s) => s.id === r.serviceId);
-        return sum + (svc?.durationMinutes ?? 0) * (r.quantity > 0 ? r.quantity : 1);
+        const duration = r.durationMinutes.trim()
+          ? Number(r.durationMinutes)
+          : (svc?.durationMinutes ?? 0);
+        return sum + duration * (r.quantity > 0 ? r.quantity : 1);
       }, 0),
     [validRows, data.services],
   );
@@ -683,6 +695,9 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
           // Пустое поле не отправляем вовсе: бэк снапшотит цену из прайса сам,
           // а присланная каталожная цена — лишний повод для проверки права.
           ...(r.unitPrice.trim() ? { unitPrice: r.unitPrice.trim() } : {}),
+          ...(r.durationMinutes.trim()
+            ? { durationMinutes: Number(r.durationMinutes) }
+            : {}),
           // Ключ уходит только когда расходники правили: его отсутствие значит
           // «развернуть состав услуги как есть», а `[]` — «без расходников»
           // (именно так убирается лишний товар из состава при записи).
@@ -1403,7 +1418,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                           // тоже сбрасываем: пересчёт на прайс новой
                                           // услуги бэк пропускает без права.
                                           ...((v?.id ?? null) !== row.serviceId
-                                            ? { consumptions: null, unitPrice: "" }
+                                            ? { consumptions: null, unitPrice: "", durationMinutes: "" }
                                             : {}),
                                         });
                                       }}
@@ -1451,14 +1466,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
                                     <ServicePriceField
                                       basePrice={selectedService.basePrice}
                                       value={row.unitPrice}
+                                      baseDurationMinutes={selectedService.durationMinutes}
+                                      durationValue={row.durationMinutes}
                                       disabled={saving}
                                       onChange={(next) => updateRow(index, { unitPrice: next })}
-                                      suffix={
-                                        selectedService.durationMinutes
-                                          ? t("addDrawer.durationSuffix", {
-                                              minutes: selectedService.durationMinutes,
-                                            })
-                                          : ""
+                                      onDurationChange={(next) =>
+                                        updateRow(index, { durationMinutes: next })
                                       }
                                     />
                                   )}
