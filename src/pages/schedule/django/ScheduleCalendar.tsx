@@ -25,6 +25,7 @@ import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import "dayjs/locale/ru";
@@ -32,7 +33,7 @@ import "dayjs/locale/ru";
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
-import { computeDayOccurrences, type DayOccurrence } from "./occurrences";
+import { computeDayOccurrences, lunchNote, type DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 import {
   HOUR_GUIDES,
@@ -43,6 +44,7 @@ import {
   MONTH_DAY_END_MIN,
   MONTH_DAY_START_MIN,
   hourlyOccupancy,
+  occMinutes,
   packIntoLanes,
   timeToLeftPct,
   type LaneSegment,
@@ -325,7 +327,11 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   const MonthLane: React.FC<{ segments: LaneSegment[] }> = ({ segments }) => {
     const tip = [...segments]
       .sort((a, b) => a.startMin - b.startMin)
-      .map((s) => `${s.occ.employeeName}: ${shortTime(s.occ.startTime)}–${shortTime(s.occ.endTime)}`)
+      .map(
+        (s) =>
+          `${s.occ.employeeName}: ${shortTime(s.occ.startTime)}–${shortTime(s.occ.endTime)}` +
+          (s.occ.lunch ? ` (${lunchNote(s.occ)})` : ""),
+      )
       .join("  •  ");
     return (
       <Tooltip title={tip} arrow placement="top" enterDelay={250}>
@@ -379,6 +385,25 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                 >
                   {surname(occ.employeeName)}
                 </Typography>
+                {/* Обед — вырез внутри полосы; проценты пересчитаны от ширины
+                    сегмента, потому что сегмент сам позиционирован в % дорожки. */}
+                {occ.lunch && (() => {
+                  const lunchLeft = timeToLeftPct(occMinutes(occ.lunch.start));
+                  const lunchRight = timeToLeftPct(occMinutes(occ.lunch.end));
+                  if (lunchRight <= left || lunchLeft >= left + width) return null;
+                  return (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        left: `${((lunchLeft - left) / width) * 100}%`,
+                        width: `${((lunchRight - lunchLeft) / width) * 100}%`,
+                        top: 0,
+                        bottom: 0,
+                        bgcolor: alpha(theme.palette.background.paper, 0.7),
+                      }}
+                    />
+                  );
+                })()}
               </Box>
             );
           })}
@@ -805,9 +830,16 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                       {isExtra && (
                         <Chip label="доп." size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: "0.6rem", flexShrink: 0 }} />
                       )}
-                      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                        {timeRange(occ)}
-                      </Typography>
+                      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                          {timeRange(occ)}
+                        </Typography>
+                        {occ.lunch && (
+                          <Tooltip title={lunchNote(occ)} arrow>
+                            <RestaurantOutlined sx={{ fontSize: 13, color: "text.disabled" }} />
+                          </Tooltip>
+                        )}
+                      </Stack>
                     </Stack>
                     );
                   })}

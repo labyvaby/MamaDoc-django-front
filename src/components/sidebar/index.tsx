@@ -24,6 +24,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme, alpha } from "@mui/material/styles";
 import OrganizationBrand from "../brand/OrganizationBrand";
 import { useAppVersion } from "../../api/appVersion";
+import { fetchChatwootCounts } from "../../api/chatwoot";
 import { useT } from "../../i18n/VerticalProvider";
 
 
@@ -48,6 +49,7 @@ import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ReviewsOutlined from "@mui/icons-material/ReviewsOutlined";
 import BookOnlineOutlined from "@mui/icons-material/BookOnlineOutlined";
+import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
@@ -344,7 +346,13 @@ const SidebarSecondary: React.FC = () => {
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const { isSuperAdmin, activeEmployee, activeBranch, loading: permissionsLoading } = usePermissions();
+  const {
+    isSuperAdmin,
+    activeEmployee,
+    activeBranch,
+    activeOrganization,
+    loading: permissionsLoading,
+  } = usePermissions();
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const hasVisibleSettingsTab = Object.entries(
@@ -356,6 +364,7 @@ const SidebarSecondary: React.FC = () => {
   );
   const orgId = useApiOrgId();
   const isSuper = isSuperAdmin();
+  const isRetail = activeOrganization?.vertical === "retail";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -381,41 +390,42 @@ const SidebarSecondary: React.FC = () => {
     // правами (appointments.*_room/registry.view): организация сама решает в
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
-    registratura: isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry),
-    bookings: isSuper || can(PAGE_PERMISSIONS.bookings),
-    doctorRoom: isSuper || can(PAGE_PERMISSIONS.doctorRoom),
-    nurseRoom: isSuper || can(PAGE_PERMISSIONS.nurseRoom),
-    schedule: isSuper || can(PAGE_PERMISSIONS.schedule),
+    registratura: !isRetail && (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry)),
+    bookings: !isRetail && (isSuper || can(PAGE_PERMISSIONS.bookings)),
+    chats: !isRetail && (isSuper || can(PAGE_PERMISSIONS.chats)),
+    doctorRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.doctorRoom)),
+    nurseRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.nurseRoom)),
+    schedule: !isRetail && (isSuper || can(PAGE_PERMISSIONS.schedule)),
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
-    tasks: isSuper || can(PAGE_PERMISSIONS.tasks),
-    expenses: isSuper || can(PAGE_PERMISSIONS.expenses),
+    tasks: can(PAGE_PERMISSIONS.tasks),
+    expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
-    achievements: isSuper || can(PAGE_PERMISSIONS.achievements),
+    achievements: can(PAGE_PERMISSIONS.achievements),
     // ОРГАНИЗАЦИЯ
-    employees: isSuper || can(PAGE_PERMISSIONS.employees),
-    patients: isSuper || can(PAGE_PERMISSIONS.patients),
-    vaccinations: isSuper || can(PAGE_PERMISSIONS.vaccinations),
+    employees: can(PAGE_PERMISSIONS.employees),
+    patients: !isRetail && can(PAGE_PERMISSIONS.patients),
+    vaccinations: !isRetail && can(PAGE_PERMISSIONS.vaccinations),
     // Исторические реестры — только суперадмин (19.08.2026), права нет намеренно.
-    allAppointments: isSuper,
-    allProcedures: isSuper,
-    services: isSuper || can(PAGE_PERMISSIONS.services),
+    allAppointments: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    allProcedures: !isRetail && isSuper && can(PAGE_PERMISSIONS.appointments),
+    services: !isRetail && can(PAGE_PERMISSIONS.services),
     documents: moduleGate("documents"),
     // СКЛАДЫ
-    products: isSuper || can(PAGE_PERMISSIONS.products),
-    sales: isSuper || can(PAGE_PERMISSIONS.sales),
-    storage: isSuper || can(PAGE_PERMISSIONS.warehouses),
+    products: can(PAGE_PERMISSIONS.products),
+    sales: can(PAGE_PERMISSIONS.sales),
+    storage: can(PAGE_PERMISSIONS.warehouses),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
-    salaryReports: isSuper || can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
+    salaryReports: can("payroll.view") || (can("payroll.view_own") && activeEmployee != null),
     // В Django-режиме гейтим правом, а не ролью: роль-гейт скрывал «Отчеты»
     // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
-    reports: isSuper || can(PAGE_PERMISSIONS.reports),
-    cashbox: isSuper || can(PAGE_PERMISSIONS.cashbox),
-    load: isSuper || can(PAGE_PERMISSIONS.reports),
-    notifications: isSuper || can(PAGE_PERMISSIONS.notifications),
+    reports: can(PAGE_PERMISSIONS.reports),
+    cashbox: can(PAGE_PERMISSIONS.cashbox),
+    load: !isRetail && can(PAGE_PERMISSIONS.reports),
+    notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
 
@@ -529,6 +539,27 @@ const SidebarSecondary: React.FC = () => {
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
   });
+  // Чаты: бейдж — открытые диалоги, которые сотрудник реально видит.
+  // Запрос включён только при праве на раздел; 403 (нет связи с Чат-центром)
+  // и 404 (интеграция выключена) — не ошибка, а «бейджа нет», поэтому retry
+  // выключен и ошибка молча превращается в ноль.
+  const chatsCountsQuery = useQuery({
+    queryKey: ["chatwoot", "counts"],
+    queryFn: fetchChatwootCounts,
+    enabled: can_.chats,
+    retry: false,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const chatsCounts = chatsCountsQuery.data;
+  const chatsBadgeCount = chatsCounts
+    ? chatsCounts.mine + chatsCounts.unassigned
+    : 0;
+  // Свои диалоги — личный долг, поэтому краснее; ничьи сами по себе спокойнее.
+  const chatsBadgeColor: "error" | "primary" =
+    (chatsCounts?.mine ?? 0) > 0 ? "error" : "primary";
+
   const bookingsBadgeCount = bookingsPendingQuery.data?.count ?? 0;
   const bookingsBadgeColor: "error" | "primary" =
     (bookingsOverdueQuery.data?.count ?? 0) > 0 ? "error" : "primary";
@@ -662,6 +693,13 @@ const SidebarSecondary: React.FC = () => {
             Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
           <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
+        )}
+
+        {/* Чаты — встроенный дашборд Chatwoot (chat.operator.kg) со сквозной
+            авторизацией. Пункт виден по праву chatwoot.view; сотрудник без
+            учётки в Chatwoot увидит на странице заглушку «запросите доступ». */}
+        {show("my-work") && can_.chats && (
+          <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} badgeCount={chatsBadgeCount} badgeColor={chatsBadgeColor} />
         )}
 
         {/* Кабинет врача */}
@@ -799,7 +837,7 @@ const SidebarSecondary: React.FC = () => {
         )}
 
         {/* Отзывы (Django-mode only) */}
-        {show("management") && (isSuper || can(PAGE_PERMISSIONS.reviews)) && (
+        {show("management") && !isRetail && can(PAGE_PERMISSIONS.reviews) && (
           <SidebarMenuItem to="/reviews" icon={<ReviewsOutlined />} label="Отзывы" collapsed={siderCollapsed} />
         )}
 

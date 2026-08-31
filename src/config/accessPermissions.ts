@@ -34,11 +34,20 @@ export const PAGE_PERMISSIONS = {
   notifications: "notifications.manage",
   reviews: ["reviews.view", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
+  // Раздел «Чаты» — встроенный Chatwoot. Право выдаётся ролям в редакторе
+  // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
+  chats: "chatwoot.view",
   tasks: "tasks.list",
   vaccinations: "vaccinations.view",
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],
   conclusionPrint: "medical.conclusions.print",
+  clients: "clients.view",
+  pos: "pos.view",
+  inventory: "warehouse.manage",
+  ecommerce: "ecommerce.view",
+  targets: "targets.view",
+  messaging: "messaging.view",
 } satisfies Record<string, string | string[]>;
 
 export const SETTINGS_TAB_PERMISSIONS = {
@@ -71,6 +80,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // же notifications.manage, что и настройки уведомлений — своего кода прав
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
+  productAttributes: "warehouse.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

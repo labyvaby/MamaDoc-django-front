@@ -304,14 +304,35 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     resetChipFilters,
   } = useReceptionFilters();
 
+  // Врач привязан к текущему скоупу данных. При переходе в другую
+  // организацию/филиал старый id нельзя переносить в новый скоуп, но смена
+  // даты этот фильтр должна сохранять.
+  const scopeKey = `${activeOrganization?.id ?? ""}:${activeBranch?.id ?? ""}`;
+  const observedScopeRef = React.useRef(false);
+  const previousScopeKeyRef = React.useRef(scopeKey);
+  React.useEffect(() => {
+    // Контекст пользователя может прийти после первого рендера. Это ещё не
+    // переключение скоупа, поэтому первый полностью определённый скоуп только
+    // запоминаем и не трогаем фильтр из URL.
+    if (activeOrganization?.id == null) return;
+    if (!observedScopeRef.current) {
+      observedScopeRef.current = true;
+      previousScopeKeyRef.current = scopeKey;
+      return;
+    }
+    if (previousScopeKeyRef.current !== scopeKey) {
+      setDoctorFilter(null);
+      previousScopeKeyRef.current = scopeKey;
+    }
+  }, [activeOrganization?.id, scopeKey, setDoctorFilter]);
+
   // DateNavigation (shared with the original Регистратура) works in string dates
   const dateStr = date.format("YYYY-MM-DD");
   const handleSetDate = React.useCallback(
     (s: string) => {
-      if (s !== dateStr) setDoctorFilter(null);
       setDate(dayjs(s));
     },
-    [dateStr, setDoctorFilter],
+    [],
   );
 
   const [createOpen, setCreateOpen] = React.useState(false);

@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Chip } from "@mui/material";
+import { Box, Chip, Stack, Typography } from "@mui/material";
 import { alpha, type Theme } from "@mui/material/styles";
 
 import type { TaskPriority, TaskStatus } from "../../api/tasks";
@@ -65,4 +65,34 @@ export const TaskStatusChip: React.FC<{ status: TaskStatus }> = ({ status }) => 
 export const TaskPriorityChip: React.FC<{ priority: TaskPriority }> = ({ priority }) => {
   const m = TASK_PRIORITY_META[priority];
   return m ? <TonedChip label={m.label} toneName={m.color} /> : <>{priority}</>;
+};
+
+/**
+ * Приоритет точкой с подписью — для таблиц, где в строке уже есть чип статуса.
+ * Две плашки в одной строке спорят друг с другом; точка несёт тот же сигнал,
+ * но не перетягивает внимание с названия задачи.
+ */
+export const TaskPriorityDot: React.FC<{ priority: TaskPriority }> = ({ priority }) => {
+  const m = TASK_PRIORITY_META[priority];
+  if (!m) return <>{priority}</>;
+  return (
+    <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+      <Box
+        component="span"
+        sx={(t) => {
+          const p = tone(t, m.color);
+          return {
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            flexShrink: 0,
+            bgcolor: p ? p.main : t.palette.text.disabled,
+          };
+        }}
+      />
+      <Typography variant="body2" color="text.secondary" noWrap>
+        {m.label}
+      </Typography>
+    </Stack>
+  );
 };

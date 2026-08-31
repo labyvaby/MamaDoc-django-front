@@ -82,6 +82,7 @@ const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPag
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
 const BookingsPage = lazy(() => import("./pages/bookings"));
+const ChatsPage = lazy(() => import("./pages/chats"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const VaccinationsPage = lazy(() => import("./pages/vaccinations"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
@@ -117,6 +118,7 @@ const SpecializationsSettingsPage = lazy(() => import("./pages/settings/Speciali
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
+const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
 // (registry/RegistryJournalView), а не рабочий кабинет с навигацией по дням.
@@ -124,6 +126,7 @@ const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
+const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -379,6 +382,11 @@ function App() {
                         meta: { label: "Брони" }
                       },
                       {
+                        name: "chats",
+                        list: "/chats",
+                        meta: { label: "Чаты" }
+                      },
+                      {
                         name: "tasks",
                         list: "/tasks",
                         meta: { label: "Задачи" }
@@ -567,6 +575,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoWarehousesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="retail"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <RetailDashboardPage />
                               </Suspense>
                             </RequirePermission>
                           }
@@ -822,6 +840,16 @@ function App() {
                               />
                             )}
                             <Route
+                              path="settings/product-attributes"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.productAttributes}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ProductAttributesSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
                               path="settings/expense-categories"
                               element={
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.expenseCategories}>
@@ -857,6 +885,16 @@ function App() {
                                 <RequirePermission permission={PAGE_PERMISSIONS.bookings}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BookingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="chats"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.chats}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <ChatsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

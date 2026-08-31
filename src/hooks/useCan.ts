@@ -2,7 +2,8 @@ import { usePermissions } from './usePermissions';
 
 /**
  * Shortcut hook — returns true if the current user can access the permission.
- * Superadmin always returns true. Returns false while permissions are loading.
+ * Платформенный администратор обходит ролевую проверку, но не модульный
+ * скоуп активной организации. Пока права загружаются — false.
  *
  * @example
  * const canViewPatients = useCan('patients.view');
@@ -24,12 +25,11 @@ export function useCan(permission: string | string[]): boolean {
  * if (can('finance.view')) { ... }
  */
 export function useCanChecker() {
-  const { canAccess, isSuperAdmin, loading } = usePermissions();
+  const { canAccess, loading } = usePermissions();
   return {
     loading,
     can: (permission: string | string[]) => {
       if (loading) return false;
-      if (isSuperAdmin()) return true;
       const perms = Array.isArray(permission) ? permission : [permission];
       return perms.some((p) => canAccess!(p));
     },

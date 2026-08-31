@@ -55,6 +55,7 @@ import {
   DjangoProductImage,
 } from "../../../api/warehouse";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
+import { DjangoProductImageSlider } from "../../../components/products/django/DjangoProductImageSlider";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
 
 /**
@@ -733,16 +734,14 @@ const ProductDetailCard: React.FC<{
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [historyLoading, setHistoryLoading] = React.useState(false);
 
-  // Галерея товара + выбранное для показа изображение.
+  // Галерея товара — слайдер сам держит текущий слайд.
   const [gallery, setGallery] = React.useState<DjangoProductImage[]>([]);
-  const [activeImageUrl, setActiveImageUrl] = React.useState<string | null>(null);
 
   // Reset expanded state when product changes
   React.useEffect(() => {
     setExpanded(false);
     setHistoryOpen(false);
     setPriceHistory([]);
-    setActiveImageUrl(null);
   }, [product?.id]);
 
   // Галерея — подгружаем при выборе товара.
@@ -882,60 +881,14 @@ const ProductDetailCard: React.FC<{
     >
       <Box sx={{ flex: 1, overflowY: "auto", p: 3 }}>
         <Grid2 container spacing={3}>
-          {/* Left Column: Image + галерея */}
+          {/* Left Column: слайдер фотографий. key сбрасывает слайд при смене товара. */}
           <Grid2 size={{ xs: 12, md: 5 }}>
-            <Avatar
-              variant="rounded"
-              src={activeImageUrl || product.imageUrl || undefined}
-              sx={{
-                width: "100%",
-                height: "auto",
-                aspectRatio: "1/1",
-                bgcolor: (theme) => alpha(theme.palette.action.hover, 0.5),
-                border: 1,
-                borderColor: "divider",
-                borderRadius: "14px",
-              }}
-            >
-              <Typography variant="h3" color="text.secondary">
-                {product.name.charAt(0)}
-              </Typography>
-            </Avatar>
-
-            {gallery.length > 1 && (
-              <Stack
-                direction="row"
-                spacing={1}
-                useFlexGap
-                flexWrap="wrap"
-                sx={{ mt: 1.5 }}
-              >
-                {gallery.map((img) => {
-                  const isActive = (activeImageUrl || product.imageUrl) === img.url;
-                  return (
-                    <ButtonBase
-                      key={img.id}
-                      onClick={() => setActiveImageUrl(img.url)}
-                      sx={{
-                        width: 56,
-                        height: 56,
-                        borderRadius: "10px",
-                        overflow: "hidden",
-                        border: 2,
-                        borderColor: isActive ? "primary.main" : "divider",
-                      }}
-                    >
-                      <Box
-                        component="img"
-                        src={img.url}
-                        alt=""
-                        sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    </ButtonBase>
-                  );
-                })}
-              </Stack>
-            )}
+            <DjangoProductImageSlider
+              key={product.id}
+              images={gallery}
+              fallbackUrl={product.imageUrl}
+              name={product.name}
+            />
           </Grid2>
 
           {/* Right Column: Info */}

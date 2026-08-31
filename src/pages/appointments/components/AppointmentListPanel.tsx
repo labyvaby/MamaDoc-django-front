@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Avatar,
+  Alert,
   Badge,
   Box,
   Button,
@@ -400,6 +401,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [items, groupEmployeeIds, dayShifts]);
 
+  // После смены даты выбранный врач может исчезнуть из списка: на новом дне
+  // у него нет ни приёмов, ни смены. Сохраняем последнее известное ФИО, чтобы
+  // предупреждение всё равно было конкретным, а не «у кого-то нет смены».
+  const doctorNamesRef = React.useRef(new Map<number, string>());
+  React.useEffect(() => {
+    for (const doctor of availableDoctors) doctorNamesRef.current.set(doctor.id, doctor.name);
+  }, [availableDoctors]);
+
   // ── Фильтры статуса визита и оплаты ───────────────────────────────────────
   // Главные вопросы стойки — «кто уже в холле» и «с кого ещё не взяли деньги»:
   // раньше отобрать таких можно было только глазами по всему списку. Фильтруем
@@ -536,11 +545,19 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
 
   const [filterSheetOpen, setFilterSheetOpen] = React.useState(false);
 
-  // Выбранного специалиста нет среди тех, кто работает в этот день (фильтр
-  // пережил смену даты) — ни одна аватарка не подсвечена, и пустой список
-  // выглядел бы как «сегодня никого».
-  const orphanDoctorFilter =
-    selectedDoctorId != null && !availableDoctors.some((d) => d.id === selectedDoctorId);
+  // Фильтр пережил смену даты, но у выбранного специалиста нет фактической
+  // смены на выбранный день. `segments` уже учитывает weekday и исключения,
+  // поэтому одного попадания правила в диапазон недостаточно.
+  const selectedDoctor =
+    selectedDoctorId == null
+      ? null
+      : availableDoctors.find((doctor) => doctor.id === selectedDoctorId) ?? null;
+  const selectedDoctorName =
+    selectedDoctor?.name ??
+    (selectedDoctorId == null ? null : doctorNamesRef.current.get(selectedDoctorId)) ??
+    null;
+  const doctorHasNoShift =
+    selectedDoctorId != null && dayShifts != null && !dayShifts.segments.has(selectedDoctorId);
 
   // ── Group by employee → list of appointments ──────────────────────────────
   // Mirrors оригинал: каждый приём попадает в группу каждого участвующего
@@ -919,17 +936,30 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
             {/* Фильтр специалиста переживает смену даты (он в URL), поэтому в
                 другом дне он может указывать на того, кто в этот день не
                 работает: без подсказки это выглядит как пустой день. */}
-            {!hideDoctorStrip && orphanDoctorFilter && (
-              <Box sx={{ mt: -1 }}>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  color="warning"
-                  label={t("list.doctorNotInDay")}
-                  onDelete={() => setSelectedDoctorId(null)}
-                  sx={{ height: 24, fontWeight: 500 }}
-                />
-              </Box>
+            {!hideDoctorStrip && doctorHasNoShift && (
+              <Alert
+                severity="warning"
+                sx={{
+                  mt: -1,
+                  py: 0,
+                  alignItems: "center",
+                  "& .MuiAlert-message": { py: 0.75 },
+                }}
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => setSelectedDoctorId(null)}
+                    sx={{ whiteSpace: "nowrap", textTransform: "none" }}
+                  >
+                    {t("list.chooseAnotherDoctor")}
+                  </Button>
+                }
+              >
+                {t("list.doctorNotInDay", {
+                  doctorName: selectedDoctorName ?? t("list.selectedDoctor"),
+                })}
+              </Alert>
             )}
 
             {/* Фильтры «ход визита | деньги». На телефоне ряд чипов не влезает
