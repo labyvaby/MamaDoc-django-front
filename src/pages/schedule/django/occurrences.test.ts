@@ -74,34 +74,43 @@ describe("computeDayOccurrences", () => {
   });
 
   describe("обеденный перерыв", () => {
-    it("режет смену на два сегмента", () => {
+    it("смену не режет — перерыв кладёт в поле lunch", () => {
       const r = rule({ lunchStart: "13:00", lunchEnd: "14:00" });
       const occs = computeDayOccurrences(THU, [r], []);
       expect(occs).toEqual([
-        expect.objectContaining({ startTime: "09:00", endTime: "13:00" }),
-        expect.objectContaining({ startTime: "14:00", endTime: "17:00" }),
+        expect.objectContaining({
+          startTime: "09:00",
+          endTime: "17:00",
+          sourceId: 1,
+          lunch: { start: "13:00", end: "14:00" },
+        }),
       ]);
     });
 
-    it("оба сегмента ссылаются на одно правило", () => {
-      const r = rule({ lunchStart: "13:00", lunchEnd: "14:00" });
-      const occs = computeDayOccurrences(THU, [r], []);
-      expect(occs.map((o) => o.sourceId)).toEqual([1, 1]);
+    it("обрезает перерыв по границам смены", () => {
+      const r = rule({ lunchStart: "08:00", lunchEnd: "10:00" });
+      expect(computeDayOccurrences(THU, [r], [])[0].lunch).toEqual({ start: "09:00", end: "10:00" });
     });
 
-    it("не режет, если обед совпадает с границей смены", () => {
-      const r = rule({ lunchStart: "09:00", lunchEnd: "10:00" });
-      expect(computeDayOccurrences(THU, [r], [])).toHaveLength(1);
+    it("перерыв целиком вне смены игнорирует", () => {
+      const r = rule({ lunchStart: "18:00", lunchEnd: "19:00" });
+      expect(computeDayOccurrences(THU, [r], [])[0].lunch).toBeNull();
     });
 
-    it("не режет, если обед выходит за пределы смены", () => {
-      const r = rule({ lunchStart: "13:00", lunchEnd: "18:00" });
-      expect(computeDayOccurrences(THU, [r], [])).toHaveLength(1);
-    });
-
-    it("не режет при некорректном обеде (начало позже конца)", () => {
+    it("игнорирует некорректный обед (начало позже конца)", () => {
       const r = rule({ lunchStart: "14:00", lunchEnd: "13:00" });
-      expect(computeDayOccurrences(THU, [r], [])).toHaveLength(1);
+      const occs = computeDayOccurrences(THU, [r], []);
+      expect(occs).toHaveLength(1);
+      expect(occs[0].lunch).toBeNull();
+    });
+
+    it("без обеда поле пустое", () => {
+      expect(computeDayOccurrences(THU, [rule()], [])[0].lunch).toBeNull();
+    });
+
+    it("у точечной смены обеда нет — полей в контракте исключений не существует", () => {
+      const exc = exception({ kind: "extra", startTime: "18:00", endTime: "20:00" });
+      expect(computeDayOccurrences(THU, [], [exc])[0].lunch).toBeNull();
     });
   });
 
@@ -127,7 +136,7 @@ describe("computeDayOccurrences", () => {
       expect(occs).toHaveLength(1);
     });
 
-    it("day_off отменяет обе половины смены с обедом", () => {
+    it("day_off отменяет смену с обедом", () => {
       const r = rule({ lunchStart: "13:00", lunchEnd: "14:00" });
       expect(computeDayOccurrences(THU, [r], [exception()])).toEqual([]);
     });

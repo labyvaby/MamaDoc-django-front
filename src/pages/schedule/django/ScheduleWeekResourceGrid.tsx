@@ -3,11 +3,12 @@ import { Box, Chip, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
-import type { DayOccurrence } from "./occurrences";
+import { lunchNote, type DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
 import { useNowMinute } from "./useNowMinute";
@@ -268,13 +269,16 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                               dayOccs.map((occ) => (
                                 <Tooltip
                                   key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
-                                  title={`${occ.startTime}–${occ.endTime}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
+                                  title={`${occ.startTime}–${occ.endTime}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
                                   arrow
                                 >
                                   <Box
                                     sx={{
                                       width: "100%",
-                                      textAlign: "center",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      gap: 0.25,
                                       borderRadius: "4px",
                                       px: 0.5,
                                       py: "1px",
@@ -300,6 +304,18 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                     >
                                       {shortTime(occ.startTime)}–{shortTime(occ.endTime)}
                                     </Typography>
+                                    {/* Колонка дня узкая — сам перерыв не нарисовать,
+                                        помечаем смену значком, время в тултипе. */}
+                                    {occ.lunch && (
+                                      <RestaurantOutlined
+                                        sx={{
+                                          fontSize: 11,
+                                          flexShrink: 0,
+                                          color: theme.palette.getContrastText(c),
+                                          opacity: 0.75,
+                                        }}
+                                      />
+                                    )}
                                   </Box>
                                 </Tooltip>
                               ))

@@ -111,7 +111,10 @@ export function hourlyOccupancy(occs: DayOccurrence[]): number[] {
     const min = h * 60;
     const ids = new Set<number>();
     for (const o of occs) {
-      if (occMinutes(o.startTime) <= min && occMinutes(o.endTime) > min) ids.add(o.employeeId);
+      if (occMinutes(o.startTime) > min || occMinutes(o.endTime) <= min) continue;
+      // Час внутри обеда сотрудник не работает — в загрузку он не идёт.
+      if (o.lunch && occMinutes(o.lunch.start) <= min && occMinutes(o.lunch.end) > min) continue;
+      ids.add(o.employeeId);
     }
     return ids.size;
   });

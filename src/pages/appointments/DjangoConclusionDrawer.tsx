@@ -52,7 +52,10 @@ import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
-import { useAppointmentReceipt } from "../../components/appointments/useAppointmentReceipt";
+import {
+  useAppointmentReceipt,
+  useReceiptAvailable,
+} from "../../components/appointments/useAppointmentReceipt";
 import InvoiceFormatDialog from "../../components/appointments/InvoiceFormatDialog";
 import type { InvoicePageSize } from "../../components/appointments/appointmentInvoice";
 import { formatQuantity, trimDecimalInput } from "../../utility/format";
@@ -356,6 +359,9 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // за визит целиком.
   const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
   const receiptAppointmentId = appointmentId ?? conclusion?.appointmentId ?? null;
+  // До оплаты чека нет: врач заполняет заключение раньше кассы, и печатать
+  // бланк с нулями пациенту нельзя.
+  const receiptAvailable = useReceiptAvailable(receiptAppointmentId, open);
   // Лист выбираем перед печатью: A5 — кассовый чек, A4 — счёт на руки.
   const [receiptFormatOpen, setReceiptFormatOpen] = React.useState(false);
   const handlePrintReceipt = async (pageSize: InvoicePageSize) => {
@@ -995,7 +1001,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
                 >
                   {t("conclusion.certificate")}
                 </Button>
-                {receiptAppointmentId != null && (
+                {receiptAppointmentId != null && receiptAvailable && (
                   <Button
                     size="small"
                     variant="outlined"
@@ -1575,7 +1581,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               >
                 {t("conclusion.certificate")}
               </Button>
-              {receiptAppointmentId != null && (
+              {receiptAppointmentId != null && receiptAvailable && (
                 <Button
                   size="small"
                   variant="outlined"

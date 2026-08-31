@@ -44,7 +44,32 @@
     "included": "в цене {{service.gen}}",
     "noWriteOff": "не списывается",
     "billableFooter": "Оплачивается сверх {{service.gen}}",
-    "sectionDescription": "Описание"
+    "sectionDescription": "Описание",
+    "sectionSimilar": "Похожие {{service.nomPl}}",
+    "bookButton": "Записать на {{service.acc}}",
+    "duplicateTooltip": "Создать копию {{service.gen}}",
+    "cost": "Себестоимость",
+    "margin": "Маржа",
+    "marginWithPercent": "Маржа · {{percent}}%",
+    "stockWarning": "На складе не хватает: {{products}} — списание при оплате не пройдёт",
+    "sectionPerformers": "Кто оказывает",
+    "sectionPerformersCount": "Кто оказывает · {{count}}",
+    "hiddenOnline": "Не в онлайн-записи",
+    "priceOverrideChip": "Цену можно менять",
+    "priceOverrideHint": "{{specialist.nom, capitalize}} может изменить цену этой {{service.gen}} — до принятия оплаты"
+  },
+  "performers": {
+    "noSpecialization": "Без специализации",
+    "empty": "Пока никто не оказывает — назначьте {{service.acc}} {{employee.dat}}",
+    "assign": "Добавить {{employee.acc}}",
+    "loadError": "Не удалось загрузить исполнителей",
+    "priceOverrideHint": "Своя цена {{employee.gen}}",
+    "branchHint": "Основной филиал {{employee.gen}}",
+    "durationOverrideHint": "Своя длительность {{employee.gen}}",
+    "durationValue": "{{minutes}} мин",
+    "showAll_one": "Показать ещё {{count}}",
+    "showAll_few": "Показать ещё {{count}}",
+    "showAll_many": "Показать ещё {{count}}"
   },
   "relatedProducts": {
     "noOptions": "Товары не найдены",
@@ -69,6 +94,31 @@
     "addHelperEmpty": "Необязательно: товары со склада, которые расходуются на {{service.acc}}",
     "addHelperNonEmpty": "Чип — платный товар или в цене {{service.gen}}, тумблер — списывать ли со склада",
     "extraInVisit": "Платные товары в {{visit.pre}}"
+  },
+  "list": {
+    "performerCount_one": "{{count}} исполнитель",
+    "performerCount_few": "{{count}} исполнителя",
+    "performerCount_many": "{{count}} исполнителей",
+    "noPerformers": "Некому оказывать",
+    "performersFilterLabel": "Исполнители",
+    "performersFilterAll": "Все {{service.nomPl}}",
+    "performersFilterNone": "Без исполнителей"
+  },
+  "duplicate": {
+    "nameSuffix": "{{name}} (копия)"
+  },
+  "assignPerformer": {
+    "title": "Кто будет оказывать",
+    "subtitle": "«{{name}}» появится у выбранных {{employee.genPl}} и станет доступна при записи",
+    "placeholder": "Начните вводить фамилию",
+    "noOptions": "Все подходящие {{employee.nomPl}} уже назначены",
+    "submit": "Назначить",
+    "added_one": "Назначение сохранено",
+    "added_few": "Сохранено назначений: {{count}}",
+    "added_many": "Сохранено назначений: {{count}}",
+    "failed_one": "Не удалось сохранить назначение",
+    "failed_few": "Не удалось сохранить назначений: {{count}}",
+    "failed_many": "Не удалось сохранить назначений: {{count}}"
   },
   "form": {
     "nameLabel": "Название {{service.gen}} *",
