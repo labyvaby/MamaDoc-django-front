@@ -35,6 +35,8 @@ export type PageHeaderProps = {
     searchVal?: string;
     onSearchChange?: (val: string) => void;
     searchPlaceholder?: string;
+    /** Ссылка на поле поиска — чтобы страница могла навести фокус (шорткат «/»). */
+    searchInputRef?: React.Ref<HTMLInputElement>;
     loading?: boolean;
 };
 
@@ -51,6 +53,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     searchVal = "",
     onSearchChange,
     searchPlaceholder = "Поиск...",
+    searchInputRef,
     loading = false,
 }) => {
     const handleClear = () => onSearchChange?.("");
@@ -146,6 +149,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
                                     size="small"
                                     placeholder={searchPlaceholder}
                                     value={searchVal}
+                                    inputRef={searchInputRef}
                                     onChange={(e) => onSearchChange?.(e.target.value)}
                                     InputProps={{
                                         startAdornment: (

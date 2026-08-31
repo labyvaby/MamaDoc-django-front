@@ -16,6 +16,7 @@ import {
   MenuItem,
   Popover,
   Skeleton,
+  Snackbar,
   Stack,
   Tooltip,
   Typography,
@@ -610,6 +611,7 @@ const TasksPage: React.FC = () => {
   const [actionError, setActionError] = React.useState<string | null>(null);
   /** Задача, для которой открыт диалог подтверждения удаления. */
   const [pendingDelete, setPendingDelete] = React.useState<Task | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
 
   const isArchive = tab === "archive";
@@ -1044,6 +1046,35 @@ const TasksPage: React.FC = () => {
     [getTakeAction, getCompleteAction, rowMutation.isPending, isArchive, canDelete, deleteMutation.isPending],
   );
 
+  /* Клавиатура: «/» — в поиск, «N» — новая заявка. Пропускаем нажатия внутри
+     полей ввода и при открытых дровере/диалоге, иначе шорткат сработает
+     посреди набора текста. */
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target?.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "");
+      if (typing) return;
+      if (createOpen || selectedId != null || pendingDelete) return;
+
+      if (e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      // Раскладка не важна: латинская N и русская Т — одна клавиша.
+      if ((e.key === "n" || e.key === "N" || e.key === "т" || e.key === "Т") && canCreate && !isArchive) {
+        e.preventDefault();
+        setCreateOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canCreate, createOpen, isArchive, pendingDelete, selectedId]);
+
   if (!permLoading && !canList) return <AccessDenied />;
 
   const rows = query.data?.results ?? [];
@@ -1148,6 +1179,7 @@ const TasksPage: React.FC = () => {
         showSearch
         searchVal={searchInput}
         onSearchChange={setSearchInput}
+        searchInputRef={searchInputRef}
         searchPlaceholder="Название задачи"
         loading={query.isFetching}
       />
@@ -1456,11 +1488,18 @@ const TasksPage: React.FC = () => {
           )}
         </Stack>
 
-        {actionError && (
-          <Alert severity="error" onClose={() => setActionError(null)} sx={{ mb: 1.5 }}>
+        {/* Ошибка действия — тостом: алерт в потоке сдвигал доску вниз, и
+            карточки уезжали из-под курсора прямо во время перетаскивания. */}
+        <Snackbar
+          open={Boolean(actionError)}
+          autoHideDuration={6000}
+          onClose={() => setActionError(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        >
+          <Alert severity="error" onClose={() => setActionError(null)} sx={{ width: "100%" }}>
             {actionError}
           </Alert>
-        )}
+        </Snackbar>
 
         {/* ── Список ── */}
         {query.error ? (
@@ -1477,6 +1516,7 @@ const TasksPage: React.FC = () => {
             canManage={canManage}
             canUpdate={canUpdate}
             meEmployeeId={meEmployeeId}
+            emptyState={<NoRowsOverlay />}
           />
         ) : isMobile ? (
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pb: 10 }}>
