@@ -95,6 +95,8 @@
     "discounted": "Со скидкой",
     "discountSuffix": " · скидка {{amount}}",
     "discountPercentSuffix": " · скидка {{percent}}%",
+    "priceChanged": "Цена изменена",
+    "priceChangedTooltip": "{{service}}: {{oldPrice}} → {{newPrice}}",
     "total": "Итого:",
     "insurance": "Страховка",
     "insurancePayment": "Оплата страховкой",
