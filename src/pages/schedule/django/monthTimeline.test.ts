@@ -17,6 +17,7 @@ const occ = (over: Partial<DayOccurrence> = {}): DayOccurrence => ({
   endTime: "17:00",
   kind: "rule",
   sourceId: 1,
+  lunch: null,
   ...over,
 });
 

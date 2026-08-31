@@ -1,13 +1,14 @@
 import React from "react";
 import { Box, Chip, Tooltip, Typography } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
-import type { DayOccurrence } from "./occurrences";
+import { lunchNote, type DayOccurrence } from "./occurrences";
 import { employeeColorHex } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
 import { useNowMinute } from "./useNowMinute";
@@ -396,7 +397,7 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           return (
                             <Tooltip
                               key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
-                              title={`${occ.employeeName}: ${occ.startTime}–${occ.endTime}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
+                              title={`${occ.employeeName}: ${occ.startTime}–${occ.endTime}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
                               arrow
                             >
                               <Box
@@ -432,6 +433,33 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                 >
                                   {shortTime(occ.startTime)}–{shortTime(occ.endTime)}
                                 </Typography>
+                                {/* Обед — вырез внутри полосы: смена одна, работы в этот час нет. */}
+                                {occ.lunch && (
+                                  <Box
+                                    sx={{
+                                      position: "absolute",
+                                      left: leftPx(parseTimeToMinutes(occ.lunch.start)) - l,
+                                      width: Math.max(
+                                        leftPx(parseTimeToMinutes(occ.lunch.end)) -
+                                          leftPx(parseTimeToMinutes(occ.lunch.start)),
+                                        4,
+                                      ),
+                                      top: 0,
+                                      bottom: 0,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      // Полупрозрачная накладка, а не сплошная «дырка»:
+                                      // сквозь неё виден цвет смены, поэтому перерыв
+                                      // читается как часть одной полосы, а не разрыв.
+                                      bgcolor: alpha(theme.palette.background.paper, 0.62),
+                                    }}
+                                  >
+                                    <RestaurantOutlined
+                                      sx={{ fontSize: 12, color: "text.secondary" }}
+                                    />
+                                  </Box>
+                                )}
                               </Box>
                             </Tooltip>
                           );
