@@ -34,6 +34,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
+import BoltOutlined from "@mui/icons-material/BoltOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { useCanChecker } from "../../hooks/useCan";
@@ -176,6 +177,12 @@ const TAB_DEFS: TabDef[] = [
     key: "notifications",
     to: "/settings/notifications",
     icon: <NotificationsOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "automations",
+    to: "/settings/automations",
+    icon: <BoltOutlined fontSize="small" />,
     group: "operations",
   },
 ];

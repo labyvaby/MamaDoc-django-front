@@ -106,6 +106,7 @@ const ConclusionFormsSettingsPage = lazy(() => import("./pages/settings/Conclusi
 const DjangoReportsPage = lazy(() => import("./pages/reports/django"));
 const PatientsPage = lazy(() => import("./pages/patients"));
 const DjangoNotificationSettingsPage = lazy(() => import("./pages/settings/django/NotificationSettingsPage"));
+const AutomationsSettingsPage = lazy(() => import("./pages/settings/automations/AutomationsSettingsPage"));
 const SettingsIndexPage = lazy(() => import("./pages/settings/SettingsIndexPage"));
 const OrganizationSettingsPage = lazy(() => import("./pages/settings/OrganizationSettingsPage"));
 const BranchesSettingsPage = lazy(() => import("./pages/settings/BranchesSettingsPage"));
@@ -680,6 +681,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.notifications}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoNotificationSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/automations"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.automations}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AutomationsSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }
