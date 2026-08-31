@@ -1,9 +1,10 @@
 import React from "react";
 import {
-    Alert, Autocomplete, Avatar, Box, Button, CardContent, Chip, CircularProgress,
-    Divider, Drawer, IconButton, InputAdornment, MenuItem, Paper, Stack, Switch, TextField,
+    Alert, Autocomplete, Avatar, Box, Button, CardContent, Chip,
+    Drawer, IconButton, InputAdornment, MenuItem, Paper, Stack, Switch, TextField,
     ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from "@mui/material";
+import { Link as RouterLink } from "react-router";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import PhotoCameraOutlined from "@mui/icons-material/PhotoCameraOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
@@ -13,7 +14,6 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PaletteOutlined from "@mui/icons-material/PaletteOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
-import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
@@ -280,12 +280,20 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                 {sectionHeader(
                                     <Inventory2Outlined fontSize="small" />,
                                     "Основная информация",
-                                    "Название и визуальная карточка товара",
+                                    isMatrix
+                                        ? "Название модели — оно станет основой для всех вариантов"
+                                        : "Название и визуальная карточка товара",
                                 )}
                                 <Stack spacing={1.5} sx={{ mt: 2 }}>
+                                    {/*
+                                      Фото грузится только для одиночного товара: матрица уходит в
+                                      createProductModel + generateProductMatrix, а там принимать
+                                      изображение некуда. Раньше дропзона показывалась и в матрице —
+                                      файл выбирался и молча пропадал.
+                                    */}
                                     {isEdit && product ? (
                                         <DjangoProductGallery productId={product.id} onChanged={onSaved} />
-                                    ) : (
+                                    ) : isMatrix ? null : (
                                         <CardContent
                                             component="div"
                                             onClick={() =>
@@ -503,8 +511,8 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                             : "Эти поля настроены в разделе категорий",
                                         <Tooltip title="Настроить категорию">
                                             <IconButton
-                                                component="a"
-                                                href="/settings/product-attributes"
+                                                component={RouterLink}
+                                                to="/settings/product-attributes"
                                                 size="small"
                                                 aria-label="Настроить категорию"
                                             >
@@ -584,6 +592,14 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                                         sizes.length
                                                         : "Выберите хотя бы один цвет и размер"}
                                                 </Typography>
+                                                <Typography
+                                                    variant="caption"
+                                                    color="text.disabled"
+                                                    sx={{ display: "block", mt: 0.5 }}
+                                                >
+                                                    Фото, штрихкод и доступность продажи задаются у
+                                                    каждого варианта после создания.
+                                                </Typography>
                                             </Paper>
                                         )}
                                         {!categoryAttributes.length && (
@@ -650,61 +666,69 @@ export const DjangoProductFormDrawer: React.FC<Props> = ({ open, onClose, produc
                                             />
                                         )}
                                     </Stack>
-                                    <Paper
-                                        variant="outlined"
-                                        sx={{
-                                            p: 1.5,
-                                            borderRadius: 2.5,
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "space-between",
-                                            gap: 2,
-                                        }}
-                                    >
-                                        <Box sx={{ minWidth: 0 }}>
-                                            <Typography variant="body2" fontWeight={750}>
-                                                Доступен для продажи
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                Товар будет виден в каталоге и кассе
-                                            </Typography>
-                                        </Box>
-                                        <ToggleButtonGroup
-                                            exclusive
-                                            size="small"
-                                            value={values.isForSale ? "active" : "hidden"}
-                                            onChange={(_, next) =>
-                                                next && set({ isForSale: next === "active" })
-                                            }
-                                            disabled={busy}
+                                    {/*
+                                      Матрица уходит в createProductModel + generateProductMatrix,
+                                      где нет ни isForSale, ни isVaccine. Раньше переключатели
+                                      показывались и там: пользователь их выставлял, а выбор молча
+                                      терялся. У готовых вариантов оба флага правятся поштучно.
+                                    */}
+                                    {!isMatrix && (
+                                        <Paper
+                                            variant="outlined"
+                                            sx={{
+                                                p: 1.5,
+                                                borderRadius: 2.5,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "space-between",
+                                                gap: 2,
+                                            }}
                                         >
-                                            <ToggleButton
-                                                value="active"
-                                                sx={{
-                                                    textTransform: "none",
-                                                    px: { xs: 1.25, sm: 2 },
-                                                    borderRadius: 1.5,
-                                                    "&.Mui-selected": {
-                                                        color: "success.dark",
-                                                        bgcolor: "success.50",
-                                                    },
-                                                }}
+                                            <Box sx={{ minWidth: 0 }}>
+                                                <Typography variant="body2" fontWeight={750}>
+                                                    Доступен для продажи
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Товар будет виден в каталоге и кассе
+                                                </Typography>
+                                            </Box>
+                                            <ToggleButtonGroup
+                                                exclusive
+                                                size="small"
+                                                value={values.isForSale ? "active" : "hidden"}
+                                                onChange={(_, next) =>
+                                                    next && set({ isForSale: next === "active" })
+                                                }
+                                                disabled={busy}
                                             >
-                                                Да
-                                            </ToggleButton>
-                                            <ToggleButton
-                                                value="hidden"
-                                                sx={{
-                                                    textTransform: "none",
-                                                    px: { xs: 1.25, sm: 2 },
-                                                    borderRadius: 1.5,
-                                                }}
-                                            >
-                                                Нет
-                                            </ToggleButton>
-                                        </ToggleButtonGroup>
-                                    </Paper>
-                                    {canUseVaccines && (
+                                                <ToggleButton
+                                                    value="active"
+                                                    sx={{
+                                                        textTransform: "none",
+                                                        px: { xs: 1.25, sm: 2 },
+                                                        borderRadius: 1.5,
+                                                        "&.Mui-selected": {
+                                                            color: "success.dark",
+                                                            bgcolor: "success.50",
+                                                        },
+                                                    }}
+                                                >
+                                                    Да
+                                                </ToggleButton>
+                                                <ToggleButton
+                                                    value="hidden"
+                                                    sx={{
+                                                        textTransform: "none",
+                                                        px: { xs: 1.25, sm: 2 },
+                                                        borderRadius: 1.5,
+                                                    }}
+                                                >
+                                                    Нет
+                                                </ToggleButton>
+                                            </ToggleButtonGroup>
+                                        </Paper>
+                                    )}
+                                    {canUseVaccines && !isMatrix && (
                                         <Paper
                                             variant="outlined"
                                             sx={{
