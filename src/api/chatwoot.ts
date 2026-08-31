@@ -30,8 +30,17 @@ export type ChatwootUnavailableReason =
   /** Chatwoot недоступен или отвечает ошибкой (502). Наша проблема, не пользователя. */
   | "unavailable";
 
-/** Машинный код, которым бэк помечает «нет учётки в Chatwoot». */
-const NO_ACCOUNT_MARKER = "chatwoot_no_account";
+/** Машинный код нового конверта, которым бэк помечает «нет учётки». */
+const NO_ACCOUNT_CODE = "CHATWOOT_NO_ACCOUNT";
+
+/**
+ * Тот же случай в старой форме ответа (`{"detail":[{"msg":"…"}]}`).
+ *
+ * Конверт `{"error":{code,…}}` выложен пока только на test — прод отвечает
+ * по-старому, и там кода в ответе нет вовсе (см. `ApiError.code` в client.ts).
+ * Пока обе формы живы, живы и обе ветки разбора.
+ */
+const NO_ACCOUNT_LEGACY_MARKER = "chatwoot_no_account";
 
 export async function fetchChatwootEmbed(): Promise<ChatwootEmbed> {
   return apiRequest<ChatwootEmbed>("/chatwoot/embed/");
@@ -55,8 +64,11 @@ export async function fetchChatwootCounts(): Promise<ChatwootCounts> {
  * Причина отказа по ответу бэкенда.
  *
  * 403 приходит и когда у роли нет права `chatwoot.view`, и когда права есть, но
- * учётки в Chatwoot нет. Различаем по маркеру `chatwoot_no_account`: без него
- * это отказ по правам, и до страницы дело всё равно не дойдёт — её закрывает
+ * учётки в Чат-центре нет. В новом конверте их различает `error.code` —
+ * ветвиться по тексту сообщения контракт запрещает
+ * (docs/backend-error-contract.md). Текст читаем только там, где кода нет в
+ * принципе: прод ещё отвечает старой формой. Ни то ни другое — отказ по
+ * правам, и до страницы дело всё равно не дойдёт: её закрывает
  * `RequirePermission`.
  */
 export function chatwootUnavailableReason(
@@ -65,8 +77,11 @@ export function chatwootUnavailableReason(
   if (!(error instanceof ApiError)) return "unavailable";
   if (error.status === 404) return "disabled";
   if (error.status === 403) {
-    const marker = `${error.code ?? ""} ${error.message}`;
-    return marker.includes(NO_ACCOUNT_MARKER) ? "no_account" : "disabled";
+    if (error.code === NO_ACCOUNT_CODE) return "no_account";
+    if (error.code === null && error.message.includes(NO_ACCOUNT_LEGACY_MARKER)) {
+      return "no_account";
+    }
+    return "disabled";
   }
   return "unavailable";
 }
