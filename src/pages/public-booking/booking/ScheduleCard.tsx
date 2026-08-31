@@ -26,11 +26,12 @@ import { useT } from "../../../i18n/VerticalProvider";
  * «Сегодня» и «Завтра» вместо дня недели подсвечены синим — так ближайшие даты
  * находятся взглядом сразу.
  */
-const DayTile: React.FC<{ day: CalendarDay; active: boolean; onClick: () => void }> = ({
-  day,
-  active,
-  onClick,
-}) => {
+const DayTile: React.FC<{
+  day: CalendarDay;
+  active: boolean;
+  dayOff?: boolean;
+  onClick: () => void;
+}> = ({ day, active, dayOff, onClick }) => {
   const { t } = useT("publicBooking");
   const value = new Date(`${day.date}T00:00:00`);
   const today = new Date();
@@ -137,7 +138,8 @@ const DayTile: React.FC<{ day: CalendarDay; active: boolean; onClick: () => void
           color: chip.text,
         }}
       >
-        {formatSlotsCount(day.slotsCount)}
+        {/* Выходной по графику — не «нет окон»: занятости нет, врач не принимает. */}
+        {dayOff ? t("dayOff") : formatSlotsCount(day.slotsCount)}
       </Box>
     </ButtonBase>
   );
@@ -154,6 +156,8 @@ interface ScheduleCardProps {
   onTimeChange: (time: string) => void;
   slots: AvailableTimeSlot[];
   timesLoading: boolean;
+  /** Даты, в которые филиал по графику не работает, — подписываем «выходной». */
+  dayOffDates?: Set<string>;
   dateError?: boolean;
   timeError?: boolean;
 }
@@ -171,6 +175,7 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
   onTimeChange,
   slots,
   timesLoading,
+  dayOffDates,
   dateError,
   timeError,
 }) => {
@@ -246,6 +251,7 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
                 key={day.date}
                 day={day}
                 active={selectedDate === day.date}
+                dayOff={dayOffDates?.has(day.date)}
                 onClick={() => onDateChange(day.date)}
               />
             ))}

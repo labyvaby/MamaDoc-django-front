@@ -45,7 +45,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
 import { ScheduleCard } from "./booking/ScheduleCard";
 import { BranchesCard } from "./booking/BranchesCard";
-import { branchHasSchedule } from "./booking/schedule";
+import { branchHasSchedule, dayOffDates } from "./booking/schedule";
 import { ServicesCard, type PickableService } from "./booking/ServicesCard";
 import { DoctorCard } from "./booking/DoctorCard";
 import { ReviewsDialog } from "./booking/ReviewsDialog";
@@ -186,6 +186,8 @@ const DoctorBookingPage: React.FC = () => {
   const [servicesUnlocked, setServicesUnlocked] = React.useState(false);
   /** Блок услуг раскрывается под расписанием — подводим к нему взгляд. */
   const servicesRef = React.useRef<HTMLDivElement | null>(null);
+  /** Набор услуг, для которого уже сработал автовыбор единственной услуги. */
+  const autoPickedKeyRef = React.useRef<string | null>(null);
   const [errors, setErrors] = React.useState({ date: false, time: false, services: false });
 
   const [reviewsOpen, setReviewsOpen] = React.useState(false);
@@ -276,6 +278,7 @@ const DoctorBookingPage: React.FC = () => {
     setFilteredTimes(null);
     setFilteredServices(null);
     setSelectedServices([]);
+    autoPickedKeyRef.current = null;
     setStep(1);
   };
 
@@ -328,6 +331,16 @@ const DoctorBookingPage: React.FC = () => {
         )
         .filter((s): s is PickableService => Boolean(s)),
     [selectedServices, visibleServices, allServices],
+  );
+
+  /** Нерабочие дни филиала: в календаре их подписываем «выходной». */
+  const calendarDaysOff = React.useMemo(
+    () =>
+      dayOffDates(
+        selectedBranch,
+        calendar.filter((d) => !d.isAvailable).map((d) => d.date),
+      ),
+    [selectedBranch, calendar],
   );
 
   const selectedDay = calendar.find((d) => d.date === selectedDate) ?? null;
@@ -401,21 +414,54 @@ const DoctorBookingPage: React.FC = () => {
     }
   };
 
-  const handleServiceToggle = async (serviceId: number) => {
+  /** Применить набор услуг и пересчитать под него свободные окна. */
+  const applyServices = React.useCallback(
+    async (next: number[]) => {
+      setSelectedServices(next);
+      setErrors((prev) => ({ ...prev, services: false }));
+      if (!selectedDate) return;
+      const times = await reloadTimes(selectedDate, next);
+      // Более длинный набор услуг может не влезть в выбранное окно — тогда время
+      // сбрасываем и возвращаем гостя на шаг выбора времени.
+      if (times && selectedTime && !times.some((s) => s.time === selectedTime && !s.busy)) {
+        setSelectedTime(null);
+        setStep(2);
+      }
+    },
+    [selectedDate, selectedTime, reloadTimes],
+  );
+
+  const handleServiceToggle = (serviceId: number) => {
     const next = selectedServices.includes(serviceId)
       ? selectedServices.filter((id) => id !== serviceId)
       : [...selectedServices, serviceId];
-    setSelectedServices(next);
-    setErrors((prev) => ({ ...prev, services: false }));
-    if (!selectedDate) return;
-    const times = await reloadTimes(selectedDate, next);
-    // Более длинный набор услуг может не влезть в выбранное окно — тогда время
-    // сбрасываем и возвращаем гостя на шаг выбора времени.
-    if (times && selectedTime && !times.some((s) => s.time === selectedTime && !s.busy)) {
-      setSelectedTime(null);
-      setStep(2);
-    }
+    return applyServices(next);
   };
+
+  /**
+   * Единственная услуга — выбирать не из чего: отмечаем её сами, чтобы гость не
+   * кликал по одной строке, а окна сразу считались под её длительность. Ключ
+   * набора не даёт вернуть услугу, которую гость снял руками (услуга
+   * необязательна, см. BOOKING_NO_SERVICE_ENABLED).
+   */
+  React.useEffect(() => {
+    if (calendarLoading || servicesLoading) return;
+    // Ждём календарь: дата приходит вместе с ним, а без даты окна под
+    // длительность услуги не пересчитать.
+    if (!calendar.length) return;
+    const key = visibleServices.map((s) => s.id).join(",");
+    if (autoPickedKeyRef.current === key) return;
+    autoPickedKeyRef.current = key;
+    if (visibleServices.length !== 1 || selectedServices.length > 0) return;
+    void applyServices([visibleServices[0].id]);
+  }, [
+    calendar,
+    calendarLoading,
+    servicesLoading,
+    visibleServices,
+    selectedServices,
+    applyServices,
+  ]);
 
   const handleBook = () => {
     const dateInvalid = !selectedDate;
@@ -591,6 +637,7 @@ const DoctorBookingPage: React.FC = () => {
         onTimeChange={(time) => void handleTimeChange(time)}
         slots={slots}
         timesLoading={timesLoading}
+        dayOffDates={calendarDaysOff}
         dateError={errors.date}
         timeError={errors.time}
       />

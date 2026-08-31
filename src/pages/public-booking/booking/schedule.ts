@@ -82,6 +82,31 @@ export function shortDate(date: string): string {
 }
 
 /**
+ * Нерабочие по графику дни филиала среди дат календаря — их пациенту честнее
+ * подписать «выходной», а не «нет окон»: занятости там нет, врач просто не
+ * принимает. Без правил графика ничего не утверждаем — вернётся пустой набор.
+ */
+export function dayOffDates(
+  branch: ProfessionalScheduleBranch | null | undefined,
+  dates: string[],
+): Set<string> {
+  const off = new Set<string>();
+  if (!branch?.rules.length) return off;
+
+  for (const date of dates) {
+    const exception = branch.exceptions.find((e) => e.date === date);
+    if (exception) {
+      if (exception.kind === "day_off" || exception.kind === "vacation") off.add(date);
+      continue;
+    }
+    // У бэка неделя начинается с понедельника (0), у JS Date — с воскресенья.
+    const weekday = (new Date(`${date}T00:00:00`).getDay() + 6) % 7;
+    if (!branch.rules.some((rule) => rule.weekdays.includes(weekday))) off.add(date);
+  }
+  return off;
+}
+
+/**
  * Есть ли в филиале хоть какое-то рабочее время. Филиал приходит и вовсе без
  * графика — значит записать туда формально можно, но времени в нём не задано,
  * и предлагать его первым нельзя.

@@ -7,6 +7,7 @@ import type {
 } from "../../../api/publicBooking";
 import {
   branchHasSchedule,
+  dayOffDates,
   hhmm,
   lunchRange,
   ruleLabel,
@@ -129,5 +130,40 @@ describe("branchHasSchedule", () => {
   it("правило или дополнительная смена дают график", () => {
     expect(branchHasSchedule(branch({ rules: [rule()] }))).toBe(true);
     expect(branchHasSchedule(branch({ exceptions: [exception({ kind: "extra" })] }))).toBe(true);
+  });
+});
+
+describe("dayOffDates", () => {
+  // 2026-08-31 — понедельник (0 у бэка), 2026-09-05 — суббота (5).
+  const workdays = branch({ rules: [rule({ weekdays: [0, 1, 2, 3, 4] })] });
+
+  it("нерабочий день недели — выходной, рабочий — нет", () => {
+    const off = dayOffDates(workdays, ["2026-08-31", "2026-09-05", "2026-09-06"]);
+    expect([...off]).toEqual(["2026-09-05", "2026-09-06"]);
+  });
+
+  it("без правил графика ничего не утверждаем", () => {
+    expect(dayOffDates(branch(), ["2026-09-05"]).size).toBe(0);
+    expect(dayOffDates(null, ["2026-09-05"]).size).toBe(0);
+  });
+
+  it("смена важнее правила: day_off закрывает рабочий день, extra открывает выходной", () => {
+    const withExceptions = branch({
+      rules: [rule({ weekdays: [0, 1, 2, 3, 4] })],
+      exceptions: [
+        exception({ id: 1, date: "2026-08-31", kind: "day_off" }),
+        exception({ id: 2, date: "2026-09-05", kind: "extra" }),
+      ],
+    });
+    const off = dayOffDates(withExceptions, ["2026-08-31", "2026-09-05"]);
+    expect([...off]).toEqual(["2026-08-31"]);
+  });
+
+  it("отпуск считается выходным", () => {
+    const onVacation = branch({
+      rules: [rule({ weekdays: [0, 1, 2, 3, 4] })],
+      exceptions: [exception({ date: "2026-09-01", kind: "vacation" })],
+    });
+    expect([...dayOffDates(onVacation, ["2026-09-01"])]).toEqual(["2026-09-01"]);
   });
 });
