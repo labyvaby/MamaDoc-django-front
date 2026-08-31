@@ -9,17 +9,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   Fab,
   IconButton,
+  Menu,
   MenuItem,
   Skeleton,
   Stack,
-  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { alpha, useTheme } from "@mui/material/styles";
+import { alpha, useTheme, type Theme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -37,6 +38,7 @@ import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import FiberNewOutlined from "@mui/icons-material/FiberNewOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
@@ -211,6 +213,118 @@ const StatTile: React.FC<{
     </Box>
   </Stack>
 );
+
+/**
+ * Единая геометрия элементов ряда фильтров: чипы, селекты-пилюли, поля периода
+ * и кнопки сортировки имеют одну высоту и радиус, поэтому ряд читается как одна
+ * линия, а не как случайный набор контролов разного размера.
+ */
+const FILTER_PILL_HEIGHT = 30;
+
+const pillSx = (t: Theme, active = false, tone?: "error") => {
+  const accent = tone === "error" ? t.palette.error : t.palette.primary;
+  const activeColor = t.palette.mode === "dark" ? accent.light : accent.dark;
+  return {
+    height: FILTER_PILL_HEIGHT,
+    px: 1.25,
+    borderRadius: "9px",
+    border: 1,
+    borderColor: active ? alpha(accent.main, 0.45) : "divider",
+    bgcolor: active ? alpha(accent.main, t.palette.mode === "dark" ? 0.18 : 0.1) : "transparent",
+    color: active ? activeColor : "text.secondary",
+    fontSize: "0.8125rem",
+    fontWeight: 500,
+    textTransform: "none" as const,
+    flexShrink: 0,
+    transition: "border-color .15s ease, background-color .15s ease, color .15s ease",
+    "&:hover": {
+      bgcolor: active
+        ? alpha(accent.main, t.palette.mode === "dark" ? 0.24 : 0.14)
+        : subtleBg(t, true),
+      borderColor: alpha(accent.main, 0.35),
+      color: active ? activeColor : "text.primary",
+    },
+  };
+};
+
+/**
+ * Селект-пилюля с выпадающим меню — замена TextField(select) в ряду фильтров.
+ * Пока значение не выбрано, показывает название фильтра; после выбора —
+ * «Название: значение», чтобы по ряду было видно, что именно включено.
+ */
+const FilterPill: React.FC<{
+  label: string;
+  icon: React.ReactElement;
+  value: string;
+  options: { value: string; label: string }[];
+  allLabel: string;
+  onChange: (value: string) => void;
+}> = ({ label, icon, value, options, allLabel, onChange }) => {
+  const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
+  const open = Boolean(anchorEl);
+  const active = value !== "";
+  const selected = options.find((o) => o.value === value);
+
+  const pick = (next: string) => {
+    onChange(next);
+    setAnchorEl(null);
+  };
+
+  return (
+    <>
+      <ButtonBase
+        focusRipple
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={(e) => setAnchorEl(e.currentTarget)}
+        sx={(t) => ({
+          ...pillSx(t, active),
+          display: "flex",
+          alignItems: "center",
+          gap: 0.75,
+          maxWidth: 240,
+          ...(open ? { borderColor: alpha(t.palette.primary.main, 0.45) } : null),
+        })}
+      >
+        {React.cloneElement(icon, { sx: { fontSize: 15, color: "inherit" } })}
+        <Box component="span" sx={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {active && selected ? `${label}: ${selected.label}` : label}
+        </Box>
+        <ExpandMoreOutlined
+          sx={{
+            fontSize: 15,
+            color: "inherit",
+            transition: "transform .15s ease",
+            transform: open ? "rotate(180deg)" : "none",
+          }}
+        />
+      </ButtonBase>
+
+      <Menu
+        anchorEl={anchorEl}
+        open={open}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        slotProps={{ paper: { sx: { mt: 0.5, borderRadius: "12px", minWidth: 200 } } }}
+      >
+        <MenuItem selected={!active} onClick={() => pick("")} sx={{ fontSize: "0.875rem" }}>
+          {allLabel}
+        </MenuItem>
+        {options.map((o) => (
+          <MenuItem
+            key={o.value}
+            selected={o.value === value}
+            onClick={() => pick(o.value)}
+            sx={{ fontSize: "0.875rem" }}
+          >
+            {o.label}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
+  );
+};
 
 /** Чип быстрого фильтра: включается/выключается кликом. */
 const FilterChip: React.FC<{
@@ -1068,8 +1182,8 @@ const TasksPage: React.FC = () => {
           )}
         </Stack>
 
-        {/* ── Быстрые фильтры ── */}
-        <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" sx={{ mb: 1.25 }}>
+        {/* ── Фильтры: быстрые пресеты и точные значения — одной строкой ── */}
+        <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" sx={{ mb: 1.5 }}>
           {isArchive ? (
             <>
               <FilterChip
@@ -1131,94 +1245,42 @@ const TasksPage: React.FC = () => {
             />
           )}
 
-          <Box sx={{ flex: 1 }} />
-
-          {/* Сортировка: серверный ordering (smart | created) */}
-          <Tooltip
-            title={
-              ordering === "smart"
-                ? "Сначала просроченные и срочные, затем по сроку"
-                : "Сначала недавно созданные"
-            }
-          >
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<SwapVertOutlined sx={{ fontSize: 17 }} />}
-              onClick={() => setOrdering((o) => (o === "smart" ? "created" : "smart"))}
-              sx={(t) => ({
-                textTransform: "none",
-                borderRadius: "10px",
-                color: "text.secondary",
-                borderColor: "divider",
-                flexShrink: 0,
-                "&:hover": {
-                  color: "text.primary",
-                  bgcolor: subtleBg(t, true),
-                  borderColor: alpha(t.palette.primary.main, 0.35),
-                },
-              })}
-            >
-              {ordering === "smart" ? "Умная сортировка" : "Сначала новые"}
-            </Button>
-          </Tooltip>
           </>
           )}
-        </Stack>
 
-        {/* ── Фильтры ── */}
-        <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="center" sx={{ mb: 1.5 }}>
+          {/* Граница между «быстрыми» переключателями и точными фильтрами */}
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: "center" }} />
+
           {/* На канбане статус — это колонка, в архиве — сегмент выше;
               отдельный селект в обоих случаях только запутывает. */}
           {!boardMode && !isArchive && (
-            <TextField
-              select
-              size="small"
+            <FilterPill
               label="Статус"
+              icon={<PlayArrowOutlined />}
               value={status}
-              onChange={(e) => setStatus(e.target.value as TaskStatus | "")}
-              sx={{ minWidth: 170 }}
-            >
-              <MenuItem value="">Все статусы</MenuItem>
-              {TASK_STATUS_OPTIONS.map((o) => (
-                <MenuItem key={o.value} value={o.value}>
-                  {o.label}
-                </MenuItem>
-              ))}
-            </TextField>
+              options={TASK_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              allLabel="Все статусы"
+              onChange={(v) => setStatus(v as TaskStatus | "")}
+            />
           )}
 
-          <TextField
-            select
-            size="small"
+          <FilterPill
             label="Категория"
+            icon={<AssignmentOutlined />}
             value={categoryId === "" ? "" : String(categoryId)}
-            onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
-            sx={{ minWidth: 170 }}
-          >
-            <MenuItem value="">Все категории</MenuItem>
-            {(categoriesQuery.data ?? []).map((c) => (
-              <MenuItem key={c.id} value={String(c.id)}>
-                {c.name}
-              </MenuItem>
-            ))}
-          </TextField>
+            options={(categoriesQuery.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+            allLabel="Все категории"
+            onChange={(v) => setCategoryId(v === "" ? "" : Number(v))}
+          />
 
-          <TextField
-            select
-            size="small"
+          <FilterPill
             label="Приоритет"
+            icon={<PriorityHighOutlined />}
             value={priority}
-            onChange={(e) => setPriority(e.target.value as TaskPriority | "")}
-            sx={{ minWidth: 150 }}
-          >
-            <MenuItem value="">Любой</MenuItem>
-            {TASK_PRIORITY_OPTIONS.map((o) => (
-              <MenuItem key={o.value} value={o.value}>
-                {o.label}
-              </MenuItem>
-            ))}
-          </TextField>
+            options={TASK_PRIORITY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            allLabel="Любой приоритет"
+            onChange={(v) => setPriority(v as TaskPriority | "")}
+          />
 
           {/* Срок: опционально, чтобы не скрывать задачи без due_date.
               В архиве срок не фильтрует — задачи уже закрыты. */}
@@ -1228,33 +1290,27 @@ const TasksPage: React.FC = () => {
                 Срок:
               </Typography>
               <DateRangeField
+                dense
                 value={dueRange}
                 onChange={(r) => setDueRange(r)}
                 presets={DUE_RANGE_PRESETS}
-                minWidth={200}
+                minWidth={190}
               />
-              <IconButton size="small" aria-label="Убрать фильтр по сроку" onClick={() => setDueRange(null)}>
-                <CloseOutlined sx={{ fontSize: 16 }} />
+              <IconButton
+                size="small"
+                aria-label="Убрать фильтр по сроку"
+                onClick={() => setDueRange(null)}
+                sx={{ p: 0.5 }}
+              >
+                <CloseOutlined sx={{ fontSize: 15 }} />
               </IconButton>
             </Stack>
           ) : (
             <Button
               size="small"
-              variant="outlined"
-              startIcon={<CalendarMonthOutlined sx={{ fontSize: 17 }} />}
+              startIcon={<CalendarMonthOutlined sx={{ fontSize: 15 }} />}
               onClick={() => setDueRange({ from: startOfRuWeek(), to: startOfRuWeek().endOf("week") })}
-              sx={(t) => ({
-                textTransform: "none",
-                borderRadius: "10px",
-                color: "text.secondary",
-                borderColor: "divider",
-                flexShrink: 0,
-                "&:hover": {
-                  color: "text.primary",
-                  bgcolor: subtleBg(t, true),
-                  borderColor: alpha(t.palette.primary.main, 0.35),
-                },
-              })}
+              sx={(t) => pillSx(t)}
             >
               Срок
             </Button>
@@ -1268,35 +1324,29 @@ const TasksPage: React.FC = () => {
                   Подана:
                 </Typography>
                 <DateRangeField
+                  dense
                   value={createdRange}
                   onChange={(r) => setCreatedRange(r)}
                   presets={DEFAULT_RANGE_PRESETS}
-                  minWidth={200}
+                  minWidth={190}
                 />
-                <IconButton size="small" aria-label="Убрать фильтр по дате подачи" onClick={() => setCreatedRange(null)}>
-                  <CloseOutlined sx={{ fontSize: 16 }} />
+                <IconButton
+                  size="small"
+                  aria-label="Убрать фильтр по дате подачи"
+                  onClick={() => setCreatedRange(null)}
+                  sx={{ p: 0.5 }}
+                >
+                  <CloseOutlined sx={{ fontSize: 15 }} />
                 </IconButton>
               </Stack>
             ) : (
               <Button
                 size="small"
-                variant="outlined"
-                startIcon={<CalendarMonthOutlined sx={{ fontSize: 17 }} />}
+                startIcon={<CalendarMonthOutlined sx={{ fontSize: 15 }} />}
                 onClick={() =>
                   setCreatedRange({ from: dayjs().subtract(29, "day").startOf("day"), to: dayjs().endOf("day") })
                 }
-                sx={(t) => ({
-                  textTransform: "none",
-                  borderRadius: "10px",
-                  color: "text.secondary",
-                  borderColor: "divider",
-                  flexShrink: 0,
-                  "&:hover": {
-                    color: "text.primary",
-                    bgcolor: subtleBg(t, true),
-                    borderColor: alpha(t.palette.primary.main, 0.35),
-                  },
-                })}
+                sx={(t) => pillSx(t)}
               >
                 Дата подачи
               </Button>
@@ -1306,11 +1356,33 @@ const TasksPage: React.FC = () => {
             <Button
               size="small"
               onClick={handleResetFilters}
-              startIcon={<CloseOutlined fontSize="small" />}
-              sx={{ textTransform: "none", flexShrink: 0 }}
+              startIcon={<CloseOutlined sx={{ fontSize: 15 }} />}
+              sx={{ textTransform: "none", flexShrink: 0, fontSize: "0.8125rem" }}
             >
               Сбросить
             </Button>
+          )}
+
+          <Box sx={{ flex: 1 }} />
+
+          {/* Сортировка: серверный ordering (smart | created) */}
+          {!isArchive && (
+            <Tooltip
+              title={
+                ordering === "smart"
+                  ? "Сначала просроченные и срочные, затем по сроку"
+                  : "Сначала недавно созданные"
+              }
+            >
+              <Button
+                size="small"
+                startIcon={<SwapVertOutlined sx={{ fontSize: 15 }} />}
+                onClick={() => setOrdering((o) => (o === "smart" ? "created" : "smart"))}
+                sx={(t) => pillSx(t)}
+              >
+                {ordering === "smart" ? "Умная сортировка" : "Сначала новые"}
+              </Button>
+            </Tooltip>
           )}
         </Stack>
 
@@ -1406,7 +1478,7 @@ const TasksPage: React.FC = () => {
             )}
           </Box>
         ) : (
-          <Box sx={{ flex: 1, minHeight: 360 }}>
+          <Box sx={{ flex: 1, minHeight: 0 }}>
             <DataGrid<Task>
               rows={rows}
               columns={columns}
