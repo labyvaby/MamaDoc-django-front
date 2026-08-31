@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import dayjs from "dayjs";
 
 import {
+  appointmentPriceChangeSummary,
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
@@ -48,6 +49,69 @@ const line = (over: Record<string, unknown>) =>
     consumptions: [],
     ...over,
   }) as DjangoAppointment["services"][number];
+
+describe("appointmentPriceChangeSummary", () => {
+  it("восстанавливает итог до последней правки с учётом количества услуги", () => {
+    const target = appt({
+      totalAmount: "2600.00",
+      services: [
+        line({
+          id: 17,
+          quantity: 2,
+          unitPrice: "800.00",
+          service: { id: 3, name: "Повторный приём" },
+        }),
+        line({ id: 18, unitPrice: "1000.00" }),
+      ],
+      priceOverrides: [
+        {
+          id: 2,
+          serviceLineId: 17,
+          oldUnitPrice: "1000.00",
+          newUnitPrice: "800.00",
+          changedAt: "2026-09-01T10:00:00Z",
+        },
+      ],
+    });
+
+    expect(appointmentPriceChangeSummary(target)).toEqual({
+      previousTotal: 3000,
+      currentTotal: 2600,
+      serviceName: "Повторный приём",
+      oldUnitPrice: 1000,
+      newUnitPrice: 800,
+    });
+  });
+
+  it("берёт последнюю по времени правку, а удалённые строки пропускает", () => {
+    const target = appt({
+      totalAmount: "900.00",
+      services: [line({ id: 7, unitPrice: "900.00" })],
+      priceOverrides: [
+        {
+          id: 3,
+          serviceLineId: null,
+          oldUnitPrice: "500.00",
+          newUnitPrice: "100.00",
+          changedAt: "2026-09-01T12:00:00Z",
+        },
+        {
+          id: 1,
+          serviceLineId: 7,
+          oldUnitPrice: "1000.00",
+          newUnitPrice: "900.00",
+          changedAt: "2026-09-01T11:00:00Z",
+        },
+      ],
+    });
+
+    expect(appointmentPriceChangeSummary(target)?.previousTotal).toBe(1000);
+  });
+
+  it("не ставит метку без истории изменения цены", () => {
+    expect(appointmentPriceChangeSummary(appt({ priceOverrides: [] }))).toBeNull();
+  });
+});
 
 describe("matchesAppointmentSearch", () => {
   const target = appt({

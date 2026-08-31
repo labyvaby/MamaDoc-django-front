@@ -176,6 +176,60 @@ export function serviceLineTotal(line: AppointmentServiceLine): number {
   return amount > 0 ? amount : 0;
 }
 
+export interface AppointmentPriceChangeSummary {
+  previousTotal: number;
+  currentTotal: number;
+  serviceName: string | null;
+  oldUnitPrice: number;
+  newUnitPrice: number;
+}
+
+/**
+ * Последняя фактическая правка цены и итог приёма непосредственно до неё.
+ *
+ * История приходит свежей сверху, но сортируем по changedAt сами: контракт
+ * остаётся устойчивым, даже если порядок API когда-нибудь изменится. Изменение
+ * относится к цене единицы, поэтому разницу умножаем на количество строки.
+ * Удалённую строку восстановить из текущего списка нельзя — такую запись
+ * пропускаем и берём предыдущую доступную правку.
+ */
+export function appointmentPriceChangeSummary(
+  appt: DjangoAppointment,
+): AppointmentPriceChangeSummary | null {
+  const currentTotal = Number(appt.totalAmount);
+  if (!Number.isFinite(currentTotal)) return null;
+
+  const overrides = [...(appt.priceOverrides ?? [])].sort(
+    (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
+  );
+  for (const override of overrides) {
+    if (override.serviceLineId == null) continue;
+    const serviceLine = appt.services.find((line) => line.id === override.serviceLineId);
+    if (!serviceLine) continue;
+
+    const oldUnitPrice = Number(override.oldUnitPrice);
+    const newUnitPrice = Number(override.newUnitPrice);
+    if (
+      !Number.isFinite(oldUnitPrice) ||
+      !Number.isFinite(newUnitPrice) ||
+      oldUnitPrice === newUnitPrice
+    ) {
+      continue;
+    }
+
+    const quantity = Number(serviceLine.quantity) || 1;
+    return {
+      previousTotal: Math.max(0, currentTotal + (oldUnitPrice - newUnitPrice) * quantity),
+      currentTotal,
+      serviceName: serviceLine.service?.name ?? null,
+      oldUnitPrice,
+      newUnitPrice,
+    };
+  }
+
+  return null;
+}
+
 /**
  * Множитель скидки приёма: во сколько раз строка дешевле своей каталожной цены.
  *

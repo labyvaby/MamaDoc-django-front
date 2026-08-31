@@ -20,6 +20,7 @@ import { useTheme, alpha } from "@mui/material/styles";
 import FilterListOutlined from "@mui/icons-material/FilterListOutlined";
 import NightlightOutlined from "@mui/icons-material/NightlightOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
+import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import AddCircleOutline from "@mui/icons-material/AddCircleOutline";
 // Иконки SMS-уведомлений — те же импорты, что в старом фронте (home/AppointmentsList).
 import SmsOutlined from "@mui/icons-material/SmsOutlined";
@@ -47,6 +48,7 @@ import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
 import AppointmentFilterChips from "./AppointmentFilterChips";
 import {
+  appointmentPriceChangeSummary,
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
@@ -1091,6 +1093,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       const discountAmount = Number(a.discountAmount ?? 0);
                       const discountPercent = discountPercentOf(totalAmount, discountAmount);
                       const payableAmount = Math.max(0, totalAmount - discountAmount);
+                      const priceChange = appointmentPriceChangeSummary(a);
+                      const previousPayableAmount = priceChange
+                        ? Math.max(0, priceChange.previousTotal - discountAmount)
+                        : null;
                       // Бэк не отдаёт hasMedicalConclusion — выводим наличие
                       // заключения из строк услуг (conclusionState/conclusionId).
                       const hasConclusion = (a.services ?? []).some(
@@ -1211,14 +1217,36 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                   })}
                               </Stack>
 
+                              {priceChange && (
+                                <Tooltip
+                                  title={t("list.priceChangedTooltip", {
+                                    service: priceChange.serviceName ?? t("details.service"),
+                                    oldPrice: formatKGS(priceChange.oldUnitPrice),
+                                    newPrice: formatKGS(priceChange.newUnitPrice),
+                                  })}
+                                >
+                                  <Stack
+                                    direction="row"
+                                    alignItems="center"
+                                    gap={0.4}
+                                    sx={{ mt: 0.5, color: "warning.dark" }}
+                                  >
+                                    <PriceChangeOutlined sx={{ fontSize: 15 }} />
+                                    <Typography variant="caption" fontWeight={700}>
+                                      {t("list.priceChanged")}
+                                    </Typography>
+                                  </Stack>
+                                </Tooltip>
+                              )}
+
                               {/* Итого — стоимость услуг, не финансовая операция,
                                   поэтому видна всем (в т.ч. врачу без прав на
                                   финансы), как в оригинале. */}
-                              {totalAmount > 0 && (
+                              {(totalAmount > 0 || previousPayableAmount != null) && (
                                 <Typography
                                   variant="body2"
                                   color="text.secondary"
-                                  sx={{ mt: 0.5 }}
+                                  sx={{ mt: priceChange ? 0.125 : 0.5 }}
                                 >
                                   {t("list.total")}{" "}
                                   {/* При скидке «Итого» — это то, что человек
@@ -1228,12 +1256,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                                       оплаченного приёма чипа скидки нет (там
                                       «Оплачено»), и эта строка — единственное
                                       место, где дисконт виден. */}
-                                  {discountPercent != null && (
+                                  {(previousPayableAmount != null || discountPercent != null) && (
                                     <Box
                                       component="span"
                                       sx={{ textDecoration: "line-through", opacity: 0.6, mr: 0.5 }}
                                     >
-                                      {formatKGS(totalAmount)}
+                                      {formatKGS(previousPayableAmount ?? totalAmount)}
                                     </Box>
                                   )}
                                   {formatKGS(discountPercent != null ? payableAmount : totalAmount)}
