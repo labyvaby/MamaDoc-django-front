@@ -276,45 +276,70 @@ const ScheduleWeekResourceGrid: React.FC<ScheduleWeekResourceGridProps> = ({
                                     sx={{
                                       width: "100%",
                                       display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      gap: 0.25,
-                                      borderRadius: "4px",
-                                      px: 0.5,
-                                      py: "1px",
-                                      // Сплошная заливка вместо полупрозрачной:
-                                      // на тёмном фоне тинты жёлтого/оранжевого
-                                      // выглядели грязно-бурыми и одинаковыми
-                                      // (жалоба заказчика 14.07.2026).
-                                      bgcolor: c,
-                                      border:
-                                  occ.kind !== "rule"
-                                          ? `1.5px dashed ${theme.palette.background.paper}`
-                                          : undefined,
+                                      flexDirection: "column",
+                                      alignItems: "stretch",
+                                      gap: "1px",
                                     }}
                                   >
-                                    <Typography
-                                      noWrap
+                                    <Box
                                       sx={{
-                                        fontSize: "0.7rem",
-                                        fontWeight: 600,
-                                        color: theme.palette.getContrastText(c),
-                                        fontVariantNumeric: "tabular-nums",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        borderRadius: "4px",
+                                        px: 0.5,
+                                        py: "1px",
+                                        // Сплошная заливка вместо полупрозрачной:
+                                        // на тёмном фоне тинты жёлтого/оранжевого
+                                        // выглядели грязно-бурыми и одинаковыми
+                                        // (жалоба заказчика 14.07.2026).
+                                        bgcolor: c,
+                                        border:
+                                          occ.kind !== "rule"
+                                            ? `1.5px dashed ${theme.palette.background.paper}`
+                                            : undefined,
                                       }}
                                     >
-                                      {shortTime(occ.startTime)}–{shortTime(occ.endTime)}
-                                    </Typography>
-                                    {/* Колонка дня узкая — сам перерыв не нарисовать,
-                                        помечаем смену значком, время в тултипе. */}
-                                    {occ.lunch && (
-                                      <RestaurantOutlined
+                                      <Typography
+                                        noWrap
                                         sx={{
-                                          fontSize: 11,
-                                          flexShrink: 0,
+                                          fontSize: "0.7rem",
+                                          fontWeight: 600,
                                           color: theme.palette.getContrastText(c),
-                                          opacity: 0.75,
+                                          fontVariantNumeric: "tabular-nums",
                                         }}
-                                      />
+                                      >
+                                        {shortTime(occ.startTime)}–{shortTime(occ.endTime)}
+                                      </Typography>
+                                    </Box>
+                                    {/* Колонку дня перерывом не разрезать (полосы времени
+                                        тут нет), поэтому обед — подпись под сменой: время
+                                        видно сразу, без наведения на тултип. */}
+                                    {occ.lunch && (
+                                      <Box
+                                        sx={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          gap: 0.25,
+                                          minWidth: 0,
+                                        }}
+                                      >
+                                        <RestaurantOutlined
+                                          sx={{ fontSize: 10, flexShrink: 0, color: "text.disabled" }}
+                                        />
+                                        <Typography
+                                          noWrap
+                                          sx={{
+                                            fontSize: "0.62rem",
+                                            lineHeight: 1.25,
+                                            color: "text.secondary",
+                                            fontVariantNumeric: "tabular-nums",
+                                          }}
+                                        >
+                                          {shortTime(occ.lunch.start)}–{shortTime(occ.lunch.end)}
+                                        </Typography>
+                                      </Box>
                                     )}
                                   </Box>
                                 </Tooltip>
