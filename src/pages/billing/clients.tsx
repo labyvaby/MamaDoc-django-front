@@ -181,23 +181,21 @@ export default function BillingClientsPage() {
         </TableContainer>
       </Box>
 
-      <Dialog open={dialogOpen} onClose={() => !saveMutation.isPending && setDialogOpen(false)} fullWidth maxWidth="sm">
+      <Dialog open={dialogOpen} onClose={() => !saveMutation.isPending && setDialogOpen(false)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle>{editing ? "Изменить клиента" : "Новый клиент"}</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 0.5 }}>
+        <DialogContent dividers sx={{ px: { xs: 2, sm: 3 }, py: 3 }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2.25 }}>
             <TextField select label="Тип клиента" value={form.clientType} onChange={(event) => setForm({ ...form, clientType: event.target.value as FormState["clientType"] })}>
               <MenuItem value="individual">Физическое лицо</MenuItem>
               <MenuItem value="company">Компания</MenuItem>
             </TextField>
             <TextField required label={form.clientType === "company" ? "Контактное лицо" : "ФИО"} value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} />
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField required={!editing} disabled={Boolean(editing)} fullWidth label="Телефон" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} helperText={editing ? "Телефон меняется через контактные данные" : undefined} />
-              <TextField fullWidth label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            </Stack>
-            {form.clientType === "company" && <Stack direction={{ xs: "column", sm: "row" }} spacing={2}><TextField fullWidth label="Юридическое название" value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} /><TextField label="ИНН" value={form.inn} onChange={(event) => setForm({ ...form, inn: event.target.value })} /></Stack>}
+            <TextField required={!editing} disabled={Boolean(editing)} fullWidth label="Телефон" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} helperText={editing ? "Телефон меняется через контактные данные" : undefined} />
+            <TextField fullWidth label="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            {form.clientType === "company" && <><TextField fullWidth label="Юридическое название" value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} /><TextField label="ИНН" value={form.inn} onChange={(event) => setForm({ ...form, inn: event.target.value })} /></>}
             <TextField select label="Статус" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><MenuItem value="new">Новый</MenuItem><MenuItem value="active">Активный</MenuItem><MenuItem value="inactive">Неактивный</MenuItem></TextField>
-            <TextField label="Заметка" multiline minRows={3} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
-          </Stack>
+            <TextField label="Заметка" multiline minRows={3} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} sx={{ gridColumn: "1 / -1" }} />
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)} disabled={saveMutation.isPending}>Отмена</Button>

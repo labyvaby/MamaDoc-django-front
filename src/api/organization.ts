@@ -30,6 +30,9 @@ export interface DjangoOrganization {
    *  MamaDoc/backend_ticket_organization_vertical.md. Отсутствующее или
    *  незнакомое значение нормализуется в DEFAULT_VERTICAL. */
   vertical: Vertical;
+  bakaiTokenMasked: string;
+  bakaiTokenSet: boolean;
+  onlinePaymentEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,6 +46,9 @@ export interface UpdateOrganizationPayload {
   appointmentOverlapMode?: AppointmentOverlapMode;
   themeConfig?: Record<string, any> | null;
   vertical?: Vertical;
+  /** Write-only: пустая строка удаляет сохранённый токен. */
+  bakaiOpenbankingToken?: string;
+  onlinePaymentEnabled?: boolean;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -103,9 +109,9 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
  *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
 type DjangoOrganizationWire = Omit<
   DjangoOrganization,
-  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical"
+  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical" | "bakaiTokenMasked" | "bakaiTokenSet" | "onlinePaymentEnabled"
 > &
-  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">> & {
+  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "bakaiTokenMasked" | "bakaiTokenSet" | "onlinePaymentEnabled">> & {
     vertical?: string | null;
   };
 
@@ -116,6 +122,9 @@ function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization 
     appointmentOverlapMode: raw.appointmentOverlapMode ?? "forbid",
     themeConfig: raw.themeConfig ?? null,
     vertical: isVertical(raw.vertical) ? raw.vertical : DEFAULT_VERTICAL,
+    bakaiTokenMasked: raw.bakaiTokenMasked ?? "",
+    bakaiTokenSet: raw.bakaiTokenSet ?? false,
+    onlinePaymentEnabled: raw.onlinePaymentEnabled ?? false,
   };
 }
 

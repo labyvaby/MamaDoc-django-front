@@ -684,7 +684,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="billing/contracts"
+                          path="contracts"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.billing}>
                               <Suspense fallback={<LinearProgress />}>
@@ -694,7 +694,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="billing/offerings"
+                          path="offerings"
                           element={
                             <RequirePermission permission="offerings.view">
                               <Suspense fallback={<LinearProgress />}>
@@ -704,7 +704,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="billing/charges"
+                          path="charges"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.billing}>
                               <Suspense fallback={<LinearProgress />}>
@@ -714,7 +714,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="billing/payments"
+                          path="payments"
                           element={
                             <RequirePermission permission="billing.payments.view">
                               <Suspense fallback={<LinearProgress />}>
@@ -724,7 +724,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="billing/debtors"
+                          path="debtors"
                           element={
                             <RequirePermission permission="billing.debtors.view">
                               <Suspense fallback={<LinearProgress />}>
@@ -734,7 +734,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="billing/clients"
+                          path="clients"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.clients}>
                               <Suspense fallback={<LinearProgress />}>
@@ -743,6 +743,12 @@ function App() {
                             </RequirePermission>
                           }
                         />
+                        <Route path="billing/contracts" element={<Navigate to="/contracts" replace />} />
+                        <Route path="billing/offerings" element={<Navigate to="/offerings" replace />} />
+                        <Route path="billing/charges" element={<Navigate to="/charges" replace />} />
+                        <Route path="billing/payments" element={<Navigate to="/payments" replace />} />
+                        <Route path="billing/debtors" element={<Navigate to="/debtors" replace />} />
+                        <Route path="billing/clients" element={<Navigate to="/clients" replace />} />
                         <Route
                           path="reports"
                           element={

@@ -33,7 +33,7 @@ export const RequirePermission: React.FC<RequirePermissionProps> = ({
   requireAll = false,
   fallback,
 }) => {
-  const { loading, canAccess, isSuperAdmin } = usePermissions();
+  const { loading, canAccess } = usePermissions();
 
   if (loading) {
     return (
@@ -48,11 +48,6 @@ export const RequirePermission: React.FC<RequirePermissionProps> = ({
         <CircularProgress />
       </Box>
     );
-  }
-
-  // Superadmin bypasses all permission checks
-  if (isSuperAdmin()) {
-    return <>{children}</>;
   }
 
   const perms = Array.isArray(permission) ? permission : [permission];

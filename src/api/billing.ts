@@ -209,6 +209,8 @@ export const billingApi = {
     apiRequest<BillingOffering[]>(`/offerings/${query(params)}`),
   createOffering: (body: Record<string, unknown>) =>
     apiRequest<BillingOffering>("/offerings/", { method: "POST", body }),
+  updateOffering: (id: number, body: Record<string, unknown>, scope: Scope) =>
+    apiRequest<BillingOffering>(`/offerings/${id}/${query(scope)}`, { method: "PATCH", body }),
   archiveOffering: (id: number, scope: Scope) =>
     apiRequest<void>(`/offerings/${id}/${query(scope)}`, { method: "DELETE" }),
 
