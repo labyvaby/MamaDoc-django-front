@@ -35,7 +35,7 @@ import {
   type DjangoSpecialization,
   type DjangoBank,
 } from "../../../api/staff";
-import { getRoles, type RbacRole } from "../../../api/rbac";
+import { getRoles, rolesForActiveOrg, type RbacRole } from "../../../api/rbac";
 import { ApiError } from "../../../api/client";
 import { usePermissions } from "../../../hooks/usePermissions";
 import type { RbacBranch } from "../../../api/auth";
@@ -86,25 +86,6 @@ function splitFullName(fullName: string): { firstName?: string; lastName?: strin
   if (parts.length === 1) return { firstName: parts[0] };
   const [last, ...rest] = parts;
   return { lastName: last, firstName: rest.join(" ") };
-}
-
-// Бэкенд отдаёт роли ВСЕХ организаций, к которым у пользователя есть доступ
-// (суперюзеру — вообще все роли системы). Сотрудник заводится в активной
-// организации, поэтому роль обязана принадлежать ей: сначала фильтруем по
-// activeOrgId, иначе в списке всплывают чужие роли. Затем сворачиваем дубли по
-// `code` (а при его отсутствии — по `name`) как защитный слой. Пока активная
-// организация не определена, оставляем как есть (фильтровать не по чему).
-function rolesForActiveOrg(roles: RbacRole[], activeOrgId?: number): RbacRole[] {
-  const scoped =
-    activeOrgId == null
-      ? roles
-      : roles.filter((r) => r.organizationId === activeOrgId);
-  const byKey = new Map<string, RbacRole>();
-  for (const role of scoped) {
-    const key = (role.code || role.name).trim().toLowerCase();
-    if (!byKey.has(key)) byKey.set(key, role);
-  }
-  return Array.from(byKey.values());
 }
 
 const isImageFile = (f: File | null) => Boolean(f && f.type.startsWith("image/"));
