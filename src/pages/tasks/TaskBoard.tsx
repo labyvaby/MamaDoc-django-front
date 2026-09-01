@@ -1,13 +1,10 @@
 import React from "react";
-import { Box, IconButton, Menu, MenuItem, Skeleton, Stack, Tooltip, Typography } from "@mui/material";
-import { alpha, type Theme } from "@mui/material/styles";
+import { Box, Skeleton, Stack, Tooltip, Typography, useTheme } from "@mui/material";
+import { type Theme } from "@mui/material/styles";
 import { keepPreviousData, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import InboxOutlined from "@mui/icons-material/InboxOutlined";
-import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
 
+import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
 import { UserAvatar } from "../../components/ui";
-import { subtleBg } from "../../theme/uiHelpers";
 import {
   approveTask,
   completeTask,
@@ -86,159 +83,12 @@ function transitionFor(
 const toneColor = (t: Theme, name: ToneName) =>
   name ? t.palette[name].main : t.palette.text.disabled;
 
-type BoardCardProps = {
-  task: Task;
-  /** Порядок в колонке — задаёт лесенку появления. */
-  index: number;
-  /** Доступные переходы: то же, что даёт перетаскивание, но кликом. */
-  actions: { to: TaskStatus; label: string }[];
-  onAction: (to: TaskStatus) => void;
-  onOpen: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  dragging: boolean;
-};
-
-const BoardCard: React.FC<BoardCardProps> = ({
-  task,
-  index,
-  actions,
-  onAction,
-  onOpen,
-  onDragStart,
-  onDragEnd,
-  dragging,
-}) => {
-  const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
-  // Системная настройка «уменьшить движение» — тогда карточки просто появляются.
-  const reduceMotion = useReducedMotion();
+/** Содержимое карточки задачи; оболочку (drag, меню, анимацию) даёт ядро доски. */
+const TaskCardBody: React.FC<{ task: Task; hasActions: boolean }> = ({ task, hasActions }) => {
   const due = dueInfo(task.dueDate, task.status);
-  const priority = TASK_PRIORITY_META[task.priority];
-  // Цветом отмечаем только то, что требует внимания: «низкий» и «обычный»
-  // приоритеты полоски не получают — иначе колонка превращается в радугу и
-  // срочное перестаёт выделяться.
-  const accent = task.priority === "urgent" ? "error" : task.priority === "high" ? "warning" : null;
 
   return (
-    /* Обёртка отвечает только за появление и исчезновение: у motion.div свои
-       onDragStart/onDragEnd (pan-жесты), они конфликтуют с HTML5-перетаскиванием,
-       поэтому drag остаётся на внутреннем Box. */
-    <motion.div
-      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }}
-      transition={{
-        duration: 0.18,
-        ease: "easeOut",
-        // Лесенка сверху вниз: колонка «собирается», а не мигает целиком.
-        delay: reduceMotion ? 0 : Math.min(index * 0.03, 0.15),
-      }}
-    >
-    <Box
-      draggable
-      /* Карточка открывается и с клавиатуры: перетаскивание мышью — не
-         единственный способ работать с доской (и на тач-экране его нет). */
-      role="button"
-      tabIndex={0}
-      aria-label={`Задача: ${task.title}`}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        // Safari не начинает перетаскивание без полезной нагрузки.
-        e.dataTransfer.setData("text/plain", String(task.id));
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onClick={onOpen}
-      sx={(t) => ({
-        position: "relative",
-        overflow: "hidden",
-        p: 1.25,
-        pl: 1.75,
-        borderRadius: "12px",
-        border: 1,
-        borderColor: due?.overdue ? alpha(t.palette.error.main, 0.35) : "divider",
-        bgcolor: "background.paper",
-        cursor: "grab",
-        opacity: dragging ? 0.45 : 1,
-        transition: "border-color .15s ease, background-color .15s ease, opacity .15s ease",
-        "&:hover": { borderColor: alpha(t.palette.primary.main, 0.35), bgcolor: subtleBg(t, true) },
-        "&:active": { cursor: "grabbing" },
-      })}
-    >
-      {/* Приоритет — полоской по левому краю вместо чипа: не занимает строку
-          и не спорит с заголовком за внимание. */}
-      {accent && (
-        <Tooltip title={`Приоритет: ${priority.label}`}>
-          <Box
-            sx={(t) => ({
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 3,
-              bgcolor: t.palette[accent].main,
-            })}
-          />
-        </Tooltip>
-      )}
-
-      {/* Те же переходы, что и перетаскиванием: на тач-экране HTML5-drag не
-          работает вовсе, да и мышью «взять в работу» быстрее одним кликом. */}
-      {actions.length > 0 && (
-        <>
-          <Tooltip title="Действия по задаче">
-            <IconButton
-              size="small"
-              aria-label="Действия по задаче"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuAnchor(e.currentTarget);
-              }}
-              sx={{
-                position: "absolute",
-                top: 2,
-                right: 2,
-                color: "text.disabled",
-                opacity: menuAnchor ? 1 : 0.5,
-                transition: "opacity .15s ease, color .15s ease",
-                "&:hover": { opacity: 1, color: "text.primary" },
-              }}
-            >
-              <MoreVertOutlined sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-          <Menu
-            anchorEl={menuAnchor}
-            open={Boolean(menuAnchor)}
-            onClose={() => setMenuAnchor(null)}
-            onClick={(e) => e.stopPropagation()}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-            transformOrigin={{ vertical: "top", horizontal: "right" }}
-            slotProps={{ paper: { sx: { borderRadius: "12px", minWidth: 190 } } }}
-          >
-            {actions.map((a) => (
-              <MenuItem
-                key={a.to}
-                sx={{ fontSize: "0.875rem" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuAnchor(null);
-                  onAction(a.to);
-                }}
-              >
-                {a.label}
-              </MenuItem>
-            ))}
-          </Menu>
-        </>
-      )}
-
+    <>
       <Typography
         variant="body2"
         fontWeight={600}
@@ -249,7 +99,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
           WebkitBoxOrient: "vertical",
           overflow: "hidden",
           // Место под кнопку действий, чтобы заголовок под неё не заезжал.
-          pr: actions.length > 0 ? 3 : 0,
+          pr: hasActions ? 3 : 0,
         }}
       >
         {task.title}
@@ -298,8 +148,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
           </Tooltip>
         )}
       </Stack>
-    </Box>
-    </motion.div>
+    </>
   );
 };
 
@@ -328,10 +177,9 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   enabled,
   emptyState,
 }) => {
+  const theme = useTheme();
   const invalidateTasks = useInvalidateTasks();
   const queryClient = useQueryClient();
-  const [dragged, setDragged] = React.useState<Task | null>(null);
-  const [hoverColumn, setHoverColumn] = React.useState<TaskStatus | null>(null);
   /** Сколько задач тянем в каждой колонке — растёт по мере прокрутки. */
   const [limits, setLimits] = React.useState<Partial<Record<TaskStatus, number>>>({});
 
@@ -417,11 +265,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
       .filter((x): x is { to: TaskStatus; move: { fn: never; label: string } } => x.move != null)
       .map(({ to, move }) => ({ to, label: move.label }));
 
-  const handleDrop = (to: TaskStatus) => {
-    setHoverColumn(null);
-    const task = dragged;
-    setDragged(null);
-    if (!task || task.status === to) return;
+  const handleDrop = (task: Task, to: TaskStatus) => {
     if (!transitionFor(task, to, ctx)) {
       onError(
         to === "paused"
@@ -435,175 +279,78 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
     moveMutation.mutate({ task, to });
   };
 
-  /* Доска целиком пуста: пять одинаковых пунктирных зон подряд выглядят как
-     поломка, поэтому показываем один экран — тот же, что и у списка. */
-  const boardIsEmpty =
-    emptyState != null &&
-    results.every((q) => !q.isLoading && (q.data?.count ?? 0) === 0);
+  const tasksOf = (status: TaskStatus) => results[COLUMNS.indexOf(status)]?.data?.results ?? [];
 
-  if (boardIsEmpty) {
-    return (
-      <Box sx={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {emptyState}
-      </Box>
-    );
-  }
+  const columns: BoardColumnDef<TaskStatus>[] = COLUMNS.map((status, i) => {
+    const q = results[i];
+    const tasks = q.data?.results ?? [];
+    const count = q.data?.count ?? 0;
+
+    return {
+      id: status,
+      title: TASK_STATUS_META[status].label,
+      dotColor: toneColor(theme, TASK_STATUS_META[status].color),
+      count,
+      loading: q.isLoading,
+      emptyHint: "Нет задач",
+      footer:
+        count > tasks.length ? (
+          <Stack alignItems="center" sx={{ py: 1 }}>
+            {q.isFetching ? (
+              <Skeleton variant="rounded" height={92} width="100%" />
+            ) : (
+              <Typography variant="caption" color="text.disabled">
+                Прокрутите, чтобы загрузить ещё {count - tasks.length}
+              </Typography>
+            )}
+          </Stack>
+        ) : undefined,
+      onScrollEnd: () => {
+        if (count <= tasks.length) return;
+        setLimits((prev) => {
+          const current = prev[status] ?? COLUMN_SIZE;
+          if (current >= count || tasks.length < current) return prev;
+          return { ...prev, [status]: current + COLUMN_SIZE };
+        });
+      },
+    };
+  });
+
+  const card = (task: Task): BoardCardSpec => {
+    const actions = availableActions(task);
+    // Цветом отмечаем только то, что требует внимания: «низкий» и «обычный»
+    // приоритеты полоски не получают — иначе колонка превращается в радугу и
+    // срочное перестаёт выделяться.
+    const accent = task.priority === "urgent" ? "error" : task.priority === "high" ? "warning" : null;
+
+    return {
+      ariaLabel: `Задача: ${task.title}`,
+      accentColor: accent ? theme.palette[accent].main : null,
+      accentTooltip: `Приоритет: ${TASK_PRIORITY_META[task.priority].label}`,
+      alert: dueInfo(task.dueDate, task.status)?.overdue ?? false,
+      actions: actions.map((a) => ({
+        key: a.to,
+        label: a.label,
+        onSelect: () => moveMutation.mutate({ task, to: a.to }),
+      })),
+      actionsTooltip: "Действия по задаче",
+      onOpen: () => onOpenTask(task.id),
+      content: <TaskCardBody task={task} hasActions={actions.length > 0} />,
+    };
+  };
 
   return (
-    <Box
-      sx={{
-        flex: 1,
-        minHeight: 0,
-        display: "flex",
-        gap: 1.25,
-        overflowX: "auto",
-        pb: 1,
-      }}
-    >
-      {COLUMNS.map((status, i) => {
-        const q = results[i];
-        const tasks = q.data?.results ?? [];
-        const count = q.data?.count ?? 0;
-        const droppable = dragged != null && transitionFor(dragged, status, ctx) != null;
-        const isHover = hoverColumn === status && droppable;
-
-        return (
-          <Stack
-            key={status}
-            onDragOver={(e) => {
-              if (!droppable) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (hoverColumn !== status) setHoverColumn(status);
-            }}
-            onDragLeave={() => setHoverColumn((c) => (c === status ? null : c))}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDrop(status);
-            }}
-            sx={(t) => ({
-              /* Колонки делят всю ширину поровну, но не уже 268px: на широком
-                 экране доска не оставляет пустоту справа, на узком — включается
-                 горизонтальная прокрутка контейнера. */
-              flex: "1 0 268px",
-              // Без сброса min-width колонка с длинными именами исполнителей
-              // выторговывает себе лишние пиксели и ряд перестаёт быть ровным.
-              minWidth: 0,
-              minHeight: 0,
-              borderRadius: "14px",
-              border: 1,
-              borderColor: isHover ? alpha(t.palette.primary.main, 0.5) : "divider",
-              bgcolor: isHover ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.1 : 0.05) : subtleBg(t),
-              transition: "border-color .15s ease, background-color .15s ease",
-              // Колонка, куда перенос запрещён, гаснет — правило видно до drop.
-              opacity: dragged != null && !droppable && dragged.status !== status ? 0.5 : 1,
-            })}
-          >
-            <Stack
-              direction="row"
-              alignItems="center"
-              gap={0.75}
-              sx={{ px: 1.5, py: 1.25, borderBottom: 1, borderColor: "divider" }}
-            >
-              {/* Тот же цвет, что у чипа статуса в таблице — доска и список
-                  говорят на одном языке. */}
-              <Box
-                sx={(t) => ({
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  bgcolor: toneColor(t, TASK_STATUS_META[status].color),
-                })}
-              />
-              <Typography variant="subtitle2" fontWeight={600} noWrap>
-                {TASK_STATUS_META[status].label}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {count}
-              </Typography>
-            </Stack>
-
-            <Stack
-              gap={1}
-              onScroll={(e) => {
-                // Догружаем следующую порцию, не доходя до самого низа, — так
-                // прокрутка не упирается в конец списка.
-                const el = e.currentTarget;
-                if (el.scrollHeight - el.scrollTop - el.clientHeight > 160) return;
-                if (count <= tasks.length) return;
-                setLimits((prev) => {
-                  const current = prev[status] ?? COLUMN_SIZE;
-                  if (current >= count || tasks.length < current) return prev;
-                  return { ...prev, [status]: current + COLUMN_SIZE };
-                });
-              }}
-              sx={{ p: 1, overflowY: "auto", flex: 1, minHeight: 0 }}
-            >
-              {q.isLoading ? (
-                Array.from({ length: 3 }).map((_, k) => <Skeleton key={k} variant="rounded" height={92} />)
-              ) : tasks.length === 0 ? (
-                /* Пустая колонка — норма, а не ошибка: вместо серого «Пусто» в
-                   каждой из пяти колонок рисуем спокойную зону, которая заодно
-                   показывает, куда можно бросить карточку. */
-                <Stack
-                  alignItems="center"
-                  justifyContent="center"
-                  gap={0.75}
-                  sx={(t) => ({
-                    /* Высота карточки, а не всей колонки: зона читается как
-                       место под задачу, а не как пустое полотно. */
-                    minHeight: 96,
-                    borderRadius: "10px",
-                    border: "1px dashed",
-                    borderColor: droppable ? alpha(t.palette.primary.main, 0.45) : "divider",
-                    opacity: droppable ? 1 : 0.6,
-                    transition: "border-color .15s ease, opacity .15s ease",
-                  })}
-                >
-                  <InboxOutlined sx={{ fontSize: 22, color: "text.disabled" }} />
-                  <Typography variant="caption" color="text.disabled">
-                    {droppable ? "Перенести сюда" : "Нет задач"}
-                  </Typography>
-                </Stack>
-              ) : (
-                <>
-                  <AnimatePresence>
-                    {tasks.map((task, cardIndex) => (
-                      <BoardCard
-                        key={task.id}
-                        task={task}
-                        index={cardIndex}
-                        actions={availableActions(task)}
-                        onAction={(to) => moveMutation.mutate({ task, to })}
-                        dragging={dragged?.id === task.id}
-                        onOpen={() => onOpenTask(task.id)}
-                        onDragStart={() => setDragged(task)}
-                        onDragEnd={() => {
-                          setDragged(null);
-                          setHoverColumn(null);
-                        }}
-                      />
-                    ))}
-                  </AnimatePresence>
-                  {count > tasks.length && (
-                    <Stack alignItems="center" sx={{ py: 1 }}>
-                      {q.isFetching ? (
-                        <Skeleton variant="rounded" height={92} width="100%" />
-                      ) : (
-                        <Typography variant="caption" color="text.disabled">
-                          Прокрутите, чтобы загрузить ещё {count - tasks.length}
-                        </Typography>
-                      )}
-                    </Stack>
-                  )}
-                </>
-              )}
-            </Stack>
-          </Stack>
-        );
-      })}
-    </Box>
+    <Board<Task, TaskStatus>
+      columns={columns}
+      itemsOf={tasksOf}
+      getItemId={(task) => task.id}
+      columnOf={(task) => task.status}
+      canDrop={(task, to) => transitionFor(task, to, ctx) != null}
+      onDrop={handleDrop}
+      card={card}
+      isEmpty={results.every((q) => !q.isLoading && (q.data?.count ?? 0) === 0)}
+      emptyState={emptyState}
+    />
   );
 };
 
