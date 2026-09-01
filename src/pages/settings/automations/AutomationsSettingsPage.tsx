@@ -32,6 +32,7 @@ import dayjs from "dayjs";
 import {
   getAutomationCatalog,
   getAutomations,
+  isScheduledEvent,
   updateAutomation,
   type Automation,
   type AutomationStatus,
@@ -250,9 +251,23 @@ const AutomationsSettingsPage: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{item.eventLabel}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace" }}>
-                      {item.eventCode}
-                    </Typography>
+                    {/* У правила по расписанию код события ничего не говорит —
+                        важно, когда оно сработает в следующий раз. */}
+                    {isScheduledEvent(item.eventCode) ? (
+                      <Typography variant="caption" color="text.secondary">
+                        {item.nextRunAt
+                          ? t("automations.schedule.nextRun", {
+                              when: dayjs(item.nextRunAt).format(
+                                "DD.MM.YYYY HH:mm",
+                              ),
+                            })
+                          : t("automations.schedule.notArmed")}
+                      </Typography>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace" }}>
+                        {item.eventCode}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell>{item.branchName ?? t("automations.allBranches")}</TableCell>
                   <TableCell>

@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   PROFICHAT_PUSH_CHANNEL,
+  SCHEDULE_EVENT_CODE,
   type Automation,
   type AutomationCatalogEvent,
 } from "../../../api/automations";
 import {
   automationToForm,
+  emptySchedule,
   makeGroup,
   makeLeaf,
   nodeDepth,
@@ -85,6 +87,10 @@ const LABELS = {
   unknownField: (code: string) => `unknown:${code}`,
   bodyRequired: "body",
   delayRange: "delay",
+  weekdaysRequired: "weekdays",
+  intervalRange: "interval",
+  timeRequired: "time",
+  phoneRequired: "phone",
 };
 
 function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
@@ -94,6 +100,7 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
     status: "active",
     branchId: null,
     conditions: null,
+    schedule: emptySchedule(),
     actions: [
       {
         key: "a1",
@@ -101,6 +108,7 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
         delayMinutes: "10",
         channel: "sms",
         recipientField: "client_phone",
+        recipientPhone: "",
         title: "",
         body: "Здравствуйте, {{client_name}}!",
       },
@@ -428,5 +436,95 @@ describe("канал ProfiChat push", () => {
     form.actions[0].body = "Ждём вас";
 
     expect(relevantPayloadFields(form).get("client_name")).toContain("template");
+  });
+});
+
+describe("правило по расписанию", () => {
+  const scheduled = (overrides: Partial<AutomationForm> = {}) =>
+    baseForm({
+      eventCode: SCHEDULE_EVENT_CODE,
+      actions: [
+        {
+          key: "a1",
+          actionType: "send_message",
+          delayMinutes: "0",
+          channel: "sms",
+          recipientField: "client_phone",
+          recipientPhone: "+996700000001",
+          title: "",
+          body: "Планёрка.",
+        },
+      ],
+      ...overrides,
+    });
+
+  it("отправляет периодичность и телефон вместо переменной получателя", () => {
+    const input = toSaveInput(scheduled());
+
+    expect(input.schedule).toEqual({
+      kind: "weekly",
+      time: "10:00",
+      weekdays: [0],
+    });
+    expect(input.actions[0].config.recipientPhone).toBe("+996700000001");
+    expect(input.actions[0].config.recipientField).toBeUndefined();
+  });
+
+  it("интервальное повторение уходит числом", () => {
+    const input = toSaveInput(
+      scheduled({
+        schedule: { ...emptySchedule(), kind: "interval_days", intervalDays: "2" },
+      }),
+    );
+
+    expect(input.schedule).toEqual({
+      kind: "interval_days",
+      time: "10:00",
+      intervalDays: 2,
+    });
+  });
+
+  it("условия к расписанию не уходят", () => {
+    const leaf = makeLeaf("status", "eq");
+    leaf.value = "confirmed";
+
+    expect(toSaveInput(scheduled({ conditions: leaf })).conditions).toEqual({});
+  });
+
+  it("требует день недели и телефон", () => {
+    const errors = validateForm(
+      scheduled({
+        schedule: { ...emptySchedule(), weekdays: [] },
+        actions: [
+          {
+            key: "a1",
+            actionType: "send_message",
+            delayMinutes: "0",
+            channel: "sms",
+            recipientField: "client_phone",
+            recipientPhone: "",
+            title: "",
+            body: "Планёрка.",
+          },
+        ],
+      }),
+      undefined,
+      LABELS,
+    );
+
+    expect(errors.schedule).toBe("weekdays");
+    expect(errors.actionFields.a1.recipientPhone).toBe("phone");
+  });
+
+  it("проверяет границы интервала", () => {
+    const errors = validateForm(
+      scheduled({
+        schedule: { ...emptySchedule(), kind: "interval_days", intervalDays: "0" },
+      }),
+      undefined,
+      LABELS,
+    );
+
+    expect(errors.schedule).toBe("interval");
   });
 });
