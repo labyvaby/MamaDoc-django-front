@@ -205,6 +205,26 @@ export const djangoQueryKeys = {
       ["django", "tasks", "my-stats", orgId ?? null] as const,
   },
 
+  deals: {
+    all: ["django", "deals"] as const,
+    list: (params: Record<string, unknown>) => ["django", "deals", "list", params] as const,
+    detail: (id: number) => ["django", "deals", id] as const,
+    /** Доска приходит одним агрегатом — ключ на набор фильтров, а не на колонку. */
+    board: (params: Record<string, unknown>) => ["django", "deals", "board", params] as const,
+    summary: (params: Record<string, unknown>) => ["django", "deals", "summary", params] as const,
+    pipelines: (orgId?: number) => ["django", "deals", "pipelines", orgId ?? null] as const,
+    stages: (pipelineId?: number, orgId?: number) =>
+      ["django", "deals", "stages", pipelineId ?? null, orgId ?? null] as const,
+    sources: (orgId?: number) => ["django", "deals", "sources", orgId ?? null] as const,
+    lostReasons: (orgId?: number) => ["django", "deals", "lost-reasons", orgId ?? null] as const,
+    duplicates: (phone: string, orgId?: number) =>
+      ["django", "deals", "duplicates", phone, orgId ?? null] as const,
+    funnel: (params: Record<string, unknown>) => ["django", "deals", "funnel", params] as const,
+    /** Пикер услуг в карточке сделки: прайс общий по организации. */
+    servicePicker: (search: string, orgId?: number) =>
+      ["django", "deals", "service-picker", search, orgId ?? null] as const,
+  },
+
   waitlist: {
     all: ["django", "waitlist"] as const,
     list: (params: Record<string, unknown>) =>

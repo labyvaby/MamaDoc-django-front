@@ -85,6 +85,7 @@ const BookingsPage = lazy(() => import("./pages/bookings"));
 const ChatsPage = lazy(() => import("./pages/chats"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const WaitlistPage = lazy(() => import("./pages/waitlist"));
+const DealsPage = lazy(() => import("./pages/deals"));
 const VaccinationsPage = lazy(() => import("./pages/vaccinations"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
@@ -396,6 +397,11 @@ function App() {
                         name: "waitlist",
                         list: "/waitlist",
                         meta: { label: "Лист ожидания" }
+                      },
+                      {
+                        name: "deals",
+                        list: "/deals",
+                        meta: { label: "Воронка продаж" }
                       },
                       {
                         name: "vaccinations",
@@ -921,6 +927,16 @@ function App() {
                                 <RequirePermission permission={PAGE_PERMISSIONS.waitlist}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <WaitlistPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="deals"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.deals}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DealsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

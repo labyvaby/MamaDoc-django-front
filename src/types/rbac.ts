@@ -181,6 +181,15 @@ export const PERMISSIONS = {
   TASKS_LIST: 'tasks.list',
   TASKS_MANAGE: 'tasks.manage',
 
+  // Воронка продаж (контракт: MamaDoc/backend_answer_deals_module.md)
+  DEALS_LIST: 'deals.list',
+  DEALS_READ: 'deals.read',
+  DEALS_CREATE: 'deals.create',
+  DEALS_UPDATE: 'deals.update',
+  DEALS_MANAGE: 'deals.manage',
+  /** Правка суммы уже выигранной сделки — владелец и бухгалтер. */
+  DEALS_AMOUNT_OVERRIDE: 'deals.amount_override',
+
   // Лист ожидания (контракт: MamaDoc/backend_ticket_waitlist_module.md)
   WAITLIST_VIEW: 'waitlist.view',
   WAITLIST_CREATE: 'waitlist.create',

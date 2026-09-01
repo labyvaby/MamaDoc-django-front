@@ -56,6 +56,7 @@ import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
+import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
@@ -402,6 +403,7 @@ const SidebarSecondary: React.FC = () => {
     cleaning: moduleGate("cleaning"),
     tasks: can(PAGE_PERMISSIONS.tasks),
     waitlist: can(PAGE_PERMISSIONS.waitlist),
+    deals: can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
     achievements: can(PAGE_PERMISSIONS.achievements),
@@ -583,7 +585,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.expenses || can_.knowledge || can_.achievements,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -729,6 +731,17 @@ const SidebarSecondary: React.FC = () => {
             collapsed={siderCollapsed}
             badgeCount={waitlistBadgeCount}
             badgeColor={waitlistBadgeColor}
+          />
+        )}
+
+        {/* Воронка продаж: обращения от первого звонка до оплаты.
+            Пункт виден по deals.list — права появляются вместе с модулем. */}
+        {show("my-work") && can_.deals && (
+          <SidebarMenuItem
+            to="/deals"
+            icon={<FilterAltOutlined />}
+            label="Воронка продаж"
+            collapsed={siderCollapsed}
           />
         )}
 

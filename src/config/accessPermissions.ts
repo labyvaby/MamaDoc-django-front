@@ -39,6 +39,8 @@ export const PAGE_PERMISSIONS = {
   chats: "chatwoot.view",
   tasks: "tasks.list",
   waitlist: ["waitlist.view", "waitlist.manage"],
+  // Воронка продаж: смотреть доску даёт deals.list, настраивать — deals.manage.
+  deals: ["deals.list", "deals.manage"],
   vaccinations: "vaccinations.view",
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],
