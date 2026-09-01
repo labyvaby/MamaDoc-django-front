@@ -267,8 +267,15 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
         typeId: typeId as number,
         photos: photos.map((p) => p.file),
         employeeId: canAssign && employeeId !== "" ? employeeId : undefined,
-        // Дату шлём только когда её реально выбирали (иначе бэк ставит «сейчас»).
-        date: showDate && date?.isValid() ? date.format("YYYY-MM-DD") : undefined,
+        // Дату шлём только для прошедшего дня. За сегодня поле не отправляем:
+        // бэк кладёт в `performedAt` полдень выбранного дня и сравнивает его с
+        // текущим моментом, поэтому до 12:00 сегодняшняя дата отбивается как
+        // «Дата уборки не может быть в будущем» — а уборку отмечают как раз
+        // утром. Без поля бэк проставит момент создания, тот же день.
+        date:
+          showDate && date?.isValid() && !date.isSame(dayjs(), "day")
+            ? date.format("YYYY-MM-DD")
+            : undefined,
         organizationId: orgId,
       });
       notify?.({
