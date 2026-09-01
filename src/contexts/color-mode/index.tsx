@@ -79,6 +79,16 @@ type ColorModeContextType = {
   setSidebarDensity: (density: SidebarDensity) => void;
   /** Сброс к значениям по умолчанию. */
   reset: () => void;
+  /**
+   * Есть ли у сотрудника личные переопределения темы. По ним решаем, показывать
+   * ли кнопку «Вернуть тему организации».
+   */
+  hasPersonalTheme: boolean;
+  /**
+   * Убирает личные переопределения и возвращает тему организации. Отличается от
+   * reset: тот откатывает к дефолтам приложения, а не к палитре организации.
+   */
+  resetToOrganization: () => void;
 };
 
 export const ColorModeContext = createContext<ColorModeContextType>(
@@ -163,12 +173,15 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
 
   /** Настройки, выбранные пользователем вручную — их палитра организации не трогает. */
   const overridesRef = useRef<Set<ThemeField>>(readThemeOverrides());
+  /** Дубль размера overridesRef в состоянии: ref не перерисовывает кастомайзер. */
+  const [personalCount, setPersonalCount] = useState(overridesRef.current.size);
   /** Последняя применённая палитра организации (по значению, не по ссылке). */
   const appliedConfigRef = useRef<string | null>(null);
 
   const markOverride = useCallback((field: ThemeField) => {
     if (overridesRef.current.has(field)) return;
     overridesRef.current.add(field);
+    setPersonalCount(overridesRef.current.size);
     try {
       window.localStorage.setItem(
         THEME_OVERRIDES_KEY,
@@ -311,7 +324,64 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     setCardSkinState(DEFAULT_CARD_SKIN);
     setUiScaleState(DEFAULT_UI_SCALE);
     setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
+    setPersonalCount(0);
   }, []);
+
+  /**
+   * Возврат к теме организации: снимаем личные переопределения и применяем
+   * `themeConfig` немедленно. Ждать следующего ответа `/auth/me/` нельзя —
+   * эффект применения смотрит на изменение самого конфига, а он не менялся.
+   */
+  const resetToOrganization = useCallback(() => {
+    overridesRef.current = new Set();
+    appliedConfigRef.current = null;
+    setPersonalCount(0);
+    try {
+      window.localStorage.removeItem(THEME_OVERRIDES_KEY);
+    } catch {
+      /* приватный режим — переопределения уйдут до перезагрузки */
+    }
+    const config = themeConfig;
+    if (!config || typeof config !== "object") {
+      // У организации палитры нет — возвращаемся к дефолтам приложения.
+      setSchemeState("system");
+      setAccentIdState(DEFAULT_ACCENT_ID);
+      setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
+      setDarkSurfaceState(DEFAULT_DARK_SURFACE);
+      setCardSkinState(DEFAULT_CARD_SKIN);
+      setUiScaleState(DEFAULT_UI_SCALE);
+      setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
+      return;
+    }
+    const orgAccent = config.accentId || config.primaryColor;
+    setAccentIdState(resolveAccentId(typeof orgAccent === "string" ? orgAccent : null));
+    setSchemeState(
+      config.colorScheme === "light" || config.colorScheme === "dark" || config.colorScheme === "system"
+        ? (config.colorScheme as ColorScheme)
+        : "system",
+    );
+    setLightSurfaceState(
+      typeof config.lightSurface === "string" ? config.lightSurface : DEFAULT_LIGHT_SURFACE,
+    );
+    setDarkSurfaceState(
+      typeof config.darkSurface === "string" ? config.darkSurface : DEFAULT_DARK_SURFACE,
+    );
+    setCardSkinState(
+      config.cardSkin === "bordered" || config.cardSkin === "shadow"
+        ? (config.cardSkin as CardSkin)
+        : DEFAULT_CARD_SKIN,
+    );
+    setUiScaleState(
+      config.uiScale === "compact" || config.uiScale === "normal" || config.uiScale === "large"
+        ? (config.uiScale as UiScale)
+        : DEFAULT_UI_SCALE,
+    );
+    setSidebarDensityState(
+      SIDEBAR_DENSITIES.includes(config.sidebarDensity as SidebarDensity)
+        ? (config.sidebarDensity as SidebarDensity)
+        : DEFAULT_SIDEBAR_DENSITY,
+    );
+  }, [themeConfig]);
 
   const accentPreset = useMemo(() => getAccentPreset(accentId), [accentId]);
   const accentTokens = accentPreset[mode];
@@ -336,6 +406,8 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       sidebarDensity,
       setSidebarDensity,
       reset,
+      hasPersonalTheme: personalCount > 0,
+      resetToOrganization,
     }),
     [
       scheme,
@@ -356,6 +428,8 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setUiScale,
       setSidebarDensity,
       reset,
+      personalCount,
+      resetToOrganization,
     ],
   );
 

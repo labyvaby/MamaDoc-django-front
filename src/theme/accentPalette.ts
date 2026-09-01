@@ -1,14 +1,25 @@
 /**
  * Акцентная палитра приложения.
  *
- * Отличие от прежней модели «один хекс на обе темы»: акцент здесь — СВЯЗКА
- * токенов, и она своя для светлой и тёмной темы. Акцент тянет за собой фон
- * страницы, цвет карточек и границы, поэтому интерфейс получается тонированным
- * под выбранный цвет, а не «цветная кнопка на сером фоне».
+ * Акцент — СВЯЗКА токенов, своя для светлой и тёмной темы: он тянет за собой
+ * фон страницы, цвет карточек и границы, поэтому интерфейс получается
+ * тонированным под выбранный цвет, а не «цветная кнопка на сером фоне».
  *
- * Каждая пара (accent × поверхность) проверена на контраст: accent как текст на
- * surface, accent как текст на accentBg и accentFg на заливке accent — везде
- * не ниже 4.5:1 (WCAG AA). Правя значения, прогоняй `npm run test -- accentPalette`.
+ * Три правила держат набор:
+ *
+ * 1. Контраст. Каждая пара — accent на surface, accent на accentBg, accentFg
+ *    на заливке accent — не ниже 4.5:1 (WCAG AA).
+ * 2. Расстояние до статусных цветов. Приложение говорит цветом о состоянии
+ *    приёма (`config/appointmentStatuses.tsx`): error — отменён/долг, warning —
+ *    идёт приём, success — оплачено, info — подтверждён, teal — «Пациент
+ *    здесь», purple — частично оплачено. Акцент, совпадающий с любым из них,
+ *    делает чипы статусов неотличимыми от кнопок, поэтому такие оттенки в
+ *    палитру не попадают (ΔE ≥ 20 в обеих темах).
+ * 3. Различимость. Два акцента, которые глаз не отличает, — это не выбор, а
+ *    шум в сетке.
+ *
+ * Все три зафиксированы тестом: правя значения, прогоняй
+ * `npm run test -- accentPalette`.
  */
 
 /** Шесть цветов, из которых собирается тема для одного режима (день/ночь). */
@@ -18,7 +29,7 @@ export type AccentTokens = {
   /**
    * Непрозрачный фон под акцентом: чипы, активный пункт меню, дорожка прогресса.
    * Именно непрозрачный, а не alpha(accent): полупрозрачная подложка «плывёт»
-   * поверх цветных строк таблиц и выделения.
+   * поверх цветных строк таблиц.
    */
   accentBg: string;
   /** Текст и иконки поверх заливки accent. */
@@ -41,35 +52,16 @@ export type AccentPreset = {
 };
 
 /**
- * Акценты, отсортированные по кругу цветового тона; замыкает список нейтральный
- * «Графитовый» — он вне круга и добавлен нами: в прежней палитре нейтральных
- * оттенка было два («Графит», «Сталь»), и без него выбор тех, кто сознательно
- * отказался от цвета, мигрировал бы в бирюзу.
+ * 50 акцентов по кругу цветового тона; замыкает список нейтральный
+ * «Графитовый» — он вне круга и нужен тем, кто сознательно отказывается от
+ * цвета.
  */
 export const ACCENT_PRESETS: AccentPreset[] = [
   {
-    id: "crimson",
-    name: "Малиновый",
-    light: { accent: "#BE296A", accentBg: "#FEEAEF", accentFg: "#FFFFFF", page: "#FFEDF2", surface: "#FFFAFC", border: "#EED0D8" },
-    dark: { accent: "#FF8FB4", accentBg: "#4B2532", accentFg: "#19080E", page: "#19080E", surface: "#261319", border: "#41282F" },
-  },
-  {
-    id: "cherry",
-    name: "Вишнёвый",
-    light: { accent: "#C2285B", accentBg: "#FFEAED", accentFg: "#FFFFFF", page: "#FEEEF0", surface: "#FFFAFB", border: "#EFD0D5" },
-    dark: { accent: "#FF91A8", accentBg: "#4C252D", accentFg: "#1A080C", page: "#1A080C", surface: "#271317", border: "#42282D" },
-  },
-  {
-    id: "scarlet",
-    name: "Алый",
-    light: { accent: "#C4284B", accentBg: "#FEEBEC", accentFg: "#FFFFFF", page: "#FEEEEF", surface: "#FEFBFB", border: "#EFD0D2" },
-    dark: { accent: "#FF939D", accentBg: "#4D2529", accentFg: "#1A080A", page: "#1A080A", surface: "#271314", border: "#42282A" },
-  },
-  {
-    id: "red",
-    name: "Красный",
-    light: { accent: "#C52A39", accentBg: "#FEEBEA", accentFg: "#FFFFFF", page: "#FFEEED", surface: "#FEFBFB", border: "#F0D1CF" },
-    dark: { accent: "#FF9593", accentBg: "#4D2525", accentFg: "#1A0808", page: "#1A0808", surface: "#271312", border: "#422827" },
+    id: "chestnut",
+    name: "Каштановый",
+    light: { accent: "#6E2E2A", accentBg: "#FAE8E7", accentFg: "#FFFFFF", page: "#FAEBEB", surface: "#FDFBFB", border: "#E0D4D3" },
+    dark: { accent: "#C78682", accentBg: "#382827", accentFg: "#130909", page: "#130909", surface: "#1C1414", border: "#312E2E" },
   },
   {
     id: "tomato",
@@ -78,10 +70,16 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#FF9688", accentBg: "#4D2621", accentFg: "#1A0907", page: "#1A0907", surface: "#271310", border: "#422825" },
   },
   {
-    id: "brick",
-    name: "Кирпичный",
-    light: { accent: "#C23502", accentBg: "#FEECE7", accentFg: "#FFFFFF", page: "#FEEFEA", surface: "#FFFBF9", border: "#EFD2C9" },
-    dark: { accent: "#FE987C", accentBg: "#4D271D", accentFg: "#1A0905", page: "#1A0905", surface: "#27140E", border: "#422922" },
+    id: "sienna",
+    name: "Сиена",
+    light: { accent: "#A83524", accentBg: "#FCE8E5", accentFg: "#FFFFFF", page: "#FCECE9", surface: "#FEFBFA", border: "#E3D2D0" },
+    dark: { accent: "#E4A399", accentBg: "#3C2623", accentFg: "#150907", page: "#150907", surface: "#1E1312", border: "#352B2A" },
+  },
+  {
+    id: "rust",
+    name: "Ржавый",
+    light: { accent: "#9D3A10", accentBg: "#FEEBE3", accentFg: "#FFFFFF", page: "#FEEEE7", surface: "#FEFBFA", border: "#E9D3CA" },
+    dark: { accent: "#E59979", accentBg: "#44271B", accentFg: "#170A05", page: "#170A05", surface: "#22140E", border: "#3C2A23" },
   },
   {
     id: "terracotta",
@@ -96,10 +94,22 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#FE9B60", accentBg: "#4B2914", accentFg: "#190A03", page: "#190A03", surface: "#26150A", border: "#412A1E" },
   },
   {
+    id: "coffee",
+    name: "Кофейный",
+    light: { accent: "#6E4A2A", accentBg: "#FAF0E7", accentFg: "#FFFFFF", page: "#FAF2EB", surface: "#FDFCFB", border: "#E0D9D3" },
+    dark: { accent: "#C7A282", accentBg: "#382F27", accentFg: "#130E09", page: "#130E09", surface: "#1C1814", border: "#312F2E" },
+  },
+  {
     id: "orange",
     name: "Оранжевый",
     light: { accent: "#A55700", accentBg: "#FFECDF", accentFg: "#FFFFFF", page: "#FFEFE4", surface: "#FEFBF9", border: "#ECD4C3" },
     dark: { accent: "#FA9F55", accentBg: "#492A11", accentFg: "#180A02", page: "#180A02", surface: "#251509", border: "#402B1C" },
+  },
+  {
+    id: "ochre",
+    name: "Охра",
+    light: { accent: "#93611F", accentBg: "#FCF2E5", accentFg: "#FFFFFF", page: "#FCF4E9", surface: "#FEFCFA", border: "#E3DBD0" },
+    dark: { accent: "#E4C399", accentBg: "#3C3123", accentFg: "#150F07", page: "#150F07", surface: "#1E1912", border: "#35302A" },
   },
   {
     id: "carrot",
@@ -108,22 +118,10 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#F4A34C", accentBg: "#482C0D", accentFg: "#180B01", page: "#180B01", surface: "#241608", border: "#3E2C1A" },
   },
   {
-    id: "pumpkin",
-    name: "Тыквенный",
-    light: { accent: "#976100", accentBg: "#FFEDD9", accentFg: "#FFFFFF", page: "#FDF0E1", surface: "#FFFBF7", border: "#E8D6C1" },
-    dark: { accent: "#EEA743", accentBg: "#452D0A", accentFg: "#170C01", page: "#170C01", surface: "#231707", border: "#3D2D19" },
-  },
-  {
     id: "amber",
     name: "Янтарный",
     light: { accent: "#8D6300", accentBg: "#FDEED6", accentFg: "#FFFFFF", page: "#FBF1E1", surface: "#FEFBF7", border: "#E6D7C0" },
     dark: { accent: "#E7AC3E", accentBg: "#432F08", accentFg: "#160C01", page: "#160C01", surface: "#221706", border: "#3B2E18" },
-  },
-  {
-    id: "honey",
-    name: "Медовый",
-    light: { accent: "#876601", accentBg: "#FBEFD6", accentFg: "#FFFFFF", page: "#FAF2E1", surface: "#FEFCF7", border: "#E3D8C0" },
-    dark: { accent: "#DFB03A", accentBg: "#403007", accentFg: "#140D01", page: "#140D01", surface: "#201806", border: "#392F18" },
   },
   {
     id: "mustard",
@@ -132,22 +130,16 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#D5B53B", accentBg: "#3D3207", accentFg: "#130E01", page: "#130E01", surface: "#1F1906", border: "#373018" },
   },
   {
-    id: "olive",
-    name: "Оливковый",
-    light: { accent: "#7A6D02", accentBg: "#F5F1D7", accentFg: "#FFFFFF", page: "#F6F3E1", surface: "#FDFCF7", border: "#DEDAC0" },
-    dark: { accent: "#CBB93F", accentBg: "#3A3308", accentFg: "#110F01", page: "#110F01", surface: "#1D1A06", border: "#353118" },
+    id: "brass",
+    name: "Латунный",
+    light: { accent: "#6E652A", accentBg: "#FAF8E7", accentFg: "#FFFFFF", page: "#FAF8EB", surface: "#FDFDFB", border: "#E0DED3" },
+    dark: { accent: "#C7BE82", accentBg: "#383527", accentFg: "#131209", page: "#131209", surface: "#1C1B14", border: "#31312E" },
   },
   {
     id: "khaki",
     name: "Хаки",
     light: { accent: "#737001", accentBg: "#F2F2D8", accentFg: "#FFFFFF", page: "#F4F4E2", surface: "#FCFCF7", border: "#DBDBC1" },
     dark: { accent: "#C0BE46", accentBg: "#36350B", accentFg: "#100F01", page: "#100F01", surface: "#1B1B07", border: "#323219" },
-  },
-  {
-    id: "lime",
-    name: "Лаймовый",
-    light: { accent: "#6A7301", accentBg: "#EFF3D9", accentFg: "#FFFFFF", page: "#F1F5E3", surface: "#FBFCF7", border: "#D8DCC2" },
-    dark: { accent: "#B4C24E", accentBg: "#32360E", accentFg: "#0E1002", page: "#0E1002", surface: "#191B08", border: "#2F331B" },
   },
   {
     id: "spring",
@@ -162,10 +154,22 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#9AC964", accentBg: "#293916", accentFg: "#0A1103", page: "#0A1103", surface: "#141D0B", border: "#2A341E" },
   },
   {
+    id: "moss",
+    name: "Мшистый",
+    light: { accent: "#4F6E2A", accentBg: "#F1FAE7", accentFg: "#FFFFFF", page: "#F3FAEB", surface: "#FCFDFB", border: "#DAE0D3" },
+    dark: { accent: "#A7C782", accentBg: "#303827", accentFg: "#0E1309", page: "#0E1309", surface: "#181C14", border: "#30312E" },
+  },
+  {
     id: "green",
     name: "Зелёный",
     light: { accent: "#377C02", accentBg: "#E6F6DF", accentFg: "#FFFFFF", page: "#EBF7E7", surface: "#FAFDF8", border: "#CFDFC8" },
     dark: { accent: "#8CCC70", accentBg: "#243A1A", accentFg: "#081104", page: "#081104", surface: "#121D0D", border: "#273521" },
+  },
+  {
+    id: "forest",
+    name: "Лесной",
+    light: { accent: "#2A6E34", accentBg: "#E7FAEA", accentFg: "#FFFFFF", page: "#EBFAED", surface: "#FBFDFB", border: "#D3E0D5" },
+    dark: { accent: "#82C78D", accentBg: "#27382A", accentFg: "#09130A", page: "#09130A", surface: "#141C15", border: "#2E312E" },
   },
   {
     id: "meadow",
@@ -186,52 +190,10 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#5AD295", accentBg: "#123C27", accentFg: "#021209", page: "#021209", surface: "#0A1E13", border: "#1E3729" },
   },
   {
-    id: "mint",
-    name: "Мятный",
-    light: { accent: "#027C5A", accentBg: "#DBF8EB", accentFg: "#FFFFFF", page: "#E4F8EF", surface: "#F8FDFB", border: "#C5E1D4" },
-    dark: { accent: "#47D3A2", accentBg: "#0A3C2B", accentFg: "#01130B", page: "#01130B", surface: "#081E16", border: "#1B372B" },
-  },
-  {
-    id: "seagreen",
-    name: "Морская волна",
-    light: { accent: "#007B63", accentBg: "#DAF8EE", accentFg: "#FFFFFF", page: "#E3F8F1", surface: "#F7FDFB", border: "#C3E1D7" },
-    dark: { accent: "#31D4AE", accentBg: "#033D30", accentFg: "#00130D", page: "#00130D", surface: "#061E18", border: "#19372E" },
-  },
-  {
-    id: "turquoise",
-    name: "Бирюзовый",
-    light: { accent: "#027A6B", accentBg: "#D8F8F1", accentFg: "#FFFFFF", page: "#E2F8F3", surface: "#F7FDFC", border: "#C1E1DA" },
-    dark: { accent: "#0FD4BB", accentBg: "#003C34", accentFg: "#00130F", page: "#00130F", surface: "#041E1A", border: "#163731" },
-  },
-  {
-    id: "aquamarine",
-    name: "Аквамарин",
-    light: { accent: "#037972", accentBg: "#D7F8F4", accentFg: "#FFFFFF", page: "#E1F8F5", surface: "#F7FDFC", border: "#C0E1DD" },
-    dark: { accent: "#01D3C6", accentBg: "#003C38", accentFg: "#001311", page: "#001311", surface: "#031E1C", border: "#153734" },
-  },
-  {
-    id: "cyan",
-    name: "Циан",
-    light: { accent: "#047878", accentBg: "#D6F8F7", accentFg: "#FFFFFF", page: "#E1F8F7", surface: "#F7FDFD", border: "#C0E1E0" },
-    dark: { accent: "#0DD1D1", accentBg: "#013B3B", accentFg: "#001212", page: "#001212", surface: "#021E1E", border: "#143736" },
-  },
-  {
-    id: "lagoon",
-    name: "Лагунный",
-    light: { accent: "#02787E", accentBg: "#D6F8FA", accentFg: "#FFFFFF", page: "#E1F8F9", surface: "#F7FDFE", border: "#BFE1E3" },
-    dark: { accent: "#07D0DB", accentBg: "#013B3E", accentFg: "#001214", page: "#001214", surface: "#021E20", border: "#143639" },
-  },
-  {
     id: "sky",
     name: "Небесный",
     light: { accent: "#087684", accentBg: "#D6F7FD", accentFg: "#FFFFFF", page: "#E1F7FB", surface: "#F7FDFE", border: "#C0E0E5" },
     dark: { accent: "#04CEE5", accentBg: "#003A42", accentFg: "#001215", page: "#001215", surface: "#031E22", border: "#14363B" },
-  },
-  {
-    id: "azure",
-    name: "Лазурный",
-    light: { accent: "#02768B", accentBg: "#D8F6FE", accentFg: "#FFFFFF", page: "#E1F7FD", surface: "#F7FDFF", border: "#C0DFE8" },
-    dark: { accent: "#05CCEF", accentBg: "#013A45", accentFg: "#001217", page: "#001217", surface: "#031D23", border: "#15353D" },
   },
   {
     id: "lightblue",
@@ -240,10 +202,10 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#22CAF8", accentBg: "#003949", accentFg: "#001118", page: "#001118", surface: "#051D25", border: "#17353F" },
   },
   {
-    id: "steelblue",
-    name: "Стальной",
-    light: { accent: "#00769D", accentBg: "#E0F4FE", accentFg: "#FFFFFF", page: "#E4F6FF", surface: "#F9FCFF", border: "#C3DEEC" },
-    dark: { accent: "#3FC7FF", accentBg: "#06384C", accentFg: "#001119", page: "#001119", surface: "#061C26", border: "#193441" },
+    id: "polar",
+    name: "Полярный",
+    light: { accent: "#2A5F6E", accentBg: "#E7F6FA", accentFg: "#FFFFFF", page: "#EBF7FA", surface: "#FBFDFD", border: "#D3DDE0" },
+    dark: { accent: "#82B7C7", accentBg: "#273438", accentFg: "#091113", page: "#091113", surface: "#141A1C", border: "#2E3131" },
   },
   {
     id: "cornflower",
@@ -258,52 +220,40 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#71BFFF", accentBg: "#14364F", accentFg: "#03101B", page: "#03101B", surface: "#0B1B28", border: "#1E3243" },
   },
   {
-    id: "blue",
-    name: "Синий",
-    light: { accent: "#016CC3", accentBg: "#E6F1FE", accentFg: "#FFFFFF", page: "#EAF4FF", surface: "#FAFCFE", border: "#C9DBF0" },
-    dark: { accent: "#80BCFE", accentBg: "#1A3450", accentFg: "#040F1C", page: "#040F1C", surface: "#0D1A29", border: "#213244" },
+    id: "sapphire",
+    name: "Сапфировый",
+    light: { accent: "#10469D", accentBg: "#E3EDFE", accentFg: "#FFFFFF", page: "#E7F0FE", surface: "#FAFCFE", border: "#CAD6E9" },
+    dark: { accent: "#79A2E5", accentBg: "#1B2B44", accentFg: "#050C17", page: "#050C17", surface: "#0E1622", border: "#232D3C" },
   },
   {
-    id: "royal",
-    name: "Королевский синий",
-    light: { accent: "#1B68DA", accentBg: "#E8F1FF", accentFg: "#FFFFFF", page: "#EBF3FF", surface: "#FAFCFE", border: "#CCDAF1" },
-    dark: { accent: "#8CB9FF", accentBg: "#203351", accentFg: "#060E1C", page: "#060E1C", surface: "#101A29", border: "#243145" },
+    id: "denim",
+    name: "Джинсовый",
+    light: { accent: "#2A436E", accentBg: "#E7EEFA", accentFg: "#FFFFFF", page: "#EBF0FA", surface: "#FBFCFD", border: "#D3D8E0" },
+    dark: { accent: "#829CC7", accentBg: "#272D38", accentFg: "#090D13", page: "#090D13", surface: "#14171C", border: "#2E2F31" },
   },
   {
-    id: "ultramarine",
-    name: "Ультрамарин",
-    light: { accent: "#3B62DB", accentBg: "#EAF0FF", accentFg: "#FFFFFF", page: "#EDF2FE", surface: "#FBFCFE", border: "#CED9F1" },
-    dark: { accent: "#97B6FE", accentBg: "#253151", accentFg: "#080E1C", page: "#080E1C", surface: "#121929", border: "#273045" },
+    id: "electric",
+    name: "Электрик",
+    light: { accent: "#172CC9", accentBg: "#E4E7FD", accentFg: "#FFFFFF", page: "#E8EBFD", surface: "#FAFBFE", border: "#CDD0E6" },
+    dark: { accent: "#A3ACEE", accentBg: "#1F2340", accentFg: "#060816", page: "#060816", surface: "#101220", border: "#262839" },
   },
   {
-    id: "indigo",
-    name: "Индиго",
-    light: { accent: "#505DDA", accentBg: "#EBF0FF", accentFg: "#FFFFFF", page: "#EEF2FF", surface: "#FBFCFE", border: "#D1D8F1" },
-    dark: { accent: "#A1B2FE", accentBg: "#293051", accentFg: "#0A0D1C", page: "#0A0D1C", surface: "#141829", border: "#2A2F45" },
+    id: "midnight",
+    name: "Полуночный",
+    light: { accent: "#2A2A6E", accentBg: "#E7E7FA", accentFg: "#FFFFFF", page: "#EBEBFA", surface: "#FBFBFD", border: "#D3D3E0" },
+    dark: { accent: "#8D8DCC", accentBg: "#272738", accentFg: "#090913", page: "#090913", surface: "#14141C", border: "#2E2E31" },
   },
   {
-    id: "iris",
-    name: "Ирисовый",
-    light: { accent: "#6058D8", accentBg: "#EDEFFE", accentFg: "#FFFFFF", page: "#F0F1FF", surface: "#FBFBFE", border: "#D4D7F0" },
-    dark: { accent: "#AAAFFF", accentBg: "#2D2F51", accentFg: "#0C0C1C", page: "#0C0C1C", surface: "#171729", border: "#2C2E44" },
+    id: "ultraviolet",
+    name: "Ультрафиолет",
+    light: { accent: "#4C17C9", accentBg: "#ECE4FD", accentFg: "#FFFFFF", page: "#EEE8FD", surface: "#FBFAFE", border: "#D4CDE6" },
+    dark: { accent: "#BAA3EE", accentBg: "#291F40", accentFg: "#0B0616", page: "#0B0616", surface: "#151020", border: "#2C2639" },
   },
   {
-    id: "viola",
-    name: "Фиалковый",
-    light: { accent: "#6E53D4", accentBg: "#EFEEFE", accentFg: "#FFFFFF", page: "#F1F1FE", surface: "#FBFBFF", border: "#D7D6F0" },
-    dark: { accent: "#B4ABFF", accentBg: "#312D50", accentFg: "#0E0C1B", page: "#0E0C1B", surface: "#191728", border: "#2F2D44" },
-  },
-  {
-    id: "violet",
-    name: "Фиолетовый",
-    light: { accent: "#7A4ECF", accentBg: "#F1EDFE", accentFg: "#FFFFFF", page: "#F3F0FF", surface: "#FCFBFF", border: "#DAD5EE" },
-    dark: { accent: "#BDA7FE", accentBg: "#352C4E", accentFg: "#0F0B1B", page: "#0F0B1B", surface: "#1B1627", border: "#322C43" },
-  },
-  {
-    id: "lilac",
-    name: "Лиловый",
-    light: { accent: "#8549C8", accentBg: "#F3EDFF", accentFg: "#FFFFFF", page: "#F5F0FE", surface: "#FCFBFF", border: "#DDD4ED" },
-    dark: { accent: "#C8A2FE", accentBg: "#392B4C", accentFg: "#110B1A", page: "#110B1A", surface: "#1C1526", border: "#342B41" },
+    id: "grape",
+    name: "Виноградный",
+    light: { accent: "#4D109D", accentBg: "#EFE3FE", accentFg: "#FFFFFF", page: "#F1E7FE", surface: "#FCFAFE", border: "#D7CAE9" },
+    dark: { accent: "#A879E5", accentBg: "#2D1B44", accentFg: "#0D0517", page: "#0D0517", surface: "#170E22", border: "#2E233C" },
   },
   {
     id: "purple",
@@ -312,10 +262,16 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#D29DFA", accentBg: "#3C2A4A", accentFg: "#120A19", page: "#120A19", surface: "#1E1525", border: "#362B40" },
   },
   {
-    id: "amethyst",
-    name: "Аметистовый",
-    light: { accent: "#9940B6", accentBg: "#F9EAFE", accentFg: "#FFFFFF", page: "#F9EEFE", surface: "#FEFAFF", border: "#E3D2E9" },
-    dark: { accent: "#DB9AF3", accentBg: "#3F2947", accentFg: "#140A17", page: "#140A17", surface: "#201424", border: "#392A3E" },
+    id: "plum",
+    name: "Сливовый",
+    light: { accent: "#592A6E", accentBg: "#F4E7FA", accentFg: "#FFFFFF", page: "#F5EBFA", surface: "#FCFBFD", border: "#DCD3E0" },
+    dark: { accent: "#B282C7", accentBg: "#322738", accentFg: "#100913", page: "#100913", surface: "#19141C", border: "#302E31" },
+  },
+  {
+    id: "mulberry",
+    name: "Шелковичный",
+    light: { accent: "#83109D", accentBg: "#F9E3FE", accentFg: "#FFFFFF", page: "#FAE7FE", surface: "#FDFAFE", border: "#E3CAE9" },
+    dark: { accent: "#D179E5", accentBg: "#3C1B44", accentFg: "#140517", page: "#140517", surface: "#1E0E22", border: "#38233C" },
   },
   {
     id: "orchid",
@@ -330,10 +286,22 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#EA95E0", accentBg: "#442741", accentFg: "#160915", page: "#160915", surface: "#221321", border: "#3C293A" },
   },
   {
+    id: "blackberry",
+    name: "Ежевичный",
+    light: { accent: "#6E2A5F", accentBg: "#FAE7F6", accentFg: "#FFFFFF", page: "#FAEBF7", surface: "#FDFBFD", border: "#E0D3DD" },
+    dark: { accent: "#C782B7", accentBg: "#382734", accentFg: "#130911", page: "#130911", surface: "#1C141A", border: "#312E31" },
+  },
+  {
     id: "magenta",
     name: "Маджента",
     light: { accent: "#AF3393", accentBg: "#FEE9F7", accentFg: "#FFFFFF", page: "#FEEDF8", surface: "#FEFAFD", border: "#EAD1E1" },
     dark: { accent: "#F193D6", accentBg: "#46263D", accentFg: "#170913", page: "#170913", surface: "#24131F", border: "#3E2837" },
+  },
+  {
+    id: "cyclamen",
+    name: "Цикламен",
+    light: { accent: "#C0168D", accentBg: "#FDE4F5", accentFg: "#FFFFFF", page: "#FDE8F7", surface: "#FEFAFD", border: "#E6CDDF" },
+    dark: { accent: "#EEA3D7", accentBg: "#401F36", accentFg: "#160611", page: "#160611", surface: "#20101B", border: "#392633" },
   },
   {
     id: "pink",
@@ -348,6 +316,42 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { accent: "#FB90BF", accentBg: "#4A2536", accentFg: "#190810", page: "#190810", surface: "#26131B", border: "#402832" },
   },
   {
+    id: "marsala",
+    name: "Марсала",
+    light: { accent: "#6E2A48", accentBg: "#FAE7EF", accentFg: "#FFFFFF", page: "#FAEBF1", surface: "#FDFBFC", border: "#E0D3D9" },
+    dark: { accent: "#C782A0", accentBg: "#38272E", accentFg: "#13090D", page: "#13090D", surface: "#1C1417", border: "#312E2F" },
+  },
+  {
+    id: "crimson",
+    name: "Малиновый",
+    light: { accent: "#BE296A", accentBg: "#FEEAEF", accentFg: "#FFFFFF", page: "#FFEDF2", surface: "#FFFAFC", border: "#EED0D8" },
+    dark: { accent: "#FF8FB4", accentBg: "#4B2532", accentFg: "#19080E", page: "#19080E", surface: "#261319", border: "#41282F" },
+  },
+  {
+    id: "cherry",
+    name: "Вишнёвый",
+    light: { accent: "#C2285B", accentBg: "#FFEAED", accentFg: "#FFFFFF", page: "#FEEEF0", surface: "#FFFAFB", border: "#EFD0D5" },
+    dark: { accent: "#FF91A8", accentBg: "#4C252D", accentFg: "#1A080C", page: "#1A080C", surface: "#271317", border: "#42282D" },
+  },
+  {
+    id: "scarlet",
+    name: "Алый",
+    light: { accent: "#C4284B", accentBg: "#FEEBEC", accentFg: "#FFFFFF", page: "#FEEEEF", surface: "#FEFBFB", border: "#EFD0D2" },
+    dark: { accent: "#FF939D", accentBg: "#4D2529", accentFg: "#1A080A", page: "#1A080A", surface: "#271314", border: "#42282A" },
+  },
+  {
+    id: "garnet",
+    name: "Гранатовый",
+    light: { accent: "#A82435", accentBg: "#FCE5E8", accentFg: "#FFFFFF", page: "#FCE9EC", surface: "#FEFAFB", border: "#E3D0D2" },
+    dark: { accent: "#E499A3", accentBg: "#3C2326", accentFg: "#150709", page: "#150709", surface: "#1E1213", border: "#352A2B" },
+  },
+  {
+    id: "red",
+    name: "Красный",
+    light: { accent: "#C52A39", accentBg: "#FEEBEA", accentFg: "#FFFFFF", page: "#FFEEED", surface: "#FEFBFB", border: "#F0D1CF" },
+    dark: { accent: "#FF9593", accentBg: "#4D2525", accentFg: "#1A0808", page: "#1A0808", surface: "#271312", border: "#422827" },
+  },
+  {
     id: "graphite",
     name: "Графитовый",
     light: { accent: "#4A5A70", accentBg: "#E7EBF1", accentFg: "#FFFFFF", page: "#EFF2F6", surface: "#FBFCFD", border: "#D5DBE4" },
@@ -356,11 +360,41 @@ export const ACCENT_PRESETS: AccentPreset[] = [
 ];
 
 /**
- * Акцент по умолчанию — «Ирисовый». Прежний дефолт был «Ирис» #5b5bd6; в новой
- * палитре ему соответствует iris (#6058D8 в светлой теме), поэтому у тех, кто
- * ничего не менял, цвет остаётся тем же на глаз.
+ * Акценты, убранные из палитры, и их прежние оттенки: одни совпадали со
+ * статусными цветами, другие дублировали соседей. Нужны только для миграции —
+ * эти ключи уже сохранены у сотрудников и организаций, и по оттенку мы
+ * подбираем им ближайшую замену.
  */
-export const DEFAULT_ACCENT_ID = "iris";
+const REMOVED_ACCENTS: Record<string, string> = {
+  brick: "#C23502", // Кирпичный
+  mint: "#027C5A", // Мятный
+  seagreen: "#007B63", // Морская волна
+  turquoise: "#027A6B", // Бирюзовый
+  aquamarine: "#037972", // Аквамарин
+  cyan: "#047878", // Циан
+  lagoon: "#02787E", // Лагунный
+  blue: "#016CC3", // Синий
+  royal: "#1B68DA", // Королевский синий
+  ultramarine: "#3B62DB", // Ультрамарин
+  indigo: "#505DDA", // Индиго
+  iris: "#6058D8", // Ирисовый
+  viola: "#6E53D4", // Фиалковый
+  violet: "#7A4ECF", // Фиолетовый
+  lilac: "#8549C8", // Лиловый
+  pumpkin: "#976100", // Тыквенный
+  honey: "#876601", // Медовый
+  olive: "#7A6D02", // Оливковый
+  lime: "#6A7301", // Лаймовый
+  azure: "#02768B", // Лазурный
+  steelblue: "#00769D", // Стальной
+  amethyst: "#9940B6", // Аметистовый
+};
+
+/**
+ * Акцент по умолчанию — «Сапфировый». Прежний дефолт «Ирисовый» из палитры
+ * ушёл: он почти совпадал со статусом «частично оплачено» (ΔE 8).
+ */
+export const DEFAULT_ACCENT_ID = "sapphire";
 
 const BY_ID = new Map(ACCENT_PRESETS.map((p) => [p.id, p]));
 
@@ -384,19 +418,9 @@ const hexToRgb = (hex: string): [number, number, number] => {
   ];
 };
 
-/**
- * Приводит сохранённое значение к ключу пресета.
- *
- * Нужно для миграции: в настройках сотрудников и в `themeConfig` организаций
- * лежит хекс старой палитры (`#5b5bd6` и т.п.). Подбираем ближайший акцент по
- * светлой теме, чтобы после релиза цвет не «прыгнул» на дефолтный.
- */
-export const resolveAccentId = (value: string | null | undefined): string => {
-  if (!value) return DEFAULT_ACCENT_ID;
-  if (BY_ID.has(value)) return value;
-  if (!/^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(value)) return DEFAULT_ACCENT_ID;
-
-  const [r, g, b] = hexToRgb(value);
+/** Ближайший акцент палитры к произвольному цвету. */
+const nearestAccentId = (hex: string): string => {
+  const [r, g, b] = hexToRgb(hex);
   let bestId = DEFAULT_ACCENT_ID;
   let bestDist = Infinity;
   for (const preset of ACCENT_PRESETS) {
@@ -408,4 +432,21 @@ export const resolveAccentId = (value: string | null | undefined): string => {
     }
   }
   return bestId;
+};
+
+/**
+ * Приводит сохранённое значение к ключу пресета.
+ *
+ * Нужно для миграции: в настройках сотрудников и в `themeConfig` организаций
+ * лежит либо хекс старой палитры (`#5b5bd6`), либо ключ акцента, которого уже
+ * нет (`iris`). И то и другое переводим в ближайший оттенок, чтобы после
+ * релиза тема не «прыгнула» на дефолтную.
+ */
+export const resolveAccentId = (value: string | null | undefined): string => {
+  if (!value) return DEFAULT_ACCENT_ID;
+  if (BY_ID.has(value)) return value;
+  const removed = REMOVED_ACCENTS[value];
+  if (removed) return nearestAccentId(removed);
+  if (!/^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(value)) return DEFAULT_ACCENT_ID;
+  return nearestAccentId(value);
 };
