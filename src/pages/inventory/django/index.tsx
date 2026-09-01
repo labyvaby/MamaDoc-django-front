@@ -605,21 +605,23 @@ const DjangoInventoryPage: React.FC = () => {
         }
     };
 
-    const handleCancelDocument = async () => {
-        if (!countDocument) return;
+    /** Отменить пересчёт по id: и текущий, и любой открытый из истории. */
+    const cancelDocument = async (id: number) => {
         const approved = await confirm({
             title: "Отменить документ?",
-            message: "Пересчёт закроется без проведения разниц. Посчитанное будет потеряно.",
+            message: "Пересчёт закроется без проведения разниц: остатки склада не изменятся, а посчитанное в документе будет потеряно.",
             confirmText: "Отменить документ",
             variant: "error",
         });
         if (!approved) return;
         setBusy(true);
         try {
-            await cancelWarehouseInventoryCount(countDocument.document.id, orgId ?? undefined);
-            notify?.({ type: "success", message: "Документ отменён" });
-            resetSession();
-            setStep("setup");
+            await cancelWarehouseInventoryCount(id, orgId ?? undefined);
+            notify?.({ type: "success", message: "Документ №" + id + " отменён" });
+            if (countDocument?.document.id === id) {
+                resetSession();
+                setStep("setup");
+            }
             if (warehouseId != null) void loadHistory(warehouseId);
         } catch (error) {
             notify?.({
@@ -629,6 +631,10 @@ const DjangoInventoryPage: React.FC = () => {
         } finally {
             setBusy(false);
         }
+    };
+
+    const handleCancelDocument = () => {
+        if (countDocument) void cancelDocument(countDocument.document.id);
     };
 
     /** Товар создан из неизвестного штрихкода — засчитываем ему накопленные пики. */
@@ -692,51 +698,51 @@ const DjangoInventoryPage: React.FC = () => {
 
     return (
         <Box
-            sx={{
-                // Контейнер лейаута задаёт высоту и overflow:hidden — страница
-                // обязана скроллиться внутри себя, иначе низ просто обрезается.
+            sx={(t) => ({
+                // У страницы один владелец вертикальной прокрутки. Если держать
+                // overflowY на дочернем блоке, браузер получает конкурирующие
+                // scroll-контейнеры из-за фиксированной высоты ThemedLayout.
                 height: "100%",
                 minHeight: 0,
                 width: "100%",
                 display: "flex",
                 flexDirection: "column",
-            }}
+                overflowY: "auto",
+                overflowX: "hidden",
+                scrollbarGutter: "stable",
+                pr: { md: 0.5 },
+            })}
         >
-            <Box sx={{ flexShrink: 0 }}>
-                <PageHeader
-                    title="Инвентаризация"
-                    showTitle={false}
-                    onAdd={canManage ? headerAction.onAdd : undefined}
-                    addButtonText={headerAction.text}
-                    addButtonIcon={headerAction.icon}
-                    actions={step === "setup" ? undefined : (
-                        <>
-                            {step === "result" && (
-                                <AppButton variant="outlined" onClick={() => setStep("count")} disabled={busy}>
-                                    К пересчёту
-                                </AppButton>
-                            )}
-                            <AppButton
-                                variant="text"
-                                color="error"
-                                onClick={handleCancelDocument}
-                                disabled={busy || !canManage}
-                            >
-                                Отменить документ
+            <PageHeader
+                title="Инвентаризация"
+                showTitle={false}
+                onAdd={canManage ? headerAction.onAdd : undefined}
+                addButtonText={headerAction.text}
+                addButtonIcon={headerAction.icon}
+                actions={step === "setup" ? undefined : (
+                    <>
+                        {step === "result" && (
+                            <AppButton variant="outlined" onClick={() => setStep("count")} disabled={busy}>
+                                К пересчёту
                             </AppButton>
-                        </>
-                    )}
-                />
-            </Box>
+                        )}
+                        <AppButton
+                            variant="text"
+                            color="error"
+                            onClick={handleCancelDocument}
+                            disabled={busy || !canManage}
+                        >
+                            Отменить документ
+                        </AppButton>
+                    </>
+                )}
+            />
 
             <Box
                 sx={(t) => ({
                     px: t.appLayout.page.paddingX,
                     pb: t.appLayout.page.paddingY,
-                    flex: 1,
-                    minHeight: 0,
-                    overflowY: "auto",
-                    overflowX: "hidden",
+                    flex: "0 0 auto",
                     display: "flex",
                     flexDirection: "column",
                     gap: 2,
@@ -794,6 +800,8 @@ const DjangoInventoryPage: React.FC = () => {
                         loading={historyLoading}
                         onContinue={(id) => void openDocument(id, "count")}
                         onOpen={(id) => void openDocument(id, "result")}
+                        onCancel={(id) => void cancelDocument(id)}
+                        onRefresh={warehouseId == null ? undefined : () => void loadHistory(warehouseId)}
                         disabled={busy}
                     />
                 )}
