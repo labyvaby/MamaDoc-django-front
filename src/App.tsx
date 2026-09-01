@@ -86,6 +86,7 @@ const ChatsPage = lazy(() => import("./pages/chats"));
 const TasksPage = lazy(() => import("./pages/tasks"));
 const WaitlistPage = lazy(() => import("./pages/waitlist"));
 const DealsPage = lazy(() => import("./pages/deals"));
+const DealsSettingsPage = lazy(() => import("./pages/settings/DealsSettingsPage"));
 const VaccinationsPage = lazy(() => import("./pages/vaccinations"));
 const AchievementsPage = lazy(() => import("./pages/achievements"));
 const DocumentsPage = lazy(() => import("./pages/documents"));
@@ -877,6 +878,16 @@ function App() {
                                 <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.tasks}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <TasksSettingsPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="settings/deals"
+                              element={
+                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.deals}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <DealsSettingsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

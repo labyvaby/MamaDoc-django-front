@@ -31,6 +31,7 @@ import KeyboardArrowRightOutlined from "@mui/icons-material/KeyboardArrowRightOu
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
 import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
@@ -160,6 +161,12 @@ const TAB_DEFS: TabDef[] = [
     key: "tasks",
     to: "/settings/tasks",
     icon: <AssignmentOutlined fontSize="small" />,
+    group: "operations",
+  },
+  {
+    key: "deals",
+    to: "/settings/deals",
+    icon: <FilterAltOutlined fontSize="small" />,
     group: "operations",
   },
   {

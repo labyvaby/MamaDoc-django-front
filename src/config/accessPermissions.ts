@@ -75,6 +75,7 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // что доступ у существующих ролей не меняется.
   conclusionForms: "medical.conclusion_forms.manage",
   tasks: "tasks.manage",
+  deals: "deals.manage",
   cleaning: "cleaning.manage",
   skud: PAGE_PERMISSIONS.attendanceSettings,
   announcements: PAGE_PERMISSIONS.announcements,

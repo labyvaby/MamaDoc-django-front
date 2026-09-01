@@ -22,6 +22,7 @@
       "diagnoses": "{{diagnosis.nomPl, capitalize}}",
       "conclusionForms": "Бланки заключений",
       "tasks": "Задачи",
+      "deals": "Воронка продаж",
       "cleaning": "Уборка",
       "skud": "СКУД",
       "announcements": "Объявления",
