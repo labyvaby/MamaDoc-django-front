@@ -148,7 +148,6 @@ const DjangoInventoryPage: React.FC = () => {
     const [history, setHistory] = React.useState<WarehouseInventoryCount[]>([]);
     const [historyLoading, setHistoryLoading] = React.useState(false);
     const [selectedCategories, setSelectedCategories] = React.useState<string[]>([]);
-    const [comment, setComment] = React.useState("");
     const [onlyWithStock, setOnlyWithStock] = React.useState(true);
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
@@ -407,7 +406,6 @@ const DjangoInventoryPage: React.FC = () => {
             const detail = await startWarehouseInventoryCount({
                 warehouseId,
                 productIds: scopeProducts.map((product) => product.id),
-                comment: comment.trim() || undefined,
                 organizationId: orgId ?? undefined,
             });
             resetSession();
@@ -698,7 +696,7 @@ const DjangoInventoryPage: React.FC = () => {
 
     return (
         <Box
-            sx={(t) => ({
+            sx={{
                 // У страницы один владелец вертикальной прокрутки. Если держать
                 // overflowY на дочернем блоке, браузер получает конкурирующие
                 // scroll-контейнеры из-за фиксированной высоты ThemedLayout.
@@ -711,7 +709,7 @@ const DjangoInventoryPage: React.FC = () => {
                 overflowX: "hidden",
                 scrollbarGutter: "stable",
                 pr: { md: 0.5 },
-            })}
+            }}
         >
             <PageHeader
                 title="Инвентаризация"
@@ -780,8 +778,6 @@ const DjangoInventoryPage: React.FC = () => {
                         selected={selectedCategories}
                         onToggleCategory={toggleCategory}
                         onToggleAll={toggleAllCategories}
-                        comment={comment}
-                        onCommentChange={setComment}
                         scopeCount={scopeProducts.length}
                         scopeWithStock={withStockCount}
                         scopeTotal={categoryProducts.length}

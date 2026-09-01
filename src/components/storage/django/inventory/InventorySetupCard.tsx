@@ -37,8 +37,6 @@ export type InventorySetupCardProps = {
     selected: string[];
     onToggleCategory: (name: string) => void;
     onToggleAll: () => void;
-    comment: string;
-    onCommentChange: (value: string) => void;
     /** Сколько позиций попадёт в документ и на какую ожидаемую сумму. */
     scopeCount: number;
     /** Сколько позиций выбранных категорий имеют остаток именно на этом складе. */
@@ -70,8 +68,6 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
     selected,
     onToggleCategory,
     onToggleAll,
-    comment,
-    onCommentChange,
     scopeCount,
     scopeWithStock,
     scopeTotal,
@@ -276,15 +272,6 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
                         </Box>
                     )}
                     sx={{ alignItems: "flex-start", ml: 0, "& .MuiSwitch-root": { mt: -0.5 } }}
-                />
-
-                <TextField
-                    label="Комментарий к документу"
-                    placeholder="Например: плановый пересчёт за август"
-                    value={comment}
-                    onChange={(event) => onCommentChange(event.target.value)}
-                    disabled={disabled}
-                    fullWidth
                 />
 
                 <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ color: "text.secondary" }}>
