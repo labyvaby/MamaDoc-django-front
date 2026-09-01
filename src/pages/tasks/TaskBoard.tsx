@@ -61,12 +61,18 @@ function transitionFor(
     if (task.assigneeId != null && !mine && !canManage) return null;
     return { fn: takeTask, label: from === "paused" ? "Возобновить" : "Взять в работу" };
   }
-  if (to === "awaiting_approval" && from === "in_progress" && mine && !canManage) {
-    // Только для исполнителя без права приёмки: у обладателя tasks.manage тот же
-    // complete/ закрывает задачу сразу в done (api/tasks.ts), поэтому колонка
-    // «На подтверждении» для него не цель переноса — иначе доска обещает
-    // переход, которого нет, и карточка перепрыгивает через колонку.
-    return { fn: completeTask, label: "Исполнить" };
+  if (to === "awaiting_approval" && from === "in_progress") {
+    // Исполнителю без права приёмки complete/ сам уводит задачу в приёмку.
+    if (mine && !canManage) return { fn: completeTask, label: "Исполнить" };
+    // Обладателю tasks.manage тот же complete/ закрывает задачу сразу в done,
+    // поэтому приёмку он запрашивает явным флагом (контракт 31.08.2026).
+    if (canManage) {
+      return {
+        fn: (id, orgId) => completeTask(id, orgId, { requestApproval: true }),
+        label: "Отправить на проверку",
+      };
+    }
+    return null;
   }
   if (to === "done") {
     if (from === "awaiting_approval" && canManage) return { fn: approveTask, label: "Подтвердить" };

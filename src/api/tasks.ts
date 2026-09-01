@@ -59,6 +59,12 @@ export interface Task {
   attachmentsCount: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Когда задачу закрыли (done/cancelled) — ISO-datetime; у открытых и у
+   * приёмки (awaiting_approval) — null. Контракт 31.08.2026; на тесте бэк
+   * проставил дату и старым закрытым задачам (по updatedAt).
+   */
+  closedAt: string | null;
 }
 
 export interface TaskComment {
@@ -106,7 +112,8 @@ export interface TasksResponse {
 }
 
 export interface TasksFilters {
-  status?: TaskStatus;
+  /** Массив уходит одним параметром через запятую: status=done,cancelled. */
+  status?: TaskStatus | readonly TaskStatus[];
   categoryId?: number;
   priority?: TaskPriority;
   /** "me" — задачи, назначенные на текущего сотрудника. */
@@ -120,6 +127,9 @@ export interface TasksFilters {
   /** Диапазон по дате подачи (YYYY-MM-DD, включительно). Контракт v2, P2. */
   createdFrom?: string;
   createdTo?: string;
+  /** Диапазон по дате закрытия (YYYY-MM-DD, включительно) — фильтр архива. */
+  closedFrom?: string;
+  closedTo?: string;
   /** "smart" — просроченные → приоритет → срок → дата создания (дефолт списков). */
   ordering?: "smart" | "created";
   page?: number;
@@ -213,6 +223,9 @@ function seedTask(
     attachmentsCount: partial.attachments?.length ?? 0,
     createdAt: partial.createdAt ?? nowIso(),
     updatedAt: nowIso(),
+    closedAt:
+      partial.closedAt ??
+      (partial.status === "done" || partial.status === "cancelled" ? nowIso() : null),
     comments: partial.comments ?? [],
     attachments: partial.attachments ?? [],
     statusLog: partial.statusLog ?? [],
@@ -305,6 +318,8 @@ function mockLog(t: MockTaskRecord, toStatus: TaskStatus, reason = "") {
   });
   t.status = toStatus;
   t.updatedAt = nowIso();
+  // Дата закрытия появляется только в done/cancelled: приёмка задачу не закрывает.
+  t.closedAt = toStatus === "done" || toStatus === "cancelled" ? nowIso() : null;
 }
 
 function toTask(r: MockTaskRecord): Task {
@@ -332,7 +347,9 @@ function withOrg(path: string, organizationId?: number): string {
 
 function buildTaskParams(filters: TasksFilters): URLSearchParams {
   const q = new URLSearchParams();
-  if (filters.status) q.set("status", filters.status);
+  if (filters.status) {
+    q.set("status", typeof filters.status === "string" ? filters.status : filters.status.join(","));
+  }
   if (filters.categoryId != null) q.set("categoryId", String(filters.categoryId));
   if (filters.priority) q.set("priority", filters.priority);
   if (filters.assignee) q.set("assignee", filters.assignee);
@@ -342,6 +359,8 @@ function buildTaskParams(filters: TasksFilters): URLSearchParams {
   if (filters.dueTo) q.set("dueTo", filters.dueTo);
   if (filters.createdFrom) q.set("createdFrom", filters.createdFrom);
   if (filters.createdTo) q.set("createdTo", filters.createdTo);
+  if (filters.closedFrom) q.set("closedFrom", filters.closedFrom);
+  if (filters.closedTo) q.set("closedTo", filters.closedTo);
   if (filters.ordering) q.set("ordering", filters.ordering);
   if (filters.page != null) q.set("page", String(filters.page));
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
@@ -355,7 +374,10 @@ export function getTasks(
 ): Promise<TasksResponse> {
   if (TASKS_USE_MOCKS) {
     let list = mockTasks.map(toTask);
-    if (filters.status) list = list.filter((t) => t.status === filters.status);
+    if (filters.status) {
+      const wanted = typeof filters.status === "string" ? [filters.status] : filters.status;
+      list = list.filter((t) => wanted.includes(t.status));
+    }
     if (filters.categoryId != null) list = list.filter((t) => t.categoryId === filters.categoryId);
     if (filters.priority) list = list.filter((t) => t.priority === filters.priority);
     if (filters.assignee === "me") list = list.filter((t) => t.assigneeId === MOCK_ME.id);
@@ -372,6 +394,11 @@ export function getTasks(
     if (filters.dueTo) list = list.filter((t) => t.dueDate != null && dueDay(t)! <= filters.dueTo!);
     if (filters.createdFrom) list = list.filter((t) => t.createdAt.slice(0, 10) >= filters.createdFrom!);
     if (filters.createdTo) list = list.filter((t) => t.createdAt.slice(0, 10) <= filters.createdTo!);
+    // Закрытые фильтруем по closedAt; открытые под этот фильтр не попадают.
+    if (filters.closedFrom)
+      list = list.filter((t) => t.closedAt != null && t.closedAt.slice(0, 10) >= filters.closedFrom!);
+    if (filters.closedTo)
+      list = list.filter((t) => t.closedAt != null && t.closedAt.slice(0, 10) <= filters.closedTo!);
     if (filters.ordering === "created") {
       list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     } else {
@@ -458,12 +485,12 @@ export function updateTask(
 }
 
 /**
- * Безвозвратное удаление задачи (право `tasks.manage`).
+ * Безвозвратное удаление задачи (право `tasks.manage`), ответ 204 без тела.
  *
- * ⚠ Вызывать только под флагом `TASKS_DELETE_ENABLED` (см. pages/tasks/meta):
- * бэк метод не реализовал — `DELETE /api/tasks/{id}/` отвечает 405
- * «Метод 'DELETE' не разрешён, разрешённые: ['GET', 'PATCH']» (проверено
- * 07.08.2026). Тикет — `MamaDoc/backend_ticket_tasks_delete.md`.
+ * Удалять бэк разрешает только закрытые задачи (done/cancelled), иначе 400
+ * «Удалять можно только выполненные или отменённые задачи»; вместе с задачей
+ * пропадают комментарии, вложения (включая файлы), история и уведомления.
+ * Реализовано бэком 31.08.2026, проверено на тесте.
  */
 export function deleteTask(taskId: number, organizationId?: number): Promise<void> {
   if (TASKS_USE_MOCKS) {
@@ -505,9 +532,17 @@ export function pauseTask(
 
 /**
  * Исполнить. Бэкенд: assignee → awaiting_approval; обладатель tasks.manage →
- * сразу done (решение Рика 07.07.2026). В моках — всегда awaiting_approval.
+ * сразу done (решение Рика 07.07.2026).
+ *
+ * `requestApproval: true` заставляет приёмку и для tasks.manage — задача уходит
+ * в awaiting_approval вместо done (контракт 31.08.2026, проверен на тесте).
+ * `false` бэк трактует как отсутствие флага, поэтому не отправляем его вовсе.
  */
-export function completeTask(taskId: number, organizationId?: number): Promise<Task> {
+export function completeTask(
+  taskId: number,
+  organizationId?: number,
+  options?: { requestApproval?: boolean },
+): Promise<Task> {
   if (TASKS_USE_MOCKS) {
     const r = mockFind(taskId);
     mockLog(r, "awaiting_approval");
@@ -515,6 +550,7 @@ export function completeTask(taskId: number, organizationId?: number): Promise<T
   }
   return apiRequest<Task>(withOrg(`/tasks/${taskId}/complete/`, organizationId), {
     method: "POST",
+    body: options?.requestApproval ? { requestApproval: true } : undefined,
   });
 }
 
