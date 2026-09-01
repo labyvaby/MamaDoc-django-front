@@ -424,6 +424,7 @@ const SidebarSecondary: React.FC = () => {
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
     reports: can(PAGE_PERMISSIONS.reports),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
+    billing: can(PAGE_PERMISSIONS.billing),
     load: !isRetail && can(PAGE_PERMISSIONS.reports),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
@@ -569,7 +570,7 @@ const SidebarSecondary: React.FC = () => {
     "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
     "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.sales || can_.storage,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.billing || can_.load || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -844,6 +845,10 @@ const SidebarSecondary: React.FC = () => {
         {/* Касса */}
         {show("management") && can_.cashbox && (
           <SidebarMenuItem to="/cashbox" icon={<AccountBalanceWalletOutlined />} label="Касса" collapsed={siderCollapsed} />
+        )}
+
+        {show("management") && can_.billing && (
+          <SidebarMenuItem to="/billing" icon={<PaymentsOutlined />} label="Биллинг" collapsed={siderCollapsed} />
         )}
 
         {/* Нагрузка */}

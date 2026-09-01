@@ -29,6 +29,7 @@ export const PAGE_PERMISSIONS = {
   attendance: "attendance.view",
   attendanceSettings: "attendance.manage",
   cashbox: "finance.view",
+  billing: "billing.view",
   reports: "reports.view",
   payroll: ["payroll.view", "payroll.view_own"],
   notifications: "notifications.manage",

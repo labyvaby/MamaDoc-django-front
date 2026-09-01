@@ -78,6 +78,7 @@ const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSe
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
+const BillingPage = lazy(() => import("./pages/billing"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
@@ -349,6 +350,11 @@ function App() {
                         name: "cashbox",
                         list: "/cashbox",
                         meta: { label: "Касса" }
+                      },
+                      {
+                        name: "billing",
+                        list: "/billing",
+                        meta: { label: "Биллинг" }
                       },
                       {
                         name: "reports",
@@ -659,6 +665,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoCashboxPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
                               </Suspense>
                             </RequirePermission>
                           }
