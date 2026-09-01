@@ -18,13 +18,18 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
+import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { AppButton, ConfirmDialog, CustomDateTimePicker } from "../ui";
 import LostReasonDialog from "./LostReasonDialog";
+import CreateTaskDrawer from "../tasks/CreateTaskDrawer";
+import DjangoAddAppointmentDrawer from "../../pages/appointments/DjangoAddAppointmentDrawer";
 import { useT } from "../../i18n/VerticalProvider";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useCanChecker } from "../../hooks/useCan";
 import { useAllActiveEmployees } from "../../hooks/useAllActiveEmployees";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { formatKGS } from "../../utility/format";
@@ -95,6 +100,12 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   const orgId = useApiOrgId();
   const queryClient = useQueryClient();
   const { employees } = useAllActiveEmployees(dealId != null);
+  const { can } = useCanChecker();
+
+  /* Действия ведут в чужие модули, поэтому и права спрашиваем их: у
+     регистратора может быть deals.update без tasks.create. */
+  const canCreateTask = can("tasks.create") || can("tasks.manage");
+  const canCreateAppointment = can("appointments.create") || can("appointments.manage");
 
   const open = dealId != null;
 
@@ -115,6 +126,8 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   /** Перенос в этап потери ждёт причину: без неё бэк отклонит запрос (400). */
   const [lostStageId, setLostStageId] = React.useState<number | null>(null);
+  const [taskOpen, setTaskOpen] = React.useState(false);
+  const [appointmentOpen, setAppointmentOpen] = React.useState(false);
   const debouncedServiceQuery = useDebouncedValue(serviceQuery, 350);
 
   /* Гидратация полей — по узкому ключу, а не по всему объекту сделки: иначе
@@ -440,6 +453,43 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
                 />
               </Stack>
 
+              {/* Действия в остальную CRM: обращение доводится до записи, не
+                  выходя из карточки. */}
+              {canCreateTask || canCreateAppointment ? (
+                <Stack direction="row" gap={1} flexWrap="wrap">
+                  {canCreateTask ? (
+                    <AppButton
+                      size="small"
+                      variant="outlined"
+                      startIcon={<AssignmentOutlined />}
+                      onClick={() => setTaskOpen(true)}
+                    >
+                      {t("detail.createTask")}
+                    </AppButton>
+                  ) : null}
+
+                  {canCreateAppointment ? (
+                    /* Запись требует карты клиента: у лида её может не быть,
+                       и дровер приёма без пациента не отправится. Кнопку не
+                       прячем, а объясняем тултипом — иначе непонятно, почему
+                       действия нет. */
+                    <Tooltip title={deal.patientId == null ? t("detail.needsPatient") : ""}>
+                      <span>
+                        <AppButton
+                          size="small"
+                          variant="outlined"
+                          startIcon={<EventAvailableOutlined />}
+                          disabled={deal.patientId == null}
+                          onClick={() => setAppointmentOpen(true)}
+                        >
+                          {t("detail.createAppointment")}
+                        </AppButton>
+                      </span>
+                    </Tooltip>
+                  ) : null}
+                </Stack>
+              ) : null}
+
               <Divider />
 
               {/* Услуги: цена — снимок прайса на момент добавления. */}
@@ -648,6 +698,46 @@ const DealDetailDrawer: React.FC<DealDetailDrawerProps> = ({
           )}
         </Box>
       </Stack>
+
+      {/* Задача из карточки: ссылки на сделку у задачи нет (поля на бэке не
+          существует), поэтому контекст уходит текстом — по нему исполнитель
+          найдёт обращение поиском в воронке. */}
+      <CreateTaskDrawer
+        open={taskOpen}
+        onClose={() => setTaskOpen(false)}
+        canManage={can("tasks.manage")}
+        prefill={
+          deal
+            ? {
+                title: t("detail.taskTitle", {
+                  name: deal.patientName || deal.contactName,
+                }),
+                description: t("detail.taskDescription", {
+                  name: deal.patientName || deal.contactName,
+                  phone: deal.phone ? formatPhoneDisplay(deal.phone) : "—",
+                  stage: deal.stageName,
+                  amount: formatKGS(deal.amount),
+                }),
+              }
+            : undefined
+        }
+      />
+
+      {/* Запись на приём: пациент и первая услуга из сделки. Остальные услуги
+          добавляются в самой записи — дровер приёма принимает только одну. */}
+      {appointmentOpen && deal?.patientId != null ? (
+        <DjangoAddAppointmentDrawer
+          open
+          onClose={() => setAppointmentOpen(false)}
+          initialPatientId={deal.patientId}
+          initialServiceId={detail?.items[0]?.serviceId ?? null}
+          showAllFieldsInitially
+          onCreated={() => {
+            setAppointmentOpen(false);
+            onNotify(t("detail.appointmentCreated"));
+          }}
+        />
+      ) : null}
 
       <LostReasonDialog
         open={lostStageId != null}

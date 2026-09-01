@@ -56,6 +56,12 @@ type CreateTaskDrawerProps = {
   canManage: boolean;
   /** Фото-первый флоу: файл, снятый до открытия формы (FAB-камера). */
   initialFile?: File | null;
+  /**
+   * Заготовка формы из другого модуля — например «Перезвонить по обращению»
+   * из карточки воронки. Ссылки на сделку у задачи нет (поля на бэке не
+   * существует), поэтому контекст уходит текстом в описание.
+   */
+  prefill?: { title?: string; description?: string };
 };
 
 const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
@@ -63,6 +69,7 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
   onClose,
   canManage,
   initialFile = null,
+  prefill,
 }) => {
   const invalidateTasks = useInvalidateTasks();
   const orgId = useApiOrgId();
@@ -95,6 +102,16 @@ const CreateTaskDrawer: React.FC<CreateTaskDrawerProps> = ({
       priority: "",
     },
   });
+
+  /* Заготовка из другого модуля подставляется один раз на открытие: дальше
+     поля принадлежат пользователю, и перезапись стёрла бы его правки.
+     Категорию не трогаем — её всё равно угадает автокатегория по названию. */
+  React.useEffect(() => {
+    if (!open || !prefill) return;
+    if (prefill.title != null) setValue("title", prefill.title);
+    if (prefill.description != null) setValue("description", prefill.description);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Валидацию ведёт react-hook-form; хук нужен только чтобы увести фокус
   // в первое незаполненное поле — у Controller ref не доходит до инпута.
