@@ -86,6 +86,23 @@ const buildRows = (detail: WarehouseInventoryDetail, catalog: DjangoProduct[]): 
         .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 };
 
+/**
+ * 404 на открытии документа — это не «нет маршрута», а «склад недоступен»:
+ * список складов приходит по всей организации, а писать бэк разрешает только
+ * в склад активного филиала (см. _writable_warehouse).
+ */
+const startErrorMessage = (
+    error: unknown,
+    warehouse: DjangoWarehouse | undefined,
+    branchName: string | null,
+): string => {
+    if (!(error instanceof ApiError)) return "Не удалось открыть инвентаризацию";
+    if (error.status !== 404) return error.message;
+    const where = warehouse ? "«" + warehouse.name + "» (филиал " + warehouse.branchName + ")" : "Выбранный склад";
+    const here = branchName ? ", активен филиал " + branchName : "";
+    return where + " недоступен для записи" + here + " — выберите склад своего филиала или переключите филиал в шапке";
+};
+
 const vibrate = (ms: number) => {
     try {
         navigator.vibrate?.(ms);
@@ -107,8 +124,9 @@ const DjangoInventoryPage: React.FC = () => {
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const canView = useCan("warehouse.view");
     const canManage = useCan("warehouse.manage");
-    const { activeEmployee, loading: permLoading } = usePermissions();
+    const { activeEmployee, activeBranch, loading: permLoading } = usePermissions();
     const { organizationId: orgId, orgReady } = useActiveScope();
+    const activeBranchId = activeBranch?.id ?? null;
 
     const [step, setStep] = React.useState<Step>("setup");
     const [warehouses, setWarehouses] = React.useState<DjangoWarehouse[]>([]);
@@ -155,8 +173,15 @@ const DjangoInventoryPage: React.FC = () => {
                 setWarehouses(warehouseList);
                 setWarehouseId((current) => {
                     if (current != null) return current;
-                    const primary = warehouseList.find((item) => item.isPrimary && !item.isLinked);
-                    return (primary ?? warehouseList[0])?.id ?? null;
+                    // Список складов бэк отдаёт по всей организации, когда фронт
+                    // передаёт organizationId, а открыть документ можно только на
+                    // складе активного филиала — иначе POST отвечает 404.
+                    const own = warehouseList.filter(
+                        (item) => activeBranchId == null || item.branchId === activeBranchId,
+                    );
+                    const pool = own.length ? own : warehouseList;
+                    const primary = pool.find((item) => item.isPrimary);
+                    return (primary ?? pool[0])?.id ?? null;
                 });
             } catch (error) {
                 if (isAbortError(error)) return;
@@ -168,7 +193,7 @@ const DjangoInventoryPage: React.FC = () => {
                 setLoading(false);
             }
         },
-        [loadProducts, notify, orgId],
+        [activeBranchId, loadProducts, notify, orgId],
     );
 
     React.useEffect(() => {
@@ -195,6 +220,16 @@ const DjangoInventoryPage: React.FC = () => {
         categoriesReady.current = true;
         setSelectedCategories(categories.map((category) => category.name));
     }, [categories]);
+
+    // Свои склады сверху: чужие остаются в списке, но не подсовываются первыми.
+    const warehouseOptions = React.useMemo(() => {
+        const own = (item: DjangoWarehouse) => activeBranchId == null || item.branchId === activeBranchId;
+        return [...warehouses].sort((a, b) => {
+            if (own(a) !== own(b)) return own(a) ? -1 : 1;
+            if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+            return a.name.localeCompare(b.name, "ru");
+        });
+    }, [activeBranchId, warehouses]);
 
     const scopeProducts = React.useMemo(
         () => products.filter((product) => selectedCategories.includes(categoryOf(product))),
@@ -290,7 +325,11 @@ const DjangoInventoryPage: React.FC = () => {
         } catch (error) {
             notify?.({
                 type: "error",
-                message: error instanceof ApiError ? error.message : "Не удалось открыть инвентаризацию",
+                message: startErrorMessage(
+                    error,
+                    warehouses.find((item) => item.id === warehouseId),
+                    activeBranch?.name ?? null,
+                ),
             });
         } finally {
             setBusy(false);
@@ -518,36 +557,52 @@ const DjangoInventoryPage: React.FC = () => {
             : { onAdd: handleApply, text: "Провести", icon: <FactCheckOutlined /> };
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", width: "100%" }}>
-            <PageHeader
-                title="Инвентаризация"
-                showTitle={false}
-                onAdd={canManage ? headerAction.onAdd : undefined}
-                addButtonText={headerAction.text}
-                addButtonIcon={headerAction.icon}
-                actions={step === "setup" ? undefined : (
-                    <>
-                        {step === "result" && (
-                            <AppButton variant="outlined" onClick={() => setStep("count")} disabled={busy}>
-                                К пересчёту
+        <Box
+            sx={{
+                // Контейнер лейаута задаёт высоту и overflow:hidden — страница
+                // обязана скроллиться внутри себя, иначе низ просто обрезается.
+                height: "100%",
+                minHeight: 0,
+                width: "100%",
+                display: "flex",
+                flexDirection: "column",
+            }}
+        >
+            <Box sx={{ flexShrink: 0 }}>
+                <PageHeader
+                    title="Инвентаризация"
+                    showTitle={false}
+                    onAdd={canManage ? headerAction.onAdd : undefined}
+                    addButtonText={headerAction.text}
+                    addButtonIcon={headerAction.icon}
+                    actions={step === "setup" ? undefined : (
+                        <>
+                            {step === "result" && (
+                                <AppButton variant="outlined" onClick={() => setStep("count")} disabled={busy}>
+                                    К пересчёту
+                                </AppButton>
+                            )}
+                            <AppButton
+                                variant="text"
+                                color="error"
+                                onClick={handleCancelDocument}
+                                disabled={busy || !canManage}
+                            >
+                                Отменить документ
                             </AppButton>
-                        )}
-                        <AppButton
-                            variant="text"
-                            color="error"
-                            onClick={handleCancelDocument}
-                            disabled={busy || !canManage}
-                        >
-                            Отменить документ
-                        </AppButton>
-                    </>
-                )}
-            />
+                        </>
+                    )}
+                />
+            </Box>
 
             <Box
                 sx={(t) => ({
                     px: t.appLayout.page.paddingX,
                     pb: t.appLayout.page.paddingY,
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    overflowX: "hidden",
                     display: "flex",
                     flexDirection: "column",
                     gap: 2,
@@ -577,7 +632,8 @@ const DjangoInventoryPage: React.FC = () => {
 
                 {step === "setup" && (
                     <InventorySetupCard
-                        warehouses={warehouses}
+                        warehouses={warehouseOptions}
+                        activeBranchId={activeBranchId}
                         warehouseId={warehouseId}
                         onWarehouseChange={setWarehouseId}
                         categories={categories}

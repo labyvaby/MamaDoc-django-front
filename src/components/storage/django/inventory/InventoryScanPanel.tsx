@@ -396,7 +396,7 @@ export const InventoryScanPanel: React.FC<InventoryScanPanelProps> = ({
                     gap: 2,
                     [t.breakpoints.up("lg")]: {
                         position: "sticky",
-                        top: t.appLayout.header.height.desktop + 16,
+                        top: 0,
                     },
                 })}
             >
