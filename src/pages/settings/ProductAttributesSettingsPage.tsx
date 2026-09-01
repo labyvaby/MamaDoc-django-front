@@ -41,6 +41,14 @@ import {
 import { AppBottomSheet } from "../../components/ui/AppBottomSheet";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
+import {
+    MONO,
+    pluralFields,
+    pluralValues,
+    pluralVariants,
+    swatchOf,
+    useProductTones as useTones,
+} from "../../theme/productTokens";
 import { SettingsLayout } from "./SettingsLayout";
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -55,7 +63,6 @@ import { SettingsLayout } from "./SettingsLayout";
  * ──────────────────────────────────────────────────────────────────────── */
 
 const CQ = "attrs";
-const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 type Role = DjangoProductAttribute["role"];
 
@@ -75,115 +82,6 @@ const roleInfo: Record<Role, { title: string; description: string }> = {
 };
 
 /** Токены дизайна, которых нет в теме: роли полей, статус матрицы, подложки. */
-function useTones() {
-    const theme = useTheme();
-    const dark = theme.palette.mode === "dark";
-    return React.useMemo(
-        () => ({
-            role: {
-                color: dark ? "#C084FC" : "#9333EA",
-                size: dark ? "#F5A524" : "#C2410C",
-                generic: dark ? "#94A3B8" : "#5C6B85",
-            } as Record<Role, string>,
-            matrix: dark ? "#2DD4BF" : "#0D8A80",
-            ok: dark ? "#4ADE80" : "#16A34A",
-            /** Утопленная подложка: поиск, рейл, базовые строки формы. */
-            soft: dark ? alpha("#FFFFFF", 0.045) : alpha("#0B0A10", 0.035),
-            /** Подложка чипов значений. */
-            soft2: dark ? alpha("#FFFFFF", 0.085) : alpha("#0B0A10", 0.06),
-            lineSoft: dark ? alpha("#FFFFFF", 0.05) : alpha("#0B0A10", 0.05),
-        }),
-        [dark],
-    );
-}
-
-/* ── цвет образца ─────────────────────────────────────────────────────────
- * У значения атрибута в API нет hex — есть только `value` и служебный `code`.
- * Поэтому образец берём из hex в `code` (если админ его туда положил), иначе
- * из словаря названий, иначе — детерминированный оттенок из строки, чтобы
- * одно и то же значение всегда красилось одинаково.
- * ──────────────────────────────────────────────────────────────────────── */
-const COLOR_NAMES: Array<[string, string]> = [
-    ["чёрн", "#1B1B1F"],
-    ["черн", "#1B1B1F"],
-    ["black", "#1B1B1F"],
-    ["бел", "#F2F2F4"],
-    ["white", "#F2F2F4"],
-    ["молочн", "#F2EAD9"],
-    ["кремов", "#EFE3CC"],
-    ["беж", "#D9C7A7"],
-    ["beige", "#D9C7A7"],
-    ["хаки", "#6B6B3F"],
-    ["khaki", "#6B6B3F"],
-    ["сер", "#8A8A93"],
-    ["gray", "#8A8A93"],
-    ["grey", "#8A8A93"],
-    ["серебр", "#C0C4C9"],
-    ["золот", "#C8A951"],
-    ["бордов", "#7C2B3B"],
-    ["красн", "#D02B2B"],
-    ["red", "#D02B2B"],
-    ["розов", "#E58FB0"],
-    ["pink", "#E58FB0"],
-    ["оранж", "#E07B39"],
-    ["orange", "#E07B39"],
-    ["жёлт", "#E5B800"],
-    ["желт", "#E5B800"],
-    ["yellow", "#E5B800"],
-    ["зелён", "#2F9E44"],
-    ["зелен", "#2F9E44"],
-    ["green", "#2F9E44"],
-    ["мятн", "#8FD6C0"],
-    ["бирюз", "#2EC4B6"],
-    ["голуб", "#4AA8E0"],
-    ["син", "#2B5BD0"],
-    ["blue", "#2B5BD0"],
-    ["фиолет", "#7C4DBD"],
-    ["purple", "#7C4DBD"],
-    ["сирен", "#B39DDB"],
-    ["коричн", "#7A5230"],
-    ["brown", "#7A5230"],
-];
-
-const HEX_RE = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i;
-
-function swatchOf(value: string, code?: string): string {
-    if (code && HEX_RE.test(code)) return code.startsWith("#") ? code : `#${code}`;
-    const key = value.trim().toLowerCase();
-    const hit = COLOR_NAMES.find(([name]) => key.includes(name));
-    if (hit) return hit[1];
-    let hash = 0;
-    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) % 360;
-    return `hsl(${hash} 42% 55%)`;
-}
-
-/** «3 значения» / «1 значение» / «нет значений». */
-function pluralValues(count: number): string {
-    if (count === 0) return "нет значений";
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    if (mod10 === 1 && mod100 !== 11) return `${count} значение`;
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} значения`;
-    return `${count} значений`;
-}
-
-function pluralFields(count: number): string {
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    if (mod10 === 1 && mod100 !== 11) return `${count} поле`;
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} поля`;
-    return `${count} полей`;
-}
-
-function pluralVariants(count: number): string {
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    if (mod10 === 1 && mod100 !== 11) return `${count} вариант`;
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} варианта`;
-    return `${count} вариантов`;
-}
-
-/* ── мелкие примитивы ───────────────────────────────────────────────────── */
 
 const RoleDot: React.FC<{ role: Role }> = ({ role }) => {
     const tones = useTones();
@@ -1223,7 +1121,7 @@ const ProductAttributesSettingsPage: React.FC = () => {
     const theme = useTheme();
     const tones = useTones();
     const orgId = useApiOrgId();
-    const { activeOrganization, loading: permissionsLoading } = usePermissions();
+    const { loading: permissionsLoading } = usePermissions();
 
     const [attributes, setAttributes] = React.useState<DjangoProductAttribute[]>([]);
     const [categories, setCategories] = React.useState<DjangoProductCategoryNode[]>([]);
@@ -1238,10 +1136,7 @@ const ProductAttributesSettingsPage: React.FC = () => {
         DjangoProductCategoryNode | null | undefined
     >(undefined);
 
-    const isRetail = activeOrganization?.vertical === "retail";
-
     const load = React.useCallback(async () => {
-        if (activeOrganization?.vertical !== "retail") return;
         setLoading(true);
         try {
             const [nextAttributes, nextCategories] = await Promise.all([
@@ -1259,7 +1154,7 @@ const ProductAttributesSettingsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [activeOrganization?.vertical, notify, orgId]);
+    }, [notify, orgId]);
 
     React.useEffect(() => {
         void load();
@@ -1402,26 +1297,16 @@ const ProductAttributesSettingsPage: React.FC = () => {
                         категорию в карточке товара, и форма подстраивается сама.
                     </Typography>
 
-                    {isRetail && (
-                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: "8px", mt: "14px" }}>
-                            <Meter value={categories.length} label="категории" />
-                            <Meter value={attributes.length} label="поля" />
-                            <Meter value={variantCategories} label="создаёт варианты" accent={tones.matrix} />
-                            <Meter value={valueTotal} label="значений" />
-                        </Box>
-                    )}
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "8px", mt: "14px" }}>
+                        <Meter value={categories.length} label="категории" />
+                        <Meter value={attributes.length} label="поля" />
+                        <Meter value={variantCategories} label="создаёт варианты" accent={tones.matrix} />
+                        <Meter value={valueTotal} label="значений" />
+                    </Box>
                 </Box>
 
-                {activeOrganization && !isRetail && (
-                    <Alert severity="info">
-                        Настройка форм категорий доступна организациям с вертикалью «Розничная
-                        торговля».
-                    </Alert>
-                )}
-
-                {isRetail && (
-                    <>
-                        {/* переключатель разделов — только пока рейл не помещается рядом */}
+                <>
+                    {/* переключатель разделов — только пока рейл не помещается рядом */}
                         <Box
                             role="group"
                             aria-label="Раздел"
@@ -1701,8 +1586,7 @@ const ProductAttributesSettingsPage: React.FC = () => {
                                 </Box>
                             </Box>
                         </Box>
-                    </>
-                )}
+                </>
 
                 <AttributeEditor
                     open={attributeEditor !== undefined}

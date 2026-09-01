@@ -216,7 +216,6 @@ export function useVisibleSettingsTabs(): TabDef[] {
     if (activeOrganization?.vertical === "retail" && retailHiddenTabs.includes(tab.key)) {
       return false;
     }
-    if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;
