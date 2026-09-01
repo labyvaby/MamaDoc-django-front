@@ -4,6 +4,7 @@ import { useTheme } from "@mui/material/styles";
 import PersonOutlined from "@mui/icons-material/PersonOutlined";
 
 import type { ClinicalRole } from "../../../api/staff";
+import { lunchFill } from "./employeeColors";
 import type { ScheduleFiltersState } from "./useScheduleFilters";
 
 const ROLE_LABELS: Record<ClinicalRole, string> = {
@@ -109,6 +110,14 @@ const ScheduleFilters: React.FC<ScheduleFiltersProps> = ({
           />
           <Typography variant="caption" color="text.disabled" noWrap>
             Смена
+          </Typography>
+        </Stack>
+        {/* Красный вырез в полосе смены сам по себе читается как ошибка —
+            поясняем его образцом того же цвета, что и в календаре. */}
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Box sx={{ width: 14, height: 10, borderRadius: "3px", bgcolor: lunchFill(theme) }} />
+          <Typography variant="caption" color="text.disabled" noWrap>
+            Обед
           </Typography>
         </Stack>
       </Stack>

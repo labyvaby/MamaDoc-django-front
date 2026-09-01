@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Chip, Tooltip, Typography } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
@@ -9,7 +9,7 @@ import { type Dayjs } from "dayjs";
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import { lunchNote, type DayOccurrence } from "./occurrences";
-import { employeeColorHex } from "./employeeColors";
+import { employeeColorHex, lunchFill } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
 import { useNowMinute } from "./useNowMinute";
 
@@ -449,14 +449,16 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                       display: "flex",
                                       alignItems: "center",
                                       justifyContent: "center",
-                                      // Полупрозрачная накладка, а не сплошная «дырка»:
-                                      // сквозь неё виден цвет смены, поэтому перерыв
-                                      // читается как часть одной полосы, а не разрыв.
-                                      bgcolor: alpha(theme.palette.background.paper, 0.62),
+                                      // Красный вырез (просьба заказчика 02.09.2026).
+                                      bgcolor: lunchFill(theme),
+                                      // Тонкие боковые грани отделяют вырез от смены, если
+                                      // сама смена оказалась красноватой.
+                                      borderLeft: `1px solid ${theme.palette.background.paper}`,
+                                      borderRight: `1px solid ${theme.palette.background.paper}`,
                                     }}
                                   >
                                     <RestaurantOutlined
-                                      sx={{ fontSize: 12, color: "text.secondary" }}
+                                      sx={{ fontSize: 12, color: "error.contrastText" }}
                                     />
                                   </Box>
                                 )}

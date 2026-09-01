@@ -34,7 +34,7 @@ import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
 import type { ScheduleException, ScheduleRule } from "../../../api/scheduling";
 import { computeDayOccurrences, lunchNote, type DayOccurrence } from "./occurrences";
-import { employeeColorHex } from "./employeeColors";
+import { employeeColorHex, lunchFill } from "./employeeColors";
 import {
   HOUR_GUIDES,
   LANE_H,
@@ -399,7 +399,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                         width: `${((lunchRight - lunchLeft) / width) * 100}%`,
                         top: 0,
                         bottom: 0,
-                        bgcolor: alpha(theme.palette.background.paper, 0.7),
+                        // Красный вырез — как в дневной ленте (просьба заказчика
+                        // 02.09.2026). Сегмент бывает в пару пикселей шириной,
+                        // поэтому здесь только заливка, без иконки.
+                        bgcolor: lunchFill(theme),
                       }}
                     />
                   );
@@ -716,6 +719,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               week={currentWeek}
               employees={employees}
               occurrencesByDate={filteredOccurrencesByDate}
+              exceptions={exceptions}
               employeeColorMap={employeeColorMap}
               onDayClick={onDayClick}
             />
@@ -836,7 +840,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                         </Typography>
                         {occ.lunch && (
                           <Tooltip title={lunchNote(occ)} arrow>
-                            <RestaurantOutlined sx={{ fontSize: 13, color: "text.disabled" }} />
+                            <RestaurantOutlined sx={{ fontSize: 13, color: "error.onSurface" }} />
                           </Tooltip>
                         )}
                       </Stack>

@@ -135,8 +135,12 @@ const ScheduleDayDrawer: React.FC<ScheduleDayDrawerProps> = ({
                           alignItems="center"
                           sx={{ width: "fit-content" }}
                         >
-                          <RestaurantOutlined sx={{ fontSize: 13, color: "text.disabled" }} />
-                          <Typography variant="caption" color="text.disabled" noWrap>
+                          <RestaurantOutlined sx={{ fontSize: 13, color: "error.onSurface" }} />
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            sx={{ color: "error.onSurface", fontWeight: 600 }}
+                          >
                             {occ.lunch.start}–{occ.lunch.end}
                           </Typography>
                         </Stack>

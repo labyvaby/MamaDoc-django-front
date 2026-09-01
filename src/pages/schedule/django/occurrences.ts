@@ -45,6 +45,55 @@ export function lunchNote(occ: DayOccurrence): string {
   return occ.lunch ? `обед ${occ.lunch.start}–${occ.lunch.end}` : "";
 }
 
+/** "HH:MM" → минуты от полуночи. Некорректное время считаем полуночью. */
+const minutesOf = (t: string): number => {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)/.exec(t);
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0;
+};
+
+/** Длительность смены в минутах; смена «через полночь» считается до конца суток. */
+export function shiftMinutes(occ: DayOccurrence): number {
+  const start = minutesOf(occ.startTime);
+  const end = minutesOf(occ.endTime);
+  return (end <= start ? 24 * 60 : end) - start;
+}
+
+/** Минуты обеда внутри смены (0, если перерыва нет). */
+export function lunchMinutes(occ: DayOccurrence): number {
+  if (!occ.lunch) return 0;
+  return Math.max(minutesOf(occ.lunch.end) - minutesOf(occ.lunch.start), 0);
+}
+
+/** Рабочее время смены без обеда, минуты. */
+export function netShiftMinutes(occ: DayOccurrence): number {
+  return Math.max(shiftMinutes(occ) - lunchMinutes(occ), 0);
+}
+
+/** Человеческая длительность: «8 ч», «7 ч 30 мин», «45 мин». */
+export function formatDuration(minutes: number): string {
+  const total = Math.max(Math.round(minutes), 0);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m} мин`;
+  return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
+}
+
+/**
+ * Полная подпись смены для тултипа: часы, длительность, обед и чистое время.
+ * «Чистых» показываем только когда обед есть — иначе строка дублирует себя.
+ */
+export function occurrenceNote(occ: DayOccurrence): string {
+  const parts = [
+    `${occ.startTime}–${occ.endTime}`,
+    formatDuration(shiftMinutes(occ)),
+  ];
+  if (occ.lunch) {
+    parts.push(lunchNote(occ), `чистых ${formatDuration(netShiftMinutes(occ))}`);
+  }
+  if (occ.kind !== "rule") parts.push("точечная смена");
+  return parts.join(" · ");
+}
+
 /**
  * Вычисляет фактические смены на конкретный день из недельных правил
  * с учётом исключений (day_off/vacation отменяют смену по правилу,

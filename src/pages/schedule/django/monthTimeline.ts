@@ -54,34 +54,48 @@ export interface PackedLane {
   lastEndMin: number;
 }
 
+/** Окно, в котором раскладываются смены. По умолчанию — месячное 07:00–22:00. */
+export interface LaneWindow {
+  startMin?: number;
+  endMin?: number;
+  /** Минимальная видимая ширина сегмента, минут. */
+  minSegMin?: number;
+}
+
 /**
  * Укладывает смены дня в минимум горизонтальных дорожек: непересекающиеся по
  * времени смены делят одну дорожку (интервальная упаковка, 1 дорожка ≈ «поток»).
- * Смены целиком вне окна 07–22 (ранние/поздние/ночные) не выбрасываются, а
+ * Смены целиком вне окна (ранние/поздние/ночные) не выбрасываются, а
  * прижимаются к краю окна с минимальной шириной — иначе счётчик дня видит
  * смену, а таймлайн нет.
+ *
+ * Окно параметризуемо: недельная сетка сужает его до реального графика недели,
+ * чтобы полоски занимали ширину колонки, а не треть её.
  */
-export function packIntoLanes(occs: DayOccurrence[]): PackedLane[] {
+export function packIntoLanes(occs: DayOccurrence[], window: LaneWindow = {}): PackedLane[] {
+  const windowStart = window.startMin ?? MONTH_DAY_START_MIN;
+  const windowEnd = window.endMin ?? MONTH_DAY_END_MIN;
+  const minSeg = window.minSegMin ?? MONTH_MIN_SEG_MIN;
   const segs: LaneSegment[] = occs
     .map((occ) => {
       const rawStart = occMinutes(occ.startTime);
       // Ночная смена «через полночь» (например 20:00–02:00) — рисуем до конца суток.
       const rawEnd = occMinutes(occ.endTime) <= rawStart ? 24 * 60 : occMinutes(occ.endTime);
-      let startMin = clampMin(rawStart, MONTH_DAY_START_MIN, MONTH_DAY_END_MIN);
-      let endMin = clampMin(rawEnd, MONTH_DAY_START_MIN, MONTH_DAY_END_MIN);
-      if (endMin - startMin < MONTH_MIN_SEG_MIN) {
-        if (rawEnd <= MONTH_DAY_START_MIN) {
-          // Целиком до 07:00 — прижимаем к левому краю.
-          startMin = MONTH_DAY_START_MIN;
-          endMin = MONTH_DAY_START_MIN + MONTH_MIN_SEG_MIN;
-        } else if (rawStart >= MONTH_DAY_END_MIN) {
-          // Целиком после 22:00 — прижимаем к правому краю.
-          startMin = MONTH_DAY_END_MIN - MONTH_MIN_SEG_MIN;
-          endMin = MONTH_DAY_END_MIN;
+      let startMin = clampMin(rawStart, windowStart, windowEnd);
+      let endMin = clampMin(rawEnd, windowStart, windowEnd);
+      if (endMin - startMin < minSeg) {
+        if (rawEnd <= windowStart) {
+          // Целиком до начала окна — прижимаем к левому краю.
+          startMin = windowStart;
+          endMin = windowStart + minSeg;
+        } else if (rawStart >= windowEnd) {
+          // Целиком после конца окна — прижимаем к правому краю.
+          startMin = windowEnd - minSeg;
+          endMin = windowEnd;
         } else {
           // Короткая смена внутри окна — растягиваем до минимума в границах окна.
-          endMin = Math.min(startMin + MONTH_MIN_SEG_MIN, MONTH_DAY_END_MIN);
-          startMin = endMin - MONTH_MIN_SEG_MIN;
+          endMin = Math.min(startMin + minSeg, windowEnd);
+          startMin = endMin - minSeg;
         }
       }
       return { occ, startMin, endMin };
