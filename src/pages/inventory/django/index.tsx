@@ -119,7 +119,7 @@ const DjangoInventoryPage: React.FC = () => {
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
 
-    const [document, setDocument] = React.useState<WarehouseInventoryDetail | null>(null);
+    const [countDocument, setCountDocument] = React.useState<WarehouseInventoryDetail | null>(null);
     const [rows, setRows] = React.useState<CountRow[]>([]);
     const [order, setOrder] = React.useState<number[]>([]);
     const [unknownScans, setUnknownScans] = React.useState<UnknownScan[]>([]);
@@ -257,7 +257,7 @@ const DjangoInventoryPage: React.FC = () => {
         setPicks(0);
         setStartedAt(null);
         setElapsed("00:00");
-        setDocument(null);
+        setCountDocument(null);
     };
 
     const handleStart = async () => {
@@ -282,7 +282,7 @@ const DjangoInventoryPage: React.FC = () => {
                 organizationId: orgId ?? undefined,
             });
             resetSession();
-            setDocument(detail);
+            setCountDocument(detail);
             setRows(buildRows(detail, products));
             setStartedAt(Date.now());
             setStep("count");
@@ -345,11 +345,11 @@ const DjangoInventoryPage: React.FC = () => {
 
     /** Отправить факт в документ и перечитать строки — ответ бэка авторитетнее. */
     const pushLines = async (lines: Array<{ productId: number; quantity: string }>) => {
-        if (!document || lines.length === 0) return false;
+        if (!countDocument || lines.length === 0) return false;
         setBusy(true);
         try {
-            const detail = await submitInventoryCountLines(document.document.id, lines, orgId ?? undefined);
-            setDocument(detail);
+            const detail = await submitInventoryCountLines(countDocument.document.id, lines, orgId ?? undefined);
+            setCountDocument(detail);
             const fresh = buildRows(detail, products);
             setRows(fresh);
             countedRef.current = new Map(
@@ -368,7 +368,7 @@ const DjangoInventoryPage: React.FC = () => {
     };
 
     const handleFinish = async () => {
-        if (!document) return;
+        if (!countDocument) return;
         const counted = rows.filter((row) => row.counted != null);
         if (counted.length === 0) {
             notify?.({ type: "error", message: "Ни одна позиция не посчитана — пикните хотя бы один товар" });
@@ -405,7 +405,7 @@ const DjangoInventoryPage: React.FC = () => {
     };
 
     const handleApply = async () => {
-        if (!document) return;
+        if (!countDocument) return;
         const pendingUnknown = unknownScans.length;
         const approved = await confirm({
             title: "Провести инвентаризацию?",
@@ -418,7 +418,7 @@ const DjangoInventoryPage: React.FC = () => {
         if (!approved) return;
         setBusy(true);
         try {
-            await closeWarehouseInventoryCount(document.document.id, orgId ?? undefined);
+            await closeWarehouseInventoryCount(countDocument.document.id, orgId ?? undefined);
             notify?.({ type: "success", message: "Инвентаризация проведена" });
             resetSession();
             setStep("setup");
@@ -434,7 +434,7 @@ const DjangoInventoryPage: React.FC = () => {
     };
 
     const handleCancelDocument = async () => {
-        if (!document) return;
+        if (!countDocument) return;
         const approved = await confirm({
             title: "Отменить документ?",
             message: "Пересчёт закроется без проведения разниц. Посчитанное будет потеряно.",
@@ -444,7 +444,7 @@ const DjangoInventoryPage: React.FC = () => {
         if (!approved) return;
         setBusy(true);
         try {
-            await cancelWarehouseInventoryCount(document.document.id, orgId ?? undefined);
+            await cancelWarehouseInventoryCount(countDocument.document.id, orgId ?? undefined);
             notify?.({ type: "success", message: "Документ отменён" });
             resetSession();
             setStep("setup");
@@ -553,22 +553,22 @@ const DjangoInventoryPage: React.FC = () => {
                     gap: 2,
                 })}
             >
-                {document && (
+                {countDocument && (
                     <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
                         <Chip
                             size="small"
                             icon={<DescriptionOutlined />}
-                            label={`Документ №${document.document.id}`}
+                            label={`Документ №${countDocument.document.id}`}
                         />
-                        <Chip size="small" icon={<StoreOutlined />} label={document.document.warehouseName} />
+                        <Chip size="small" icon={<StoreOutlined />} label={countDocument.document.warehouseName} />
                         <Chip
                             size="small"
                             label={step === "count" ? "Пересчёт идёт" : "Черновик итогов"}
                             color="primary"
                             variant="outlined"
                         />
-                        {document.document.startedByName && (
-                            <Chip size="small" label={document.document.startedByName} variant="outlined" />
+                        {countDocument.document.startedByName && (
+                            <Chip size="small" label={countDocument.document.startedByName} variant="outlined" />
                         )}
                     </Stack>
                 )}
