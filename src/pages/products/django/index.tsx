@@ -2,7 +2,6 @@ import React from "react";
 import {
   Box,
   Typography,
-  Avatar,
   Stack,
   Divider,
   Grid2,
@@ -10,7 +9,7 @@ import {
   Chip,
   IconButton,
   Button,
-  ButtonBase,
+  Autocomplete,
   alpha,
   Collapse,
   Paper,
@@ -18,15 +17,16 @@ import {
   Badge,
   TextField,
   MenuItem,
+  InputAdornment,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import FilterListIcon from "@mui/icons-material/FilterListOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
-import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import dayjs from "dayjs";
 
@@ -34,7 +34,6 @@ import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyStat
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
-import { subtleBg } from "../../../theme";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -49,12 +48,22 @@ import {
   getProductCategories,
   getProductPriceHistory,
   getProductGallery,
+  getProductModels,
+  productAvailableStock,
   deleteProduct,
   DjangoProduct,
   DjangoPriceHistoryEntry,
   DjangoProductImage,
+  DjangoProductModel,
 } from "../../../api/warehouse";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
+import { DjangoProductPositionRow } from "../../../components/products/django/DjangoProductPositionRow";
+import {
+  buildPositions,
+  matchedVariantIds,
+  positionMatches,
+} from "../../../components/products/django/productPositions";
+import { pluralPositions, useProductTones } from "../../../theme/productTokens";
 import { DjangoProductImageSlider } from "../../../components/products/django/DjangoProductImageSlider";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
 
@@ -63,33 +72,13 @@ import ProductFilterDrawer, { ProductFilters } from "../../../components/product
  * Красный — только при нулевом/отрицательном остатке; «мало» — при остатке
  * ≤ минимума (lowStockThreshold, поле бэка — пока может отсутствовать).
  */
-type StockState = {
-  label: string;
-  color: "error" | "warning" | "success";
-  icon: React.ReactElement | null;
-  out: boolean;
-  /** Приглушённый нейтральный бейдж (строка и так затемнена). */
-  muted: boolean;
-};
-const getStockState = (p: DjangoProduct): StockState => {
-  const stock = p.stock || 0;
-  const unit = p.unit || "шт";
-  const min = (p as unknown as { lowStockThreshold?: number }).lowStockThreshold ?? 0;
-  if (stock <= 0) {
-    return { label: "Нет в наличии", color: "error", icon: null, out: true, muted: true };
-  }
-  if (min > 0 && stock <= min) {
-    return { label: `Мало: ${stock} ${unit}`, color: "warning", icon: <WarningAmberOutlined sx={{ fontSize: 14 }} />, out: false, muted: false };
-  }
-  return { label: `${stock} ${unit}`, color: "success", icon: null, out: false, muted: false };
-};
-
 const DjangoProductsPage: React.FC = () => {
   usePageTitle("Товары");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+  const tones = useProductTones();
   const { loading: permLoading } = usePermissions();
   // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
   const orgId = useApiOrgId();
@@ -109,6 +98,11 @@ const DjangoProductsPage: React.FC = () => {
   });
   // Сортировка списка
   const [sortBy, setSortBy] = React.useState<"name" | "stock" | "price">("name");
+  // Модели: их названия нужны, чтобы позиция называлась «Пальто шерстяное
+  // oversize», а не хвостом первого варианта.
+  const [models, setModels] = React.useState<DjangoProductModel[]>([]);
+  // Раскрытые позиции — ключ из buildPositions, переживает перерисовку списка.
+  const [openKeys, setOpenKeys] = React.useState<Set<string>>(new Set());
 
   // Data state
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
@@ -153,18 +147,30 @@ const DjangoProductsPage: React.FC = () => {
     }
   }, [orgId]);
 
+  const fetchModels = React.useCallback(async () => {
+    try {
+      setModels(await getProductModels(undefined, orgId));
+    } catch (e) {
+      if (isAbortError(e)) return;
+      // Не критично: без моделей позиция назовётся по первому варианту.
+      console.error("Failed to load product models:", e);
+    }
+  }, [orgId]);
+
   React.useEffect(() => {
     if (!permLoading && canView) {
       fetchProducts();
       fetchCategories();
+      fetchModels();
     }
-  }, [permLoading, canView, fetchProducts, fetchCategories]);
+  }, [permLoading, canView, fetchProducts, fetchCategories, fetchModels]);
 
   // Обновление при возврате фокуса — изменения коллег подтянутся без F5.
   useFocusRefetch(() => {
     if (!permLoading && canView) {
       fetchProducts();
       fetchCategories();
+      fetchModels();
     }
   });
 
@@ -177,6 +183,7 @@ const DjangoProductsPage: React.FC = () => {
       if (!permLoading && canView) {
         fetchProducts();
         fetchCategories();
+        fetchModels();
       }
     },
   });
@@ -238,54 +245,70 @@ const DjangoProductsPage: React.FC = () => {
     return Array.from(cats) as string[];
   }, [serverCategories, products]);
 
-  const filteredProducts = React.useMemo(() => {
-    const list = products.filter((p) => {
-      // 1. Text Search
-      const q = searchQuery.toLowerCase();
-      const matchSearch =
-        p.name.toLowerCase().includes(q) ||
-        (p.barcode && p.barcode.includes(q)) ||
-        (p.category && p.category.toLowerCase().includes(q));
+  /**
+   * Фильтры применяем к SKU, а поиск — уже к собранной позиции: продавец ищет
+   * «Хаки» или сканирует штрихкод варианта, и позиция обязана всплыть целиком,
+   * своего штрихкода у неё нет.
+   */
+  const scopedProducts = React.useMemo(
+    () =>
+      products.filter((p) => {
+        if (filters.category && p.category !== filters.category) return false;
+        if (filters.saleStatus !== "all") {
+          const isActive = p.isForSale ?? true;
+          if (filters.saleStatus === "active" && !isActive) return false;
+          if (filters.saleStatus === "inactive" && isActive) return false;
+        }
+        if (filters.stockStatus !== "all") {
+          const stock = productAvailableStock(p);
+          if (filters.stockStatus === "in_stock" && stock <= 0) return false;
+          if (filters.stockStatus === "out_of_stock" && stock > 0) return false;
+        }
+        return true;
+      }),
+    [products, filters],
+  );
 
-      if (!matchSearch) return false;
+  const positions = React.useMemo(
+    () => buildPositions(scopedProducts, models),
+    [scopedProducts, models],
+  );
 
-      // 2. Category Filter
-      if (filters.category && p.category !== filters.category) return false;
-
-      // 3. Sale Status Filter
-      if (filters.saleStatus !== "all") {
-        const isActive = p.isForSale ?? true;
-        if (filters.saleStatus === "active" && !isActive) return false;
-        if (filters.saleStatus === "inactive" && isActive) return false;
-      }
-
-      // 4. Stock Filter
-      if (filters.stockStatus !== "all") {
-        const stock = p.stock || 0;
-        if (filters.stockStatus === "in_stock" && stock <= 0) return false;
-        if (filters.stockStatus === "out_of_stock" && stock > 0) return false;
-      }
-
-      return true;
-    });
-
-    // Сортировка
+  const visiblePositions = React.useMemo(() => {
+    const list = positions.filter((position) => positionMatches(position, searchQuery));
     const sorted = [...list];
     if (sortBy === "name") {
       sorted.sort((a, b) => a.name.localeCompare(b.name, "ru"));
     } else if (sortBy === "stock") {
-      sorted.sort((a, b) => (b.stock || 0) - (a.stock || 0));
+      sorted.sort((a, b) => b.stock - a.stock);
     } else if (sortBy === "price") {
-      sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+      sorted.sort((a, b) => b.priceMax - a.priceMax);
     }
     return sorted;
-  }, [products, searchQuery, filters, sortBy]);
+  }, [positions, searchQuery, sortBy]);
+
+  /** Сколько SKU видно сейчас — позиции считаются отдельно от строк учёта. */
+  const visibleSkuCount = React.useMemo(
+    () => visiblePositions.reduce((sum, position) => sum + position.variants.length, 0),
+    [visiblePositions],
+  );
+
+  /* Поиск, попавший внутрь варианта, сам раскрывает свою позицию: иначе
+     совпадение остаётся невидимым под свёрнутой строкой. */
+  const searchOpenKeys = React.useMemo(() => {
+    if (!searchQuery.trim()) return new Set<string>();
+    return new Set(
+      visiblePositions
+        .filter((position) => matchedVariantIds(position, searchQuery).size > 0)
+        .map((position) => position.key),
+    );
+  }, [visiblePositions, searchQuery]);
 
   // Сводка по наличию — для чипов-фильтров над списком.
   const stockCounts = React.useMemo(() => {
     let out = 0;
     for (const p of products) {
-      if ((p.stock || 0) <= 0) out += 1;
+      if (productAvailableStock(p) <= 0) out += 1;
     }
     return { total: products.length, out, inStock: products.length - out };
   }, [products]);
@@ -347,10 +370,6 @@ const DjangoProductsPage: React.FC = () => {
         showTitle={false}
         addButtonText={canManage ? "Добавить товар" : undefined}
         onAdd={canManage ? handleAddClick : undefined}
-        showSearch
-        searchVal={searchQuery}
-        onSearchChange={setSearchQuery}
-        searchPlaceholder="Поиск..."
       />
 
       <Box sx={{ px: 2, pb: 4, pt: 1, flex: 1, overflow: "hidden" }}>
@@ -376,7 +395,7 @@ const DjangoProductsPage: React.FC = () => {
                 sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", gap: 1 }}
               >
                 <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                  Товары ({isFilterActive ? `${filteredProducts.length} из ${products.length}` : products.length})
+                  Товары ({isFilterActive ? `${visiblePositions.length} из ${positions.length}` : pluralPositions(positions.length)})
                 </Typography>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <TextField
@@ -390,133 +409,116 @@ const DjangoProductsPage: React.FC = () => {
                     <MenuItem value="stock">По остатку</MenuItem>
                     <MenuItem value="price">По цене</MenuItem>
                   </TextField>
-                  <Badge badgeContent={activeFilterCount} color="primary">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<FilterListIcon fontSize="small" />}
-                      onClick={() => setFilterDrawerOpen(true)}
-                      sx={{ textTransform: "none" }}
-                    >
-                      Фильтры
-                    </Button>
-                  </Badge>
                 </Stack>
               </Stack>
 
-              {/* Сводка по наличию — кликабельные чипы-фильтры */}
-              <Stack
-                direction="row"
-                gap={0.75}
-                flexWrap="wrap"
-                sx={{ px: 1.5, py: 1, borderBottom: 1, borderColor: "divider" }}
+              {/* Компактная панель: категория поиском, наличие, счётчики.
+                  Ленты чипов убраны — на 30 категориях они уезжали за экран,
+                  а активный фильтр было не видно. */}
+              <Box
+                sx={{
+                  px: 1.5,
+                  py: 1.25,
+                  borderBottom: 1,
+                  borderColor: "divider",
+                  display: "grid",
+                  gap: 1,
+                  alignItems: "center",
+                  gridTemplateColumns: {
+                    xs: "1fr",
+                    sm: "minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) auto",
+                  },
+                }}
               >
-                {([
-                  { value: "all" as const, label: "Все", count: stockCounts.total, tone: null },
-                  { value: "in_stock" as const, label: "В наличии", count: stockCounts.inStock, tone: "success" as const },
-                  { value: "out_of_stock" as const, label: "Нет в наличии", count: stockCounts.out, tone: "error" as const },
-                ]).map((o) => {
-                  const active = filters.stockStatus === o.value;
-                  const accent = o.tone ? theme.palette[o.tone].main : theme.palette.primary.main;
-                  const accentText = o.tone
-                    ? theme.palette.mode === "dark"
-                      ? theme.palette[o.tone].light
-                      : theme.palette[o.tone].dark
-                    : "primary.onSurface";
-                  return (
-                    <Chip
-                      key={o.value}
-                      size="small"
-                      clickable
-                      onClick={() => setFilters((f) => ({ ...f, stockStatus: o.value }))}
-                      label={`${o.label} · ${o.count}`}
-                      sx={(t) => ({
-                        height: 26,
-                        borderRadius: "8px",
-                        fontWeight: 500,
-                        border: 1,
-                        borderColor: active ? alpha(accent, 0.4) : "divider",
-                        color: active ? accentText : "text.secondary",
-                        bgcolor: active
-                          ? alpha(accent, t.palette.mode === "dark" ? 0.16 : 0.08)
-                          : "transparent",
-                        "&:hover": {
-                          bgcolor: active
-                            ? alpha(accent, t.palette.mode === "dark" ? 0.22 : 0.12)
-                            : subtleBg(t, true),
-                        },
-                      })}
-                    />
-                  );
-                })}
-              </Stack>
-
-              {/* Категории — горизонтальная лента чипов */}
-              {availableCategories.length > 0 && (
-                <Box
-                  sx={{
-                    px: 1.5,
-                    py: 1,
-                    borderBottom: 1,
-                    borderColor: "divider",
-                    display: "flex",
-                    gap: 0.75,
-                    overflowX: "auto",
-                    scrollbarWidth: "none",
-                    "&::-webkit-scrollbar": { display: "none" },
+                <TextField
+                  size="small"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Название, значение, SKU или штрихкод"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchOutlined sx={{ fontSize: 18, color: "text.disabled" }} />
+                      </InputAdornment>
+                    ),
                   }}
+                />
+                <Autocomplete
+                  size="small"
+                  options={availableCategories}
+                  value={filters.category}
+                  onChange={(_, next) => setFilters((f) => ({ ...f, category: next }))}
+                  noOptionsText="Ничего не нашлось"
+                  renderInput={(params) => (
+                    <TextField {...params} label="Категория" placeholder="Все категории" />
+                  )}
+                />
+                <TextField
+                  select
+                  size="small"
+                  label="Наличие"
+                  value={filters.stockStatus}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      stockStatus: e.target.value as ProductFilters["stockStatus"],
+                    }))
+                  }
                 >
-                  <Chip
-                    size="small"
-                    clickable
-                    label="Все категории"
-                    onClick={() => setFilters((f) => ({ ...f, category: null }))}
-                    sx={(t) => ({
-                      height: 26,
-                      borderRadius: "8px",
-                      fontWeight: 500,
-                      flexShrink: 0,
+                  <MenuItem value="all">Все · {stockCounts.total}</MenuItem>
+                  <MenuItem value="in_stock">В наличии · {stockCounts.inStock}</MenuItem>
+                  <MenuItem value="out_of_stock">Нет в наличии · {stockCounts.out}</MenuItem>
+                </TextField>
+                <Badge badgeContent={activeFilterCount} color="primary">
+                  <Button
+                    variant="outlined"
+                    startIcon={<FilterListIcon fontSize="small" />}
+                    onClick={() => setFilterDrawerOpen(true)}
+                    sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+                  >
+                    Ещё
+                  </Button>
+                </Badge>
+              </Box>
+
+              <Box sx={{ px: 1.5, py: 1.25, borderBottom: 1, borderColor: "divider", display: "flex", gap: 1, flexWrap: "wrap" }}>
+                {[
+                  { v: visiblePositions.length, l: "позиций" },
+                  { v: visibleSkuCount, l: "строк учёта" },
+                  { v: visiblePositions.filter((x) => !x.single).length, l: "с разрезом", tone: tones.matrix },
+                  { v: visiblePositions.reduce((a, x) => a + x.outCount, 0), l: "нет в наличии", tone: tones.danger },
+                ].map((m) => (
+                  <Box
+                    key={m.l}
+                    sx={{
+                      display: "inline-flex",
+                      alignItems: "baseline",
+                      gap: "7px",
+                      px: "12px",
+                      py: "7px",
                       border: 1,
-                      borderColor: !filters.category ? alpha(t.palette.primary.main, 0.4) : "divider",
-                      color: !filters.category ? "primary.onSurface" : "text.secondary",
-                      bgcolor: !filters.category
-                        ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
-                        : "transparent",
-                    })}
-                  />
-                  {availableCategories.map((cat) => {
-                    const active = filters.category === cat;
-                    return (
-                      <Chip
-                        key={cat}
-                        size="small"
-                        clickable
-                        label={cat}
-                        onClick={() =>
-                          setFilters((f) => ({ ...f, category: f.category === cat ? null : cat }))
-                        }
-                        sx={(t) => ({
-                          height: 26,
-                          borderRadius: "8px",
-                          fontWeight: 500,
-                          flexShrink: 0,
-                          border: 1,
-                          borderColor: active ? alpha(t.palette.primary.main, 0.4) : "divider",
-                          color: active ? "primary.onSurface" : "text.secondary",
-                          bgcolor: active
-                            ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
-                            : "transparent",
-                          "&:hover": {
-                            bgcolor: active
-                              ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.22 : 0.12)
-                              : subtleBg(t, true),
-                          },
-                        })}
-                      />
-                    );
-                  })}
-                </Box>
-              )}
+                      borderColor: "divider",
+                      borderRadius: "9px",
+                      bgcolor: tones.soft,
+                    }}
+                  >
+                    <Box
+                      component="b"
+                      sx={{
+                        fontSize: 16,
+                        fontWeight: 600,
+                        fontVariantNumeric: "tabular-nums",
+                        color: m.v > 0 ? m.tone : undefined,
+                      }}
+                    >
+                      {m.v}
+                    </Box>
+                    <Box component="span" sx={{ fontSize: 12, color: "text.disabled" }}>
+                      {m.l}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
 
               {/* Чипы применённых фильтров */}
               {activeFilterChips.length > 0 && (
@@ -545,7 +547,7 @@ const DjangoProductsPage: React.FC = () => {
               <Box sx={{ overflowY: "auto", flex: 1 }}>
                 {loading ? (
                   <ListLoadingSkeleton rows={6} />
-                ) : filteredProducts.length === 0 ? (
+                ) : visiblePositions.length === 0 ? (
                   <ListEmptyState
                     icon={<Inventory2OutlinedIcon />}
                     title={products.length === 0 ? "Товаров пока нет" : "Ничего не найдено"}
@@ -564,99 +566,24 @@ const DjangoProductsPage: React.FC = () => {
                   />
                 ) : (
                   <Stack spacing={1} sx={{ p: 1.5 }}>
-                    {filteredProducts.map((p) => {
-                      const isSelected = selectedProduct?.id === p.id;
-                      const stockState = getStockState(p);
-                      return (
-                        <ButtonBase
-                          key={p.id}
-                          focusRipple
-                          onClick={() => {
-                            if (selectedProduct?.id !== p.id) {
-                              setSelectedProduct(p);
-                            }
-                          }}
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1.5,
-                            width: "100%",
-                            textAlign: "left",
-                            p: 1.25,
-                            borderRadius: "14px",
-                            border: 1,
-                            borderColor: isSelected ? "primary.main" : "divider",
-                            bgcolor: (theme) =>
-                              isSelected ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
-                            transition:
-                              "border-color .15s ease, background-color .15s ease",
-                            "&:hover": {
-                              borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
-                              bgcolor: (theme) => subtleBg(theme, true),
-                            },
-                          }}
-                        >
-                          {/* Левая часть приглушается, если товара нет в наличии */}
-                          <Avatar
-                            variant="rounded"
-                            src={p.imageUrl || undefined}
-                            sx={{
-                              flexShrink: 0,
-                              width: 48,
-                              height: 48,
-                              borderRadius: "14px",
-                              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                              color: "primary.onSurface",
-                              opacity: stockState.out ? 0.55 : 1,
-                            }}
-                          >
-                            {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
-                          </Avatar>
-                          <Box sx={{ flex: 1, minWidth: 0, opacity: stockState.out ? 0.55 : 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
-                              {p.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" noWrap display="block">
-                              {p.category ? `${p.category} • ` : ""}
-                              {p.barcode || "—"}
-                            </Typography>
-                          </Box>
-                          <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}>
-                            {p.price > 0 && (
-                              <Typography variant="body2" color="text.secondary">
-                                {p.price.toLocaleString()} сом
-                              </Typography>
-                            )}
-                            <Chip
-                              size="small"
-                              icon={stockState.icon ?? undefined}
-                              label={stockState.label}
-                              sx={(theme) => ({
-                                height: 22,
-                                fontSize: "0.7rem",
-                                fontWeight: 600,
-                                borderRadius: "7px",
-                                // «Нет в наличии» — нейтральный приглушённый бейдж:
-                                // строка и так затемнена, красный на каждой строке шумит.
-                                bgcolor: stockState.muted
-                                  ? subtleBg(theme, true)
-                                  : alpha(theme.palette[stockState.color].main, 0.12),
-                                color: stockState.muted
-                                  ? "text.secondary"
-                                  : `${stockState.color}.main`,
-                                "& .MuiChip-icon": {
-                                  color: stockState.muted
-                                    ? "text.secondary"
-                                    : `${stockState.color}.main`,
-                                  ml: 0.5,
-                                },
-                                "& .MuiChip-label": { px: 0.75 },
-                              })}
-                            />
-                          </Stack>
-                        </ButtonBase>
-                      );
-                    })}
+                    {visiblePositions.map((position) => (
+                      <DjangoProductPositionRow
+                        key={position.key}
+                        position={position}
+                        open={openKeys.has(position.key) || searchOpenKeys.has(position.key)}
+                        onToggle={() =>
+                          setOpenKeys((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(position.key)) next.delete(position.key);
+                            else next.add(position.key);
+                            return next;
+                          })
+                        }
+                        selectedProductId={selectedProduct?.id ?? null}
+                        onSelectProduct={setSelectedProduct}
+                        highlighted={matchedVariantIds(position, searchQuery)}
+                      />
+                    ))}
                   </Stack>
                 )}
               </Box>
