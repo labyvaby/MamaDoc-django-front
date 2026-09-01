@@ -40,6 +40,8 @@ export type InventorySetupCardProps = {
     scopeCount: number;
     scopeSum: number;
     responsibleName: string;
+    /** Активный филиал: склад другого филиала бэк не даст открыть. */
+    activeBranchId?: number | null;
     disabled?: boolean;
 };
 
@@ -61,9 +63,15 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
     scopeCount,
     scopeSum,
     responsibleName,
+    activeBranchId = null,
     disabled = false,
 }) => {
     const allSelected = categories.length > 0 && selected.length === categories.length;
+    const isForeign = (warehouse: DjangoWarehouse) =>
+        activeBranchId != null && warehouse.branchId !== activeBranchId;
+    const chosen = warehouses.find((warehouse) => warehouse.id === warehouseId);
+    // Ловим чужой филиал до запроса: бэк на него отвечает сухим «Не найдено».
+    const foreignChosen = chosen != null && isForeign(chosen);
 
     return (
         <AppCard
@@ -78,12 +86,16 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
                         value={warehouseId ?? ""}
                         onChange={(event) => onWarehouseChange(Number(event.target.value))}
                         disabled={disabled || warehouses.length === 0}
+                        error={foreignChosen}
+                        helperText={foreignChosen
+                            ? "Склад другого филиала — переключите филиал в шапке, иначе документ не откроется"
+                            : undefined}
                         fullWidth
                     >
                         {warehouses.map((warehouse) => (
                             <MenuItem key={warehouse.id} value={warehouse.id}>
                                 {warehouse.name}
-                                {warehouse.isLinked ? ` · ${warehouse.branchName}` : ""}
+                                {isForeign(warehouse) || warehouse.isLinked ? ` · ${warehouse.branchName}` : ""}
                             </MenuItem>
                         ))}
                     </TextField>
