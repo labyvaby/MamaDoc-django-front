@@ -536,8 +536,8 @@ const SidebarSecondary: React.FC = () => {
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
     "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.sales || can_.storage,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
+    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -740,11 +740,6 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Вакцины */}
-        {show("org") && can_.vaccinations && (
-          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
-        )}
-
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -772,6 +767,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Товары */}
         {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
+        )}
+
+        {/* Вакцины (карточки вакцин — товары склада с меткой «вакцина») */}
+        {show("storage") && can_.vaccinations && (
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
         )}
 
         {/* Продажи товаров */}
