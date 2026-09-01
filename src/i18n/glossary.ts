@@ -30,6 +30,12 @@ const retailGlossary: Glossary = {
   room: retailTerm("m", "торговый зал", "торгового зала", "торговому залу", "торговый зал", "торговым залом", "торговом зале", "торговые залы", "торговых залов", "торговым залам", "торговые залы", "торговыми залами", "торговых залах"),
 };
 
+const billingGlossary: Glossary = {
+  ...(beautyGlossary as Glossary),
+  org: retailTerm("f", "организация", "организации", "организации", "организацию", "организацией", "организации", "организации", "организаций", "организациям", "организации", "организациями", "организациях"),
+  specialist: retailTerm("m", "сотрудник", "сотрудника", "сотруднику", "сотрудника", "сотрудником", "сотруднике", "сотрудники", "сотрудников", "сотрудникам", "сотрудников", "сотрудниками", "сотрудниках"),
+};
+
 /**
  * Реестр терминологических профилей.
  * Ключ — код вертикали, который бэкенд отдаёт в activeOrganization.vertical.
@@ -37,7 +43,9 @@ const retailGlossary: Glossary = {
 const PROFILES: Record<Vertical, Glossary> = {
   clinic: clinicGlossary as Glossary,
   beauty: beautyGlossary as Glossary,
+  fitness: beautyGlossary as Glossary,
   retail: retailGlossary,
+  billing: billingGlossary,
 };
 
 /** Список поддерживаемых вертикалей — для настроек и валидации. */
@@ -47,7 +55,9 @@ export const SUPPORTED_VERTICALS = Object.keys(PROFILES) as Vertical[];
 export const VERTICAL_LABELS: Record<Vertical, string> = {
   clinic: "Медицинская клиника",
   beauty: "Салон красоты",
+  fitness: "Фитнес-клуб",
   retail: "Магазин / ритейл",
+  billing: "Биллинг и подписки",
 };
 
 /** Проверка, что строка с бэкенда — известная нам вертикаль. */

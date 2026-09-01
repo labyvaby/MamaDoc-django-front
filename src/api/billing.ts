@@ -112,12 +112,18 @@ export interface BillingOffering {
 
 export interface BillingClient {
   id: number;
+  organizationId: number;
+  clientType: "individual" | "company";
   fullName: string;
   phone: string;
   email: string;
   status: string;
   balance: Money;
   debt: Money;
+  legalName: string;
+  inn: string;
+  note: string;
+  joinedAt: string;
 }
 
 export interface ContractDefaults {
@@ -208,6 +214,10 @@ export const billingApi = {
 
   clients: (params: Scope & { q?: string }) =>
     apiRequest<BillingClient[]>(`/clients/${query(params)}`),
+  createClient: (body: Record<string, unknown>) =>
+    apiRequest<BillingClient>("/clients/", { method: "POST", body }),
+  updateClient: (id: number, body: Record<string, unknown>, scope: Scope) =>
+    apiRequest<BillingClient>(`/clients/${id}/${query(scope)}`, { method: "PATCH", body }),
 
   contractDefaults: (scope: Scope) =>
     apiRequest<ContractDefaults>(`/v2/billing/contract-defaults/${query(scope)}`),

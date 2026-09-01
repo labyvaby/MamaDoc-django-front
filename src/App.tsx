@@ -79,6 +79,7 @@ const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage
 const CertificatePrintPage = lazy(() => import("./pages/print/CertificatePrintPage").then(module => ({ default: module.CertificatePrintPage }))); // New Certificate Page
 const DjangoCashboxPage = lazy(() => import("./pages/cashbox/django"));
 const BillingPage = lazy(() => import("./pages/billing"));
+const BillingClientsPage = lazy(() => import("./pages/billing/clients"));
 const DjangoExpensesPage = lazy(() => import("./pages/expenses/DjangoExpensesPage"));
 const DjangoSalaryReportsPage = lazy(() => import("./pages/salary-reports/django"));
 const ReviewsPage = lazy(() => import("./pages/reviews"));
@@ -136,10 +137,13 @@ const RootRedirect = () => {
   // был хардкод /appointments, и вход без права appointments.registry.view
   // заканчивался экраном «Нет доступа».
   const { loading, can } = useCanChecker();
-  const { role, activeEmployee } = usePermissions();
+  const { role, activeEmployee, activeOrganization } = usePermissions();
   const { loading: moduleLoading, moduleGate } = useModuleGate();
   if (loading || moduleLoading) {
     return <LinearProgress />;
+  }
+  if (activeOrganization?.vertical === "billing" && can(PAGE_PERMISSIONS.billing)) {
+    return <Navigate to="/billing" replace />;
   }
   const path = resolveHomeRoute({
     roleCode: role?.name,
@@ -675,6 +679,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.billing}>
                               <Suspense fallback={<LinearProgress />}>
                                 <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing/clients"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.clients}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingClientsPage />
                               </Suspense>
                             </RequirePermission>
                           }

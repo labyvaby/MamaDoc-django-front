@@ -365,6 +365,7 @@ const SidebarSecondary: React.FC = () => {
   const orgId = useApiOrgId();
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
+  const isBilling = activeOrganization?.vertical === "billing";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -391,14 +392,14 @@ const SidebarSecondary: React.FC = () => {
     // редакторе ролей, кому какой кабинет показывать. Данные внутри страниц
     // по-прежнему требуют appointments.view.
     registratura: !isRetail && (isSuper || can(PAGE_PERMISSIONS.appointmentsRegistry)),
-    bookings: !isRetail && (isSuper || can(PAGE_PERMISSIONS.bookings)),
-    chats: !isRetail && (isSuper || can(PAGE_PERMISSIONS.chats)),
+    bookings: !isRetail && !isBilling && (isSuper || can(PAGE_PERMISSIONS.bookings)),
+    chats: !isRetail && !isBilling && (isSuper || can(PAGE_PERMISSIONS.chats)),
     doctorRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.doctorRoom)),
     nurseRoom: !isRetail && (isSuper || can(PAGE_PERMISSIONS.nurseRoom)),
     schedule: !isRetail && (isSuper || can(PAGE_PERMISSIONS.schedule)),
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
-    tasks: can(PAGE_PERMISSIONS.tasks),
+    tasks: !isBilling && can(PAGE_PERMISSIONS.tasks),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
     achievements: can(PAGE_PERMISSIONS.achievements),
@@ -584,11 +585,41 @@ const SidebarSecondary: React.FC = () => {
   if (permissionsLoading) {
     return (
       <List sx={{ py: 0 }}>
-        <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
-        <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
-        <SidebarSkudItem collapsed={siderCollapsed} />
+        {isBilling ? (
+          <>
+            <SidebarMenuItem to="/billing" icon={<HomeOutlined />} label="Главная" collapsed={siderCollapsed} excludePaths={["/billing/clients"]} />
+            <SidebarMenuItem to="/billing/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={siderCollapsed} />
+            <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+            <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} />
+          </>
+        ) : (
+          <>
+            <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
+            <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
+            <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
+            <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
+            <SidebarSkudItem collapsed={siderCollapsed} />
+          </>
+        )}
+      </List>
+    );
+  }
+
+  if (isBilling) {
+    return (
+      <List sx={{ py: 0.5 }}>
+        {(isSuper || can_.billing) && (
+          <SidebarMenuItem to="/billing" icon={<HomeOutlined />} label="Главная" collapsed={siderCollapsed} excludePaths={["/billing/clients"]} />
+        )}
+        {(isSuper || can(PAGE_PERMISSIONS.clients)) && (
+          <SidebarMenuItem to="/billing/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={siderCollapsed} />
+        )}
+        {(isSuper || can_.employees) && (
+          <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+        )}
+        {(isSuper || can_.settings) && (
+          <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} />
+        )}
       </List>
     );
   }

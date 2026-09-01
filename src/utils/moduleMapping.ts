@@ -36,6 +36,9 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   reviews: 'reviews',
   notifications: 'announcements',
   telegram_bot: 'telegram_bot',
+  clients: 'clients',
+  offerings: 'offerings',
+  billing: 'billing',
 };
 
 /**

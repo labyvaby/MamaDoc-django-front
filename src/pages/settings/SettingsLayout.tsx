@@ -212,7 +212,16 @@ export function useVisibleSettingsTabs(): TabDef[] {
     "diagnoses",
     "conclusionForms",
   ];
+  const billingTabs: SettingsTabKey[] = [
+    "organization",
+    "branches",
+    "roles",
+    "memberships",
+  ];
   return TAB_DEFS.filter((tab) => {
+    if (activeOrganization?.vertical === "billing" && !billingTabs.includes(tab.key)) {
+      return false;
+    }
     if (activeOrganization?.vertical === "retail" && retailHiddenTabs.includes(tab.key)) {
       return false;
     }
