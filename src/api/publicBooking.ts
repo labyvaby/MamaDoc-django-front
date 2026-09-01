@@ -86,6 +86,23 @@ interface PublicRequestOptions {
 }
 
 /**
+ * Тело ответа. `response.json()` при обрыве запроса (AbortController) бросает
+ * AbortError — глушить его в `.catch(() => null)` нельзя: прерванный запрос
+ * иначе выглядит как успешный ответ с пустым телом и падает у вызывающего кода
+ * на `raw.data` («Cannot read properties of null»), то есть страница показывает
+ * обрыв как ошибку загрузки. Остальное (пустое тело, HTML от прокси) — null:
+ * ветки статусов ниже разбирают его сами.
+ */
+async function readJsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    return null;
+  }
+}
+
+/**
  * GET/POST к публичному API. Без credentials (публичный AllowAny). Ошибки бэка
  * приходят как `{ error, message, details }` — extractErrorMessage их разбирает.
  * Возвращает СЫРОЙ (snake_case) payload; распаковка/camelize — в обёртках ниже.
@@ -114,11 +131,24 @@ export async function publicRawRequest<T>(
   if (response.status === 204) return undefined as T;
   if (response.status === 429) notifyRateLimited();
 
-  const payload = await response.json().catch(() => null);
+  const payload = await readJsonBody(response);
   if (!response.ok) {
     throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
   }
   return payload as T;
+}
+
+/**
+ * Конверт обязателен: публичные ручки отвечают `{ data }` / `{ data, pagination }`.
+ * null здесь — 200 без JSON (заглушка прокси, обрезанное тело); без проверки это
+ * падало у вызывающего кода как «Cannot read properties of null».
+ */
+function requireEnvelope<T>(raw: T | null | undefined, path: string): T {
+  if (raw == null) {
+    if (import.meta.env.DEV) console.error("[publicBooking] пустой ответ:", path);
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0, null);
+  }
+  return raw;
 }
 
 /** GET одиночного ресурса: `{ data }` → camelCase T. */
@@ -127,8 +157,8 @@ export async function getItem<T>(
   signal?: AbortSignal,
   headers?: Record<string, string>,
 ): Promise<T> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(path, { signal, headers });
-  return camelizeDeep(raw.data) as T;
+  const raw = await publicRawRequest<ItemEnvelope<unknown> | null>(path, { signal, headers });
+  return camelizeDeep(requireEnvelope(raw, path).data) as T;
 }
 
 /**
@@ -141,7 +171,10 @@ export async function getList<T>(
   signal?: AbortSignal,
   headers?: Record<string, string>,
 ): Promise<PublicList<T>> {
-  const raw = await publicRawRequest<ListEnvelope<unknown>>(path, { signal, headers });
+  const raw = requireEnvelope(
+    await publicRawRequest<ListEnvelope<unknown> | null>(path, { signal, headers }),
+    path,
+  );
   const items = (raw.data ?? []).map((x) => camelizeDeep(x) as T);
   return {
     items,
@@ -888,7 +921,7 @@ export async function createGuestBooking(
   req: CreateGuestBookingRequest,
   signal?: AbortSignal,
 ): Promise<GuestBookingResult> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(`/bookings/`, {
+  const raw = await publicRawRequest<ItemEnvelope<unknown> | null>(`/bookings/`, {
     method: "POST",
     signal,
     headers: req.patientToken ? { "X-Patient-Token": req.patientToken } : undefined,
@@ -904,7 +937,7 @@ export async function createGuestBooking(
       ...(req.patientId != null ? { patient_id: req.patientId } : {}),
     },
   });
-  return camelizeDeep(raw.data) as GuestBookingResult;
+  return camelizeDeep(requireEnvelope(raw, "/bookings/").data) as GuestBookingResult;
 }
 
 // ── Лист ожидания (гость) ────────────────────────────────────────────────────
@@ -942,7 +975,7 @@ export async function createWaitlistRequest(
   req: CreateWaitlistRequest,
   signal?: AbortSignal,
 ): Promise<CreateWaitlistResult> {
-  const raw = await publicRawRequest<ItemEnvelope<unknown>>(`/waitlist/`, {
+  const raw = await publicRawRequest<ItemEnvelope<unknown> | null>(`/waitlist/`, {
     method: "POST",
     signal,
     body: {
@@ -956,5 +989,5 @@ export async function createWaitlistRequest(
       ...(req.dateTo ? { date_to: req.dateTo } : {}),
     },
   });
-  return camelizeDeep(raw.data) as CreateWaitlistResult;
+  return camelizeDeep(requireEnvelope(raw, "/waitlist/").data) as CreateWaitlistResult;
 }
