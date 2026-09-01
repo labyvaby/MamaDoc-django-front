@@ -144,6 +144,26 @@ export function getRoles(organizationId?: number | null): Promise<RbacRole[]> {
   );
 }
 
+/**
+ * Роли активной организации из общего ответа `/rbac/roles/`.
+ *
+ * Бэкенд отдаёт роли ВСЕХ организаций, к которым у пользователя есть доступ
+ * (суперюзеру — вообще все роли системы), поэтому сначала фильтруем по
+ * активной организации, иначе в списках всплывают чужие роли. Затем сворачиваем
+ * дубли по `code` (а при его отсутствии — по `name`) как защитный слой. Пока
+ * активная организация не определена, оставляем как есть (фильтровать не по чему).
+ */
+export function rolesForActiveOrg(roles: RbacRole[], activeOrgId?: number | null): RbacRole[] {
+  const scoped =
+    activeOrgId == null ? roles : roles.filter((r) => r.organizationId === activeOrgId);
+  const byKey = new Map<string, RbacRole>();
+  for (const role of scoped) {
+    const key = (role.code || role.name).trim().toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, role);
+  }
+  return Array.from(byKey.values());
+}
+
 export function getRole(id: number): Promise<RbacRole> {
   return apiRequest<RbacRole>(`/rbac/roles/${id}/`);
 }

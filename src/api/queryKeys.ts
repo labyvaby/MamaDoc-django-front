@@ -205,6 +205,19 @@ export const djangoQueryKeys = {
       ["django", "tasks", "my-stats", orgId ?? null] as const,
   },
 
+  waitlist: {
+    all: ["django", "waitlist"] as const,
+    list: (params: Record<string, unknown>) =>
+      ["django", "waitlist", "list", params] as const,
+    detail: (id: number) => ["django", "waitlist", id] as const,
+    /** Кандидаты на конкретное освободившееся окно. */
+    matches: (params: Record<string, unknown>) =>
+      ["django", "waitlist", "matches", params] as const,
+    matchCounts: (params: Record<string, unknown>) =>
+      ["django", "waitlist", "match-counts", params] as const,
+    summary: (orgId?: number) => ["django", "waitlist", "summary", orgId ?? null] as const,
+  },
+
   achievements: {
     all: ["django", "achievements"] as const,
     definitions: ["django", "achievements", "definitions"] as const,

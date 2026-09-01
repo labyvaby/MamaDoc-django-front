@@ -35,6 +35,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { useOrgRoles } from "../../hooks/useOrgRoles";
+import type { RbacRole } from "../../api/rbac";
 import { SettingsLayout } from "./SettingsLayout";
 import { ConfirmDialog } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -67,18 +69,38 @@ import { TASK_PRIORITY_META, TASK_PRIORITY_OPTIONS } from "../tasks/meta";
 import { useT } from "../../i18n/VerticalProvider";
 
 // ── Справочники ────────────────────────────────────────────────────────────────
-// Роли-исполнители для привязки категорий (без superadmin). Подписи — из
-// settings.json (tasks.roles) через roleOptionsOf(t), т.к. doctor/nurse
-// параметризуются глоссарием (врач/медсестра ↔ мастер/ассистент).
+// Группы-исполнители для привязки категорий — это роли организации
+// («Настройки → Роли»), а не фиксированный перечень: набор групп у организаций
+// разный, и захардкоженный список предлагает выбрать то, чего у неё нет.
+// Запасной перечень ниже используется, только когда роли недоступны: ручка
+// `/rbac/roles/` закрыта правом `rbac.roles.view`, а настройки задач открыты
+// по `tasks.manage` — у части администраторов первого права нет.
 
 const ROLE_VALUES = ["admin", "manager", "owner", "doctor", "nurse", "receptionist", "registrator", "accountant"] as const;
 
-function roleOptionsOf(t: (key: string) => string): { value: string; label: string }[] {
-  return ROLE_VALUES.map((value) => ({ value, label: t(`tasks.roles.${value}`) }));
+/** Есть ли для кода роли подпись в глоссарии (doctor → «врач» / «мастер»). */
+const hasGlossaryLabel = (code: string) => (ROLE_VALUES as readonly string[]).includes(code);
+
+function roleOptionsOf(
+  t: (key: string) => string,
+  orgRoles: RbacRole[],
+): { value: string; label: string }[] {
+  if (orgRoles.length === 0) {
+    return ROLE_VALUES.map((value) => ({ value, label: t(`tasks.roles.${value}`) }));
+  }
+  return orgRoles.map((r) => ({ value: r.code, label: roleLabelOf(r.code, t, orgRoles) }));
 }
 
-function roleLabelOf(v: string, t: (key: string) => string): string {
-  return (ROLE_VALUES as readonly string[]).includes(v) ? t(`tasks.roles.${v}`) : v;
+/**
+ * Подпись группы: своё название — у ролей, созданных организацией; системные
+ * роли переводим глоссарием, иначе в салоне красоты «Врач» вместо «Мастер».
+ * Неизвестный код (роль удалили, а в категории она осталась) показываем как есть.
+ */
+function roleLabelOf(code: string, t: (key: string) => string, orgRoles: RbacRole[]): string {
+  const role = orgRoles.find((r) => r.code === code);
+  if (role && !role.isSystem) return role.name;
+  if (hasGlossaryLabel(code)) return t(`tasks.roles.${code}`);
+  return role?.name ?? code;
 }
 
 // Названия дней недели — данные локали, одинаковые в обеих вертикалях,
@@ -111,6 +133,8 @@ type CategoryDialogProps = {
 const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category, onSaved }) => {
   const { t } = useT("settings");
   const orgId = useApiOrgId();
+  // Группы грузим только при открытом диалоге: список нужен для выбора.
+  const { roles: orgRoles } = useOrgRoles(open);
   const [name, setName] = React.useState("");
   const [roles, setRoles] = React.useState<string[]>([]);
   const [priority, setPriority] = React.useState<TaskPriority>("normal");
@@ -167,7 +191,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
     }
   };
 
-  const roleOptions = roleOptionsOf(t);
+  const roleOptions = roleOptionsOf(t, orgRoles);
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
@@ -201,7 +225,7 @@ const CategoryDialog: React.FC<CategoryDialogProps> = ({ open, onClose, category
               renderValue: (selected) => (
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                   {(selected as string[]).map((v) => (
-                    <Chip key={v} label={roleLabelOf(v, t)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
+                    <Chip key={v} label={roleLabelOf(v, t, orgRoles)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
                   ))}
                 </Box>
               ),
@@ -669,6 +693,9 @@ const TasksSettingsPage: React.FC = () => {
   usePageTitle(t("tasks.pageTitle"));
   const orgId = useApiOrgId();
   const queryClient = useQueryClient();
+  // Роли организации нужны и таблице: по ним подписываются чипы групп и видно,
+  // что группа из категории в организации больше не существует.
+  const { roles: orgRoles, available: orgRolesAvailable } = useOrgRoles();
 
   const [categoryDialog, setCategoryDialog] = React.useState<{ open: boolean; category: TaskCategory | null }>({
     open: false,
@@ -826,9 +853,29 @@ const TasksSettingsPage: React.FC = () => {
                       <TableCell sx={{ opacity: c.isActive ? 1 : 0.5 }}>{c.name}</TableCell>
                       <TableCell>
                         <Stack direction="row" gap={0.5} flexWrap="wrap">
-                          {c.assignedRoles.map((r) => (
-                            <Chip key={r} label={roleLabelOf(r, t)} size="small" sx={{ height: 20, borderRadius: "6px" }} />
-                          ))}
+                          {c.assignedRoles.map((r) => {
+                            // Группа могла исчезнуть (роль удалили или её никогда
+                            // не было у организации) — такую помечаем, иначе
+                            // категория выглядит настроенной, а адресовать её некому.
+                            const missing = orgRolesAvailable && !orgRoles.some((role) => role.code === r);
+                            const chip = (
+                              <Chip
+                                key={r}
+                                label={roleLabelOf(r, t, orgRoles)}
+                                size="small"
+                                color={missing ? "warning" : undefined}
+                                variant={missing ? "outlined" : "filled"}
+                                sx={{ height: 20, borderRadius: "6px" }}
+                              />
+                            );
+                            return missing ? (
+                              <Tooltip key={r} title={t("tasks.categories.roleMissing")}>
+                                <span>{chip}</span>
+                              </Tooltip>
+                            ) : (
+                              chip
+                            );
+                          })}
                         </Stack>
                       </TableCell>
                       <TableCell>

@@ -85,7 +85,6 @@ import {
   type TaskPriority,
   type TaskStatus,
   type TasksFilters,
-  type TasksResponse,
 } from "../../api/tasks";
 import {
   djangoQueryKeys,
@@ -103,6 +102,7 @@ import {
   TASK_ARCHIVE_STATUSES,
   TASK_PRIORITY_OPTIONS,
   TASK_STATUS_OPTIONS,
+  taskErrorMessage,
   TASKS_DELETE_ENABLED,
   TASKS_REFRESH_MS,
 } from "./meta";
@@ -601,6 +601,8 @@ const TasksPage: React.FC = () => {
   /** Опциональные период-фильтры: null — выключен (задачи без срока не скрываются). */
   const [dueRange, setDueRange] = React.useState<DateRange | null>(null);
   const [createdRange, setCreatedRange] = React.useState<DateRange | null>(null);
+  /** Период по дате закрытия — только в архиве (closedFrom/closedTo). */
+  const [closedRange, setClosedRange] = React.useState<DateRange | null>(null);
   const [ordering, setOrdering] = React.useState<"smart" | "created">("smart");
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
@@ -627,6 +629,9 @@ const TasksPage: React.FC = () => {
       setStatus("");
       setQuickDue("");
       setDueRange(null);
+    } else {
+      // Период закрытия вне архива не показываем — иначе он молча режет выборку.
+      setClosedRange(null);
     }
   };
 
@@ -656,7 +661,7 @@ const TasksPage: React.FC = () => {
 
   React.useEffect(() => {
     setPage(0);
-  }, [tab, status, archiveStatus, categoryId, priority, search, dueRange, createdRange, quickDue, ordering]);
+  }, [tab, status, archiveStatus, categoryId, priority, search, dueRange, createdRange, closedRange, quickDue, ordering]);
 
   /** Быстрый пресет разворачивается в те же dueFrom/dueTo, что и период. */
   const quickDueRange = React.useMemo((): { from?: string; to?: string } => {
@@ -682,7 +687,7 @@ const TasksPage: React.FC = () => {
   const filters: TasksFilters = {
     status: isArchive
       ? archiveStatus === "all"
-        ? undefined // подставляется в queryFn: серверный `status` — одно значение
+        ? TASK_ARCHIVE_STATUSES // одним запросом: status=done,cancelled
         : archiveStatus
       : status === ""
       ? undefined
@@ -708,6 +713,8 @@ const TasksPage: React.FC = () => {
       : undefined,
     createdFrom: createdFilterOn && createdRange ? createdRange.from.format("YYYY-MM-DD") : undefined,
     createdTo: createdFilterOn && createdRange ? createdRange.to.format("YYYY-MM-DD") : undefined,
+    closedFrom: isArchive && closedRange ? closedRange.from.format("YYYY-MM-DD") : undefined,
+    closedTo: isArchive && closedRange ? closedRange.to.format("YYYY-MM-DD") : undefined,
     // В архиве «умная» сортировка (просрочка → приоритет) смысла не имеет:
     // закрытые задачи листают по свежести.
     ordering: isArchive ? "created" : ordering,
@@ -726,32 +733,10 @@ const TasksPage: React.FC = () => {
       archiveStatus: isArchive ? archiveStatus : undefined,
       page: page + 1,
     }),
-    queryFn: async ({ signal }): Promise<TasksResponse> => {
-      // «Все закрытые» — две выборки вместо одной: серверный `status` принимает
-      // единственное значение (второй параметр перетирает первый, запятая даёт
-      // пустой список — проверено на API 07.08.2026). Обе отсортированы по
-      // одному ключу (ordering=created), поэтому топ-N объединения гарантированно
-      // лежит в объединении топ-N каждой — срез по странице корректен.
-      if (isArchive && archiveStatus === "all") {
-        const need = (page + 1) * PAGE_SIZE;
-        const parts = await Promise.all(
-          TASK_ARCHIVE_STATUSES.map((s) =>
-            getTasks({ ...filters, status: s, page: 1, pageSize: need }, signal),
-          ),
-        );
-        const merged = parts
-          .flatMap((p) => p.results)
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        const start = page * PAGE_SIZE;
-        return {
-          results: merged.slice(start, start + PAGE_SIZE),
-          count: parts.reduce((sum, p) => sum + p.count, 0),
-          next: null,
-          previous: null,
-        };
-      }
-      return getTasks({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal);
-    },
+    // «Все закрытые» уходят одним параметром `status=done,cancelled`: бэк
+    // принимает список через запятую с 31.08.2026 (раньше приходилось делать
+    // две выборки и склеивать страницы руками).
+    queryFn: ({ signal }) => getTasks({ ...filters, page: page + 1, pageSize: PAGE_SIZE }, signal),
     enabled: enabled && !boardMode,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
@@ -799,7 +784,7 @@ const TasksPage: React.FC = () => {
       setActionError(
         isStatusConflict
           ? "Статус задачи изменился (возможно, её уже завершили). Список обновлён — проверьте доступные действия."
-          : raw || "Не удалось выполнить действие",
+          : taskErrorMessage(e, "Не удалось выполнить действие"),
       );
       invalidateTasks();
     },
@@ -815,7 +800,7 @@ const TasksPage: React.FC = () => {
     },
     onError: (e) => {
       setPendingDelete(null);
-      setActionError(e instanceof Error ? e.message : "Не удалось удалить задачу");
+      setActionError(taskErrorMessage(e, "Не удалось удалить задачу"));
     },
   });
 
@@ -841,9 +826,11 @@ const TasksPage: React.FC = () => {
   const getCompleteAction = React.useCallback(
     (t: Task): RowAction | null => {
       if (t.status === "in_progress" && (t.assigneeId === meEmployeeId || canManage)) {
+        // Обладателю tasks.manage бэк закрывает задачу сразу, минуя приёмку —
+        // отправить её на проверку можно из карточки и с доски.
         return {
           key: "complete",
-          label: "Исполнить",
+          label: canManage ? "Исполнить и закрыть" : "Исполнить",
           icon: <CheckOutlined sx={{ fontSize: 18 }} />,
           fn: completeTask,
         };
@@ -869,6 +856,7 @@ const TasksPage: React.FC = () => {
     quickDue !== "" ||
     dueRange != null ||
     createdRange != null ||
+    closedRange != null ||
     (isArchive && archiveStatus !== "all");
 
   const handleResetFilters = () => {
@@ -880,23 +868,29 @@ const TasksPage: React.FC = () => {
     setQuickDue("");
     setDueRange(null);
     setCreatedRange(null);
+    setClosedRange(null);
   };
 
   const columns = React.useMemo<GridColDef<Task>[]>(
     () => {
       /** В архиве срок не актуален — важнее, когда задачу закрыли. */
       const closedColumn: GridColDef<Task> = {
-        field: "updatedAt",
+        field: "closedAt",
         headerName: "Закрыта",
         width: 150,
         sortable: false,
-        renderCell: ({ row }) => (
-          <Tooltip title={formatDateTime(row.updatedAt)}>
-            <Typography variant="body2" color="text.secondary">
-              {relativeTime(row.updatedAt)}
-            </Typography>
-          </Tooltip>
-        ),
+        renderCell: ({ row }) => {
+          // closedAt — дата закрытия от бэка; у задач, закрытых до появления
+          // поля, его может не быть — тогда показываем последнее изменение.
+          const closed = row.closedAt ?? row.updatedAt;
+          return (
+            <Tooltip title={formatDateTime(closed)}>
+              <Typography variant="body2" color="text.secondary">
+                {relativeTime(closed)}
+              </Typography>
+            </Tooltip>
+          );
+        },
       };
 
       const deleteColumn: GridColDef<Task> = {
@@ -1144,7 +1138,43 @@ const TasksPage: React.FC = () => {
     </Button>
   );
 
-  const foldedActiveCount = (status !== "" ? 1 : 0) + (createdRange ? 1 : 0);
+  /* Дата закрытия — только в архиве: closedFrom/closedTo фильтруют по closedAt */
+  const closedFilter = !isArchive ? null : closedRange ? (
+    <Stack direction="row" alignItems="center" gap={0.25}>
+      <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+        Закрыта:
+      </Typography>
+      <DateRangeField
+        dense
+        value={closedRange}
+        onChange={(r) => setClosedRange(r)}
+        presets={DEFAULT_RANGE_PRESETS}
+        minWidth={190}
+      />
+      <IconButton
+        size="small"
+        aria-label="Убрать фильтр по дате закрытия"
+        onClick={() => setClosedRange(null)}
+        sx={{ p: 0.5 }}
+      >
+        <CloseOutlined sx={{ fontSize: 15 }} />
+      </IconButton>
+    </Stack>
+  ) : (
+    <Button
+      size="small"
+      startIcon={<CalendarMonthOutlined sx={{ fontSize: 15 }} />}
+      onClick={() =>
+        setClosedRange({ from: dayjs().subtract(29, "day").startOf("day"), to: dayjs().endOf("day") })
+      }
+      sx={(t) => pillSx(t)}
+    >
+      Дата закрытия
+    </Button>
+  );
+
+  const foldedActiveCount =
+    (status !== "" ? 1 : 0) + (createdRange ? 1 : 0) + (closedRange ? 1 : 0);
 
   const NoRowsOverlay = () => (
     <Stack alignItems="center" justifyContent="center" sx={{ height: "100%", opacity: 0.75 }}>
@@ -1435,12 +1465,15 @@ const TasksPage: React.FC = () => {
             </Button>
           )}
 
+          {!compactFilters && closedFilter}
+
           {!compactFilters && createdFilter}
 
           {/* Узкий экран: редкие фильтры под кнопкой, чтобы строка не переносилась */}
-          {compactFilters && (statusFilter || createdFilter) && (
+          {compactFilters && (statusFilter || createdFilter || closedFilter) && (
             <MoreFilters activeCount={foldedActiveCount}>
               {statusFilter}
+              {closedFilter}
               {createdFilter}
             </MoreFilters>
           )}

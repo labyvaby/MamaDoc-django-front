@@ -10,6 +10,7 @@ import { useParams } from "react-router";
 
 import {
   createGuestBooking,
+  createWaitlistRequest,
   getProfessional,
   getProfessionalAvailableServices,
   getProfessionalAvailableTimes,
@@ -50,6 +51,8 @@ import { ServicesCard, type PickableService } from "./booking/ServicesCard";
 import { DoctorCard } from "./booking/DoctorCard";
 import { ReviewsDialog } from "./booking/ReviewsDialog";
 import { GuestDialog, SuccessDialog } from "./booking/Dialogs";
+import { WaitlistDialog } from "./booking/WaitlistDialog";
+import { WAITLIST_PUBLIC_CHANNEL_ENABLED } from "../waitlist/meta";
 import { choiceTotals, type BookingChoice } from "./booking/choice";
 
 /**
@@ -150,6 +153,7 @@ const BookButton: React.FC<{
 
 const DoctorBookingPage: React.FC = () => {
   const { t } = useT("publicBooking");
+  const { t: tWaitlist } = useT("waitlist");
   const { idOrSlug = "" } = useParams<{ idOrSlug: string }>();
   const { go } = useBookingNav();
   const { branches } = useBookingOrg();
@@ -192,6 +196,11 @@ const DoctorBookingPage: React.FC = () => {
 
   const [reviewsOpen, setReviewsOpen] = React.useState(false);
   const [guestOpen, setGuestOpen] = React.useState(false);
+  // Лист ожидания — выход из тупика «свободных окон нет».
+  const [waitlistOpen, setWaitlistOpen] = React.useState(false);
+  const [waitlistSubmitting, setWaitlistSubmitting] = React.useState(false);
+  const [waitlistError, setWaitlistError] = React.useState<string | null>(null);
+  const [waitlistDone, setWaitlistDone] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<GuestBookingResult | null>(null);
@@ -530,6 +539,37 @@ const DoctorBookingPage: React.FC = () => {
   const handleGuestSubmit = (name: string, phone: string, comment: string) =>
     submitBooking(name, phone, comment);
 
+  /**
+   * «Сообщите, когда освободится»: у врача нет ни одного свободного дня.
+   * Заявка не занимает слот и не создаёт карту — регистратор перезвонит,
+   * когда время появится (авто-SMS в v1 нет, и обещать её гостю нельзя).
+   */
+  const handleWaitlistSubmit = (data: { name: string; phone: string; comment: string }) => {
+    if (!doctor || !branchId) return;
+    setWaitlistSubmitting(true);
+    setWaitlistError(null);
+    createWaitlistRequest({
+      professionalId: doctor.id,
+      branchId,
+      serviceIds: selectedServices,
+      patientName: data.name,
+      patientPhone: data.phone,
+      comment: data.comment,
+    })
+      .then(() => {
+        setWaitlistOpen(false);
+        setWaitlistDone(true);
+      })
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 429) {
+          setWaitlistError(tWaitlist("publicSite.errorTooMany"));
+        } else {
+          setWaitlistError(tWaitlist("publicSite.errorGeneric"));
+        }
+      })
+      .finally(() => setWaitlistSubmitting(false));
+  };
+
   // ── Состояния загрузки и ошибок ────────────────────────────────────────────
 
   if (loading) {
@@ -759,7 +799,24 @@ const DoctorBookingPage: React.FC = () => {
               {scheduleBlock}
 
               {!hasAvailableDay && !calendarLoading && (
-                <Alert severity="info">{t("noSlotsAvailable")}</Alert>
+                <Alert
+                  severity={waitlistDone ? "success" : "info"}
+                  action={
+                    WAITLIST_PUBLIC_CHANNEL_ENABLED && !waitlistDone ? (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          setWaitlistError(null);
+                          setWaitlistOpen(true);
+                        }}
+                      >
+                        {tWaitlist("publicSite.cta")}
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  {waitlistDone ? tWaitlist("publicSite.successText") : t("noSlotsAvailable")}
+                </Alert>
               )}
 
               {/* Услуги идут ПОСЛЕ расписания: порядок шагов сверху вниз —
@@ -858,6 +915,16 @@ const DoctorBookingPage: React.FC = () => {
         onClose={() => setGuestOpen(false)}
         onSubmit={handleGuestSubmit}
       />
+
+      {WAITLIST_PUBLIC_CHANNEL_ENABLED && (
+        <WaitlistDialog
+          open={waitlistOpen}
+          submitting={waitlistSubmitting}
+          error={waitlistError}
+          onClose={() => setWaitlistOpen(false)}
+          onSubmit={handleWaitlistSubmit}
+        />
+      )}
 
       {result && (
         <SuccessDialog

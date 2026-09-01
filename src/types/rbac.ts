@@ -181,6 +181,11 @@ export const PERMISSIONS = {
   TASKS_LIST: 'tasks.list',
   TASKS_MANAGE: 'tasks.manage',
 
+  // Лист ожидания (контракт: MamaDoc/backend_ticket_waitlist_module.md)
+  WAITLIST_VIEW: 'waitlist.view',
+  WAITLIST_CREATE: 'waitlist.create',
+  WAITLIST_MANAGE: 'waitlist.manage',
+
   // Достижения (контракт: MamaDoc/backend_ticket_achievements_module.md)
   ACHIEVEMENTS_VIEW: 'achievements.view',
 

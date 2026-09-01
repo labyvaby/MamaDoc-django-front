@@ -55,12 +55,14 @@ import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
+import { getWaitlistSummary } from "../../api/waitlist";
 import { getBookings } from "../../api/bookings";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import {
@@ -399,6 +401,7 @@ const SidebarSecondary: React.FC = () => {
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
     tasks: can(PAGE_PERMISSIONS.tasks),
+    waitlist: can(PAGE_PERMISSIONS.waitlist),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
     achievements: can(PAGE_PERMISSIONS.achievements),
@@ -456,6 +459,20 @@ const SidebarSecondary: React.FC = () => {
     (tasksSummary?.inProgress ?? 0) +
     (tasksSummary?.awaitingApproval ?? 0);
   const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
+
+  // Бейдж «Лист ожидания»: сколько человек стоит в очереди (waiting). Красный —
+  // когда среди них есть срочные: такой очередью надо заняться сегодня.
+  const waitlistSummaryQuery = useQuery({
+    queryKey: djangoQueryKeys.waitlist.summary(orgId),
+    queryFn: ({ signal }) => getWaitlistSummary(orgId, signal),
+    enabled: can_.waitlist && !permissionsLoading,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const waitlistBadgeCount = waitlistSummaryQuery.data?.waiting ?? 0;
+  const waitlistBadgeColor: "error" | "primary" =
+    (waitlistSummaryQuery.data?.urgent ?? 0) > 0 ? "error" : "primary";
 
   // Бейдж «Брони»: заявки, ждущие подтверждения персоналом (status=pending) —
   // и с гостевой формы /book, и из синка operator.kg. Отдельного счётчика на
@@ -566,9 +583,9 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
-    "org": can_.employees || can_.patients || can_.vaccinations || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
-    "storage": can_.products || can_.sales || can_.storage,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
+    "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
+    "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
   };
 
@@ -702,6 +719,19 @@ const SidebarSecondary: React.FC = () => {
           <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} badgeCount={chatsBadgeCount} badgeColor={chatsBadgeColor} />
         )}
 
+        {/* Лист ожидания: кому не хватило свободного окна.
+            Бейдж — сколько человек сейчас в очереди. */}
+        {show("my-work") && can_.waitlist && (
+          <SidebarMenuItem
+            to="/waitlist"
+            icon={<HourglassEmptyOutlined />}
+            label="Лист ожидания"
+            collapsed={siderCollapsed}
+            badgeCount={waitlistBadgeCount}
+            badgeColor={waitlistBadgeColor}
+          />
+        )}
+
         {/* Кабинет врача */}
         {show("my-work") && can_.doctorRoom && (
           <SidebarMenuItem to="/doctor" icon={<LocalHospitalOutlined />} label={t("doctorRoom")} collapsed={siderCollapsed} />
@@ -778,11 +808,6 @@ const SidebarSecondary: React.FC = () => {
           />
         )}
 
-        {/* Вакцины */}
-        {show("org") && can_.vaccinations && (
-          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
-        )}
-
         {/* Все приемы */}
         {show("org") && can_.allAppointments && (
           <SidebarMenuItem to="/all-appointments" icon={<HistoryOutlined />} label={t("allAppointments")} collapsed={siderCollapsed} />
@@ -810,6 +835,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Товары */}
         {show("storage") && can_.products && (
           <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
+        )}
+
+        {/* Вакцины (карточки вакцин — товары склада с меткой «вакцина») */}
+        {show("storage") && can_.vaccinations && (
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
         )}
 
         {/* Продажи товаров */}

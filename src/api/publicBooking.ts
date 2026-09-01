@@ -906,3 +906,55 @@ export async function createGuestBooking(
   });
   return camelizeDeep(raw.data) as GuestBookingResult;
 }
+
+// ── Лист ожидания (гость) ────────────────────────────────────────────────────
+
+export interface CreateWaitlistRequest {
+  professionalId: number;
+  branchId: number;
+  serviceIds: number[];
+  /** Желаемый период, YYYY-MM-DD. Оба поля опциональны: «когда угодно». */
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  patientName: string;
+  /** В международном формате, напр. "+996700123456". */
+  patientPhone: string;
+  comment?: string;
+}
+
+export interface CreateWaitlistResult {
+  id: number;
+  status: string;
+}
+
+/**
+ * `POST /api/v1/waitlist/` — «сообщите, когда освободится»: у врача нет
+ * свободных окон, гость оставляет телефон, регистратор звонит, как только
+ * время появилось.
+ *
+ * ⚠ Бэком НЕ реализован (тикет `backend_ticket_waitlist_module.md` §5) — на
+ * фронте закрыт флагом `WAITLIST_PUBLIC_CHANNEL_ENABLED`. Заявка не
+ * материализуется в `Patient` и не занимает слот; ответ на анти-спам (429 или
+ * свой код) — открытый вопрос §9.7 тикета, поэтому здесь ошибка пробрасывается
+ * как есть и разбирается на стороне UI.
+ */
+export async function createWaitlistRequest(
+  req: CreateWaitlistRequest,
+  signal?: AbortSignal,
+): Promise<CreateWaitlistResult> {
+  const raw = await publicRawRequest<ItemEnvelope<unknown>>(`/waitlist/`, {
+    method: "POST",
+    signal,
+    body: {
+      professional_id: req.professionalId,
+      branch_id: req.branchId,
+      service_ids: req.serviceIds,
+      patient_name: req.patientName,
+      patient_phone: req.patientPhone,
+      comment: req.comment ?? "",
+      ...(req.dateFrom ? { date_from: req.dateFrom } : {}),
+      ...(req.dateTo ? { date_to: req.dateTo } : {}),
+    },
+  });
+  return camelizeDeep(raw.data) as CreateWaitlistResult;
+}

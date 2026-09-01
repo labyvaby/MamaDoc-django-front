@@ -38,6 +38,7 @@ export const PAGE_PERMISSIONS = {
   // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
   chats: "chatwoot.view",
   tasks: "tasks.list",
+  waitlist: ["waitlist.view", "waitlist.manage"],
   vaccinations: "vaccinations.view",
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],
