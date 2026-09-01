@@ -32,17 +32,18 @@ import DensityMediumOutlined from "@mui/icons-material/DensityMediumOutlined";
 import DensityLargeOutlined from "@mui/icons-material/DensityLargeOutlined";
 import ViewAgendaOutlined from "@mui/icons-material/ViewAgendaOutlined";
 
+import { ColorModeContext, type ColorScheme } from "../../contexts/color-mode";
 import {
-  ColorModeContext,
-  PRIMARY_PRESETS,
-  DEFAULT_PRIMARY,
-  type ColorScheme,
-} from "../../contexts/color-mode";
+  ACCENT_PRESETS,
+  DEFAULT_ACCENT_ID,
+  getAccentPreset,
+} from "../../theme/accentPalette";
 import {
   LIGHT_SURFACES,
   DARK_SURFACES,
   DEFAULT_LIGHT_SURFACE,
   DEFAULT_DARK_SURFACE,
+  ACCENT_SURFACE_KEY,
   DEFAULT_CARD_SKIN,
   DEFAULT_UI_SCALE,
   DEFAULT_SIDEBAR_DENSITY,
@@ -73,6 +74,13 @@ const DENSITY_OPTIONS: { value: SidebarDensity; label: string; icon: React.React
   { value: "spacious", label: "Просторно", icon: <ViewAgendaOutlined fontSize="small" /> },
 ];
 
+/**
+ * Хекс акцента в светлой теме. Кладём его в themeConfig рядом с accentId: так
+ * версии фронта, которые ещё не знают про акцентную палитру, покажут близкий
+ * цвет, а не дефолтный.
+ */
+const accentHex = (id: string) => getAccentPreset(id).light.accent;
+
 const SectionTitle: React.FC<{ children: React.ReactNode; first?: boolean }> = ({
   children,
   first,
@@ -86,47 +94,60 @@ const SectionTitle: React.FC<{ children: React.ReactNode; first?: boolean }> = (
   </Typography>
 );
 
-/** Сетка цветовых свотчей (общая для основного цвета и поверхностей). */
-const SwatchGrid: React.FC<{
-  items: { key: string; color: string; name: string; bordered?: boolean }[];
+/**
+ * Сетка акцентов. Свотч показывает связку, а не один цвет: подложка — accentBg
+ * (фон чипов и активных пунктов), точка — сам accent. Так на глаз видно, каким
+ * получится интерфейс, а не только кнопка «Создать».
+ */
+const AccentGrid: React.FC<{
+  mode: "light" | "dark";
   selected: string;
-  onSelect: (key: string) => void;
-}> = ({ items, selected, onSelect }) => (
-  <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 1.25 }}>
-    {items.map((it) => {
-      const isSel = selected.toLowerCase() === it.key.toLowerCase();
+  onSelect: (id: string) => void;
+}> = ({ mode, selected, onSelect }) => (
+  <Box sx={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 1 }}>
+    {ACCENT_PRESETS.map((preset) => {
+      const tokens = preset[mode];
+      const isSel = preset.id === selected;
       return (
-        <Tooltip key={it.key} title={it.name}>
+        <Tooltip key={preset.id} title={preset.name}>
           <Box
             component="button"
             type="button"
-            onClick={() => onSelect(it.key)}
-            aria-label={it.name}
+            onClick={() => onSelect(preset.id)}
+            aria-label={preset.name}
+            aria-pressed={isSel}
             sx={{
               cursor: "pointer",
               p: 0,
-              height: 40,
+              height: 34,
               borderRadius: "10px",
-              bgcolor: it.color,
+              bgcolor: tokens.accentBg,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#fff",
-              border: it.bordered ? "1px solid" : "1px solid transparent",
-              borderColor: it.bordered ? "divider" : "transparent",
+              border: "1px solid",
+              borderColor: tokens.border,
               outline: isSel ? "2px solid" : "2px solid transparent",
               outlineColor: isSel ? "primary.main" : "transparent",
               outlineOffset: 2,
               transition: "transform .1s ease",
-              "&:active": { transform: "scale(0.96)" },
+              "&:active": { transform: "scale(0.94)" },
             }}
           >
-            {isSel && (
-              <CheckIcon
-                fontSize="small"
-                sx={{ color: it.bordered ? "text.primary" : "#fff" }}
-              />
-            )}
+            <Box
+              sx={{
+                width: isSel ? 18 : 14,
+                height: isSel ? 18 : 14,
+                borderRadius: "50%",
+                bgcolor: tokens.accent,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "width .1s ease, height .1s ease",
+              }}
+            >
+              {isSel && <CheckIcon sx={{ fontSize: 12, color: tokens.accentFg }} />}
+            </Box>
           </Box>
         </Tooltip>
       );
@@ -257,8 +278,10 @@ const ThemeCustomizerContent: React.FC<{
     scheme,
     setScheme,
     mode,
+    accentId,
+    setAccentId,
+    accentPreset,
     primaryColor,
-    setPrimaryColor,
     lightSurface,
     setLightSurface,
     darkSurface,
@@ -282,7 +305,7 @@ const ThemeCustomizerContent: React.FC<{
   const handleUpdate = React.useCallback(
     (patch: {
       colorScheme?: ColorScheme;
-      primaryColor?: string;
+      accentId?: string;
       lightSurface?: string;
       darkSurface?: string;
       cardSkin?: CardSkin;
@@ -290,7 +313,7 @@ const ThemeCustomizerContent: React.FC<{
       sidebarDensity?: SidebarDensity;
     }) => {
       const nextScheme = patch.colorScheme ?? scheme;
-      const nextPrimary = patch.primaryColor ?? primaryColor;
+      const nextAccentId = patch.accentId ?? accentId;
       const nextLight = patch.lightSurface ?? lightSurface;
       const nextDark = patch.darkSurface ?? darkSurface;
       const nextCard = patch.cardSkin ?? cardSkin;
@@ -298,7 +321,7 @@ const ThemeCustomizerContent: React.FC<{
       const nextDensity = patch.sidebarDensity ?? sidebarDensity;
 
       if (patch.colorScheme) setScheme(patch.colorScheme);
-      if (patch.primaryColor) setPrimaryColor(patch.primaryColor);
+      if (patch.accentId) setAccentId(patch.accentId);
       if (patch.lightSurface) setLightSurface(patch.lightSurface);
       if (patch.darkSurface) setDarkSurface(patch.darkSurface);
       if (patch.cardSkin) setCardSkin(patch.cardSkin);
@@ -308,7 +331,10 @@ const ThemeCustomizerContent: React.FC<{
       if (canManageOrgTheme && activeOrganization?.id) {
         const newThemeConfig = {
           colorScheme: nextScheme,
-          primaryColor: nextPrimary,
+          accentId: nextAccentId,
+          // Хекс акцента остаётся в конфиге для совместимости: его читают версии
+          // фронта, которые ещё не знают про accentId (кэш PWA, публичные темы).
+          primaryColor: accentHex(nextAccentId),
           lightSurface: nextLight,
           darkSurface: nextDark,
           cardSkin: nextCard,
@@ -322,14 +348,14 @@ const ThemeCustomizerContent: React.FC<{
     },
     [
       scheme,
-      primaryColor,
+      accentId,
       lightSurface,
       darkSurface,
       cardSkin,
       uiScale,
       sidebarDensity,
       setScheme,
-      setPrimaryColor,
+      setAccentId,
       setLightSurface,
       setDarkSurface,
       setCardSkin,
@@ -345,7 +371,8 @@ const ThemeCustomizerContent: React.FC<{
     if (canManageOrgTheme && activeOrganization?.id) {
       const defaultThemeConfig = {
         colorScheme: "system",
-        primaryColor: DEFAULT_PRIMARY,
+        accentId: DEFAULT_ACCENT_ID,
+        primaryColor: accentHex(DEFAULT_ACCENT_ID),
         lightSurface: DEFAULT_LIGHT_SURFACE,
         darkSurface: DEFAULT_DARK_SURFACE,
         cardSkin: DEFAULT_CARD_SKIN,
@@ -357,6 +384,22 @@ const ThemeCustomizerContent: React.FC<{
       );
     }
   }, [reset, canManageOrgTheme, activeOrganization?.id]);
+
+  /**
+   * Поверхность «под акцент» — псевдо-пресет для той же сетки превью, что и
+   * нейтральные фоны. Значения берутся из выбранного акцента, поэтому карточка
+   * меняется вместе с ним.
+   */
+  const tintedSurface: SurfacePreset = React.useMemo(() => {
+    const tokens = accentPreset[mode];
+    return {
+      key: ACCENT_SURFACE_KEY,
+      name: "Под акцент",
+      default: tokens.page,
+      paper: tokens.surface,
+      swatch: tokens.accentBg,
+    };
+  }, [accentPreset, mode]);
 
   const [colorsOpen, setColorsOpen] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -392,7 +435,7 @@ const ThemeCustomizerContent: React.FC<{
 
   const isDefault =
     scheme === "system" &&
-    primaryColor === DEFAULT_PRIMARY &&
+    accentId === DEFAULT_ACCENT_ID &&
     lightSurface === DEFAULT_LIGHT_SURFACE &&
     darkSurface === DEFAULT_DARK_SURFACE &&
     cardSkin === DEFAULT_CARD_SKIN &&
@@ -594,20 +637,24 @@ const ThemeCustomizerContent: React.FC<{
               </ToggleButton>
             </ToggleButtonGroup>
 
-            {/* Основной цвет */}
-            <SectionTitle>Основной цвет</SectionTitle>
-            <SwatchGrid
-              items={PRIMARY_PRESETS.map((c) => ({ key: c.value, color: c.value, name: c.name }))}
-              selected={primaryColor}
-              onSelect={(col) => handleUpdate({ primaryColor: col })}
+            {/* Акцент */}
+            <SectionTitle>
+              Акцент — {accentPreset.name.toLowerCase()}
+            </SectionTitle>
+            <AccentGrid
+              mode={mode}
+              selected={accentId}
+              onSelect={(id) => handleUpdate({ accentId: id })}
             />
 
-            {/* Палитра фона — только для активного режима (день/ночь) */}
+            {/* Палитра фона — только для активного режима (день/ночь).
+                Первый вариант тонирует поверхности под акцент, остальные —
+                нейтральные фоны для тех, кому цветной фон не нужен. */}
             {mode === "light" ? (
               <>
                 <SectionTitle>Светлая палитра</SectionTitle>
                 <PalettePreviewGrid
-                  surfaces={LIGHT_SURFACES}
+                  surfaces={[tintedSurface, ...LIGHT_SURFACES]}
                   dark={false}
                   accent={primaryColor}
                   selected={lightSurface}
@@ -618,7 +665,7 @@ const ThemeCustomizerContent: React.FC<{
               <>
                 <SectionTitle>Тёмная палитра</SectionTitle>
                 <PalettePreviewGrid
-                  surfaces={DARK_SURFACES}
+                  surfaces={[tintedSurface, ...DARK_SURFACES]}
                   dark
                   accent={primaryColor}
                   selected={darkSurface}

@@ -9,6 +9,7 @@ import {
   DEFAULT_UI_SCALE,
   DEFAULT_SIDEBAR_DENSITY,
   SIDEBAR_DENSITIES,
+  ACCENT_SURFACE_KEY,
   type CardSkin,
   type UiScale,
   type SidebarDensity,
@@ -23,49 +24,30 @@ import React, {
   useState,
 } from "react";
 
+import {
+  DEFAULT_ACCENT_ID,
+  getAccentPreset,
+  resolveAccentId,
+  type AccentPreset,
+} from "../../theme/accentPalette";
 import { usePermissions } from "../../hooks/usePermissions";
 
 export type ColorScheme = "light" | "dark" | "system";
 
 /**
- * Палитра основных цветов для кастомайзера.
+ * Основной цвет больше не хранится хексом: акцент — это связка токенов
+ * (`theme/accentPalette`), своя для дня и ночи, и он тянет за собой фон
+ * страницы, цвет карточек и границы. В настройках сотрудника и в
+ * `themeConfig` организации лежит ключ пресета; сохранённый ранее хекс
+ * переводится в ближайший акцент через `resolveAccentId`.
  *
- * Подобраны современные, достаточно насыщенные оттенки (диапазон Tailwind
- * 600–700), которые читаемы белым текстом на заливке и не «теряются» при
- * использовании как цвет текста/ссылок на светлых поверхностях.
- *
- * Порядок — по оттенку (синие → фиолетово-розовые → зелёно-нейтральные), сетка
- * свотчей в кастомайзере четырёхколоночная, поэтому длина кратна четырём.
- *
- * ⚠ Основной цвет — не только кнопки: от него зависят бордеры карточек,
- * divider и акценты, и он соседствует с цветовой азбукой статусов приёма
+ * ⚠ Акцент соседствует с цветовой азбукой статусов приёма
  * (`config/appointmentStatuses.tsx`): info — подтверждён, teal `#0d9488` —
  * «Пациент здесь»/безнал, purple `#6366f1` — частично оплачено, success —
- * оплачено, warning — идёт приём, error — отменён/долг. Новые оттенки держим
- * в холодной и нейтральной зоне: чем ближе основной цвет к статусному, тем
- * хуже читаются чипы статусов.
+ * оплачено, warning — идёт приём, error — отменён/долг. Чем ближе выбранный
+ * акцент к статусному цвету, тем хуже читаются чипы статусов.
  */
-export const PRIMARY_PRESETS: { name: string; value: string }[] = [
-  { name: "Лазурь", value: "#0284c7" },   // sky-600 — светлый голубой
-  { name: "Сапфир", value: "#2563eb" },   // blue-600 — насыщенный «электрический» синий
-  { name: "Индиго", value: "#4338ca" },   // indigo-700 — глубокий индиго
-  { name: "Ирис", value: "#5b5bd6" },     // мягкий индиго-фиолет (Linear/Radix) — премиальный, по умолчанию
-  { name: "Аметист", value: "#7c3aed" },  // violet-600 — трендовый фиолетовый
-  { name: "Слива", value: "#9333ea" },    // purple-600 — пурпурный
-  { name: "Фуксия", value: "#db2777" },   // pink-600 — яркая современная маджента
-  { name: "Рубин", value: "#e11d48" },    // rose-600 — сочный красно-розовый
-  { name: "Океан", value: "#0e7490" },    // cyan-700 — глубокий сине-бирюзовый; заменил «Бирюзу» #0d9488, дублировавшую статусный teal
-  { name: "Изумруд", value: "#059669" },  // emerald-600 — свежий «медицинский» зелёный
-  { name: "Графит", value: "#475569" },   // slate-600 — нейтральный графитовый
-  { name: "Сталь", value: "#334155" },    // slate-700 — тёмный нейтральный
-];
-
-/**
- * Цвет по умолчанию — «Ирис». Задан значением, а не первым элементом палитры:
- * порядок свотчей меняется ради визуальной группировки, дефолт от этого
- * зависеть не должен.
- */
-export const DEFAULT_PRIMARY = "#5b5bd6";
+export { DEFAULT_ACCENT_ID };
 
 type ColorModeContextType = {
   /** Пользовательская настройка схемы (включая «системная»). */
@@ -73,13 +55,17 @@ type ColorModeContextType = {
   /** Фактически применённый режим (light/dark) с учётом системного. */
   mode: "light" | "dark";
   setScheme: (scheme: ColorScheme) => void;
-  /** Текущий основной цвет (hex). */
+  /** Ключ выбранного акцента (theme/accentPalette). */
+  accentId: string;
+  setAccentId: (id: string) => void;
+  /** Пресет выбранного акцента целиком — для превью в кастомайзере. */
+  accentPreset: AccentPreset;
+  /** Акцент текущего режима как hex — для мест, где нужен именно цвет. */
   primaryColor: string;
-  setPrimaryColor: (color: string) => void;
-  /** Ключ светлой поверхности (slate/gray/neutral). */
+  /** Ключ светлой поверхности: ACCENT_SURFACE_KEY либо нейтральный пресет. */
   lightSurface: string;
   setLightSurface: (key: string) => void;
-  /** Ключ тёмной поверхности (navy/mirage/mint/cinder/black). */
+  /** Ключ тёмной поверхности: ACCENT_SURFACE_KEY либо нейтральный пресет. */
   darkSurface: string;
   setDarkSurface: (key: string) => void;
   /** Скин карточек. */
@@ -105,7 +91,7 @@ const getSystemMode = (): "light" | "dark" =>
 /** Настройки темы, которые пользователь может переопределить лично. */
 type ThemeField =
   | "colorScheme"
-  | "primaryColor"
+  | "accentId"
   | "lightSurface"
   | "darkSurface"
   | "cardSkin"
@@ -126,7 +112,12 @@ const readThemeOverrides = (): Set<ThemeField> => {
   try {
     const raw = window.localStorage.getItem(THEME_OVERRIDES_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    return new Set(Array.isArray(parsed) ? (parsed as ThemeField[]) : []);
+    const fields = Array.isArray(parsed) ? (parsed as string[]) : [];
+    // Раньше акцент назывался primaryColor. Переименование не должно стирать
+    // личный выбор сотрудника — иначе палитра организации перетрёт его цвет.
+    return new Set(
+      fields.map((k) => (k === "primaryColor" ? "accentId" : k)) as ThemeField[],
+    );
   } catch {
     return new Set();
   }
@@ -142,16 +133,17 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   const storedScheme =
     (localStorage.getItem("colorScheme") as ColorScheme | null) ||
     (localStorage.getItem("colorMode") as ColorScheme | null);
-  const storedPrimary = localStorage.getItem("primaryColor");
+  // Ключ акцента; до этого релиза здесь лежал хекс основного цвета — подбираем
+  // по нему ближайший пресет, чтобы тема не «прыгнула» после обновления.
+  const storedAccent =
+    localStorage.getItem("accentId") || localStorage.getItem("primaryColor");
 
   const [scheme, setSchemeState] = useState<ColorScheme>(
     storedScheme === "light" || storedScheme === "dark" || storedScheme === "system"
       ? storedScheme
       : "system",
   );
-  const [primaryColor, setPrimaryColorState] = useState<string>(
-    storedPrimary || DEFAULT_PRIMARY,
-  );
+  const [accentId, setAccentIdState] = useState<string>(resolveAccentId(storedAccent));
   const [lightSurface, setLightSurfaceState] = useState<string>(
     localStorage.getItem("lightSurface") || DEFAULT_LIGHT_SURFACE,
   );
@@ -199,12 +191,10 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     appliedConfigRef.current = serialized;
 
     const overrides = overridesRef.current;
-    if (
-      !overrides.has("primaryColor") &&
-      themeConfig.primaryColor &&
-      typeof themeConfig.primaryColor === "string"
-    ) {
-      setPrimaryColorState(themeConfig.primaryColor);
+    // Организация может хранить как новый ключ акцента, так и старый хекс.
+    const orgAccent = themeConfig.accentId || themeConfig.primaryColor;
+    if (!overrides.has("accentId") && orgAccent && typeof orgAccent === "string") {
+      setAccentIdState(resolveAccentId(orgAccent));
     }
     if (
       !overrides.has("colorScheme") &&
@@ -263,7 +253,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   }, []);
 
   useEffect(() => { window.localStorage.setItem("colorScheme", scheme); }, [scheme]);
-  useEffect(() => { window.localStorage.setItem("primaryColor", primaryColor); }, [primaryColor]);
+  useEffect(() => { window.localStorage.setItem("accentId", accentId); }, [accentId]);
   useEffect(() => { window.localStorage.setItem("lightSurface", lightSurface); }, [lightSurface]);
   useEffect(() => { window.localStorage.setItem("darkSurface", darkSurface); }, [darkSurface]);
   useEffect(() => { window.localStorage.setItem("cardSkin", cardSkin); }, [cardSkin]);
@@ -277,9 +267,9 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     markOverride("colorScheme");
     setSchemeState(next);
   }, [markOverride]);
-  const setPrimaryColor = useCallback((next: string) => {
-    markOverride("primaryColor");
-    setPrimaryColorState(next);
+  const setAccentId = useCallback((next: string) => {
+    markOverride("accentId");
+    setAccentIdState(resolveAccentId(next));
   }, [markOverride]);
   const setLightSurface = useCallback((next: string) => {
     markOverride("lightSurface");
@@ -315,7 +305,7 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       /* ignore */
     }
     setSchemeState("system");
-    setPrimaryColorState(DEFAULT_PRIMARY);
+    setAccentIdState(DEFAULT_ACCENT_ID);
     setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
     setDarkSurfaceState(DEFAULT_DARK_SURFACE);
     setCardSkinState(DEFAULT_CARD_SKIN);
@@ -323,13 +313,18 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
   }, []);
 
+  const accentPreset = useMemo(() => getAccentPreset(accentId), [accentId]);
+  const accentTokens = accentPreset[mode];
+
   const value = useMemo<ColorModeContextType>(
     () => ({
       scheme,
       mode,
       setScheme,
-      primaryColor,
-      setPrimaryColor,
+      accentId,
+      setAccentId,
+      accentPreset,
+      primaryColor: accentTokens.accent,
       lightSurface,
       setLightSurface,
       darkSurface,
@@ -345,14 +340,16 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     [
       scheme,
       mode,
-      primaryColor,
+      accentId,
+      accentPreset,
+      accentTokens.accent,
       lightSurface,
       darkSurface,
       cardSkin,
       uiScale,
       sidebarDensity,
       setScheme,
-      setPrimaryColor,
+      setAccentId,
       setLightSurface,
       setDarkSurface,
       setCardSkin,
@@ -365,17 +362,23 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   const theme = useMemo(() => {
     const surfacePresets = mode === "dark" ? DARK_SURFACES : LIGHT_SURFACES;
     const surfaceKey = mode === "dark" ? darkSurface : lightSurface;
-    const surface = surfacePresets.find((s) => s.key === surfaceKey);
+    // ACCENT_SURFACE_KEY — поверхности берутся из акцента (тонированный режим).
+    // Любой другой ключ означает выбранный нейтральный фон: он передаётся явно
+    // и отключает тонировку внутри getAppTheme.
+    const surface =
+      surfaceKey === ACCENT_SURFACE_KEY
+        ? undefined
+        : surfacePresets.find((p) => p.key === surfaceKey);
     return getAppTheme(mode, {
-      // Применяем выбранный цвет всегда (включая дефолтный), чтобы свотч в
-      // кастомайзере совпадал с реальным цветом темы и контраст был предсказуем.
-      primaryColor,
+      // Токены акцента передаём всегда: даже с нейтральным фоном из них берутся
+      // цвет заливки, текст на заливке и подложка активных состояний.
+      accent: accentTokens,
       surface: surface ? { default: surface.default, paper: surface.paper } : undefined,
       cardSkin,
       uiScale,
       sidebarDensity,
     });
-  }, [mode, primaryColor, lightSurface, darkSurface, cardSkin, uiScale, sidebarDensity]);
+  }, [mode, accentTokens, lightSurface, darkSurface, cardSkin, uiScale, sidebarDensity]);
 
   return (
     <ColorModeContext.Provider value={value}>

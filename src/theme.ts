@@ -3,6 +3,7 @@ import type { PaletteMode, Theme } from "@mui/material/styles";
 import { createFilterOptions } from "@mui/material/Autocomplete";
 import { RefineThemes } from "@refinedev/mui";
 import "@mui/x-data-grid/themeAugmentation";
+import type { AccentTokens } from "./theme/accentPalette";
 
 const fontStack =
   "'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji'";
@@ -14,6 +15,15 @@ const fontStack =
 // "120px" и подобные magic numbers напрямую.
 
 export interface AppLayoutConfig {
+  /**
+   * Множитель «Размера интерфейса» из кастомайзера (compact/normal/large).
+   * Кегли масштабируются сами — они в rem, — а вот высоты, заданные в
+   * пикселях, о размере интерфейса не знают. Компоненты, где такие высоты
+   * есть (например, строки недельной сетки расписания), домножают их на этот
+   * множитель, чтобы «Крупный» действительно укрупнял, а не только растил
+   * текст внутри прежней высоты.
+   */
+  uiScaleFactor: number;
   header: {
     // Фактическая высота тулбара в AppBar (px)
     height: {
@@ -164,8 +174,16 @@ export const DARK_SURFACES: SurfacePreset[] = [
   { key: "black", name: "Black", default: "#000000", paper: "#121212", swatch: "#121212" },
 ];
 
-export const DEFAULT_LIGHT_SURFACE = "slate";
-export const DEFAULT_DARK_SURFACE = "navy";
+/**
+ * Ключ поверхности «под акцент»: фон страницы, карточки и границы берутся из
+ * выбранного акцента (theme/accentPalette), а не из нейтрального пресета.
+ * Это значение по умолчанию; нейтральные пресеты ниже остаются доступны тем,
+ * кому цветной фон не нужен, и тем, у кого выбор уже сохранён.
+ */
+export const ACCENT_SURFACE_KEY = "accent";
+
+export const DEFAULT_LIGHT_SURFACE = ACCENT_SURFACE_KEY;
+export const DEFAULT_DARK_SURFACE = ACCENT_SURFACE_KEY;
 
 export type CardSkin = "bordered" | "shadow";
 export const DEFAULT_CARD_SKIN: CardSkin = "bordered";
@@ -196,6 +214,12 @@ export const SIDEBAR_DENSITY_TOKENS: Record<
 export const SIDEBAR_DENSITIES = Object.keys(SIDEBAR_DENSITY_TOKENS) as SidebarDensity[];
 
 export type ThemeCustomization = {
+  /**
+   * Связка токенов выбранного акцента (см. theme/accentPalette). Задаёт не
+   * только цвет кнопок, но и фон страницы, цвет карточек и границы. Если
+   * передана — перекрывает primaryColor и surface.
+   */
+  accent?: AccentTokens;
   primaryColor?: string;
   surface?: { default: string; paper: string };
   cardSkin?: CardSkin;
@@ -208,6 +232,7 @@ export function getAppTheme(
   custom: ThemeCustomization = {},
 ): Theme {
   const {
+    accent: accentTokens,
     primaryColor,
     surface,
     cardSkin = DEFAULT_CARD_SKIN,
@@ -222,6 +247,7 @@ export function getAppTheme(
 
   // Layout токены — единственный источник правды для размеров layout'а
   const appLayout: AppLayoutConfig = {
+    uiScaleFactor: fontScale,
     header: {
       height: {
         mobile: 56,
@@ -297,17 +323,26 @@ export function getAppTheme(
   // Derive tokens from base to keep compatibility with Refine defaults.
   // primaryColor (если задан в кастомайзере) переопределяет основной цвет —
   // от него же зависят бордеры карточек, divider, акценты и т.п.
-  const primary = primaryColor || base.palette.primary.main;
-  const primaryLight = primaryColor ? lighten(primaryColor, 0.25) : base.palette.primary.light;
-  const primaryDark = primaryColor ? darken(primaryColor, 0.2) : base.palette.primary.dark;
-  const backgroundPaper = surface?.paper || base.palette.background.paper;
-  const backgroundDefault = surface?.default || base.palette.background.default;
+  const hasCustomPrimary = Boolean(accentTokens?.accent || primaryColor);
+  const primary = accentTokens?.accent || primaryColor || base.palette.primary.main;
+  const primaryLight = hasCustomPrimary ? lighten(primary, 0.25) : base.palette.primary.light;
+  const primaryDark = hasCustomPrimary ? darken(primary, 0.2) : base.palette.primary.dark;
+  const backgroundPaper = surface?.paper || accentTokens?.surface || base.palette.background.paper;
+  const backgroundDefault = surface?.default || accentTokens?.page || base.palette.background.default;
+  // Тонированный режим: поверхности взяты из акцентной палитры. Явно переданная
+  // surface (публичные страницы, выбор нейтрального фона в кастомайзере) его
+  // отключает — тогда границы и подсветка считаются по-старому, от primary.
+  const tinted = Boolean(accentTokens) && !surface;
+  // Единый цвет границ карточек, ящиков и шапки.
+  const borderColor =
+    tinted && accentTokens ? accentTokens.border : alpha(primary, m === "dark" ? 0.18 : 0.1);
 
   // Автоподбор цвета текста НА ЗАЛИВКЕ основного цвета — выбираем тот вариант
   // (белый/тёмный), у которого контраст ВЫШЕ, а не просто «тёмный если ≥3».
   const useWhiteOnPrimary =
     getContrastRatio(primary, "#ffffff") >= getContrastRatio(primary, "#000000");
-  const primaryContrastText = useWhiteOnPrimary ? "#fff" : "rgba(0, 0, 0, 0.87)";
+  const primaryContrastText =
+    accentTokens?.accentFg ?? (useWhiteOnPrimary ? "#fff" : "rgba(0, 0, 0, 0.87)");
 
   // Контраст-безопасный вариант основного цвета для использования КАК ТЕКСТ на
   // поверхности: подкручиваем яркость (темнее в светлой теме, светлее в тёмной),
@@ -366,7 +401,14 @@ export function getAppTheme(
         dark: primaryDark,
         contrastText: primaryContrastText,
         // Лёгкий тон для фонов активных состояний (кнопки фильтра и т.п.).
-        lighter: alpha(primary, m === "dark" ? 0.24 : 0.12),
+        // В тонированном режиме это непрозрачный цвет из палитры: полупрозрачная
+        // подложка «плывёт» поверх цветных строк таблиц и выделения. На
+        // нейтральном фоне остаётся прежняя alpha — цвет из палитры подобран к
+        // её собственной поверхности и на чужой смотрелся бы инородно.
+        lighter:
+          tinted && accentTokens
+            ? accentTokens.accentBg
+            : alpha(primary, m === "dark" ? 0.24 : 0.12),
         // Контраст-безопасный цвет для primary КАК ТЕКСТ на поверхности.
         onSurface: primaryOnSurface,
       },
@@ -402,7 +444,7 @@ export function getAppTheme(
         default: backgroundDefault,
         paper: backgroundPaper,
       },
-      divider: alpha(primary, m === "dark" ? 0.18 : 0.12),
+      divider: tinted ? borderColor : alpha(primary, m === "dark" ? 0.18 : 0.12),
     },
     shape: {
       // Базовый радиус для всего: карточки/кнопки переопределяются ниже
@@ -458,8 +500,12 @@ export function getAppTheme(
             margin: 0,
             overflowX: "hidden",
             WebkitTapHighlightColor: "transparent",
-            backgroundImage:
-              m === "dark"
+            // Тонированная поверхность акцентной палитры уже даёт цвет: подсветка
+            // поверх неё мутит оттенок и спорит с «плоским» гайдом. Градиент
+            // остаётся только для нейтральных поверхностей.
+            backgroundImage: tinted
+              ? "none"
+              : m === "dark"
                 ? `linear-gradient(180deg, rgba(15,18,24,0.9), rgba(15,18,24,0.9)), radial-gradient(1200px 600px at 0% 0%, ${alpha(primary, 0.06)}, transparent)`
                 : `radial-gradient(1200px 600px at 0% 0%, ${alpha(primary, 0.06)}, transparent)`,
             backgroundRepeat: "no-repeat",
@@ -495,11 +541,10 @@ export function getAppTheme(
         styleOverrides: {
           root: {
             backdropFilter: "saturate(180%) blur(10px)",
-            backgroundColor:
-              m === "dark"
-                ? alpha(backgroundPaper, 0.75)
-                : alpha("#ffffff", 0.7),
-            borderBottom: `1px solid ${alpha(primary, m === "dark" ? 0.22 : 0.12)}`,
+            // Шапка — «стекло» поверх поверхности: жёстко белый фон выбивался бы
+            // из тонированного окружения.
+            backgroundColor: alpha(backgroundPaper, m === "dark" ? 0.75 : 0.7),
+            borderBottom: `1px solid ${borderColor}`,
           },
         },
       },
@@ -600,7 +645,7 @@ export function getAppTheme(
       MuiDrawer: {
         styleOverrides: {
           paper: {
-            borderLeft: `1px solid ${alpha(primary, m === "dark" ? 0.18 : 0.1)}`,
+            borderLeft: `1px solid ${borderColor}`,
             backgroundImage: "none",
           },
         },
@@ -626,7 +671,7 @@ export function getAppTheme(
                       : "0 1px 2px rgba(2,6,23,0.04), 0 6px 20px rgba(2,6,23,0.07)",
                 }
               : {
-                  borderColor: alpha(primary, m === "dark" ? 0.18 : 0.1),
+                  borderColor,
                 },
         },
       },
