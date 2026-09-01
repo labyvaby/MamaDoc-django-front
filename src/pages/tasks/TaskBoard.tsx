@@ -5,10 +5,12 @@ import { keepPreviousData, useMutation, useQueries, useQueryClient } from "@tans
 
 import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
 import { UserAvatar } from "../../components/ui";
+import { ReasonDialog } from "../../components/ui";
 import {
   approveTask,
   completeTask,
   getTasks,
+  pauseTask,
   takeTask,
   type Task,
   type TaskStatus,
@@ -37,17 +39,25 @@ type Ctx = {
   meEmployeeId: number | null;
 };
 
+type Transition = {
+  fn: (id: number, orgId?: number, reason?: string) => Promise<Task>;
+  label: string;
+  /**
+   * Бэк не выполнит переход без причины (пауза) — спрашиваем её диалогом
+   * перед вызовом, и только потом двигаем карточку.
+   */
+  needsReason?: boolean;
+  /** Заголовок диалога причины. */
+  reasonTitle?: string;
+};
+
 /**
  * Перенос карточки = вызов соответствующего действия API, а не произвольная
  * смена статуса: у бэка нет PATCH status, переходы делают эндпоинты
- * take/complete/approve. Возвращает исполнителя перехода или null, если такой
- * перенос недопустим (или не хватает прав).
+ * take/complete/approve/pause. Возвращает исполнителя перехода или null, если
+ * такой перенос недопустим (или не хватает прав).
  */
-function transitionFor(
-  task: Task,
-  to: TaskStatus,
-  ctx: Ctx,
-): { fn: (id: number, orgId?: number) => Promise<Task>; label: string } | null {
+function transitionFor(task: Task, to: TaskStatus, ctx: Ctx): Transition | null {
   const { canManage, canUpdate, meEmployeeId } = ctx;
   const canWork = canUpdate || canManage;
   const mine = task.assigneeId != null && task.assigneeId === meEmployeeId;
@@ -60,7 +70,7 @@ function transitionFor(
   }
   if (to === "awaiting_approval" && from === "in_progress") {
     // Исполнителю без права приёмки complete/ сам уводит задачу в приёмку.
-    if (mine && !canManage) return { fn: completeTask, label: "Исполнить" };
+    if (mine && !canManage) return { fn: (id, orgId) => completeTask(id, orgId), label: "Исполнить" };
     // Обладателю tasks.manage тот же complete/ закрывает задачу сразу в done,
     // поэтому приёмку он запрашивает явным флагом (контракт 31.08.2026).
     if (canManage) {
@@ -71,10 +81,23 @@ function transitionFor(
     }
     return null;
   }
+  if (to === "paused" && from === "in_progress") {
+    // Пауза доступна тому же кругу, что и «Исполнить», но требует причины:
+    // она уходит в историю задачи и объясняет остановку.
+    if (!mine && !canManage) return null;
+    return {
+      fn: (id, orgId, reason) => pauseTask(id, { reason: reason ?? "" }, orgId),
+      label: "Поставить на паузу",
+      needsReason: true,
+      reasonTitle: "Поставить на паузу",
+    };
+  }
   if (to === "done") {
     if (from === "awaiting_approval" && canManage) return { fn: approveTask, label: "Подтвердить" };
     // Обладателю tasks.manage бэк закрывает задачу сразу, минуя приёмку.
-    if (from === "in_progress" && canManage) return { fn: completeTask, label: "Исполнить и закрыть" };
+    if (from === "in_progress" && canManage) {
+      return { fn: (id, orgId) => completeTask(id, orgId), label: "Исполнить и закрыть" };
+    }
   }
   return null;
 }
@@ -182,6 +205,12 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   const queryClient = useQueryClient();
   /** Сколько задач тянем в каждой колонке — растёт по мере прокрутки. */
   const [limits, setLimits] = React.useState<Partial<Record<TaskStatus, number>>>({});
+  /** Открытый диалог причины: перенос ждёт ответа пользователя. */
+  const [reasonPrompt, setReasonPrompt] = React.useState<{
+    task: Task;
+    to: TaskStatus;
+    title: string;
+  } | null>(null);
 
   const ctx: Ctx = { canManage, canUpdate, meEmployeeId };
 
@@ -216,10 +245,10 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   });
 
   const moveMutation = useMutation({
-    mutationFn: ({ task, to }: { task: Task; to: TaskStatus }) => {
+    mutationFn: ({ task, to, reason }: { task: Task; to: TaskStatus; reason?: string }) => {
       const move = transitionFor(task, to, ctx);
       if (!move) return Promise.reject(new Error("Такой перенос недоступен"));
-      return move.fn(task.id, orgId);
+      return move.fn(task.id, orgId, reason);
     },
     // Карточка переезжает сразу, не дожидаясь ответа сервера: перенос — это
     // жест, и пауза в полсекунды читается как «не сработало».
@@ -262,18 +291,25 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   const availableActions = (task: Task) =>
     COLUMNS.filter((to) => to !== task.status)
       .map((to) => ({ to, move: transitionFor(task, to, ctx) }))
-      .filter((x): x is { to: TaskStatus; move: { fn: never; label: string } } => x.move != null)
+      .filter((x): x is { to: TaskStatus; move: Transition } => x.move != null)
       .map(({ to, move }) => ({ to, label: move.label }));
 
-  const handleDrop = (task: Task, to: TaskStatus) => {
-    if (!transitionFor(task, to, ctx)) {
+  /**
+   * Единая точка перехода для жеста и для меню: переход, которому нужна
+   * причина, сперва открывает диалог — карточка поедет только после ответа.
+   */
+  const startMove = (task: Task, to: TaskStatus) => {
+    const move = transitionFor(task, to, ctx);
+    if (!move) {
       onError(
-        to === "paused"
-          ? "Поставить на паузу можно только из карточки задачи — нужна причина"
-          : to === "awaiting_approval" && task.status === "in_progress" && canManage
+        to === "awaiting_approval" && task.status === "in_progress" && canManage
           ? "У вас есть право подтверждать, поэтому «Исполнить» закрывает задачу сразу — переносите в «Исполнена»"
           : `Нельзя перенести «${TASK_STATUS_META[task.status].label}» → «${TASK_STATUS_META[to].label}»`,
       );
+      return;
+    }
+    if (move.needsReason) {
+      setReasonPrompt({ task, to, title: move.reasonTitle ?? move.label });
       return;
     }
     moveMutation.mutate({ task, to });
@@ -331,7 +367,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
       actions: actions.map((a) => ({
         key: a.to,
         label: a.label,
-        onSelect: () => moveMutation.mutate({ task, to: a.to }),
+        onSelect: () => startMove(task, a.to),
       })),
       actionsTooltip: "Действия по задаче",
       onOpen: () => onOpenTask(task.id),
@@ -340,17 +376,32 @@ const TaskBoard: React.FC<TaskBoardProps> = ({
   };
 
   return (
-    <Board<Task, TaskStatus>
-      columns={columns}
-      itemsOf={tasksOf}
-      getItemId={(task) => task.id}
-      columnOf={(task) => task.status}
-      canDrop={(task, to) => transitionFor(task, to, ctx) != null}
-      onDrop={handleDrop}
-      card={card}
-      isEmpty={results.every((q) => !q.isLoading && (q.data?.count ?? 0) === 0)}
-      emptyState={emptyState}
-    />
+    <>
+      <Board<Task, TaskStatus>
+        columns={columns}
+        itemsOf={tasksOf}
+        getItemId={(task) => task.id}
+        columnOf={(task) => task.status}
+        canDrop={(task, to) => transitionFor(task, to, ctx) != null}
+        onDrop={startMove}
+        card={card}
+        isEmpty={results.every((q) => !q.isLoading && (q.data?.count ?? 0) === 0)}
+        emptyState={emptyState}
+      />
+
+      <ReasonDialog
+        open={reasonPrompt != null}
+        title={reasonPrompt?.title ?? ""}
+        description="Причина попадёт в историю задачи — коллеги увидят, почему работа остановлена."
+        onCancel={() => setReasonPrompt(null)}
+        onConfirm={(reason) => {
+          if (reasonPrompt) {
+            moveMutation.mutate({ task: reasonPrompt.task, to: reasonPrompt.to, reason });
+          }
+          setReasonPrompt(null);
+        }}
+      />
+    </>
   );
 };
 

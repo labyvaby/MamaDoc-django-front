@@ -16,6 +16,8 @@ export { AppBottomSheet } from "./AppBottomSheet";
 export type { AppBottomSheetProps } from "./AppBottomSheet";
 export { ConfirmDialog } from "./ConfirmDialog";
 export type { ConfirmDialogProps, ConfirmDialogVariant } from "./ConfirmDialog";
+export { ReasonDialog } from "./ReasonDialog";
+export type { ReasonDialogProps } from "./ReasonDialog";
 export { PhoneCountryCodeSelect } from "./PhoneCountryCodeSelect";
 export type { PhoneCountryCodeSelectProps } from "./PhoneCountryCodeSelect";
 export { PaymentInfoBlock } from "./PaymentInfoBlock";
