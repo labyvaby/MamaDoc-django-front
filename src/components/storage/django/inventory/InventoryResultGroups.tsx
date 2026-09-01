@@ -111,7 +111,7 @@ export const InventoryResultGroups: React.FC<InventoryResultGroupsProps> = ({
     onMarkMissing,
     disabled = false,
 }) => {
-    const [collapsed, setCollapsed] = React.useState<Partial<Record<InventoryStatus, boolean>>>({ ok: true });
+    const [collapsed, setCollapsed] = React.useState<Partial<Record<InventoryStatus, boolean>>>({ ok: true, wait: true });
 
     const grouped = React.useMemo(() => {
         const map: Record<InventoryStatus, CountRow[]> = {
@@ -333,11 +333,9 @@ export const InventoryResultGroups: React.FC<InventoryResultGroupsProps> = ({
                                                             lineHeight: 1.2,
                                                         })}
                                                     >
-                                                        {row.counted == null
-                                                            ? "—"
-                                                            : diff === 0
-                                                                ? "—"
-                                                                : `${diff > 0 ? "+" : "−"}${qty(Math.abs(diff))}`}
+                                                        {row.counted == null || diff === 0
+                                                            ? ""
+                                                            : `${diff > 0 ? "+" : "−"}${qty(Math.abs(diff))}`}
                                                     </Typography>
                                                     <Typography
                                                         variant="caption"
@@ -345,7 +343,7 @@ export const InventoryResultGroups: React.FC<InventoryResultGroupsProps> = ({
                                                         sx={{ fontVariantNumeric: "tabular-nums", display: "block" }}
                                                     >
                                                         {row.counted == null
-                                                            ? "не считали"
+                                                            ? "не пикнут"
                                                             : diff === 0
                                                                 ? "сошлось"
                                                                 : money(rowDiffSum(row))}

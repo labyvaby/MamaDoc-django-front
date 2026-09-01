@@ -17,12 +17,16 @@ import { ApiError, isAbortError } from "../../../api/client";
 import {
     cancelWarehouseInventoryCount,
     closeWarehouseInventoryCount,
+    getInventoryCountDetail,
+    getInventoryCounts,
     getProducts,
+    getStock,
     getWarehouses,
     startWarehouseInventoryCount,
     submitInventoryCountLines,
     type DjangoProduct,
     type DjangoWarehouse,
+    type WarehouseInventoryCount,
     type WarehouseInventoryDetail,
 } from "../../../api/warehouse";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
@@ -35,6 +39,7 @@ import {
     type LastScan,
 } from "../../../components/storage/django/inventory/InventoryScanPanel";
 import { InventoryResultGroups } from "../../../components/storage/django/inventory/InventoryResultGroups";
+import { InventoryHistoryCard } from "../../../components/storage/django/inventory/InventoryHistoryCard";
 import {
     positionsLabel,
     type CountRow,
@@ -66,7 +71,11 @@ const rowFromProduct = (product: DjangoProduct, expected: number, counted: numbe
 });
 
 /** Строки документа в терминах экрана: ожидание — из бэка, факт — из ответа. */
-const buildRows = (detail: WarehouseInventoryDetail, catalog: DjangoProduct[]): CountRow[] => {
+const buildRows = (
+    detail: WarehouseInventoryDetail,
+    catalog: DjangoProduct[],
+    stockOf: (productId: number) => number,
+): CountRow[] => {
     const byId = new Map(catalog.map((product) => [product.id, product]));
     return detail.lines
         .map((line) => {
@@ -79,7 +88,10 @@ const buildRows = (detail: WarehouseInventoryDetail, catalog: DjangoProduct[]): 
                 barcodes: product?.barcodes ?? [],
                 unit: product?.unit || "шт",
                 price: product?.price ?? 0,
-                expected: toNumber(line.expected),
+                // expected в документе NULL, пока строку не посчитали: бэк
+                // замораживает ожидание в момент подсчёта. До этого показываем
+                // текущий остаток склада — то, с чем кладовщик и сверяется.
+                expected: line.expected == null ? stockOf(line.productId) : toNumber(line.expected),
                 counted: line.counted == null || line.counted === "" ? null : toNumber(line.counted),
             } satisfies CountRow;
         })
@@ -132,8 +144,12 @@ const DjangoInventoryPage: React.FC = () => {
     const [warehouses, setWarehouses] = React.useState<DjangoWarehouse[]>([]);
     const [warehouseId, setWarehouseId] = React.useState<number | null>(null);
     const [products, setProducts] = React.useState<DjangoProduct[]>([]);
+    const [stockByProduct, setStockByProduct] = React.useState<Map<number, number>>(new Map());
+    const [history, setHistory] = React.useState<WarehouseInventoryCount[]>([]);
+    const [historyLoading, setHistoryLoading] = React.useState(false);
     const [selectedCategories, setSelectedCategories] = React.useState<string[]>([]);
     const [comment, setComment] = React.useState("");
+    const [onlyWithStock, setOnlyWithStock] = React.useState(true);
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
 
@@ -158,6 +174,38 @@ const DjangoInventoryPage: React.FC = () => {
             const list = await getProducts(signal, { organizationId: orgId ?? undefined });
             setProducts(list);
             return list;
+        },
+        [orgId],
+    );
+
+    const stockOf = React.useCallback(
+        (productId: number) => stockByProduct.get(productId) ?? 0,
+        [stockByProduct],
+    );
+
+    /** Остатки выбранного склада — источник ожидания до первого подсчёта. */
+    const loadStock = React.useCallback(
+        async (id: number, signal?: AbortSignal) => {
+            const rows = await getStock(id, signal, orgId ?? undefined);
+            setStockByProduct(new Map(rows.map((row) => [row.productId, row.quantity])));
+        },
+        [orgId],
+    );
+
+    const loadHistory = React.useCallback(
+        async (id: number, signal?: AbortSignal) => {
+            setHistoryLoading(true);
+            try {
+                const rows = await getInventoryCounts(
+                    { warehouseId: id, organizationId: orgId ?? undefined },
+                    signal,
+                );
+                setHistory(rows.slice(0, 6));
+            } catch (error) {
+                if (!isAbortError(error)) setHistory([]);
+            } finally {
+                setHistoryLoading(false);
+            }
         },
         [orgId],
     );
@@ -203,6 +251,18 @@ const DjangoInventoryPage: React.FC = () => {
         return () => controller.abort();
     }, [load, orgReady]);
 
+    // Остатки и история — по выбранному складу, поэтому перезагружаются при смене.
+    React.useEffect(() => {
+        if (!orgReady || warehouseId == null) return;
+        const controller = new AbortController();
+        void loadStock(warehouseId, controller.signal).catch((error) => {
+            if (isAbortError(error)) return;
+            notify?.({ type: "error", message: "Не удалось загрузить остатки склада" });
+        });
+        void loadHistory(warehouseId, controller.signal);
+        return () => controller.abort();
+    }, [loadHistory, loadStock, notify, orgReady, warehouseId]);
+
     const categories = React.useMemo<InventoryCategoryOption[]>(() => {
         const counts = new Map<string, number>();
         products.forEach((product) => {
@@ -231,16 +291,32 @@ const DjangoInventoryPage: React.FC = () => {
         });
     }, [activeBranchId, warehouses]);
 
-    const scopeProducts = React.useMemo(
+    const categoryProducts = React.useMemo(
         () => products.filter((product) => selectedCategories.includes(categoryOf(product))),
         [products, selectedCategories],
     );
 
-    // Остаток из карточки товара — агрегат по видимым складам, поэтому это
-    // оценка «до старта»; точное ожидание приходит в строках документа.
+    const withStockCount = React.useMemo(
+        () => categoryProducts.filter((product) => stockOf(product.id) > 0).length,
+        [categoryProducts, stockOf],
+    );
+
+    // Фильтр «только с остатком» бесполезен, если на складе не лежит ничего из
+    // выбранных категорий: документ вышел бы пустым.
+    const filterByStock = onlyWithStock && withStockCount > 0;
+
+    const scopeProducts = React.useMemo(
+        () => (filterByStock
+            ? categoryProducts.filter((product) => stockOf(product.id) > 0)
+            : categoryProducts),
+        [categoryProducts, filterByStock, stockOf],
+    );
+
+    // Сумма — по остатку ВЫБРАННОГО склада, а не по агрегату из карточки товара:
+    // иначе экран обещает миллионы, а на этом складе товара нет вовсе.
     const scopeSum = React.useMemo(
-        () => scopeProducts.reduce((total, product) => total + product.price * (product.stock ?? 0), 0),
-        [scopeProducts],
+        () => scopeProducts.reduce((total, product) => total + product.price * stockOf(product.id), 0),
+        [scopeProducts, stockOf],
     );
 
     const barcodeIndex = React.useMemo(() => {
@@ -308,6 +384,24 @@ const DjangoInventoryPage: React.FC = () => {
             notify?.({ type: "error", message: "Выберите хотя бы одну категорию товаров" });
             return;
         }
+        // Второй открытый документ на один склад — это два разных факта по одной
+        // полке. Предлагаем продолжить старый, а новый открываем только явно.
+        const openDoc = history.find(
+            (item) => item.status === "counting" && item.warehouseId === warehouseId,
+        );
+        if (openDoc) {
+            const approved = await confirm({
+                title: "По складу уже открыт пересчёт",
+                message: "Документ №" + openDoc.id + ": посчитано " + openDoc.countedTotal
+                    + " из " + openDoc.lineTotal
+                    + ". Его можно продолжить кнопкой «Продолжить» в истории ниже — или открыть"
+                    + " ещё один документ на этот же склад.",
+                confirmText: "Открыть новый документ",
+                cancelText: "Не открывать",
+                variant: "warning",
+            });
+            if (!approved) return;
+        }
         setBusy(true);
         try {
             const detail = await startWarehouseInventoryCount({
@@ -318,9 +412,10 @@ const DjangoInventoryPage: React.FC = () => {
             });
             resetSession();
             setCountDocument(detail);
-            setRows(buildRows(detail, products));
+            setRows(buildRows(detail, products, stockOf));
             setStartedAt(Date.now());
             setStep("count");
+            void loadHistory(warehouseId);
             notify?.({ type: "success", message: `Документ №${detail.document.id} открыт — можно пикать` });
         } catch (error) {
             notify?.({
@@ -330,6 +425,40 @@ const DjangoInventoryPage: React.FC = () => {
                     warehouses.find((item) => item.id === warehouseId),
                     activeBranch?.name ?? null,
                 ),
+            });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    /** Незакрытый пересчёт: строки уже в документе, факт берём из ответа бэка. */
+    const openDocument = async (id: number, target: Step) => {
+        setBusy(true);
+        try {
+            const detail = await getInventoryCountDetail(id, orgId ?? undefined);
+            const fresh = buildRows(detail, products, stockOf);
+            countedRef.current = new Map(
+                fresh.filter((row) => row.counted != null).map((row) => [row.productId, row.counted as number]),
+            );
+            unknownRef.current = new Map();
+            setUnknownScans([]);
+            setCountDocument(detail);
+            setRows(fresh);
+            // Лента «пикнутых» после возврата — по времени подсчёта строки.
+            setOrder(
+                [...detail.lines]
+                    .filter((line) => line.counted != null && line.counted !== "")
+                    .sort((a, b) => (b.countedAt ?? "").localeCompare(a.countedAt ?? ""))
+                    .map((line) => line.productId),
+            );
+            setLastScan(null);
+            setPicks(0);
+            setStartedAt(new Date(detail.document.createdAt).getTime() || Date.now());
+            setStep(target);
+        } catch (error) {
+            notify?.({
+                type: "error",
+                message: error instanceof ApiError ? error.message : "Не удалось открыть документ",
             });
         } finally {
             setBusy(false);
@@ -364,7 +493,7 @@ const DjangoInventoryPage: React.FC = () => {
             const product = products.find((item) => item.id === productId);
             if (!product) return current;
             notify?.({ type: "success", message: `«${product.name}» вне выбранных категорий — добавлен в документ` });
-            return [...current, rowFromProduct(product, product.stock ?? 0, next)];
+            return [...current, rowFromProduct(product, stockOf(productId), next)];
         });
 
         setOrder((current) => [productId, ...current.filter((id) => id !== productId)]);
@@ -389,7 +518,7 @@ const DjangoInventoryPage: React.FC = () => {
         try {
             const detail = await submitInventoryCountLines(countDocument.document.id, lines, orgId ?? undefined);
             setCountDocument(detail);
-            const fresh = buildRows(detail, products);
+            const fresh = buildRows(detail, products, stockOf);
             setRows(fresh);
             countedRef.current = new Map(
                 fresh.filter((row) => row.counted != null).map((row) => [row.productId, row.counted as number]),
@@ -462,6 +591,10 @@ const DjangoInventoryPage: React.FC = () => {
             resetSession();
             setStep("setup");
             await loadProducts();
+            if (warehouseId != null) {
+                await loadStock(warehouseId);
+                await loadHistory(warehouseId);
+            }
         } catch (error) {
             notify?.({
                 type: "error",
@@ -487,6 +620,7 @@ const DjangoInventoryPage: React.FC = () => {
             notify?.({ type: "success", message: "Документ отменён" });
             resetSession();
             setStep("setup");
+            if (warehouseId != null) void loadHistory(warehouseId);
         } catch (error) {
             notify?.({
                 type: "error",
@@ -531,7 +665,7 @@ const DjangoInventoryPage: React.FC = () => {
             countedRef.current.set(product.id, scanned);
             setRows((current) => current.some((row) => row.productId === product.id)
                 ? current.map((row) => (row.productId === product.id ? { ...row, counted: scanned } : row))
-                : [...current, rowFromProduct(product, product.stock ?? 0, scanned)]);
+                : [...current, rowFromProduct(product, stockOf(product.id), scanned)]);
             setOrder((current) => [product.id, ...current.filter((id) => id !== product.id)]);
         }
         notify?.({ type: "success", message: `«${product.name}» засчитан: ${scanned}` });
@@ -643,9 +777,24 @@ const DjangoInventoryPage: React.FC = () => {
                         comment={comment}
                         onCommentChange={setComment}
                         scopeCount={scopeProducts.length}
+                        scopeWithStock={withStockCount}
+                        scopeTotal={categoryProducts.length}
+                        onlyWithStock={filterByStock}
+                        onToggleOnlyWithStock={() => setOnlyWithStock((current) => !current)}
+                        stockFilterAvailable={withStockCount > 0}
                         scopeSum={scopeSum}
                         responsibleName={activeEmployee?.fullName ?? "—"}
                         disabled={busy || !canManage}
+                    />
+                )}
+
+                {step === "setup" && (
+                    <InventoryHistoryCard
+                        items={history}
+                        loading={historyLoading}
+                        onContinue={(id) => void openDocument(id, "count")}
+                        onOpen={(id) => void openDocument(id, "result")}
+                        disabled={busy}
                     />
                 )}
 

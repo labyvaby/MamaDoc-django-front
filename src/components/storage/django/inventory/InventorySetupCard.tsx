@@ -3,8 +3,10 @@ import {
     Box,
     ButtonBase,
     Divider,
+    FormControlLabel,
     MenuItem,
     Stack,
+    Switch,
     TextField,
     Typography,
 } from "@mui/material";
@@ -14,6 +16,7 @@ import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import InfoOutlined from "@mui/icons-material/InfoOutlined";
+import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 
 import { AppButton, AppCard, InfoTile } from "../../../ui";
 import { subtleBg } from "../../../../theme/uiHelpers";
@@ -38,6 +41,15 @@ export type InventorySetupCardProps = {
     onCommentChange: (value: string) => void;
     /** Сколько позиций попадёт в документ и на какую ожидаемую сумму. */
     scopeCount: number;
+    /** Сколько позиций выбранных категорий имеют остаток именно на этом складе. */
+    scopeWithStock?: number;
+    /** Сколько всего позиций в выбранных категориях (без фильтра по остатку). */
+    scopeTotal?: number;
+    /** Включён ли фильтр «только с остатком на складе». */
+    onlyWithStock?: boolean;
+    onToggleOnlyWithStock?: () => void;
+    /** Фильтр доступен, только если на складе вообще что-то лежит. */
+    stockFilterAvailable?: boolean;
     scopeSum: number;
     responsibleName: string;
     /** Активный филиал: склад другого филиала бэк не даст открыть. */
@@ -61,6 +73,11 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
     comment,
     onCommentChange,
     scopeCount,
+    scopeWithStock,
+    scopeTotal,
+    onlyWithStock = false,
+    onToggleOnlyWithStock,
+    stockFilterAvailable = false,
     scopeSum,
     responsibleName,
     activeBranchId = null,
@@ -229,12 +246,37 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
                         active={selected.length > 0}
                     />
                     <InfoTile
+                        icon={<WarehouseOutlined />}
+                        label="С остатком на складе"
+                        value={scopeWithStock == null ? "—" : `${scopeWithStock} из ${scopeTotal ?? scopeCount}`}
+                        active={(scopeWithStock ?? 0) > 0}
+                    />
+                    <InfoTile
                         icon={<PaymentsOutlined />}
                         label="Ожидаемая сумма"
                         value={money(scopeSum)}
                         active={scopeSum > 0}
                     />
                 </Box>
+
+                <FormControlLabel
+                    control={(
+                        <Switch
+                            checked={onlyWithStock}
+                            onChange={() => onToggleOnlyWithStock?.()}
+                            disabled={disabled || !stockFilterAvailable || !onToggleOnlyWithStock}
+                        />
+                    )}
+                    label={(
+                        <Box>
+                            <Typography variant="body2">Только позиции с остатком на складе</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                Товар без остатка всё равно можно пикнуть — он добавится в документ как излишек
+                            </Typography>
+                        </Box>
+                    )}
+                    sx={{ alignItems: "flex-start", ml: 0, "& .MuiSwitch-root": { mt: -0.5 } }}
+                />
 
                 <TextField
                     label="Комментарий к документу"
@@ -248,8 +290,9 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
                 <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ color: "text.secondary" }}>
                     <InfoOutlined sx={{ fontSize: 16, mt: "2px", color: "text.disabled" }} />
                     <Typography variant="caption" sx={{ lineHeight: 1.55 }}>
-                        Штрихкоды, которых нет в базе, не потеряются — они соберутся в отдельный блок
-                        «Неизвестные товары» на экране итогов.
+                        Ожидаемый остаток берётся по этому складу и замораживается в момент подсчёта
+                        позиции — до пика в строке стоит текущий остаток склада. Штрихкоды, которых нет
+                        в базе, не потеряются: они соберутся в блок «Неизвестные товары» на итогах.
                     </Typography>
                 </Stack>
             </Stack>
