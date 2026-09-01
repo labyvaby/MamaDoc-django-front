@@ -36,6 +36,7 @@ import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import MedicalServicesOutlined from "@mui/icons-material/MedicalServicesOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 // import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
@@ -423,6 +424,7 @@ const SidebarSecondary: React.FC = () => {
     products: can(PAGE_PERMISSIONS.products),
     sales: can(PAGE_PERMISSIONS.sales),
     storage: can(PAGE_PERMISSIONS.warehouses),
+    inventory: can(PAGE_PERMISSIONS.warehouses),
     // УПРАВЛЕНИЕ
     // payroll.view открывает общий отчёт; payroll.view_own + активная карточка
     // сотрудника — тот же экран в персональном режиме (только свои цифры).
@@ -866,6 +868,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Остатки (объединённые «Движение товара» + «Склад») */}
         {show("storage") && can_.storage && (
           <SidebarMenuItem to="/warehouses" icon={<Inventory2Outlined />} label="Остатки" collapsed={siderCollapsed} />
+        )}
+
+        {/* Инвентаризация по штрихкодам */}
+        {show("storage") && can_.inventory && (
+          <SidebarMenuItem to="/inventory" icon={<FactCheckOutlined />} label="Инвентаризация" collapsed={siderCollapsed} />
         )}
 
         {/* ══════════════════════════════════════════

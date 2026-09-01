@@ -71,6 +71,7 @@ const EmployeesPage = lazy(() => import("./pages/employes"));
 const ServicesPage = lazy(() => import("./pages/services/DjangoServicesPage"));
 const DjangoWarehousesPage = lazy(() => import("./pages/warehouses/django"));
 const DjangoProductsPage = lazy(() => import("./pages/products/django"));
+const DjangoInventoryPage = lazy(() => import("./pages/inventory/django"));
 const DjangoSalesPage = lazy(() => import("./pages/sales/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/django"));
@@ -319,6 +320,11 @@ function App() {
                         name: "warehouses",
                         list: "/warehouses",
                         meta: { label: "Склад" }
+                      },
+                      {
+                        name: "inventory",
+                        list: "/inventory",
+                        meta: { label: "Инвентаризация" }
                       },
                       {
                         name: "patients",
@@ -594,6 +600,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoWarehousesPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="inventory"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.warehouses}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DjangoInventoryPage />
                               </Suspense>
                             </RequirePermission>
                           }
