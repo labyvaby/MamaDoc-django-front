@@ -30,6 +30,8 @@ export { cascadeContainer, cascadeItem } from "./motionPresets";
 export type { ListEmptyStateProps } from "./listStates";
 export { UserAvatar } from "./UserAvatar";
 export type { UserAvatarProps } from "./UserAvatar";
+export { TonedChip } from "./TonedChip";
+export type { TonedChipProps, ToneName } from "./TonedChip";
 export { InfoTile } from "./InfoTile";
 export type { InfoTileProps } from "./InfoTile";
 export { DiscountInput } from "./DiscountInput";

@@ -73,6 +73,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.TASKS_LIST],
   },
 
+  // Лист ожидания
+  {
+    path: '/waitlist',
+    requiredPermissions: [PERMISSIONS.WAITLIST_VIEW, PERMISSIONS.WAITLIST_MANAGE],
+  },
+
   // Достижения
   {
     path: '/achievements',

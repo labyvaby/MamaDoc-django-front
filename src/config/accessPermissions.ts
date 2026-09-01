@@ -35,6 +35,7 @@ export const PAGE_PERMISSIONS = {
   reviews: ["reviews.view", "reviews.manage"],
   bookings: ["bookings.view", "bookings.manage"],
   tasks: "tasks.list",
+  waitlist: ["waitlist.view", "waitlist.manage"],
   vaccinations: "vaccinations.view",
   achievements: "achievements.view",
   announcements: ["announcements.view", "announcements.manage"],

@@ -33,6 +33,14 @@ export interface OverlapConfirmDialogProps {
   saving: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  /**
+   * «Время занято — поставить в лист ожидания». Показывается только когда у
+   * пользователя есть право на очередь: пересечение чаще всего значит, что
+   * свободного времени нет, и человека логичнее поставить в очередь, чем
+   * записывать вторым на тот же слот.
+   */
+  onWaitlist?: () => void;
+  waitlistLabel?: string;
 }
 
 /**
@@ -46,6 +54,8 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
   saving,
   onCancel,
   onConfirm,
+  onWaitlist,
+  waitlistLabel,
 }) => {
   const { t } = useT("appointments");
   const requested = conflict?.requestedSlot;
@@ -99,6 +109,11 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
         </Stack>
       </DialogContent>
       <DialogActions>
+        {onWaitlist && (
+          <Button onClick={onWaitlist} disabled={saving} sx={{ mr: "auto" }}>
+            {waitlistLabel}
+          </Button>
+        )}
         <Button onClick={onCancel} disabled={saving}>
           {t("overlapDialog.cancel")}
         </Button>

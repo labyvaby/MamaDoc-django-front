@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Collapse,
@@ -268,6 +269,12 @@ interface DayTimelineProps {
   onOpenAppointment?: (appointmentId: number) => void;
   /** Клик не считается, если это было перетаскивание сетки (drag-to-scroll). */
   dragMovedRef?: { current: boolean };
+  /**
+   * «Окон нет — поставить в лист ожидания»: главный тупик регистратора, из
+   * которого раньше выхода не было. Не задан — кнопка не показывается (нет
+   * права на очередь или модуль выключен).
+   */
+  onWaitlist?: (employeeId: number, date: string) => void;
 }
 
 /** Окна и приёмы одного дня одного врача — общий рендер сетки и панели врача. */
@@ -278,10 +285,19 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
   onBook,
   onOpenAppointment,
   dragMovedRef,
+  onWaitlist,
 }) => {
   const { t } = useT("appointments");
+  const { t: tWaitlist } = useT("waitlist");
   const theme = useTheme();
   const rows = React.useMemo(() => buildTimeline(day), [day]);
+
+  /** Кнопка «в лист ожидания» под заглушкой «окон нет». */
+  const waitlistAction = onWaitlist ? (
+    <Button size="small" onClick={() => onWaitlist(employeeId, day.date)}>
+      {tWaitlist("add")}
+    </Button>
+  ) : undefined;
 
   // Приём есть, а смены в этот день нет (или это выходной): раньше здесь стояла
   // заглушка «нет графика» и приёмы не показывались вообще — врач выглядел
@@ -289,14 +305,18 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
   const offSchedule = (!day.scheduled || day.dayOff) && rows.some((r) => r.kind === "appt");
 
   if (day.dayOff && !offSchedule) {
-    return <Alert severity="info" icon={false}>{t("slots.dayOff")}</Alert>;
+    return (
+      <Alert severity="info" icon={false} action={waitlistAction}>
+        {t("slots.dayOff")}
+      </Alert>
+    );
   }
   if (!day.scheduled && !offSchedule) {
     return <Alert severity="info" icon={false}>{t("slots.noSchedule")}</Alert>;
   }
   if (rows.length === 0) {
     return (
-      <Alert severity="info" icon={false}>
+      <Alert severity="info" icon={false} action={waitlistAction}>
         {dense ? t("slots.noSlotsShort") : t("slots.noFreeSlots")}
       </Alert>
     );
@@ -521,6 +541,8 @@ export interface FreeSlotsViewProps {
   onBook: (employeeId: number, isoDateTime: string) => void;
   /** Клик по занятому времени — открыть карточку этого приёма поверх окон. */
   onOpenAppointment?: (appointmentId: number) => void;
+  /** «Окон нет — поставить в лист ожидания» (см. DayTimelineProps.onWaitlist). */
+  onWaitlist?: (employeeId: number, date: string) => void;
 }
 
 const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
@@ -529,6 +551,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
   headerActions,
   onBook,
   onOpenAppointment,
+  onWaitlist,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -2116,6 +2139,7 @@ const FreeSlotsView: React.FC<FreeSlotsViewProps> = ({
                             onBook={onBook}
                             onOpenAppointment={onOpenAppointment}
                             dragMovedRef={isDragMovedRef}
+                            onWaitlist={onWaitlist}
                           />
                         )}
                       </Box>

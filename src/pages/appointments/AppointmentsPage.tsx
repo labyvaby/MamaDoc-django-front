@@ -13,6 +13,7 @@ import {
   DialogTitle,
   Divider,
   Drawer,
+  Snackbar,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
@@ -22,6 +23,7 @@ import {
 } from "@mui/material";
 import FormatListBulletedOutlined from "@mui/icons-material/FormatListBulletedOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 import dayjs, { type Dayjs } from "dayjs";
 import "dayjs/locale/ru";
 
@@ -50,6 +52,16 @@ import {
   type HomeDashboard,
 } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
+import {
+  getWaitlist,
+  getWaitlistEntry,
+  scheduleWaitlistEntry,
+  type WaitlistEntry,
+} from "../../api/waitlist";
+import WaitlistCandidatesPanel, {
+  type WaitlistSlotRef,
+} from "../../components/waitlist/WaitlistCandidatesPanel";
+import WaitlistDrawer, { type WaitlistPrefill } from "../../components/waitlist/WaitlistDrawer";
 import { getDjangoEmployees } from "../../api/staff";
 import { getScheduleRules, getScheduleExceptions } from "../../api/scheduling";
 import { computeDayOccurrences } from "../schedule/django/occurrences";
@@ -249,6 +261,8 @@ type AppointmentsPageProps = {
 
 const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const { t } = useT("appointments");
+  const { t: tWaitlist } = useT("waitlist");
+  const orgId = useApiOrgId();
   const isDoctorCabinet = scope === "me";
   const isNurseCabinet = scope === "nurse";
   const pageTitle = isDoctorCabinet
@@ -397,6 +411,22 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     { mode: "cancel" | "delete"; appt: DjangoAppointment } | null
   >(null);
   const [confirmBusy, setConfirmBusy] = React.useState(false);
+
+  // ── Лист ожидания ──
+  const canWaitlist = can("waitlist.view") || can("waitlist.manage");
+  const canWaitlistCreate = can("waitlist.create") || can("waitlist.manage");
+  /** Окно, которое только что освободилось (отменили приём) — для подсказки. */
+  const [freedSlot, setFreedSlot] = React.useState<WaitlistSlotRef | null>(null);
+  const [freedCount, setFreedCount] = React.useState(0);
+  const [candidatesOpen, setCandidatesOpen] = React.useState(false);
+  const [waitlistDrawerOpen, setWaitlistDrawerOpen] = React.useState(false);
+  /** С чем открыть форму очереди: врач и день, где окон не нашлось. */
+  const [waitlistPrefill, setWaitlistPrefill] = React.useState<WaitlistPrefill | null>(null);
+  /**
+   * Запись листа, которую закрываем созданным приёмом. Закрытие делаем после
+   * реального создания приёма: пока приёма нет, человек по-прежнему ждёт.
+   */
+  const [waitlistToClose, setWaitlistToClose] = React.useState<WaitlistEntry | null>(null);
   const activeScope = useActiveScope();
   const branchId = activeBranch?.id ?? undefined;
 
@@ -493,6 +523,7 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   React.useEffect(() => {
     const apptRaw = searchParams.get("appointment");
     const isNew = searchParams.get("new") === "1";
+    const waitlistRaw = searchParams.get("waitlistId");
     if (!apptRaw && !isNew) return;
 
     const asId = (raw: string | null): number | null => {
@@ -507,19 +538,27 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
       setRebookEmployeeId(asId(searchParams.get("employee")));
       setRebookServiceId(asId(searchParams.get("service")));
       setCreateOpen(true);
+      // Пришли из листа ожидания: запись закроется, когда приём будет создан
+      // (см. handleCreated). Карточку тянем отдельно — в URL только id.
+      const waitlistId = asId(waitlistRaw);
+      if (waitlistId != null) {
+        void getWaitlistEntry(waitlistId, orgId)
+          .then((entry) => setWaitlistToClose(entry))
+          .catch(() => setWaitlistToClose(null));
+      }
     }
 
     setSearchParams(
       (prev: URLSearchParams) => {
         const next = new URLSearchParams(prev);
-        for (const key of ["appointment", "new", "patient", "employee", "service"]) {
+        for (const key of ["appointment", "new", "patient", "employee", "service", "waitlistId"]) {
           next.delete(key);
         }
         return next;
       },
       { replace: true },
     );
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, orgId]);
 
   // Синхронизация с изменениями коллег: WebSocket /ws/changes/ как мгновенный
   // триггер + лёгкий timestamp-polling как страховка (частый, когда сокет
@@ -805,6 +844,48 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     [refreshAfterMutation, notify],
   );
 
+  /**
+   * Освободилось окно — есть ли кому его предложить.
+   *
+   * Считаем по времени и врачу отменённого приёма; врача берём из первой
+   * строки услуг (у приёма своего исполнителя нет). Молча ничего не делаем,
+   * если подходящих нет: подсказка должна появляться только когда она полезна.
+   */
+  const checkWaitlistForFreedSlot = React.useCallback(
+    async (appt: DjangoAppointment) => {
+      if (!canWaitlist) return;
+      const employeeId = appt.services.find((line) => line.employee != null)?.employee?.id;
+      if (employeeId == null) return;
+      const when = dayjs(appt.scheduledAt);
+      const slot: WaitlistSlotRef = {
+        employeeId,
+        employeeName: appt.services.find((l) => l.employee != null)?.employee?.fullName,
+        date: when.format("YYYY-MM-DD"),
+        time: when.format("HH:mm"),
+        branchId: appt.branchId,
+      };
+      try {
+        const found = await getWaitlist({
+          status: ["waiting", "offered"],
+          matchEmployeeId: slot.employeeId,
+          matchDate: slot.date,
+          matchTime: slot.time,
+          matchBranchId: slot.branchId ?? undefined,
+          organizationId: orgId,
+          pageSize: 1,
+        });
+        if (found.count > 0) {
+          setFreedSlot(slot);
+          setFreedCount(found.count);
+        }
+      } catch {
+        // Подсказка — вспомогательная: молчим, если модуль ещё не включён на
+        // бэке (403/404). Отмена приёма от этого не должна выглядеть неудачной.
+      }
+    },
+    [canWaitlist, orgId],
+  );
+
   const handleConfirm = React.useCallback(async () => {
     if (!confirm) return;
     setConfirmBusy(true);
@@ -816,11 +897,13 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         notifyConsumptionWarnings(
           await updateAppointment(confirm.appt.id, { status: "canceled" }),
         );
+        void checkWaitlistForFreedSlot(confirm.appt);
       } else {
         await deleteAppointment(confirm.appt.id);
         setSelectedAppt((prev) => (prev?.id === confirm.appt.id ? null : prev));
         // Удалённый приём нельзя оставлять открытым поверх окон.
         if (slotApptId === confirm.appt.id) closeSlotAppt();
+        void checkWaitlistForFreedSlot(confirm.appt);
       }
       setConfirm(null);
       refreshAfterMutation();
@@ -836,12 +919,29 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     notifyConsumptionWarnings,
     slotApptId,
     closeSlotAppt,
+    checkWaitlistForFreedSlot,
   ]);
 
-  const handleCreated = React.useCallback(() => {
-    setCreateOpen(false);
-    refreshAfterMutation();
-  }, [refreshAfterMutation]);
+  const handleCreated = React.useCallback(
+    (created?: DjangoAppointment) => {
+      setCreateOpen(false);
+      // Записали человека из листа ожидания — закрываем его запись созданным
+      // приёмом. Ошибку показываем, но приём уже создан: откатывать нечего.
+      if (waitlistToClose && created) {
+        void scheduleWaitlistEntry(
+          waitlistToClose.id,
+          {
+            appointmentId: created.id,
+            ...(created.patient?.id ? { patientId: created.patient.id } : {}),
+          },
+          orgId,
+        ).catch((e) => notify?.({ type: "error", message: parseBackendError(e) }));
+        setWaitlistToClose(null);
+      }
+      refreshAfterMutation();
+    },
+    [refreshAfterMutation, waitlistToClose, orgId, notify],
+  );
 
   const handleSaved = React.useCallback(() => {
     setEditTarget(null);
@@ -967,23 +1067,38 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               branchId={branchId}
               organizationId={isSuperAdmin() ? activeOrganization?.id ?? undefined : undefined}
               headerActions={
-                canCreate && (
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={viewMode}
-                    onChange={(_, v) => v && handleViewModeChange(v)}
-                  >
-                    <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
-                      <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      {t("page.tabList")}
-                    </ToggleButton>
-                    <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
-                      <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
-                      {t("page.tabSlots")}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                )
+                <Stack direction="row" gap={1} alignItems="center">
+                  {/* Свободных окон нет, а пациент просит записать — ставим его
+                      в очередь прямо отсюда, с уже выбранным специалистом. */}
+                  {canWaitlistCreate && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<HourglassEmptyOutlined sx={{ fontSize: 16 }} />}
+                      onClick={() => setWaitlistDrawerOpen(true)}
+                      sx={{ textTransform: "none" }}
+                    >
+                      {tWaitlist("add")}
+                    </Button>
+                  )}
+                  {canCreate && (
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={viewMode}
+                      onChange={(_, v) => v && handleViewModeChange(v)}
+                    >
+                      <ToggleButton value="list" sx={{ textTransform: "none", px: 1.25 }}>
+                        <FormatListBulletedOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                        {t("page.tabList")}
+                      </ToggleButton>
+                      <ToggleButton value="slots" sx={{ textTransform: "none", px: 1.25 }}>
+                        <EventAvailableOutlined sx={{ fontSize: 16, mr: 0.5 }} />
+                        {t("page.tabSlots")}
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  )}
+                </Stack>
               }
               onBook={(employeeId, dateTime) => {
                 // Услугу регистратор выбирает уже в форме записи. Из режима
@@ -995,6 +1110,14 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
                 setConclusionOpen(false);
                 setSlotApptId(appointmentId);
               }}
+              onWaitlist={
+                canWaitlistCreate
+                  ? (employeeId, dayIso) => {
+                      setWaitlistPrefill({ employeeId, desiredDateFrom: dayIso });
+                      setWaitlistDrawerOpen(true);
+                    }
+                  : undefined
+              }
             />
           </Box>
         )}
@@ -1296,6 +1419,62 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
         onClose={() => setPaymentTarget(null)}
         appointment={paymentTarget}
         onSaved={handlePaymentSaved}
+      />
+
+      {/* ── Лист ожидания ── */}
+      {/* Окно освободилось — подсказываем, кому позвонить. Слот при этом не
+          резервируется: пока никто не берёт трубку, время должно оставаться
+          доступным для всех. */}
+      <Snackbar
+        open={freedSlot != null && !candidatesOpen}
+        autoHideDuration={12_000}
+        onClose={() => setFreedSlot(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity="info"
+          onClose={() => setFreedSlot(null)}
+          action={
+            <Button color="inherit" size="small" onClick={() => setCandidatesOpen(true)}>
+              {tWaitlist("candidates.freedAction")}
+            </Button>
+          }
+        >
+          {tWaitlist("candidates.freedText", { count: freedCount })}
+        </Alert>
+      </Snackbar>
+
+      <WaitlistCandidatesPanel
+        open={candidatesOpen}
+        slot={freedSlot}
+        onClose={() => {
+          setCandidatesOpen(false);
+          setFreedSlot(null);
+        }}
+        onBook={(entry, slot) => {
+          setCandidatesOpen(false);
+          setFreedSlot(null);
+          setWaitlistToClose(entry);
+          setRebookPatientId(entry.patientId);
+          setRebookEmployeeId(slot.employeeId);
+          setSlotPrefill({
+            employeeId: slot.employeeId,
+            dateTime: `${slot.date}T${slot.time}`,
+            serviceId: entry.services[0]?.id ?? null,
+            booking: false,
+          });
+          setCreateOpen(true);
+        }}
+      />
+
+      {/* Постановка в очередь из приёмов: врач занят, а пациент просит записать. */}
+      <WaitlistDrawer
+        open={waitlistDrawerOpen}
+        onClose={() => {
+          setWaitlistDrawerOpen(false);
+          setWaitlistPrefill(null);
+        }}
+        prefill={waitlistPrefill ?? { employeeId: filterEmployeeId ?? null }}
       />
 
       {/* Ввод вакцины из карточки приёма (регистратура): пациент и appointmentId

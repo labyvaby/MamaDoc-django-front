@@ -56,6 +56,7 @@ import {
   parseOverlapConflict,
   type AppointmentOverlapConflict,
   type AppointmentStockShortage,
+  type DjangoAppointment,
 } from "../../api/appointments";
 import { parseRelatedQuantity } from "../../api/catalog";
 import ConsumptionRowsEditor from "../../components/appointments/ConsumptionRowsEditor";
@@ -68,6 +69,7 @@ import {
 import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
+import WaitlistDrawer from "../../components/waitlist/WaitlistDrawer";
 import { getPatientBalance } from "../../api/patientBalance";
 import {
   getProducts,
@@ -208,7 +210,11 @@ const productFilter = createFilterOptions<DjangoProduct>({
 export type DjangoAddAppointmentDrawerProps = {
   open: boolean;
   onClose: () => void;
-  onCreated?: () => void;
+  /**
+   * Созданный приём отдаём вызывающей стороне: по нему закрывается запись
+   * листа ожидания («записали — человек больше не ждёт»).
+   */
+  onCreated?: (created?: DjangoAppointment) => void;
   initialDate?: string | null;
   /**
    * Использовать initialDate как точное время, без округления к шагу
@@ -250,10 +256,12 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   showAllFieldsInitially = false,
 }) => {
   const { t } = useT("appointments");
+  const { t: tWaitlist } = useT("waitlist");
   const theme = useTheme();
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
   const canManageAppointments = useCan("appointments.update");
+  const canWaitlistCreate = useCan(["waitlist.create", "waitlist.manage"]);
   // Опечатку в телефоне видно уже при записи — правим карту, не теряя форму.
   const canUpdatePatient = useCan("patients.update");
   const [editPatientOpen, setEditPatientOpen] = React.useState(false);
@@ -283,6 +291,8 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const [selectedPatient, setSelectedPatient] = React.useState<DjangoPatient | null>(null);
   const [patientSearch, setPatientSearch] = React.useState("");
   const [serviceRows, setServiceRows] = React.useState<ServiceRow[]>([newServiceRow()]);
+  /** Открыт дровер листа ожидания («время занято — поставить в очередь»). */
+  const [waitlistOpen, setWaitlistOpen] = React.useState(false);
   const [productRows, setProductRows] = React.useState<ProductRow[]>([]);
   const [products, setProducts] = React.useState<DjangoProduct[]>([]);
   /** Каталог для расходников — без фильтров продажи и остатка. */
@@ -666,7 +676,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
     setSaveError(null);
     setSaving(true);
     try {
-      await createAppointment({
+      const created = await createAppointment({
         patientId: selectedPatient?.id ?? null,
         branchId: effectiveBranch?.id ?? null,
         // Scope to the active org so branch/org never mismatch (multi-org users).
@@ -705,7 +715,7 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
       });
       setOverlapConflict(null);
       notify?.({ type: "success", message: t("addDrawer.created") });
-      onCreated?.();
+      onCreated?.(created);
       onClose();
     } catch (err: unknown) {
       // Org "warn" mode: the backend lists the conflicts and waits for
@@ -1919,6 +1929,34 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
         saving={saving}
         onCancel={() => setOverlapConflict(null)}
         onConfirm={() => void performSave(true)}
+        // Время занято — чаще всего это и есть случай «запишите меня, когда
+        // освободится»: предлагаем очередь вместо записи вторым на тот же слот.
+        onWaitlist={
+          canWaitlistCreate
+            ? () => {
+                setOverlapConflict(null);
+                setWaitlistOpen(true);
+              }
+            : undefined
+        }
+        waitlistLabel={tWaitlist("add")}
+      />
+
+      {/* Лист ожидания: врач и услуги переносятся из наполовину заполненной формы */}
+      <WaitlistDrawer
+        open={waitlistOpen}
+        onClose={() => setWaitlistOpen(false)}
+        prefill={{
+          patientId: selectedPatient?.id ?? null,
+          patientName: selectedPatient?.fullName ?? null,
+          phone: selectedPatient?.phone ?? null,
+          employeeId: serviceRows.find((r) => r.employeeId != null)?.employeeId ?? null,
+          serviceIds: serviceRows
+            .map((r) => r.serviceId)
+            .filter((id): id is number => id != null),
+          desiredDateFrom: scheduledAt ? dayjs(scheduledAt).format("YYYY-MM-DD") : null,
+        }}
+        onSaved={() => onClose()}
       />
 
       {/* Подтверждение закрытия при несохранённых данных */}

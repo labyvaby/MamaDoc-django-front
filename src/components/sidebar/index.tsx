@@ -53,12 +53,14 @@ import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
 
 import { useThemedLayoutContext } from "@refinedev/mui";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
+import { getWaitlistSummary } from "../../api/waitlist";
 import { getBookings } from "../../api/bookings";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import {
@@ -389,6 +391,7 @@ const SidebarSecondary: React.FC = () => {
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
     tasks: isSuper || can(PAGE_PERMISSIONS.tasks),
+    waitlist: isSuper || can(PAGE_PERMISSIONS.waitlist),
     expenses: isSuper || can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
     achievements: isSuper || can(PAGE_PERMISSIONS.achievements),
@@ -446,6 +449,20 @@ const SidebarSecondary: React.FC = () => {
     (tasksSummary?.inProgress ?? 0) +
     (tasksSummary?.awaitingApproval ?? 0);
   const tasksBadgeColor: "error" | "primary" = tasksOverdue > 0 ? "error" : "primary";
+
+  // Бейдж «Лист ожидания»: сколько человек стоит в очереди (waiting). Красный —
+  // когда среди них есть срочные: такой очередью надо заняться сегодня.
+  const waitlistSummaryQuery = useQuery({
+    queryKey: djangoQueryKeys.waitlist.summary(orgId),
+    queryFn: ({ signal }) => getWaitlistSummary(orgId, signal),
+    enabled: can_.waitlist && !permissionsLoading,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchInterval: DJANGO_POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const waitlistBadgeCount = waitlistSummaryQuery.data?.waiting ?? 0;
+  const waitlistBadgeColor: "error" | "primary" =
+    (waitlistSummaryQuery.data?.urgent ?? 0) > 0 ? "error" : "primary";
 
   // Бейдж «Брони»: заявки, ждущие подтверждения персоналом (status=pending) —
   // и с гостевой формы /book, и из синка operator.kg. Отдельного счётчика на
@@ -535,7 +552,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.expenses || can_.knowledge || can_.achievements,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
@@ -662,6 +679,19 @@ const SidebarSecondary: React.FC = () => {
             Бейдж — сколько заявок ждёт подтверждения. */}
         {show("my-work") && can_.bookings && (
           <SidebarMenuItem to="/bookings" icon={<BookOnlineOutlined />} label="Брони" collapsed={siderCollapsed} badgeCount={bookingsBadgeCount} badgeColor={bookingsBadgeColor} />
+        )}
+
+        {/* Лист ожидания: кому не хватило свободного окна.
+            Бейдж — сколько человек сейчас в очереди. */}
+        {show("my-work") && can_.waitlist && (
+          <SidebarMenuItem
+            to="/waitlist"
+            icon={<HourglassEmptyOutlined />}
+            label="Лист ожидания"
+            collapsed={siderCollapsed}
+            badgeCount={waitlistBadgeCount}
+            badgeColor={waitlistBadgeColor}
+          />
         )}
 
         {/* Кабинет врача */}
