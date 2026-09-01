@@ -18,6 +18,7 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Collapse,
 } from "@mui/material";
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -88,6 +89,11 @@ import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -583,44 +589,43 @@ const SidebarSecondary: React.FC = () => {
   }, [activeGroup, groupVisible["my-work"], groupVisible.org, groupVisible.storage, groupVisible.management]);
 
   if (permissionsLoading) {
+    if (isBilling) {
+      return (
+        <BillingSidebarNavigation
+          collapsed={siderCollapsed}
+          canBilling
+          canClients
+          canEmployees
+          canSettings
+          canOfferings
+          canPayments
+          canDebtors
+        />
+      );
+    }
     return (
       <List sx={{ py: 0 }}>
-        {isBilling ? (
-          <>
-            <SidebarMenuItem to="/billing" icon={<HomeOutlined />} label="Главная" collapsed={siderCollapsed} excludePaths={["/billing/clients"]} />
-            <SidebarMenuItem to="/billing/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={siderCollapsed} />
-            <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
-            <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} />
-          </>
-        ) : (
-          <>
-            <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
-            <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
-            <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
-            <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
-            <SidebarSkudItem collapsed={siderCollapsed} />
-          </>
-        )}
+        <SidebarMenuItem to="/schedule" icon={<CalendarMonthOutlined />} label="Расписание" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/nurse" icon={<MedicalServicesOutlined />} label="Процедурный кабинет" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
+        <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
+        <SidebarSkudItem collapsed={siderCollapsed} />
       </List>
     );
   }
 
   if (isBilling) {
     return (
-      <List sx={{ py: 0.5 }}>
-        {(isSuper || can_.billing) && (
-          <SidebarMenuItem to="/billing" icon={<HomeOutlined />} label="Главная" collapsed={siderCollapsed} excludePaths={["/billing/clients"]} />
-        )}
-        {(isSuper || can(PAGE_PERMISSIONS.clients)) && (
-          <SidebarMenuItem to="/billing/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={siderCollapsed} />
-        )}
-        {(isSuper || can_.employees) && (
-          <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
-        )}
-        {(isSuper || can_.settings) && (
-          <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} />
-        )}
-      </List>
+      <BillingSidebarNavigation
+        collapsed={siderCollapsed}
+        canBilling={isSuper || can_.billing}
+        canClients={isSuper || can(PAGE_PERMISSIONS.clients)}
+        canEmployees={isSuper || can_.employees}
+        canSettings={isSuper || can_.settings}
+        canOfferings={isSuper || can("offerings.view")}
+        canPayments={isSuper || can("billing.payments.view")}
+        canDebtors={isSuper || can("billing.debtors.view")}
+      />
     );
   }
 
@@ -1064,6 +1069,113 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   }
 
   return button;
+};
+
+type BillingSidebarNavigationProps = {
+  collapsed: boolean;
+  canBilling: boolean;
+  canClients: boolean;
+  canEmployees: boolean;
+  canSettings: boolean;
+  canOfferings: boolean;
+  canPayments: boolean;
+  canDebtors: boolean;
+};
+
+const BILLING_SECTION_PATHS = [
+  "/billing/clients",
+  "/billing/contracts",
+  "/billing/offerings",
+  "/billing/charges",
+  "/billing/payments",
+  "/billing/debtors",
+];
+
+const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
+  collapsed,
+  canBilling,
+  canClients,
+  canEmployees,
+  canSettings,
+  canOfferings,
+  canPayments,
+  canDebtors,
+}) => {
+  const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { setSiderCollapsed } = useThemedLayoutContext();
+  const collapsedFinal = collapsed && !isMobile;
+  const financeActive = ["/billing/charges", "/billing/payments", "/billing/debtors"].includes(location.pathname);
+  const [financeOpen, setFinanceOpen] = React.useState(financeActive);
+
+  React.useEffect(() => {
+    if (financeActive) setFinanceOpen(true);
+  }, [financeActive]);
+
+  const toggleFinance = () => {
+    if (collapsedFinal) setSiderCollapsed?.(false);
+    setFinanceOpen((open) => !open || collapsedFinal);
+  };
+
+  return (
+    <List sx={{ py: 0.5 }}>
+      {canBilling && (
+        <SidebarMenuItem
+          to="/billing"
+          icon={<HomeOutlined />}
+          label="Главная"
+          collapsed={collapsedFinal}
+          excludePaths={BILLING_SECTION_PATHS}
+        />
+      )}
+      {canClients && <SidebarMenuItem to="/billing/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={collapsedFinal} />}
+      {canBilling && <SidebarMenuItem to="/billing/contracts" icon={<DescriptionOutlined />} label="Контракты" collapsed={collapsedFinal} />}
+      {canOfferings && <SidebarMenuItem to="/billing/offerings" icon={<MedicalServicesOutlined />} label="Услуги" collapsed={collapsedFinal} />}
+      {canBilling && (
+        <>
+          <ListItem disablePadding>
+            <Tooltip title={collapsedFinal ? "Финансы" : ""} placement="right">
+              <ListItemButton
+                selected={financeActive}
+                onClick={toggleFinance}
+                aria-expanded={financeOpen}
+                sx={(theme) => ({
+                  borderRadius: "10px",
+                  my: theme.appLayout.sidebar.itemGap,
+                  py: theme.appLayout.sidebar.itemPaddingY,
+                  px: 1.4,
+                  color: financeActive ? theme.palette.primary.onSurface : undefined,
+                  bgcolor: financeActive
+                    ? alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.22 : 0.08)
+                    : "transparent",
+                })}
+              >
+                <ListItemIcon sx={{ minWidth: 36, color: financeActive ? "primary.onSurface" : undefined }}>
+                  <AccountBalanceWalletOutlined />
+                </ListItemIcon>
+                {!collapsedFinal && <ListItemText primary="Финансы" sx={{ my: 0 }} />}
+                {!collapsedFinal && (
+                  <ExpandMoreOutlined
+                    sx={{ transform: financeOpen ? "rotate(180deg)" : "none", transition: "transform 160ms ease" }}
+                  />
+                )}
+              </ListItemButton>
+            </Tooltip>
+          </ListItem>
+          <Collapse in={financeOpen && !collapsedFinal} timeout="auto" unmountOnExit>
+            <Box sx={{ pl: 2.25 }}>
+              <SidebarMenuItem to="/billing/charges" icon={<ReceiptLongOutlined />} label="Начисления" />
+              {canPayments && <SidebarMenuItem to="/billing/payments" icon={<CreditCardOutlined />} label="Оплаты" />}
+              {canDebtors && <SidebarMenuItem to="/billing/debtors" icon={<WarningAmberOutlined />} label="Должники" />}
+            </Box>
+          </Collapse>
+        </>
+      )}
+      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={collapsedFinal} />}
+      {canSettings && <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={collapsedFinal} />}
+    </List>
+  );
 };
 
 // Custom SKUD item with quick actions

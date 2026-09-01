@@ -684,6 +684,56 @@ function App() {
                           }
                         />
                         <Route
+                          path="billing/contracts"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing/offerings"
+                          element={
+                            <RequirePermission permission="offerings.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing/charges"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing/payments"
+                          element={
+                            <RequirePermission permission="billing.payments.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="billing/debtors"
+                          element={
+                            <RequirePermission permission="billing.debtors.view">
+                              <Suspense fallback={<LinearProgress />}>
+                                <BillingPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
                           path="billing/clients"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.clients}>

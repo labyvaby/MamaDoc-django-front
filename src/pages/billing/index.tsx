@@ -10,15 +10,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   IconButton,
   LinearProgress,
   Menu,
   MenuItem,
   Paper,
   Stack,
-  Tab,
-  Tabs,
   Table,
   TableBody,
   TableCell,
@@ -33,11 +30,10 @@ import LinkOutlined from "@mui/icons-material/LinkOutlined";
 import MoreHorizOutlined from "@mui/icons-material/MoreHorizOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import { useNotification } from "@refinedev/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
-import { useSearchParams } from "react-router";
+import { useLocation } from "react-router";
 
 import {
   billingApi,
@@ -45,7 +41,6 @@ import {
   type BillingContract,
   type BillingOffering,
   type BillingPayment,
-  type ContractDefaults,
 } from "../../api/billing";
 import { getErrorMessage } from "../../api/client";
 import { djangoQueryKeys } from "../../api/queryKeys";
@@ -53,19 +48,27 @@ import { AppCard, PageHeader } from "../../components/ui";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { useCan } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { subtleBg, subtleBorder } from "../../theme/uiHelpers";
+import { subtleBg } from "../../theme/uiHelpers";
 
 type BillingTab = "overview" | "contracts" | "charges" | "payments" | "debtors" | "offerings";
-type DialogKind = "contract" | "charge" | "payment" | "offering" | "defaults" | null;
+type DialogKind = "contract" | "charge" | "payment" | "offering" | null;
 
-const TAB_VALUES: BillingTab[] = ["overview", "contracts", "charges", "payments", "debtors", "offerings"];
 const TAB_LABELS: Record<BillingTab, string> = {
   overview: "Обзор",
   contracts: "Контракты",
   charges: "Начисления",
   payments: "Оплаты",
   debtors: "Должники",
-  offerings: "Объекты продажи",
+  offerings: "Услуги",
+};
+
+const PATH_TABS: Record<string, BillingTab> = {
+  "/billing": "overview",
+  "/billing/contracts": "contracts",
+  "/billing/charges": "charges",
+  "/billing/payments": "payments",
+  "/billing/debtors": "debtors",
+  "/billing/offerings": "offerings",
 };
 
 const STATUS_META: Record<string, { label: string; color: "default" | "success" | "warning" | "error" | "info" }> = {
@@ -143,17 +146,15 @@ const initialForm = () => ({
   billingDay: String(dayjs().date()), priceOverride: "", subscriptionId: "", purpose: "",
   amount: "", dueDate: dayjs().format("YYYY-MM-DD"), periodKey: dayjs().format("YYYY-MM"),
   method: "cash", chargeId: "", kind: "service", billingCycle: "monthly", category: "", capacity: "",
-  priceAmount: "", autoCharge: true, chargeLeadDays: "0", paymentTermDays: "0", graceDays: "0",
-  notifyOnCharge: true, notifyDaysBeforeDue: "3", notifyOnOverdue: true,
+  priceAmount: "",
   sessionsTotal: "", schedule: "", objectType: "office", areaUnit: "sqm", ratePeriod: "month",
   address: "", areaValue: "", depositAmount: "",
 });
 
 export default function BillingPage() {
-  usePageTitle("Биллинг");
-  const [searchParams, setSearchParams] = useSearchParams();
-  const requestedTab = searchParams.get("tab") as BillingTab | null;
-  const tab = requestedTab && TAB_VALUES.includes(requestedTab) ? requestedTab : "overview";
+  const location = useLocation();
+  const tab = PATH_TABS[location.pathname] ?? "overview";
+  usePageTitle(TAB_LABELS[tab]);
   const [search, setSearch] = React.useState("");
   const [dialog, setDialog] = React.useState<DialogKind>(null);
   const [form, setForm] = React.useState(initialForm);
@@ -164,11 +165,8 @@ export default function BillingPage() {
   const queryClient = useQueryClient();
   const scope = useActiveScope();
   const canManage = useCan("billing.manage");
-  const canViewPayments = useCan("billing.payments.view");
   const canManagePayments = useCan("billing.payments.manage");
-  const canViewDebtors = useCan("billing.debtors.view");
   const canRemind = useCan("billing.debtors.remind");
-  const canViewOfferings = useCan("offerings.view");
   const canManageOfferings = useCan("offerings.manage");
   const organizationId = scope.organizationId;
   const scopeParams = React.useMemo(() => ({ ...(organizationId ? { organizationId } : {}) }), [organizationId]);
@@ -211,15 +209,6 @@ export default function BillingPage() {
     queryFn: () => billingApi.clients(scopeParams),
     enabled: enabled && (dialog === "contract" || dialog === "payment"),
   });
-  const defaultsQuery = useQuery({
-    queryKey: djangoQueryKeys.billing.defaults(organizationId),
-    queryFn: () => billingApi.contractDefaults(scopeParams),
-    enabled: enabled && dialog === "defaults",
-  });
-
-  const visibleTabs = TAB_VALUES.filter((value) =>
-    value === "payments" ? canViewPayments : value === "debtors" ? canViewDebtors : value === "offerings" ? canViewOfferings : true,
-  );
   const chargeRows = React.useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("ru");
     const rows = chargesQuery.data?.items ?? [];
@@ -230,12 +219,6 @@ export default function BillingPage() {
     const rows = paymentsQuery.data?.items ?? [];
     return needle ? rows.filter((row) => `${row.id} ${row.clientName} ${row.chargeId ?? ""} ${row.method}`.toLocaleLowerCase("ru").includes(needle)) : rows;
   }, [paymentsQuery.data?.items, search]);
-
-  React.useEffect(() => {
-    if (!defaultsQuery.data || dialog !== "defaults") return;
-    const d = defaultsQuery.data;
-    setForm((current) => ({ ...current, billingCycle: d.billingCycle, autoCharge: d.autoCharge, chargeLeadDays: String(d.chargeLeadDays), paymentTermDays: d.paymentTermDays == null ? "" : String(d.paymentTermDays), graceDays: String(d.graceDays), notifyOnCharge: d.notifyOnCharge, notifyDaysBeforeDue: String(d.notifyDaysBeforeDue), notifyOnOverdue: d.notifyOnOverdue }));
-  }, [defaultsQuery.data, dialog]);
 
   const invalidate = React.useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: djangoQueryKeys.billing.all });
@@ -253,7 +236,6 @@ export default function BillingPage() {
       if (dialog === "charge") return billingApi.createCharge({ clientId: Number(form.clientId), subscriptionId: Number(form.subscriptionId), purpose: form.purpose, amount: form.amount, dueDate: form.dueDate, periodKey: form.periodKey, periodLabel: form.periodKey, ...scopeParams });
       if (dialog === "payment") return billingApi.createPayment({ clientId: Number(form.clientId), ...(form.chargeId ? { chargeId: Number(form.chargeId) } : {}), amount: form.amount, method: form.method, ...scopeParams });
       if (dialog === "offering") return billingApi.createOffering({ kind: form.kind, name: form.name, billingCycle: form.billingCycle, priceAmount: form.priceAmount, category: form.category, ...(form.capacity ? { capacity: Number(form.capacity) } : {}), profile: form.kind === "course" ? { sessions_total: Number(form.sessionsTotal), schedule: form.schedule, starts_on: form.startsOn } : form.kind === "rental" ? { object_type: form.objectType, area_unit: form.areaUnit, rate_period: form.ratePeriod, ...(form.address ? { address: form.address } : {}), ...(form.areaValue ? { area_value: Number(form.areaValue) } : {}), ...(form.depositAmount ? { deposit_amount: form.depositAmount } : {}) } : {}, ...scopeParams });
-      if (dialog === "defaults") return billingApi.updateContractDefaults({ billingCycle: form.billingCycle, autoCharge: form.autoCharge, chargeLeadDays: Number(form.chargeLeadDays), paymentTermDays: form.paymentTermDays === "" ? null : Number(form.paymentTermDays), graceDays: Number(form.graceDays), notifyOnCharge: form.notifyOnCharge, notifyDaysBeforeDue: Number(form.notifyDaysBeforeDue), notifyOnOverdue: form.notifyOnOverdue } as Partial<ContractDefaults>, scopeParams);
       throw new Error("Не выбрано действие");
     },
     onSuccess: async () => { setDialog(null); setForm(initialForm()); await invalidate(); notify?.({ type: "success", message: "Сохранено" }); },
@@ -261,7 +243,6 @@ export default function BillingPage() {
   });
 
   const openDialog = (kind: Exclude<DialogKind, null>) => { setForm(initialForm()); setDialog(kind); };
-  const changeTab = (_: React.SyntheticEvent, value: BillingTab) => { setSearch(""); setSearchParams(value === "overview" ? {} : { tab: value }); };
   const openMenu = (event: React.MouseEvent<HTMLElement>, item: typeof menuItem) => { setMenuAnchor(event.currentTarget); setMenuItem(item); };
   const isLoading = dashboardQuery.isLoading || contractsQuery.isLoading || chargesQuery.isLoading || paymentsQuery.isLoading || debtorsQuery.isLoading || offeringsQuery.isLoading;
   const error = dashboardQuery.error || contractsQuery.error || chargesQuery.error || paymentsQuery.error || debtorsQuery.error || offeringsQuery.error;
@@ -272,10 +253,10 @@ export default function BillingPage() {
   return (
     <Box sx={{ pb: 4 }}>
       <PageHeader
-        title="Биллинг"
+        title={TAB_LABELS[tab]}
         showTitle={false}
         onAdd={primaryAction && primaryAllowed ? primaryAction : undefined}
-        addButtonText={tab === "contracts" ? "Новый контракт" : tab === "charges" ? "Выставить начисление" : tab === "payments" ? "Принять оплату" : "Новый объект"}
+        addButtonText={tab === "contracts" ? "Новый контракт" : tab === "charges" ? "Выставить начисление" : tab === "payments" ? "Принять оплату" : "Новая услуга"}
         showSearch={tab !== "overview" && tab !== "debtors"}
         searchVal={search}
         onSearchChange={setSearch}
@@ -283,18 +264,12 @@ export default function BillingPage() {
         loading={isLoading}
         actions={
           <Stack direction="row" spacing={0.5}>
-            {canManage && <Tooltip title="Настройки контрактов"><IconButton onClick={() => openDialog("defaults")}><SettingsOutlined /></IconButton></Tooltip>}
             <Tooltip title="Обновить"><IconButton onClick={() => void invalidate()}><RefreshOutlined /></IconButton></Tooltip>
           </Stack>
         }
       />
 
       <Box sx={(theme) => ({ px: theme.appLayout.page.paddingX })}>
-        <Paper variant="outlined" sx={{ mb: 2, borderRadius: 2, overflow: "hidden" }}>
-          <Tabs value={tab} onChange={changeTab} variant="scrollable" scrollButtons="auto" sx={{ px: 1, minHeight: 48 }}>
-            {visibleTabs.map((value) => <Tab key={value} value={value} label={TAB_LABELS[value]} />)}
-          </Tabs>
-        </Paper>
         {isLoading && <LinearProgress sx={{ mb: 1, borderRadius: 2 }} />}
         {error && <Alert severity="error" sx={{ mb: 2 }}>{getErrorMessage(error, "Не удалось загрузить биллинг")}</Alert>}
 
@@ -363,13 +338,12 @@ export default function BillingPage() {
       </Menu>
 
       <Dialog open={dialog !== null} onClose={() => !submitMutation.isPending && setDialog(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{dialog === "contract" ? "Новый контракт" : dialog === "charge" ? "Новое начисление" : dialog === "payment" ? "Принять оплату" : dialog === "offering" ? "Новый объект продажи" : "Настройки новых контрактов"}</DialogTitle>
+        <DialogTitle>{dialog === "contract" ? "Новый контракт" : dialog === "charge" ? "Новое начисление" : dialog === "payment" ? "Принять оплату" : "Новая услуга"}</DialogTitle>
         <DialogContent dividers sx={{ bgcolor: (theme) => subtleBg(theme), display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2, pt: 2.5 }}>
           {dialog === "contract" && <><TextField select required label="Клиент" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} fullWidth>{(clientsQuery.data ?? []).map((client) => <MenuItem key={client.id} value={client.id}>{client.fullName}</MenuItem>)}</TextField><TextField select required label="Объект продажи" value={form.offeringId} onChange={(e) => setForm({ ...form, offeringId: e.target.value })} fullWidth>{(offeringsQuery.data ?? []).filter((o) => o.status === "active").map((offering) => <MenuItem key={offering.id} value={offering.id}>{offering.name}</MenuItem>)}</TextField><TextField label="Название контракта" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} fullWidth /><TextField label="Особая цена" type="number" value={form.priceOverride} onChange={(e) => setForm({ ...form, priceOverride: e.target.value })} fullWidth /><TextField required label="Начало" type="date" value={form.startsOn} onChange={(e) => setForm({ ...form, startsOn: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField label="Окончание" type="date" value={form.endsOn} onChange={(e) => setForm({ ...form, endsOn: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField label="День начисления" type="number" inputProps={{ min: 1, max: 31 }} value={form.billingDay} onChange={(e) => setForm({ ...form, billingDay: e.target.value })} /></>}
           {dialog === "charge" && <><TextField select required label="Контракт" value={form.subscriptionId} onChange={(e) => { const c = contractsQuery.data?.items.find((row) => row.id === Number(e.target.value)); setForm({ ...form, subscriptionId: e.target.value, clientId: c ? String(c.clientId) : "" }); }} fullWidth sx={{ gridColumn: "1 / -1" }}>{(contractsQuery.data?.items ?? []).filter((c) => c.status === "active").map((contract) => <MenuItem key={contract.id} value={contract.id}>№ {contract.number ?? contract.id} · {contract.clientName} · {contract.offeringName}</MenuItem>)}</TextField><TextField required label="Назначение" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} fullWidth sx={{ gridColumn: "1 / -1" }} /><TextField required label="Сумма" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /><TextField required label="Срок оплаты" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} InputLabelProps={{ shrink: true }} /><TextField required label="Период" value={form.periodKey} onChange={(e) => setForm({ ...form, periodKey: e.target.value })} helperText="Например, 2026-09" /></>}
           {dialog === "payment" && <><TextField select required label="Клиент" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value, chargeId: "" })} fullWidth>{(clientsQuery.data ?? []).map((client) => <MenuItem key={client.id} value={client.id}>{client.fullName}</MenuItem>)}</TextField><TextField select label="Начисление" value={form.chargeId} onChange={(e) => { const charge = chargesQuery.data?.items.find((row) => row.id === Number(e.target.value)); setForm({ ...form, chargeId: e.target.value, clientId: charge ? String(charge.clientId) : form.clientId, amount: charge ? String(Math.max(0, Number(charge.amount) - Number(charge.paidAmount))) : form.amount }); }} fullWidth><MenuItem value="">Без начисления — на баланс</MenuItem>{(chargesQuery.data?.items ?? []).filter((c) => !["paid", "cancelled"].includes(c.status)).map((charge) => <MenuItem key={charge.id} value={charge.id}>№ {charge.number} · {charge.clientName} · {formatMoney(Number(charge.amount) - Number(charge.paidAmount))}</MenuItem>)}</TextField><TextField required label="Сумма" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /><TextField select required label="Способ" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}><MenuItem value="cash">Наличные</MenuItem><MenuItem value="transfer">Банковский перевод</MenuItem><MenuItem value="bakai">Bakai Pay</MenuItem></TextField></>}
           {dialog === "offering" && <><TextField select required label="Тип" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}><MenuItem value="service">Услуга</MenuItem><MenuItem value="course">Курс</MenuItem><MenuItem value="rental">Аренда</MenuItem></TextField><TextField required label="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><TextField label="Категория" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /><TextField required label="Стоимость" type="number" value={form.priceAmount} onChange={(e) => setForm({ ...form, priceAmount: e.target.value })} /><TextField select required label="Периодичность" value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })}>{Object.entries(CYCLE_LABELS).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField>{form.kind === "course" && <><TextField required label="Количество мест" type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /><TextField required label="Количество занятий" type="number" value={form.sessionsTotal} onChange={(e) => setForm({ ...form, sessionsTotal: e.target.value })} /><TextField required label="Расписание" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} helperText="Например: пн/ср/пт 18:00" /><TextField required label="Начало курса" type="date" value={form.startsOn} onChange={(e) => setForm({ ...form, startsOn: e.target.value })} InputLabelProps={{ shrink: true }} /></>}{form.kind === "rental" && <><TextField select required label="Тип объекта" value={form.objectType} onChange={(e) => setForm({ ...form, objectType: e.target.value })}><MenuItem value="apartment">Квартира</MenuItem><MenuItem value="house">Дом</MenuItem><MenuItem value="floor">Этаж</MenuItem><MenuItem value="office">Офис</MenuItem><MenuItem value="land">Участок</MenuItem><MenuItem value="warehouse">Склад</MenuItem><MenuItem value="retail">Торговая площадь</MenuItem><MenuItem value="parking">Парковка</MenuItem><MenuItem value="other">Другое</MenuItem></TextField><TextField select required label="Единица площади" value={form.areaUnit} onChange={(e) => setForm({ ...form, areaUnit: e.target.value })}><MenuItem value="sqm">м²</MenuItem><MenuItem value="sotka">сотка</MenuItem></TextField><TextField select required label="Ставка за" value={form.ratePeriod} onChange={(e) => setForm({ ...form, ratePeriod: e.target.value })}><MenuItem value="day">Сутки</MenuItem><MenuItem value="month">Месяц</MenuItem><MenuItem value="year">Год</MenuItem></TextField><TextField label="Площадь" type="number" value={form.areaValue} onChange={(e) => setForm({ ...form, areaValue: e.target.value })} /><TextField label="Адрес" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} sx={{ gridColumn: "1 / -1" }} /><TextField label="Депозит" type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} /></>}</>}
-          {dialog === "defaults" && <><TextField select label="Периодичность" value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })}>{Object.entries(CYCLE_LABELS).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField><TextField label="Создавать за, дней" type="number" value={form.chargeLeadDays} onChange={(e) => setForm({ ...form, chargeLeadDays: e.target.value })} /><TextField label="Срок оплаты, дней" type="number" value={form.paymentTermDays} onChange={(e) => setForm({ ...form, paymentTermDays: e.target.value })} helperText="Пусто — по календарному дню" /><TextField label="Льготный период, дней" type="number" value={form.graceDays} onChange={(e) => setForm({ ...form, graceDays: e.target.value })} /><TextField label="Напомнить за, дней" type="number" value={form.notifyDaysBeforeDue} onChange={(e) => setForm({ ...form, notifyDaysBeforeDue: e.target.value })} /><Box sx={{ border: (theme) => `1px solid ${subtleBorder(theme)}`, borderRadius: 2, p: 1 }}><FormControlLabel control={<Checkbox checked={form.autoCharge} onChange={(_, v) => setForm({ ...form, autoCharge: v })} />} label="Автоначисление" /><FormControlLabel control={<Checkbox checked={form.notifyOnCharge} onChange={(_, v) => setForm({ ...form, notifyOnCharge: v })} />} label="Уведомлять о начислении" /><FormControlLabel control={<Checkbox checked={form.notifyOnOverdue} onChange={(_, v) => setForm({ ...form, notifyOnOverdue: v })} />} label="Уведомлять о просрочке" /></Box></>}
         </DialogContent>
         <DialogActions><Button onClick={() => setDialog(null)} disabled={submitMutation.isPending}>Отмена</Button><Button variant="contained" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || (dialog === "contract" && (!form.clientId || !form.offeringId)) || (dialog === "charge" && (!form.subscriptionId || !form.purpose || !form.amount)) || (dialog === "payment" && (!form.clientId || !form.amount)) || (dialog === "offering" && (!form.name || !form.priceAmount || (form.kind === "course" && (!form.capacity || !form.sessionsTotal || !form.schedule))))}>{submitMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}</Button></DialogActions>
       </Dialog>
