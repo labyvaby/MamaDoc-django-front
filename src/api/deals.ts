@@ -332,6 +332,7 @@ export interface MoveDealResponse {
 export interface DealsFunnelStage {
   stageId: number;
   name: string;
+  /** Сверх контракта, но приходит: тип и порядок этапа — чтобы не сверять со stages/. */
   kind: DealStageKind;
   order: number;
   /** Вошло в этап за период — считается по логу переходов, не по текущему положению. */
@@ -355,21 +356,21 @@ export interface DealsFunnelTotals {
   pipelineAmount: string;
 }
 
-export interface DealsFunnelBySource {
-  sourceId: number | null;
+/**
+ * Разбивка аналитики. ⚠ Ключ именно `id`, а не `sourceId`/`assigneeId`, как
+ * обещал контракт: проверено на живом API 01.09.2026. `null` — «без источника»
+ * / «без ответственного», бэк отдаёт их строкой «—».
+ */
+export interface DealsFunnelBreakdown {
+  id: number | null;
   name: string;
   created: number;
   won: number;
   wonAmount: string;
 }
 
-export interface DealsFunnelByAssignee {
-  assigneeId: number | null;
-  name: string;
-  created: number;
-  won: number;
-  wonAmount: string;
-}
+export type DealsFunnelBySource = DealsFunnelBreakdown;
+export type DealsFunnelByAssignee = DealsFunnelBreakdown;
 
 export interface DealsFunnelLostReason {
   lostReasonId: number | null;

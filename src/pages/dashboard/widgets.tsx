@@ -13,6 +13,8 @@ import ReplayOutlined from "@mui/icons-material/ReplayOutlined";
 import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import FilterAltOutlined from "@mui/icons-material/FilterAltOutlined";
+import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
 
 import { AppCard, AppButton } from "../../components/ui";
 import { getDayCounts } from "../../api/appointments";
@@ -20,6 +22,7 @@ import { getCashboxSummary } from "../../api/cashbox";
 import { getMonthlyReport } from "../../api/reports";
 import { getReviewStats } from "../../api/reviews";
 import { getTasksSummary } from "../../api/tasks";
+import { getDealsSummary } from "../../api/deals";
 import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../api/queryKeys";
 import { formatKGS } from "../../utility/format";
 import { subtleBg } from "../../theme/uiHelpers";
@@ -564,6 +567,79 @@ export const TasksWidget: React.FC<WidgetProps> = ({ scope }) => {
               href="/tasks" value={s.awaitingApproval} tone="warning" />
             </Grid>
           )}
+        </Grid>
+      )}
+    </AppCard>
+  );
+};
+
+// ── Воронка продаж ────────────────────────────────────────────────────────────
+
+/**
+ * Обращения в работе и то, что мешает им двигаться.
+ *
+ * Периода не имеет: вопрос всегда про «сейчас» — сколько денег в воронке и
+ * кому надо позвонить сегодня. Ретроспектива живёт во вкладке аналитики,
+ * туда и уводим по клику.
+ */
+export const DealsWidget: React.FC<WidgetProps> = ({ scope }) => {
+  const query = useQuery({
+    queryKey: djangoQueryKeys.deals.summary({ organizationId: scope.organizationId }),
+    queryFn: ({ signal }) => getDealsSummary({ organizationId: scope.organizationId }, signal),
+    enabled: scope.orgReady,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+
+  const s = query.data;
+  const loading = query.isLoading;
+
+  return (
+    <AppCard variant="outlined" elevation={0} title="Воронка продаж" subheader="сейчас">
+      {query.isError ? (
+        <WidgetError error={query.error} />
+      ) : (
+        <Grid container spacing={1.5}>
+          <Grid item xs={6}>
+            <MetricTile
+              label="В работе"
+              href="/deals"
+              value={s?.openCount ?? 0}
+              icon={<FilterAltOutlined />}
+              hint={s ? formatKGS(s.openAmount) : undefined}
+              loading={loading}
+            />
+          </Grid>
+          <Grid item xs={6}>
+            {/* Просроченное касание — то, из-за чего лиды умирают молча. */}
+            <MetricTile
+              label="Просрочено касаний"
+              href="/deals?action=overdue"
+              value={s?.overdueActionsCount ?? 0}
+              icon={<WarningAmberOutlined />}
+              tone={s && s.overdueActionsCount > 0 ? "error" : "neutral"}
+              loading={loading}
+            />
+          </Grid>
+          <Grid item xs={6}>
+            <MetricTile
+              label="На сегодня"
+              href="/deals?action=today"
+              value={s?.todayActionsCount ?? 0}
+              icon={<AccessTimeOutlined />}
+              loading={loading}
+            />
+          </Grid>
+          <Grid item xs={6}>
+            <MetricTile
+              label="Выиграно"
+              href="/deals?tab=analytics"
+              value={s?.wonCount ?? 0}
+              icon={<TrendingUpOutlined />}
+              tone={s && s.wonCount > 0 ? "success" : "neutral"}
+              hint={s ? formatKGS(s.wonAmount) : undefined}
+              loading={loading}
+            />
+          </Grid>
         </Grid>
       )}
     </AppCard>

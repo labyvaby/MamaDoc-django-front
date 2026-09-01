@@ -18,6 +18,7 @@ export type WidgetId =
   | "month"
   | "staff"
   | "tasks"
+  | "deals"
   | "reviews";
 
 export type WidgetSpan = 4 | 6 | 12;
@@ -78,6 +79,7 @@ export const WIDGETS: WidgetMeta[] = [
     span: 6,
   },
   { id: "tasks", label: "Задачи", permission: PAGE_PERMISSIONS.tasks, span: 6 },
+  { id: "deals", label: "Воронка продаж", permission: PAGE_PERMISSIONS.deals, span: 6 },
   { id: "reviews", label: "Отзывы", permission: PAGE_PERMISSIONS.reviews, span: 6 },
 ];
 

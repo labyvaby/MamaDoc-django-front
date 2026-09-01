@@ -9,11 +9,12 @@ import dayjs from "dayjs";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import FilterAltOffOutlined from "@mui/icons-material/FilterAltOffOutlined";
 
-import { AppButton, ListEmptyState, PageHeader } from "../../components/ui";
+import { AppButton, ListEmptyState, PageHeader, SegmentedTabs } from "../../components/ui";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import CreateDealDrawer from "../../components/deals/CreateDealDrawer";
 import DealDetailDrawer from "../../components/deals/DealDetailDrawer";
 import DealBoardView from "./DealBoardView";
+import DealsAnalyticsView from "./DealsAnalyticsView";
 import { subtleBg } from "../../theme/uiHelpers";
 import { useT } from "../../i18n/VerticalProvider";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -34,6 +35,8 @@ import { DEALS_REFRESH_MS, dealsErrorMessage } from "./meta";
 
 /** Пилюля-фильтр по касаниям: «На сегодня» / «Просрочено». */
 type ActionPill = "today" | "overdue" | null;
+
+type DealsTab = "board" | "analytics";
 
 const DealsPage: React.FC = () => {
   const { t } = useT("deals");
@@ -69,6 +72,9 @@ const DealsPage: React.FC = () => {
     (searchParams.get("action") as ActionPill) ?? null,
   );
 
+  const [tab, setTab] = React.useState<DealsTab>(
+    (searchParams.get("tab") as DealsTab) || "board",
+  );
   const [createOpen, setCreateOpen] = React.useState(false);
   const [openDealId, setOpenDealId] = React.useState<number | null>(null);
   const [toast, setToast] = React.useState<{ text: string; severity: "error" | "success" } | null>(
@@ -77,13 +83,14 @@ const DealsPage: React.FC = () => {
 
   React.useEffect(() => {
     const next = new URLSearchParams();
+    if (tab !== "board") next.set("tab", tab);
     if (pipelineId !== "") next.set("pipeline", String(pipelineId));
     if (debouncedSearch) next.set("q", debouncedSearch);
     if (assigneeId !== "") next.set("assignee", String(assigneeId));
     if (sourceId !== "") next.set("source", String(sourceId));
     if (actionPill) next.set("action", actionPill);
     setSearchParams(next, { replace: true });
-  }, [pipelineId, debouncedSearch, assigneeId, sourceId, actionPill, setSearchParams]);
+  }, [tab, pipelineId, debouncedSearch, assigneeId, sourceId, actionPill, setSearchParams]);
 
   const { employees } = useAllActiveEmployees(canView && !permLoading);
 
@@ -182,6 +189,24 @@ const DealsPage: React.FC = () => {
           description={t("notConfiguredHint")}
         />
       ) : (
+        <>
+          <SegmentedTabs<DealsTab>
+            tabs={[
+              { key: "board", label: t("tabs.board") },
+              { key: "analytics", label: t("tabs.analytics") },
+            ]}
+            value={tab}
+            onChange={setTab}
+            layoutId="deals-tabs"
+          />
+
+          {tab === "analytics" ? (
+            <DealsAnalyticsView
+              pipelineId={activePipeline?.id}
+              orgId={orgId}
+              enabled={activePipeline != null}
+            />
+          ) : (
         <>
           {/* Ряд фильтров пилюлями — тот же паттерн, что на доске задач. */}
           <Stack
@@ -333,6 +358,8 @@ const DealsPage: React.FC = () => {
               ) : undefined
             }
           />
+        </>
+          )}
         </>
       )}
 
