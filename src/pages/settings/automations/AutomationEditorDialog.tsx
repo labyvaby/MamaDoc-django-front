@@ -30,6 +30,7 @@ import SendOutlined from "@mui/icons-material/SendOutlined";
 
 import {
   MAX_DELAY_MINUTES,
+  MAX_INTERVAL_DAYS,
   createAutomation,
   testAutomation,
   updateAutomation,
@@ -46,11 +47,13 @@ import { useT } from "../../../i18n/VerticalProvider";
 import { ConditionBuilder } from "./ConditionBuilder";
 import { FieldValueInput } from "./FieldValueInput";
 import { PhonePayloadInput } from "./PhonePayloadInput";
+import { ScheduleEditor } from "./ScheduleEditor";
 import {
   automationToForm,
   defaultRecipientField,
   emptyForm,
   hasErrors,
+  isScheduledForm,
   makeAction,
   supportsTitle,
   relevantPayloadFields,
@@ -59,6 +62,7 @@ import {
   supportsBranchFilter,
   toConditions,
   toSaveInput,
+  toSchedule,
   validateForm,
   type ActionForm,
   type AutomationForm,
@@ -117,6 +121,9 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     () => catalog.events.find((item) => item.code === form.eventCode),
     [catalog.events, form.eventCode],
   );
+  /** Правило по расписанию: вместо условий — периодичность, вместо
+      переменной-получателя — введённый номер телефона. */
+  const scheduled = isScheduledForm(form);
 
   /**
    * Форма берётся из пропсов ровно один раз — при открытии диалога.
@@ -179,6 +186,12 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
       unknownField: (code: string) => t("automations.conditions.unknownField", { code }),
       bodyRequired: t("automations.action.bodyRequired"),
       delayRange: t("automations.action.delayRange", { max: MAX_DELAY_MINUTES }),
+      weekdaysRequired: t("automations.schedule.weekdaysRequired"),
+      intervalRange: t("automations.schedule.intervalRange", {
+        max: MAX_INTERVAL_DAYS,
+      }),
+      timeRequired: t("automations.schedule.timeRequired"),
+      phoneRequired: t("automations.action.phoneRequired"),
     }),
     [t],
   );
@@ -276,6 +289,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
         conditions: toConditions(form),
         actions: toSaveInput(form, organizationId).actions,
         eventPayload: testPayload,
+        ...(scheduled ? { schedule: toSchedule(form) } : {}),
         ...(organizationId != null ? { organizationId } : {}),
       }),
     onSuccess: (result) => {
@@ -425,6 +439,15 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                   </Alert>
                 )}
 
+                {scheduled && (
+                  <ScheduleEditor
+                    value={form.schedule}
+                    onChange={(schedule) => update({ schedule })}
+                    error={submitted ? errors.schedule : undefined}
+                    disabled={busy}
+                  />
+                )}
+
                 {branchSupported ? (
                   <TextField
                     select
@@ -452,6 +475,9 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
               </Stack>
             </Section>
 
+            {/* У расписания условий не бывает: данных события, по которым
+                их проверять, попросту нет. */}
+            {!scheduled && (
             <Section title={t("automations.steps.if")} hint={t("automations.steps.ifHint")}>
               <ConditionBuilder
                 event={event}
@@ -463,6 +489,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                 disabled={busy}
               />
             </Section>
+            )}
 
             <Section title={t("automations.steps.then")} hint={t("automations.steps.thenHint")}>
               <Stack spacing={2}>
@@ -515,7 +542,11 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
 
                         <TextField
                           size="small"
-                          label={t("automations.action.delayLabel")}
+                          label={t(
+                            scheduled
+                              ? "automations.action.delayLabelSchedule"
+                              : "automations.action.delayLabel",
+                          )}
                           value={action.delayMinutes}
                           onChange={(e) =>
                             updateAction(action.key, {
@@ -527,16 +558,41 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           error={Boolean(errors.actionFields[action.key]?.delayMinutes)}
                           helperText={
                             errors.actionFields[action.key]?.delayMinutes ??
-                            t("automations.action.delayHint")
+                            t(
+                              scheduled
+                                ? "automations.action.delayHintSchedule"
+                                : "automations.action.delayHint",
+                            )
                           }
                           sx={{ minWidth: 200 }}
                         />
+
+                        {/* У расписания payload нет — номер вводится руками.
+                            Тем же полем, что и в карточке пациента: код
+                            страны, маска, проверка длины. */}
+                        {scheduled && (
+                          <Box sx={{ minWidth: 240, flex: 1 }}>
+                            <PhonePayloadInput
+                              label={t("automations.action.phoneLabel")}
+                              helperText={
+                                errors.actionFields[action.key]?.recipientPhone ??
+                                t("automations.action.phoneHint")
+                              }
+                              value={action.recipientPhone}
+                              onChange={(phone) =>
+                                updateAction(action.key, { recipientPhone: phone })
+                              }
+                              disabled={busy}
+                            />
+                          </Box>
+                        )}
 
                         {/* Выбор получателя показываем, только когда выбирать
                             действительно есть из чего. У всех текущих событий
                             телефон ровно один — спрашивать «откуда взять
                             номер» бессмысленно, достаточно назвать источник. */}
-                        {recipientChoices(event, action.recipientField).length > 1 && (
+                        {!scheduled &&
+                          recipientChoices(event, action.recipientField).length > 1 && (
                           <TextField
                             select
                             size="small"
@@ -567,7 +623,8 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         )}
                       </Stack>
 
-                      {recipientChoices(event, action.recipientField).length <= 1 && (
+                      {!scheduled &&
+                        recipientChoices(event, action.recipientField).length <= 1 && (
                         <Typography variant="caption" color="text.secondary">
                           {t("automations.action.recipientFixed", {
                             name: variableLabel(event, action.recipientField),

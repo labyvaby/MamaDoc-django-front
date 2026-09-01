@@ -111,6 +111,11 @@ export type AutomationConditions =
 export interface AutomationActionConfig {
   channel?: string;
   recipientField?: string;
+  /**
+   * Телефон получателя целиком («+996700000001»). Только у правил по
+   * расписанию: события там нет, брать номер из payload неоткуда.
+   */
+  recipientPhone?: string;
   /** Заголовок push-уведомления; у SMS и WhatsApp заголовка нет. */
   title?: string;
   body?: string;
@@ -125,6 +130,26 @@ export interface AutomationAction {
   config: AutomationActionConfig;
 }
 
+/**
+ * Повторение правила по расписанию.
+ *
+ * `weekly` — по выбранным дням недели (0 = понедельник), `interval_days` —
+ * каждые N дней от `startDate` (по умолчанию — день сохранения). Время всегда
+ * местное для филиала правила, а для правила «во всех филиалах» — по часовому
+ * поясу установки.
+ */
+export interface AutomationSchedule {
+  kind: "weekly" | "interval_days";
+  /** «ЧЧ:ММ». */
+  time: string;
+  /** Только у `weekly`. 0 = понедельник, 6 = воскресенье. */
+  weekdays?: number[];
+  /** Только у `interval_days`. */
+  intervalDays?: number;
+  /** Только у `interval_days`: «ГГГГ-ММ-ДД», точка отсчёта сетки. */
+  startDate?: string;
+}
+
 export interface Automation {
   id: number;
   organizationId: number;
@@ -136,6 +161,11 @@ export interface Automation {
   status: AutomationStatus;
   conditions: AutomationConditions;
   actions: AutomationAction[];
+  /** Пусто у правила по событию. */
+  schedule: AutomationSchedule | Record<string, never>;
+  /** Ближайшее срабатывание; `null` у события и у неактивного расписания. */
+  nextRunAt: string | null;
+  lastRunAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -157,6 +187,8 @@ export interface AutomationSaveInput {
   branchId: number | null;
   conditions: AutomationConditions;
   actions: AutomationActionInput[];
+  /** Обязательно для события расписания, игнорируется для остальных. */
+  schedule?: AutomationSchedule;
   organizationId?: number;
 }
 
@@ -199,6 +231,7 @@ export interface AutomationTestInput {
   conditions: AutomationConditions;
   actions: AutomationActionInput[];
   eventPayload: Record<string, unknown>;
+  schedule?: AutomationSchedule;
   organizationId?: number;
 }
 
@@ -344,6 +377,22 @@ export function isEmptyConditions(
  * каталоге — нет и в выпадающем списке.
  */
 export const PROFICHAT_PUSH_CHANNEL = "profichat_push";
+
+/**
+ * Псевдособытие правила по расписанию.
+ *
+ * В каталоге оно приходит как обычное событие — но без полей условий: сама
+ * периодичность и есть триггер, проверять там нечего.
+ */
+export const SCHEDULE_EVENT_CODE = "schedule.recurring";
+
+/** Правило запускается расписанием, а не событием домена. */
+export function isScheduledEvent(eventCode: string): boolean {
+  return eventCode === SCHEDULE_EVENT_CODE;
+}
+
+/** Верхняя граница `intervalDays` — ограничение бэка. */
+export const MAX_INTERVAL_DAYS = 365;
 
 /** Операторы, которым `value` не нужен вовсе. */
 export const OPERATORS_WITHOUT_VALUE = new Set(["exists"]);
