@@ -48,8 +48,9 @@ export interface UseDjangoAppointmentDataResult {
  * Loads performers, services, and the service↔employee assignment matrix for
  * the appointment form. ``branchId`` narrows services and the matrix to the
  * specified branch (matching appointment save-time validation). Everything is
- * fetched through appointments/catalog endpoints (appointments.view +
- * catalog.view) — no staff.view required, so clinicians can open the form.
+ * fetched through appointments/catalog endpoints. The catalog is optional:
+ * clinicians may have appointments.view without catalog.view, and the
+ * appointment form must still be able to edit an existing visit.
  */
 export function useDjangoAppointmentData(
   enabled: boolean,
@@ -68,7 +69,11 @@ export function useDjangoAppointmentData(
       // Performers come from the appointments-scoped service-providers
       // endpoint (bulk mode), NOT /staff/employees/ — clinicians lack
       // staff.view and were getting 403 on opening the form.
-      const [rawProviders, rawServices, rawAssignments] = await Promise.all([
+      // Do not let a forbidden catalog request discard the appointment-scoped
+      // provider/matrix responses. A clinician can edit appointments without
+      // having access to the full catalog page (catalog.view).
+      const [providersResult, servicesResult, assignmentsResult] =
+        await Promise.allSettled([
         getServiceProviders({ branchId: branchId ?? undefined }, signal),
         // ⚠ /catalog/services/ отвечает 404 «branchId не совпадает с активным
         // филиалом», если филиал запроса не равен филиалу сессии (проверено на
@@ -80,7 +85,28 @@ export function useDjangoAppointmentData(
         ),
         getServiceAssignments(branchId ?? undefined, signal),
       ]);
-      return { rawProviders, rawServices, rawAssignments };
+
+      const rawProviders =
+        providersResult.status === "fulfilled" ? providersResult.value : [];
+      const rawServices =
+        servicesResult.status === "fulfilled" ? servicesResult.value : [];
+      const rawAssignments =
+        assignmentsResult.status === "fulfilled" ? assignmentsResult.value : [];
+      const referenceError =
+        providersResult.status === "rejected"
+          ? providersResult.reason
+          : assignmentsResult.status === "rejected"
+            ? assignmentsResult.reason
+            : null;
+
+      return {
+        rawProviders,
+        rawServices,
+        rawAssignments,
+        assignmentsLoaded: assignmentsResult.status === "fulfilled",
+        referenceError:
+          referenceError instanceof Error ? referenceError.message : null,
+      };
     },
     enabled,
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
@@ -154,9 +180,12 @@ export function useDjangoAppointmentData(
   const canEmployeeProvideService = React.useCallback(
     (employeeId: number | null, serviceId: number | null): boolean => {
       if (employeeId === null || serviceId === null) return true;
+      // If the matrix request failed, defer the authoritative validation to
+      // the backend instead of showing a false performer mismatch locally.
+      if (dataQuery.data && !dataQuery.data.assignmentsLoaded) return true;
       return svcByEmployee.get(employeeId)?.has(serviceId) ?? false;
     },
-    [svcByEmployee],
+    [dataQuery.data, svcByEmployee],
   );
 
   return {
@@ -165,7 +194,10 @@ export function useDjangoAppointmentData(
     services,
     serviceProviders: [],
     loading: dataQuery.isLoading,
-    error: dataQuery.error instanceof Error ? dataQuery.error.message : null,
+    error:
+      dataQuery.error instanceof Error
+        ? dataQuery.error.message
+        : dataQuery.data?.referenceError ?? null,
     getEmployeesForService,
     getServicesForEmployee,
     canEmployeeProvideService,

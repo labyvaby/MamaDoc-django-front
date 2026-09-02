@@ -209,6 +209,42 @@ function lineHasConclusion(line: AppointmentServiceLine): boolean {
   );
 }
 
+/**
+ * A clinician may open an existing appointment without catalog.view. Keep the
+ * service snapshot returned with that appointment available to the form so the
+ * selected value and its price still render when the catalog request is 403.
+ */
+function appointmentServiceOption(
+  line: AppointmentServiceLine,
+  organizationId: number,
+): DjangoCatalogServiceWithEmployees | null {
+  const service = line.service;
+  if (!service) return null;
+  return {
+    id: service.id,
+    organizationId,
+    name: service.name,
+    slug: "",
+    description: null,
+    durationMinutes: service.durationMinutes,
+    basePrice: service.basePrice,
+    isActive: true,
+    onlineBookingVisible: true,
+    allowPriceOverride: line.allowPriceOverride !== false,
+    imageUrl: service.imageUrl,
+    sortOrder: 0,
+    category: null,
+    relatedProductId: null,
+    relatedProduct: null,
+    relatedProducts: [],
+    branches: [],
+    hasHiddenBranches: false,
+    createdAt: "",
+    updatedAt: "",
+    assignedEmployeeIds: line.employee?.id != null ? [line.employee.id] : [],
+  };
+}
+
 /** Цена единицы строки: своя (сохранённая/правленая) либо цена каталога. */
 function rowUnitPrice(
   row: Pick<ServiceRow, "serviceId" | "unitPrice">,
@@ -366,6 +402,19 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     activeOrganization?.id ?? null,
     activeMembership?.id ?? null,
   );
+
+  // The appointment response contains a service snapshot. Merge it only for
+  // services missing from the catalog response (inactive/forbidden), keeping
+  // the full catalog object whenever it is available.
+  const servicesForForm = React.useMemo(() => {
+    const byId = new Map(data.services.map((service) => [service.id, service]));
+    if (!appointment) return [...byId.values()];
+    for (const line of appointment.services) {
+      const fallback = appointmentServiceOption(line, appointment.organizationId);
+      if (fallback && !byId.has(fallback.id)) byId.set(fallback.id, fallback);
+    }
+    return [...byId.values()];
+  }, [appointment, data.services]);
 
   // ── form ────────────────────────────────────────────────────────────────
   const [scheduledAt, setScheduledAt] = React.useState<string>("");
@@ -730,8 +779,8 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
   // стоит другое. Цена каталога нужна только новым строкам, у которых
   // unitPrice ещё пустой.
   const servicesTotal = React.useMemo(
-    () => validRows.reduce((sum, r) => sum + rowAmount(r, data.services), 0),
-    [validRows, data.services],
+    () => validRows.reduce((sum, r) => sum + rowAmount(r, servicesForForm), 0),
+    [validRows, servicesForForm],
   );
   const productsTotal = React.useMemo(
     () => productRows.reduce((sum, r) => sum + r.unitPrice * parseQty(r.quantity), 0),
@@ -744,23 +793,23 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
     () =>
       validRows.reduce((sum, r) => {
         if (r.lineId != null) return sum + billableRowsTotal(r.consumptions);
-        const svc = data.services.find((s) => s.id === r.serviceId);
+        const svc = servicesForForm.find((s) => s.id === r.serviceId);
         return svc ? sum + previewBillableTotal(svc.relatedProducts, r.quantity) : sum;
       }, 0),
-    [validRows, data.services],
+    [validRows, servicesForForm],
   );
   const grandTotal = servicesTotal + productsTotal + consumptionsTotal;
   // Суммарная длительность услуг — по ней видно, на сколько занят слот.
   const totalDuration = React.useMemo(
     () =>
       validRows.reduce((sum, r) => {
-        const svc = data.services.find((s) => s.id === r.serviceId);
+        const svc = servicesForForm.find((s) => s.id === r.serviceId);
         const duration = r.durationMinutes.trim()
           ? Number(r.durationMinutes)
           : (svc?.durationMinutes ?? 0);
         return sum + duration * (r.quantity > 0 ? r.quantity : 1);
       }, 0),
-    [validRows, data.services],
+    [validRows, servicesForForm],
   );
 
   // Каталог + товары существующих строк, выпавшие из каталога (кончился
@@ -1426,9 +1475,21 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                               }
                             >
                               {group.rows.map(({ row, index }, rowIndex) => {
+                                const existingService = servicesForForm.find(
+                                  (s) => s.id === row.serviceId,
+                                );
+                                const serviceOptions =
+                                  row.employeeId !== null
+                                    ? [
+                                        ...availableServices,
+                                        ...(existingService &&
+                                        !availableServices.some((s) => s.id === existingService.id)
+                                          ? [existingService]
+                                          : []),
+                                      ]
+                                    : servicesForForm;
                                 const selectedService =
-                                  availableServices.find((s) => s.id === row.serviceId) ??
-                                  data.services.find((s) => s.id === row.serviceId) ??
+                                  serviceOptions.find((s) => s.id === row.serviceId) ??
                                   null;
                                 const incompatible =
                                   row.serviceId !== null &&
@@ -1487,13 +1548,13 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                   // appointments.edit_with_conclusion — без
                                   // права поле заблокировано сразу.
                                   disabled={row.hasConclusion && !canEditLocked}
-                                  options={row.employeeId !== null ? availableServices : data.services}
+                                  options={serviceOptions}
                                   loading={data.loading}
                                   value={selectedService}
                                   // Симметрично исполнителю: у выбранного
                                   // специалиста может не быть назначенных услуг.
                                   noOptionsText={
-                                    row.employeeId !== null && availableServices.length === 0
+                                    row.employeeId !== null && serviceOptions.length === 0
                                       ? t("serviceRow.noServiceForEmployee")
                                       : t("serviceRow.noServiceMatches")
                                   }
@@ -1567,10 +1628,10 @@ const DjangoEditAppointmentDrawer: React.FC<DjangoEditAppointmentDrawerProps> = 
                                         }
                                         suffix={
                                           <>
-                                            {rowAmount(row, data.services) !==
-                                            rowUnitPrice(row, data.services)
+                                            {rowAmount(row, servicesForForm) !==
+                                            rowUnitPrice(row, servicesForForm)
                                               ? t("editDrawer.lineTotalSuffix", {
-                                                  amount: formatKGS(rowAmount(row, data.services)),
+                                                  amount: formatKGS(rowAmount(row, servicesForForm)),
                                                 })
                                               : ""}
                                             {discount > 0
