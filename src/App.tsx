@@ -123,6 +123,7 @@ const SpecializationsSettingsPage = lazy(() => import("./pages/settings/Speciali
 const BanksSettingsPage = lazy(() => import("./pages/settings/BanksSettingsPage"));
 const InsurersSettingsPage = lazy(() => import("./pages/settings/InsurersSettingsPage"));
 const CashlessMethodsSettingsPage = lazy(() => import("./pages/settings/CashlessMethodsSettingsPage"));
+const OdoctorSettingsPage = lazy(() => import("./pages/settings/OdoctorSettingsPage"));
 const ProductAttributesSettingsPage = lazy(() => import("./pages/settings/ProductAttributesSettingsPage"));
 const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPage"));
 // Реестры «Все приёмы» / «Все процедуры» — исторический список за период
@@ -728,6 +729,16 @@ function App() {
                             <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.automations}>
                               <Suspense fallback={<LinearProgress />}>
                                 <AutomationsSettingsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="settings/odoctor"
+                          element={
+                            <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.odoctor}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <OdoctorSettingsPage />
                               </Suspense>
                             </RequirePermission>
                           }

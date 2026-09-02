@@ -62,7 +62,7 @@ import { useT } from "../../i18n/VerticalProvider";
 const CATEGORY_KEYS = [
   "appointments", "patients", "staff", "catalog", "content", "organization",
   "branches", "rbac", "roles", "users", "finance", "warehouse", "reports",
-  "attendance", "schedule", "services", "expenses",
+  "attendance", "schedule", "services", "expenses", "odoctor",
 ] as const;
 
 function categoryLabel(cat: string, t: (key: string) => string): string {

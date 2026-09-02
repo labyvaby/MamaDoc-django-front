@@ -85,6 +85,11 @@ export const SETTINGS_TAB_PERMISSIONS = {
   // у модуля нет (docs/automations-api.md §2).
   automations: PAGE_PERMISSIONS.notifications,
   productAttributes: "warehouse.manage",
+  // Витрина odoctor.kg. Право своё, а не общее с расписанием: за страницей
+  // лежит учётная запись внешнего кабинета — ключ от чужой системы. Читать и
+  // менять эти настройки бэк разрешает по одному и тому же коду, поэтому
+  // «смотреть, но не править» на странице нет.
+  odoctor: "odoctor.manage",
 } satisfies Record<string, string | string[]>;
 
 export type SettingsTabKey = keyof typeof SETTINGS_TAB_PERMISSIONS;

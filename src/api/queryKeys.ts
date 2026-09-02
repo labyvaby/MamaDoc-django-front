@@ -362,6 +362,13 @@ export const djangoQueryKeys = {
       ["django", "conclusion-forms", organizationId ?? null] as const,
   },
 
+  odoctor: {
+    // Строка настроек одна на организацию, списка нет — только объект в скоупе
+    // организации, поэтому и ключ один.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "odoctor", "settings", organizationId ?? null] as const,
+  },
+
   scheduling: {
     rules: (params: Record<string, unknown>) =>
       ["django", "scheduling", "rules", params] as const,
