@@ -7,6 +7,7 @@ import type {
   ProfessionalScheduleRule,
 } from "../../../api/publicBooking";
 import {
+  bookableBranches,
   branchHasSchedule,
   calendarsReady,
   dayOffDates,
@@ -283,5 +284,41 @@ describe("calendarsReady", () => {
 
   it("филиалов нет — готовности нет", () => {
     expect(calendarsReady([], { "1": [] })).toBe(false);
+  });
+});
+
+describe("bookableBranches", () => {
+  it("филиал без графика и без окон не показываем", () => {
+    const withRules = branch({ id: 13, rules: [rule()] });
+    const visible = bookableBranches([home, withRules], { 1: null, 13: "2026-09-04" }, 1);
+    expect(visible.map((b) => b.id)).toEqual([13]);
+  });
+
+  it("график есть, свободных дней нет — филиал остаётся: «нет свободного времени» ≠ «не принимает»", () => {
+    const busy = branch({ id: 13, rules: [rule()] });
+    const visible = bookableBranches([home, busy], { 1: null, 13: null }, 1);
+    expect(visible.map((b) => b.id)).toEqual([13]);
+  });
+
+  it("графика нет, но окна есть — филиал показываем", () => {
+    // Расписание могли вести исключениями, которых нет в запрошенном периоде.
+    const visible = bookableBranches([home, second], { 1: null, 13: "2026-09-04" }, 1);
+    expect(visible.map((b) => b.id)).toEqual([13]);
+  });
+
+  it("принимать негде вовсе — оставляем один домашний филиал ради адреса", () => {
+    const visible = bookableBranches([home, second], { 1: null, 13: null }, 1);
+    expect(visible.map((b) => b.id)).toEqual([1]);
+  });
+
+  it("негде принимать и домашнего в списке нет — первый из списка", () => {
+    const visible = bookableBranches([second], { 13: null }, 1);
+    expect(visible.map((b) => b.id)).toEqual([13]);
+  });
+
+  it("оба филиала рабочие — показываем оба", () => {
+    const a = branch({ id: 1, rules: [rule()] });
+    const b = branch({ id: 13, rules: [rule()] });
+    expect(bookableBranches([a, b], { 1: "2026-09-03", 13: "2026-09-04" }, 1)).toHaveLength(2);
   });
 });
