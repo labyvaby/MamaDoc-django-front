@@ -364,6 +364,7 @@
     "newVisit": "Новый {{visit.nom}}:",
     "employee": "{{employee.nom, capitalize}}: {{name}}",
     "patient": "{{patient.nom, capitalize}}: {{name}}",
+    "otherBranch": "{{employee.nom, capitalize}} в это время принимает в другом филиале",
     "cancel": "Нет, вернуться",
     "confirm": "Да, сохранить"
   },
@@ -634,6 +635,7 @@
     "free": "Свободно",
     "book": "Записать",
     "timePassed": "Время прошло",
+    "busyElsewhere": "Занят в другом филиале",
     "backToGrid": "К сетке {{specialist.genPl}}",
     "todayNearest": "Сегодня, ближайшее {{time}}",
     "tomorrow": "завтра",

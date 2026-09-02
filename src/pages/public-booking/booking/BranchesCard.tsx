@@ -54,6 +54,34 @@ const ExceptionChip: React.FC<{ label: string }> = ({ label }) => (
   </Box>
 );
 
+/**
+ * Есть ли в филиале свободное время: «ближайшее 3 сент» или «нет свободного
+ * времени». Отвечает на вопрос, ради которого пациент и открыл карточку.
+ */
+const SlotChip: React.FC<{ nearest: string | null }> = ({ nearest }) => {
+  const { t } = useT("publicBooking");
+  return (
+    <Box
+      sx={{
+        px: 0.85,
+        py: 0.3,
+        borderRadius: PILL_RADIUS,
+        fontSize: 11,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        whiteSpace: "nowrap",
+        ...(nearest
+          ? accentChip
+          : { bgcolor: "background.default", border: `1px solid ${BORDER}`, color: MUTED }),
+      }}
+    >
+      {nearest
+        ? t("branches.nearestSlot", { date: shortDate(nearest) })
+        : t("branches.noSlotsHere")}
+    </Box>
+  );
+};
+
 /** График филиала: правила строками, ближайшие исключения — чипами. */
 const BranchSchedule: React.FC<{ branch: ProfessionalScheduleBranch }> = ({ branch }) => {
   const { t } = useT("publicBooking");
@@ -124,6 +152,15 @@ interface BranchesCardProps {
   loading: boolean;
   selectedId: number | null;
   onSelect: (id: number) => void;
+  /**
+   * Ближайшее свободное окно каждого филиала (YYYY-MM-DD) или null, если окон
+   * нет; undefined — календари ещё грузятся.
+   *
+   * Без этого график филиала («Пн – Пт 09:00 – 16:30») читается как обещание
+   * записи, хотя свободных дней там может не быть вовсе — и наоборот, филиал
+   * без строки графика выглядит нерабочим, хотя окна в нём есть.
+   */
+  nearestByBranch?: Record<number, string | null>;
 }
 
 /**
@@ -143,6 +180,7 @@ export const BranchesCard: React.FC<BranchesCardProps> = ({
   loading,
   selectedId,
   onSelect,
+  nearestByBranch,
 }) => {
   const { t } = useT("publicBooking");
   const pickable = branches.length > 1;
@@ -177,11 +215,14 @@ export const BranchesCard: React.FC<BranchesCardProps> = ({
                 sx={{ fontSize: 18, mt: 0.25, flexShrink: 0, color: active ? BOOKING_PRIMARY : MUTED }}
               />
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography
-                  sx={{ fontSize: 14, fontWeight: 600, color: active ? BOOKING_PRIMARY : "text.primary" }}
-                >
-                  {branch.name}
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={0.75} flexWrap="wrap">
+                  <Typography
+                    sx={{ fontSize: 14, fontWeight: 600, color: active ? BOOKING_PRIMARY : "text.primary" }}
+                  >
+                    {branch.name}
+                  </Typography>
+                  {nearestByBranch && <SlotChip nearest={nearestByBranch[branch.id] ?? null} />}
+                </Stack>
                 {branch.address && (
                   <Typography sx={{ fontSize: 12.5, color: MUTED, lineHeight: 1.4 }}>
                     {branch.address}

@@ -46,7 +46,13 @@ import { useT } from "../../i18n/VerticalProvider";
 import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
 import { ScheduleCard } from "./booking/ScheduleCard";
 import { BranchesCard } from "./booking/BranchesCard";
-import { branchHasSchedule, dayOffDates } from "./booking/schedule";
+import {
+  dayOffDates,
+  nearestAvailableDate,
+  pickBranchWithSlots,
+  pickDefaultBranchId,
+  shortDate,
+} from "./booking/schedule";
 import { ServicesCard, type PickableService } from "./booking/ServicesCard";
 import { DoctorCard } from "./booking/DoctorCard";
 import { ReviewsDialog } from "./booking/ReviewsDialog";
@@ -168,7 +174,17 @@ const DoctorBookingPage: React.FC = () => {
   const [notFound, setNotFound] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [calendar, setCalendar] = React.useState<CalendarDay[]>([]);
+  /**
+   * Календари по филиалам: ключ — id филиала, "all" — выдача без branch_id
+   * (когда ручка расписания филиалов не дала).
+   *
+   * Грузим сразу все, а не только выбранный: иначе карточка говорит «окон нет»
+   * в филиале, где смен нет, умалчивая, что в соседнем они есть — врач выглядит
+   * нерабочим (жалоба 02.09.2026). Филиалов у специалиста один-три, запросы
+   * идут параллельно, и переключение филиала после этого не стоит ни одного
+   * запроса — раньше стоило.
+   */
+  const [calendarByBranch, setCalendarByBranch] = React.useState<Record<string, CalendarDay[]>>({});
   const [calendarLoading, setCalendarLoading] = React.useState(false);
 
   const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
@@ -264,19 +280,39 @@ const DoctorBookingPage: React.FC = () => {
     return () => controller.abort();
   }, [idOrSlug]);
 
+  /** Ближайший свободный день филиала (или null) — по загруженным календарям. */
+  const nearestDayByBranch = React.useMemo(() => {
+    const out: Record<number, string | null> = {};
+    for (const branch of scheduleBranches) {
+      out[branch.id] = nearestAvailableDate(calendarByBranch[String(branch.id)]);
+    }
+    return out;
+  }, [scheduleBranches, calendarByBranch]);
+
   /**
-   * Филиал по умолчанию. Основной филиал врача берём, только если в нём есть
-   * график: на проде обычная картина — «домашний» филиал 1 и смены в 13, и
-   * запись по умолчанию уходила бы в филиал, где врача в это время нет.
+   * Филиал по умолчанию — тот, где раньше всего есть свободное окно.
+   *
+   * Раньше выбирали по наличию правил в графике, и филиал с расписанием, но без
+   * свободных дней в ближайшие две недели, выигрывал у филиала с окнами: карточка
+   * открывалась на пустом расписании и говорила «окон нет». Ждём календари: до
+   * них решать не на чем.
    */
   React.useEffect(() => {
-    if (scheduleLoading || pickedBranchId !== null || !scheduleBranches.length) return;
-    const home = scheduleBranches.find((b) => b.id === doctor?.branch?.id);
-    if (home && branchHasSchedule(home)) return;
-    const withSchedule = scheduleBranches.find(branchHasSchedule);
-    if (withSchedule) setPickedBranchId(withSchedule.id);
-    else if (!home) setPickedBranchId(scheduleBranches[0].id);
-  }, [scheduleLoading, scheduleBranches, pickedBranchId, doctor?.branch?.id]);
+    if (scheduleLoading || calendarLoading || pickedBranchId !== null) return;
+    const next = pickDefaultBranchId(
+      scheduleBranches,
+      nearestDayByBranch,
+      doctor?.branch?.id ?? null,
+    );
+    if (next !== null) setPickedBranchId(next);
+  }, [
+    scheduleLoading,
+    calendarLoading,
+    scheduleBranches,
+    pickedBranchId,
+    doctor?.branch?.id,
+    nearestDayByBranch,
+  ]);
 
   /** Смена филиала: окна и услуги считались для прежнего — сбрасываем выбор. */
   const handleBranchChange = (id: number) => {
@@ -291,28 +327,36 @@ const DoctorBookingPage: React.FC = () => {
     setStep(1);
   };
 
-  // Календарь врача. Грузим без услуги — как только услуги выбраны, времена
-  // пересчитываются через available-times.
+  // Календари врача — по одному на филиал. Грузим без услуги: как только услуги
+  // выбраны, времена пересчитываются через available-times.
   React.useEffect(() => {
-    if (!doctor) return;
+    if (!doctor || scheduleLoading) return;
     const controller = new AbortController();
+    const keys: (number | null)[] = scheduleBranches.length
+      ? scheduleBranches.map((b) => b.id)
+      : [null];
     setCalendarLoading(true);
-    getProfessionalCalendar(idOrSlug, { branchId }, controller.signal)
-      .then((days) => {
-        setCalendar(days);
-        // Сразу открываем ближайший свободный день — это то, что ищет пациент.
-        const firstAvailable = days.find((d) => d.isAvailable);
-        if (firstAvailable) {
-          setSelectedDate(firstAvailable.date);
-          setStep(2);
-        }
-      })
+    Promise.all(
+      keys.map((id) =>
+        getProfessionalCalendar(idOrSlug, { branchId: id ?? undefined }, controller.signal)
+          .then((days) => [id === null ? "all" : String(id), days] as const)
+          // Филиал, чей календарь не ответил, показываем без окон, а не роняем
+          // всю карточку: остальные филиалы записать по-прежнему можно.
+          .catch((e) => {
+            if (isAbortError(e)) throw e;
+            return [id === null ? "all" : String(id), [] as CalendarDay[]] as const;
+          }),
+      ),
+    )
+      .then((entries) => setCalendarByBranch(Object.fromEntries(entries)))
       .catch((e) => {
-        if (!isAbortError(e)) setCalendar([]);
+        if (!isAbortError(e)) setCalendarByBranch({});
       })
-      .finally(() => setCalendarLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setCalendarLoading(false);
+      });
     return () => controller.abort();
-  }, [doctor, idOrSlug, branchId]);
+  }, [doctor, idOrSlug, scheduleBranches, scheduleLoading]);
 
   // Первое раскрытие блока услуг: он теперь ниже расписания и на телефоне
   // остаётся за краем экрана — иначе гость не заметит, что появился шаг 3.
@@ -342,6 +386,25 @@ const DoctorBookingPage: React.FC = () => {
     [selectedServices, visibleServices, allServices],
   );
 
+  /** Календарь выбранного филиала. */
+  const calendar = React.useMemo(
+    () => calendarByBranch[branchId === null ? "all" : String(branchId)] ?? [],
+    [calendarByBranch, branchId],
+  );
+
+  /**
+   * Открываем ближайший свободный день выбранного филиала. Раньше это делалось
+   * в then загрузки; теперь календари загружены заранее, и день выбирается и при
+   * первом показе, и при переключении филиала.
+   */
+  React.useEffect(() => {
+    if (selectedDate !== null) return;
+    const firstAvailable = calendar.find((d) => d.isAvailable);
+    if (!firstAvailable) return;
+    setSelectedDate(firstAvailable.date);
+    setStep(2);
+  }, [calendar, selectedDate]);
+
   /** Нерабочие дни филиала: в календаре их подписываем «выходной». */
   const calendarDaysOff = React.useMemo(
     () =>
@@ -357,6 +420,21 @@ const DoctorBookingPage: React.FC = () => {
   const slots: AvailableTimeSlot[] =
     filteredTimes ?? (selectedDay?.times ?? []).map((time) => ({ time, busy: false }));
   const hasAvailableDay = calendar.some((d) => d.isAvailable);
+
+  /**
+   * Филиал, где окна есть, когда в выбранном их нет.
+   *
+   * Пациент выбирает адрес сам, и «нет свободного времени» в одном филиале
+   * читалось как «врач не принимает вообще» — при том что в соседнем окна есть
+   * (жалоба 02.09.2026). Предлагаем переключиться, а не молчим.
+   */
+  const elsewhereBranch = React.useMemo(
+    () =>
+      hasAvailableDay || calendarLoading
+        ? null
+        : pickBranchWithSlots(scheduleBranches, nearestDayByBranch, branchId),
+    [hasAvailableDay, calendarLoading, scheduleBranches, branchId, nearestDayByBranch],
+  );
 
   // Филиал обязателен всегда (без branch_id → 400), услуга — пока бэк не
   // принимает пустой service_ids (см. BOOKING_NO_SERVICE_ENABLED).
@@ -792,13 +870,30 @@ const DoctorBookingPage: React.FC = () => {
                 loading={scheduleLoading}
                 selectedId={branchId}
                 onSelect={handleBranchChange}
+                nearestByBranch={calendarLoading ? undefined : nearestDayByBranch}
               />
 
               <StepIndicator current={step} />
 
               {scheduleBlock}
 
-              {!hasAvailableDay && !calendarLoading && (
+              {!hasAvailableDay && !calendarLoading && elsewhereBranch && (
+                <Alert
+                  severity="info"
+                  action={
+                    <Button size="small" onClick={() => handleBranchChange(elsewhereBranch.branch.id)}>
+                      {t("branches.showElsewhere")}
+                    </Button>
+                  }
+                >
+                  {t("branches.elsewhere", {
+                    name: elsewhereBranch.branch.name,
+                    date: shortDate(elsewhereBranch.date),
+                  })}
+                </Alert>
+              )}
+
+              {!hasAvailableDay && !calendarLoading && !elsewhereBranch && (
                 <Alert
                   severity={waitlistDone ? "success" : "info"}
                   action={

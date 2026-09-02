@@ -1,4 +1,5 @@
 import type {
+  CalendarDay,
   ProfessionalScheduleBranch,
   ProfessionalScheduleException,
   ProfessionalScheduleRule,
@@ -116,4 +117,63 @@ export function branchHasSchedule(branch: ProfessionalScheduleBranch): boolean {
     branch.rules.length > 0 ||
     branch.exceptions.some((e) => e.kind === "extra" || e.kind === "override")
   );
+}
+
+// ── Филиал по свободным окнам ────────────────────────────────────────────────
+
+/** Ближайший день календаря со свободным временем; null — окон нет. */
+export function nearestAvailableDate(days: CalendarDay[] | undefined): string | null {
+  return days?.find((d) => d.isAvailable)?.date ?? null;
+}
+
+/**
+ * Филиал, который карточка показывает по умолчанию, — тот, где раньше всего
+ * есть свободное окно.
+ *
+ * Выбирать по наличию правил в графике было нельзя: расписание в филиале может
+ * быть, а свободных дней в ближайшие две недели ноль (всё занято или период
+ * правила ещё не начался), и карточка открывалась на пустом расписании со
+ * словами «окон нет», умалчивая про соседний филиал.
+ *
+ * При равных датах впереди «домашний» филиал — не уводим пациента с привычного
+ * адреса. Если окон нет нигде, возвращаем домашний (а когда врача в нём нет —
+ * первый филиал с графиком), чтобы адрес и часы работы всё-таки показались.
+ */
+export function pickDefaultBranchId(
+  branches: ProfessionalScheduleBranch[],
+  nearestByBranch: Record<number, string | null>,
+  homeBranchId: number | null,
+): number | null {
+  if (!branches.length) return null;
+
+  const withSlots = branches
+    .map((b) => ({ id: b.id, date: nearestByBranch[b.id] ?? null }))
+    .filter((b): b is { id: number; date: string } => b.date !== null)
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        (a.id === homeBranchId ? -1 : b.id === homeBranchId ? 1 : 0),
+    );
+  if (withSlots.length) return withSlots[0].id;
+
+  if (homeBranchId !== null && branches.some((b) => b.id === homeBranchId)) return homeBranchId;
+  return (branches.find(branchHasSchedule) ?? branches[0]).id;
+}
+
+/**
+ * Филиал с ближайшим окном среди остальных — чем ответить, когда в выбранном
+ * филиале свободного времени нет. Без этого «нет свободного времени» читается
+ * как «врач не принимает вообще».
+ */
+export function pickBranchWithSlots(
+  branches: ProfessionalScheduleBranch[],
+  nearestByBranch: Record<number, string | null>,
+  excludeBranchId: number | null,
+): { branch: ProfessionalScheduleBranch; date: string } | null {
+  const candidates = branches
+    .filter((b) => b.id !== excludeBranchId)
+    .map((branch) => ({ branch, date: nearestByBranch[branch.id] ?? null }))
+    .filter((c): c is { branch: ProfessionalScheduleBranch; date: string } => c.date !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return candidates[0] ?? null;
 }

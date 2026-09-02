@@ -329,6 +329,13 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
 
   const timeFontSize = dense ? "0.775rem" : "0.8rem";
 
+  // Сотрудник со сменами в двух филиалах: в org-wide выдаче (суперпользователь
+  // без выбранного филиала) слоты обеих смен приходят одним плоским списком, и
+  // одно время встречается дважды с разными branchId. Тогда без подписи филиала
+  // строки неотличимы; в обычном режиме (филиал один) подпись только шумит.
+  const multiBranchDay =
+    new Set(day.slots.map((s) => s.branchId).filter((id) => id != null)).size > 1;
+
   return (
     <Stack spacing={0.5}>
       {offSchedule && (
@@ -436,8 +443,13 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
         }
 
         const { slot } = row;
-        // Не свободен и не занят приёмом — окно, которое уже прошло.
-        const past = !slot.free && slot.appointmentId == null;
+        // Окно закрыто приёмом сотрудника в другом филиале: записать нельзя
+        // (проверка пересечений идёт по сотруднику), а чьим приёмом — не наше
+        // дело, чужих данных бэк не отдаёт. Проверяем раньше past: у такого
+        // слота тоже нет appointmentId, и без флага он выглядел бы прошедшим.
+        const busyElsewhere = !slot.free && slot.busyElsewhere === true;
+        // Не свободен, не занят приёмом и не чужая занятость — окно уже прошло.
+        const past = !slot.free && slot.appointmentId == null && !busyElsewhere;
         const busy = !slot.free && slot.appointmentId != null;
         return (
           <Stack
@@ -492,6 +504,16 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
             >
               {slot.start}
             </Typography>
+            {multiBranchDay && slot.branchName && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ flex: 1, minWidth: 0, textAlign: "left", pl: 0.5 }}
+                noWrap
+              >
+                {slot.branchName}
+              </Typography>
+            )}
             {slot.free ? (
               <Stack
                 direction="row"
@@ -529,6 +551,10 @@ const DayTimeline: React.FC<DayTimelineProps> = ({
             ) : busy ? (
               <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
                 {slot.patientName ?? ""}
+              </Typography>
+            ) : busyElsewhere ? (
+              <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }} noWrap>
+                {t("slots.busyElsewhere")}
               </Typography>
             ) : null}
           </Stack>

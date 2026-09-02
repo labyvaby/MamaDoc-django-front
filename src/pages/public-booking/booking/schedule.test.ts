@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  CalendarDay,
   ProfessionalScheduleBranch,
   ProfessionalScheduleException,
   ProfessionalScheduleRule,
@@ -10,6 +11,9 @@ import {
   dayOffDates,
   hhmm,
   lunchRange,
+  nearestAvailableDate,
+  pickBranchWithSlots,
+  pickDefaultBranchId,
   ruleLabel,
   upcomingExceptions,
   weekdaysLabel,
@@ -165,5 +169,97 @@ describe("dayOffDates", () => {
       exceptions: [exception({ date: "2026-09-01", kind: "vacation" })],
     });
     expect([...dayOffDates(onVacation, ["2026-09-01"])]).toEqual(["2026-09-01"]);
+  });
+});
+
+// ── Филиал по свободным окнам ────────────────────────────────────────────────
+
+const day = (date: string, isAvailable: boolean): CalendarDay => ({
+  date,
+  label: date,
+  isAvailable,
+  slotsCount: isAvailable ? 4 : 0,
+  times: isAvailable ? ["09:00", "09:30"] : [],
+});
+
+/** Филиал 1 — «домашний», 13 — второй. */
+const home = branch({ id: 1, name: "Мама Доктор" });
+const second = branch({ id: 13, name: "Мама Доктор Плюс" });
+
+describe("nearestAvailableDate", () => {
+  it("берёт первый день со свободным временем", () => {
+    expect(
+      nearestAvailableDate([day("2026-09-02", false), day("2026-09-04", true), day("2026-09-05", true)]),
+    ).toBe("2026-09-04");
+  });
+
+  it("нет свободных дней или календарь не загружен — null", () => {
+    expect(nearestAvailableDate([day("2026-09-02", false)])).toBeNull();
+    expect(nearestAvailableDate([])).toBeNull();
+    expect(nearestAvailableDate(undefined)).toBeNull();
+  });
+});
+
+describe("pickDefaultBranchId", () => {
+  it("филиал с более ранним окном выигрывает у домашнего", () => {
+    // Ровно жалоба 02.09.2026: в домашнем филиале окон нет, а карточка
+    // открывалась именно на нём и говорила «окон нет».
+    const picked = pickDefaultBranchId([home, second], { 1: null, 13: "2026-09-03" }, 1);
+    expect(picked).toBe(13);
+  });
+
+  it("при равных датах впереди домашний филиал — привычный адрес", () => {
+    const picked = pickDefaultBranchId(
+      [second, home],
+      { 1: "2026-09-03", 13: "2026-09-03" },
+      1,
+    );
+    expect(picked).toBe(1);
+  });
+
+  it("окон нет нигде — остаёмся в домашнем филиале", () => {
+    expect(pickDefaultBranchId([home, second], { 1: null, 13: null }, 1)).toBe(1);
+  });
+
+  it("окон нет и домашнего филиала в списке нет — первый с графиком", () => {
+    const noSchedule = branch({ id: 12, name: "Тестовый", rules: [] });
+    const withSchedule = branch({ id: 13, rules: [rule()] });
+    expect(pickDefaultBranchId([noSchedule, withSchedule], { 12: null, 13: null }, 1)).toBe(13);
+  });
+
+  it("филиалов нет — выбирать нечего", () => {
+    expect(pickDefaultBranchId([], {}, 1)).toBeNull();
+  });
+
+  it("график в филиале есть, но свободных дней нет — выигрывает филиал с окнами", () => {
+    // Прежняя эвристика смотрела на наличие правил и оставалась здесь.
+    const busy = branch({ id: 1, rules: [rule({ weekdays: [0, 1, 2, 3, 4] })] });
+    expect(pickDefaultBranchId([busy, second], { 1: null, 13: "2026-09-10" }, 1)).toBe(13);
+  });
+});
+
+describe("pickBranchWithSlots", () => {
+  it("предлагает филиал с ближайшим окном, кроме текущего", () => {
+    const found = pickBranchWithSlots([home, second], { 1: null, 13: "2026-09-03" }, 1);
+    expect(found?.branch.id).toBe(13);
+    expect(found?.date).toBe("2026-09-03");
+  });
+
+  it("из нескольких кандидатов берёт самый ранний", () => {
+    const third = branch({ id: 12, name: "Третий" });
+    const found = pickBranchWithSlots(
+      [home, second, third],
+      { 1: null, 13: "2026-09-10", 12: "2026-09-04" },
+      1,
+    );
+    expect(found?.branch.id).toBe(12);
+  });
+
+  it("окна только в текущем филиале — предлагать нечего", () => {
+    expect(pickBranchWithSlots([home, second], { 1: "2026-09-03", 13: null }, 1)).toBeNull();
+  });
+
+  it("окон нет нигде — null", () => {
+    expect(pickBranchWithSlots([home, second], { 1: null, 13: null }, 1)).toBeNull();
   });
 });
