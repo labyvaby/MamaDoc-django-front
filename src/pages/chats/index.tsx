@@ -1,14 +1,21 @@
 import React from "react";
-import { Box, LinearProgress, Stack } from "@mui/material";
+import { Box, LinearProgress, Stack, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 
-import { PageHeader } from "../../components/ui";
+import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+
+import { AppButton, PageHeader } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { chatwootUnavailableReason, fetchChatwootEmbed } from "../../api/chatwoot";
 import { ChatsUnavailable } from "./ChatsUnavailable";
+import {
+  useChatwootLoginFailed,
+  useChatwootTabLock,
+} from "./useChatwootSession";
 
 /**
- * Раздел «Чаты» — дашборд Chatwoot внутри CRM.
+ * Раздел «Чаты» — дашборд Чат-центра внутри CRM.
  *
  * Сотрудник уже авторизован в CRM, поэтому второй вход не нужен: бэкенд отдаёт
  * одноразовую ссылку, iframe открывает её, Chatwoot ставит свою сессию и сам
@@ -24,7 +31,7 @@ import { ChatsUnavailable } from "./ChatsUnavailable";
  * `sso_auth_token` по одному на пользователя, и каждая новая выдача затирает
  * предыдущую: если запросить ссылку второй раз, пока iframe грузится с первой,
  * та превращается в тыкву — `POST /auth/sign_in` отвечает 401, и вместо
- * дашборда появляется форма пароля (наблюдалось на стенде 29.08.2026).
+ * дашборда появляется форма пароля.
  *
  * Отсюда два предохранителя, и убирать их нельзя:
  *
@@ -33,14 +40,82 @@ import { ChatsUnavailable } from "./ChatsUnavailable";
  *    раздела начнётся с чистого листа и получит свежую ссылку;
  * 2. первый успешный `url` замораживается в состоянии, поэтому никакой
  *    повторный рендер уже не подменит `src` у живого iframe.
+ *
+ * Ту же гонку умеют устраивать две вкладки CRM, и там предохранители не
+ * помогают — токен один на пользователя, а вкладки друг о друге не знают. За
+ * это отвечает `useChatwootTabLock`: раздел живёт ровно в одной вкладке,
+ * остальные предлагают перехватить. Если вход всё-таки сорвался, Chatwoot
+ * сообщает об этом сам (`useChatwootLoginFailed`), и мы показываем повтор
+ * вместо чужой формы пароля.
  */
+
+/** Показать заново: новая ссылка и новый iframe вместо мёртвой сессии. */
+const ChatsRecovery: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
+  <Stack
+    spacing={2}
+    sx={{ height: "100%", alignItems: "center", justifyContent: "center", px: 2 }}
+  >
+    <Typography variant="h6" sx={{ fontWeight: 700, textAlign: "center" }}>
+      Вход в Чат-центр не завершился
+    </Typography>
+    <Typography
+      sx={{ color: "text.secondary", textAlign: "center", maxWidth: 460 }}
+    >
+      Так бывает, если раздел открывали в другой вкладке или на другом
+      устройстве — Чат-центр разрешает только один вход за раз. Нажмите
+      «Войти заново», и всё откроется.
+    </Typography>
+    <AppButton variant="contained" startIcon={<RefreshOutlined />} onClick={onRetry}>
+      Войти заново
+    </AppButton>
+  </Stack>
+);
+
+/** Раздел уже занят другой вкладкой — предлагаем перенести его сюда. */
+const ChatsInAnotherTab: React.FC<{ onTakeOver: () => void }> = ({
+  onTakeOver,
+}) => (
+  <Stack
+    spacing={2}
+    sx={{ height: "100%", alignItems: "center", justifyContent: "center", px: 2 }}
+  >
+    <Typography variant="h6" sx={{ fontWeight: 700, textAlign: "center" }}>
+      Чаты открыты в другой вкладке
+    </Typography>
+    <Typography
+      sx={{ color: "text.secondary", textAlign: "center", maxWidth: 460 }}
+    >
+      Чат-центр держит один вход на сотрудника, поэтому две вкладки мешали бы
+      друг другу. Продолжите там — или перенесите чаты сюда.
+    </Typography>
+    <AppButton
+      variant="outlined"
+      startIcon={<OpenInNewOutlined />}
+      onClick={onTakeOver}
+    >
+      Открыть здесь
+    </AppButton>
+  </Stack>
+);
+
+const FRAME_HEIGHT = { xs: "80vh", md: "calc(100vh - 96px)" } as const;
 
 export const ChatsPage: React.FC = () => {
   usePageTitle("Чаты");
 
-  const { data, isPending, error, refetch } = useQuery({
-    queryKey: ["chatwoot", "embed"],
+  const { role, takeOver } = useChatwootTabLock();
+  const isOwner = role === "owner";
+
+  // `attempt` меняется только при осознанном повторе: он и сбрасывает
+  // замороженную ссылку, и пересоздаёт iframe (через key), чтобы Chatwoot начал
+  // вход с чистого листа, а не досматривал мёртвую сессию.
+  const [attempt, setAttempt] = React.useState(0);
+  const [loginFailed, setLoginFailed] = React.useState(false);
+
+  const { data, isPending, error } = useQuery({
+    queryKey: ["chatwoot", "embed", attempt],
     queryFn: fetchChatwootEmbed,
+    enabled: isOwner,
     // См. предохранитель №1 в шапке файла.
     staleTime: Infinity,
     gcTime: 0,
@@ -56,6 +131,30 @@ export const ChatsPage: React.FC = () => {
     setFrozenUrl((current) => current ?? data?.url ?? null);
   }, [data?.url]);
 
+  const retry = React.useCallback(() => {
+    setLoginFailed(false);
+    setFrozenUrl(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
+  useChatwootLoginFailed(frozenUrl, () => setLoginFailed(true));
+
+  if (!isOwner) {
+    return (
+      <Box sx={{ height: FRAME_HEIGHT }}>
+        <ChatsInAnotherTab onTakeOver={takeOver} />
+      </Box>
+    );
+  }
+
+  if (loginFailed) {
+    return (
+      <Box sx={{ height: FRAME_HEIGHT }}>
+        <ChatsRecovery onRetry={retry} />
+      </Box>
+    );
+  }
+
   if (isPending || (!error && !frozenUrl)) {
     return (
       <Stack spacing={2}>
@@ -67,10 +166,10 @@ export const ChatsPage: React.FC = () => {
 
   if (error || !data) {
     return (
-      <Box sx={{ height: { xs: "auto", md: "calc(100vh - 96px)" } }}>
+      <Box sx={{ height: FRAME_HEIGHT }}>
         <ChatsUnavailable
           reason={chatwootUnavailableReason(error)}
-          onRetry={() => void refetch()}
+          onRetry={retry}
         />
       </Box>
     );
@@ -83,13 +182,14 @@ export const ChatsPage: React.FC = () => {
     <Box sx={{ height: "100%" }}>
       <Box
         sx={{
-          height: { xs: "80vh", md: "calc(100vh - 96px)" },
+          height: FRAME_HEIGHT,
           borderRadius: 2,
           overflow: "hidden",
           border: (theme) => `1px solid ${theme.palette.divider}`,
         }}
       >
         <Box
+          key={attempt}
           component="iframe"
           src={frozenUrl ?? undefined}
           title="Чаты"
