@@ -102,7 +102,9 @@ const OverlapConfirmDialog: React.FC<OverlapConfirmDialogProps> = ({
                 {t("overlapDialog.employee", { name: o.employeeName || "—" })}
               </Typography>
               <Typography variant="caption" color="text.secondary" component="div">
-                {t("overlapDialog.patient", { name: o.patientName || "—" })}
+                {o.otherBranch
+                  ? t("overlapDialog.otherBranch")
+                  : t("overlapDialog.patient", { name: o.patientName || "—" })}
               </Typography>
             </Box>
           ))}

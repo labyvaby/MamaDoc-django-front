@@ -104,6 +104,15 @@ export interface OverlapConflict {
   employeeId: number | null;
   employeeName: string;
   patientName: string;
+  /**
+   * Конфликт в ДРУГОМ филиале: сотрудник в это время принимает не здесь.
+   *
+   * С 02.09.2026 проверка пересечений идёт по сотруднику, а не по филиалу —
+   * один человек не может быть в двух адресах. Чужого пациента бэк при этом не
+   * раскрывает: `patientName` приходит пустой строкой (проверено на тесте
+   * 02.09.2026), поэтому подпись строки берём от этого флага, а не от имени.
+   */
+  otherBranch?: boolean;
 }
 
 /** Body of the HTTP 409 returned when the org "warn" mode blocks an overlap. */
