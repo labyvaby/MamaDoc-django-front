@@ -400,7 +400,16 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         map.set(id, { id, name, photoUrl: null, nickname: null, apptCount: 0 });
       }
     }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return Array.from(map.values()).sort((a, b) => {
+      // В регистратуре сначала показываем врачей, у которых уже есть приёмы
+      // на выбранную дату; остальные остаются в быстром фильтре ниже.
+      const aHasAppointments = a.apptCount > 0 ? 1 : 0;
+      const bHasAppointments = b.apptCount > 0 ? 1 : 0;
+      return (
+        bHasAppointments - aHasAppointments ||
+        a.name.localeCompare(b.name, "ru")
+      );
+    });
   }, [items, groupEmployeeIds, dayShifts]);
 
   // После смены даты выбранный врач может исчезнуть из списка: на новом дне
