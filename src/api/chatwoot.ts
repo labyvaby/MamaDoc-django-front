@@ -42,6 +42,22 @@ const NO_ACCOUNT_CODE = "CHATWOOT_NO_ACCOUNT";
  */
 const NO_ACCOUNT_LEGACY_MARKER = "chatwoot_no_account";
 
+/**
+ * Куда вести iframe, когда сессия Чат-центра уже есть в браузере.
+ *
+ * Секретов не содержит: обычная ссылка на дашборд. Ради неё и заведён отдельный
+ * запрос — одноразовый токен входа перестаёт выписываться на каждое открытие
+ * раздела, а значит реже попадает в историю браузера и логи.
+ */
+export type ChatwootSession = {
+  dashboardUrl: string;
+  accountId: number;
+};
+
+export async function fetchChatwootSession(): Promise<ChatwootSession> {
+  return apiRequest<ChatwootSession>("/chatwoot/session/");
+}
+
 export async function fetchChatwootEmbed(): Promise<ChatwootEmbed> {
   return apiRequest<ChatwootEmbed>("/chatwoot/embed/");
 }
