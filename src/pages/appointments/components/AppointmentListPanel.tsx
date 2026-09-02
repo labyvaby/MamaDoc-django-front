@@ -52,6 +52,7 @@ import {
   employeeMoneyTotals,
   firstFreeSlotInSegment,
   firstFreeSlotInSegmentFor,
+  firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
 } from "./listFilters";
 import { AppBottomSheet } from "../../../components/ui";
@@ -671,8 +672,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           for (const seg of shiftSegments ?? []) {
             if (seg.start >= firstStart.format("HH:mm")) continue;
             const clippedEnd = seg.end < firstStart.format("HH:mm") ? seg.end : firstStart.format("HH:mm");
-            const slot = firstFreeSlotInSegment(date ?? firstStart, { start: seg.start, end: clippedEnd });
-            if (slot && slot.isBefore(firstStart) && !isCoveredByActive(slot.valueOf())) {
+            const slot = firstFreeSlotInSegmentFor(
+              date ?? firstStart,
+              { start: seg.start, end: clippedEnd },
+              activeIntervals,
+            );
+            if (slot && slot.isBefore(firstStart)) {
               renderItems.push({
                 isGap: true,
                 id: `gap-before-${first.id}-${slot.format("HH:mm")}`,
@@ -713,27 +718,67 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           if (!isCancelledStatus(next.status)) {
             const currentEnd = appointmentEnd(current);
             const gapMs = dayjs(next.scheduledAt).valueOf() - currentEnd.valueOf();
-            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)
-                && !isCoveredByActive(currentEnd.valueOf())) {
+            if (gapMs >= GAP_THRESHOLD_MS && currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+              const nextStart = dayjs(next.scheduledAt);
+              const shiftSegment = shiftSegments?.find((s) => {
+                const currentHm = currentEnd.format("HH:mm");
+                return currentHm >= s.start && currentHm < s.end;
+              });
+              const gapSlot = shiftSegment
+                ? firstFreeSlotAtOrAfter(
+                    date ?? currentEnd,
+                    shiftSegment,
+                    activeIntervals,
+                    currentEnd,
+                    nextStart,
+                  )
+                : firstFreeSlotAtOrAfter(
+                    date ?? currentEnd,
+                    { start: currentEnd.format("HH:mm"), end: nextStart.format("HH:mm") },
+                    activeIntervals,
+                    currentEnd,
+                    nextStart,
+                  );
+              if (!gapSlot) continue;
               const key = `gap-${current.id}-${next.id}`;
               renderItems.push({
                 isGap: true,
                 id: key,
-                timeStr: currentEnd.format("HH:mm"),
-                dateIso: currentEnd.format("YYYY-MM-DDTHH:mm"),
+                timeStr: gapSlot.format("HH:mm"),
+                dateIso: gapSlot.format("YYYY-MM-DDTHH:mm"),
                 employeeId: groupEmployeeId,
               });
             }
           }
         } else if (!isCancelled && i === sorted.length - 1) {
           const currentEnd = appointmentEnd(current);
-          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)
-              && !isCoveredByActive(currentEnd.valueOf())) {
+          if (currentEnd.isAfter(dayjs()) && slotInShift(currentEnd)) {
+            const shiftSegment = shiftSegments?.find((s) => {
+              const currentHm = currentEnd.format("HH:mm");
+              return currentHm >= s.start && currentHm < s.end;
+            });
+            const gapSlot = shiftSegment
+              ? firstFreeSlotAtOrAfter(
+                  date ?? currentEnd,
+                  shiftSegment,
+                  activeIntervals,
+                  currentEnd,
+                )
+              : firstFreeSlotAtOrAfter(
+                  date ?? currentEnd,
+                  {
+                    start: currentEnd.format("HH:mm"),
+                    end: currentEnd.add(30, "minute").format("HH:mm"),
+                  },
+                  activeIntervals,
+                  currentEnd,
+                );
+            if (!gapSlot) continue;
             renderItems.push({
               isGap: true,
               id: `gap-after-${current.id}`,
-              timeStr: currentEnd.format("HH:mm"),
-              dateIso: currentEnd.format("YYYY-MM-DDTHH:mm"),
+              timeStr: gapSlot.format("HH:mm"),
+              dateIso: gapSlot.format("YYYY-MM-DDTHH:mm"),
               employeeId: groupEmployeeId,
             });
           }

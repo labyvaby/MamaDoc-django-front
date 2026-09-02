@@ -556,6 +556,8 @@ export interface DjangoAppointment {
   /** Разложен из `branch.name`; null, если филиал не задан. */
   branchName: string | null;
   patient: AppointmentPatientShort | null;
+  /** Legacy performer field; new clients should use services[].employee. */
+  employee?: AppointmentEmployeeShort | null;
   scheduledAt: string;
   /** Конец приёма, посчитанный бэком как начало + сумма длительностей строк
    *  услуг. Не равен scheduledAt + 30 мин: приём с несколькими услугами длиннее,

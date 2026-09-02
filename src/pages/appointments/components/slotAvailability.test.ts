@@ -106,6 +106,17 @@ describe("busyIntervalsByEmployee", () => {
     expect(map.has(33)).toBe(false);
   });
 
+  it("учитывает legacy-исполнителя самого приёма", () => {
+    const map = busyIntervalsByEmployee([
+      {
+        ...apptWithLines("09:00", "10:00", []),
+        employee: { id: 44, fullName: "Старый исполнитель" },
+      } as DjangoAppointment,
+    ]);
+
+    expect(isSlotCovered(map.get(44) ?? [], ms("09:30"))).toBe(true);
+  });
+
   it("не считает занятыми отменённые приёмы и строки без исполнителя", () => {
     const map = busyIntervalsByEmployee([
       apptWithLines("09:00", "09:30", [12], "canceled"),
