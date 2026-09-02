@@ -158,7 +158,11 @@
     "excVacation": "отпуск",
     "excExtra": "дополнительно",
     "excOverride": "другое время",
-    "loadFailed": "Не удалось загрузить график."
+    "loadFailed": "Не удалось загрузить график.",
+    "nearestSlot": "ближайшее {{date}}",
+    "noSlotsHere": "нет свободного времени",
+    "elsewhere": "Здесь свободного времени нет, но {{branch.nom}} «{{name}}» принимает — ближайшее окно {{date}}.",
+    "showElsewhere": "Показать"
   },
   "byCode": {
     "heading": "Ваша {{record.nom}}",
