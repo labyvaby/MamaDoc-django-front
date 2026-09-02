@@ -22,6 +22,7 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  Alert,
   alpha,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -35,6 +36,7 @@ import WbSunnyOutlined from "@mui/icons-material/WbSunnyOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import EventBusyOutlinedIcon from "@mui/icons-material/EventBusyOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs from "dayjs";
@@ -55,6 +57,12 @@ import {
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../../api/queryKeys";
 import { PageHeader, ListLoadingSkeleton, ListEmptyState, CustomDatePicker } from "../../../components/ui";
 import ShiftFormDrawer, { type EmployeeOption } from "./ShiftFormDrawer";
+import {
+  buildBranchOptions,
+  filterShiftsByBranch,
+  unassignedShifts,
+  type ShiftBranchFilter,
+} from "./branchFilter";
 
 dayjs.extend(duration);
 
@@ -77,10 +85,11 @@ const DjangoWorkShiftsPage: React.FC = () => {
   const queryClient = useQueryClient();
   // Как в оригинале: без карточки сотрудника отметка невозможна — показываем
   // предупреждение вместо кнопок, а не ошибку 400 после клика.
-  const { activeEmployee, activeBranch } = usePermissions();
+  const { activeEmployee, activeBranch, activeMembership, switchContext } = usePermissions();
   const orgId = useApiOrgId();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = React.useState<number | null>(null);
+  const [branchFilter, setBranchFilter] = React.useState<ShiftBranchFilter>("all");
   const [startDate, setStartDate] = React.useState(dayjs().startOf("month").format("YYYY-MM-DD"));
   const [endDate, setEndDate] = React.useState(dayjs().endOf("month").format("YYYY-MM-DD"));
 
@@ -93,6 +102,8 @@ const DjangoWorkShiftsPage: React.FC = () => {
     actionLoading,
     effectiveAllowedIp,
     isIpCorrect,
+    isBranchMissing,
+    clockBranches,
     currentShift,
     handleStartShift,
     handleEndShift,
@@ -114,9 +125,21 @@ const DjangoWorkShiftsPage: React.FC = () => {
     [employeesQuery.data],
   );
 
+  const branchOptions = React.useMemo(
+    () => buildBranchOptions(activeMembership?.branches ?? [], shifts),
+    [activeMembership, shifts],
+  );
+
+  // Фильтр филиала — клиентский; почему именно так, см. branchFilter.ts.
+  const visibleShifts = React.useMemo(
+    () => filterShiftsByBranch(shifts, branchFilter),
+    [shifts, branchFilter],
+  );
+  const withoutBranch = React.useMemo(() => unassignedShifts(shifts), [shifts]);
+
   const processedShifts = React.useMemo(
     () =>
-      shifts.map((shift) => {
+      visibleShifts.map((shift) => {
         const clockIn = dayjs(shift.clockIn);
         return {
           ...shift,
@@ -127,13 +150,60 @@ const DjangoWorkShiftsPage: React.FC = () => {
           durationStr: formatDuration(shift.clockIn, shift.clockOut),
         };
       }),
-    [shifts],
+    [visibleShifts],
   );
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editTarget, setEditTarget] = React.useState<WorkShiftRow | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<WorkShiftRow | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+
+  // Привязка смен без филиала: цель — либо одна строка, либо все найденные.
+  const [assignTargets, setAssignTargets] = React.useState<WorkShiftRow[] | null>(null);
+  const [assignBranchId, setAssignBranchId] = React.useState<number | "">("");
+  const [assigning, setAssigning] = React.useState(false);
+  const [assignDone, setAssignDone] = React.useState(0);
+
+  const openAssign = (targets: WorkShiftRow[]) => {
+    setAssignBranchId(activeBranch?.id ?? branchOptions[0]?.id ?? "");
+    setAssignDone(0);
+    setAssignTargets(targets);
+  };
+
+  const runAssign = async () => {
+    if (!assignTargets || assignBranchId === "") return;
+    setAssigning(true);
+    setAssignDone(0);
+    let failed = 0;
+    for (const shift of assignTargets) {
+      try {
+        // PATCH смены не частичный: без clockIn бэкенд отвечает 400
+        // «Обязательное поле» (проверено на проде 02.09.2026). Остальные поля
+        // не передаём — непереданное бэкенд сохраняет как есть.
+        await updateShift(
+          shift.id,
+          {
+            branchId: assignBranchId,
+            clockIn: shift.clockIn,
+            ...(shift.clockOut ? { clockOut: shift.clockOut } : {}),
+          },
+          { organizationId: orgId },
+        );
+      } catch {
+        failed += 1;
+      }
+      setAssignDone((done) => done + 1);
+    }
+    setAssigning(false);
+    void invalidate();
+    setAssignTargets(null);
+    notify?.({
+      type: failed ? "error" : "success",
+      message: failed
+        ? `Привязано смен: ${assignTargets.length - failed}, с ошибкой: ${failed}`
+        : `Привязано смен: ${assignTargets.length}`,
+    });
+  };
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: djangoQueryKeys.attendance.all });
@@ -202,6 +272,33 @@ const DjangoWorkShiftsPage: React.FC = () => {
     }
   };
 
+  // Филиал смены: у старых и «потерянных» отметок его нет — показываем это
+  // явно, а управляющему даём привязать смену прямо из строки.
+  const branchCell = (shift: WorkShiftRow) => {
+    if (shift.branchId != null) {
+      return (
+        <Typography variant="body2" noWrap>
+          {shift.branchName ?? `Филиал ${shift.branchId}`}
+        </Typography>
+      );
+    }
+    if (canManage && branchOptions.length > 0) {
+      return (
+        <Tooltip title="Смена не входит в филиальный расчёт ЗП — привязать к филиалу">
+          <Chip
+            label="Без филиала"
+            size="small"
+            color="warning"
+            variant="outlined"
+            icon={<ApartmentOutlined />}
+            onClick={() => openAssign([shift])}
+          />
+        </Tooltip>
+      );
+    }
+    return <Chip label="Без филиала" size="small" color="warning" variant="outlined" />;
+  };
+
   const statusChip = (shift: typeof processedShifts[number]) => {
     if (!shift.clockOut) return <Chip label="Активна" color="success" size="small" />;
     if (shift.isAnomalous) return <Chip label="Аномально" color="error" size="small" />;
@@ -234,6 +331,27 @@ const DjangoWorkShiftsPage: React.FC = () => {
               {emp.fullName}
             </MenuItem>
           ))}
+        </TextField>
+      )}
+      {branchOptions.length > 1 && (
+        <TextField
+          select
+          size="small"
+          label="Филиал"
+          value={branchFilter === "all" ? "" : String(branchFilter)}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setBranchFilter(raw === "" ? "all" : raw === "none" ? "none" : Number(raw));
+          }}
+          sx={{ flex: "1 1 200px", minWidth: 180 }}
+        >
+          <MenuItem value="">Все филиалы</MenuItem>
+          {branchOptions.map((branch) => (
+            <MenuItem key={branch.id} value={String(branch.id)}>
+              {branch.name}
+            </MenuItem>
+          ))}
+          <MenuItem value="none">Без филиала{withoutBranch.length ? ` (${withoutBranch.length})` : ""}</MenuItem>
         </TextField>
       )}
       <CustomDatePicker
@@ -354,6 +472,35 @@ const DjangoWorkShiftsPage: React.FC = () => {
                     Вы не в офисном Wi-Fi — начать смену нельзя
                   </Typography>
                 )}
+                {/* Филиал смены берётся из активного контекста сессии; без него
+                    отработанные часы не войдут ни в один филиальный расчёт ЗП. */}
+                {!currentShift && isBranchMissing && clockBranches.length > 1 && (
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+                    <Typography variant="caption" sx={{ color: "warning.main" }}>
+                      Филиал не выбран — выберите, иначе смена не войдёт в расчёт зарплаты филиала:
+                    </Typography>
+                    <TextField
+                      select
+                      size="small"
+                      label="Филиал смены"
+                      value=""
+                      onChange={(e) => {
+                        if (!e.target.value || !activeMembership) return;
+                        void switchContext?.({
+                          membershipId: activeMembership.id,
+                          branchId: Number(e.target.value),
+                        });
+                      }}
+                      sx={{ minWidth: 200 }}
+                    >
+                      {clockBranches.map((branch) => (
+                        <MenuItem key={branch.id} value={String(branch.id)}>
+                          {branch.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+                )}
               </Box>
               <Box sx={{ flexShrink: 0 }}>
                 {!currentShift ? (
@@ -386,6 +533,38 @@ const DjangoWorkShiftsPage: React.FC = () => {
           </Paper>
         )}
 
+        {/* Смены без филиала не входят ни в один филиальный расчёт зарплаты:
+            payroll режет по branchId, поэтому такие часы теряются молча. */}
+        {!loading && withoutBranch.length > 0 && (
+          <Alert
+            severity="warning"
+            variant="outlined"
+            sx={{ mb: 2, borderRadius: "10px" }}
+            action={
+              <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+                {branchFilter !== "none" && (
+                  <Button color="inherit" size="small" onClick={() => setBranchFilter("none")}>
+                    Показать
+                  </Button>
+                )}
+                {canManage && branchOptions.length > 0 && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    startIcon={<ApartmentOutlined />}
+                    onClick={() => openAssign(withoutBranch)}
+                  >
+                    Привязать
+                  </Button>
+                )}
+              </Stack>
+            }
+          >
+            Смен без филиала за период: {withoutBranch.length}. Они не попадают в
+            филиальный расчёт зарплаты — ни в один из филиалов.
+          </Alert>
+        )}
+
         {/* Список смен */}
         <Paper
           elevation={0}
@@ -403,7 +582,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
             sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}
           >
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              История смен{!loading ? ` (${shifts.length})` : ""}
+              История смен{!loading ? ` (${visibleShifts.length})` : ""}
             </Typography>
           </Stack>
 
@@ -413,11 +592,15 @@ const DjangoWorkShiftsPage: React.FC = () => {
 
           {loading ? (
             <ListLoadingSkeleton rows={6} />
-          ) : shifts.length === 0 ? (
+          ) : visibleShifts.length === 0 ? (
             <ListEmptyState
               icon={<EventBusyOutlinedIcon />}
               title="Смен пока нет"
-              description="За выбранный период отметок нет. Измените период или добавьте смену вручную."
+              description={
+                branchFilter !== "all" && shifts.length > 0
+                  ? "В выбранном филиале отметок за период нет. Смените филиал или период."
+                  : "За выбранный период отметок нет. Измените период или добавьте смену вручную."
+              }
               action={
                 canManage ? (
                   <Button variant="contained" size="small" startIcon={<AddOutlined />} onClick={openCreate}>
@@ -436,6 +619,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                       <TableCell>Дата</TableCell>
                       <TableCell>Режим</TableCell>
                       {canManage && <TableCell>Сотрудник</TableCell>}
+                      <TableCell>Филиал</TableCell>
                       <TableCell>Начало</TableCell>
                       <TableCell>Конец</TableCell>
                       <TableCell>Длительность</TableCell>
@@ -454,7 +638,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                             {isNewDay && (
                               <TableRow sx={{ position: "sticky", top: 56, zIndex: 2 }}>
                                 <TableCell
-                                  colSpan={canManage ? 8 : 6}
+                                  colSpan={canManage ? 9 : 7}
                                   sx={{
                                     py: 1,
                                     fontWeight: 700,
@@ -489,6 +673,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                                 )}
                               </TableCell>
                               {canManage && <TableCell>{shift.employeeName}</TableCell>}
+                              <TableCell>{branchCell(shift)}</TableCell>
                               <TableCell>{shift.timeStart}</TableCell>
                               <TableCell>{shift.timeEnd}</TableCell>
                               <TableCell>{shift.durationStr}</TableCell>
@@ -573,6 +758,7 @@ const DjangoWorkShiftsPage: React.FC = () => {
                                   </Typography>
                                 )}
                               </Stack>
+                              <Box sx={{ mt: 0.75 }}>{branchCell(shift)}</Box>
                             </Box>
                             <Stack direction="row" alignItems="center" spacing={0.5} ml={1} sx={{ flexShrink: 0 }}>
                               {statusChip(shift)}
@@ -615,6 +801,64 @@ const DjangoWorkShiftsPage: React.FC = () => {
             : undefined
         }
       />
+
+      <Dialog
+        open={Boolean(assignTargets)}
+        onClose={assigning ? undefined : () => setAssignTargets(null)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Привязать к филиалу</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            {assignTargets && assignTargets.length > 1
+              ? `Смен без филиала за период: ${assignTargets.length}. После привязки их часы войдут в расчёт зарплаты выбранного филиала.`
+              : `Смена${
+                  assignTargets?.[0]
+                    ? ` от ${dayjs(assignTargets[0].clockIn).format("DD.MM.YYYY HH:mm")}`
+                    : ""
+                } войдёт в расчёт зарплаты выбранного филиала.`}
+          </DialogContentText>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="Филиал"
+            value={assignBranchId === "" ? "" : String(assignBranchId)}
+            onChange={(e) => setAssignBranchId(e.target.value ? Number(e.target.value) : "")}
+            disabled={assigning}
+          >
+            {branchOptions.map((branch) => (
+              <MenuItem key={branch.id} value={String(branch.id)}>
+                {branch.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          {assigning && assignTargets && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress
+                variant="determinate"
+                value={(assignDone / Math.max(assignTargets.length, 1)) * 100}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                Обработано {assignDone} из {assignTargets.length}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAssignTargets(null)} disabled={assigning} color="inherit">
+            Отмена
+          </Button>
+          <Button
+            onClick={runAssign}
+            disabled={assigning || assignBranchId === ""}
+            variant="contained"
+          >
+            Привязать
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(deleteTarget)} onClose={deleting ? undefined : () => setDeleteTarget(null)}>
         <DialogTitle>Удалить смену?</DialogTitle>
