@@ -20,17 +20,29 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
 import {
-  buildOdoctorSettingsPatch,
+  applyClearPasswordToggle,
   findOdoctorSettingsProblem,
   getOdoctorSettings,
   odoctorSettingsErrorMessage,
   odoctorSettingsToForm,
-  updateOdoctorSettings,
+  parseHorizonDays,
+  passwordFieldState,
+  saveOdoctorSettingsForm,
+  ODOCTOR_HORIZON_MAX_DAYS,
+  type OdoctorPasswordFieldState,
   type OdoctorSettingsForm,
 } from "../../api/odoctor";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
+
+/** Подпись под полем пароля — по состоянию из passwordFieldState. */
+const PASSWORD_HELPER: Record<OdoctorPasswordFieldState, string> = {
+  clearing: "odoctor.form.passwordClearing",
+  changing: "odoctor.form.passwordChanging",
+  set: "odoctor.form.passwordSet",
+  unset: "odoctor.form.passwordUnset",
+};
 
 // ── Главный компонент ────────────────────────────────────────────────────────
 
@@ -78,15 +90,17 @@ const OdoctorSettingsPage: React.FC = () => {
   const settings = settingsQuery.data;
 
   /**
-   * Форма заполняется из ответа сервера ровно один раз на каждый ответ, и
-   * только через `odoctorSettingsToForm` — там же живёт правило «поле пароля
-   * из ответа не заполняется никогда».
+   * Первое заполнение формы и подхват внешних изменений строки настроек.
    *
-   * Ключ эффекта — сам объект ответа, а не его поля: после сохранения бэк
-   * отдаёт сохранённое состояние, и форма должна встать на него (в том числе
-   * очистить поле пароля и снять галочку отзыва). Правки, которые оператор
-   * ещё не сохранил, при этом не затираются: пока запрос не перезапросили,
-   * ссылка на данные та же.
+   * Только этот путь, и только через `odoctorSettingsToForm` — там живёт
+   * правило «поле пароля из ответа не заполняется никогда». Незаконченную
+   * правку эффект не затирает: пока данные структурно те же, react-query
+   * держит прежнюю ссылку.
+   *
+   * ⚠ Сбросом формы после сохранения этот эффект быть не может — ровно по той
+   * же причине: смена одного пароля возвращает побайтово тот же payload,
+   * ссылка не меняется, и эффект не срабатывает. Сброс живёт в `handleSave`,
+   * см. `saveOdoctorSettingsForm`.
    */
   React.useEffect(() => {
     if (settings) setForm(odoctorSettingsToForm(settings));
@@ -114,10 +128,14 @@ const OdoctorSettingsPage: React.FC = () => {
     setBusy(true);
     setSaveError(null);
     try {
-      const next = await updateOdoctorSettings(buildOdoctorSettingsPatch(form, orgId));
+      const { settings: next, form: nextForm } = await saveOdoctorSettingsForm(form, orgId);
       // Кладём ответ в кеш вместо инвалидации: он и есть сохранённое
       // состояние, а лишний GET заново собрал бы ту же строку.
       queryClient.setQueryData(djangoQueryKeys.odoctor.settings(orgId ?? null), next);
+      // Сброс формы — здесь, безусловно, а не эффектом на данных запроса:
+      // setQueryData на совпадающем ответе оставляет прежнюю ссылку, и
+      // набранный пароль остался бы в поле (см. saveOdoctorSettingsForm).
+      setForm(nextForm);
       setSaved(true);
     } catch (e) {
       setSaveError(odoctorSettingsErrorMessage(e));
@@ -183,15 +201,9 @@ const OdoctorSettingsPage: React.FC = () => {
               type="number"
               size="small"
               value={form.horizonDays}
-              onChange={(e) => {
-                // Пустое поле держим нулём, а не NaN: ноль — осмысленное
-                // состояние (бэк отвергает его только при включённой
-                // интеграции), и о нём есть что сказать словами.
-                const parsed = Number.parseInt(e.target.value, 10);
-                patch({ horizonDays: Number.isFinite(parsed) && parsed > 0 ? parsed : 0 });
-              }}
+              onChange={(e) => patch({ horizonDays: parseHorizonDays(e.target.value) })}
               disabled={busy}
-              inputProps={{ min: 0, max: 365 }}
+              inputProps={{ min: 0, max: ODOCTOR_HORIZON_MAX_DAYS }}
               helperText={t("odoctor.form.horizonHelper")}
               sx={{ maxWidth: 320 }}
             />
@@ -233,13 +245,7 @@ const OdoctorSettingsPage: React.FC = () => {
               disabled={busy || form.clearPassword}
               inputProps={{ maxLength: 254 }}
               autoComplete="new-password"
-              helperText={
-                form.newPassword !== ""
-                  ? t("odoctor.form.passwordChanging")
-                  : hasPassword
-                    ? t("odoctor.form.passwordSet")
-                    : t("odoctor.form.passwordUnset")
-              }
+              helperText={t(PASSWORD_HELPER[passwordFieldState(form, hasPassword)])}
               sx={{ maxWidth: 420 }}
             />
 
@@ -255,16 +261,16 @@ const OdoctorSettingsPage: React.FC = () => {
                   control={
                     <Checkbox
                       checked={form.clearPassword}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         // Введённый пароль и стирание вместе бэк отвергает
                         // (400), поэтому взведённая галочка очищает поле, а не
-                        // копит противоречие.
-                        patch(
-                          e.target.checked
-                            ? { clearPassword: true, newPassword: "" }
-                            : { clearPassword: false },
-                        )
-                      }
+                        // копит противоречие. Правило — в applyClearPasswordToggle,
+                        // под тестом: на нём и держится «отправить нельзя вовсе».
+                        setSaveError(null);
+                        setForm((prev) =>
+                          prev ? applyClearPasswordToggle(prev, e.target.checked) : prev,
+                        );
+                      }}
                       disabled={busy}
                     />
                   }

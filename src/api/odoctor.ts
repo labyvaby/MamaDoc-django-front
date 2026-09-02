@@ -87,6 +87,35 @@ export function updateOdoctorSettings(
   });
 }
 
+// ── Поля формы ─────────────────────────────────────────────────────────────────
+
+/**
+ * Предел, который поле ввода обещает атрибутом `max`. Бэк принимает больше
+ * (`PositiveSmallIntegerField`, до 32767), но обещание надо либо держать, либо
+ * не давать: HTML-атрибут при наборе не действует, и без клампа набранные 3650
+ * уехали бы на бэк молча.
+ */
+export const ODOCTOR_HORIZON_MAX_DAYS = 365;
+
+/**
+ * Строка из поля «Горизонт, дней» → число дней.
+ *
+ * `Number`, а не `parseInt`: `type="number"` пропускает экспоненциальную
+ * запись, и `parseInt("1e3")` вернул бы `1` — оператор набрал тысячу, а
+ * сохранился бы один день. Дробь округляем вниз: msgspec ждёт `int` и на
+ * `7.9` ответил бы 400, а половина дня горизонта не значит ничего.
+ *
+ * Всё, что не разобралось, и всё меньше единицы — ноль. Ноль здесь осмысленное
+ * состояние, а не ошибка: пустое поле выглядит именно так, бэк отвергает его
+ * только при включённой интеграции, и об этом есть что сказать словами
+ * (`horizonRequired`).
+ */
+export function parseHorizonDays(raw: string): number {
+  const value = Math.floor(Number(raw));
+  if (!Number.isFinite(value) || value < 1) return 0;
+  return Math.min(value, ODOCTOR_HORIZON_MAX_DAYS);
+}
+
 // ── Форма → тело PATCH ─────────────────────────────────────────────────────────
 
 /** Состояние формы настроек — то, из чего собирается тело PATCH. */
@@ -128,6 +157,47 @@ export function odoctorSettingsToForm(settings: OdoctorSettings): OdoctorSetting
 }
 
 /**
+ * Форма после щелчка по галочке отзыва.
+ *
+ * Взведённая галочка **всегда** чистит поле пароля, и это единственное, что
+ * делает истинным «противоречие отправить нельзя вовсе»: без очистки состояние
+ * «новый пароль вместе со стиранием» собиралось бы одним щелчком, а бэк
+ * отвечает на него 400. Обе страховки ниже — `findOdoctorSettingsProblem` и
+ * `buildOdoctorSettingsPatch` — стоят на этой очистке, а не заменяют её.
+ *
+ * Снятие галочки поле не восстанавливает: восстанавливать нечего, значение
+ * стёрто, а не спрятано.
+ */
+export function applyClearPasswordToggle(
+  form: OdoctorSettingsForm,
+  checked: boolean,
+): OdoctorSettingsForm {
+  return checked
+    ? { ...form, clearPassword: true, newPassword: "" }
+    : { ...form, clearPassword: false };
+}
+
+/**
+ * Что стоит под полем пароля. Состояния путать нельзя: пустое поле у заданного
+ * пароля значит «оставить прежний», пустое поле у незаданного — «пароля нет», и
+ * по одному виду поля они неотличимы.
+ *
+ * `clearPassword` проверяется первым — тем же выбором последней надежды, что и
+ * в `buildOdoctorSettingsPatch`: подпись обязана говорить о том, что уедет на
+ * бэк, а уедет отзыв.
+ */
+export type OdoctorPasswordFieldState = "clearing" | "changing" | "set" | "unset";
+
+export function passwordFieldState(
+  form: OdoctorSettingsForm,
+  hasPassword: boolean,
+): OdoctorPasswordFieldState {
+  if (form.clearPassword) return "clearing";
+  if (form.newPassword !== "") return "changing";
+  return hasPassword ? "set" : "unset";
+}
+
+/**
  * Тело PATCH из состояния формы.
  *
  * `newPassword` уходит только когда в поле что-то ввели: пустое поле значит «не
@@ -139,9 +209,11 @@ export function odoctorSettingsToForm(settings: OdoctorSettings): OdoctorSetting
  * ключа, которого нет, точно нельзя задеть.
  *
  * Оба ключа одновременно функция не отдаёт никогда: их сочетание бэк отвергает
- * (400), и форма до этого не доводит (`findOdoctorSettingsProblem`). Здесь это
- * страховка на случай состояния, собранного в обход формы: введённый пароль
- * важнее галочки, потому что его набрали руками сейчас.
+ * (400), и форма до этого не доводит — галочка чистит поле
+ * (`applyClearPasswordToggle`), а `findOdoctorSettingsProblem` блокирует
+ * сохранение. Состояние недостижимо, так что здесь остаётся только выбор
+ * последней надежды, и он в пользу отзыва: не поставить новый пароль — потеря
+ * удобства, не стереть утёкший — потеря контроля над доступом к чужой системе.
  *
  * Значение пароля не подрезаем: пробел внутри секрета — часть секрета. Логин
  * подрезаем — бэк сравнивает его через `.strip()`, и пробел по краям только
@@ -157,9 +229,44 @@ export function buildOdoctorSettingsPatch(
     odoctorLogin: form.odoctorLogin.trim(),
   };
   if (organizationId != null) payload.organizationId = organizationId;
-  if (form.newPassword !== "") payload.newPassword = form.newPassword;
-  else if (form.clearPassword) payload.clearPassword = true;
+  if (form.clearPassword) payload.clearPassword = true;
+  else if (form.newPassword !== "") payload.newPassword = form.newPassword;
   return payload;
+}
+
+/**
+ * Сохранить форму: собрать тело, отправить PATCH и вернуть новое состояние —
+ * и строку настроек, и форму под неё.
+ *
+ * Форма пересобирается из ответа **здесь**, а не эффектом на данных запроса, и
+ * это не удобство. `queryClient.setQueryData` прогоняет ответ через
+ * `replaceEqualDeep`, а тот при полном совпадении возвращает **прежнюю
+ * ссылку** (`@tanstack/query-core@5.90.10`; `structuralSharing` включён по
+ * умолчанию, Refine его не выключает). Смена одного пароля даёт побайтово тот
+ * же payload — значения пароля в нём нет, а `hasPassword` был `true` и
+ * остался, — ссылка не меняется, эффект на `[settings]` не срабатывает, и
+ * набранный секрет остаётся в поле.
+ *
+ * Чем это плохо, по возрастанию: снекбар говорит «сохранено» при заполненном
+ * поле, и естественная реакция — нажать «Сохранить» ещё раз; `newPassword`
+ * уезжает при каждом следующем сохранении, включая правку одного горизонта,
+ * то есть рушится ровно тот инвариант, ради которого
+ * `buildOdoctorSettingsPatch` этот ключ и не кладёт; у двух операторов чужая
+ * смена пароля молча откатывается на ту, что осталась в поле у первого; и
+ * набранный секрет живёт в состоянии React неограниченно после успешного
+ * сохранения.
+ *
+ * Лечить это добавлением `dataUpdatedAt` в зависимости эффекта нельзя: тогда
+ * форма сбрасывалась бы на каждом перезапросе, затирая незаконченную правку.
+ */
+export async function saveOdoctorSettingsForm(
+  form: OdoctorSettingsForm,
+  organizationId?: number | null,
+): Promise<{ settings: OdoctorSettings; form: OdoctorSettingsForm }> {
+  const settings = await updateOdoctorSettings(
+    buildOdoctorSettingsPatch(form, organizationId),
+  );
+  return { settings, form: odoctorSettingsToForm(settings) };
 }
 
 // ── Что бэк отвергнет ──────────────────────────────────────────────────────────
@@ -245,5 +352,5 @@ export function odoctorSettingsErrorMessage(err: unknown): string {
     .filter(Boolean);
   // Пустой результат означает, что от сообщения остались одни префиксы —
   // сырой текст всё же лучше пустой красной плашки.
-  return parts.length > 0 ? parts.join(" ") : raw;
+  return parts.length > 0 ? parts.join("; ") : raw;
 }

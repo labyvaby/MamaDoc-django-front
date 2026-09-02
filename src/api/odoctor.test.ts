@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "./client";
 import {
+  applyClearPasswordToggle,
   buildOdoctorSettingsPatch,
   findOdoctorSettingsProblem,
   odoctorSettingsErrorMessage,
   odoctorSettingsToForm,
+  parseHorizonDays,
+  passwordFieldState,
+  saveOdoctorSettingsForm,
   updateOdoctorSettings,
+  ODOCTOR_HORIZON_MAX_DAYS,
   type OdoctorSettings,
   type OdoctorSettingsForm,
 } from "./odoctor";
@@ -21,6 +27,21 @@ function settings(over: Partial<OdoctorSettings> = {}): OdoctorSettings {
     hasPassword: true,
     ...over,
   };
+}
+
+/**
+ * Ответ, в котором значение пароля всё-таки оказалось. Контракт такого не
+ * допускает, но заполнять поле «чем найдётся» нельзя ни при каких
+ * обстоятельствах: то, что попало в поле, уйдёт в newPassword следующим
+ * сохранением.
+ */
+function leakySettings(over: Partial<OdoctorSettings> = {}): OdoctorSettings {
+  return {
+    ...settings(over),
+    password: "s3cret",
+    newPassword: "s3cret",
+    odoctorPassword: "s3cret",
+  } as unknown as OdoctorSettings;
 }
 
 function form(over: Partial<OdoctorSettingsForm> = {}): OdoctorSettingsForm {
@@ -45,17 +66,8 @@ describe("odoctorSettingsToForm", () => {
   });
 
   it("оставляет поле пароля пустым, даже если в ответе оказалось значение", () => {
-    // Значения пароля в контракте нет, но заполнять поле «чем найдётся» нельзя
-    // ни при каких обстоятельствах: то, что попало в поле, уйдёт в newPassword
-    // следующим сохранением. Плейсхолдер из звёздочек — та же ошибка.
-    const leaky = {
-      ...settings(),
-      password: "s3cret",
-      newPassword: "s3cret",
-      odoctorPassword: "s3cret",
-    } as unknown as OdoctorSettings;
-
-    expect(odoctorSettingsToForm(leaky).newPassword).toBe("");
+    // Плейсхолдер из звёздочек — та же ошибка, что и настоящее значение.
+    expect(odoctorSettingsToForm(leakySettings()).newPassword).toBe("");
   });
 
   it("сбрасывает галочку отзыва: стирание — разовое действие", () => {
@@ -70,6 +82,113 @@ describe("odoctorSettingsToForm", () => {
       newPassword: "",
       clearPassword: false,
     });
+  });
+});
+
+describe("parseHorizonDays", () => {
+  it("обычное число", () => {
+    expect(parseHorizonDays("7")).toBe(7);
+    expect(parseHorizonDays(" 7 ")).toBe(7);
+  });
+
+  it("пустое поле — ноль, а не NaN", () => {
+    // Ноль осмыслен: бэк отвергает его только при включённой интеграции, и об
+    // этом есть что сказать словами (horizonRequired).
+    expect(parseHorizonDays("")).toBe(0);
+  });
+
+  it("ноль и отрицательное — ноль", () => {
+    expect(parseHorizonDays("0")).toBe(0);
+    expect(parseHorizonDays("-5")).toBe(0);
+  });
+
+  it("дробь округляет вниз: msgspec ждёт int и на 7.9 ответил бы 400", () => {
+    expect(parseHorizonDays("7.9")).toBe(7);
+  });
+
+  it("экспоненциальную запись читает как число, а не как первую цифру", () => {
+    // type=number такой ввод пропускает, а parseInt("1e3") вернул бы 1 —
+    // оператор набрал тысячу, а сохранился бы один день.
+    expect(parseHorizonDays("1e1")).toBe(10);
+    expect(parseHorizonDays("1e3")).toBe(ODOCTOR_HORIZON_MAX_DAYS);
+  });
+
+  it("клампит сверху: атрибут max при наборе не действует", () => {
+    // Без клампа набранные 3650 уехали бы на бэк молча — там 32767.
+    expect(parseHorizonDays("3650")).toBe(ODOCTOR_HORIZON_MAX_DAYS);
+    expect(parseHorizonDays(String(ODOCTOR_HORIZON_MAX_DAYS))).toBe(ODOCTOR_HORIZON_MAX_DAYS);
+  });
+
+  it("мусор и бесконечность — ноль", () => {
+    expect(parseHorizonDays("12abc")).toBe(0);
+    expect(parseHorizonDays("abc")).toBe(0);
+    expect(parseHorizonDays("Infinity")).toBe(0);
+  });
+
+  it("шестнадцатеричную запись читает как число (зафиксировано, не задумано)", () => {
+    // Поле type=number такого не отдаёт; тест держит поведение известным.
+    expect(parseHorizonDays("0x10")).toBe(16);
+  });
+});
+
+describe("applyClearPasswordToggle", () => {
+  it("взведённая галочка всегда чистит поле пароля", () => {
+    // Это единственное, что делает истинным «противоречие отправить нельзя
+    // вовсе»: без очистки состояние «новый пароль плюс стирание» собиралось бы
+    // одним щелчком, а бэк отвечает на него 400.
+    const next = applyClearPasswordToggle(form({ newPassword: "набранный" }), true);
+
+    expect(next.clearPassword).toBe(true);
+    expect(next.newPassword).toBe("");
+  });
+
+  it("взведение при пустом поле ничего не ломает", () => {
+    const next = applyClearPasswordToggle(form(), true);
+
+    expect(next.clearPassword).toBe(true);
+    expect(next.newPassword).toBe("");
+  });
+
+  it("снятие галочки поле не восстанавливает", () => {
+    // Восстанавливать нечего: значение стёрто, а не спрятано.
+    const cleared = applyClearPasswordToggle(form({ newPassword: "набранный" }), true);
+    const back = applyClearPasswordToggle(cleared, false);
+
+    expect(back.clearPassword).toBe(false);
+    expect(back.newPassword).toBe("");
+  });
+
+  it("остальные поля не трогает и исходную форму не мутирует", () => {
+    const before = form({ horizonDays: 21, odoctorLogin: "svc", newPassword: "набранный" });
+    const next = applyClearPasswordToggle(before, true);
+
+    expect(next.horizonDays).toBe(21);
+    expect(next.odoctorLogin).toBe("svc");
+    expect(before.newPassword).toBe("набранный");
+  });
+});
+
+describe("passwordFieldState", () => {
+  it("введённый пароль — «будет заменён»", () => {
+    expect(passwordFieldState(form({ newPassword: "новый" }), true)).toBe("changing");
+  });
+
+  it("пустое поле у заданного пароля — «оставить прежний»", () => {
+    expect(passwordFieldState(form(), true)).toBe("set");
+  });
+
+  it("пустое поле у незаданного — «пароля нет»", () => {
+    // По одному виду поля это состояние от предыдущего неотличимо, поэтому
+    // подпись и нужна.
+    expect(passwordFieldState(form(), false)).toBe("unset");
+  });
+
+  it("взведённая галочка перебивает всё: подпись обязана говорить про отзыв", () => {
+    expect(passwordFieldState(form({ clearPassword: true }), true)).toBe("clearing");
+    // Тот же выбор последней надежды, что и в buildOdoctorSettingsPatch.
+    expect(passwordFieldState(form({ clearPassword: true, newPassword: "новый" }), true)).toBe(
+      "clearing",
+    );
   });
 });
 
@@ -99,16 +218,17 @@ describe("buildOdoctorSettingsPatch", () => {
     expect(payload).not.toHaveProperty("newPassword");
   });
 
-  it("не отправляет новый пароль вместе со стиранием", () => {
-    // Сочетание бэк отвергает (400 на NON_FIELD_ERRORS), форма до него не
-    // доводит — но состояние, собранное в обход формы, не должно превращаться
-    // в отказ: набранный руками пароль важнее галочки.
+  it("при обоих ключах разом выбирает отзыв, а не установку пароля", () => {
+    // Состояние недостижимо (галочка чистит поле) и предзаблокировано, так что
+    // это выбор последней надежды. Он в пользу отзыва: не поставить новый
+    // пароль — потеря удобства, не стереть утёкший — потеря контроля над
+    // доступом к чужой системе.
     const payload = buildOdoctorSettingsPatch(
       form({ newPassword: "новый", clearPassword: true }),
     );
 
-    expect(payload.newPassword).toBe("новый");
-    expect(payload).not.toHaveProperty("clearPassword");
+    expect(payload.clearPassword).toBe(true);
+    expect(payload).not.toHaveProperty("newPassword");
   });
 
   it("подрезает логин: бэк сравнивает его через strip()", () => {
@@ -231,9 +351,19 @@ describe("odoctorSettingsErrorMessage", () => {
       "is_enabled: Нужны логин и пароль.; horizon_days: Укажите хотя бы один день.";
     const err = new ApiError(text, 400, envelope(text));
 
+    // Разделитель бэка ('; ') сохраняем: без него две причины склеиваются в
+    // одну фразу — сейчас это незаметно только потому, что все три сообщения
+    // кончаются точкой.
     expect(odoctorSettingsErrorMessage(err)).toBe(
-      "Нужны логин и пароль. Укажите хотя бы один день.",
+      "Нужны логин и пароль.; Укажите хотя бы один день.",
     );
+  });
+
+  it("от сообщения из одних префиксов остаётся сырой текст, а не пустота", () => {
+    // Иначе на месте причины отказа была бы пустая красная плашка.
+    const err = new ApiError("__all__: ", 400, envelope("__all__: "));
+
+    expect(odoctorSettingsErrorMessage(err)).toBe("__all__: ");
   });
 
   it("обычную ошибку отдаёт как есть", () => {
@@ -295,14 +425,16 @@ describe("updateOdoctorSettings", () => {
     expect(body).not.toHaveProperty("newPassword");
   });
 
-  it("ответ на сохранение значения пароля не содержит — только признак", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(settings({ hasPassword: true })));
+  it("значение пароля из ответа в форму не попадает и через fetch-слой", async () => {
+    // Фикстура с паролем — иначе тест проверял бы сам себя: у ответа без
+    // пароля поле формы пусто и без всякой защиты.
+    fetchMock.mockResolvedValue(jsonResponse(leakySettings({ hasPassword: true })));
 
     const saved = await updateOdoctorSettings(
       buildOdoctorSettingsPatch(form({ newPassword: "новый" })),
     );
 
-    expect(saved.hasPassword).toBe(true);
+    expect((saved as unknown as { password?: string }).password).toBe("s3cret");
     expect(odoctorSettingsToForm(saved).newPassword).toBe("");
   });
 
@@ -322,6 +454,82 @@ describe("updateOdoctorSettings", () => {
 
     expect(odoctorSettingsErrorMessage(err)).toBe(
       "Выберите одно: либо новый пароль (newPassword), либо стирание пароля (clearPassword).",
+    );
+  });
+});
+
+// ── Важно 1: сброс формы на ротации пароля ───────────────────────────────────
+
+describe("saveOdoctorSettingsForm", () => {
+  it("react-query на равном ответе оставляет прежнюю ссылку — сбросу нельзя быть эффектом", () => {
+    // Механизм находки: replaceEqualDeep при полном совпадении возвращает
+    // прежний объект (structuralSharing включён по умолчанию, Refine его не
+    // выключает). Пока это так, useEffect([settings]) на ротации пароля не
+    // срабатывает, и сброс обязан жить в самом пути сохранения.
+    const client = new QueryClient();
+    const key = ["django", "odoctor", "settings", null];
+    client.setQueryData(key, settings({ hasPassword: true }));
+    const seeded = client.getQueryData(key);
+
+    // Ответ бэка на смену ОДНОГО пароля: значения пароля в payload нет, а
+    // hasPassword был true и остался — новый объект, равный прежнему.
+    const afterRotation = settings({ hasPassword: true });
+    expect(afterRotation).not.toBe(seeded);
+
+    client.setQueryData(key, afterRotation);
+
+    expect(client.getQueryData(key)).toBe(seeded);
+  });
+
+  it("после смены одного пароля поле очищается, хотя ответ равен прежнему", async () => {
+    // Тот самый путь. Иначе снекбар говорит «сохранено» при заполненном поле,
+    // а набранный пароль уезжает в newPassword при каждом следующем
+    // сохранении — включая правку одного горизонта.
+    fetchMock.mockResolvedValue(jsonResponse(settings({ hasPassword: true })));
+
+    const result = await saveOdoctorSettingsForm(form({ newPassword: "новый" }));
+
+    expect(sentBody().newPassword).toBe("новый");
+    expect(result.form.newPassword).toBe("");
+    expect(result.form.clearPassword).toBe(false);
+  });
+
+  it("следующее сохранение после ротации уже не несёт пароль", async () => {
+    // Инвариант, который рушился: правка одного горизонта не должна трогать
+    // учётку. Проверяем на форме, вернувшейся из предыдущего сохранения.
+    fetchMock.mockResolvedValue(jsonResponse(settings({ hasPassword: true })));
+    const afterRotation = await saveOdoctorSettingsForm(form({ newPassword: "новый" }));
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValue(jsonResponse(settings({ horizonDays: 21, hasPassword: true })));
+    await saveOdoctorSettingsForm({ ...afterRotation.form, horizonDays: 21 });
+
+    const body = sentBody();
+    expect(body).not.toHaveProperty("newPassword");
+    expect(body.horizonDays).toBe(21);
+  });
+
+  it("отзыв учётки тоже снимает галочку в вернувшейся форме", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(settings({ isEnabled: false, hasPassword: false })));
+
+    const result = await saveOdoctorSettingsForm(form({ isEnabled: false, clearPassword: true }));
+
+    expect(sentBody().clearPassword).toBe(true);
+    expect(result.form.clearPassword).toBe(false);
+    expect(result.settings.hasPassword).toBe(false);
+  });
+
+  it("отказ пробрасывает наружу — сообщение собирает страница", async () => {
+    const text = "__all__: Выберите одно: либо новый пароль, либо стирание.";
+    fetchMock.mockResolvedValue(jsonResponse(envelope(text), 400));
+
+    const err = await saveOdoctorSettingsForm(form({ newPassword: "x" })).catch(
+      (e) => e,
+    );
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(odoctorSettingsErrorMessage(err)).toBe(
+      "Выберите одно: либо новый пароль, либо стирание.",
     );
   });
 });
