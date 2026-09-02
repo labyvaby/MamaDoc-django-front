@@ -39,6 +39,7 @@ import BoltOutlined from "@mui/icons-material/BoltOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
+import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { useCanChecker } from "../../hooks/useCan";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -227,6 +228,9 @@ export function useVisibleSettingsTabs(): TabDef[] {
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;
+    // Воронка продаж: на проде эндпоинтов ещё нет — вкладку прячем тем же
+    // флагом, что и роут с пунктом меню (api/deals.ts).
+    if (tab.key === "deals" && !DEALS_MODULE_ENABLED) return false;
     // Уборка на моках: гейт единый с роутом и сайдбаром (см. useModuleGate).
     return tab.key === "cleaning"
       ? moduleGate("cleaning", [SETTINGS_TAB_PERMISSIONS.cleaning])

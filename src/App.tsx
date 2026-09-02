@@ -58,6 +58,8 @@ import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "r
 import { djangoQueryKeys } from "./api/queryKeys";
 import { ApiError } from "./api/client";
 import { CASHLESS_METHODS_ENABLED } from "./api/cashlessMethods";
+import { DEALS_MODULE_ENABLED } from "./api/deals";
+import { WAITLIST_MODULE_ENABLED } from "./api/waitlist";
 import { djangoDataProvider } from "./config/djangoDataProvider";
 
 // ОПТИМИЗАЦИЯ: Все страницы загружаются через lazy() для code splitting
@@ -394,16 +396,20 @@ function App() {
                         list: "/tasks",
                         meta: { label: "Задачи" }
                       },
-                      {
-                        name: "waitlist",
-                        list: "/waitlist",
-                        meta: { label: "Лист ожидания" }
-                      },
-                      {
-                        name: "deals",
-                        list: "/deals",
-                        meta: { label: "Воронка продаж" }
-                      },
+                      ...(WAITLIST_MODULE_ENABLED
+                        ? [{
+                            name: "waitlist",
+                            list: "/waitlist",
+                            meta: { label: "Лист ожидания" }
+                          }]
+                        : []),
+                      ...(DEALS_MODULE_ENABLED
+                        ? [{
+                            name: "deals",
+                            list: "/deals",
+                            meta: { label: "Воронка продаж" }
+                          }]
+                        : []),
                       {
                         name: "vaccinations",
                         list: "/vaccinations",
@@ -882,16 +888,18 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            <Route
-                              path="settings/deals"
-                              element={
-                                <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.deals}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <DealsSettingsPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
+                            {DEALS_MODULE_ENABLED && (
+                              <Route
+                                path="settings/deals"
+                                element={
+                                  <RequirePermission permission={SETTINGS_TAB_PERMISSIONS.deals}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <DealsSettingsPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
                             <Route
                               path="reviews"
                               element={
@@ -932,26 +940,34 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            <Route
-                              path="waitlist"
-                              element={
-                                <RequirePermission permission={PAGE_PERMISSIONS.waitlist}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <WaitlistPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
-                            <Route
-                              path="deals"
-                              element={
-                                <RequirePermission permission={PAGE_PERMISSIONS.deals}>
-                                  <Suspense fallback={<LinearProgress />}>
-                                    <DealsPage />
-                                  </Suspense>
-                                </RequirePermission>
-                              }
-                            />
+                            {/* Лист ожидания — вместе с флагом
+                                WAITLIST_MODULE_ENABLED (бэка на проде нет). */}
+                            {WAITLIST_MODULE_ENABLED && (
+                              <Route
+                                path="waitlist"
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.waitlist}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <WaitlistPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
+                            {/* Воронка продаж — вместе с флагом
+                                DEALS_MODULE_ENABLED (на проде 404). */}
+                            {DEALS_MODULE_ENABLED && (
+                              <Route
+                                path="deals"
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.deals}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <DealsPage />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            )}
                             <Route
                               path="vaccinations"
                               element={

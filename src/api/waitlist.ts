@@ -16,6 +16,19 @@ import { apiRequest } from "./client";
 /** true — данные из памяти вкладки; false — живой API. */
 export const WAITLIST_USE_MOCKS = true;
 
+/**
+ * Модуль целиком: пункт меню, роут `/waitlist`, кнопки очереди в «Приёмах» и
+ * подсказка «кому позвонить», когда окно освободилось.
+ *
+ * ⚠ Выключен до выкладки бэкенда: на проде `/api/waitlist/` отвечает 404
+ * (проверено 02.09.2026), а на моках регистратор увидел бы выдуманную
+ * очередь — и стал бы звонить людям, которых в ней нет. Гейта по правам
+ * мало: роль `superadmin` проходит в `usePermissions` любую проверку, а на
+ * проде эта роль есть у живых аккаунтов. Включать вместе с
+ * `WAITLIST_USE_MOCKS = false`.
+ */
+export const WAITLIST_MODULE_ENABLED = false;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type WaitlistStatus = "waiting" | "offered" | "scheduled" | "cancelled" | "expired";

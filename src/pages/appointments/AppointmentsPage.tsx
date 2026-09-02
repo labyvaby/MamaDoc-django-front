@@ -56,6 +56,7 @@ import {
   getWaitlist,
   getWaitlistEntry,
   scheduleWaitlistEntry,
+  WAITLIST_MODULE_ENABLED,
   type WaitlistEntry,
 } from "../../api/waitlist";
 import WaitlistCandidatesPanel, {
@@ -434,8 +435,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   const [confirmBusy, setConfirmBusy] = React.useState(false);
 
   // ── Лист ожидания ──
-  const canWaitlist = can("waitlist.view") || can("waitlist.manage");
-  const canWaitlistCreate = can("waitlist.create") || can("waitlist.manage");
+  // Модуль на моках и без бэкенда на проде — гейт по правам его не прикрывает
+  // (роль superadmin проходит любую проверку), поэтому флаг стоит первым.
+  const canWaitlist =
+    WAITLIST_MODULE_ENABLED && (can("waitlist.view") || can("waitlist.manage"));
+  const canWaitlistCreate =
+    WAITLIST_MODULE_ENABLED && (can("waitlist.create") || can("waitlist.manage"));
   /** Окно, которое только что освободилось (отменили приём) — для подсказки. */
   const [freedSlot, setFreedSlot] = React.useState<WaitlistSlotRef | null>(null);
   const [freedCount, setFreedCount] = React.useState(0);

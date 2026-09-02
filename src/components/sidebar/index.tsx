@@ -63,7 +63,8 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { logout as djangoLogout } from "../../api";
 import { getTasksSummary } from "../../api/tasks";
-import { getWaitlistSummary } from "../../api/waitlist";
+import { getWaitlistSummary, WAITLIST_MODULE_ENABLED } from "../../api/waitlist";
+import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { getBookings } from "../../api/bookings";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import {
@@ -402,8 +403,10 @@ const SidebarSecondary: React.FC = () => {
     skud: isSuper || can(PAGE_PERMISSIONS.attendance),
     cleaning: moduleGate("cleaning"),
     tasks: can(PAGE_PERMISSIONS.tasks),
-    waitlist: can(PAGE_PERMISSIONS.waitlist),
-    deals: can(PAGE_PERMISSIONS.deals),
+    // Лист ожидания и воронка ждут бэкенда на проде — гейт по правам их не
+    // прикрывает: роль superadmin проходит любую проверку прав.
+    waitlist: WAITLIST_MODULE_ENABLED && can(PAGE_PERMISSIONS.waitlist),
+    deals: DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals),
     expenses: can(PAGE_PERMISSIONS.expenses),
     knowledge: moduleGate("knowledge"),
     achievements: can(PAGE_PERMISSIONS.achievements),

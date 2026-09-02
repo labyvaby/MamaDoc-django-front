@@ -70,6 +70,7 @@ import { orgWide } from "../../api/scope";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import OverlapConfirmDialog from "./components/OverlapConfirmDialog";
 import WaitlistDrawer from "../../components/waitlist/WaitlistDrawer";
+import { WAITLIST_MODULE_ENABLED } from "../../api/waitlist";
 import { getPatientBalance } from "../../api/patientBalance";
 import {
   getProducts,
@@ -264,7 +265,11 @@ const DjangoAddAppointmentDrawer: React.FC<DjangoAddAppointmentDrawerProps> = ({
   const { open: notify } = useNotification();
   const canCreate = useCan("appointments.create");
   const canManageAppointments = useCan("appointments.update");
-  const canWaitlistCreate = useCan(["waitlist.create", "waitlist.manage"]);
+  // Права проверяем всегда (хук нельзя звать под условием), а флаг гасит
+  // модуль: бэкенда ещё нет, и роль superadmin проходит любую проверку прав
+  // (см. WAITLIST_MODULE_ENABLED в api/waitlist.ts).
+  const hasWaitlistCreatePermission = useCan(["waitlist.create", "waitlist.manage"]);
+  const canWaitlistCreate = WAITLIST_MODULE_ENABLED && hasWaitlistCreatePermission;
   // Опечатку в телефоне видно уже при записи — правим карту, не теряя форму.
   const canUpdatePatient = useCan("patients.update");
   const [editPatientOpen, setEditPatientOpen] = React.useState(false);

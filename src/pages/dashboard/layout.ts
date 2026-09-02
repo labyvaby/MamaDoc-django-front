@@ -1,4 +1,5 @@
 import { PAGE_PERMISSIONS } from "../../config/accessPermissions";
+import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import type { PeriodKey } from "./period";
 
 /**
@@ -217,6 +218,9 @@ export interface VisibilityContext {
  */
 export function availableWidgets(ctx: VisibilityContext): WidgetMeta[] {
   return WIDGETS.filter((w) => {
+    // Воронка продаж ждёт бэкенда на проде: блок убираем тем же флагом, что и
+    // страницу с пунктом меню — иначе сводка встречает ошибкой загрузки.
+    if (w.id === "deals" && !DEALS_MODULE_ENABLED) return false;
     if (!ctx.can(w.permission)) return false;
     if (w.onlyPeriod && w.onlyPeriod !== ctx.period) return false;
     if (w.needsManyBranches && ctx.branchCount < 2) return false;
