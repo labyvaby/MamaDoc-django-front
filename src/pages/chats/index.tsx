@@ -7,7 +7,11 @@ import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
 import { AppButton, PageHeader } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { chatwootUnavailableReason, fetchChatwootEmbed } from "../../api/chatwoot";
+import {
+  chatwootUnavailableReason,
+  fetchChatwootEmbed,
+  fetchChatwootSession,
+} from "../../api/chatwoot";
 import { ChatsUnavailable } from "./ChatsUnavailable";
 import {
   useChatwootLoginFailed,
@@ -47,6 +51,15 @@ import {
  * остальные предлагают перехватить. Если вход всё-таки сорвался, Chatwoot
  * сообщает об этом сам (`useChatwootLoginFailed`), и мы показываем повтор
  * вместо чужой формы пароля.
+ *
+ * ВХОД ЛЕНИВЫЙ. Сессия Чат-центра живёт в браузере сама, поэтому сначала ведём
+ * iframe прямо на дашборд (`/chatwoot/session/` — ссылка без секретов). Токен
+ * выписывается только если Чат-центр сообщил, что сессии нет. Так он реже
+ * оказывается в адресной строке, истории браузера и логах, а живёт он всего
+ * пять минут.
+ *
+ * Если `/session/` недоступен — например, бэкенд с ним ещё не выкачен — молча
+ * откатываемся к прежнему порядку и просим ссылку сразу.
  */
 
 /** Показать заново: новая ссылка и новый iframe вместо мёртвой сессии. */
@@ -112,10 +125,26 @@ export const ChatsPage: React.FC = () => {
   const [attempt, setAttempt] = React.useState(0);
   const [loginFailed, setLoginFailed] = React.useState(false);
 
+  const sessionQuery = useQuery({
+    queryKey: ["chatwoot", "session", attempt],
+    queryFn: fetchChatwootSession,
+    enabled: isOwner,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  // Ссылка входа нужна в двух случаях: Чат-центр сказал, что сессии нет, или
+  // адрес дашборда получить не удалось (старый бэкенд, выключенная интеграция).
+  const needsLogin = loginFailed || sessionQuery.isError;
+
   const { data, isPending, error } = useQuery({
     queryKey: ["chatwoot", "embed", attempt],
     queryFn: fetchChatwootEmbed,
-    enabled: isOwner,
+    enabled: isOwner && needsLogin,
     // См. предохранитель №1 в шапке файла.
     staleTime: Infinity,
     gcTime: 0,
@@ -126,9 +155,10 @@ export const ChatsPage: React.FC = () => {
   });
 
   // Предохранитель №2: адрес, с которым iframe начал вход, больше не меняется.
+  // Ссылка входа перекрывает дашборд — но только один раз за попытку.
   const [frozenUrl, setFrozenUrl] = React.useState<string | null>(null);
   React.useEffect(() => {
-    setFrozenUrl((current) => current ?? data?.url ?? null);
+    if (data?.url) setFrozenUrl(data.url);
   }, [data?.url]);
 
   const retry = React.useCallback(() => {
@@ -137,7 +167,10 @@ export const ChatsPage: React.FC = () => {
     setAttempt((n) => n + 1);
   }, []);
 
-  useChatwootLoginFailed(frozenUrl, () => setLoginFailed(true));
+  // Пока вход не понадобился — показываем дашборд; дальше его сменит ссылка.
+  const iframeUrl = frozenUrl ?? sessionQuery.data?.dashboardUrl ?? null;
+
+  useChatwootLoginFailed(iframeUrl, () => setLoginFailed(true));
 
   if (!isOwner) {
     return (
@@ -147,7 +180,9 @@ export const ChatsPage: React.FC = () => {
     );
   }
 
-  if (loginFailed) {
+  // Экран повтора нужен, только когда и ссылка входа не спасла: сам по себе
+  // сорвавшийся вход мы сначала пробуем починить, выписав её.
+  if (loginFailed && frozenUrl) {
     return (
       <Box sx={{ height: FRAME_HEIGHT }}>
         <ChatsRecovery onRetry={retry} />
@@ -155,7 +190,8 @@ export const ChatsPage: React.FC = () => {
     );
   }
 
-  if (isPending || (!error && !frozenUrl)) {
+  const waiting = needsLogin ? isPending : sessionQuery.isPending;
+  if (waiting || (!error && !iframeUrl)) {
     return (
       <Stack spacing={2}>
         <PageHeader title="Чаты" />
@@ -164,11 +200,11 @@ export const ChatsPage: React.FC = () => {
     );
   }
 
-  if (error || !data) {
+  if (!iframeUrl) {
     return (
       <Box sx={{ height: FRAME_HEIGHT }}>
         <ChatsUnavailable
-          reason={chatwootUnavailableReason(error)}
+          reason={chatwootUnavailableReason(error ?? sessionQuery.error)}
           onRetry={retry}
         />
       </Box>
@@ -191,7 +227,7 @@ export const ChatsPage: React.FC = () => {
         <Box
           key={attempt}
           component="iframe"
-          src={frozenUrl ?? undefined}
+          src={iframeUrl}
           title="Чаты"
           // Chatwoot грузит вложения и уведомления; sandbox не ставим, иначе
           // ломается его собственная авторизация и WebSocket.
