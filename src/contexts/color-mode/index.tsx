@@ -1,15 +1,10 @@
 import { ThemeProvider } from "@mui/material/styles";
 import {
   getAppTheme,
-  LIGHT_SURFACES,
-  DARK_SURFACES,
-  DEFAULT_LIGHT_SURFACE,
-  DEFAULT_DARK_SURFACE,
   DEFAULT_CARD_SKIN,
   DEFAULT_UI_SCALE,
   DEFAULT_SIDEBAR_DENSITY,
   SIDEBAR_DENSITIES,
-  ACCENT_SURFACE_KEY,
   type CardSkin,
   type UiScale,
   type SidebarDensity,
@@ -62,12 +57,6 @@ type ColorModeContextType = {
   accentPreset: AccentPreset;
   /** Акцент текущего режима как hex — для мест, где нужен именно цвет. */
   primaryColor: string;
-  /** Ключ светлой поверхности: ACCENT_SURFACE_KEY либо нейтральный пресет. */
-  lightSurface: string;
-  setLightSurface: (key: string) => void;
-  /** Ключ тёмной поверхности: ACCENT_SURFACE_KEY либо нейтральный пресет. */
-  darkSurface: string;
-  setDarkSurface: (key: string) => void;
   /** Скин карточек. */
   cardSkin: CardSkin;
   setCardSkin: (skin: CardSkin) => void;
@@ -102,8 +91,6 @@ const getSystemMode = (): "light" | "dark" =>
 type ThemeField =
   | "colorScheme"
   | "accentId"
-  | "lightSurface"
-  | "darkSurface"
   | "cardSkin"
   | "uiScale"
   | "sidebarDensity";
@@ -118,6 +105,15 @@ type ThemeField =
  */
 const THEME_OVERRIDES_KEY = "themeOverrides";
 
+/** Настройки, которые ещё существуют. Всё прочее из хранилища отбрасываем. */
+const THEME_FIELDS: ThemeField[] = [
+  "colorScheme",
+  "accentId",
+  "cardSkin",
+  "uiScale",
+  "sidebarDensity",
+];
+
 const readThemeOverrides = (): Set<ThemeField> => {
   try {
     const raw = window.localStorage.getItem(THEME_OVERRIDES_KEY);
@@ -125,8 +121,13 @@ const readThemeOverrides = (): Set<ThemeField> => {
     const fields = Array.isArray(parsed) ? (parsed as string[]) : [];
     // Раньше акцент назывался primaryColor. Переименование не должно стирать
     // личный выбор сотрудника — иначе палитра организации перетрёт его цвет.
+    // А вот выбор фона (lightSurface/darkSurface) настройкой быть перестал:
+    // фон приходит вместе с темой, и такой «личный выбор» больше нечего
+    // применять — иначе кнопка «Вернуть тему организации» висела бы без дела.
     return new Set(
-      fields.map((k) => (k === "primaryColor" ? "accentId" : k)) as ThemeField[],
+      fields
+        .map((k) => (k === "primaryColor" ? "accentId" : k))
+        .filter((k): k is ThemeField => THEME_FIELDS.includes(k as ThemeField)),
     );
   } catch {
     return new Set();
@@ -154,12 +155,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       : "system",
   );
   const [accentId, setAccentIdState] = useState<string>(resolveAccentId(storedAccent));
-  const [lightSurface, setLightSurfaceState] = useState<string>(
-    localStorage.getItem("lightSurface") || DEFAULT_LIGHT_SURFACE,
-  );
-  const [darkSurface, setDarkSurfaceState] = useState<string>(
-    localStorage.getItem("darkSurface") || DEFAULT_DARK_SURFACE,
-  );
   const [cardSkin, setCardSkinState] = useState<CardSkin>(
     (localStorage.getItem("cardSkin") as CardSkin) || DEFAULT_CARD_SKIN,
   );
@@ -219,20 +214,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setSchemeState(themeConfig.colorScheme as ColorScheme);
     }
     if (
-      !overrides.has("lightSurface") &&
-      themeConfig.lightSurface &&
-      typeof themeConfig.lightSurface === "string"
-    ) {
-      setLightSurfaceState(themeConfig.lightSurface);
-    }
-    if (
-      !overrides.has("darkSurface") &&
-      themeConfig.darkSurface &&
-      typeof themeConfig.darkSurface === "string"
-    ) {
-      setDarkSurfaceState(themeConfig.darkSurface);
-    }
-    if (
       !overrides.has("cardSkin") &&
       themeConfig.cardSkin &&
       (themeConfig.cardSkin === "bordered" || themeConfig.cardSkin === "shadow")
@@ -267,8 +248,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
 
   useEffect(() => { window.localStorage.setItem("colorScheme", scheme); }, [scheme]);
   useEffect(() => { window.localStorage.setItem("accentId", accentId); }, [accentId]);
-  useEffect(() => { window.localStorage.setItem("lightSurface", lightSurface); }, [lightSurface]);
-  useEffect(() => { window.localStorage.setItem("darkSurface", darkSurface); }, [darkSurface]);
   useEffect(() => { window.localStorage.setItem("cardSkin", cardSkin); }, [cardSkin]);
   useEffect(() => { window.localStorage.setItem("uiScale", uiScale); }, [uiScale]);
   useEffect(() => { window.localStorage.setItem("sidebarDensity", sidebarDensity); }, [sidebarDensity]);
@@ -283,14 +262,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
   const setAccentId = useCallback((next: string) => {
     markOverride("accentId");
     setAccentIdState(resolveAccentId(next));
-  }, [markOverride]);
-  const setLightSurface = useCallback((next: string) => {
-    markOverride("lightSurface");
-    setLightSurfaceState(next);
-  }, [markOverride]);
-  const setDarkSurface = useCallback((next: string) => {
-    markOverride("darkSurface");
-    setDarkSurfaceState(next);
   }, [markOverride]);
   const setCardSkin = useCallback((next: CardSkin) => {
     markOverride("cardSkin");
@@ -319,8 +290,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     }
     setSchemeState("system");
     setAccentIdState(DEFAULT_ACCENT_ID);
-    setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
-    setDarkSurfaceState(DEFAULT_DARK_SURFACE);
     setCardSkinState(DEFAULT_CARD_SKIN);
     setUiScaleState(DEFAULT_UI_SCALE);
     setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
@@ -346,8 +315,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       // У организации палитры нет — возвращаемся к дефолтам приложения.
       setSchemeState("system");
       setAccentIdState(DEFAULT_ACCENT_ID);
-      setLightSurfaceState(DEFAULT_LIGHT_SURFACE);
-      setDarkSurfaceState(DEFAULT_DARK_SURFACE);
       setCardSkinState(DEFAULT_CARD_SKIN);
       setUiScaleState(DEFAULT_UI_SCALE);
       setSidebarDensityState(DEFAULT_SIDEBAR_DENSITY);
@@ -359,12 +326,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       config.colorScheme === "light" || config.colorScheme === "dark" || config.colorScheme === "system"
         ? (config.colorScheme as ColorScheme)
         : "system",
-    );
-    setLightSurfaceState(
-      typeof config.lightSurface === "string" ? config.lightSurface : DEFAULT_LIGHT_SURFACE,
-    );
-    setDarkSurfaceState(
-      typeof config.darkSurface === "string" ? config.darkSurface : DEFAULT_DARK_SURFACE,
     );
     setCardSkinState(
       config.cardSkin === "bordered" || config.cardSkin === "shadow"
@@ -395,10 +356,6 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       setAccentId,
       accentPreset,
       primaryColor: accentTokens.accent,
-      lightSurface,
-      setLightSurface,
-      darkSurface,
-      setDarkSurface,
       cardSkin,
       setCardSkin,
       uiScale,
@@ -415,15 +372,11 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
       accentId,
       accentPreset,
       accentTokens.accent,
-      lightSurface,
-      darkSurface,
       cardSkin,
       uiScale,
       sidebarDensity,
       setScheme,
       setAccentId,
-      setLightSurface,
-      setDarkSurface,
       setCardSkin,
       setUiScale,
       setSidebarDensity,
@@ -433,26 +386,19 @@ export const ColorModeContextProvider: React.FC<PropsWithChildren> = ({
     ],
   );
 
-  const theme = useMemo(() => {
-    const surfacePresets = mode === "dark" ? DARK_SURFACES : LIGHT_SURFACES;
-    const surfaceKey = mode === "dark" ? darkSurface : lightSurface;
-    // ACCENT_SURFACE_KEY — поверхности берутся из акцента (тонированный режим).
-    // Любой другой ключ означает выбранный нейтральный фон: он передаётся явно
-    // и отключает тонировку внутри getAppTheme.
-    const surface =
-      surfaceKey === ACCENT_SURFACE_KEY
-        ? undefined
-        : surfacePresets.find((p) => p.key === surfaceKey);
-    return getAppTheme(mode, {
-      // Токены акцента передаём всегда: даже с нейтральным фоном из них берутся
-      // цвет заливки, текст на заливке и подложка активных состояний.
-      accent: accentTokens,
-      surface: surface ? { default: surface.default, paper: surface.paper } : undefined,
-      cardSkin,
-      uiScale,
-      sidebarDensity,
-    });
-  }, [mode, accentTokens, lightSurface, darkSurface, cardSkin, uiScale, sidebarDensity]);
+  const theme = useMemo(
+    () =>
+      // Тема — одна связка токенов: цвет заливки, текст на ней, подложка
+      // активных состояний, фон страницы, карточки и границы. Отдельного
+      // выбора фона нет: сочетание задано пресетом (theme/accentPalette).
+      getAppTheme(mode, {
+        accent: accentTokens,
+        cardSkin,
+        uiScale,
+        sidebarDensity,
+      }),
+    [mode, accentTokens, cardSkin, uiScale, sidebarDensity],
+  );
 
   return (
     <ColorModeContext.Provider value={value}>

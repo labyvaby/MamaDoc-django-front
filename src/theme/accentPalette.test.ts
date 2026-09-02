@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACCENT_PRESETS,
+  CALM_PRESETS,
+  TINTED_PRESETS,
   DEFAULT_ACCENT_ID,
   getAccentPreset,
   resolveAccentId,
@@ -69,8 +71,28 @@ const STATUS_COLORS = {
 } as const;
 
 describe("акцентная палитра", () => {
-  it("ровно 50 акцентов", () => {
-    expect(ACCENT_PRESETS).toHaveLength(50);
+  it("24 цветных темы и 12 спокойных", () => {
+    expect(TINTED_PRESETS).toHaveLength(24);
+    expect(CALM_PRESETS).toHaveLength(12);
+    expect(ACCENT_PRESETS).toHaveLength(36);
+  });
+
+  // Спокойные темы — замена прежнему отдельному выбору фона: их смысл в том,
+  // что страница и карточки остаются нейтральными, а цвет живёт только в
+  // акценте. Тонированный page здесь означал бы, что нейтрального фона в
+  // приложении больше нет вовсе.
+  it("у спокойных тем фон нейтральный", () => {
+    const spread = (hex: string): number => {
+      const h = hex.replace("#", "");
+      const channels = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+      return Math.max(...channels) - Math.min(...channels);
+    };
+    for (const preset of CALM_PRESETS) {
+      for (const mode of ["light", "dark"] as const) {
+        expect(spread(preset[mode].page), `${preset.id}.${mode}.page`).toBeLessThanOrEqual(16);
+        expect(spread(preset[mode].surface), `${preset.id}.${mode}.surface`).toBeLessThanOrEqual(16);
+      }
+    }
   });
 
   it("ключи уникальны", () => {
@@ -154,9 +176,9 @@ describe("акцентная палитра", () => {
 
     it("переводит хекс старой палитры в ближайший акцент", () => {
       // Нейтральные «Графит» и «Сталь» прежней палитры — оба уходят в
-      // сдержанные сине-серые оттенки, а не в цветные.
+      // спокойные сине-серые темы, а не в цветные.
       expect(resolveAccentId("#475569")).toBe("graphite");
-      expect(resolveAccentId("#334155")).toBe("denim");
+      expect(resolveAccentId("#334155")).toBe("steel");
     });
 
     it("убранные из палитры ключи переводит в ближайший оставшийся", () => {
