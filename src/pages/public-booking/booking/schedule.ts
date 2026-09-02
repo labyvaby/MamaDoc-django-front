@@ -177,3 +177,21 @@ export function pickBranchWithSlots(
     .sort((a, b) => a.date.localeCompare(b.date));
   return candidates[0] ?? null;
 }
+
+/**
+ * Загружены ли календари всех филиалов врача.
+ *
+ * Без этой проверки выбор филиала по умолчанию превращался в гонку: эффект
+ * успевал отработать раньше загрузки календарей, у всех филиалов «окон нет», и
+ * дефолтом фиксировался домашний филиал — даже когда окна были в соседнем.
+ * Проявлялось через раз, зависело от того, чей ответ пришёл первым (прод,
+ * 02.09.2026: одна и та же карточка открывалась то на филиале с окнами, то на
+ * пустом).
+ */
+export function calendarsReady(
+  branches: ProfessionalScheduleBranch[],
+  calendarByBranch: Record<string, CalendarDay[]>,
+): boolean {
+  if (!branches.length) return false;
+  return branches.every((b) => calendarByBranch[String(b.id)] !== undefined);
+}

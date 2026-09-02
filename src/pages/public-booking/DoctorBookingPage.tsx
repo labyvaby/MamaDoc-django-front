@@ -47,6 +47,7 @@ import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
 import { ScheduleCard } from "./booking/ScheduleCard";
 import { BranchesCard } from "./booking/BranchesCard";
 import {
+  calendarsReady,
   dayOffDates,
   nearestAvailableDate,
   pickBranchWithSlots,
@@ -299,6 +300,9 @@ const DoctorBookingPage: React.FC = () => {
    */
   React.useEffect(() => {
     if (scheduleLoading || calendarLoading || pickedBranchId !== null) return;
+    // Пока календари не пришли, «окон нет» ни в одном филиале — решение по
+    // такой картине зафиксировало бы домашний филиал навсегда (guard выше).
+    if (!calendarsReady(scheduleBranches, calendarByBranch)) return;
     const next = pickDefaultBranchId(
       scheduleBranches,
       nearestDayByBranch,
@@ -309,6 +313,7 @@ const DoctorBookingPage: React.FC = () => {
     scheduleLoading,
     calendarLoading,
     scheduleBranches,
+    calendarByBranch,
     pickedBranchId,
     doctor?.branch?.id,
     nearestDayByBranch,

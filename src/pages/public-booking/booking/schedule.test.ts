@@ -8,6 +8,7 @@ import type {
 } from "../../../api/publicBooking";
 import {
   branchHasSchedule,
+  calendarsReady,
   dayOffDates,
   hhmm,
   lunchRange,
@@ -261,5 +262,26 @@ describe("pickBranchWithSlots", () => {
 
   it("окон нет нигде — null", () => {
     expect(pickBranchWithSlots([home, second], { 1: null, 13: null }, 1)).toBeNull();
+  });
+});
+
+describe("calendarsReady", () => {
+  it("готово, только когда есть календарь каждого филиала", () => {
+    expect(calendarsReady([home, second], { "1": [], "13": [day("2026-09-04", true)] })).toBe(true);
+  });
+
+  it("календарь одного филиала ещё не пришёл — решение принимать рано", () => {
+    // Гонка на проде 02.09.2026: эффект успевал раньше загрузки, у всех
+    // филиалов «окон нет», и дефолтом фиксировался домашний филиал.
+    expect(calendarsReady([home, second], { "1": [] })).toBe(false);
+    expect(calendarsReady([home, second], {})).toBe(false);
+  });
+
+  it("пустой календарь филиала — это ответ, а не отсутствие данных", () => {
+    expect(calendarsReady([home], { "1": [] })).toBe(true);
+  });
+
+  it("филиалов нет — готовности нет", () => {
+    expect(calendarsReady([], { "1": [] })).toBe(false);
   });
 });
