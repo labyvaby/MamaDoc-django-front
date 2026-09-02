@@ -318,6 +318,9 @@ export function deleteCleaningType(typeId: number, organizationId?: number): Pro
 
 // ── Записи ────────────────────────────────────────────────────────────────────
 
+/** Размер страницы при выгрузке месяца целиком (бэк отдаёт до 200 за раз). */
+const FETCH_PAGE_SIZE = 200;
+
 export function getCleaningRecords(
   filters: CleaningRecordsFilters = {},
   signal?: AbortSignal,
@@ -345,6 +348,46 @@ export function getCleaningRecords(
   if (filters.pageSize != null) q.set("pageSize", String(filters.pageSize));
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
   return apiRequest<CleaningRecordsResponse>(`/cleaning/records/?${q.toString()}`, { signal });
+}
+
+/**
+ * Свежие сверху: по дате уборки, при равной дате — по моменту создания
+ * (у записей задним числом время внутри дня служебное, полдень).
+ */
+export function sortCleaningRecords(records: CleaningRecord[]): CleaningRecord[] {
+  return [...records].sort(
+    (a, b) =>
+      cleaningRecordDate(b).slice(0, 10).localeCompare(cleaningRecordDate(a).slice(0, 10)) ||
+      b.createdAt.localeCompare(a.createdAt) ||
+      b.id - a.id,
+  );
+}
+
+/**
+ * Записи месяца одним списком, отсортированные по дате уборки.
+ *
+ * Зачем не серверная пагинация: `GET /cleaning/records/` сортирует по моменту
+ * создания и молча игнорирует `ordering` (проверено на проде 02.09.2026:
+ * `ordering=id`, `ordering=performed_at` порядок ответа не меняют). Из-за этого
+ * уборка, отмеченная задним числом, всплывала выше сегодняшних — её `createdAt`
+ * свежее. Отсортировать одну страницу мало: «поздно созданная, но старая»
+ * запись сидит на первой странице сервера и всё равно окажется не на своём
+ * месте. Поэтому страница берёт месяц целиком (десятки записей) и пагинирует
+ * у себя. Когда бэк научится `ordering`, здесь останется один запрос с ним.
+ */
+export async function getCleaningRecordsSorted(
+  filters: Omit<CleaningRecordsFilters, "page" | "pageSize"> = {},
+  signal?: AbortSignal,
+): Promise<CleaningRecord[]> {
+  const all: CleaningRecord[] = [];
+  // Страховка от бесконечного цикла, если бэк перестанет отдавать `next`/`count`
+  // честно: 10 страниц по 200 — заведомо больше, чем уборок в месяце.
+  for (let page = 1; page <= 10; page += 1) {
+    const chunk = await getCleaningRecords({ ...filters, page, pageSize: FETCH_PAGE_SIZE }, signal);
+    all.push(...chunk.results);
+    if (!chunk.next || chunk.results.length === 0 || all.length >= chunk.count) break;
+  }
+  return sortCleaningRecords(all);
 }
 
 export interface CreateCleaningRecordPayload {

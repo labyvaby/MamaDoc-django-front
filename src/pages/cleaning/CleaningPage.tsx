@@ -58,6 +58,7 @@ import {
   deleteCleaningRecord,
   getCleaningActiveMonths,
   getCleaningRecords,
+  getCleaningRecordsSorted,
   getCleaningSummary,
   getCleaningTypes,
   isCleaningBackdated,
@@ -131,28 +132,39 @@ const CleaningPage: React.FC = () => {
       month: monthStr,
       status: statusFilter,
       type: typeFilter,
-      page,
       orgId: orgId ?? null,
       branchId: branchId ?? null,
     }),
     queryFn: ({ signal }) =>
-      getCleaningRecords(
+      getCleaningRecordsSorted(
         {
           dateFrom: month.format("YYYY-MM-DD"),
           dateTo: month.endOf("month").format("YYYY-MM-DD"),
           status: statusFilter === "all" ? undefined : statusFilter,
           type: typeFilter === "all" ? undefined : typeFilter,
           branch: branchId,
-          page: page + 1,
-          pageSize: PAGE_SIZE,
           organizationId: orgId,
         },
         signal,
       ),
     placeholderData: keepPreviousData,
   });
-  const rows = recordsQuery.data?.results ?? [];
-  const total = recordsQuery.data?.count ?? 0;
+  // Месяц берём целиком и режем сами: бэк сортирует по моменту создания и не
+  // понимает `ordering`, из-за чего уборка задним числом уезжала наверх списка
+  // (см. getCleaningRecordsSorted).
+  const allRows = recordsQuery.data;
+  const total = allRows?.length ?? 0;
+  const rows = React.useMemo(
+    () => (allRows ?? []).slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [allRows, page],
+  );
+  // Последняя запись страницы может быть удалена — тогда страница «уезжает» за
+  // конец списка и показывается пустой; возвращаемся на существующую.
+  React.useEffect(() => {
+    if (page > 0 && page * PAGE_SIZE >= total) {
+      setPage(Math.max(0, Math.ceil(total / PAGE_SIZE) - 1));
+    }
+  }, [page, total]);
 
   // Счётчики для плиток-фильтров. Отдельного эндпоинта со сводкой по статусам
   // нет, но DRF отдаёт `count` в пагинации — три запроса по одной строке
