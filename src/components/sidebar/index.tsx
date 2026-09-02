@@ -371,6 +371,7 @@ const SidebarSecondary: React.FC = () => {
   const orgId = useApiOrgId();
   const isSuper = isSuperAdmin();
   const isRetail = activeOrganization?.vertical === "retail";
+  const isBillingVertical = activeOrganization?.vertical === "billing";
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => {
     const saved = sessionStorage.getItem("sidebar-group");
     return (saved as NavGroup) ?? "my-work";
@@ -597,6 +598,27 @@ const SidebarSecondary: React.FC = () => {
         <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />
         <SidebarMenuItem to="/products" icon={<Inventory2Outlined />} label="Товары" collapsed={siderCollapsed} />
         <SidebarSkudItem collapsed={siderCollapsed} />
+      </List>
+    );
+  }
+
+  // У биллинговой организации один рабочий контур: клиенты, договоры и
+  // деньги. Общая CRM-навигация (брони, чаты, кабинеты и групповые фильтры)
+  // здесь только создаёт ложные точки входа. Сам модуль billing при этом
+  // остаётся доступен и в других вертикалях через общую навигацию ниже.
+  if (isBillingVertical) {
+    return (
+      <List sx={{ py: 0.5 }}>
+        <BillingSidebarNavigation
+          collapsed={siderCollapsed}
+          canBilling={can_.billing}
+          canClients={can_.clients}
+          canEmployees={can_.employees}
+          canSettings={can_.settings}
+          canOfferings={can_.offerings}
+          canPayments={can("billing.payments.view")}
+          canDebtors={can("billing.debtors.view")}
+        />
       </List>
     );
   }
@@ -1059,6 +1081,10 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
 type BillingSidebarNavigationProps = {
   collapsed: boolean;
   canBilling: boolean;
+  canClients?: boolean;
+  canEmployees?: boolean;
+  canSettings?: boolean;
+  canOfferings?: boolean;
   canPayments: boolean;
   canDebtors: boolean;
 };
@@ -1073,6 +1099,10 @@ const BILLING_SECTION_PATHS = [
 const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
   collapsed,
   canBilling,
+  canClients = false,
+  canEmployees = false,
+  canSettings = false,
+  canOfferings = false,
   canPayments,
   canDebtors,
 }) => {
@@ -1104,7 +1134,9 @@ const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
           excludePaths={BILLING_SECTION_PATHS}
         />
       )}
+      {canClients && <SidebarMenuItem to="/clients" icon={<SearchOutlined />} label="Клиенты" collapsed={collapsedFinal} />}
       {canBilling && <SidebarMenuItem to="/contracts" icon={<DescriptionOutlined />} label="Контракты" collapsed={collapsedFinal} />}
+      {canOfferings && <SidebarMenuItem to="/offerings" icon={<MedicalServicesOutlined />} label="Услуги и объекты" collapsed={collapsedFinal} />}
       {canBilling && (
         <>
           <ListItem disablePadding>
@@ -1145,6 +1177,8 @@ const BillingSidebarNavigation: React.FC<BillingSidebarNavigationProps> = ({
           </Collapse>
         </>
       )}
+      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={collapsedFinal} />}
+      {canSettings && <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={collapsedFinal} />}
     </>
   );
 };

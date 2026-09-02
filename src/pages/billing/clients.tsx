@@ -32,6 +32,7 @@ import { PageHeader } from "../../components/ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useCan } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { ClientCardDrawer } from "./ClientCardDrawer";
 
 type FormState = {
   clientType: "individual" | "company";
@@ -67,6 +68,7 @@ export default function BillingClientsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = React.useState("");
   const [editing, setEditing] = React.useState<BillingClient | null>(null);
+  const [selected, setSelected] = React.useState<BillingClient | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [form, setForm] = React.useState<FormState>(emptyForm);
 
@@ -92,8 +94,9 @@ export default function BillingClientsPage() {
         ? billingApi.updateClient(editing.id, body, { organizationId })
         : billingApi.createClient(body);
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: djangoQueryKeys.billing.clients(organizationId) });
+      if (selected?.id === saved.id) setSelected(saved);
       setDialogOpen(false);
       notify?.({ type: "success", message: editing ? "Клиент обновлён" : "Клиент создан" });
     },
@@ -160,7 +163,14 @@ export default function BillingClientsPage() {
                 <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><CircularProgress size={28} /></TableCell></TableRow>
               )}
               {!clientsQuery.isLoading && rows.map((client) => (
-                <TableRow key={client.id} hover>
+                <TableRow
+                  key={client.id}
+                  hover
+                  tabIndex={0}
+                  onClick={() => setSelected(client)}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelected(client); }}
+                  sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}
+                >
                   <TableCell>
                     <Typography fontWeight={650}>{client.fullName}</Typography>
                     {client.legalName && <Typography variant="caption" color="text.secondary">{client.legalName}{client.inn ? ` · ИНН ${client.inn}` : ""}</Typography>}
@@ -170,7 +180,11 @@ export default function BillingClientsPage() {
                   <TableCell align="right">{money(client.balance)}</TableCell>
                   <TableCell align="right" sx={{ color: Number(client.debt) > 0 ? "error.main" : undefined, fontWeight: 650 }}>{money(client.debt)}</TableCell>
                   <TableCell><Chip size="small" color={client.status === "active" ? "success" : "default"} label={client.status === "active" ? "Активен" : client.status} /></TableCell>
-                  <TableCell align="right">{canManage && <Button size="small" startIcon={<EditOutlined />} onClick={() => openEdit(client)}>Изменить</Button>}</TableCell>
+                  <TableCell align="right">
+                    {canManage
+                      ? <Button size="small" startIcon={<EditOutlined />} onClick={(event) => { event.stopPropagation(); openEdit(client); }}>Изменить</Button>
+                      : <Button size="small" onClick={(event) => { event.stopPropagation(); setSelected(client); }}>Открыть</Button>}
+                  </TableCell>
                 </TableRow>
               ))}
               {!clientsQuery.isLoading && rows.length === 0 && (
@@ -204,6 +218,13 @@ export default function BillingClientsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ClientCardDrawer
+        client={selected}
+        organizationId={organizationId}
+        onClose={() => setSelected(null)}
+        onEdit={openEdit}
+      />
     </Box>
   );
 }

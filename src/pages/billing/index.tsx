@@ -49,6 +49,8 @@ import { useActiveScope } from "../../hooks/useActiveScope";
 import { useCan } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { subtleBg } from "../../theme/uiHelpers";
+import { ChargeCardDrawer } from "./ChargeCardDrawer";
+import { ContractCardDrawer } from "./ContractCardDrawer";
 
 type BillingTab = "overview" | "contracts" | "charges" | "payments" | "debtors" | "offerings";
 type DialogKind = "contract" | "charge" | "payment" | "offering" | null;
@@ -84,6 +86,16 @@ const STATUS_META: Record<string, { label: string; color: "default" | "success" 
   overdue: { label: "Просрочено", color: "error" },
   cancelled: { label: "Отменено", color: "default" },
 };
+
+const CHARGE_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Все" },
+  { value: "overdue", label: "Просроченные" },
+  { value: "issued", label: "Выставленные" },
+  { value: "partially_paid", label: "Частично оплаченные" },
+  { value: "draft", label: "Черновики" },
+  { value: "paid", label: "Оплаченные" },
+  { value: "cancelled", label: "Отменённые" },
+];
 
 const KIND_LABELS: Record<string, string> = { service: "Услуга", course: "Курс", rental: "Аренда" };
 const CYCLE_LABELS: Record<string, string> = {
@@ -162,6 +174,9 @@ export default function BillingPage() {
   const [menuItem, setMenuItem] = React.useState<BillingContract | BillingCharge | BillingPayment | BillingOffering | null>(null);
   const [editingOffering, setEditingOffering] = React.useState<BillingOffering | null>(null);
   const [selectedDebtors, setSelectedDebtors] = React.useState<number[]>([]);
+  const [selectedContract, setSelectedContract] = React.useState<BillingContract | null>(null);
+  const [selectedCharge, setSelectedCharge] = React.useState<BillingCharge | null>(null);
+  const [chargeStatus, setChargeStatus] = React.useState("");
   const { open: notify } = useNotification();
   const queryClient = useQueryClient();
   const scope = useActiveScope();
@@ -186,8 +201,8 @@ export default function BillingPage() {
     enabled: enabled && (tab === "contracts" || dialog === "charge"),
   });
   const chargesQuery = useQuery({
-    queryKey: djangoQueryKeys.billing.charges({ organizationId, q: search }),
-    queryFn: () => billingApi.charges({ ...scopeParams, q: search, pageSize: 200 }),
+    queryKey: djangoQueryKeys.billing.charges({ organizationId, q: search, status: chargeStatus }),
+    queryFn: () => billingApi.charges({ ...scopeParams, q: search, ...(chargeStatus ? { status: chargeStatus } : {}), pageSize: 200 }),
     enabled: enabled && (tab === "charges" || dialog === "payment"),
   });
   const paymentsQuery = useQuery({
@@ -322,17 +337,31 @@ export default function BillingPage() {
         {tab === "contracts" && (
           <TableContainer component={Paper} variant="outlined">
             <Table size="small"><TableHead><TableRow><TableCell>Контракт</TableCell><TableCell>Клиент</TableCell><TableCell>Объект</TableCell><TableCell>Период</TableCell><TableCell align="right">Стоимость</TableCell><TableCell align="right">Долг</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
-              <TableBody>{(contractsQuery.data?.items ?? []).map((row) => <TableRow key={row.id} hover><TableCell><Typography fontWeight={650}>№ {row.number ?? row.id}</Typography><Typography variant="caption" color="text.secondary">{row.name || "Без названия"}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.offeringName}<Typography variant="caption" color="text.secondary" display="block">{KIND_LABELS[row.offeringKind] ?? row.offeringKind}</Typography></TableCell><TableCell>{formatDate(row.startsOn)} — {formatDate(row.endsOn)}</TableCell><TableCell align="right">{formatMoney(row.effectivePrice)}<Typography variant="caption" color="text.secondary" display="block">{CYCLE_LABELS[row.effectiveBillingCycle] ?? row.effectiveBillingCycle}</Typography></TableCell><TableCell align="right" sx={{ color: Number(row.debt) > 0 ? "error.main" : undefined, fontWeight: 650 }}>{formatMoney(row.debt)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" onClick={(e) => openMenu(e, row)}><MoreHorizOutlined /></IconButton></TableCell></TableRow>)}{!contractsQuery.isLoading && !(contractsQuery.data?.items.length) && <EmptyRow colSpan={8} text="Создайте первый контракт — начисления появятся автоматически." />}</TableBody>
+              <TableBody>{(contractsQuery.data?.items ?? []).map((row) => <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedContract(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedContract(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell><Typography fontWeight={650}>№ {row.number ?? row.id}</Typography><Typography variant="caption" color="text.secondary">{row.name || row.offeringName}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell>{row.offeringName}<Typography variant="caption" color="text.secondary" display="block">{KIND_LABELS[row.offeringKind] ?? row.offeringKind}</Typography></TableCell><TableCell>{formatDate(row.startsOn)} — {formatDate(row.endsOn)}</TableCell><TableCell align="right">{formatMoney(row.effectivePrice)}<Typography variant="caption" color="text.secondary" display="block">{CYCLE_LABELS[row.effectiveBillingCycle] ?? row.effectiveBillingCycle}</Typography></TableCell><TableCell align="right" sx={{ color: Number(row.debt) > 0 ? "error.main" : undefined, fontWeight: 650 }}>{formatMoney(row.debt)}</TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" aria-label={`Действия контракта № ${row.number ?? row.id}`} onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton></TableCell></TableRow>)}{!contractsQuery.isLoading && !(contractsQuery.data?.items.length) && <EmptyRow colSpan={8} text="Создайте первый контракт — начисления появятся автоматически." />}</TableBody>
             </Table>
           </TableContainer>
         )}
 
         {tab === "charges" && (
-          <TableContainer component={Paper} variant="outlined">
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+              {CHARGE_FILTERS.map((filter) => (
+                <Chip
+                  key={filter.value || "all"}
+                  label={filter.label}
+                  size="small"
+                  color={chargeStatus === filter.value ? "primary" : "default"}
+                  variant={chargeStatus === filter.value ? "filled" : "outlined"}
+                  onClick={() => setChargeStatus(filter.value)}
+                />
+              ))}
+            </Stack>
+            <TableContainer component={Paper} variant="outlined">
             <Table size="small"><TableHead><TableRow><TableCell>Начисление</TableCell><TableCell>Клиент</TableCell><TableCell>Назначение</TableCell><TableCell>Срок</TableCell><TableCell align="right">Сумма</TableCell><TableCell align="right">Оплачено</TableCell><TableCell>Статус</TableCell><TableCell /></TableRow></TableHead>
-              <TableBody>{chargeRows.map((row) => { const progress = Math.min(100, Number(row.amount) ? Number(row.paidAmount) / Number(row.amount) * 100 : 0); return <TableRow key={row.id} hover><TableCell><Typography fontWeight={650}>№ {row.number}</Typography><Typography variant="caption" color="text.secondary">{row.periodLabel || row.periodKey}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell sx={{ maxWidth: 300 }}>{row.purpose}<Typography variant="caption" color="text.secondary" display="block">{row.offeringName}</Typography></TableCell><TableCell sx={{ color: row.status === "overdue" ? "error.main" : undefined }}>{formatDate(row.dueDate)}</TableCell><TableCell align="right">{formatMoney(row.amount)}</TableCell><TableCell align="right"><Typography variant="body2">{formatMoney(row.paidAmount)}</Typography><LinearProgress variant="determinate" value={progress} color={progress === 100 ? "success" : "primary"} sx={{ mt: 0.5, minWidth: 80, borderRadius: 3 }} /></TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" onClick={(e) => openMenu(e, row)}><MoreHorizOutlined /></IconButton></TableCell></TableRow>; })}{!chargesQuery.isLoading && !chargeRows.length && <EmptyRow colSpan={8} text="Начислений пока нет." />}</TableBody>
-            </Table>
-          </TableContainer>
+              <TableBody>{chargeRows.map((row) => { const progress = Math.min(100, Number(row.amount) ? Number(row.paidAmount) / Number(row.amount) * 100 : 0); return <TableRow key={row.id} hover tabIndex={0} onClick={() => setSelectedCharge(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedCharge(row); }} sx={{ cursor: "pointer", "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: -2 } }}><TableCell><Typography fontWeight={650}>№ {row.number}</Typography><Typography variant="caption" color="text.secondary">{row.periodLabel || row.periodKey}</Typography></TableCell><TableCell>{row.clientName}</TableCell><TableCell sx={{ maxWidth: 300 }}>{row.purpose}<Typography variant="caption" color="text.secondary" display="block">{row.offeringName}</Typography></TableCell><TableCell sx={{ color: row.status === "overdue" ? "error.main" : undefined }}>{formatDate(row.dueDate)}</TableCell><TableCell align="right">{formatMoney(row.amount)}</TableCell><TableCell align="right"><Typography variant="body2">{formatMoney(row.paidAmount)}</Typography><LinearProgress variant="determinate" value={progress} color={progress === 100 ? "success" : "primary"} sx={{ mt: 0.5, minWidth: 80, borderRadius: 3 }} /></TableCell><TableCell><StatusChip status={row.status} /></TableCell><TableCell align="right"><IconButton size="small" onClick={(e) => { e.stopPropagation(); openMenu(e, row); }}><MoreHorizOutlined /></IconButton></TableCell></TableRow>; })}{!chargesQuery.isLoading && !chargeRows.length && <EmptyRow colSpan={8} text="Начислений пока нет." />}</TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
         )}
 
         {tab === "payments" && (
@@ -380,6 +409,23 @@ export default function BillingPage() {
         </DialogContent>
         <DialogActions><Button onClick={() => setDialog(null)} disabled={submitMutation.isPending}>Отмена</Button><Button variant="contained" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || (dialog === "contract" && (!form.clientId || !form.offeringId)) || (dialog === "charge" && (!form.subscriptionId || !form.purpose || !form.amount)) || (dialog === "payment" && (!form.clientId || !form.amount)) || (dialog === "offering" && (!form.name || !form.priceAmount || (form.kind === "course" && (!form.capacity || !form.sessionsTotal || !form.schedule))))}>{submitMutation.isPending ? <CircularProgress size={20} /> : "Сохранить"}</Button></DialogActions>
       </Dialog>
+
+      <ChargeCardDrawer
+        charge={selectedCharge}
+        organizationId={organizationId}
+        canManage={canManage}
+        canManagePayments={canManagePayments}
+        onClose={() => setSelectedCharge(null)}
+        onChanged={setSelectedCharge}
+      />
+
+      <ContractCardDrawer
+        contract={selectedContract}
+        organizationId={organizationId}
+        canManage={canManage}
+        onClose={() => setSelectedContract(null)}
+        onChanged={setSelectedContract}
+      />
     </Box>
   );
 }
