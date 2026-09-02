@@ -94,7 +94,9 @@ export function firstFreeSlotInSegment(
     .add(minutesIntoStep === 0 ? 0 : SLOT_STEP_MINUTES - minutesIntoStep, "minute");
 
   const candidate = roundedNow.isAfter(segStart) ? roundedNow : segStart;
-  return candidate.isBefore(segEnd) ? candidate : null;
+  return candidate.add(SLOT_STEP_MINUTES, "minute").valueOf() <= segEnd.valueOf()
+    ? candidate
+    : null;
 }
 
 /**
@@ -116,11 +118,58 @@ export function firstFreeSlotInSegmentFor(
   const segEnd = day.hour(endH).minute(endM).second(0).millisecond(0);
 
   let candidate = firstFreeSlotInSegment(day, segment, now);
-  while (candidate && isSlotCovered(intervals, candidate.valueOf())) {
+  while (
+    candidate &&
+    intervals.some((interval) => {
+      const start = candidate!.valueOf();
+      const end = candidate!.add(SLOT_STEP_MINUTES, "minute").valueOf();
+      return start < interval.end && interval.start < end;
+    })
+  ) {
     candidate = candidate.add(SLOT_STEP_MINUTES, "minute");
-    if (!candidate.isBefore(segEnd)) return null;
+    if (candidate.add(SLOT_STEP_MINUTES, "minute").valueOf() > segEnd.valueOf()) return null;
   }
   return candidate;
+}
+
+/**
+ * Первое свободное получасовое окно с привязкой к началу смены.
+ *
+ * Нельзя начинать сетку от конца предыдущего приёма: при смене 09:00,
+ * приёмах 09:00–09:40 и 10:20–10:50 это ошибочно давало окно 09:40, хотя
+ * реальные слоты 09:00, 09:30 и 10:00 все заняты.
+ */
+export function firstFreeSlotAtOrAfter(
+  day: Dayjs,
+  segment: { start: string; end: string },
+  intervals: BusyInterval[],
+  notBefore: Dayjs,
+  latestEnd?: Dayjs,
+  now: Dayjs = dayjs(),
+): Dayjs | null {
+  const [startH, startM] = segment.start.split(":").map(Number);
+  const [endH, endM] = segment.end.split(":").map(Number);
+  if ([startH, startM, endH, endM].some((n) => !Number.isFinite(n))) return null;
+
+  const segStart = day.hour(startH).minute(startM).second(0).millisecond(0);
+  const segEnd = day.hour(endH).minute(endM).second(0).millisecond(0);
+  if (!segEnd.isAfter(segStart)) return null;
+  const end = latestEnd && latestEnd.isBefore(segEnd) ? latestEnd : segEnd;
+  const isToday = day.isSame(now, "day");
+
+  for (
+    let candidate = segStart;
+    candidate.add(SLOT_STEP_MINUTES, "minute").valueOf() <= end.valueOf();
+    candidate = candidate.add(SLOT_STEP_MINUTES, "minute")
+  ) {
+    const candidateEnd = candidate.add(SLOT_STEP_MINUTES, "minute");
+    if (candidate.isBefore(notBefore) || (isToday && candidate.isBefore(now))) continue;
+    const overlaps = intervals.some(
+      (interval) => candidate.valueOf() < interval.end && interval.start < candidateEnd.valueOf(),
+    );
+    if (!overlaps) return candidate;
+  }
+  return null;
 }
 
 /** Только цифры — номера в базе лежат в разном формате (+996, 0555, пробелы). */
