@@ -276,10 +276,12 @@ const OdoctorSettingsPage: React.FC = () => {
                   }
                   label={t("odoctor.form.clearPasswordLabel")}
                 />
+                {/* Подпись постоянная: во взведённом состоянии «пароль
+                    будет стёрт» уже сказано под самим полем, вместе с тем,
+                    как это отменить. Здесь остаётся то, что нигде больше не
+                    сказано, — зачем этот отзыв нужен. */}
                 <FormHelperText>
-                  {form.clearPassword
-                    ? t("odoctor.form.clearPasswordPending")
-                    : t("odoctor.form.clearPasswordHelper")}
+                  {t("odoctor.form.clearPasswordHelper")}
                 </FormHelperText>
               </Box>
             )}
