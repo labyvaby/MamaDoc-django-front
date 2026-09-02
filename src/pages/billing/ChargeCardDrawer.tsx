@@ -53,10 +53,10 @@ const date = (value: string | null | undefined) => (value ? dayjs(value).format(
 const statusLabels: Record<string, string> = {
   draft: "Черновик",
   issued: "Выставлено",
-  partially_paid: "Частично оплачено",
+  partial: "Частично оплачено",
   paid: "Оплачено",
   overdue: "Просрочено",
-  cancelled: "Отменено",
+  canceled: "Отменено",
   pending: "В обработке",
   succeeded: "Успешно",
   refunded: "Возвращено",
@@ -66,10 +66,10 @@ const statusLabels: Record<string, string> = {
 const statusColors: Record<string, "default" | "info" | "warning" | "success" | "error"> = {
   draft: "default",
   issued: "info",
-  partially_paid: "warning",
+  partial: "warning",
   paid: "success",
   overdue: "error",
-  cancelled: "default",
+  canceled: "default",
 };
 
 const methodLabels: Record<string, string> = {
@@ -80,8 +80,8 @@ const methodLabels: Record<string, string> = {
 
 const sourceLabels: Record<string, string> = {
   manual: "Создано вручную",
+  bulk: "Массовое начисление",
   auto: "Автоначисление",
-  schedule: "По расписанию контракта",
 };
 
 const cycleLabels: Record<string, string> = {
@@ -200,7 +200,7 @@ export function ChargeCardDrawer({
 
   const allocations = allocationsQuery.data?.items ?? [];
   const busy = statusMutation.isPending || linkMutation.isPending;
-  const closed = charge != null && ["paid", "cancelled"].includes(charge.status);
+  const closed = charge != null && ["paid", "canceled"].includes(charge.status);
   const progress = charge && Number(charge.amount)
     ? Math.min(100, (Number(charge.paidAmount) / Number(charge.amount)) * 100)
     : 0;

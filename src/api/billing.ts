@@ -70,7 +70,7 @@ export interface BillingCharge {
   amount: Money;
   paidAmount: Money;
   dueDate: string;
-  status: "draft" | "issued" | "partially_paid" | "paid" | "overdue" | "cancelled" | string;
+  status: "draft" | "issued" | "partial" | "paid" | "overdue" | "canceled" | string;
   source: string;
   createdAt: string;
   updatedAt: string;

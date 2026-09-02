@@ -153,7 +153,7 @@ export function ClientCardDrawer({ client, organizationId, onClose, onEdit }: Pr
   const charges = chargesQuery.data?.items ?? [];
   const payments = paymentsQuery.data?.items ?? [];
   const issuedTotal = charges
-    .filter((charge) => charge.status !== "cancelled")
+    .filter((charge) => charge.status !== "canceled")
     .reduce((sum, charge) => sum + Number(charge.amount), 0);
   const paidTotal = payments
     .filter((payment) => payment.status === "succeeded")

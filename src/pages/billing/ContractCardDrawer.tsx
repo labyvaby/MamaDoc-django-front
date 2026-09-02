@@ -15,7 +15,6 @@ import {
   Paper,
   Stack,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
@@ -64,10 +63,10 @@ const statusLabels: Record<string, string> = {
   ended: "Завершён",
   draft: "Черновик",
   issued: "Выставлено",
-  partially_paid: "Частично оплачено",
+  partial: "Частично оплачено",
   paid: "Оплачено",
   overdue: "Просрочено",
-  cancelled: "Отменено",
+  canceled: "Отменено",
 };
 
 function Fact({ label, value, danger = false }: { label: string; value: React.ReactNode; danger?: boolean }) {
@@ -156,7 +155,7 @@ export function ContractCardDrawer({ contract, organizationId, canManage, onClos
   }, [contractId]);
 
   const charges = chargesQuery.data?.items ?? [];
-  const openCharges = charges.filter((charge) => !["paid", "cancelled"].includes(charge.status));
+  const openCharges = charges.filter((charge) => !["paid", "canceled"].includes(charge.status));
   const outstanding = openCharges.reduce((sum, charge) => sum + Math.max(0, Number(charge.amount) - Number(charge.paidAmount)), 0);
   const busy = statusMutation.isPending || endMutation.isPending;
 

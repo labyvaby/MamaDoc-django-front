@@ -11,7 +11,6 @@ import {
   DialogTitle,
   MenuItem,
   Paper,
-  Stack,
   Table,
   TableBody,
   TableCell,
