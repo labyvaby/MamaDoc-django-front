@@ -8,7 +8,8 @@ import { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
 import type { DjangoEmployeeListItem } from "../../../api/staff";
-import { lunchNote, type DayOccurrence } from "./occurrences";
+import { lunchNote, shiftTimeLabel, type DayOccurrence } from "./occurrences";
+import { segmentLunch, segmentWorkSpans } from "./monthTimeline";
 import { employeeColorHex, lunchFill } from "./employeeColors";
 import { namesFromOccurrences, occurrencesOf, useCollapsedGroups, useResourceGroups } from "./resourceRows";
 import { useNowMinute } from "./useNowMinute";
@@ -43,10 +44,8 @@ const leftPx = (min: number) =>
 
 // Единый формат «Ч:ММ» без ведущего нуля у часа (9:00, 10:30, 18:00) —
 // минуты показываем всегда, чтобы подписи смен читались одинаково.
-const shortTime = (t: string) => {
-  const [hh, mm] = t.split(":");
-  return `${parseInt(hh, 10)}:${mm}`;
-};
+const minutesToShort = (min: number) =>
+  `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -390,69 +389,89 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                           />
                         )}
                         {rowOccs.map((occ) => {
-                          const start = parseTimeToMinutes(occ.startTime);
-                          const end = parseTimeToMinutes(occ.endTime);
-                          const l = leftPx(start);
-                          const w = Math.max(leftPx(end) - l, 6);
+                          const seg = {
+                            occ,
+                            startMin: parseTimeToMinutes(occ.startTime),
+                            endMin: parseTimeToMinutes(occ.endTime),
+                          };
+                          const tip = `${occ.employeeName}: ${shiftTimeLabel(occ)}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`;
+                          const lunch = segmentLunch(seg);
+                          const spans = segmentWorkSpans(seg);
+                          const lunchLeft = lunch ? leftPx(lunch.startMin) : 0;
+                          const lunchWidth = lunch
+                            ? Math.max(leftPx(lunch.endMin) - lunchLeft, 4)
+                            : 0;
                           return (
-                            <Tooltip
-                              key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}
-                              title={`${occ.employeeName}: ${occ.startTime}–${occ.endTime}${occ.lunch ? ` · ${lunchNote(occ)}` : ""}${occ.kind !== "rule" ? " (точечная смена)" : ""}`}
-                              arrow
-                            >
-                              <Box
-                                sx={{
-                                  position: "absolute",
-                                  left: l,
-                                  width: w,
-                                  top: 5,
-                                  bottom: 5,
-                                  zIndex: 2,
-                                  borderRadius: "5px",
-                                  // Сплошная заливка вместо полупрозрачной —
-                                  // см. комментарий в ScheduleWeekResourceGrid.
-                                  bgcolor: c,
-                                  border:
-                                    occ.kind !== "rule"
-                                      ? `1.5px dashed ${theme.palette.background.paper}`
-                                      : undefined,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  px: 0.75,
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <Typography
-                                  noWrap
-                                  sx={{
-                                    fontSize: "0.7rem",
-                                    fontWeight: 600,
-                                    color: theme.palette.getContrastText(c),
-                                    fontVariantNumeric: "tabular-nums",
-                                  }}
-                                >
-                                  {shortTime(occ.startTime)}–{shortTime(occ.endTime)}
-                                </Typography>
-                                {/* Обед — вырез внутри полосы: смена одна, работы в этот час нет. */}
-                                {occ.lunch && (
+                            <React.Fragment key={`${occ.kind}_${occ.sourceId}_${occ.startTime}`}>
+                              {spans.map((span, si) => {
+                                const l = leftPx(span.startMin);
+                                const w = Math.max(leftPx(span.endMin) - l, 6);
+                                // Отрезок до обеда скруглён слева, после — справа:
+                                // вместе с вырезом это читается как одна смена.
+                                const first = si === 0;
+                                const last = si === spans.length - 1;
+                                return (
+                                  <Tooltip key={span.startMin} title={tip} arrow>
+                                    <Box
+                                      sx={{
+                                        position: "absolute",
+                                        left: l,
+                                        width: w,
+                                        top: 5,
+                                        bottom: 5,
+                                        zIndex: 2,
+                                        borderRadius: `${first ? "5px" : "0"} ${last ? "5px" : "0"} ${last ? "5px" : "0"} ${first ? "5px" : "0"}`,
+                                        // Сплошная заливка вместо полупрозрачной —
+                                        // см. комментарий в ScheduleWeekResourceGrid.
+                                        bgcolor: c,
+                                        border:
+                                          occ.kind !== "rule"
+                                            ? `1.5px dashed ${theme.palette.background.paper}`
+                                            : undefined,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        // Время каждого отрезка жмётся к обеду: до
+                                        // перерыва — к правому краю, после — к левому,
+                                        // так обе подписи стоят по бокам от выреза.
+                                        justifyContent: first && !last ? "flex-end" : "flex-start",
+                                        px: 0.75,
+                                        overflow: "hidden",
+                                      }}
+                                    >
+                                      <Typography
+                                        noWrap
+                                        sx={{
+                                          fontSize: "0.7rem",
+                                          fontWeight: 600,
+                                          color: theme.palette.getContrastText(c),
+                                          fontVariantNumeric: "tabular-nums",
+                                        }}
+                                      >
+                                        {minutesToShort(span.startMin)}–
+                                        {minutesToShort(span.endMin)}
+                                      </Typography>
+                                    </Box>
+                                  </Tooltip>
+                                );
+                              })}
+                              {/* Обед — красный вырез между отрезками смены
+                                  (просьба заказчика 02.09.2026). */}
+                              {lunch && (
+                                <Tooltip title={lunchNote(occ)} arrow>
                                   <Box
                                     sx={{
                                       position: "absolute",
-                                      left: leftPx(parseTimeToMinutes(occ.lunch.start)) - l,
-                                      width: Math.max(
-                                        leftPx(parseTimeToMinutes(occ.lunch.end)) -
-                                          leftPx(parseTimeToMinutes(occ.lunch.start)),
-                                        4,
-                                      ),
-                                      top: 0,
-                                      bottom: 0,
+                                      left: lunchLeft,
+                                      width: lunchWidth,
+                                      top: 5,
+                                      bottom: 5,
+                                      zIndex: 2,
                                       display: "flex",
                                       alignItems: "center",
                                       justifyContent: "center",
-                                      // Красный вырез (просьба заказчика 02.09.2026).
                                       bgcolor: lunchFill(theme),
-                                      // Тонкие боковые грани отделяют вырез от смены, если
-                                      // сама смена оказалась красноватой.
+                                      // Тонкие боковые грани отделяют вырез от смены,
+                                      // если сама смена оказалась красноватой.
                                       borderLeft: `1px solid ${theme.palette.background.paper}`,
                                       borderRight: `1px solid ${theme.palette.background.paper}`,
                                     }}
@@ -461,9 +480,9 @@ const ScheduleDayTimeline: React.FC<ScheduleDayTimelineProps> = ({
                                       sx={{ fontSize: 12, color: "error.contrastText" }}
                                     />
                                   </Box>
-                                )}
-                              </Box>
-                            </Tooltip>
+                                </Tooltip>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                       </Box>

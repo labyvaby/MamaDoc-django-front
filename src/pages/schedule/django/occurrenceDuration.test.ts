@@ -6,6 +6,7 @@ import {
   netShiftMinutes,
   occurrenceNote,
   shiftMinutes,
+  shiftTimeLabel,
   type DayOccurrence,
 } from "./occurrences";
 
@@ -65,13 +66,44 @@ describe("occurrenceNote", () => {
     expect(occurrenceNote(occ())).toBe("09:00–17:00 · 8 ч");
   });
 
-  it("смена с обедом — плюс перерыв и чистое время", () => {
+  it("смена с обедом — рабочие отрезки, чистое время и перерыв", () => {
     expect(occurrenceNote(occ({ lunch: { start: "13:00", end: "14:00" } }))).toBe(
-      "09:00–17:00 · 8 ч · обед 13:00–14:00 · чистых 7 ч",
+      "09:00–13:00, 14:00–17:00 · 7 ч · обед 13:00–14:00",
     );
   });
 
   it("точечную смену помечает отдельно", () => {
     expect(occurrenceNote(occ({ kind: "extra" }))).toBe("09:00–17:00 · 8 ч · точечная смена");
+  });
+});
+
+describe("shiftTimeLabel", () => {
+  it("без обеда — цельный интервал", () => {
+    expect(shiftTimeLabel(occ())).toBe("09:00–17:00");
+  });
+
+  it("обед делит смену на «до» и «после»", () => {
+    expect(shiftTimeLabel(occ({ lunch: { start: "13:00", end: "14:00" } }))).toBe(
+      "09:00–13:00, 14:00–17:00",
+    );
+  });
+
+  it("обед в начале смены оставляет один отрезок", () => {
+    expect(shiftTimeLabel(occ({ lunch: { start: "09:00", end: "10:00" } }))).toBe("10:00–17:00");
+  });
+
+  it("обед в конце смены оставляет один отрезок", () => {
+    expect(shiftTimeLabel(occ({ lunch: { start: "16:00", end: "17:00" } }))).toBe("09:00–16:00");
+  });
+
+  it("обед во всю смену не оставляет подпись пустой", () => {
+    expect(shiftTimeLabel(occ({ lunch: { start: "09:00", end: "17:00" } }))).toBe("09:00–17:00");
+  });
+
+  it("уважает форматтер экрана", () => {
+    const short = (t: string) => `${parseInt(t.slice(0, 2), 10)}:${t.slice(3)}`;
+    expect(shiftTimeLabel(occ({ lunch: { start: "13:00", end: "14:00" } }), short)).toBe(
+      "9:00–13:00, 14:00–17:00",
+    );
   });
 });
