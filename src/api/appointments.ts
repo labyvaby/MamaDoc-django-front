@@ -98,7 +98,12 @@ export function parseBackendError(err: unknown): string {
 
 /** One existing appointment the requested slot runs into (mirrors backend). */
 export interface OverlapConflict {
-  appointmentId: number;
+  /**
+   * null для приёма ЧУЖОГО филиала: с 02.09.2026 бэк скрывает и идентификатор,
+   * не только имя пациента (ветка feature/multi-branch-schedule, §7). Ссылку на
+   * карточку приёма по такому конфликту строить нельзя.
+   */
+  appointmentId: number | null;
   startsAt: string;
   endsAt: string;
   employeeId: number | null;
