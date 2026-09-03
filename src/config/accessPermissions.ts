@@ -47,7 +47,9 @@ export const PAGE_PERMISSIONS = {
   conclusionPrint: "medical.conclusions.print",
   clients: "clients.view",
   pos: "pos.view",
-  inventory: "warehouse.manage",
+  // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
+  // операции открытия/сканирования/завершения дополнительно проверяет API.
+  inventory: "warehouse.view",
   ecommerce: "ecommerce.view",
   targets: "targets.view",
   messaging: "messaging.view",
