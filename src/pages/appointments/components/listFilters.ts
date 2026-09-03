@@ -8,10 +8,12 @@
 import dayjs, { type Dayjs } from "dayjs";
 
 import type {
+  AppointmentCancelReason,
   AppointmentPriceOverride,
   AppointmentServiceLine,
   DjangoAppointment,
 } from "../../../api/appointments";
+import { APPOINTMENT_CANCEL_REASONS, isAppointmentCancelReason } from "../../../api/appointments";
 import type { PaymentStatus } from "../../../api/payments";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 import {
@@ -157,6 +159,30 @@ export function matchesMoneyFlags(
   if (selected.length === 0) return true;
   const flags = appointmentMoneyFlags(appt);
   return selected.some((flag) => flags.includes(flag));
+}
+
+/**
+ * Ось «почему отменили» — видна и фильтруется только у отменённых приёмов.
+ * Добавлена вслед за bulk-отменой отсутствия врача (03.09.2026): без неё
+ * «отменено по вине клиники» неотличимо от «пациент передумал» в отчёте.
+ *
+ * ⚠ Задаёт допустимые значения URL-параметра `reason` (useReceptionFilters).
+ * Легаси-записи со свободным текстом (до 03.09.2026) под фильтр не попадают —
+ * значение неизвестно, фильтровать по нему нечем; см. isAppointmentCancelReason.
+ */
+export const CANCEL_REASON_OPTIONS: readonly AppointmentCancelReason[] = APPOINTMENT_CANCEL_REASONS;
+
+/** Подходит ли приём под выбранные причины отмены (несколько — ИЛИ). */
+export function matchesCancelReasons(
+  appt: DjangoAppointment,
+  selected: AppointmentCancelReason[],
+): boolean {
+  if (selected.length === 0) return true;
+  return (
+    appt.status === "canceled" &&
+    isAppointmentCancelReason(appt.cancelReason) &&
+    selected.includes(appt.cancelReason)
+  );
 }
 
 /** Шаг сетки записи: как и длительность приёма по умолчанию (slotAvailability). */

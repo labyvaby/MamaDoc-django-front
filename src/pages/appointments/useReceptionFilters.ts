@@ -13,6 +13,7 @@ import React from "react";
 import { useSearchParams } from "react-router";
 
 import {
+  CANCEL_REASON_OPTIONS,
   MONEY_FLAG_OPTIONS,
   PAYMENT_FILTER_OPTIONS,
   VISIT_FILTER_CODES,
@@ -20,6 +21,7 @@ import {
 } from "./components/listFilters";
 import type { StatusCode } from "../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../api/payments";
+import type { AppointmentCancelReason } from "../../api/appointments";
 
 const PARAM = {
   search: "q",
@@ -28,6 +30,8 @@ const PARAM = {
   payment: "pay",
   /** Скидки и правки цены: `money=discount,price_up`. */
   money: "money",
+  /** Причина отмены: `reason=doctor_absent`. */
+  reason: "reason",
 } as const;
 
 const PAYMENT_VALUES = PAYMENT_FILTER_OPTIONS.map((o) => o.value);
@@ -49,6 +53,7 @@ export function useReceptionFilters() {
   const statusRaw = searchParams.get(PARAM.status);
   const paymentRaw = searchParams.get(PARAM.payment);
   const moneyRaw = searchParams.get(PARAM.money);
+  const reasonRaw = searchParams.get(PARAM.reason);
 
   const statusFilter = React.useMemo(
     () => parseCsv<StatusCode>(statusRaw, VISIT_FILTER_CODES),
@@ -61,6 +66,10 @@ export function useReceptionFilters() {
   const moneyFlagFilter = React.useMemo(
     () => parseCsv<AppointmentMoneyFlag>(moneyRaw, MONEY_FLAG_OPTIONS),
     [moneyRaw],
+  );
+  const reasonFilter = React.useMemo(
+    () => parseCsv<AppointmentCancelReason>(reasonRaw, CANCEL_REASON_OPTIONS),
+    [reasonRaw],
   );
 
   /**
@@ -144,9 +153,21 @@ export function useReceptionFilters() {
         setParam(PARAM.money, values.length ? values.join(",") : null),
       [setParam],
     ),
+    reasonFilter,
+    setReasonFilter: React.useCallback(
+      (values: AppointmentCancelReason[]) =>
+        setParam(PARAM.reason, values.length ? values.join(",") : null),
+      [setParam],
+    ),
     /** Сброс всех осей чипов — одним обновлением URL (см. setParams). */
     resetChipFilters: React.useCallback(
-      () => setParams({ [PARAM.status]: null, [PARAM.payment]: null, [PARAM.money]: null }),
+      () =>
+        setParams({
+          [PARAM.status]: null,
+          [PARAM.payment]: null,
+          [PARAM.money]: null,
+          [PARAM.reason]: null,
+        }),
       [setParams],
     ),
   };

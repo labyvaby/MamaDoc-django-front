@@ -105,6 +105,18 @@ export interface ScheduleCalendarProps {
   currentEmployeeId?: number | null;
   /** Общая карта цветов (строится в index.tsx по сменам периода). */
   employeeColorMap: Map<number, number>;
+  /**
+   * Записи, оставшиеся без разбора в дни отсутствия (выходной/отпуск) — дата
+   * YYYY-MM-DD → сколько всего приёмов у всех отсутствующих в этот день.
+   * Отметка отсутствия сама ничего не отменяет (см. AbsenceConflictsDrawer),
+   * поэтому день выходного, на который записаны пациенты, — дыра, которую
+   * иначе видно только открыв разбор вручную.
+   */
+  absenceDayTotals?: Map<string, number>;
+  /** Кто именно отсутствует в этот день и сколько у него записей — для тултипа. */
+  absenceDayEmployees?: Map<string, { employeeId: number; count: number }[]>;
+  /** Клик по маркеру — открыть разбор по конкретному сотруднику и дню. */
+  onAbsenceBadgeClick?: (employeeId: number, date: string) => void;
 }
 
 const WEEKDAY_FULL = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
@@ -121,6 +133,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   onDayClick,
   currentEmployeeId,
   employeeColorMap,
+  absenceDayTotals,
+  absenceDayEmployees,
+  onAbsenceBadgeClick,
 }) => {
   const theme = useTheme();
   const mode = theme.palette.mode;
@@ -278,6 +293,43 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     (occs: DayOccurrence[]): number => new Set(occs.map((o) => o.employeeId)).size,
     [],
   );
+
+  // Маркер «записаны пациенты, а врач отсутствует» — красный, чтобы бросался в
+  // глаза среди нейтральных счётчиков смен. Пусто, если пропсы не переданы
+  // (страница без права appointments.view их не считает вовсе).
+  const AbsenceBadge: React.FC<{ day: Dayjs; show: boolean }> = ({ day, show }) => {
+    const key = day.format("YYYY-MM-DD");
+    const total = absenceDayTotals?.get(key) ?? 0;
+    if (!show || total === 0) return null;
+    const byEmployee = [...(absenceDayEmployees?.get(key) ?? [])].sort((a, b) => b.count - a.count);
+    const tip = byEmployee
+      .map((e) => `${employeesById.get(e.employeeId)?.fullName ?? `#${e.employeeId}`}: ${e.count}`)
+      .join("  •  ");
+    const primary = byEmployee[0];
+    return (
+      <Tooltip title={tip || `Записей без разбора: ${total}`} arrow placement="right">
+        <Chip
+          label={total}
+          size="small"
+          color="error"
+          onClick={
+            onAbsenceBadgeClick && primary
+              ? (e) => {
+                  e.stopPropagation();
+                  onAbsenceBadgeClick(primary.employeeId, key);
+                }
+              : undefined
+          }
+          sx={{
+            pointerEvents: "auto",
+            height: 18,
+            minWidth: 18,
+            "& .MuiChip-label": { px: "5px", fontSize: "0.65rem", fontWeight: 700 },
+          }}
+        />
+      </Tooltip>
+    );
+  };
 
   // Число дня + нейтральный счётчик работающих сотрудников
   const DayCounter: React.FC<{ day: Dayjs; occs: DayOccurrence[]; show: boolean }> = ({ day, occs, show }) => {
@@ -490,10 +542,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
               right: 4,
               zIndex: 3,
               display: "flex",
-              justifyContent: "flex-end",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
               pointerEvents: "none",
             }}
           >
+            <AbsenceBadge day={day} show={isCurrentMonth} />
             <DayCounter day={day} occs={occs} show={isCurrentMonth} />
           </Box>
 

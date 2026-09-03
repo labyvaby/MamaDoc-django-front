@@ -23,7 +23,9 @@ import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import { getStatusAccent, getStatusLabel } from "../../../config/appointmentStatuses";
 import type { StatusCode } from "../../../config/appointmentStatuses";
 import type { PaymentStatus } from "../../../api/payments";
+import type { AppointmentCancelReason } from "../../../api/appointments";
 import {
+  CANCEL_REASON_OPTIONS,
   MONEY_FLAG_LABEL_KEY,
   MONEY_FLAG_OPTIONS,
   PAYMENT_FILTER_OPTIONS,
@@ -32,6 +34,7 @@ import {
 } from "./listFilters";
 import { useT } from "../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../theme";
+import { cancelReasonLabel } from "../../../utility/cancelReasonLabel";
 
 /** Значок оси цены: скидка — ярлык, правки цены — стрелка направления. */
 const PRICE_FLAG_ICON: Record<AppointmentMoneyFlag, typeof LocalOfferOutlined> = {
@@ -53,6 +56,14 @@ type Props = {
   moneyCounts?: Map<AppointmentMoneyFlag, number>;
   selectedMoneyFlags?: AppointmentMoneyFlag[];
   onToggleMoneyFlag?: (value: AppointmentMoneyFlag) => void;
+  /**
+   * Счётчики причин отмены; чипы видны только у тех значений, что реально
+   * встретились (то есть только когда в выборке есть отменённые с известным
+   * кодом причины — легаси-свободный текст в счётчик не попадает).
+   */
+  reasonCounts?: Map<AppointmentCancelReason, number>;
+  selectedReasons?: AppointmentCancelReason[];
+  onToggleReason?: (value: AppointmentCancelReason) => void;
   onReset: () => void;
   /** Мобильный лист: кнопка сброса отдельной строкой, чтобы её было легко попасть пальцем. */
   wrap?: boolean;
@@ -68,6 +79,9 @@ const AppointmentFilterChips: React.FC<Props> = ({
   moneyCounts,
   selectedMoneyFlags = [],
   onToggleMoneyFlag,
+  reasonCounts,
+  selectedReasons = [],
+  onToggleReason,
   onReset,
   wrap = false,
 }) => {
@@ -85,15 +99,28 @@ const AppointmentFilterChips: React.FC<Props> = ({
     moneyCounts && onToggleMoneyFlag
       ? MONEY_FLAG_OPTIONS.filter((flag) => (moneyCounts.get(flag) ?? 0) > 0)
       : [];
+  const reasonChips =
+    reasonCounts && onToggleReason
+      ? CANCEL_REASON_OPTIONS.filter((reason) => (reasonCounts.get(reason) ?? 0) > 0)
+      : [];
 
   const hasActive =
-    selectedStatuses.length > 0 || selectedPayments.length > 0 || selectedMoneyFlags.length > 0;
+    selectedStatuses.length > 0 ||
+    selectedPayments.length > 0 ||
+    selectedMoneyFlags.length > 0 ||
+    selectedReasons.length > 0;
 
   // Ряд скрываем, только когда скрывать нечего И нечего сбрасывать: при
   // активном фильтре чипы могут исчезнуть все разом (например, у выбранного
   // специалиста в этот день нет ни одной записи) — и тогда снять фильтр было
   // бы нечем, список так и остался бы пустым без видимой причины.
-  if (visitChips.length === 0 && moneyChips.length === 0 && priceChips.length === 0 && !hasActive)
+  if (
+    visitChips.length === 0 &&
+    moneyChips.length === 0 &&
+    priceChips.length === 0 &&
+    reasonChips.length === 0 &&
+    !hasActive
+  )
     return null;
 
   const chipSx = (accent: { main: string; text: string } | null, active: boolean) => ({
@@ -259,6 +286,31 @@ const AppointmentFilterChips: React.FC<Props> = ({
               active,
             )}
             sx={chipSx(accent, active)}
+          />
+        );
+      })}
+
+      {/* Причина отмены — подось «Отменено»: разделитель свой, чтобы было видно,
+          что это не отдельная категория статусов, а уточнение одной из них. */}
+      {reasonChips.length > 0 && (
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.25, flexShrink: 0 }} />
+      )}
+
+      {reasonChips.map((reason) => {
+        const active = selectedReasons.includes(reason);
+        return (
+          <Chip
+            key={reason}
+            size="small"
+            clickable
+            onClick={() => onToggleReason?.(reason)}
+            label={chipContent(
+              null,
+              cancelReasonLabel(reason) ?? reason,
+              reasonCounts?.get(reason) ?? 0,
+              active,
+            )}
+            sx={chipSx(null, active)}
           />
         );
       })}

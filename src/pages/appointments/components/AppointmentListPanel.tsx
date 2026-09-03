@@ -55,9 +55,11 @@ import {
   firstFreeSlotInSegmentFor,
   firstFreeSlotAtOrAfter,
   matchesAppointmentSearch,
+  matchesCancelReasons,
   matchesMoneyFlags,
   type AppointmentMoneyFlag,
 } from "./listFilters";
+import { isAppointmentCancelReason, type AppointmentCancelReason } from "../../../api/appointments";
 import { AppBottomSheet } from "../../../components/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -116,6 +118,12 @@ interface AppointmentListPanelProps {
   /** Ось скидок и правок цены — так же управляемая страницей (URL) или своя. */
   moneyFlagFilter?: AppointmentMoneyFlag[];
   onMoneyFlagFilterChange?: (values: AppointmentMoneyFlag[]) => void;
+  /**
+   * Ось причины отмены — видна только у отменённых приёмов; та же управляемая
+   * схема, что у остальных осей. См. matchesCancelReasons.
+   */
+  reasonFilter?: AppointmentCancelReason[];
+  onReasonFilterChange?: (values: AppointmentCancelReason[]) => void;
   /**
    * Сброс обеих осей сразу. Отдельный колбэк, а не два вызова подряд: владелец
    * состояния может складывать их в одно обновление (страница пишет фильтры в
@@ -341,6 +349,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   onPaymentFilterChange,
   moneyFlagFilter,
   onMoneyFlagFilterChange,
+  reasonFilter,
+  onReasonFilterChange,
   onResetChipFilters,
   showPaymentFilter = false,
   showGroupTotals = false,
@@ -466,11 +476,23 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     [isMoneyControlled, onMoneyFlagFilterChange],
   );
 
+  const isReasonControlled = reasonFilter !== undefined;
+  const [internalReasons, setInternalReasons] = React.useState<AppointmentCancelReason[]>([]);
+  const selectedReasons = isReasonControlled ? reasonFilter : internalReasons;
+  const setSelectedReasons = React.useCallback(
+    (values: AppointmentCancelReason[]) => {
+      if (!isReasonControlled) setInternalReasons(values);
+      onReasonFilterChange?.(values);
+    },
+    [isReasonControlled, onReasonFilterChange],
+  );
+
   React.useEffect(() => {
     if (!isStatusControlled) setInternalStatuses([]);
     if (!isPaymentControlled) setInternalPayments([]);
     if (!isMoneyControlled) setInternalMoneyFlags([]);
-  }, [titleDate, isStatusControlled, isPaymentControlled, isMoneyControlled]);
+    if (!isReasonControlled) setInternalReasons([]);
+  }, [titleDate, isStatusControlled, isPaymentControlled, isMoneyControlled, isReasonControlled]);
 
   // ── Отбор: поиск → исполнитель → чипы ─────────────────────────────────────
   // Порядок важен: счётчики чипов считаются на середине цепочки, поэтому при
@@ -526,6 +548,15 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     return counts;
   }, [doctorScopedItems]);
 
+  const reasonCounts = React.useMemo(() => {
+    const counts = new Map<AppointmentCancelReason, number>();
+    for (const appt of doctorScopedItems) {
+      if (appt.status !== "canceled" || !isAppointmentCancelReason(appt.cancelReason)) continue;
+      counts.set(appt.cancelReason, (counts.get(appt.cancelReason) ?? 0) + 1);
+    }
+    return counts;
+  }, [doctorScopedItems]);
+
   const filteredItems = React.useMemo(() => {
     let list = doctorScopedItems;
     if (selectedStatuses.length > 0) {
@@ -544,8 +575,17 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     if (selectedMoneyFlags.length > 0) {
       list = list.filter((appt) => matchesMoneyFlags(appt, selectedMoneyFlags));
     }
+    if (selectedReasons.length > 0) {
+      list = list.filter((appt) => matchesCancelReasons(appt, selectedReasons));
+    }
     return list;
-  }, [doctorScopedItems, selectedStatuses, selectedPayments, selectedMoneyFlags]);
+  }, [
+    doctorScopedItems,
+    selectedStatuses,
+    selectedPayments,
+    selectedMoneyFlags,
+    selectedReasons,
+  ]);
 
   const toggleStatus = React.useCallback(
     (code: StatusCode) =>
@@ -577,31 +617,48 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     [selectedMoneyFlags, setSelectedMoneyFlags],
   );
 
+  const toggleReason = React.useCallback(
+    (value: AppointmentCancelReason) =>
+      setSelectedReasons(
+        selectedReasons.includes(value)
+          ? selectedReasons.filter((v) => v !== value)
+          : [...selectedReasons, value],
+      ),
+    [selectedReasons, setSelectedReasons],
+  );
+
   const resetChipFilters = React.useCallback(() => {
     if (onResetChipFilters) {
       if (!isStatusControlled) setInternalStatuses([]);
       if (!isPaymentControlled) setInternalPayments([]);
       if (!isMoneyControlled) setInternalMoneyFlags([]);
+      if (!isReasonControlled) setInternalReasons([]);
       onResetChipFilters();
       return;
     }
     setSelectedStatuses([]);
     setSelectedPayments([]);
     setSelectedMoneyFlags([]);
+    setSelectedReasons([]);
   }, [
     onResetChipFilters,
     isStatusControlled,
     isPaymentControlled,
     isMoneyControlled,
+    isReasonControlled,
     setSelectedStatuses,
     setSelectedPayments,
     setSelectedMoneyFlags,
+    setSelectedReasons,
   ]);
 
   // Сколько записей дня скрыто фильтрами. Без этой строки отфильтрованный
   // список выглядит как «в этот день почти никого нет».
   const activeChipCount =
-    selectedStatuses.length + selectedPayments.length + selectedMoneyFlags.length;
+    selectedStatuses.length +
+    selectedPayments.length +
+    selectedMoneyFlags.length +
+    selectedReasons.length;
   const isFiltered = filteredItems.length !== items.length;
   // Отбор по существующим записям (чипы или поиск). Фильтр по специалисту сюда
   // не входит: выбрать свободного врача и увидеть его окна — нормальный сценарий.
@@ -940,6 +997,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       moneyCounts={showPaymentFilter ? moneyCounts : undefined}
       selectedMoneyFlags={selectedMoneyFlags}
       onToggleMoneyFlag={showPaymentFilter ? toggleMoneyFlag : undefined}
+      reasonCounts={reasonCounts}
+      selectedReasons={selectedReasons}
+      onToggleReason={toggleReason}
       onReset={resetChipFilters}
     />
   );
@@ -1409,6 +1469,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
             moneyCounts={showPaymentFilter ? moneyCounts : undefined}
             selectedMoneyFlags={selectedMoneyFlags}
             onToggleMoneyFlag={showPaymentFilter ? toggleMoneyFlag : undefined}
+            reasonCounts={reasonCounts}
+            selectedReasons={selectedReasons}
+            onToggleReason={toggleReason}
             onReset={resetChipFilters}
             wrap
           />
