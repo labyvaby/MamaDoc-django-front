@@ -134,12 +134,14 @@ export const accentChip = { bg: "#EAF3FF", text: BOOKING_PRIMARY, border: "#DCEB
 
 /**
  * Ближайшие свободные окна в карточке списка врачей: сегодня — зелёные,
- * завтра — синие, дальняя дата — без заливки.
+ * завтра — синие, дальняя дата — фиолетовая. Три разных оттенка, а не один
+ * приглушённый на всё «не сегодня»: срок ближайшего окна пациент считывает
+ * цветом раньше, чем читает дату.
  */
 export const nearestTone = {
   today: { label: "#34C759", chipBg: "#D7FFE3", chipText: "#008236" },
   tomorrow: { label: "#1A5DD0", chipBg: "#ECF1FB", chipText: "#1A5DD0" },
-  later: { label: "#7A7878", chipBg: "transparent", chipText: "#312E2E" },
+  later: { label: "#6E56CF", chipBg: "#F0EDFB", chipText: "#5B46B8" },
 } as const;
 
 /** Цвет рейтинга. */
